@@ -65,7 +65,7 @@
         }
 
         .nav-item.disabled {
-            opacity: 0.7;
+            opacity: 0.65;
         }
 
         .main {
@@ -364,10 +364,98 @@
             color: #111827;
         }
 
+        .order-sections {
+            display: grid;
+            gap: 18px;
+            margin-top: 22px;
+        }
+
+        .data-section {
+            border: 1px solid #eef2f7;
+            border-radius: 18px;
+            background: #ffffff;
+            overflow: hidden;
+        }
+
+        .data-section-header {
+            padding: 14px 16px;
+            border-bottom: 1px solid #eef2f7;
+            font-size: 14px;
+            font-weight: 800;
+            color: #111827;
+            background: #fafafa;
+        }
+
+        .product-list {
+            display: grid;
+        }
+
+        .product-row {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 14px;
+            padding: 14px 16px;
+            border-bottom: 1px solid #f1f5f9;
+        }
+
+        .product-row:last-child {
+            border-bottom: 0;
+        }
+
+        .product-name {
+            font-size: 15px;
+            font-weight: 800;
+            color: #111827;
+            margin-bottom: 5px;
+        }
+
+        .product-meta {
+            font-size: 13px;
+            color: #6b7280;
+        }
+
+        .product-price {
+            font-size: 15px;
+            font-weight: 800;
+            color: #111827;
+            white-space: nowrap;
+        }
+
+        .section-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px;
+            padding: 16px;
+        }
+
+        .payment-status {
+            font-size: 15px;
+            font-weight: 800;
+        }
+
+        .payment-status.paid {
+            color: #16a34a;
+        }
+
+        .payment-status.unpaid {
+            color: #b45309;
+        }
+
+        .delivery-text {
+            font-size: 15px;
+            font-weight: 700;
+            line-height: 1.45;
+            word-break: break-word;
+        }
+
         .empty {
             padding: 50px 22px;
             color: #6b7280;
             text-align: center;
+        }
+
+        .empty.small {
+            padding: 22px;
         }
 
         .empty strong {
@@ -409,8 +497,16 @@
                 grid-template-columns: 1fr;
             }
 
+            .section-grid {
+                grid-template-columns: 1fr;
+            }
+
             .detail-header {
                 flex-direction: column;
+            }
+
+            .product-row {
+                grid-template-columns: 1fr;
             }
         }
     </style>
@@ -539,6 +635,12 @@
                     {% set detail_phone = selected_order.get("phone") or selected_order.get("PHONE") or selected_order.get("user_phone") or selected_order.get("USER_PHONE") or "" %}
                     {% set detail_price = selected_order.get("price") or selected_order.get("PRICE") or selected_order.get("sum") or selected_order.get("SUM") or "" %}
                     {% set detail_date = selected_order.get("date") or selected_order.get("DATE_INSERT") or selected_order.get("created_at") or selected_order.get("DATE_CREATE") or "" %}
+                    {% set detail_email = selected_order.get("email") or selected_order.get("EMAIL") or "" %}
+                    {% set detail_address = selected_order.get("address") or selected_order.get("ADDRESS") or "" %}
+                    {% set detail_city = selected_order.get("city") or selected_order.get("CITY") or "" %}
+                    {% set detail_paid = selected_order.get("paid") or selected_order.get("PAYED") or "" %}
+                    {% set detail_paid_name = selected_order.get("paid_name") or "" %}
+                    {% set detail_products = selected_order.get("products") or [] %}
 
                     <div class="detail-header">
                         <div>
@@ -634,6 +736,96 @@
                             {% else %}
                                 <div class="info-value">Проверить статус заказа в Битрикс.</div>
                             {% endif %}
+                        </div>
+
+                        <div class="order-sections">
+                            <section class="data-section">
+                                <div class="data-section-header">Состав заказа</div>
+
+                                {% if detail_products %}
+                                    <div class="product-list">
+                                        {% for product in detail_products %}
+                                            {% set product_name = product.get("name") or product.get("NAME") or "Товар без названия" %}
+                                            {% set product_quantity = product.get("quantity") or product.get("QUANTITY") or "1" %}
+                                            {% set product_price = product.get("price") or product.get("PRICE") or "" %}
+
+                                            <div class="product-row">
+                                                <div>
+                                                    <div class="product-name">{{ product_name }}</div>
+                                                    <div class="product-meta">
+                                                        Количество: {{ product_quantity|float|round(0, "floor")|int }} шт.
+                                                    </div>
+                                                </div>
+
+                                                <div class="product-price">
+                                                    {% if product_price %}
+                                                        <span class="money-value" data-amount="{{ product_price }}">{{ product_price }}</span> ₽
+                                                    {% else %}
+                                                        —
+                                                    {% endif %}
+                                                </div>
+                                            </div>
+                                        {% endfor %}
+                                    </div>
+                                {% else %}
+                                    <div class="empty small">
+                                        Состав заказа пока не загружен.
+                                    </div>
+                                {% endif %}
+                            </section>
+
+                            <section class="data-section">
+                                <div class="data-section-header">Оплата и доставка</div>
+
+                                <div class="section-grid">
+                                    <div class="info-card">
+                                        <div class="info-label">Оплата</div>
+
+                                        {% if detail_paid == "Y" %}
+                                            <div class="payment-status paid">Оплачен</div>
+                                        {% elif detail_paid == "N" %}
+                                            <div class="payment-status unpaid">Не оплачен</div>
+                                        {% elif detail_paid_name %}
+                                            <div class="payment-status">{{ detail_paid_name }}</div>
+                                        {% else %}
+                                            <div class="info-value muted-value">Не указана</div>
+                                        {% endif %}
+                                    </div>
+
+                                    <div class="info-card">
+                                        <div class="info-label">Email</div>
+                                        <div class="info-value">
+                                            {% if detail_email %}
+                                                {{ detail_email }}
+                                            {% else %}
+                                                <span class="muted-value">Не указан</span>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+
+                                    <div class="info-card">
+                                        <div class="info-label">Город</div>
+                                        <div class="info-value">
+                                            {% if detail_city %}
+                                                {{ detail_city }}
+                                            {% else %}
+                                                <span class="muted-value">Не указан</span>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+
+                                    <div class="info-card">
+                                        <div class="info-label">Адрес доставки</div>
+                                        <div class="delivery-text">
+                                            {% if detail_address %}
+                                                {{ detail_address }}
+                                            {% else %}
+                                                <span class="muted-value">Не указан</span>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                </div>
+                            </section>
                         </div>
                     </div>
                 {% else %}
