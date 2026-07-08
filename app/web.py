@@ -14,6 +14,16 @@ STATUS_NAMES = {
 }
 
 
+def to_float(value):
+    if value is None or value == "":
+        return 0.0
+
+    try:
+        return float(str(value).replace(",", "."))
+    except ValueError:
+        return 0.0
+
+
 def get_property(order, code):
     properties = order.get("properties") or []
 
@@ -24,6 +34,17 @@ def get_property(order, code):
                 return value
 
     return ""
+
+
+def calculate_products_total(products):
+    total = 0.0
+
+    for product in products:
+        price = to_float(product.get("price") or product.get("PRICE"))
+        quantity = to_float(product.get("quantity") or product.get("QUANTITY") or 1)
+        total += price * quantity
+
+    return total
 
 
 def normalize_order(order):
@@ -74,6 +95,19 @@ def normalize_order(order):
 
     products = order.get("products") or []
 
+    order_total = to_float(
+        order.get("price")
+        or order.get("PRICE")
+        or order.get("sum")
+        or order.get("SUM")
+    )
+
+    products_total = calculate_products_total(products)
+    delivery_price = order_total - products_total
+
+    if delivery_price < 0:
+        delivery_price = 0.0
+
     order["status"] = status
     order["status_name"] = STATUS_NAMES.get(status, status)
 
@@ -88,6 +122,10 @@ def normalize_order(order):
 
     order["products"] = products
     order["products_count"] = len(products)
+
+    order["order_total"] = order_total
+    order["products_total"] = products_total
+    order["delivery_price"] = delivery_price
 
     return order
 
