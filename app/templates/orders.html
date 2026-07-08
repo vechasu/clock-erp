@@ -421,6 +421,33 @@
             white-space: nowrap;
         }
 
+        .order-summary {
+            padding: 16px;
+            display: grid;
+            gap: 10px;
+        }
+
+        .summary-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+            font-size: 15px;
+            color: #374151;
+        }
+
+        .summary-row strong {
+            color: #111827;
+        }
+
+        .summary-total {
+            margin-top: 8px;
+            padding-top: 12px;
+            border-top: 1px solid #eef2f7;
+            font-size: 17px;
+            font-weight: 900;
+            color: #111827;
+        }
+
         .section-grid {
             display: grid;
             grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -566,7 +593,7 @@
                             {% set status_code = status|string|upper %}
                             {% set customer = order.get("customer") or order.get("client") or order.get("name") or order.get("USER_NAME") or order.get("user_name") or "" %}
                             {% set phone = order.get("phone") or order.get("PHONE") or order.get("user_phone") or order.get("USER_PHONE") or "" %}
-                            {% set price = order.get("price") or order.get("PRICE") or order.get("sum") or order.get("SUM") or "" %}
+                            {% set price = order.get("price") or order.get("PRICE") or order.get("sum") or order.get("SUM") or order.get("order_total") or "" %}
                             {% set date = order.get("date") or order.get("DATE_INSERT") or order.get("created_at") or order.get("DATE_CREATE") or "" %}
 
                             <a
@@ -641,6 +668,9 @@
                     {% set detail_paid = selected_order.get("paid") or selected_order.get("PAYED") or "" %}
                     {% set detail_paid_name = selected_order.get("paid_name") or "" %}
                     {% set detail_products = selected_order.get("products") or [] %}
+                    {% set detail_order_total = selected_order.get("order_total") if selected_order.get("order_total") is not none else detail_price %}
+                    {% set detail_products_total = selected_order.get("products_total") if selected_order.get("products_total") is not none else "" %}
+                    {% set detail_delivery_price = selected_order.get("delivery_price") if selected_order.get("delivery_price") is not none else "" %}
 
                     <div class="detail-header">
                         <div>
@@ -688,7 +718,9 @@
                             <div class="info-card">
                                 <div class="info-label">Сумма</div>
                                 <div class="info-value">
-                                    {% if detail_price %}
+                                    {% if detail_order_total %}
+                                        <span class="money-value" data-amount="{{ detail_order_total }}">{{ detail_order_total }}</span> ₽
+                                    {% elif detail_price %}
                                         <span class="money-value" data-amount="{{ detail_price }}">{{ detail_price }}</span> ₽
                                     {% else %}
                                         <span class="muted-value">Не указана</span>
@@ -748,6 +780,7 @@
                                             {% set product_name = product.get("name") or product.get("NAME") or "Товар без названия" %}
                                             {% set product_quantity = product.get("quantity") or product.get("QUANTITY") or "1" %}
                                             {% set product_price = product.get("price") or product.get("PRICE") or "" %}
+                                            {% set product_line_total = product_price|float * product_quantity|float %}
 
                                             <div class="product-row">
                                                 <div>
@@ -759,7 +792,7 @@
 
                                                 <div class="product-price">
                                                     {% if product_price %}
-                                                        <span class="money-value" data-amount="{{ product_price }}">{{ product_price }}</span> ₽
+                                                        <span class="money-value" data-amount="{{ product_line_total }}">{{ product_line_total }}</span> ₽
                                                     {% else %}
                                                         —
                                                     {% endif %}
@@ -772,6 +805,45 @@
                                         Состав заказа пока не загружен.
                                     </div>
                                 {% endif %}
+                            </section>
+
+                            <section class="data-section">
+                                <div class="data-section-header">Расчет заказа</div>
+
+                                <div class="order-summary">
+                                    <div class="summary-row">
+                                        <span>Товары</span>
+                                        <strong>
+                                            {% if detail_products_total != "" %}
+                                                <span class="money-value" data-amount="{{ detail_products_total }}">{{ detail_products_total }}</span> ₽
+                                            {% else %}
+                                                —
+                                            {% endif %}
+                                        </strong>
+                                    </div>
+
+                                    <div class="summary-row">
+                                        <span>Доставка</span>
+                                        <strong>
+                                            {% if detail_delivery_price != "" %}
+                                                <span class="money-value" data-amount="{{ detail_delivery_price }}">{{ detail_delivery_price }}</span> ₽
+                                            {% else %}
+                                                —
+                                            {% endif %}
+                                        </strong>
+                                    </div>
+
+                                    <div class="summary-row summary-total">
+                                        <span>Итого</span>
+                                        <strong>
+                                            {% if detail_order_total %}
+                                                <span class="money-value" data-amount="{{ detail_order_total }}">{{ detail_order_total }}</span> ₽
+                                            {% else %}
+                                                —
+                                            {% endif %}
+                                        </strong>
+                                    </div>
+                                </div>
                             </section>
 
                             <section class="data-section">
