@@ -1,10 +1,13 @@
 import requests
-from flask import Flask, render_template
+from flask import Flask, render_template, request, redirect, url_for
 
 app = Flask(__name__)
 
 ORDERS_URL = "https://tictactoy.ru/api/orders.php"
 ORDER_URL = "https://tictactoy.ru/api/order.php?id="
+UPDATE_ORDER_STATUS_URL = "https://tictactoy.ru/api/update_order_status.php"
+
+UPDATE_ORDER_STATUS_TOKEN = "clock_erp_secret_2026_change_me"
 
 STATUS_NAMES = {
     "N": "Новый",
@@ -167,6 +170,29 @@ def get_orders():
     return orders
 
 
+def update_order_status(order_id, new_status):
+    allowed_statuses = ["N", "D", "F", "C"]
+
+    if new_status not in allowed_statuses:
+        return {
+            "status": "error",
+            "message": "Invalid status"
+        }
+
+    response = requests.post(
+        UPDATE_ORDER_STATUS_URL,
+        data={
+            "token": UPDATE_ORDER_STATUS_TOKEN,
+            "order_id": str(order_id),
+            "status": new_status,
+        },
+        timeout=15
+    )
+
+    response.raise_for_status()
+    return response.json()
+
+
 @app.route("/")
 def index():
     orders = get_orders()
@@ -197,6 +223,15 @@ def order_page(order_id):
         orders=orders,
         selected_order=selected_order
     )
+
+
+@app.route("/order/<int:order_id>/status", methods=["POST"])
+def order_status_update(order_id):
+    new_status = request.form.get("status", "")
+
+    update_order_status(order_id, new_status)
+
+    return redirect(url_for("order_page", order_id=order_id))
 
 
 if __name__ == "__main__":
