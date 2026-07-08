@@ -92,19 +92,6 @@ def normalize_order(order):
     return order
 
 
-def get_orders():
-    response = requests.get(ORDERS_URL, timeout=15)
-    response.raise_for_status()
-
-    orders = response.json().get("orders", [])
-
-    normalized_orders = []
-    for order in orders:
-        normalized_orders.append(normalize_order(order))
-
-    return normalized_orders
-
-
 def get_order(order_id):
     response = requests.get(ORDER_URL + str(order_id), timeout=15)
     response.raise_for_status()
@@ -113,13 +100,39 @@ def get_order(order_id):
     return normalize_order(order)
 
 
+def get_orders():
+    response = requests.get(ORDERS_URL, timeout=15)
+    response.raise_for_status()
+
+    short_orders = response.json().get("orders", [])
+
+    orders = []
+
+    for short_order in short_orders:
+        order_id = short_order.get("id") or short_order.get("ID")
+
+        if not order_id:
+            normalized_short_order = normalize_order(short_order)
+            if normalized_short_order:
+                orders.append(normalized_short_order)
+            continue
+
+        try:
+            full_order = get_order(order_id)
+            if full_order:
+                orders.append(full_order)
+            else:
+                orders.append(normalize_order(short_order))
+        except Exception:
+            orders.append(normalize_order(short_order))
+
+    return orders
+
+
 @app.route("/")
 def index():
     orders = get_orders()
     selected_order = orders[0] if orders else None
-
-    if selected_order:
-        selected_order = get_order(selected_order["id"])
 
     return render_template(
         "orders.html",
@@ -131,7 +144,15 @@ def index():
 @app.route("/order/<int:order_id>")
 def order_page(order_id):
     orders = get_orders()
-    selected_order = get_order(order_id)
+    selected_order = None
+
+    for order in orders:
+        if str(order.get("id")) == str(order_id):
+            selected_order = order
+            break
+
+    if not selected_order:
+        selected_order = get_order(order_id)
 
     return render_template(
         "orders.html",
