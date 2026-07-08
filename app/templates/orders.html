@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<h2>Заказы</h2>
+
+<div class="layout">
+
+    <div class="orders">
+
+        {% for order in orders %}
+
+            <a class="order-card" href="/order/{{ order.id }}">
+
+                <b>№{{ order.number }}</b><br>
+
+                {{ order.status_name }}<br>
+
+                {{ order.price }} ₽
+
+            </a>
+
+        {% endfor %}
+
+    </div>
+
+    <div class="order">
+
+        {% if selected_order %}
+
+            <h2>Заказ №{{ selected_order.number }}</h2>
+
+            <p><b>Статус:</b> {{ selected_order.status_name }}</p>
+
+            <p><b>Дата:</b> {{ selected_order.date }}</p>
+
+            <h1>{{ selected_order.price }} ₽</h1>
+
+            <h3>Покупатель</h3>
+
+            <p>{{ selected_order.user.name }}</p>
+            <p>{{ selected_order.user.email }}</p>
+            <p>{{ selected_order.user.phone }}</p>
+
+            <h3>Товары</h3>
+
+            {% for product in selected_order.products %}
+
+                <div class="product">
+
+                    <b>{{ product.name }}</b><br>
+
+                    {{ product.quantity }} × {{ product.price }}
+
+                </div>
+
+            {% endfor %}
+
+        {% else %}
+
+            <h2>Выберите заказ</h2>
+
+        {% endif %}
+
+    </div>
+
+</div>
+
+{% endblock %}
