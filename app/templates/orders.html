@@ -64,6 +64,10 @@
             color: white;
         }
 
+        .nav-item.disabled {
+            opacity: 0.7;
+        }
+
         .main {
             padding: 28px;
         }
@@ -209,11 +213,13 @@
         .badge {
             display: inline-flex;
             align-items: center;
+            justify-content: center;
             padding: 5px 9px;
             border-radius: 999px;
             font-size: 12px;
             font-weight: 700;
             white-space: nowrap;
+            min-width: 72px;
         }
 
         .badge-new {
@@ -259,6 +265,7 @@
             display: flex;
             justify-content: space-between;
             gap: 20px;
+            align-items: flex-start;
         }
 
         .detail-title {
@@ -308,6 +315,10 @@
             word-break: break-word;
         }
 
+        .muted-value {
+            color: #9ca3af;
+        }
+
         .actions {
             display: flex;
             gap: 10px;
@@ -322,6 +333,11 @@
             font-size: 14px;
             font-weight: 700;
             cursor: pointer;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 44px;
         }
 
         .button-primary {
@@ -332,6 +348,13 @@
         .button-secondary {
             background: #f3f4f6;
             color: #111827;
+        }
+
+        .button-disabled {
+            background: #f3f4f6;
+            color: #9ca3af;
+            cursor: not-allowed;
+            pointer-events: none;
         }
 
         .section-title {
@@ -345,6 +368,10 @@
             padding: 50px 22px;
             color: #6b7280;
             text-align: center;
+        }
+
+        .empty strong {
+            color: #111827;
         }
 
         @media (max-width: 1100px) {
@@ -364,6 +391,28 @@
                 max-height: none;
             }
         }
+
+        @media (max-width: 720px) {
+            .main {
+                padding: 18px;
+            }
+
+            .topbar {
+                flex-direction: column;
+            }
+
+            .sync-card {
+                width: 100%;
+            }
+
+            .info-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .detail-header {
+                flex-direction: column;
+            }
+        }
     </style>
 </head>
 
@@ -374,10 +423,10 @@
 
         <div class="nav-title">Рабочее место</div>
         <div class="nav-item active">📦 Заказы</div>
-        <div class="nav-item">⌚ Товары</div>
-        <div class="nav-item">🏷 Остатки</div>
-        <div class="nav-item">🚚 Доставка</div>
-        <div class="nav-item">⚙️ Настройки</div>
+        <div class="nav-item disabled">⌚ Товары</div>
+        <div class="nav-item disabled">🏷 Остатки</div>
+        <div class="nav-item disabled">🚚 Доставка</div>
+        <div class="nav-item disabled">⚙️ Настройки</div>
     </aside>
 
     <main class="main">
@@ -419,10 +468,10 @@
                             {% set order_number = order.get("number") or order.get("account_number") or order.get("ACCOUNT_NUMBER") or order_id %}
                             {% set status = order.get("status") or order.get("STATUS_ID") or order.get("status_id") or "unknown" %}
                             {% set status_code = status|string|upper %}
-                            {% set customer = order.get("customer") or order.get("client") or order.get("name") or order.get("USER_NAME") or "Клиент не указан" %}
-                            {% set phone = order.get("phone") or order.get("PHONE") or order.get("user_phone") or "" %}
+                            {% set customer = order.get("customer") or order.get("client") or order.get("name") or order.get("USER_NAME") or order.get("user_name") or "" %}
+                            {% set phone = order.get("phone") or order.get("PHONE") or order.get("user_phone") or order.get("USER_PHONE") or "" %}
                             {% set price = order.get("price") or order.get("PRICE") or order.get("sum") or order.get("SUM") or "" %}
-                            {% set date = order.get("date") or order.get("DATE_INSERT") or order.get("created_at") or "" %}
+                            {% set date = order.get("date") or order.get("DATE_INSERT") or order.get("created_at") or order.get("DATE_CREATE") or "" %}
 
                             <a
                                 href="/order/{{ order_id }}"
@@ -447,16 +496,34 @@
                                 </div>
 
                                 <div class="order-meta">
-                                    <div>{{ customer }}</div>
-                                    {% if phone %}<div>{{ phone }}</div>{% endif %}
-                                    {% if price %}<div>{{ price }} ₽</div>{% endif %}
-                                    {% if date %}<div>{{ date }}</div>{% endif %}
+                                    {% if customer %}
+                                        <div>{{ customer }}</div>
+                                    {% else %}
+                                        <div class="muted-value">Клиент не указан</div>
+                                    {% endif %}
+
+                                    {% if phone %}
+                                        <div>{{ phone }}</div>
+                                    {% endif %}
+
+                                    {% if price %}
+                                        <div>
+                                            <span class="money-value" data-amount="{{ price }}">{{ price }}</span> ₽
+                                        </div>
+                                    {% endif %}
+
+                                    {% if date %}
+                                        <div>
+                                            <span class="date-value" data-date="{{ date }}">{{ date }}</span>
+                                        </div>
+                                    {% endif %}
                                 </div>
                             </a>
                         {% endfor %}
                     {% else %}
                         <div class="empty">
-                            Заказы пока не загрузились или Битрикс ничего не вернул.
+                            <strong>Заказы не загружены.</strong><br>
+                            Битрикс ничего не вернул или подключение временно недоступно.
                         </div>
                     {% endif %}
                 </div>
@@ -468,10 +535,10 @@
                     {% set detail_number = selected_order.get("number") or selected_order.get("account_number") or selected_order.get("ACCOUNT_NUMBER") or detail_id %}
                     {% set detail_status = selected_order.get("status") or selected_order.get("STATUS_ID") or selected_order.get("status_id") or "unknown" %}
                     {% set detail_status_code = detail_status|string|upper %}
-                    {% set detail_customer = selected_order.get("customer") or selected_order.get("client") or selected_order.get("name") or selected_order.get("USER_NAME") or "Клиент не указан" %}
-                    {% set detail_phone = selected_order.get("phone") or selected_order.get("PHONE") or selected_order.get("user_phone") or "" %}
+                    {% set detail_customer = selected_order.get("customer") or selected_order.get("client") or selected_order.get("name") or selected_order.get("USER_NAME") or selected_order.get("user_name") or "" %}
+                    {% set detail_phone = selected_order.get("phone") or selected_order.get("PHONE") or selected_order.get("user_phone") or selected_order.get("USER_PHONE") or "" %}
                     {% set detail_price = selected_order.get("price") or selected_order.get("PRICE") or selected_order.get("sum") or selected_order.get("SUM") or "" %}
-                    {% set detail_date = selected_order.get("date") or selected_order.get("DATE_INSERT") or selected_order.get("created_at") or "" %}
+                    {% set detail_date = selected_order.get("date") or selected_order.get("DATE_INSERT") or selected_order.get("created_at") or selected_order.get("DATE_CREATE") or "" %}
 
                     <div class="detail-header">
                         <div>
@@ -496,22 +563,46 @@
                         <div class="info-grid">
                             <div class="info-card">
                                 <div class="info-label">Клиент</div>
-                                <div class="info-value">{{ detail_customer }}</div>
+                                <div class="info-value">
+                                    {% if detail_customer %}
+                                        {{ detail_customer }}
+                                    {% else %}
+                                        <span class="muted-value">Не указан</span>
+                                    {% endif %}
+                                </div>
                             </div>
 
                             <div class="info-card">
                                 <div class="info-label">Телефон</div>
-                                <div class="info-value">{{ detail_phone or "Не указан" }}</div>
+                                <div class="info-value">
+                                    {% if detail_phone %}
+                                        {{ detail_phone }}
+                                    {% else %}
+                                        <span class="muted-value">Не указан</span>
+                                    {% endif %}
+                                </div>
                             </div>
 
                             <div class="info-card">
                                 <div class="info-label">Сумма</div>
-                                <div class="info-value">{% if detail_price %}{{ detail_price }} ₽{% else %}Не указана{% endif %}</div>
+                                <div class="info-value">
+                                    {% if detail_price %}
+                                        <span class="money-value" data-amount="{{ detail_price }}">{{ detail_price }}</span> ₽
+                                    {% else %}
+                                        <span class="muted-value">Не указана</span>
+                                    {% endif %}
+                                </div>
                             </div>
 
                             <div class="info-card">
                                 <div class="info-label">Дата создания</div>
-                                <div class="info-value">{{ detail_date or "Не указана" }}</div>
+                                <div class="info-value">
+                                    {% if detail_date %}
+                                        <span class="date-value" data-date="{{ detail_date }}">{{ detail_date }}</span>
+                                    {% else %}
+                                        <span class="muted-value">Не указана</span>
+                                    {% endif %}
+                                </div>
                             </div>
                         </div>
 
@@ -519,7 +610,12 @@
                             <button class="button button-primary" type="button">Взять в работу</button>
                             <button class="button button-secondary" type="button">Собран</button>
                             <button class="button button-secondary" type="button">Передан в доставку</button>
-                            <button class="button button-secondary" type="button">Позвонить клиенту</button>
+
+                            {% if detail_phone %}
+                                <a class="button button-secondary" href="tel:{{ detail_phone }}">Позвонить клиенту</a>
+                            {% else %}
+                                <span class="button button-disabled">Телефон не указан</span>
+                            {% endif %}
                         </div>
 
                         <h3 class="section-title">Следующее действие</h3>
@@ -542,7 +638,8 @@
                     </div>
                 {% else %}
                     <div class="empty">
-                        Выбери заказ слева, чтобы открыть карточку.
+                        <strong>Выбери заказ слева.</strong><br>
+                        После выбора здесь откроется карточка заказа.
                     </div>
                 {% endif %}
             </section>
@@ -556,6 +653,55 @@
     const filterButtons = Array.from(document.querySelectorAll(".filter"));
 
     let activeFilter = "all";
+
+    function formatMoney(value) {
+        if (value === null || value === undefined || value === "") {
+            return "";
+        }
+
+        const normalized = String(value).replace(",", ".").replace(/[^\d.]/g, "");
+        const number = Number.parseFloat(normalized);
+
+        if (Number.isNaN(number)) {
+            return String(value);
+        }
+
+        return new Intl.NumberFormat("ru-RU", {
+            maximumFractionDigits: 0
+        }).format(number);
+    }
+
+    function formatDate(value) {
+        if (!value) {
+            return "";
+        }
+
+        const raw = String(value).trim();
+
+        let match = raw.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
+        if (match) {
+            return `${match[3]}.${match[2]}.${match[1]}, ${match[4]}:${match[5]}`;
+        }
+
+        match = raw.match(/^(\d{2})\.(\d{2})\.(\d{4})[,\s]+(\d{2}):(\d{2})/);
+        if (match) {
+            return `${match[1]}.${match[2]}.${match[3]}, ${match[4]}:${match[5]}`;
+        }
+
+        return raw;
+    }
+
+    function applyValueFormatting() {
+        document.querySelectorAll(".money-value").forEach(item => {
+            const amount = item.dataset.amount || item.textContent;
+            item.textContent = formatMoney(amount);
+        });
+
+        document.querySelectorAll(".date-value").forEach(item => {
+            const date = item.dataset.date || item.textContent;
+            item.textContent = formatDate(date);
+        });
+    }
 
     function applyFilters() {
         const query = searchInput.value.toLowerCase().trim();
@@ -582,6 +728,8 @@
             applyFilters();
         });
     });
+
+    applyValueFormatting();
 </script>
 </body>
 </html>
