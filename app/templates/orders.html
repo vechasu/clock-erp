@@ -570,7 +570,6 @@
         <div class="topbar">
             <div class="title">
                 <h1>Заказы</h1>
-                <p>Рабочий экран сотрудника склада: быстро найти заказ, открыть карточку и выполнить действие.</p>
             </div>
 
             <div class="sync-card">
@@ -591,10 +590,13 @@
 
                     <div class="filters">
                         <button class="filter active" type="button" data-filter="all">Все</button>
-                        <button class="filter" type="button" data-filter="N">Новые</button>
-                        <button class="filter" type="button" data-filter="D">В работе</button>
-                        <button class="filter" type="button" data-filter="F">Готовые</button>
-                        <button class="filter" type="button" data-filter="C">Отменены</button>
+                        <button class="filter" type="button" data-filter="N">Не подтвержденные</button>
+                        <button class="filter" type="button" data-filter="A">Подтвержденные</button>
+                        <button class="filter" type="button" data-filter="T">Не дозвонились</button>
+                        <button class="filter" type="button" data-filter="D">Собранные</button>
+                        <button class="filter" type="button" data-filter="C">Отказы</button>
+                        
+                        
                     </div>
                 </div>
 
@@ -604,7 +606,7 @@
                             {% set order_id = order.get("id") or order.get("ID") %}
                             {% set order_number = order.get("number") or order.get("account_number") or order.get("ACCOUNT_NUMBER") or order_id %}
                             {% set status = order.get("status") or order.get("STATUS_ID") or order.get("status_id") or "unknown" %}
-                            {% set status_code = status|string|upper %}
+                            {% set status_code = status|string %}
                             {% set customer = order.get("customer") or order.get("client") or order.get("name") or order.get("USER_NAME") or order.get("user_name") or "" %}
                             {% set phone = order.get("phone") or order.get("PHONE") or order.get("user_phone") or order.get("USER_PHONE") or "" %}
                             {% set price = order.get("price") or order.get("PRICE") or order.get("sum") or order.get("SUM") or order.get("order_total") or "" %}
@@ -620,13 +622,15 @@
                                     <div class="order-number">Заказ №{{ order_number }}</div>
 
                                     {% if status_code == "N" %}
-                                        <span class="badge badge-new">Новый</span>
+                                        <span class="badge badge-default">Не подтвержден</span>
+                                    {% elif status_code == "A" %}
+                                        <span class="badge badge-work">Подтвержден</span>
+                                    {% elif status_code == "T" %}
+                                        <span class="badge badge-default">Не дозвонились</span>
                                     {% elif status_code == "D" %}
-                                        <span class="badge badge-work">В работе</span>
-                                    {% elif status_code == "F" %}
-                                        <span class="badge badge-done">Выполнен</span>
-                                    {% elif status_code == "C" %}
-                                        <span class="badge badge-cancel">Отменен</span>
+                                        <span class="badge badge-done">Собран</span>
+                                    {% elif status_code == "C" or status_code == "c" %}
+                                        <span class="badge badge-cancel">Отказ</span>
                                     {% else %}
                                         <span class="badge badge-default">{{ status }}</span>
                                     {% endif %}
@@ -671,7 +675,7 @@
                     {% set detail_id = selected_order.get("id") or selected_order.get("ID") %}
                     {% set detail_number = selected_order.get("number") or selected_order.get("account_number") or selected_order.get("ACCOUNT_NUMBER") or detail_id %}
                     {% set detail_status = selected_order.get("status") or selected_order.get("STATUS_ID") or selected_order.get("status_id") or "unknown" %}
-                    {% set detail_status_code = detail_status|string|upper %}
+                    {% set detail_status_code = detail_status|string %}
                     {% set detail_customer = selected_order.get("customer") or selected_order.get("client") or selected_order.get("name") or selected_order.get("USER_NAME") or selected_order.get("user_name") or "" %}
                     {% set detail_phone = selected_order.get("phone") or selected_order.get("PHONE") or selected_order.get("user_phone") or selected_order.get("USER_PHONE") or "" %}
                     {% set detail_price = selected_order.get("price") or selected_order.get("PRICE") or selected_order.get("sum") or selected_order.get("SUM") or "" %}
@@ -693,13 +697,15 @@
                         </div>
 
                         {% if detail_status_code == "N" %}
-                            <span class="badge badge-new">Новый</span>
+                            <span class="badge badge-default">Не подтвержден</span>
+                        {% elif detail_status_code == "A" %}
+                            <span class="badge badge-work">Подтвержден</span>
+                        {% elif detail_status_code == "T" %}
+                            <span class="badge badge-default">Не дозвонились</span>
                         {% elif detail_status_code == "D" %}
-                            <span class="badge badge-work">В работе</span>
-                        {% elif detail_status_code == "F" %}
-                            <span class="badge badge-done">Выполнен</span>
-                        {% elif detail_status_code == "C" %}
-                            <span class="badge badge-cancel">Отменен</span>
+                            <span class="badge badge-done">Собран</span>
+                        {% elif detail_status_code == "C" or detail_status_code == "c" %}
+                            <span class="badge badge-cancel">Отказ</span>
                         {% else %}
                             <span class="badge badge-default">{{ detail_status }}</span>
                         {% endif %}
@@ -756,19 +762,39 @@
 
                         <div class="actions">
                             <form class="status-form" method="post" action="/order/{{ detail_id }}/status">
-                                <input type="hidden" name="status" value="D">
+                                <input type="hidden" name="status" value="N">
                                 <button
-                                    class="button button-primary {% if detail_status_code == 'D' %}button-current{% endif %}"
+                                    class="button button-secondary {% if detail_status_code == 'N' %}button-current{% endif %}"
                                     type="submit"
                                 >
-                                    Взять в работу
+                                    Неподтвержден
                                 </button>
                             </form>
 
                             <form class="status-form" method="post" action="/order/{{ detail_id }}/status">
-                                <input type="hidden" name="status" value="F">
+                                <input type="hidden" name="status" value="A">
                                 <button
-                                    class="button button-secondary {% if detail_status_code == 'F' %}button-current{% endif %}"
+                                    class="button button-primary {% if detail_status_code == 'A' %}button-current{% endif %}"
+                                    type="submit"
+                                >
+                                    Подтвердить
+                                </button>
+                            </form>
+
+                            <form class="status-form" method="post" action="/order/{{ detail_id }}/status">
+                                <input type="hidden" name="status" value="T">
+                                <button
+                                    class="button button-secondary {% if detail_status_code == 'T' %}button-current{% endif %}"
+                                    type="submit"
+                                >
+                                    Не дозвонились
+                                </button>
+                            </form>
+
+                            <form class="status-form" method="post" action="/order/{{ detail_id }}/status">
+                                <input type="hidden" name="status" value="D">
+                                <button
+                                    class="button button-secondary {% if detail_status_code == 'D' %}button-current{% endif %}"
                                     type="submit"
                                 >
                                     Собран
@@ -776,45 +802,14 @@
                             </form>
 
                             <form class="status-form" method="post" action="/order/{{ detail_id }}/status">
-                                <input type="hidden" name="status" value="D">
-                                <button class="button button-secondary" type="submit">
-                                    Передан в доставку
-                                </button>
-                            </form>
-
-                            {% if detail_phone %}
-                                <a class="button button-secondary" href="tel:{{ detail_phone }}">Позвонить клиенту</a>
-                            {% else %}
-                                <span class="button button-disabled">Телефон не указан</span>
-                            {% endif %}
-
-                            <form class="status-form" method="post" action="/order/{{ detail_id }}/status">
                                 <input type="hidden" name="status" value="C">
                                 <button
                                     class="button button-danger {% if detail_status_code == 'C' %}button-current{% endif %}"
                                     type="submit"
                                 >
-                                    Отменить
+                                    Отказ
                                 </button>
                             </form>
-                        </div>
-
-                        <h3 class="section-title">Следующее действие</h3>
-
-                        <div class="info-card action-card">
-                            <div class="info-label">Рекомендация для сотрудника</div>
-
-                            {% if detail_status_code == "N" %}
-                                <div class="info-value">Проверить оплату, подтвердить заказ и взять в работу.</div>
-                            {% elif detail_status_code == "D" %}
-                                <div class="info-value">Собрать заказ на складе и подготовить к передаче в доставку.</div>
-                            {% elif detail_status_code == "F" %}
-                                <div class="info-value">Заказ завершен. Дополнительные действия не требуются.</div>
-                            {% elif detail_status_code == "C" %}
-                                <div class="info-value">Заказ отменен. Проверить, нужно ли вернуть товар в свободный остаток.</div>
-                            {% else %}
-                                <div class="info-value">Проверить статус заказа в Битрикс.</div>
-                            {% endif %}
                         </div>
 
                         <div class="order-sections">
@@ -1019,7 +1014,7 @@
 
         rows.forEach(row => {
             const rowText = (row.dataset.search || "").toLowerCase();
-            const rowStatus = (row.dataset.status || "").toUpperCase();
+            const rowStatus = (row.dataset.status || "");
 
             const matchesSearch = rowText.includes(query);
             const matchesFilter = activeFilter === "all" || rowStatus === activeFilter;

@@ -1,3 +1,4 @@
+import time
 import requests
 from flask import Flask, render_template, request, redirect, url_for
 
@@ -9,11 +10,20 @@ UPDATE_ORDER_STATUS_URL = "https://tictactoy.ru/api/update_order_status.php"
 
 UPDATE_ORDER_STATUS_TOKEN = "clock_erp_secret_2026_change_me"
 
+ORDERS_CACHE = {
+    "items": [],
+    "loaded_at": 0,
+}
+
+ORDERS_CACHE_SECONDS = 60
+
 STATUS_NAMES = {
-    "N": "Новый",
-    "D": "В работе",
-    "F": "Выполнен",
-    "C": "Отменен",
+    "N": "Не подтвержден",
+    "A": "Подтвержден",
+    "T": "Не дозвонились",
+    "D": "Собран",
+    "C": "Отказ",
+    "c": "Отказ",
 }
 
 
@@ -134,63 +144,79 @@ def normalize_order(order):
 
 
 def get_order(order_id):
-    response = requests.get(ORDER_URL + str(order_id), timeout=15)
+    response = requests.get(ORDER_URL + str(order_id), timeout=1)
     response.raise_for_status()
 
     order = response.json().get("order")
     return normalize_order(order)
 
 
-def get_orders():
-    response = requests.get(ORDERS_URL, timeout=15)
-    response.raise_for_status()
+def get_orders(force=False):
+    now = time.time()
 
-    short_orders = response.json().get("orders", [])
+    if not force and ORDERS_CACHE["items"] and now - ORDERS_CACHE["loaded_at"] < ORDERS_CACHE_SECONDS:
+        return ORDERS_CACHE["items"]
 
-    orders = []
+    try:
+        response = requests.get(ORDERS_URL, timeout=20)
+        response.raise_for_status()
 
-    for short_order in short_orders:
-        order_id = short_order.get("id") or short_order.get("ID")
+        short_orders = response.json().get("orders", [])
 
-        if not order_id:
-            normalized_short_order = normalize_order(short_order)
-            if normalized_short_order:
-                orders.append(normalized_short_order)
-            continue
+        orders = []
 
-        try:
-            full_order = get_order(order_id)
-            if full_order:
-                orders.append(full_order)
-            else:
-                orders.append(normalize_order(short_order))
-        except Exception:
-            orders.append(normalize_order(short_order))
+        for short_order in short_orders:
+            normalized_order = normalize_order(short_order)
+            if normalized_order:
+                orders.append(normalized_order)
 
-    return orders
+        ORDERS_CACHE["items"] = orders
+        ORDERS_CACHE["loaded_at"] = now
+
+        return orders
+
+    except Exception as error:
+        print(f"Ошибка загрузки списка заказов: {error}")
+
+        if ORDERS_CACHE["items"]:
+            return ORDERS_CACHE["items"]
+
+        return []
 
 
 def update_order_status(order_id, new_status):
-    allowed_statuses = ["N", "D", "F", "C"]
+    allowed_statuses = ["N", "A", "T", "D", "C", "c"]
 
     if new_status not in allowed_statuses:
         return {
             "status": "error",
-            "message": "Invalid status"
+            "message": "Недопустимый статус"
         }
 
-    response = requests.post(
-        UPDATE_ORDER_STATUS_URL,
-        data={
-            "token": UPDATE_ORDER_STATUS_TOKEN,
-            "order_id": str(order_id),
-            "status": new_status,
-        },
-        timeout=15
-    )
+    try:
+        response = requests.post(
+            UPDATE_ORDER_STATUS_URL,
+            data={
+                "token": UPDATE_ORDER_STATUS_TOKEN,
+                "order_id": str(order_id),
+                "status": new_status,
+            },
+            timeout=15
+        )
 
-    response.raise_for_status()
-    return response.json()
+        if not response.ok:
+            return {
+                "status": "error",
+                "message": f"Битрикс не принял статус {new_status}. HTTP {response.status_code}: {response.text[:300]}"
+            }
+
+        return response.json()
+
+    except Exception as error:
+        return {
+            "status": "error",
+            "message": f"Ошибка при смене статуса: {error}"
+        }
 
 
 @app.route("/")
@@ -211,12 +237,16 @@ def order_page(order_id):
     selected_order = None
 
     for order in orders:
-        if str(order.get("id")) == str(order_id):
+        if str(order.get("id")) == str(order_id) or str(order.get("ID")) == str(order_id):
             selected_order = order
             break
 
-    if not selected_order:
-        selected_order = get_order(order_id)
+    try:
+        full_order = get_order(order_id)
+        if full_order:
+            selected_order = full_order
+    except Exception as error:
+        print(f"Полная карточка заказа {order_id} не загрузилась быстро: {error}")
 
     return render_template(
         "orders.html",
@@ -230,6 +260,7 @@ def order_status_update(order_id):
     new_status = request.form.get("status", "")
 
     update_order_status(order_id, new_status)
+    get_orders(force=True)
 
     return redirect(url_for("order_page", order_id=order_id))
 
