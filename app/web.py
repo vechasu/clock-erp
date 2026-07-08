@@ -259,10 +259,23 @@ def order_page(order_id):
 def order_status_update(order_id):
     new_status = request.form.get("status", "")
 
-    update_order_status(order_id, new_status)
+    result = update_order_status(order_id, new_status)
     get_orders(force=True)
 
-    return redirect(url_for("order_page", order_id=order_id))
+    if result.get("status") == "ok":
+        return redirect(url_for(
+            "order_page",
+            order_id=order_id,
+            notice="success",
+            message="Статус заказа обновлен"
+        ))
+
+    return redirect(url_for(
+        "order_page",
+        order_id=order_id,
+        notice="error",
+        message=result.get("message", "Ошибка смены статуса")
+    ))
 
 
 if __name__ == "__main__":
