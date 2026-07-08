@@ -326,6 +326,10 @@
             margin-bottom: 22px;
         }
 
+        .status-form {
+            margin: 0;
+        }
+
         .button {
             border: 0;
             border-radius: 12px;
@@ -350,11 +354,21 @@
             color: #111827;
         }
 
+        .button-danger {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
         .button-disabled {
             background: #f3f4f6;
             color: #9ca3af;
             cursor: not-allowed;
             pointer-events: none;
+        }
+
+        .button-current {
+            outline: 2px solid #2563eb;
+            outline-offset: 2px;
         }
 
         .section-title {
@@ -741,15 +755,48 @@
                         </div>
 
                         <div class="actions">
-                            <button class="button button-primary" type="button">Взять в работу</button>
-                            <button class="button button-secondary" type="button">Собран</button>
-                            <button class="button button-secondary" type="button">Передан в доставку</button>
+                            <form class="status-form" method="post" action="/order/{{ detail_id }}/status">
+                                <input type="hidden" name="status" value="D">
+                                <button
+                                    class="button button-primary {% if detail_status_code == 'D' %}button-current{% endif %}"
+                                    type="submit"
+                                >
+                                    Взять в работу
+                                </button>
+                            </form>
+
+                            <form class="status-form" method="post" action="/order/{{ detail_id }}/status">
+                                <input type="hidden" name="status" value="F">
+                                <button
+                                    class="button button-secondary {% if detail_status_code == 'F' %}button-current{% endif %}"
+                                    type="submit"
+                                >
+                                    Собран
+                                </button>
+                            </form>
+
+                            <form class="status-form" method="post" action="/order/{{ detail_id }}/status">
+                                <input type="hidden" name="status" value="D">
+                                <button class="button button-secondary" type="submit">
+                                    Передан в доставку
+                                </button>
+                            </form>
 
                             {% if detail_phone %}
                                 <a class="button button-secondary" href="tel:{{ detail_phone }}">Позвонить клиенту</a>
                             {% else %}
                                 <span class="button button-disabled">Телефон не указан</span>
                             {% endif %}
+
+                            <form class="status-form" method="post" action="/order/{{ detail_id }}/status">
+                                <input type="hidden" name="status" value="C">
+                                <button
+                                    class="button button-danger {% if detail_status_code == 'C' %}button-current{% endif %}"
+                                    type="submit"
+                                >
+                                    Отменить
+                                </button>
+                            </form>
                         </div>
 
                         <h3 class="section-title">Следующее действие</h3>
