@@ -291,6 +291,11 @@
             background: #fafafa;
         }
 
+        .info-card.action-card {
+            background: #f8fafc;
+            border-color: #dbeafe;
+        }
+
         .info-label {
             color: #6b7280;
             font-size: 12px;
@@ -340,16 +345,6 @@
             padding: 50px 22px;
             color: #6b7280;
             text-align: center;
-        }
-
-        .raw-box {
-            background: #0f172a;
-            color: #dbeafe;
-            border-radius: 16px;
-            padding: 16px;
-            font-size: 13px;
-            overflow: auto;
-            max-height: 260px;
         }
 
         @media (max-width: 1100px) {
@@ -423,6 +418,7 @@
                             {% set order_id = order.get("id") or order.get("ID") %}
                             {% set order_number = order.get("number") or order.get("account_number") or order.get("ACCOUNT_NUMBER") or order_id %}
                             {% set status = order.get("status") or order.get("STATUS_ID") or order.get("status_id") or "unknown" %}
+                            {% set status_code = status|string|upper %}
                             {% set customer = order.get("customer") or order.get("client") or order.get("name") or order.get("USER_NAME") or "Клиент не указан" %}
                             {% set phone = order.get("phone") or order.get("PHONE") or order.get("user_phone") or "" %}
                             {% set price = order.get("price") or order.get("PRICE") or order.get("sum") or order.get("SUM") or "" %}
@@ -431,19 +427,19 @@
                             <a
                                 href="/order/{{ order_id }}"
                                 class="order-row {% if selected_order and (selected_order.get('id') == order_id or selected_order.get('ID') == order_id) %}active{% endif %}"
-                                data-status="{{ status }}"
+                                data-status="{{ status_code }}"
                                 data-search="{{ order_number }} {{ customer }} {{ phone }}"
                             >
                                 <div class="order-top">
                                     <div class="order-number">Заказ №{{ order_number }}</div>
 
-                                    {% if status == "N" %}
+                                    {% if status_code == "N" %}
                                         <span class="badge badge-new">Новый</span>
-                                    {% elif status == "D" %}
+                                    {% elif status_code == "D" %}
                                         <span class="badge badge-work">В работе</span>
-                                    {% elif status == "F" %}
+                                    {% elif status_code == "F" %}
                                         <span class="badge badge-done">Выполнен</span>
-                                    {% elif status == "C" %}
+                                    {% elif status_code == "C" %}
                                         <span class="badge badge-cancel">Отменен</span>
                                     {% else %}
                                         <span class="badge badge-default">{{ status }}</span>
@@ -471,6 +467,7 @@
                     {% set detail_id = selected_order.get("id") or selected_order.get("ID") %}
                     {% set detail_number = selected_order.get("number") or selected_order.get("account_number") or selected_order.get("ACCOUNT_NUMBER") or detail_id %}
                     {% set detail_status = selected_order.get("status") or selected_order.get("STATUS_ID") or selected_order.get("status_id") or "unknown" %}
+                    {% set detail_status_code = detail_status|string|upper %}
                     {% set detail_customer = selected_order.get("customer") or selected_order.get("client") or selected_order.get("name") or selected_order.get("USER_NAME") or "Клиент не указан" %}
                     {% set detail_phone = selected_order.get("phone") or selected_order.get("PHONE") or selected_order.get("user_phone") or "" %}
                     {% set detail_price = selected_order.get("price") or selected_order.get("PRICE") or selected_order.get("sum") or selected_order.get("SUM") or "" %}
@@ -482,13 +479,13 @@
                             <div class="detail-subtitle">Карточка заказа из Битрикс</div>
                         </div>
 
-                        {% if detail_status == "N" %}
+                        {% if detail_status_code == "N" %}
                             <span class="badge badge-new">Новый</span>
-                        {% elif detail_status == "D" %}
+                        {% elif detail_status_code == "D" %}
                             <span class="badge badge-work">В работе</span>
-                        {% elif detail_status == "F" %}
+                        {% elif detail_status_code == "F" %}
                             <span class="badge badge-done">Выполнен</span>
-                        {% elif detail_status == "C" %}
+                        {% elif detail_status_code == "C" %}
                             <span class="badge badge-cancel">Отменен</span>
                         {% else %}
                             <span class="badge badge-default">{{ detail_status }}</span>
@@ -525,8 +522,23 @@
                             <button class="button button-secondary" type="button">Позвонить клиенту</button>
                         </div>
 
-                        <h3 class="section-title">Технические данные заказа</h3>
-                        <pre class="raw-box">{{ selected_order }}</pre>
+                        <h3 class="section-title">Следующее действие</h3>
+
+                        <div class="info-card action-card">
+                            <div class="info-label">Рекомендация для сотрудника</div>
+
+                            {% if detail_status_code == "N" %}
+                                <div class="info-value">Проверить оплату, подтвердить заказ и взять в работу.</div>
+                            {% elif detail_status_code == "D" %}
+                                <div class="info-value">Собрать заказ на складе и подготовить к передаче в доставку.</div>
+                            {% elif detail_status_code == "F" %}
+                                <div class="info-value">Заказ завершен. Дополнительные действия не требуются.</div>
+                            {% elif detail_status_code == "C" %}
+                                <div class="info-value">Заказ отменен. Проверить, нужно ли вернуть товар в свободный остаток.</div>
+                            {% else %}
+                                <div class="info-value">Проверить статус заказа в Битрикс.</div>
+                            {% endif %}
+                        </div>
                     </div>
                 {% else %}
                     <div class="empty">
@@ -549,8 +561,8 @@
         const query = searchInput.value.toLowerCase().trim();
 
         rows.forEach(row => {
-            const rowText = row.dataset.search.toLowerCase();
-            const rowStatus = row.dataset.status;
+            const rowText = (row.dataset.search || "").toLowerCase();
+            const rowStatus = (row.dataset.status || "").toUpperCase();
 
             const matchesSearch = rowText.includes(query);
             const matchesFilter = activeFilter === "all" || rowStatus === activeFilter;
