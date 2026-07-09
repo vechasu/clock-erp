@@ -10,3 +10,6 @@ testenv/
 
 .vscode/
 .idea/
+
+# Local repair cases data
+instance/repair_cases.json

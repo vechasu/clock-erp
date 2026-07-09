@@ -1196,5 +1196,138 @@ def build_cell_groups(items):
 # === FINAL WAREHOUSE OVERRIDES END ===
 
 
+
+# -----------------------------
+# Repair
+# -----------------------------
+
+def get_repair_cases_path():
+    from pathlib import Path
+    path = Path("instance")
+    path.mkdir(exist_ok=True)
+    return path / "repair_cases.json"
+
+
+def load_repair_cases():
+    import json
+
+    path = get_repair_cases_path()
+
+    if not path.exists():
+        return []
+
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+    return data if isinstance(data, list) else []
+
+
+def save_repair_cases(cases):
+    import json
+
+    path = get_repair_cases_path()
+    path.write_text(json.dumps(cases, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+@app.route("/repair")
+def repair_page():
+    from flask import render_template, request
+
+    q = (request.args.get("q") or "").strip().lower()
+    notice = request.args.get("notice") or ""
+    message = request.args.get("message") or ""
+
+    cases = load_repair_cases()
+    cases = sorted(cases, key=lambda item: item.get("created_at", ""), reverse=True)
+
+    if q:
+        cases = [
+            case for case in cases
+            if q in " ".join([
+                str(case.get("comment") or ""),
+                str(case.get("order_info") or ""),
+                str(case.get("communication") or ""),
+                str(case.get("problem") or ""),
+                str(case.get("status") or ""),
+            ]).lower()
+        ]
+
+    return render_template(
+        "repair.html",
+        cases=cases,
+        q=q,
+        notice=notice,
+        message=message,
+        status_labels={
+            "new": "Новый",
+            "waiting": "Ждём",
+            "in_progress": "В работе",
+            "done": "Готово",
+        },
+    )
+
+
+@app.route("/repair/add", methods=["POST"])
+def repair_add():
+    from flask import request, redirect
+    from datetime import datetime
+    import uuid
+
+    cases = load_repair_cases()
+
+    comment = (request.form.get("comment") or "").strip()
+
+    if not comment:
+        return redirect("/repair?notice=error&message=Комментарий обязателен")
+
+    cases.append({
+        "id": str(uuid.uuid4()),
+        "created_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "comment": comment,
+        "order_info": (request.form.get("order_info") or "").strip(),
+        "communication": (request.form.get("communication") or "").strip(),
+        "problem": (request.form.get("problem") or "").strip(),
+        "status": (request.form.get("status") or "new").strip(),
+    })
+
+    save_repair_cases(cases)
+
+    return redirect("/repair?notice=success&message=Ремонт добавлен")
+
+
+@app.route("/repair/status", methods=["POST"])
+def repair_status():
+    from flask import request, redirect
+
+    case_id = (request.form.get("case_id") or "").strip()
+    status = (request.form.get("status") or "new").strip()
+
+    cases = load_repair_cases()
+
+    for case in cases:
+        if case.get("id") == case_id:
+            case["status"] = status
+            break
+
+    save_repair_cases(cases)
+
+    return redirect("/repair?notice=success&message=Статус обновлён")
+
+
+@app.route("/repair/delete", methods=["POST"])
+def repair_delete():
+    from flask import request, redirect
+
+    case_id = (request.form.get("case_id") or "").strip()
+
+    cases = [case for case in load_repair_cases() if case.get("id") != case_id]
+    save_repair_cases(cases)
+
+    return redirect("/repair?notice=success&message=Ремонт удалён")
+
+
+
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5050, debug=True)

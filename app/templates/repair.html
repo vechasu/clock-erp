@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <title>ТТТ ERP — Ремонт</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <style>
+        body { margin: 0; background: #f6f7f9; color: #111827; font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; }
+        .main { padding: 28px; }
+        h1 { margin: 0 0 8px; font-size: 34px; letter-spacing: -0.04em; }
+        .subtitle { color: #6b7280; margin-bottom: 24px; }
+        .card { background: white; border: 1px solid #e5e7eb; border-radius: 20px; padding: 18px; margin-bottom: 20px; box-shadow: 0 18px 50px rgba(15, 23, 42, 0.08); }
+        .card-title { font-size: 18px; font-weight: 900; margin-bottom: 14px; }
+        .form-grid { display: grid; grid-template-columns: 1.2fr 0.9fr 1fr 1.3fr 0.8fr; gap: 10px; align-items: start; }
+        input, textarea, select { width: 100%; border: 1px solid #d1d5db; border-radius: 14px; padding: 12px 14px; font-size: 14px; font-family: inherit; box-sizing: border-box; }
+        textarea { min-height: 86px; resize: vertical; }
+        .btn { border: 0; border-radius: 14px; padding: 12px 14px; font-weight: 900; cursor: pointer; text-decoration: none; display: inline-flex; justify-content: center; align-items: center; }
+        .btn-primary { background: #111827; color: white; width: 100%; margin-top: 10px; }
+        .btn-soft { background: #eef2ff; color: #3730a3; width: 100%; margin-top: 8px; }
+        .btn-danger { background: #fee2e2; color: #991b1b; width: 100%; margin-top: 8px; }
+        .notice { padding: 14px 16px; border-radius: 16px; margin-bottom: 18px; font-weight: 900; }
+        .notice.success { background: #dcfce7; color: #166534; }
+        .notice.error { background: #fee2e2; color: #991b1b; }
+        .toolbar { display: flex; gap: 10px; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+        .search { display: flex; gap: 10px; flex: 1; max-width: 620px; }
+        table { width: 100%; border-collapse: collapse; min-width: 1100px; }
+        th { text-align: left; background: #f9fafb; color: #374151; font-size: 13px; padding: 13px 12px; border-bottom: 1px solid #e5e7eb; }
+        td { padding: 13px 12px; border-bottom: 1px solid #eef2f7; vertical-align: top; font-size: 14px; line-height: 1.35; }
+        .table-wrap { overflow-x: auto; }
+        .status { display: inline-flex; padding: 7px 10px; border-radius: 999px; font-size: 12px; font-weight: 900; white-space: nowrap; }
+        .status.new { background: #dbeafe; color: #1d4ed8; }
+        .status.waiting { background: #fef3c7; color: #92400e; }
+        .status.in_progress { background: #ede9fe; color: #6d28d9; }
+        .status.done { background: #dcfce7; color: #166534; }
+        .empty { padding: 30px; text-align: center; color: #6b7280; font-weight: 900; }
+        @media (max-width: 1100px) { .main { padding: 20px; } .form-grid { grid-template-columns: 1fr; } .toolbar { flex-direction: column; align-items: stretch; } .search { max-width: none; } }
+    </style>
+</head>
+<body>
+    <div class="app">
+        {% include "_sidebar.html" %}
+
+        <main class="main">
+        <h1>Ремонт</h1>
+        <div class="subtitle">Заявки, гарантийные случаи и ремонт часов вместо Excel-таблицы</div>
+
+        {% if notice %}
+            <div class="notice {{ notice }}">{{ message }}</div>
+        {% endif %}
+
+        <section class="card">
+            <div class="card-title">Добавить ремонт</div>
+
+            <form method="post" action="/repair/add" class="form-grid">
+                <textarea name="comment" placeholder="Комментарий" required></textarea>
+                <input name="order_info" placeholder="Наш заказ или нет">
+                <input name="communication" placeholder="Где ведём общение">
+                <textarea name="problem" placeholder="В чём проблема с часами"></textarea>
+
+                <div>
+                    <select name="status">
+                        <option value="new">Новый</option>
+                        <option value="waiting">Ждём клиента / часы</option>
+                        <option value="in_progress">В работе</option>
+                        <option value="done">Готово</option>
+                    </select>
+                    <button class="btn btn-primary" type="submit">Добавить</button>
+                </div>
+            </form>
+        </section>
+
+        <section class="card">
+            <div class="toolbar">
+                <div class="card-title" style="margin: 0;">База ремонтов</div>
+
+                <form class="search" method="get" action="/repair">
+                    <input name="q" value="{{ q }}" placeholder="Поиск по ремонту">
+                    <button class="btn btn-soft" style="width: 120px; margin: 0;" type="submit">Найти</button>
+                </form>
+            </div>
+
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Дата</th>
+                            <th>Комментарий</th>
+                            <th>Наш заказ или нет</th>
+                            <th>Где ведём общение</th>
+                            <th>Проблема</th>
+                            <th>Статус</th>
+                            <th>Действие</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if cases %}
+                            {% for case in cases %}
+                                <tr>
+                                    <td><strong>{{ case.created_at }}</strong></td>
+                                    <td>{{ case.comment }}</td>
+                                    <td>{{ case.order_info or "—" }}</td>
+                                    <td>{{ case.communication or "—" }}</td>
+                                    <td>{{ case.problem or "—" }}</td>
+                                    <td><span class="status {{ case.status }}">{{ status_labels.get(case.status, case.status) }}</span></td>
+                                    <td>
+                                        <form method="post" action="/repair/status">
+                                            <input type="hidden" name="case_id" value="{{ case.id }}">
+                                            <select name="status">
+                                                <option value="new" {% if case.status == "new" %}selected{% endif %}>Новый</option>
+                                                <option value="waiting" {% if case.status == "waiting" %}selected{% endif %}>Ждём</option>
+                                                <option value="in_progress" {% if case.status == "in_progress" %}selected{% endif %}>В работе</option>
+                                                <option value="done" {% if case.status == "done" %}selected{% endif %}>Готово</option>
+                                            </select>
+                                            <button class="btn btn-soft" type="submit">Обновить</button>
+                                        </form>
+
+                                        <form method="post" action="/repair/delete">
+                                            <input type="hidden" name="case_id" value="{{ case.id }}">
+                                            <button class="btn btn-danger" type="submit">Удалить</button>
+                                        </form>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr><td colspan="7"><div class="empty">Пока нет ремонтов</div></td></tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        </main>
+    </div>
+</body>
+</html>

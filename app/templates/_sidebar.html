@@ -16,6 +16,8 @@
         font-weight: 800;
         letter-spacing: -0.04em;
         margin-bottom: 28px;
+        text-align: center;
+        width: 100%;
     }
 
     .logo span {
@@ -67,12 +69,12 @@
 </style>
 
 <aside class="sidebar">
-    <div class="logo">Clock <span>ERP</span></div>
+    <div class="logo">ТТТ <span>ERP</span></div>
 
     <div class="nav-title">Рабочее место</div>
 
     <nav class="sidebar-nav">
-        <a class="sidebar-link {% if not request.path.startswith('/warehouse') %}active{% endif %}" href="/">
+        <a class="sidebar-link {% if request.path == '/' or request.path.startswith('/order') %}active{% endif %}" href="/">
             📦 Заказы
         </a>
 
@@ -80,9 +82,9 @@
             🏷 Остатки
         </a>
 
-        <div class="sidebar-link disabled">
+        <a class="sidebar-link {% if request.path.startswith('/repair') %}active{% endif %}" href="/repair">
             🛠 Ремонт
-        </div>
+        </a>
 
         <div class="sidebar-link disabled">
             ⚙️ Настройки
