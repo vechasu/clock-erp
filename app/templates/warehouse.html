@@ -2,113 +2,199 @@
 <html lang="ru">
 <head>
     <meta charset="utf-8">
-    <title>Склад — Vechasu ERP</title>
+    <title>Clock ERP — Склад</title>
     <style>
-        body {
-            margin: 0;
-            background: #f4f6fb;
-            color: #111827;
-            font-family: Arial, sans-serif;
+        * {
+            box-sizing: border-box;
         }
 
-        .page {
-            max-width: 1400px;
-            margin: 0 auto;
+        body {
+            margin: 0;
+            background: #f6f7f9;
+            color: #111827;
+            font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+        }
+
+        .app {
+            min-height: 100vh;
+            display: grid;
+            grid-template-columns: 260px 1fr;
+        }
+
+        .sidebar {
+            background: #0f172a;
+            color: #ffffff;
+            padding: 24px 18px;
+            
+        }
+
+        .logo {
+            font-size: 22px;
+            font-weight: 800;
+            letter-spacing: -0.04em;
+            margin-bottom: 28px;
+        }
+
+        .logo span {
+            color: #93c5fd;
+        }
+
+        .nav-title {
+            color: #94a3b8;
+            font-size: 13px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+        }
+
+        .nav {
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 11px 12px;
+            border-radius: 12px;
+            color: #cbd5e1;
+            text-decoration: none;
+            font-size: 15px;
+            font-weight: 800;
+            margin-bottom: 6px;
+        }
+
+        .nav-item:hover {
+            background: #1e293b;
+            color: #ffffff;
+        }
+
+        .nav-item.active {
+            background: #1e293b;
+            color: #ffffff;
+        }
+
+        .nav-item.disabled {
+            opacity: 0.65;
+        }
+
+        .content {
             padding: 28px;
         }
 
-        .header {
+        .topbar {
             display: flex;
             justify-content: space-between;
+            align-items: flex-start;
             gap: 20px;
-            align-items: center;
-            margin-bottom: 22px;
+            margin-bottom: 26px;
         }
 
         h1 {
             margin: 0;
-            font-size: 32px;
+            font-size: 30px;
+            letter-spacing: -0.04em;
         }
 
-        .nav {
-            display: flex;
-            gap: 10px;
-        }
-
-        .nav a {
-            text-decoration: none;
-            background: #ffffff;
-            color: #111827;
-            border: 1px solid #e5e7eb;
-            border-radius: 12px;
-            padding: 10px 14px;
+        .subtitle {
+            margin-top: 6px;
+            color: #64748b;
+            font-size: 16px;
             font-weight: 700;
+        }
+
+        .system-card {
+            background: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-radius: 18px;
+            padding: 18px 22px;
+            min-width: 235px;
+            box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+        }
+
+        .system-label {
+            color: #64748b;
+            font-size: 14px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+
+        .system-ok {
+            color: #16a34a;
+            font-size: 16px;
+            font-weight: 900;
         }
 
         .stats {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
-            gap: 14px;
-            margin-bottom: 18px;
+            gap: 16px;
+            margin-bottom: 20px;
         }
 
         .stat {
             background: #ffffff;
-            border-radius: 18px;
-            padding: 18px;
+            border-radius: 20px;
+            padding: 20px;
             border: 1px solid #e5e7eb;
             box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
         }
 
         .stat-title {
-            color: #6b7280;
-            font-size: 13px;
-            font-weight: 700;
-            margin-bottom: 8px;
+            color: #64748b;
+            font-size: 14px;
+            font-weight: 800;
+            margin-bottom: 10px;
         }
 
         .stat-value {
-            font-size: 26px;
+            font-size: 30px;
             font-weight: 900;
         }
 
         .search-card {
             background: #ffffff;
             border: 1px solid #e5e7eb;
-            border-radius: 18px;
-            padding: 18px;
-            margin-bottom: 18px;
+            border-radius: 20px;
+            padding: 20px;
+            margin-bottom: 20px;
             box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
         }
 
         .search-form {
-            display: flex;
-            gap: 10px;
+            display: grid;
+            grid-template-columns: 1fr 120px;
+            gap: 12px;
         }
 
         input[type="text"] {
             width: 100%;
             border: 1px solid #d1d5db;
-            border-radius: 12px;
-            padding: 13px 14px;
+            border-radius: 14px;
+            padding: 14px 16px;
             font-size: 16px;
+            outline: none;
+        }
+
+        input[type="text"]:focus {
+            border-color: #2563eb;
+            box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
         }
 
         button {
             border: 0;
-            border-radius: 12px;
-            padding: 13px 18px;
+            border-radius: 14px;
+            padding: 14px 18px;
             background: #111827;
             color: #ffffff;
             font-size: 15px;
-            font-weight: 800;
+            font-weight: 900;
             cursor: pointer;
         }
 
         .table-card {
             background: #ffffff;
             border: 1px solid #e5e7eb;
-            border-radius: 18px;
+            border-radius: 20px;
             overflow: hidden;
             box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
         }
@@ -120,15 +206,15 @@
 
         th {
             text-align: left;
-            background: #f9fafb;
-            color: #374151;
+            background: #f8fafc;
+            color: #334155;
             font-size: 13px;
-            padding: 14px;
+            padding: 16px;
             border-bottom: 1px solid #e5e7eb;
         }
 
         td {
-            padding: 14px;
+            padding: 16px;
             border-bottom: 1px solid #f1f5f9;
             font-size: 14px;
         }
@@ -138,11 +224,11 @@
         }
 
         .name {
-            font-weight: 800;
+            font-weight: 900;
         }
 
         .muted {
-            color: #6b7280;
+            color: #64748b;
         }
 
         .stock-good {
@@ -155,89 +241,229 @@
             color: #991b1b;
         }
 
+        .notice {
+            border-radius: 16px;
+            padding: 14px 16px;
+            margin-bottom: 18px;
+            font-size: 15px;
+            font-weight: 800;
+            border: 1px solid transparent;
+        }
+
+        .notice-success {
+            background: #dcfce7;
+            color: #166534;
+            border-color: #bbf7d0;
+        }
+
+        .notice-error {
+            background: #fee2e2;
+            color: #991b1b;
+            border-color: #fecaca;
+        }
+
+        .add-card {
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 20px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+        }
+
+        .add-title {
+            font-size: 17px;
+            font-weight: 900;
+            margin-bottom: 14px;
+        }
+
+        .add-form {
+            display: grid;
+            grid-template-columns: 1.4fr 1fr 1fr 150px;
+            gap: 12px;
+        }
+
+        .delete-button {
+            background: #fee2e2;
+            color: #991b1b;
+            padding: 9px 12px;
+            border-radius: 10px;
+            font-size: 13px;
+        }
+
         .empty {
-            padding: 30px;
+            padding: 34px;
             text-align: center;
+            color: #64748b;
+            font-weight: 800;
+        }
+    
+        /* Единый стиль со страницей Заказы */
+        .content {
+            padding: 28px;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 30px;
+            letter-spacing: -0.04em;
+            line-height: normal;
+            font-weight: 800;
+        }
+
+        .subtitle {
+            margin: 8px 0 0;
             color: #6b7280;
+            font-size: 15px;
+            font-weight: 400;
+        }
+
+        .system-card {
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 16px;
+            padding: 14px 16px;
+            min-width: 220px;
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+        }
+
+        .system-label {
+            color: #6b7280;
+            font-size: 13px;
+            font-weight: 400;
+            margin-bottom: 4px;
+        }
+
+        .system-ok {
+            font-size: 15px;
+            font-weight: 700;
+            color: #16a34a;
+        }
+
+        .stat-title {
+            color: #6b7280;
+            font-size: 13px;
             font-weight: 700;
         }
+
+        th {
+            font-size: 13px;
+            color: #374151;
+        }
+
+        td {
+            font-size: 14px;
+        }
+
     </style>
 </head>
 <body>
-    <div class="page">
-        <div class="header">
-            <div>
-                <h1>Склад</h1>
-                <div class="muted">Остатки из МойСклад</div>
+    <div class="app">
+        {% include "_sidebar.html" %}
+
+        <main class="content">
+            <div class="topbar">
+                <div>
+                    <h1>Склад</h1>
+                    <div class="subtitle">Остатки из МойСклад</div>
+                </div>
+
+                <div class="system-card">
+                    <div class="system-label">Статус системы</div>
+                    <div class="system-ok">● ERP работает</div>
+                </div>
             </div>
 
-            <div class="nav">
-                <a href="/">Заказы</a>
-                <a href="/warehouse">Склад</a>
-            </div>
-        </div>
-
-        <div class="stats">
-            <div class="stat">
-                <div class="stat-title">Позиций</div>
-                <div class="stat-value">{{ items|length }}</div>
-            </div>
-
-            <div class="stat">
-                <div class="stat-title">Остаток</div>
-                <div class="stat-value">{{ total_stock|round(2) }}</div>
-            </div>
-
-            <div class="stat">
-                <div class="stat-title">Резерв</div>
-                <div class="stat-value">{{ total_reserve|round(2) }}</div>
-            </div>
-
-            <div class="stat">
-                <div class="stat-title">Доступно</div>
-                <div class="stat-value">{{ total_available|round(2) }}</div>
-            </div>
-        </div>
-
-        <div class="search-card">
-            <form class="search-form" method="get" action="/warehouse">
-                <input type="text" name="q" value="{{ query }}" placeholder="Поиск по названию, артикулу или коду">
-                <button type="submit">Найти</button>
-            </form>
-        </div>
-
-        <div class="table-card">
-            {% if items %}
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Название</th>
-                            <th>Артикул</th>
-                            <th>Код</th>
-                            <th>Остаток</th>
-                            <th>Резерв</th>
-                            <th>Доступно</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for item in items %}
-                            <tr>
-                                <td class="name">{{ item.name }}</td>
-                                <td>{{ item.article or "—" }}</td>
-                                <td>{{ item.code or "—" }}</td>
-                                <td class="{% if item.stock <= 0 %}stock-zero{% else %}stock-good{% endif %}">
-                                    {{ item.stock }}
-                                </td>
-                                <td>{{ item.reserve }}</td>
-                                <td>{{ item.quantity }}</td>
-                            </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            {% else %}
-                <div class="empty">Товары не найдены или МойСклад не ответил</div>
+            {% if request.args.get("notice") and request.args.get("message") %}
+                <div class="notice notice-{{ request.args.get('notice') }}">
+                    {{ request.args.get("message") }}
+                </div>
             {% endif %}
-        </div>
+
+            <div class="stats">
+                <div class="stat">
+                    <div class="stat-title">Позиций</div>
+                    <div class="stat-value">{{ items|length }}</div>
+                </div>
+
+                <div class="stat">
+                    <div class="stat-title">Остаток</div>
+                    <div class="stat-value">{{ total_stock|round(2) }}</div>
+                </div>
+
+                <div class="stat">
+                    <div class="stat-title">Резерв</div>
+                    <div class="stat-value">{{ total_reserve|round(2) }}</div>
+                </div>
+
+                <div class="stat">
+                    <div class="stat-title">Доступно</div>
+                    <div class="stat-value">{{ total_available|round(2) }}</div>
+                </div>
+            </div>
+
+            <div class="add-card">
+                <div class="add-title">Добавить позицию в МойСклад</div>
+
+                <form class="add-form" method="post" action="/warehouse/add">
+                    <input type="text" name="name" placeholder="Название товара" required>
+                    <input type="text" name="article" placeholder="Артикул">
+                    <input type="text" name="code" placeholder="Код" required>
+                    <button type="submit">Добавить</button>
+                </form>
+            </div>
+
+            <div class="search-card">
+                <form class="search-form" method="get" action="/warehouse">
+                    <input type="text" name="q" value="{{ query }}" placeholder="Поиск по названию, артикулу или коду">
+                    <button type="submit">Найти</button>
+                </form>
+            </div>
+
+            <div class="table-card">
+                {% if items %}
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Название</th>
+                                <th>Артикул</th>
+                                <th>Код</th>
+                                <th>Остаток</th>
+                                <th>Резерв</th>
+                                <th>Доступно</th>
+                                <th>Действие</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in items %}
+                                <tr>
+                                    <td class="name">{{ item.name }}</td>
+                                    <td>{{ item.article or "—" }}</td>
+                                    <td>{{ item.code or "—" }}</td>
+                                    <td class="{% if item.stock <= 0 %}stock-zero{% else %}stock-good{% endif %}">
+                                        {{ item.stock }}
+                                    </td>
+                                    <td>{{ item.reserve }}</td>
+                                    <td>{{ item.quantity }}</td>
+                                    <td>
+                                        {% if item.code %}
+                                            <form method="post" action="/warehouse/archive" onsubmit="return confirm('Убрать позицию в архив МойСклад?');">
+                                                <input type="hidden" name="code" value="{{ item.code }}">
+                                                <button class="delete-button" type="submit">Убрать</button>
+                                            </form>
+                                        {% else %}
+                                            —
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                {% else %}
+                    <div class="empty">Товары не найдены или МойСклад не ответил</div>
+                {% endif %}
+            </div>
+        </main>
     </div>
 </body>
 </html>

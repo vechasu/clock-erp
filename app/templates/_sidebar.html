@@ -1,0 +1,91 @@
+<style>
+    .app {
+        min-height: 100vh;
+        display: grid;
+        grid-template-columns: 260px 1fr;
+    }
+
+    .sidebar {
+        background: #0f172a;
+        color: white;
+        padding: 24px 18px;
+    }
+
+    .logo {
+        font-size: 22px;
+        font-weight: 800;
+        letter-spacing: -0.04em;
+        margin-bottom: 28px;
+    }
+
+    .logo span {
+        color: #93c5fd;
+    }
+
+    .nav-title {
+        font-size: 12px;
+        color: #94a3b8;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        margin-bottom: 10px;
+    }
+
+    .sidebar-nav {
+        display: block;
+    }
+
+    .sidebar-link {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 11px 12px;
+        border-radius: 12px;
+        color: #cbd5e1;
+        font-size: 15px;
+        font-weight: 800;
+        margin-bottom: 6px;
+        text-decoration: none;
+        line-height: 1.2;
+    }
+
+    .sidebar-link:hover {
+        background: #1e293b;
+        color: white;
+        text-decoration: none;
+    }
+
+    .sidebar-link.active {
+        background: #1e293b;
+        color: white;
+    }
+
+    .sidebar-link.disabled {
+        opacity: 0.65;
+        cursor: default;
+        pointer-events: none;
+    }
+</style>
+
+<aside class="sidebar">
+    <div class="logo">Clock <span>ERP</span></div>
+
+    <div class="nav-title">Рабочее место</div>
+
+    <nav class="sidebar-nav">
+        <a class="sidebar-link {% if not request.path.startswith('/warehouse') %}active{% endif %}" href="/">
+            📦 Заказы
+        </a>
+
+        <a class="sidebar-link {% if request.path.startswith('/warehouse') %}active{% endif %}" href="/warehouse">
+            🏷 Остатки
+        </a>
+
+        <div class="sidebar-link disabled">
+            🛠 Ремонт
+        </div>
+
+        <div class="sidebar-link disabled">
+            ⚙️ Настройки
+        </div>
+    </nav>
+</aside>

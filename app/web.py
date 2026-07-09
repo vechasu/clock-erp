@@ -301,23 +301,53 @@ def get_warehouse_items(limit=100, force=False):
 
     try:
         client = MoySkladClient()
-        data = client.get("/report/stock/all", params={"limit": limit})
 
-        if not data:
-            return WAREHOUSE_CACHE["items"]
+        stock_data = client.get("/report/stock/all", params={"limit": limit})
+        product_data = client.get("/entity/product", params={"limit": limit})
 
-        rows = data.get("rows", [])
+        stock_rows = stock_data.get("rows", []) if stock_data else []
+        product_rows = product_data.get("rows", []) if product_data else []
+
+        stock_by_code = {}
+
+        for row in stock_rows:
+            code = str(row.get("code") or "").strip()
+
+            if code:
+                stock_by_code[code] = row
+
         items = []
 
-        for row in rows:
+        for product in product_rows:
+            code = str(product.get("code") or "").strip()
+            stock_row = stock_by_code.get(code, {})
+
             items.append({
-                "name": row.get("name") or "",
-                "article": row.get("article") or "",
-                "code": row.get("code") or "",
-                "stock": row.get("stock") or 0,
-                "reserve": row.get("reserve") or 0,
-                "quantity": row.get("quantity") or 0,
+                "id": product.get("id") or "",
+                "name": product.get("name") or stock_row.get("name") or "",
+                "article": product.get("article") or stock_row.get("article") or "",
+                "code": code,
+                "stock": stock_row.get("stock") or 0,
+                "reserve": stock_row.get("reserve") or 0,
+                "quantity": stock_row.get("quantity") or 0,
             })
+
+        # Если в отчёте остатков есть позиция, которой нет в /entity/product, всё равно покажем её
+        product_codes = set(str(product.get("code") or "").strip() for product in product_rows)
+
+        for row in stock_rows:
+            code = str(row.get("code") or "").strip()
+
+            if code and code not in product_codes:
+                items.append({
+                    "id": "",
+                    "name": row.get("name") or "",
+                    "article": row.get("article") or "",
+                    "code": code,
+                    "stock": row.get("stock") or 0,
+                    "reserve": row.get("reserve") or 0,
+                    "quantity": row.get("quantity") or 0,
+                })
 
         WAREHOUSE_CACHE["items"] = items
         WAREHOUSE_CACHE["loaded_at"] = now
@@ -354,6 +384,98 @@ def warehouse_page():
         total_reserve=total_reserve,
         total_available=total_available,
     )
+
+
+@app.route("/warehouse/add", methods=["POST"])
+def warehouse_add_product():
+    name = request.form.get("name", "").strip()
+    code = request.form.get("code", "").strip()
+    article = request.form.get("article", "").strip()
+
+    if not name or not code:
+        return redirect(url_for(
+            "warehouse_page",
+            notice="error",
+            message="Название и код обязательны"
+        ))
+
+    try:
+        client = MoySkladClient()
+        product = client.create_product(name=name, code=code, article=article or None)
+
+        WAREHOUSE_CACHE["items"] = []
+        WAREHOUSE_CACHE["loaded_at"] = 0
+
+        if product:
+            return redirect(url_for(
+                "warehouse_page",
+                notice="success",
+                message="Позиция добавлена в МойСклад"
+            ))
+
+        return redirect(url_for(
+            "warehouse_page",
+            notice="error",
+            message="МойСклад не создал позицию"
+        ))
+
+    except Exception as error:
+        print(f"Ошибка добавления позиции: {error}")
+        return redirect(url_for(
+            "warehouse_page",
+            notice="error",
+            message="Ошибка добавления позиции"
+        ))
+
+
+@app.route("/warehouse/archive", methods=["POST"])
+def warehouse_archive_product():
+    code = request.form.get("code", "").strip()
+
+    if not code:
+        return redirect(url_for(
+            "warehouse_page",
+            notice="error",
+            message="Не указан код товара"
+        ))
+
+    try:
+        client = MoySkladClient()
+        product = client.find_product_by_code(code)
+
+        if not product:
+            return redirect(url_for(
+                "warehouse_page",
+                notice="error",
+                message="Товар не найден в МойСклад"
+            ))
+
+        result = client.archive_product(product.get("id"))
+
+        WAREHOUSE_CACHE["items"] = []
+        WAREHOUSE_CACHE["loaded_at"] = 0
+
+        if result:
+            return redirect(url_for(
+                "warehouse_page",
+                notice="success",
+                message="Позиция убрана в архив МойСклад"
+            ))
+
+        return redirect(url_for(
+            "warehouse_page",
+            notice="error",
+            message="МойСклад не убрал позицию"
+        ))
+
+    except Exception as error:
+        print(f"Ошибка архивации позиции: {error}")
+        return redirect(url_for(
+            "warehouse_page",
+            notice="error",
+            message="Ошибка удаления позиции"
+        ))
+
 
 
 if __name__ == "__main__":

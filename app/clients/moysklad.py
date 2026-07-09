@@ -27,6 +27,27 @@ class MoySkladClient:
 
         return response.json()
 
+    def put(self, endpoint, payload):
+        response = requests.put(
+            f"{self.BASE_URL}{endpoint}",
+            headers=self.headers,
+            json=payload,
+            timeout=8,
+        )
+
+        if response.status_code >= 400:
+            print("Error:", response.status_code)
+            print(response.text)
+            return None
+
+        return response.json()
+
+    def archive_product(self, product_id):
+        return self.put(
+            f"/entity/product/{product_id}",
+            {"archived": True}
+        )
+
     def get_products(self, limit=10):
         data = self.get("/entity/product", params={"limit": limit})
         if not data:
