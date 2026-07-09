@@ -578,6 +578,7 @@ def warehouse_page():
         total_stock_display=format_stock_number(total_stock),
         total_reserve=total_reserve,
         total_available=total_available,
+        stock_operations=load_stock_operations(),
     )
 
 
@@ -864,6 +865,7 @@ def warehouse_update_stock():
     current_stock_raw = (request.form.get("current_stock") or "0").strip()
     new_stock_raw = (request.form.get("new_stock") or "0").strip()
     product_name = (request.form.get("product_name") or "").strip()
+    stock_reason = (request.form.get("stock_reason") or "").strip()
 
     if not product_id:
         return redirect(url_for(
@@ -910,6 +912,8 @@ def warehouse_update_stock():
             message="Похожая операция уже создана. Дубль не отправлен в МойСклад"
         ))
 
+    reason_suffix = f" Причина: {stock_reason}" if stock_reason else ""
+
     client = MoySkladClient()
 
     try:
@@ -923,7 +927,7 @@ def warehouse_update_stock():
             moysklad_document = client.create_stock_loss(
                 product_id=product_id,
                 quantity=quantity,
-                reason=f"ТТТ ERP: списание {quantity:g} шт. {product_name}".strip()
+                reason=f"ТТТ ERP: списание {quantity:g} шт. {product_name}.{reason_suffix}".strip()
             )
             message = f"Создано списание на {quantity:g} шт. в МойСклад"
         else:
@@ -934,7 +938,7 @@ def warehouse_update_stock():
             moysklad_document = client.create_stock_enter(
                 product_id=product_id,
                 quantity=quantity,
-                reason=f"ТТТ ERP: оприходование {quantity:g} шт. {product_name}".strip()
+                reason=f"ТТТ ERP: оприходование {quantity:g} шт. {product_name}.{reason_suffix}".strip()
             )
             message = f"Создано оприходование на {quantity:g} шт. в МойСклад"
 
@@ -953,6 +957,7 @@ def warehouse_update_stock():
             "stock_after": new_stock,
             "diff": diff,
             "source": "ТТТ ERP",
+            "reason": stock_reason,
             "status": "success",
             "moysklad_document_id": (moysklad_document or {}).get("id"),
             "moysklad_document_name": (moysklad_document or {}).get("name"),

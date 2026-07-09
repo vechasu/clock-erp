@@ -912,6 +912,12 @@
                 <input id="newStockInput" type="number" step="1" min="0" name="new_stock" placeholder="Например 5">
             </div>
 
+
+            <div class="field">
+                <label>Причина изменения</label>
+                <textarea id="stockReasonInput" name="stock_reason" rows="3" placeholder="Например: пересчёт склада, брак, нашли товар, ошибка остатка"></textarea>
+            </div>
+
             <div class="future-card">
                 Если новый остаток меньше текущего — ERP создаст списание в МойСклад.
                 Если больше — создаст оприходование.
@@ -953,12 +959,14 @@
                 const after = operation.stock_after ?? "—";
                 const createdAt = operation.created_at || "";
                 const documentName = operation.moysklad_document_name || "";
+                const operationReason = operation.reason || "";
 
                 return `
                     <div style="padding: 10px 0; border-bottom: 1px solid #e5e7eb;">
                         <strong>${label}: ${quantity} шт.</strong><br>
                         <span>${before} → ${after}</span><br>
                         <span>${createdAt}</span>
+                        ${operationReason ? `<br><span>Причина: ${operationReason}</span>` : ""}
                         ${documentName ? `<br><span>МойСклад: ${documentName}</span>` : ""}
                     </div>
                 `;
@@ -991,6 +999,7 @@
             const currentStockInput = document.getElementById("currentStockInput");
             const currentStockText = document.getElementById("currentStockText");
             const newStockInput = document.getElementById("newStockInput");
+            const stockReasonInput = document.getElementById("stockReasonInput");
 
             if (stockProductIdInput) {
                 stockProductIdInput.value = button.dataset.id || button.dataset.productId || "";
@@ -1010,6 +1019,10 @@
 
             if (newStockInput) {
                 newStockInput.value = productStock;
+            }
+
+            if (stockReasonInput) {
+                stockReasonInput.value = "";
             }
 
             renderStockHistory(button.dataset.id || button.dataset.productId || "");
