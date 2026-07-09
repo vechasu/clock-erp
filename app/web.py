@@ -760,6 +760,77 @@ def warehouse_edit_product():
         ))
 
 
+
+@app.route("/warehouse/stock", methods=["POST"])
+def warehouse_update_stock():
+    product_id = (request.form.get("product_id") or "").strip()
+    current_stock_raw = (request.form.get("current_stock") or "0").strip()
+    new_stock_raw = (request.form.get("new_stock") or "0").strip()
+    product_name = (request.form.get("product_name") or "").strip()
+
+    if not product_id:
+        return redirect(url_for(
+            "warehouse_page",
+            notice="error",
+            message="Не найден ID товара"
+        ))
+
+    try:
+        current_stock = float(str(current_stock_raw).replace(",", "."))
+        new_stock = float(str(new_stock_raw).replace(",", "."))
+    except Exception:
+        return redirect(url_for(
+            "warehouse_page",
+            notice="error",
+            message="Остаток должен быть числом"
+        ))
+
+    diff = new_stock - current_stock
+
+    if diff == 0:
+        return redirect(url_for(
+            "warehouse_page",
+            notice="success",
+            message="Остаток не изменился"
+        ))
+
+    client = MoySkladClient()
+
+    try:
+        if diff < 0:
+            quantity = abs(diff)
+            client.create_stock_loss(
+                product_id=product_id,
+                quantity=quantity,
+                reason=f"ТТТ ERP: списание {quantity:g} шт. {product_name}".strip()
+            )
+            message = f"Создано списание на {quantity:g} шт. в МойСклад"
+        else:
+            quantity = diff
+            client.create_stock_enter(
+                product_id=product_id,
+                quantity=quantity,
+                reason=f"ТТТ ERP: оприходование {quantity:g} шт. {product_name}".strip()
+            )
+            message = f"Создано оприходование на {quantity:g} шт. в МойСклад"
+
+        return redirect(url_for(
+            "warehouse_page",
+            refresh="1",
+            notice="success",
+            message=message
+        ))
+
+    except Exception as error:
+        print("Ошибка изменения остатка:", error)
+
+        return redirect(url_for(
+            "warehouse_page",
+            notice="error",
+            message=f"Ошибка изменения остатка: {error}"
+        ))
+
+
 @app.route("/warehouse/archive", methods=["POST"])
 def warehouse_archive_product():
     code = request.form.get("code", "").strip()

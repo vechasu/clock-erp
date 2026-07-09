@@ -896,9 +896,29 @@
         </form>
 
         <div class="drawer-section-title">Изменение остатка</div>
-        <div class="future-card">
-            Скоро здесь можно будет поставить новый остаток, а ERP сама создаст операцию в МойСклад.
-        </div>
+
+        <form class="drawer-form" method="post" action="/warehouse/stock">
+            <input id="stockProductId" type="hidden" name="product_id">
+            <input id="stockProductName" type="hidden" name="product_name">
+            <input id="currentStockInput" type="hidden" name="current_stock">
+
+            <div class="field">
+                <label>Текущий остаток</label>
+                <div id="currentStockText" class="future-card">—</div>
+            </div>
+
+            <div class="field">
+                <label>Новый остаток</label>
+                <input id="newStockInput" type="number" step="1" min="0" name="new_stock" placeholder="Например 5">
+            </div>
+
+            <div class="future-card">
+                Если новый остаток меньше текущего — ERP создаст списание в МойСклад.
+                Если больше — создаст оприходование.
+            </div>
+
+            <button type="submit">Обновить остаток в ERP и МойСклад</button>
+        </form>
 
         <div class="drawer-section-title">История</div>
         <div class="future-card">
@@ -927,6 +947,32 @@
             const productCode = button.dataset.code || "—";
             const productCategory = button.dataset.category || "Без категории";
             const productStock = button.dataset.stock || "0";
+
+            const stockProductIdInput = document.getElementById("stockProductId");
+            const stockProductNameInput = document.getElementById("stockProductName");
+            const currentStockInput = document.getElementById("currentStockInput");
+            const currentStockText = document.getElementById("currentStockText");
+            const newStockInput = document.getElementById("newStockInput");
+
+            if (stockProductIdInput) {
+                stockProductIdInput.value = button.dataset.id || button.dataset.productId || "";
+            }
+
+            if (stockProductNameInput) {
+                stockProductNameInput.value = productName;
+            }
+
+            if (currentStockInput) {
+                currentStockInput.value = productStock;
+            }
+
+            if (currentStockText) {
+                currentStockText.textContent = productStock;
+            }
+
+            if (newStockInput) {
+                newStockInput.value = productStock;
+            }
             const productCell = button.dataset.cell || "";
             const productCellSourceLabel = button.dataset.cellSourceLabel || "";
             const productUrl = button.dataset.url || "#";

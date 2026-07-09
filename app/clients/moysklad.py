@@ -189,6 +189,101 @@ class MoySkladClient:
         )
 
 
+
+    def get_first_row(self, endpoint):
+        data = self.get(endpoint, params={"limit": 1})
+
+        if not data:
+            return None
+
+        rows = data.get("rows", [])
+
+        if not rows:
+            return None
+
+        return rows[0]
+
+    def get_default_organization(self):
+        return self.get_first_row("/entity/organization")
+
+    def get_default_store(self):
+        return self.get_first_row("/entity/store")
+
+    def get_product_meta(self, product_id):
+        return {
+            "href": f"{self.BASE_URL}/entity/product/{product_id}",
+            "metadataHref": f"{self.BASE_URL}/entity/product/metadata",
+            "type": "product",
+            "mediaType": "application/json",
+        }
+
+    def create_stock_loss(self, product_id, quantity, reason=None):
+        organization = self.get_default_organization()
+        store = self.get_default_store()
+
+        if not organization:
+            raise ValueError("В МойСклад не найдена организация")
+
+        if not store:
+            raise ValueError("В МойСклад не найден склад")
+
+        payload = {
+            "applicable": True,
+            "description": reason or "Списание из ТТТ ERP",
+            "organization": {
+                "meta": organization["meta"]
+            },
+            "store": {
+                "meta": store["meta"]
+            },
+            "positions": [
+                {
+                    "quantity": float(quantity),
+                    "reason": reason or "Изменение остатка из ТТТ ERP",
+                    "assortment": {
+                        "meta": self.get_product_meta(product_id)
+                    }
+                }
+            ]
+        }
+
+        return self.post("/entity/loss", payload)
+
+    def create_stock_enter(self, product_id, quantity, reason=None):
+        organization = self.get_default_organization()
+        store = self.get_default_store()
+
+        if not organization:
+            raise ValueError("В МойСклад не найдена организация")
+
+        if not store:
+            raise ValueError("В МойСклад не найден склад")
+
+        payload = {
+            "applicable": True,
+            "description": reason or "Оприходование из ТТТ ERP",
+            "organization": {
+                "meta": organization["meta"]
+            },
+            "store": {
+                "meta": store["meta"]
+            },
+            "positions": [
+                {
+                    "quantity": float(quantity),
+                    "price": 0,
+                    "overhead": 0,
+                    "reason": reason or "Изменение остатка из ТТТ ERP",
+                    "assortment": {
+                        "meta": self.get_product_meta(product_id)
+                    }
+                }
+            ]
+        }
+
+        return self.post("/entity/enter", payload)
+
+
     def get_stock(self, limit=20):
         data = self.get("/report/stock/all", params={"limit": limit})
         if not data:
