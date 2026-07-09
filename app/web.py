@@ -6,6 +6,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 import time
+import json
 import requests
 from app.clients.moysklad import MoySkladClient
 from flask import Flask, render_template, request, redirect, url_for
@@ -331,6 +332,19 @@ def get_stock_value(row, key):
     return value
 
 
+
+def get_product_cell_from_moysklad(product):
+    for attribute in product.get("attributes", []) or []:
+        if not isinstance(attribute, dict):
+            continue
+
+        name = str(attribute.get("name") or "").strip().lower()
+
+        if name == "ячейка склада":
+            return str(attribute.get("value") or "").strip()
+
+    return ""
+
 def get_warehouse_items(limit=1000, force=False):
     now = time.time()
 
@@ -403,6 +417,7 @@ def get_warehouse_items(limit=1000, force=False):
 
             items.append({
                 "id": product.get("id") or "",
+                "cell": cells.get(product.get("id") or "", ""),
                 "moysklad_url": (
                     product.get("meta", {}).get("uuidHref")
                     or f"https://online.moysklad.ru/app/#good/edit?id={product.get('id')}"
@@ -416,6 +431,8 @@ def get_warehouse_items(limit=1000, force=False):
                 "reserve": reserve_value,
                 "quantity": quantity_value,
             })
+
+        save_warehouse_cells(product_cells)
 
         items.sort(key=lambda item: (
             item.get("category") or "",
@@ -505,9 +522,11 @@ def item_in_category(item, selected_category):
 def warehouse_page():
     query = request.args.get("q", "").strip()
     selected_category = request.args.get("category", "").strip()
+    selected_cell = request.args.get("cell", "").strip()
 
     all_items = get_warehouse_items(force=request.args.get("refresh") == "1")
     category_tree = build_category_tree(all_items)
+    cell_groups = build_cell_groups(all_items)
 
     items = all_items
 
@@ -516,6 +535,18 @@ def warehouse_page():
             item for item in items
             if item_in_category(item, selected_category)
         ]
+
+    if selected_cell:
+        if selected_cell == "Без ячейки":
+            items = [
+                item for item in items
+                if not (item.get("cell") or "").strip()
+            ]
+        else:
+            items = [
+                item for item in items
+                if (item.get("cell") or "").strip() == selected_cell
+            ]
 
     if query:
         query_lower = query.lower()
@@ -526,6 +557,7 @@ def warehouse_page():
             or query_lower in (item.get("article") or "").lower()
             or query_lower in (item.get("code") or "").lower()
             or query_lower in (item.get("category") or "").lower()
+            or query_lower in (item.get("cell") or "").lower()
         ]
 
     total_stock = sum(float(item.get("stock") or 0) for item in items)
@@ -539,12 +571,96 @@ def warehouse_page():
         items=items,
         query=query,
         selected_category=selected_category,
+        selected_cell=selected_cell,
         category_tree=category_tree,
+        cell_groups=cell_groups,
         total_stock=total_stock,
         total_stock_display=format_stock_number(total_stock),
         total_reserve=total_reserve,
         total_available=total_available,
     )
+
+
+
+
+@app.route("/warehouse/category-cell", methods=["POST"])
+def warehouse_update_category_cell():
+    category = request.form.get("category", "").strip()
+    cell = request.form.get("cell", "").strip()
+
+    if not category:
+        return redirect(url_for(
+            "warehouse_page",
+            notice="error",
+            message="Не выбран раздел"
+        ))
+
+    try:
+        set_warehouse_category_cell(category, cell)
+
+        WAREHOUSE_CACHE["items"] = []
+        WAREHOUSE_CACHE["loaded_at"] = 0
+
+        return redirect(url_for(
+            "warehouse_page",
+            refresh="1",
+            notice="success",
+            message="Ячейка раздела сохранена"
+        ))
+
+    except Exception as error:
+        print(f"Ошибка сохранения ячейки раздела: {error}")
+        return redirect(url_for(
+            "warehouse_page",
+            notice="error",
+            message="Ошибка сохранения ячейки раздела"
+        ))
+
+
+
+@app.route("/warehouse/cell", methods=["POST"])
+def warehouse_update_cell():
+    product_id = request.form.get("product_id", "").strip()
+    cell = request.form.get("cell", "").strip()
+
+    if not product_id:
+        return redirect(url_for(
+            "warehouse_page",
+            notice="error",
+            message="Не найден ID товара"
+        ))
+
+    try:
+        # 1. Сохраняем ячейку внутри Vechasu ERP
+        set_warehouse_cell(product_id, cell)
+
+        # 2. Отправляем эту же ячейку в МойСклад
+        client = MoySkladClient()
+        client.update_product_cell_attribute(product_id, cell)
+
+        # 3. Очищаем кэш склада
+        WAREHOUSE_CACHE["items"] = []
+        WAREHOUSE_CACHE["loaded_at"] = 0
+
+        return redirect(url_for(
+            "warehouse_page",
+            refresh="1",
+            notice="success",
+            message="Ячейка сохранена в ERP и МойСклад"
+        ))
+
+    except Exception as error:
+        print(f"Ошибка синхронизации ячейки с МойСклад: {error}")
+
+        WAREHOUSE_CACHE["items"] = []
+        WAREHOUSE_CACHE["loaded_at"] = 0
+
+        return redirect(url_for(
+            "warehouse_page",
+            refresh="1",
+            notice="error",
+            message="Ячейка сохранена в ERP, но не отправлена в МойСклад"
+        ))
 
 
 @app.route("/warehouse/add", methods=["POST"])
@@ -695,22 +811,163 @@ def warehouse_archive_product():
 
 
 
+
+WAREHOUSE_CELLS_FILE = PROJECT_ROOT / "instance" / "warehouse_cells.json"
+
+
+def load_warehouse_cells():
+    try:
+        WAREHOUSE_CELLS_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+        if not WAREHOUSE_CELLS_FILE.exists():
+            return {}
+
+        return json.loads(WAREHOUSE_CELLS_FILE.read_text(encoding="utf-8") or "{}")
+
+    except Exception as error:
+        print(f"Ошибка чтения ячеек склада: {error}")
+        return {}
+
+
+def save_warehouse_cells(cells):
+    WAREHOUSE_CELLS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    WAREHOUSE_CELLS_FILE.write_text(
+        json.dumps(cells, ensure_ascii=False, indent=2),
+        encoding="utf-8"
+    )
+
+
+def set_warehouse_cell(product_id, cell):
+    cells = load_warehouse_cells()
+    product_id = str(product_id or "").strip()
+    cell = str(cell or "").strip()
+
+    if not product_id:
+        return False
+
+    if cell:
+        cells[product_id] = cell
+    else:
+        cells.pop(product_id, None)
+
+    save_warehouse_cells(cells)
+    return True
+
+
+
+
+
+
+
+
 # === FINAL WAREHOUSE OVERRIDES START ===
 
-def wh_href(entity):
-    if not isinstance(entity, dict):
-        return ""
+WAREHOUSE_CELLS_FILE = PROJECT_ROOT / "instance" / "warehouse_cells.json"
+WAREHOUSE_CATEGORY_CELLS_FILE = PROJECT_ROOT / "instance" / "warehouse_category_cells.json"
 
-    meta = entity.get("meta")
 
-    if isinstance(meta, dict):
-        return meta.get("href") or ""
+def read_json_file(path):
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
 
-    return ""
+        if not path.exists():
+            return {}
+
+        return json.loads(path.read_text(encoding="utf-8") or "{}")
+
+    except Exception as error:
+        print(f"Ошибка чтения JSON {path}: {error}")
+        return {}
+
+
+def write_json_file(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(data, ensure_ascii=False, indent=2),
+        encoding="utf-8"
+    )
+
+
+def load_warehouse_cells():
+    return read_json_file(WAREHOUSE_CELLS_FILE)
+
+
+def save_warehouse_cells(cells):
+    write_json_file(WAREHOUSE_CELLS_FILE, cells)
+
+
+def set_warehouse_cell(product_id, cell):
+    cells = load_warehouse_cells()
+    product_id = str(product_id or "").strip()
+    cell = str(cell or "").strip()
+
+    if not product_id:
+        return False
+
+    if cell:
+        cells[product_id] = cell
+    else:
+        cells.pop(product_id, None)
+
+    save_warehouse_cells(cells)
+    return True
+
+
+def load_warehouse_category_cells():
+    return read_json_file(WAREHOUSE_CATEGORY_CELLS_FILE)
+
+
+def save_warehouse_category_cells(cells):
+    write_json_file(WAREHOUSE_CATEGORY_CELLS_FILE, cells)
+
+
+def set_warehouse_category_cell(category, cell):
+    cells = load_warehouse_category_cells()
+    category = str(category or "").strip()
+    cell = str(cell or "").strip()
+
+    if not category:
+        return False
+
+    if cell:
+        cells[category] = cell
+    else:
+        cells.pop(category, None)
+
+    save_warehouse_category_cells(cells)
+    return True
 
 
 def wh_key(value):
     return str(value or "").strip().lower()
+
+
+def split_category_path(category):
+    category = (category or "Без категории").strip() or "Без категории"
+    category = category.replace("\\", "/")
+    return [part.strip() for part in category.split("/") if part.strip()]
+
+
+def get_category_cell(category, category_cells):
+    parts = split_category_path(category)
+
+    for end_index in range(len(parts), 0, -1):
+        path = "/".join(parts[:end_index])
+
+        if path in category_cells:
+            return category_cells[path], path
+
+    return "", ""
+
+
+def format_cell_source(source):
+    if source == "product":
+        return "у позиции"
+
+    if source == "category":
+        return "из раздела"
+
+    return ""
 
 
 def get_warehouse_items(limit=1000, force=False):
@@ -726,51 +983,44 @@ def get_warehouse_items(limit=1000, force=False):
     try:
         client = MoySkladClient()
 
-        product_response = client.get("/entity/product", params={"limit": limit})
+        product_cells = load_warehouse_cells()
+        category_cells = load_warehouse_category_cells()
+
+        product_response = client.get("/entity/product", params={"limit": limit, "expand": "attributes"})
         product_rows = product_response.get("rows", []) if product_response else []
 
-        stock_by_href = {}
+        stock_response = client.get_stock(limit=limit)
+        stock_rows = stock_response if isinstance(stock_response, list) else (stock_response.get("rows", []) if stock_response else [])
+
         stock_by_code = {}
         stock_by_article = {}
         stock_by_name = {}
 
-        try:
-            stock_response = client.get_stock(limit=limit)
-            stock_rows = stock_response if isinstance(stock_response, list) else (stock_response.get("rows", []) if stock_response else [])
+        for row in stock_rows:
+            code = wh_key(row.get("code"))
+            article = wh_key(row.get("article"))
+            name = wh_key(row.get("name"))
 
-            for row in stock_rows:
-                assortment = row.get("assortment") or {}
+            if code:
+                stock_by_code[code] = row
 
-                href = wh_href(assortment)
-                code = wh_key(row.get("code") or assortment.get("code"))
-                article = wh_key(row.get("article") or assortment.get("article"))
-                name = wh_key(row.get("name") or assortment.get("name"))
+            if article:
+                stock_by_article[article] = row
 
-                if href:
-                    stock_by_href[href] = row
-                if code:
-                    stock_by_code[code] = row
-                if article:
-                    stock_by_article[article] = row
-                if name:
-                    stock_by_name[name] = row
-
-            print("STOCK ROWS:", len(stock_rows))
-
-        except Exception as stock_error:
-            print("Остатки не загрузились:", stock_error)
+            if name:
+                stock_by_name[name] = row
 
         items = []
 
         for product in product_rows:
-            product_href = wh_href(product)
+            product_id = product.get("id") or ""
             name = product.get("name") or ""
             article = product.get("article") or ""
             code = product.get("code") or ""
+            category = product.get("pathName") or "Без категории"
 
             stock_row = (
-                stock_by_href.get(product_href)
-                or stock_by_code.get(wh_key(code))
+                stock_by_code.get(wh_key(code))
                 or stock_by_article.get(wh_key(article))
                 or stock_by_name.get(wh_key(name))
                 or {}
@@ -788,21 +1038,50 @@ def get_warehouse_items(limit=1000, force=False):
             if quantity_value is None:
                 quantity_value = stock_value
 
+            moysklad_cell = get_product_cell_from_moysklad(product)
+
+            if moysklad_cell:
+                product_cells[product_id] = moysklad_cell
+                product_cell = moysklad_cell
+            else:
+                product_cell = product_cells.get(product_id, "")
+
+            category_cell, category_cell_path = get_category_cell(category, category_cells)
+
+            if product_cell:
+                cell = product_cell
+                cell_source = "product"
+                cell_source_path = ""
+            elif category_cell:
+                cell = category_cell
+                cell_source = "category"
+                cell_source_path = category_cell_path
+            else:
+                cell = ""
+                cell_source = ""
+                cell_source_path = ""
+
             items.append({
-                "id": product.get("id") or "",
+                "id": product_id,
                 "moysklad_url": (
                     product.get("meta", {}).get("uuidHref")
-                    or f"https://online.moysklad.ru/app/#good/edit?id={product.get('id')}"
+                    or f"https://online.moysklad.ru/app/#good/edit?id={product_id}"
                 ),
                 "name": name,
                 "article": article,
                 "code": code,
-                "category": product.get("pathName") or "Без категории",
+                "category": category,
+                "cell": cell,
+                "cell_source": cell_source,
+                "cell_source_label": format_cell_source(cell_source),
+                "cell_source_path": cell_source_path,
                 "stock": stock_value,
                 "stock_display": format_stock_number(stock_value),
                 "reserve": reserve_value,
                 "quantity": quantity_value,
             })
+
+        save_warehouse_cells(product_cells)
 
         items.sort(key=lambda item: (
             item.get("category") or "",
@@ -812,21 +1091,11 @@ def get_warehouse_items(limit=1000, force=False):
         WAREHOUSE_CACHE["items"] = items
         WAREHOUSE_CACHE["loaded_at"] = now
 
-        print("PRODUCT ROWS:", len(product_rows))
-        print("WAREHOUSE ITEMS:", len(items))
-        print("WAREHOUSE TOTAL STOCK:", sum(float(item.get("stock") or 0) for item in items))
-
         return items
 
     except Exception as error:
         print("Ошибка загрузки склада МойСклад:", error)
         return []
-
-
-def split_category_path(category):
-    category = (category or "Без категории").strip() or "Без категории"
-    category = category.replace("\\", "/")
-    return [part.strip() for part in category.split("/") if part.strip()]
 
 
 def build_category_tree(items):
@@ -885,6 +1154,44 @@ def item_in_category(item, selected_category):
         item_category == selected_category
         or item_category.startswith(selected_category + "/")
     )
+
+
+def build_cell_groups(items):
+    groups = {}
+
+    for item in items:
+        cell = (item.get("cell") or "").strip()
+
+        if not cell:
+            cell = "Без ячейки"
+
+        if cell not in groups:
+            groups[cell] = {
+                "cell": cell,
+                "count": 0,
+                "total_stock": 0,
+                "items": []
+            }
+
+        groups[cell]["count"] += 1
+        groups[cell]["total_stock"] += float(item.get("stock") or 0)
+
+        if len(groups[cell]["items"]) < 5:
+            groups[cell]["items"].append(item.get("name") or "Без названия")
+
+    result = []
+
+    for cell, group in groups.items():
+        group["total_stock_display"] = format_stock_number(group["total_stock"])
+        result.append(group)
+
+    result.sort(key=lambda group: (
+        group["cell"] == "Без ячейки",
+        group["cell"]
+    ))
+
+    return result
+
 
 # === FINAL WAREHOUSE OVERRIDES END ===
 

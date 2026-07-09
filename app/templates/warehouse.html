@@ -172,13 +172,15 @@
             gap: 10px;
         }
 
-        input[type="text"] {
+        input[type="text"],
+        select {
             width: 100%;
             border: 1px solid #d1d5db;
             border-radius: 12px;
             padding: 12px 14px;
             font-size: 15px;
             outline: none;
+            background: white;
         }
 
         input[type="text"]:focus {
@@ -365,6 +367,23 @@
             color: #111827;
         }
 
+        .category-cell-form {
+            background: #f8fafc;
+            border: 1px solid #e5e7eb;
+            border-radius: 16px;
+            padding: 14px;
+            margin-bottom: 18px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .category-cell-form-title {
+            font-size: 14px;
+            font-weight: 900;
+            color: #111827;
+        }
+
         .category-list {
             display: flex;
             flex-direction: column;
@@ -396,6 +415,86 @@
             color: #6b7280;
             font-size: 12px;
             font-weight: 900;
+        }
+
+        .stat-actions {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .wide-drawer {
+            width: 620px;
+            max-width: 96vw;
+        }
+
+        .map-modal {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            width: 860px;
+            max-width: 92vw;
+            max-height: 86vh;
+            overflow-y: auto;
+            background: white;
+            z-index: 60;
+            border-radius: 24px;
+            padding: 28px;
+            box-shadow: 0 30px 90px rgba(15, 23, 42, 0.30);
+            transform: translate(-50%, -50%) scale(0.98);
+            display: none;
+        }
+
+        .map-modal.open {
+            display: block;
+            transform: translate(-50%, -50%) scale(1);
+        }
+
+        .warehouse-map-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 14px;
+        }
+
+        .warehouse-map-cell {
+            display: block;
+            text-decoration: none;
+            color: #111827;
+            background: #f8fafc;
+            border: 1px solid #e5e7eb;
+            border-radius: 16px;
+            padding: 14px;
+        }
+
+        .warehouse-map-cell:hover {
+            background: #eef2ff;
+            border-color: #c7d2fe;
+        }
+
+        .warehouse-map-cell.active {
+            background: #dbeafe;
+            border-color: #93c5fd;
+        }
+
+        .warehouse-map-title {
+            font-size: 18px;
+            font-weight: 900;
+            margin-bottom: 8px;
+        }
+
+        .warehouse-map-meta {
+            color: #475569;
+            font-size: 13px;
+            font-weight: 800;
+            line-height: 1.45;
+        }
+
+        .warehouse-map-preview {
+            margin-top: 10px;
+            color: #64748b;
+            font-size: 12px;
+            font-weight: 700;
+            line-height: 1.35;
         }
 
         .product-detail-grid {
@@ -483,25 +582,35 @@
 
             <div class="stats">
                 <div class="stat">
-                    <div class="stat-head">
-                        <div>
-                            <div class="stat-title">Позиций</div>
-                            <div class="stat-value">{{ items|length }}</div>
-                        </div>
-
-                        <button class="stat-button" type="button" onclick="openCategoryDrawer()">Разделы</button>
-                    </div>
+                    <div class="stat-title">Позиций</div>
+                    <div class="stat-value">{{ items|length }}</div>
                 </div>
 
                 <div class="stat">
-                    <div class="stat-title">Остаток</div>
-                    <div class="stat-value">{{ total_stock_display }}</div>
+                    <div class="stat-head">
+                        <div>
+                            <div class="stat-title">Остаток</div>
+                            <div class="stat-value">{{ total_stock_display }}</div>
+                        </div>
+
+                        <div class="stat-actions">
+                            <button class="stat-button" type="button" onclick="openCategoryDrawer()">Разделы</button>
+                            <button class="stat-button" type="button" onclick="openWarehouseMapDrawer()">Карта склада</button>
+                        </div>
+                    </div>
                 </div>
             </div>
 
             {% if selected_category %}
                 <div class="filter-pill">
-                    Фильтр: {{ selected_category }}
+                    Фильтр раздела: {{ selected_category }}
+                    <a href="/warehouse{% if query %}?q={{ query|urlencode }}{% endif %}">сбросить</a>
+                </div>
+            {% endif %}
+
+            {% if selected_cell %}
+                <div class="filter-pill">
+                    Фильтр ячейки: {{ selected_cell }}
                     <a href="/warehouse{% if query %}?q={{ query|urlencode }}{% endif %}">сбросить</a>
                 </div>
             {% endif %}
@@ -523,6 +632,10 @@
                         <input type="hidden" name="category" value="{{ selected_category }}">
                     {% endif %}
 
+                    {% if selected_cell %}
+                        <input type="hidden" name="cell" value="{{ selected_cell }}">
+                    {% endif %}
+
                     <input type="text" name="q" value="{{ query }}" placeholder="Поиск по названию, артикулу или коду">
                     <button type="submit">Найти</button>
                 </form>
@@ -537,6 +650,7 @@
                                 <th>Артикул</th>
                                 <th>Код</th>
                                 <th>Остаток</th>
+                                <th>Ячейка</th>
                                 <th>Действие</th>
                             </tr>
                         </thead>
@@ -557,6 +671,13 @@
                                     </td>
 
                                     <td>
+                                        <div>{{ item.cell or "—" }}</div>
+                                        {% if item.cell_source_label %}
+                                            <div class="muted">{{ item.cell_source_label }}</div>
+                                        {% endif %}
+                                    </td>
+
+                                    <td>
                                         {% if item.id %}
                                             <div class="row-actions">
                                                 <button
@@ -568,6 +689,9 @@
                                                     data-code="{{ item.code|e }}"
                                                     data-category="{{ item.category|e }}"
                                                     data-stock="{{ item.stock_display|e }}"
+                                                    data-cell="{{ item.cell|e }}"
+                                                    data-cell-source="{{ item.cell_source|e }}"
+                                                    data-cell-source-label="{{ item.cell_source_label|e }}"
                                                     data-url="{{ item.moysklad_url|e }}"
                                                     onclick="openEditDrawer(this)"
                                                 >
@@ -606,6 +730,29 @@
             <button class="close-button" type="button" onclick="closeAllDrawers()">×</button>
         </div>
 
+        {% macro render_category_options(nodes, level=0) %}
+            {% for node in nodes %}
+                <option value="{{ node.path }}">{{ "— " * level }}{{ node.name }} · {{ node.count }}</option>
+
+                {% if node.children %}
+                    {{ render_category_options(node.children, level + 1) }}
+                {% endif %}
+            {% endfor %}
+        {% endmacro %}
+
+        <form class="category-cell-form" method="post" action="/warehouse/category-cell">
+            <div class="category-cell-form-title">Назначить ячейку разделу</div>
+
+            <select name="category" required>
+                <option value="">Выбери раздел</option>
+                {{ render_category_options(category_tree) }}
+            </select>
+
+            <input type="text" name="cell" placeholder="Например A-01">
+
+            <button type="submit">Сохранить для раздела</button>
+        </form>
+
         <div class="category-list">
             <a class="category-link {% if not selected_category %}active{% endif %}" href="/warehouse{% if query %}?q={{ query|urlencode }}{% endif %}">
                 <span>Все товары</span>
@@ -632,6 +779,41 @@
             {{ render_nodes(category_tree) }}
         </div>
     </aside>
+
+    
+    <aside id="warehouseMapDrawer" class="map-modal">
+        <div class="drawer-header">
+            <div>
+                <div class="drawer-title">Карта склада</div>
+                <div class="drawer-subtitle">Визуальная карта ячеек и товаров</div>
+            </div>
+
+            <button class="close-button" type="button" onclick="closeAllDrawers()">×</button>
+        </div>
+
+        <div class="warehouse-map-grid">
+            {% for group in cell_groups %}
+                <a
+                    class="warehouse-map-cell {% if selected_cell == group.cell %}active{% endif %}"
+                    href="/warehouse?cell={{ group.cell|urlencode }}{% if query %}&q={{ query|urlencode }}{% endif %}"
+                >
+                    <div class="warehouse-map-title">{{ group.cell }}</div>
+
+                    <div class="warehouse-map-meta">
+                        Позиций: {{ group.count }}<br>
+                        Остаток: {{ group.total_stock_display }}
+                    </div>
+
+                    <div class="warehouse-map-preview">
+                        {% for name in group['items'] %}
+                            {{ name }}{% if not loop.last %}<br>{% endif %}
+                        {% endfor %}
+                    </div>
+                </a>
+            {% endfor %}
+        </div>
+    </aside>
+
 
     <aside id="editDrawer" class="drawer">
         <div class="drawer-header">
@@ -662,6 +844,11 @@
             <div class="product-detail-card">
                 <div class="product-detail-label">Код</div>
                 <div id="detailCode" class="product-detail-value">—</div>
+            </div>
+
+            <div class="product-detail-card">
+                <div class="product-detail-label">Ячейка</div>
+                <div id="detailCell" class="product-detail-value">—</div>
             </div>
         </div>
 
@@ -696,9 +883,17 @@
         </form>
 
         <div class="drawer-section-title">Ячейка склада</div>
-        <div class="future-card">
-            Скоро здесь будет поле ячейки: например A-01-03.
-        </div>
+
+        <form class="drawer-form" method="post" action="/warehouse/cell">
+            <input id="cellProductId" type="hidden" name="product_id">
+
+            <div class="field">
+                <label>Ячейка</label>
+                <input id="editCell" type="text" name="cell" placeholder="Например A-01-03">
+            </div>
+
+            <button type="submit">Сохранить ячейку</button>
+        </form>
 
         <div class="drawer-section-title">Изменение остатка</div>
         <div class="future-card">
@@ -718,6 +913,12 @@
             document.getElementById("categoryDrawer").classList.add("open");
         }
 
+        function openWarehouseMapDrawer() {
+            closeAllDrawers();
+            document.getElementById("drawerBackdrop").classList.add("open");
+            document.getElementById("warehouseMapDrawer").classList.add("open");
+        }
+
         function openEditDrawer(button) {
             closeAllDrawers();
 
@@ -726,15 +927,22 @@
             const productCode = button.dataset.code || "—";
             const productCategory = button.dataset.category || "Без категории";
             const productStock = button.dataset.stock || "0";
+            const productCell = button.dataset.cell || "";
+            const productCellSourceLabel = button.dataset.cellSourceLabel || "";
             const productUrl = button.dataset.url || "#";
 
             document.getElementById("detailName").textContent = productName;
             document.getElementById("detailStock").textContent = productStock;
             document.getElementById("detailCategory").textContent = productCategory;
             document.getElementById("detailCode").textContent = productCode;
+            document.getElementById("detailCell").textContent = productCell
+                ? (productCellSourceLabel ? `${productCell} · ${productCellSourceLabel}` : productCell)
+                : "—";
             document.getElementById("detailMoySkladLink").href = productUrl;
 
             document.getElementById("editProductId").value = button.dataset.id || "";
+            document.getElementById("cellProductId").value = button.dataset.id || "";
+            document.getElementById("editCell").value = productCell;
             document.getElementById("editName").value = button.dataset.name || "";
             document.getElementById("editArticle").value = button.dataset.article || "";
             document.getElementById("editCode").value = button.dataset.code || "";
@@ -744,9 +952,15 @@
         }
 
         function closeAllDrawers() {
-            document.getElementById("drawerBackdrop").classList.remove("open");
-            document.getElementById("categoryDrawer").classList.remove("open");
-            document.getElementById("editDrawer").classList.remove("open");
+            const ids = ["drawerBackdrop", "categoryDrawer", "warehouseMapDrawer", "editDrawer"];
+
+            ids.forEach(function(id) {
+                const element = document.getElementById(id);
+
+                if (element) {
+                    element.classList.remove("open");
+                }
+            });
         }
     </script>
 </body>

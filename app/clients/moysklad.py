@@ -27,6 +27,19 @@ class MoySkladClient:
 
         return response.json()
 
+    def post(self, endpoint, payload):
+        url = f"{self.BASE_URL}{endpoint}"
+
+        response = requests.post(
+            url,
+            headers=self.headers,
+            json=payload,
+            timeout=8
+        )
+
+        response.raise_for_status()
+        return response.json()
+
     def put(self, endpoint, payload):
         response = requests.put(
             f"{self.BASE_URL}{endpoint}",
@@ -102,6 +115,79 @@ class MoySkladClient:
         print("ID:", product.get("id"))
 
         return product
+
+
+
+    def get_product_metadata(self):
+        return self.get("/entity/product/metadata")
+
+    def get_product_attributes(self):
+        response = self.get("/entity/product/metadata/attributes")
+
+        if isinstance(response, dict):
+            rows = response.get("rows", [])
+
+            if isinstance(rows, list):
+                return rows
+
+            return []
+
+        if isinstance(response, list):
+            return response
+
+        return []
+
+    def find_product_attribute(self, name):
+        target_name = str(name or "").strip().lower()
+
+        for attribute in self.get_product_attributes():
+            if not isinstance(attribute, dict):
+                continue
+
+            attribute_name = str(attribute.get("name") or "").strip().lower()
+
+            if attribute_name == target_name:
+                return attribute
+
+        return None
+
+    def create_product_string_attribute(self, name):
+        return self.post(
+            "/entity/product/metadata/attributes",
+            {
+                "name": name,
+                "type": "string",
+                "required": False
+            }
+        )
+
+    def get_or_create_product_cell_attribute(self):
+        attribute_name = "Ячейка склада"
+
+        attribute = self.find_product_attribute(attribute_name)
+
+        if attribute:
+            return attribute
+
+        return self.create_product_string_attribute(attribute_name)
+
+    def update_product_cell_attribute(self, product_id, cell):
+        attribute = self.get_or_create_product_cell_attribute()
+
+        return self.put(
+            f"/entity/product/{product_id}",
+            {
+                "attributes": [
+                    {
+                        "meta": attribute["meta"],
+                        "name": attribute.get("name"),
+                        "type": attribute.get("type", "string"),
+                        "value": str(cell or "")
+                    }
+                ]
+            }
+        )
+
 
     def get_stock(self, limit=20):
         data = self.get("/report/stock/all", params={"limit": limit})
