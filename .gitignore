@@ -13,3 +13,4 @@ testenv/
 
 # Local repair cases data
 instance/repair_cases.json
+instance/stock_operations.json

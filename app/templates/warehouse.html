@@ -921,12 +921,50 @@
         </form>
 
         <div class="drawer-section-title">История</div>
-        <div class="future-card">
-            Скоро здесь будет история изменений позиции.
+
+        <div id="stockHistoryList" class="future-card">
+            Откройте товар, чтобы увидеть историю изменений.
         </div>
     </aside>
 
     <script>
+        const stockOperations = {{ stock_operations|default([])|tojson }};
+
+        function renderStockHistory(productId) {
+            const historyList = document.getElementById("stockHistoryList");
+
+            if (!historyList) {
+                return;
+            }
+
+            const productOperations = stockOperations
+                .filter(operation => String(operation.product_id || "") === String(productId || ""))
+                .slice(0, 10);
+
+            if (!productOperations.length) {
+                historyList.innerHTML = "Истории по этой позиции пока нет.";
+                return;
+            }
+
+            historyList.innerHTML = productOperations.map(operation => {
+                const label = operation.label || "Операция";
+                const quantity = operation.quantity || 0;
+                const before = operation.stock_before ?? "—";
+                const after = operation.stock_after ?? "—";
+                const createdAt = operation.created_at || "";
+                const documentName = operation.moysklad_document_name || "";
+
+                return `
+                    <div style="padding: 10px 0; border-bottom: 1px solid #e5e7eb;">
+                        <strong>${label}: ${quantity} шт.</strong><br>
+                        <span>${before} → ${after}</span><br>
+                        <span>${createdAt}</span>
+                        ${documentName ? `<br><span>МойСклад: ${documentName}</span>` : ""}
+                    </div>
+                `;
+            }).join("");
+        }
+
         function openCategoryDrawer() {
             closeAllDrawers();
             document.getElementById("drawerBackdrop").classList.add("open");
@@ -973,6 +1011,8 @@
             if (newStockInput) {
                 newStockInput.value = productStock;
             }
+
+            renderStockHistory(button.dataset.id || button.dataset.productId || "");
             const productCell = button.dataset.cell || "";
             const productCellSourceLabel = button.dataset.cellSourceLabel || "";
             const productUrl = button.dataset.url || "#";

@@ -761,6 +761,63 @@ def warehouse_edit_product():
 
 
 
+
+# -----------------------------
+# Warehouse stock operation journal
+# -----------------------------
+
+def get_stock_operations_path():
+    from pathlib import Path
+
+    path = Path("instance")
+    path.mkdir(exist_ok=True)
+
+    return path / "stock_operations.json"
+
+
+def load_stock_operations():
+    import json
+
+    path = get_stock_operations_path()
+
+    if not path.exists():
+        return []
+
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+    return data if isinstance(data, list) else []
+
+
+def save_stock_operations(operations):
+    import json
+
+    path = get_stock_operations_path()
+    path.write_text(
+        json.dumps(operations, ensure_ascii=False, indent=2),
+        encoding="utf-8"
+    )
+
+
+def add_stock_operation(operation):
+    operations = load_stock_operations()
+    operations.insert(0, operation)
+    save_stock_operations(operations[:1000])
+
+
+def get_stock_operations_for_product(product_id, limit=10):
+    product_id = str(product_id or "")
+
+    result = [
+        operation for operation in load_stock_operations()
+        if str(operation.get("product_id") or "") == product_id
+    ]
+
+    return result[:limit]
+
+
 @app.route("/warehouse/stock", methods=["POST"])
 def warehouse_update_stock():
     product_id = (request.form.get("product_id") or "").strip()
@@ -797,9 +854,14 @@ def warehouse_update_stock():
     client = MoySkladClient()
 
     try:
+        moysklad_document = None
+
         if diff < 0:
             quantity = abs(diff)
-            client.create_stock_loss(
+            operation_type = "writeoff"
+            operation_label = "Списание"
+
+            moysklad_document = client.create_stock_loss(
                 product_id=product_id,
                 quantity=quantity,
                 reason=f"ТТТ ERP: списание {quantity:g} шт. {product_name}".strip()
@@ -807,12 +869,36 @@ def warehouse_update_stock():
             message = f"Создано списание на {quantity:g} шт. в МойСклад"
         else:
             quantity = diff
-            client.create_stock_enter(
+            operation_type = "enter"
+            operation_label = "Оприходование"
+
+            moysklad_document = client.create_stock_enter(
                 product_id=product_id,
                 quantity=quantity,
                 reason=f"ТТТ ERP: оприходование {quantity:g} шт. {product_name}".strip()
             )
             message = f"Создано оприходование на {quantity:g} шт. в МойСклад"
+
+        from datetime import datetime
+        import uuid
+
+        add_stock_operation({
+            "id": str(uuid.uuid4()),
+            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "product_id": product_id,
+            "product_name": product_name,
+            "type": operation_type,
+            "label": operation_label,
+            "quantity": quantity,
+            "stock_before": current_stock,
+            "stock_after": new_stock,
+            "diff": diff,
+            "source": "ТТТ ERP",
+            "status": "success",
+            "moysklad_document_id": (moysklad_document or {}).get("id"),
+            "moysklad_document_name": (moysklad_document or {}).get("name"),
+            "moysklad_document_url": ((moysklad_document or {}).get("meta") or {}).get("uuidHref"),
+        })
 
         return redirect(url_for(
             "warehouse_page",
