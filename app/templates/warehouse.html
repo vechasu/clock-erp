@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <title>Склад — Vechasu ERP</title>
+    <style>
+        body {
+            margin: 0;
+            background: #f4f6fb;
+            color: #111827;
+            font-family: Arial, sans-serif;
+        }
+
+        .page {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 28px;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            gap: 20px;
+            align-items: center;
+            margin-bottom: 22px;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 32px;
+        }
+
+        .nav {
+            display: flex;
+            gap: 10px;
+        }
+
+        .nav a {
+            text-decoration: none;
+            background: #ffffff;
+            color: #111827;
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            padding: 10px 14px;
+            font-weight: 700;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 14px;
+            margin-bottom: 18px;
+        }
+
+        .stat {
+            background: #ffffff;
+            border-radius: 18px;
+            padding: 18px;
+            border: 1px solid #e5e7eb;
+            box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+        }
+
+        .stat-title {
+            color: #6b7280;
+            font-size: 13px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+
+        .stat-value {
+            font-size: 26px;
+            font-weight: 900;
+        }
+
+        .search-card {
+            background: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-radius: 18px;
+            padding: 18px;
+            margin-bottom: 18px;
+            box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+        }
+
+        .search-form {
+            display: flex;
+            gap: 10px;
+        }
+
+        input[type="text"] {
+            width: 100%;
+            border: 1px solid #d1d5db;
+            border-radius: 12px;
+            padding: 13px 14px;
+            font-size: 16px;
+        }
+
+        button {
+            border: 0;
+            border-radius: 12px;
+            padding: 13px 18px;
+            background: #111827;
+            color: #ffffff;
+            font-size: 15px;
+            font-weight: 800;
+            cursor: pointer;
+        }
+
+        .table-card {
+            background: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-radius: 18px;
+            overflow: hidden;
+            box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th {
+            text-align: left;
+            background: #f9fafb;
+            color: #374151;
+            font-size: 13px;
+            padding: 14px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        td {
+            padding: 14px;
+            border-bottom: 1px solid #f1f5f9;
+            font-size: 14px;
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        .name {
+            font-weight: 800;
+        }
+
+        .muted {
+            color: #6b7280;
+        }
+
+        .stock-good {
+            font-weight: 900;
+            color: #166534;
+        }
+
+        .stock-zero {
+            font-weight: 900;
+            color: #991b1b;
+        }
+
+        .empty {
+            padding: 30px;
+            text-align: center;
+            color: #6b7280;
+            font-weight: 700;
+        }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <div class="header">
+            <div>
+                <h1>Склад</h1>
+                <div class="muted">Остатки из МойСклад</div>
+            </div>
+
+            <div class="nav">
+                <a href="/">Заказы</a>
+                <a href="/warehouse">Склад</a>
+            </div>
+        </div>
+
+        <div class="stats">
+            <div class="stat">
+                <div class="stat-title">Позиций</div>
+                <div class="stat-value">{{ items|length }}</div>
+            </div>
+
+            <div class="stat">
+                <div class="stat-title">Остаток</div>
+                <div class="stat-value">{{ total_stock|round(2) }}</div>
+            </div>
+
+            <div class="stat">
+                <div class="stat-title">Резерв</div>
+                <div class="stat-value">{{ total_reserve|round(2) }}</div>
+            </div>
+
+            <div class="stat">
+                <div class="stat-title">Доступно</div>
+                <div class="stat-value">{{ total_available|round(2) }}</div>
+            </div>
+        </div>
+
+        <div class="search-card">
+            <form class="search-form" method="get" action="/warehouse">
+                <input type="text" name="q" value="{{ query }}" placeholder="Поиск по названию, артикулу или коду">
+                <button type="submit">Найти</button>
+            </form>
+        </div>
+
+        <div class="table-card">
+            {% if items %}
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Название</th>
+                            <th>Артикул</th>
+                            <th>Код</th>
+                            <th>Остаток</th>
+                            <th>Резерв</th>
+                            <th>Доступно</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in items %}
+                            <tr>
+                                <td class="name">{{ item.name }}</td>
+                                <td>{{ item.article or "—" }}</td>
+                                <td>{{ item.code or "—" }}</td>
+                                <td class="{% if item.stock <= 0 %}stock-zero{% else %}stock-good{% endif %}">
+                                    {{ item.stock }}
+                                </td>
+                                <td>{{ item.reserve }}</td>
+                                <td>{{ item.quantity }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            {% else %}
+                <div class="empty">Товары не найдены или МойСклад не ответил</div>
+            {% endif %}
+        </div>
+    </div>
+</body>
+</html>

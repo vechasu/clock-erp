@@ -1,5 +1,5 @@
 import requests
-from config import MOYSKLAD_TOKEN
+from app.config import MOYSKLAD_TOKEN
 
 
 class MoySkladClient:
@@ -17,6 +17,7 @@ class MoySkladClient:
             f"{self.BASE_URL}{endpoint}",
             headers=self.headers,
             params=params,
+            timeout=8,
         )
 
         if response.status_code >= 400:

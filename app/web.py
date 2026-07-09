@@ -1,5 +1,13 @@
+import sys
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 import time
 import requests
+from app.clients.moysklad import MoySkladClient
 from flask import Flask, render_template, request, redirect, url_for
 
 app = Flask(__name__)
@@ -16,6 +24,13 @@ ORDERS_CACHE = {
 }
 
 ORDERS_CACHE_SECONDS = 60
+
+WAREHOUSE_CACHE = {
+    "items": [],
+    "loaded_at": 0,
+}
+
+WAREHOUSE_CACHE_SECONDS = 300
 
 STATUS_NAMES = {
     "N": "Не подтвержден",
@@ -278,5 +293,68 @@ def order_status_update(order_id):
     ))
 
 
+def get_warehouse_items(limit=100, force=False):
+    now = time.time()
+
+    if not force and WAREHOUSE_CACHE["items"] and now - WAREHOUSE_CACHE["loaded_at"] < WAREHOUSE_CACHE_SECONDS:
+        return WAREHOUSE_CACHE["items"]
+
+    try:
+        client = MoySkladClient()
+        data = client.get("/report/stock/all", params={"limit": limit})
+
+        if not data:
+            return WAREHOUSE_CACHE["items"]
+
+        rows = data.get("rows", [])
+        items = []
+
+        for row in rows:
+            items.append({
+                "name": row.get("name") or "",
+                "article": row.get("article") or "",
+                "code": row.get("code") or "",
+                "stock": row.get("stock") or 0,
+                "reserve": row.get("reserve") or 0,
+                "quantity": row.get("quantity") or 0,
+            })
+
+        WAREHOUSE_CACHE["items"] = items
+        WAREHOUSE_CACHE["loaded_at"] = now
+
+        return items
+
+    except Exception as error:
+        print(f"Ошибка загрузки склада: {error}")
+        return WAREHOUSE_CACHE["items"]
+
+
+@app.route("/warehouse")
+def warehouse_page():
+    query = request.args.get("q", "").strip().lower()
+    items = get_warehouse_items(limit=100)
+
+    if query:
+        items = [
+            item for item in items
+            if query in item["name"].lower()
+            or query in item["article"].lower()
+            or query in item["code"].lower()
+        ]
+
+    total_stock = sum(float(item["stock"]) for item in items)
+    total_reserve = sum(float(item["reserve"]) for item in items)
+    total_available = sum(float(item["quantity"]) for item in items)
+
+    return render_template(
+        "warehouse.html",
+        items=items,
+        query=query,
+        total_stock=total_stock,
+        total_reserve=total_reserve,
+        total_available=total_available,
+    )
+
+
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(host="127.0.0.1", port=5050, debug=True)
