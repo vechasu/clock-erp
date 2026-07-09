@@ -818,6 +818,46 @@ def get_stock_operations_for_product(product_id, limit=10):
     return result[:limit]
 
 
+
+def is_recent_duplicate_stock_operation(product_id, operation_type, quantity, stock_before, stock_after, seconds=120):
+    from datetime import datetime, timedelta
+
+    now = datetime.now()
+
+    for operation in load_stock_operations():
+        if str(operation.get("product_id") or "") != str(product_id or ""):
+            continue
+
+        if str(operation.get("type") or "") != str(operation_type or ""):
+            continue
+
+        try:
+            operation_quantity = float(operation.get("quantity") or 0)
+            operation_before = float(operation.get("stock_before") or 0)
+            operation_after = float(operation.get("stock_after") or 0)
+        except Exception:
+            continue
+
+        if abs(operation_quantity - float(quantity)) > 0.0001:
+            continue
+
+        if abs(operation_before - float(stock_before)) > 0.0001:
+            continue
+
+        if abs(operation_after - float(stock_after)) > 0.0001:
+            continue
+
+        try:
+            created_at = datetime.strptime(operation.get("created_at") or "", "%Y-%m-%d %H:%M")
+        except Exception:
+            continue
+
+        if now - created_at <= timedelta(seconds=seconds):
+            return operation
+
+    return None
+
+
 @app.route("/warehouse/stock", methods=["POST"])
 def warehouse_update_stock():
     product_id = (request.form.get("product_id") or "").strip()
@@ -849,6 +889,25 @@ def warehouse_update_stock():
             "warehouse_page",
             notice="success",
             message="Остаток не изменился"
+        ))
+
+    operation_type_for_duplicate = "writeoff" if diff < 0 else "enter"
+    quantity_for_duplicate = abs(diff)
+
+    duplicate_operation = is_recent_duplicate_stock_operation(
+        product_id=product_id,
+        operation_type=operation_type_for_duplicate,
+        quantity=quantity_for_duplicate,
+        stock_before=current_stock,
+        stock_after=new_stock,
+    )
+
+    if duplicate_operation:
+        return redirect(url_for(
+            "warehouse_page",
+            refresh="1",
+            notice="success",
+            message="Похожая операция уже создана. Дубль не отправлен в МойСклад"
         ))
 
     client = MoySkladClient()

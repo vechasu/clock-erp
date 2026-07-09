@@ -897,7 +897,7 @@
 
         <div class="drawer-section-title">Изменение остатка</div>
 
-        <form class="drawer-form" method="post" action="/warehouse/stock">
+        <form id="stockForm" class="drawer-form" method="post" action="/warehouse/stock">
             <input id="stockProductId" type="hidden" name="product_id">
             <input id="stockProductName" type="hidden" name="product_name">
             <input id="currentStockInput" type="hidden" name="current_stock">
@@ -917,7 +917,7 @@
                 Если больше — создаст оприходование.
             </div>
 
-            <button type="submit">Обновить остаток в ERP и МойСклад</button>
+            <button id="stockSubmitButton" type="submit">Обновить остаток в ERP и МойСклад</button>
         </form>
 
         <div class="drawer-section-title">История</div>
@@ -1048,6 +1048,27 @@
                 }
             });
         }
+    
+        const stockForm = document.getElementById("stockForm");
+
+        if (stockForm) {
+            stockForm.addEventListener("submit", function(event) {
+                const submitButton = document.getElementById("stockSubmitButton");
+
+                if (!submitButton) {
+                    return;
+                }
+
+                if (submitButton.disabled) {
+                    event.preventDefault();
+                    return false;
+                }
+
+                submitButton.disabled = true;
+                submitButton.textContent = "Сохраняем...";
+            });
+        }
+
     </script>
 </body>
 </html>
