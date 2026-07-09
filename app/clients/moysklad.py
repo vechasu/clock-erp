@@ -48,6 +48,23 @@ class MoySkladClient:
             {"archived": True}
         )
 
+    def update_product(self, product_id, name=None, code=None, article=None):
+        payload = {}
+
+        if name is not None:
+            payload["name"] = name
+
+        if code is not None:
+            payload["code"] = code
+
+        if article is not None:
+            payload["article"] = article
+
+        return self.put(
+            f"/entity/product/{product_id}",
+            payload
+        )
+
     def get_products(self, limit=10):
         data = self.get("/entity/product", params={"limit": limit})
         if not data:

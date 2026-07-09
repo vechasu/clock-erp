@@ -293,94 +293,251 @@ def order_status_update(order_id):
     ))
 
 
-def get_warehouse_items(limit=100, force=False):
+def format_stock_number(value):
+    try:
+        number = float(value)
+
+        if number.is_integer():
+            return str(int(number))
+
+        return str(number).rstrip("0").rstrip(".")
+
+    except Exception:
+        return value
+
+
+def get_entity_href(entity):
+    if not isinstance(entity, dict):
+        return ""
+
+    meta = entity.get("meta")
+
+    if isinstance(meta, dict):
+        return meta.get("href") or ""
+
+    return ""
+
+
+def normalize_key(value):
+    return str(value or "").strip().lower()
+
+
+def get_stock_value(row, key):
+    value = row.get(key)
+
+    if value is None:
+        return 0
+
+    return value
+
+
+def get_warehouse_items(limit=1000, force=False):
     now = time.time()
 
-    if not force and WAREHOUSE_CACHE["items"] and now - WAREHOUSE_CACHE["loaded_at"] < WAREHOUSE_CACHE_SECONDS:
+    if (
+        not force
+        and WAREHOUSE_CACHE["items"]
+        and now - WAREHOUSE_CACHE["loaded_at"] < WAREHOUSE_CACHE_SECONDS
+    ):
         return WAREHOUSE_CACHE["items"]
 
     try:
         client = MoySkladClient()
 
-        stock_data = client.get("/report/stock/all", params={"limit": limit})
-        product_data = client.get("/entity/product", params={"limit": limit})
-
-        stock_rows = stock_data.get("rows", []) if stock_data else []
-        product_rows = product_data.get("rows", []) if product_data else []
-
+        stock_by_href = {}
         stock_by_code = {}
+        stock_by_article = {}
+        stock_by_name = {}
+
+        stock_response = client.get_stock(limit=limit)
+        stock_rows = stock_response if isinstance(stock_response, list) else (stock_response.get("rows", []) if stock_response else [])
 
         for row in stock_rows:
-            code = str(row.get("code") or "").strip()
+            assortment = row.get("assortment") or {}
+
+            href = get_entity_href(assortment)
+            code = normalize_key(row.get("code") or assortment.get("code"))
+            article = normalize_key(row.get("article") or assortment.get("article"))
+            name = normalize_key(row.get("name") or assortment.get("name"))
+
+            if href:
+                stock_by_href[href] = row
 
             if code:
                 stock_by_code[code] = row
 
+            if article:
+                stock_by_article[article] = row
+
+            if name:
+                stock_by_name[name] = row
+
+        product_response = client.get(
+            "/entity/product",
+            params={"limit": limit}
+        )
+
+        product_rows = product_response.get("rows", []) if product_response else []
+
         items = []
 
         for product in product_rows:
-            code = str(product.get("code") or "").strip()
-            stock_row = stock_by_code.get(code, {})
+            product_href = get_entity_href(product)
+            name = product.get("name") or ""
+            article = product.get("article") or ""
+            code = product.get("code") or ""
+
+            stock_row = (
+                stock_by_href.get(product_href)
+                or stock_by_code.get(normalize_key(code))
+                or stock_by_article.get(normalize_key(article))
+                or stock_by_name.get(normalize_key(name))
+                or {}
+            )
+
+            stock_value = get_stock_value(stock_row, "stock")
+            reserve_value = get_stock_value(stock_row, "reserve")
+            quantity_value = get_stock_value(stock_row, "quantity")
+
+            category = product.get("pathName") or "Без категории"
 
             items.append({
                 "id": product.get("id") or "",
-                "name": product.get("name") or stock_row.get("name") or "",
-                "article": product.get("article") or stock_row.get("article") or "",
+                "name": name,
+                "article": article,
                 "code": code,
-                "stock": stock_row.get("stock") or 0,
-                "reserve": stock_row.get("reserve") or 0,
-                "quantity": stock_row.get("quantity") or 0,
+                "category": category,
+                "stock": stock_value,
+                "stock_display": format_stock_number(stock_value),
+                "reserve": reserve_value,
+                "quantity": quantity_value,
             })
 
-        # Если в отчёте остатков есть позиция, которой нет в /entity/product, всё равно покажем её
-        product_codes = set(str(product.get("code") or "").strip() for product in product_rows)
-
-        for row in stock_rows:
-            code = str(row.get("code") or "").strip()
-
-            if code and code not in product_codes:
-                items.append({
-                    "id": "",
-                    "name": row.get("name") or "",
-                    "article": row.get("article") or "",
-                    "code": code,
-                    "stock": row.get("stock") or 0,
-                    "reserve": row.get("reserve") or 0,
-                    "quantity": row.get("quantity") or 0,
-                })
+        items.sort(key=lambda item: (
+            item.get("category") or "",
+            item.get("name") or ""
+        ))
 
         WAREHOUSE_CACHE["items"] = items
         WAREHOUSE_CACHE["loaded_at"] = now
 
+        print("WAREHOUSE ITEMS:", len(items))
+        print("WAREHOUSE STOCK TOTAL:", sum(float(item.get("stock") or 0) for item in items))
+
         return items
 
     except Exception as error:
-        print(f"Ошибка загрузки склада: {error}")
-        return WAREHOUSE_CACHE["items"]
+        print(f"Ошибка загрузки склада МойСклад: {error}")
+        return []
+
+
+
+
+def split_category_path(category):
+    category = (category or "Без категории").strip() or "Без категории"
+    category = category.replace("\\", "/")
+    return [part.strip() for part in category.split("/") if part.strip()]
+
+
+def build_category_tree(items):
+    counts = {}
+    tree = {}
+
+    for item in items:
+        category = item.get("category") or "Без категории"
+        parts = split_category_path(category)
+
+        current_path_parts = []
+
+        for part in parts:
+            current_path_parts.append(part)
+            path = "/".join(current_path_parts)
+            counts[path] = counts.get(path, 0) + 1
+
+        node = tree
+
+        for index, part in enumerate(parts):
+            path = "/".join(parts[:index + 1])
+
+            if part not in node:
+                node[part] = {
+                    "name": part,
+                    "path": path,
+                    "children": {}
+                }
+
+            node = node[part]["children"]
+
+    def convert(node):
+        result = []
+
+        for name in sorted(node.keys()):
+            item = node[name]
+            result.append({
+                "name": item["name"],
+                "path": item["path"],
+                "count": counts.get(item["path"], 0),
+                "children": convert(item["children"])
+            })
+
+        return result
+
+    return convert(tree)
+
+
+def item_in_category(item, selected_category):
+    if not selected_category:
+        return True
+
+    item_category = item.get("category") or "Без категории"
+
+    return (
+        item_category == selected_category
+        or item_category.startswith(selected_category + "/")
+    )
 
 
 @app.route("/warehouse")
 def warehouse_page():
-    query = request.args.get("q", "").strip().lower()
-    items = get_warehouse_items(limit=100)
+    query = request.args.get("q", "").strip()
+    selected_category = request.args.get("category", "").strip()
 
-    if query:
+    all_items = get_warehouse_items(force=request.args.get("refresh") == "1")
+    category_tree = build_category_tree(all_items)
+
+    items = all_items
+
+    if selected_category:
         items = [
             item for item in items
-            if query in item["name"].lower()
-            or query in item["article"].lower()
-            or query in item["code"].lower()
+            if item_in_category(item, selected_category)
         ]
 
-    total_stock = sum(float(item["stock"]) for item in items)
-    total_reserve = sum(float(item["reserve"]) for item in items)
-    total_available = sum(float(item["quantity"]) for item in items)
+    if query:
+        query_lower = query.lower()
+
+        items = [
+            item for item in items
+            if query_lower in (item.get("name") or "").lower()
+            or query_lower in (item.get("article") or "").lower()
+            or query_lower in (item.get("code") or "").lower()
+            or query_lower in (item.get("category") or "").lower()
+        ]
+
+    total_stock = sum(float(item.get("stock") or 0) for item in items)
+    total_reserve = sum(float(item.get("reserve") or 0) for item in items)
+    total_available = sum(float(item.get("quantity") or 0) for item in items)
+
+    print("CATEGORY TREE:", category_tree)
 
     return render_template(
         "warehouse.html",
         items=items,
         query=query,
+        selected_category=selected_category,
+        category_tree=category_tree,
         total_stock=total_stock,
+        total_stock_display=format_stock_number(total_stock),
         total_reserve=total_reserve,
         total_available=total_available,
     )
@@ -425,6 +582,61 @@ def warehouse_add_product():
             "warehouse_page",
             notice="error",
             message="Ошибка добавления позиции"
+        ))
+
+
+@app.route("/warehouse/edit", methods=["POST"])
+def warehouse_edit_product():
+    product_id = request.form.get("product_id", "").strip()
+    name = request.form.get("name", "").strip()
+    code = request.form.get("code", "").strip()
+    article = request.form.get("article", "").strip()
+
+    if not product_id:
+        return redirect(url_for(
+            "warehouse_page",
+            notice="error",
+            message="Не найден ID товара"
+        ))
+
+    if not name or not code:
+        return redirect(url_for(
+            "warehouse_page",
+            notice="error",
+            message="Название и код обязательны"
+        ))
+
+    try:
+        client = MoySkladClient()
+        result = client.update_product(
+            product_id=product_id,
+            name=name,
+            code=code,
+            article=article
+        )
+
+        WAREHOUSE_CACHE["items"] = []
+        WAREHOUSE_CACHE["loaded_at"] = 0
+
+        if result:
+            return redirect(url_for(
+                "warehouse_page",
+                notice="success",
+                message="Позиция обновлена в МойСклад"
+            ))
+
+        return redirect(url_for(
+            "warehouse_page",
+            notice="error",
+            message="МойСклад не обновил позицию"
+        ))
+
+    except Exception as error:
+        print(f"Ошибка редактирования позиции: {error}")
+        return redirect(url_for(
+            "warehouse_page",
+            notice="error",
+            message="Ошибка редактирования позиции"
         ))
 
 
@@ -476,6 +688,197 @@ def warehouse_archive_product():
             message="Ошибка удаления позиции"
         ))
 
+
+
+
+# === FINAL WAREHOUSE OVERRIDES START ===
+
+def wh_href(entity):
+    if not isinstance(entity, dict):
+        return ""
+
+    meta = entity.get("meta")
+
+    if isinstance(meta, dict):
+        return meta.get("href") or ""
+
+    return ""
+
+
+def wh_key(value):
+    return str(value or "").strip().lower()
+
+
+def get_warehouse_items(limit=1000, force=False):
+    now = time.time()
+
+    if (
+        not force
+        and WAREHOUSE_CACHE["items"]
+        and now - WAREHOUSE_CACHE["loaded_at"] < WAREHOUSE_CACHE_SECONDS
+    ):
+        return WAREHOUSE_CACHE["items"]
+
+    try:
+        client = MoySkladClient()
+
+        product_response = client.get("/entity/product", params={"limit": limit})
+        product_rows = product_response.get("rows", []) if product_response else []
+
+        stock_by_href = {}
+        stock_by_code = {}
+        stock_by_article = {}
+        stock_by_name = {}
+
+        try:
+            stock_response = client.get_stock(limit=limit)
+            stock_rows = stock_response if isinstance(stock_response, list) else (stock_response.get("rows", []) if stock_response else [])
+
+            for row in stock_rows:
+                assortment = row.get("assortment") or {}
+
+                href = wh_href(assortment)
+                code = wh_key(row.get("code") or assortment.get("code"))
+                article = wh_key(row.get("article") or assortment.get("article"))
+                name = wh_key(row.get("name") or assortment.get("name"))
+
+                if href:
+                    stock_by_href[href] = row
+                if code:
+                    stock_by_code[code] = row
+                if article:
+                    stock_by_article[article] = row
+                if name:
+                    stock_by_name[name] = row
+
+            print("STOCK ROWS:", len(stock_rows))
+
+        except Exception as stock_error:
+            print("Остатки не загрузились:", stock_error)
+
+        items = []
+
+        for product in product_rows:
+            product_href = wh_href(product)
+            name = product.get("name") or ""
+            article = product.get("article") or ""
+            code = product.get("code") or ""
+
+            stock_row = (
+                stock_by_href.get(product_href)
+                or stock_by_code.get(wh_key(code))
+                or stock_by_article.get(wh_key(article))
+                or stock_by_name.get(wh_key(name))
+                or {}
+            )
+
+            stock_value = stock_row.get("stock")
+            if stock_value is None:
+                stock_value = 0
+
+            reserve_value = stock_row.get("reserve")
+            if reserve_value is None:
+                reserve_value = 0
+
+            quantity_value = stock_row.get("quantity")
+            if quantity_value is None:
+                quantity_value = stock_value
+
+            items.append({
+                "id": product.get("id") or "",
+                "name": name,
+                "article": article,
+                "code": code,
+                "category": product.get("pathName") or "Без категории",
+                "stock": stock_value,
+                "stock_display": format_stock_number(stock_value),
+                "reserve": reserve_value,
+                "quantity": quantity_value,
+            })
+
+        items.sort(key=lambda item: (
+            item.get("category") or "",
+            item.get("name") or ""
+        ))
+
+        WAREHOUSE_CACHE["items"] = items
+        WAREHOUSE_CACHE["loaded_at"] = now
+
+        print("PRODUCT ROWS:", len(product_rows))
+        print("WAREHOUSE ITEMS:", len(items))
+        print("WAREHOUSE TOTAL STOCK:", sum(float(item.get("stock") or 0) for item in items))
+
+        return items
+
+    except Exception as error:
+        print("Ошибка загрузки склада МойСклад:", error)
+        return []
+
+
+def split_category_path(category):
+    category = (category or "Без категории").strip() or "Без категории"
+    category = category.replace("\\", "/")
+    return [part.strip() for part in category.split("/") if part.strip()]
+
+
+def build_category_tree(items):
+    counts = {}
+    tree = {}
+
+    for item in items:
+        category = item.get("category") or "Без категории"
+        parts = split_category_path(category)
+
+        current_path_parts = []
+
+        for part in parts:
+            current_path_parts.append(part)
+            path = "/".join(current_path_parts)
+            counts[path] = counts.get(path, 0) + 1
+
+        node = tree
+
+        for index, part in enumerate(parts):
+            path = "/".join(parts[:index + 1])
+
+            if part not in node:
+                node[part] = {
+                    "name": part,
+                    "path": path,
+                    "children": {}
+                }
+
+            node = node[part]["children"]
+
+    def convert(node):
+        result = []
+
+        for name in sorted(node.keys()):
+            item = node[name]
+            result.append({
+                "name": item["name"],
+                "path": item["path"],
+                "count": counts.get(item["path"], 0),
+                "children": convert(item["children"])
+            })
+
+        return result
+
+    return convert(tree)
+
+
+def item_in_category(item, selected_category):
+    if not selected_category:
+        return True
+
+    item_category = item.get("category") or "Без категории"
+
+    return (
+        item_category == selected_category
+        or item_category.startswith(selected_category + "/")
+    )
+
+# === FINAL WAREHOUSE OVERRIDES END ===
 
 
 if __name__ == "__main__":

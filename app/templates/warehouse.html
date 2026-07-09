@@ -3,6 +3,7 @@
 <head>
     <meta charset="utf-8">
     <title>Clock ERP — Склад</title>
+
     <style>
         * {
             box-sizing: border-box;
@@ -15,69 +16,7 @@
             font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
         }
 
-        .app {
-            min-height: 100vh;
-            display: grid;
-            grid-template-columns: 260px 1fr;
-        }
-
-        .sidebar {
-            background: #0f172a;
-            color: #ffffff;
-            padding: 24px 18px;
-            
-        }
-
-        .logo {
-            font-size: 22px;
-            font-weight: 800;
-            letter-spacing: -0.04em;
-            margin-bottom: 28px;
-        }
-
-        .logo span {
-            color: #93c5fd;
-        }
-
-        .nav-title {
-            color: #94a3b8;
-            font-size: 13px;
-            letter-spacing: 0.08em;
-            text-transform: uppercase;
-            margin-bottom: 10px;
-        }
-
-        .nav {
-        }
-
-        .nav-item {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            padding: 11px 12px;
-            border-radius: 12px;
-            color: #cbd5e1;
-            text-decoration: none;
-            font-size: 15px;
-            font-weight: 800;
-            margin-bottom: 6px;
-        }
-
-        .nav-item:hover {
-            background: #1e293b;
-            color: #ffffff;
-        }
-
-        .nav-item.active {
-            background: #1e293b;
-            color: #ffffff;
-        }
-
-        .nav-item.disabled {
-            opacity: 0.65;
-        }
-
-        .content {
+        .main {
             padding: 28px;
         }
 
@@ -86,159 +25,41 @@
             justify-content: space-between;
             align-items: flex-start;
             gap: 20px;
-            margin-bottom: 26px;
+            margin-bottom: 24px;
         }
 
         h1 {
             margin: 0;
             font-size: 30px;
             letter-spacing: -0.04em;
+            font-weight: 800;
         }
 
         .subtitle {
-            margin-top: 6px;
-            color: #64748b;
-            font-size: 16px;
-            font-weight: 700;
-        }
-
-        .system-card {
-            background: #ffffff;
-            border: 1px solid #e5e7eb;
-            border-radius: 18px;
-            padding: 18px 22px;
-            min-width: 235px;
-            box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
-        }
-
-        .system-label {
-            color: #64748b;
-            font-size: 14px;
-            font-weight: 700;
-            margin-bottom: 8px;
-        }
-
-        .system-ok {
-            color: #16a34a;
-            font-size: 16px;
-            font-weight: 900;
-        }
-
-        .stats {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 16px;
-            margin-bottom: 20px;
-        }
-
-        .stat {
-            background: #ffffff;
-            border-radius: 20px;
-            padding: 20px;
-            border: 1px solid #e5e7eb;
-            box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
-        }
-
-        .stat-title {
-            color: #64748b;
-            font-size: 14px;
-            font-weight: 800;
-            margin-bottom: 10px;
-        }
-
-        .stat-value {
-            font-size: 30px;
-            font-weight: 900;
-        }
-
-        .search-card {
-            background: #ffffff;
-            border: 1px solid #e5e7eb;
-            border-radius: 20px;
-            padding: 20px;
-            margin-bottom: 20px;
-            box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
-        }
-
-        .search-form {
-            display: grid;
-            grid-template-columns: 1fr 120px;
-            gap: 12px;
-        }
-
-        input[type="text"] {
-            width: 100%;
-            border: 1px solid #d1d5db;
-            border-radius: 14px;
-            padding: 14px 16px;
-            font-size: 16px;
-            outline: none;
-        }
-
-        input[type="text"]:focus {
-            border-color: #2563eb;
-            box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
-        }
-
-        button {
-            border: 0;
-            border-radius: 14px;
-            padding: 14px 18px;
-            background: #111827;
-            color: #ffffff;
+            margin: 8px 0 0;
+            color: #6b7280;
             font-size: 15px;
-            font-weight: 900;
-            cursor: pointer;
         }
 
-        .table-card {
-            background: #ffffff;
+        .sync-card {
+            background: white;
             border: 1px solid #e5e7eb;
-            border-radius: 20px;
-            overflow: hidden;
-            box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+            border-radius: 16px;
+            padding: 14px 16px;
+            min-width: 220px;
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
         }
 
-        table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-
-        th {
-            text-align: left;
-            background: #f8fafc;
-            color: #334155;
+        .sync-label {
+            color: #6b7280;
             font-size: 13px;
-            padding: 16px;
-            border-bottom: 1px solid #e5e7eb;
+            margin-bottom: 4px;
         }
 
-        td {
-            padding: 16px;
-            border-bottom: 1px solid #f1f5f9;
-            font-size: 14px;
-        }
-
-        tr:last-child td {
-            border-bottom: none;
-        }
-
-        .name {
-            font-weight: 900;
-        }
-
-        .muted {
-            color: #64748b;
-        }
-
-        .stock-good {
-            font-weight: 900;
-            color: #166534;
-        }
-
-        .stock-zero {
-            font-weight: 900;
-            color: #991b1b;
+        .sync-status {
+            font-size: 15px;
+            font-weight: 700;
+            color: #16a34a;
         }
 
         .notice {
@@ -262,25 +83,185 @@
             border-color: #fecaca;
         }
 
-        .add-card {
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 14px;
+            margin-bottom: 18px;
+        }
+
+        .stat {
             background: white;
             border: 1px solid #e5e7eb;
-            border-radius: 20px;
-            padding: 20px;
-            margin-bottom: 20px;
-            box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+            border-radius: 16px;
+            padding: 16px;
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+        }
+
+        .stat-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .stat-title {
+            color: #6b7280;
+            font-size: 13px;
+            font-weight: 700;
+            margin-bottom: 6px;
+        }
+
+        .stat-value {
+            font-size: 26px;
+            font-weight: 800;
+            letter-spacing: -0.04em;
+        }
+
+        .stat-button {
+            background: #eef2ff;
+            color: #3730a3;
+            padding: 9px 12px;
+            border-radius: 10px;
+            font-size: 13px;
+        }
+
+        .filter-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            background: #dbeafe;
+            color: #1d4ed8;
+            border-radius: 999px;
+            padding: 9px 12px;
+            font-size: 13px;
+            font-weight: 800;
+            margin-bottom: 18px;
+        }
+
+        .filter-pill a {
+            color: #1e3a8a;
+            text-decoration: none;
+        }
+
+        .add-card,
+        .search-card {
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 16px;
+            padding: 16px;
+            margin-bottom: 18px;
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
         }
 
         .add-title {
-            font-size: 17px;
-            font-weight: 900;
-            margin-bottom: 14px;
+            font-size: 16px;
+            font-weight: 800;
+            margin-bottom: 12px;
         }
 
         .add-form {
             display: grid;
-            grid-template-columns: 1.4fr 1fr 1fr 150px;
-            gap: 12px;
+            grid-template-columns: 1.4fr 1fr 1fr 140px;
+            gap: 10px;
+        }
+
+        .search-form {
+            display: grid;
+            grid-template-columns: 1fr 120px;
+            gap: 10px;
+        }
+
+        input[type="text"] {
+            width: 100%;
+            border: 1px solid #d1d5db;
+            border-radius: 12px;
+            padding: 12px 14px;
+            font-size: 15px;
+            outline: none;
+        }
+
+        input[type="text"]:focus {
+            border-color: #2563eb;
+            box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.10);
+        }
+
+        button {
+            border: 0;
+            border-radius: 12px;
+            padding: 12px 14px;
+            background: #111827;
+            color: white;
+            font-size: 14px;
+            font-weight: 800;
+            cursor: pointer;
+        }
+
+        .table-card {
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th {
+            text-align: left;
+            background: #f9fafb;
+            color: #374151;
+            font-size: 13px;
+            padding: 14px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        td {
+            padding: 14px;
+            border-bottom: 1px solid #f3f4f6;
+            font-size: 14px;
+            vertical-align: middle;
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        .name {
+            font-weight: 800;
+        }
+
+        .muted {
+            color: #6b7280;
+            font-size: 13px;
+            margin-top: 3px;
+        }
+
+        .stock-good {
+            font-weight: 800;
+            color: #166534;
+        }
+
+        .stock-zero {
+            font-weight: 800;
+            color: #991b1b;
+        }
+
+        .row-actions {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .edit-button {
+            background: #e0f2fe;
+            color: #075985;
+            padding: 9px 12px;
+            border-radius: 10px;
+            font-size: 13px;
         }
 
         .delete-button {
@@ -297,80 +278,141 @@
             color: #64748b;
             font-weight: 800;
         }
-    
-        /* Единый стиль со страницей Заказы */
-        .content {
-            padding: 28px;
+
+        .drawer-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.35);
+            display: none;
+            z-index: 50;
         }
 
-        h1 {
-            margin: 0;
-            font-size: 30px;
-            letter-spacing: -0.04em;
-            line-height: normal;
-            font-weight: 800;
+        .drawer-backdrop.open {
+            display: block;
         }
 
-        .subtitle {
-            margin: 8px 0 0;
-            color: #6b7280;
-            font-size: 15px;
-            font-weight: 400;
-        }
-
-        .system-card {
+        .drawer {
+            position: fixed;
+            top: 0;
+            right: -430px;
+            width: 430px;
+            max-width: 92vw;
+            height: 100vh;
             background: white;
-            border: 1px solid #e5e7eb;
-            border-radius: 16px;
-            padding: 14px 16px;
-            min-width: 220px;
-            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+            z-index: 60;
+            padding: 26px;
+            box-shadow: -20px 0 50px rgba(15, 23, 42, 0.22);
+            transition: right 0.22s ease;
+            overflow-y: auto;
         }
 
-        .system-label {
+        .drawer.open {
+            right: 0;
+        }
+
+        .drawer-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 14px;
+            margin-bottom: 22px;
+        }
+
+        .drawer-title {
+            font-size: 24px;
+            font-weight: 900;
+            letter-spacing: -0.04em;
+        }
+
+        .drawer-subtitle {
+            margin-top: 6px;
             color: #6b7280;
-            font-size: 13px;
-            font-weight: 400;
-            margin-bottom: 4px;
-        }
-
-        .system-ok {
-            font-size: 15px;
-            font-weight: 700;
-            color: #16a34a;
-        }
-
-        .stat-title {
-            color: #6b7280;
-            font-size: 13px;
-            font-weight: 700;
-        }
-
-        th {
-            font-size: 13px;
-            color: #374151;
-        }
-
-        td {
             font-size: 14px;
         }
 
+        .close-button {
+            background: #f3f4f6;
+            color: #111827;
+            width: 40px;
+            height: 40px;
+            padding: 0;
+            border-radius: 12px;
+        }
+
+        .drawer-form {
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .field label {
+            display: block;
+            margin-bottom: 7px;
+            color: #374151;
+            font-size: 13px;
+            font-weight: 800;
+        }
+
+        .drawer-actions {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .cancel-button {
+            background: #f3f4f6;
+            color: #111827;
+        }
+
+        .category-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .category-link {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            text-decoration: none;
+            color: #374151;
+            padding: 11px 12px;
+            border-radius: 12px;
+            font-size: 14px;
+            font-weight: 800;
+        }
+
+        .category-link:hover {
+            background: #f3f4f6;
+        }
+
+        .category-link.active {
+            background: #dbeafe;
+            color: #1d4ed8;
+        }
+
+        .category-count {
+            color: #6b7280;
+            font-size: 12px;
+            font-weight: 900;
+        }
     </style>
 </head>
 <body>
     <div class="app">
         {% include "_sidebar.html" %}
 
-        <main class="content">
+        <main class="main">
             <div class="topbar">
                 <div>
-                    <h1>Склад</h1>
-                    <div class="subtitle">Остатки из МойСклад</div>
+                    <h1>Остатки</h1>
+                    <div class="subtitle">Товары и остатки из МойСклад</div>
                 </div>
 
-                <div class="system-card">
-                    <div class="system-label">Статус системы</div>
-                    <div class="system-ok">● ERP работает</div>
+                <div class="sync-card">
+                    <div class="sync-label">Статус системы</div>
+                    <div class="sync-status">● ERP работает</div>
                 </div>
             </div>
 
@@ -382,25 +424,28 @@
 
             <div class="stats">
                 <div class="stat">
-                    <div class="stat-title">Позиций</div>
-                    <div class="stat-value">{{ items|length }}</div>
+                    <div class="stat-head">
+                        <div>
+                            <div class="stat-title">Позиций</div>
+                            <div class="stat-value">{{ items|length }}</div>
+                        </div>
+
+                        <button class="stat-button" type="button" onclick="openCategoryDrawer()">Разделы</button>
+                    </div>
                 </div>
 
                 <div class="stat">
                     <div class="stat-title">Остаток</div>
-                    <div class="stat-value">{{ total_stock|round(2) }}</div>
-                </div>
-
-                <div class="stat">
-                    <div class="stat-title">Резерв</div>
-                    <div class="stat-value">{{ total_reserve|round(2) }}</div>
-                </div>
-
-                <div class="stat">
-                    <div class="stat-title">Доступно</div>
-                    <div class="stat-value">{{ total_available|round(2) }}</div>
+                    <div class="stat-value">{{ total_stock_display }}</div>
                 </div>
             </div>
+
+            {% if selected_category %}
+                <div class="filter-pill">
+                    Фильтр: {{ selected_category }}
+                    <a href="/warehouse{% if query %}?q={{ query|urlencode }}{% endif %}">сбросить</a>
+                </div>
+            {% endif %}
 
             <div class="add-card">
                 <div class="add-title">Добавить позицию в МойСклад</div>
@@ -415,6 +460,10 @@
 
             <div class="search-card">
                 <form class="search-form" method="get" action="/warehouse">
+                    {% if selected_category %}
+                        <input type="hidden" name="category" value="{{ selected_category }}">
+                    {% endif %}
+
                     <input type="text" name="q" value="{{ query }}" placeholder="Поиск по названию, артикулу или коду">
                     <button type="submit">Найти</button>
                 </form>
@@ -429,28 +478,45 @@
                                 <th>Артикул</th>
                                 <th>Код</th>
                                 <th>Остаток</th>
-                                <th>Резерв</th>
-                                <th>Доступно</th>
                                 <th>Действие</th>
                             </tr>
                         </thead>
+
                         <tbody>
                             {% for item in items %}
                                 <tr>
-                                    <td class="name">{{ item.name }}</td>
+                                    <td>
+                                        <div class="name">{{ item.name }}</div>
+                                        <div class="muted">{{ item.category }}</div>
+                                    </td>
+
                                     <td>{{ item.article or "—" }}</td>
                                     <td>{{ item.code or "—" }}</td>
+
                                     <td class="{% if item.stock <= 0 %}stock-zero{% else %}stock-good{% endif %}">
-                                        {{ item.stock }}
+                                        {{ item.stock_display }}
                                     </td>
-                                    <td>{{ item.reserve }}</td>
-                                    <td>{{ item.quantity }}</td>
+
                                     <td>
-                                        {% if item.code %}
-                                            <form method="post" action="/warehouse/archive" onsubmit="return confirm('Убрать позицию в архив МойСклад?');">
-                                                <input type="hidden" name="code" value="{{ item.code }}">
-                                                <button class="delete-button" type="submit">Убрать</button>
-                                            </form>
+                                        {% if item.id %}
+                                            <div class="row-actions">
+                                                <button
+                                                    class="edit-button"
+                                                    type="button"
+                                                    data-id="{{ item.id|e }}"
+                                                    data-name="{{ item.name|e }}"
+                                                    data-article="{{ (item.article or '')|e }}"
+                                                    data-code="{{ item.code|e }}"
+                                                    onclick="openEditDrawer(this)"
+                                                >
+                                                    Изменить
+                                                </button>
+
+                                                <form method="post" action="/warehouse/archive" onsubmit="return confirm('Убрать позицию в архив МойСклад?');">
+                                                    <input type="hidden" name="code" value="{{ item.code }}">
+                                                    <button class="delete-button" type="submit">Убрать</button>
+                                                </form>
+                                            </div>
                                         {% else %}
                                             —
                                         {% endif %}
@@ -465,5 +531,105 @@
             </div>
         </main>
     </div>
+
+    <div id="drawerBackdrop" class="drawer-backdrop" onclick="closeAllDrawers()"></div>
+
+    <aside id="categoryDrawer" class="drawer">
+        <div class="drawer-header">
+            <div>
+                <div class="drawer-title">Разделы склада</div>
+                <div class="drawer-subtitle">Позиции по брендам и категориям</div>
+            </div>
+
+            <button class="close-button" type="button" onclick="closeAllDrawers()">×</button>
+        </div>
+
+        <div class="category-list">
+            <a class="category-link {% if not selected_category %}active{% endif %}" href="/warehouse{% if query %}?q={{ query|urlencode }}{% endif %}">
+                <span>Все товары</span>
+                <span class="category-count">{{ items|length }}</span>
+            </a>
+
+            {% macro render_nodes(nodes, level=0) %}
+                {% for node in nodes %}
+                    <a
+                        class="category-link {% if selected_category == node.path %}active{% endif %}"
+                        style="margin-left: {{ level * 14 }}px"
+                        href="/warehouse?category={{ node.path|urlencode }}{% if query %}&q={{ query|urlencode }}{% endif %}"
+                    >
+                        <span>{{ node.name }}</span>
+                        <span class="category-count">{{ node.count }}</span>
+                    </a>
+
+                    {% if node.children %}
+                        {{ render_nodes(node.children, level + 1) }}
+                    {% endif %}
+                {% endfor %}
+            {% endmacro %}
+
+            {{ render_nodes(category_tree) }}
+        </div>
+    </aside>
+
+    <aside id="editDrawer" class="drawer">
+        <div class="drawer-header">
+            <div>
+                <div class="drawer-title">Изменить позицию</div>
+                <div class="drawer-subtitle">Изменения сохранятся в МойСклад</div>
+            </div>
+
+            <button class="close-button" type="button" onclick="closeAllDrawers()">×</button>
+        </div>
+
+        <form class="drawer-form" method="post" action="/warehouse/edit">
+            <input id="editProductId" type="hidden" name="product_id">
+
+            <div class="field">
+                <label>Название</label>
+                <input id="editName" type="text" name="name" required>
+            </div>
+
+            <div class="field">
+                <label>Артикул</label>
+                <input id="editArticle" type="text" name="article">
+            </div>
+
+            <div class="field">
+                <label>Код</label>
+                <input id="editCode" type="text" name="code" required>
+            </div>
+
+            <div class="drawer-actions">
+                <button type="submit">Сохранить</button>
+                <button class="cancel-button" type="button" onclick="closeAllDrawers()">Отмена</button>
+            </div>
+        </form>
+    </aside>
+
+    <script>
+        function openCategoryDrawer() {
+            closeAllDrawers();
+            document.getElementById("drawerBackdrop").classList.add("open");
+            document.getElementById("categoryDrawer").classList.add("open");
+        }
+
+        function openEditDrawer(button) {
+            closeAllDrawers();
+
+            document.getElementById("editProductId").value = button.dataset.id || "";
+            document.getElementById("editName").value = button.dataset.name || "";
+            document.getElementById("editArticle").value = button.dataset.article || "";
+            document.getElementById("editCode").value = button.dataset.code || "";
+
+            document.getElementById("drawerBackdrop").classList.add("open");
+            document.getElementById("editDrawer").classList.add("open");
+        }
+
+        function closeAllDrawers() {
+            document.getElementById("drawerBackdrop").classList.remove("open");
+            document.getElementById("categoryDrawer").classList.remove("open");
+            document.getElementById("editDrawer").classList.remove("open");
+        }
+    </script>
 </body>
 </html>
