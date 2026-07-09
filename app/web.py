@@ -403,6 +403,10 @@ def get_warehouse_items(limit=1000, force=False):
 
             items.append({
                 "id": product.get("id") or "",
+                "moysklad_url": (
+                    product.get("meta", {}).get("uuidHref")
+                    or f"https://online.moysklad.ru/app/#good/edit?id={product.get('id')}"
+                ),
                 "name": name,
                 "article": article,
                 "code": code,
@@ -786,6 +790,10 @@ def get_warehouse_items(limit=1000, force=False):
 
             items.append({
                 "id": product.get("id") or "",
+                "moysklad_url": (
+                    product.get("meta", {}).get("uuidHref")
+                    or f"https://online.moysklad.ru/app/#good/edit?id={product.get('id')}"
+                ),
                 "name": name,
                 "article": article,
                 "code": code,

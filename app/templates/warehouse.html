@@ -397,6 +397,65 @@
             font-size: 12px;
             font-weight: 900;
         }
+
+        .product-detail-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 18px;
+        }
+
+        .product-detail-card {
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 14px;
+            padding: 12px;
+        }
+
+        .product-detail-label {
+            color: #6b7280;
+            font-size: 12px;
+            font-weight: 800;
+            margin-bottom: 5px;
+        }
+
+        .product-detail-value {
+            color: #111827;
+            font-size: 15px;
+            font-weight: 900;
+            word-break: break-word;
+        }
+
+        .drawer-section-title {
+            margin: 20px 0 10px;
+            font-size: 15px;
+            font-weight: 900;
+            color: #111827;
+        }
+
+        .future-card {
+            background: #f8fafc;
+            border: 1px dashed #cbd5e1;
+            border-radius: 14px;
+            padding: 14px;
+            color: #475569;
+            font-size: 14px;
+            font-weight: 700;
+            margin-top: 10px;
+        }
+
+        .moysklad-link {
+            display: block;
+            text-align: center;
+            text-decoration: none;
+            background: #111827;
+            color: white;
+            border-radius: 12px;
+            padding: 12px 14px;
+            font-size: 14px;
+            font-weight: 900;
+            margin-bottom: 18px;
+        }
     </style>
 </head>
 <body>
@@ -507,9 +566,12 @@
                                                     data-name="{{ item.name|e }}"
                                                     data-article="{{ (item.article or '')|e }}"
                                                     data-code="{{ item.code|e }}"
+                                                    data-category="{{ item.category|e }}"
+                                                    data-stock="{{ item.stock_display|e }}"
+                                                    data-url="{{ item.moysklad_url|e }}"
                                                     onclick="openEditDrawer(this)"
                                                 >
-                                                    Изменить
+                                                    Карточка
                                                 </button>
 
                                                 <form method="post" action="/warehouse/archive" onsubmit="return confirm('Убрать позицию в архив МойСклад?');">
@@ -574,12 +636,40 @@
     <aside id="editDrawer" class="drawer">
         <div class="drawer-header">
             <div>
-                <div class="drawer-title">Изменить позицию</div>
-                <div class="drawer-subtitle">Изменения сохранятся в МойСклад</div>
+                <div class="drawer-title">Карточка позиции</div>
+                <div class="drawer-subtitle">Просмотр и управление товаром</div>
             </div>
 
             <button class="close-button" type="button" onclick="closeAllDrawers()">×</button>
         </div>
+
+        <div class="product-detail-grid">
+            <div class="product-detail-card">
+                <div class="product-detail-label">Название</div>
+                <div id="detailName" class="product-detail-value">—</div>
+            </div>
+
+            <div class="product-detail-card">
+                <div class="product-detail-label">Остаток</div>
+                <div id="detailStock" class="product-detail-value">—</div>
+            </div>
+
+            <div class="product-detail-card">
+                <div class="product-detail-label">Категория</div>
+                <div id="detailCategory" class="product-detail-value">—</div>
+            </div>
+
+            <div class="product-detail-card">
+                <div class="product-detail-label">Код</div>
+                <div id="detailCode" class="product-detail-value">—</div>
+            </div>
+        </div>
+
+        <a id="detailMoySkladLink" class="moysklad-link" href="#" target="_blank">
+            Открыть в МойСклад
+        </a>
+
+        <div class="drawer-section-title">Редактирование</div>
 
         <form class="drawer-form" method="post" action="/warehouse/edit">
             <input id="editProductId" type="hidden" name="product_id">
@@ -604,6 +694,21 @@
                 <button class="cancel-button" type="button" onclick="closeAllDrawers()">Отмена</button>
             </div>
         </form>
+
+        <div class="drawer-section-title">Ячейка склада</div>
+        <div class="future-card">
+            Скоро здесь будет поле ячейки: например A-01-03.
+        </div>
+
+        <div class="drawer-section-title">Изменение остатка</div>
+        <div class="future-card">
+            Скоро здесь можно будет поставить новый остаток, а ERP сама создаст операцию в МойСклад.
+        </div>
+
+        <div class="drawer-section-title">История</div>
+        <div class="future-card">
+            Скоро здесь будет история изменений позиции.
+        </div>
     </aside>
 
     <script>
@@ -615,6 +720,19 @@
 
         function openEditDrawer(button) {
             closeAllDrawers();
+
+            const productName = button.dataset.name || "—";
+            const productArticle = button.dataset.article || "—";
+            const productCode = button.dataset.code || "—";
+            const productCategory = button.dataset.category || "Без категории";
+            const productStock = button.dataset.stock || "0";
+            const productUrl = button.dataset.url || "#";
+
+            document.getElementById("detailName").textContent = productName;
+            document.getElementById("detailStock").textContent = productStock;
+            document.getElementById("detailCategory").textContent = productCategory;
+            document.getElementById("detailCode").textContent = productCode;
+            document.getElementById("detailMoySkladLink").href = productUrl;
 
             document.getElementById("editProductId").value = button.dataset.id || "";
             document.getElementById("editName").value = button.dataset.name || "";
