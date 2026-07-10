@@ -742,7 +742,7 @@
                                                 form="{{ edit_form_id }}"
                                                 required
                                             >
-                                                {% for quantity_option in [1, 2, 3] %}
+                                                {% for quantity_option in range(1, 26) %}
                                                     <option
                                                         value="{{ quantity_option }}"
                                                         {% if sale.quantity_value == quantity_option %}selected{% endif %}
@@ -803,6 +803,8 @@
                                                 type="text"
                                                 name="region"
                                                 value="{{ sale.region }}"
+                                                list="russian-regions-list"
+                                                autocomplete="off"
                                                 form="{{ edit_form_id }}"
                                             >
                                         </td>
@@ -1045,9 +1047,14 @@
                                 name="quantity"
                                 required
                             >
-                                <option value="1" selected>1</option>
-                                <option value="2">2</option>
-                                <option value="3">3</option>
+                                {% for quantity_option in range(1, 26) %}
+                                    <option
+                                        value="{{ quantity_option }}"
+                                        {% if quantity_option == 1 %}selected{% endif %}
+                                    >
+                                        {{ quantity_option }}
+                                    </option>
+                                {% endfor %}
                             </select>
                         </div>
 
@@ -1113,8 +1120,16 @@
                                 class="control"
                                 type="text"
                                 name="region"
-                                placeholder="Город или регион"
+                                list="russian-regions-list"
+                                placeholder="Начните вводить регион"
+                                autocomplete="off"
                             >
+
+                            <datalist id="russian-regions-list">
+                                {% for region_option in russian_regions %}
+                                    <option value="{{ region_option }}"></option>
+                                {% endfor %}
+                            </datalist>
                         </div>
 
                         <div class="field field-wide">
