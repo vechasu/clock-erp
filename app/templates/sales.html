@@ -477,6 +477,90 @@
             grid-column: 1 / -1;
         }
 
+        .product-search-field {
+            position: relative;
+            z-index: 20;
+        }
+
+        .product-suggestions {
+            position: absolute;
+            top: calc(100% + 6px);
+            left: 0;
+            right: 0;
+            z-index: 1200;
+            display: none;
+            max-height: 290px;
+            overflow-y: auto;
+            background: #ffffff;
+            border: 1px solid #cfd5dc;
+            border-radius: 10px;
+            box-shadow: 0 18px 45px rgba(17, 24, 39, 0.2);
+        }
+
+        .product-suggestions.is-open {
+            display: block;
+        }
+
+        .product-suggestion {
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 14px;
+            padding: 11px 13px;
+            border: none;
+            border-bottom: 1px solid #e5e7eb;
+            background: #ffffff;
+            cursor: pointer;
+            text-align: left;
+        }
+
+        .product-suggestion:last-child {
+            border-bottom: none;
+        }
+
+        .product-suggestion:hover,
+        .product-suggestion.is-active {
+            background: #eff6ff;
+        }
+
+        .product-suggestion-main {
+            min-width: 0;
+        }
+
+        .product-suggestion-name {
+            overflow: hidden;
+            color: #111827;
+            font-size: 13px;
+            font-weight: 800;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .product-suggestion-meta {
+            margin-top: 3px;
+            overflow: hidden;
+            color: #6b7280;
+            font-size: 11px;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .product-suggestion-stock {
+            flex: 0 0 auto;
+            color: #047857;
+            font-size: 12px;
+            font-weight: 900;
+            white-space: nowrap;
+        }
+
+        .product-suggestions-empty {
+            padding: 16px;
+            color: #6b7280;
+            font-size: 13px;
+            text-align: center;
+        }
+
         .modal-actions {
             grid-column: 1 / -1;
             display: flex;
@@ -847,6 +931,7 @@
 
                 <div class="modal-body">
                     <form
+                        id="manualSaleForm"
                         method="post"
                         action="/sales/manual/add"
                         class="manual-form-grid"
@@ -894,16 +979,29 @@
                             >
                         </div>
 
-                        <div class="field field-wide">
+                        <div class="field field-wide product-search-field">
                             <label for="product_name">Товар</label>
+
                             <input
                                 id="product_name"
                                 class="control"
                                 type="text"
                                 name="product_name"
-                                placeholder="Название или артикул товара"
+                                placeholder="Начните вводить название, артикул или код"
+                                autocomplete="off"
                                 required
                             >
+
+                            <input
+                                id="product_id"
+                                type="hidden"
+                                name="product_id"
+                            >
+
+                            <div
+                                id="productSuggestions"
+                                class="product-suggestions"
+                            ></div>
                         </div>
 
                         <div class="field">
@@ -1007,11 +1105,6 @@
         manualSaleModal.classList.add("is-open");
         document.body.classList.add("modal-open");
 
-        const productInput = document.getElementById("product_name");
-
-        if (productInput) {
-            setTimeout(() => productInput.focus(), 50);
-        }
     }
 
     function closeManualSaleModalWindow() {
@@ -1087,6 +1180,255 @@
 
         updateCustomSourceField();
     }
+
+    const warehouseItems = {{ warehouse_items | tojson }};
+    const manualSaleForm = document.getElementById("manualSaleForm");
+    const productSearchInput = document.getElementById("product_name");
+    const productIdInput = document.getElementById("product_id");
+    const productSuggestions = document.getElementById(
+        "productSuggestions"
+    );
+
+    let visibleProductItems = [];
+    let activeProductIndex = -1;
+
+    function normalizeProductSearch(value) {
+        return String(value || "")
+            .toLowerCase()
+            .replaceAll("ё", "е")
+            .trim();
+    }
+
+    function getProductSearchText(item) {
+        return normalizeProductSearch([
+            item.name,
+            item.article,
+            item.code,
+            item.category,
+        ].join(" "));
+    }
+
+    function closeProductSuggestions() {
+        if (!productSuggestions) {
+            return;
+        }
+
+        productSuggestions.classList.remove("is-open");
+        activeProductIndex = -1;
+    }
+
+    function selectWarehouseProduct(item) {
+        if (!productSearchInput || !productIdInput) {
+            return;
+        }
+
+        productSearchInput.value = item.name || "";
+        productIdInput.value = item.id || "";
+        productSearchInput.setCustomValidity("");
+
+        closeProductSuggestions();
+    }
+
+    function updateActiveProductSuggestion() {
+        if (!productSuggestions) {
+            return;
+        }
+
+        const suggestionButtons = Array.from(
+            productSuggestions.querySelectorAll(
+                ".product-suggestion"
+            )
+        );
+
+        suggestionButtons.forEach((button, index) => {
+            button.classList.toggle(
+                "is-active",
+                index === activeProductIndex
+            );
+        });
+
+        const activeButton = suggestionButtons[activeProductIndex];
+
+        if (activeButton) {
+            activeButton.scrollIntoView({
+                block: "nearest",
+            });
+        }
+    }
+
+    function renderProductSuggestions() {
+        if (
+            !productSearchInput ||
+            !productSuggestions
+        ) {
+            return;
+        }
+
+        const query = normalizeProductSearch(
+            productSearchInput.value
+        );
+
+        visibleProductItems = warehouseItems
+            .filter((item) => {
+                if (!query) {
+                    return true;
+                }
+
+                return getProductSearchText(item).includes(query);
+            })
+            .slice(0, 40);
+
+        productSuggestions.innerHTML = "";
+        activeProductIndex = -1;
+
+        if (!visibleProductItems.length) {
+            const empty = document.createElement("div");
+            empty.className = "product-suggestions-empty";
+            empty.textContent =
+                "Товары с таким названием или артикулом не найдены";
+
+            productSuggestions.appendChild(empty);
+            productSuggestions.classList.add("is-open");
+            return;
+        }
+
+        visibleProductItems.forEach((item) => {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "product-suggestion";
+
+            const main = document.createElement("div");
+            main.className = "product-suggestion-main";
+
+            const name = document.createElement("div");
+            name.className = "product-suggestion-name";
+            name.textContent = item.name || "Товар без названия";
+
+            const meta = document.createElement("div");
+            meta.className = "product-suggestion-meta";
+
+            const metaParts = [];
+
+            if (item.article) {
+                metaParts.push(`Артикул: ${item.article}`);
+            }
+
+            if (item.code) {
+                metaParts.push(`Код: ${item.code}`);
+            }
+
+            if (item.category) {
+                metaParts.push(item.category);
+            }
+
+            meta.textContent = metaParts.join(" · ") || "Без артикула";
+
+            const stock = document.createElement("div");
+            stock.className = "product-suggestion-stock";
+            stock.textContent = `Остаток: ${item.stock_display}`;
+
+            main.appendChild(name);
+            main.appendChild(meta);
+            button.appendChild(main);
+            button.appendChild(stock);
+
+            button.addEventListener("mousedown", (event) => {
+                event.preventDefault();
+                selectWarehouseProduct(item);
+            });
+
+            productSuggestions.appendChild(button);
+        });
+
+        productSuggestions.classList.add("is-open");
+    }
+
+    if (productSearchInput) {
+        productSearchInput.addEventListener("click", () => {
+            renderProductSuggestions();
+        });
+
+        productSearchInput.addEventListener("input", () => {
+            if (productIdInput) {
+                productIdInput.value = "";
+            }
+
+            productSearchInput.setCustomValidity("");
+            renderProductSuggestions();
+        });
+
+        productSearchInput.addEventListener("keydown", (event) => {
+            if (!visibleProductItems.length) {
+                return;
+            }
+
+            if (event.key === "ArrowDown") {
+                event.preventDefault();
+
+                activeProductIndex = Math.min(
+                    activeProductIndex + 1,
+                    visibleProductItems.length - 1
+                );
+
+                updateActiveProductSuggestion();
+            }
+
+            if (event.key === "ArrowUp") {
+                event.preventDefault();
+
+                activeProductIndex = Math.max(
+                    activeProductIndex - 1,
+                    0
+                );
+
+                updateActiveProductSuggestion();
+            }
+
+            if (
+                event.key === "Enter" &&
+                activeProductIndex >= 0
+            ) {
+                event.preventDefault();
+
+                selectWarehouseProduct(
+                    visibleProductItems[activeProductIndex]
+                );
+            }
+
+            if (event.key === "Escape") {
+                closeProductSuggestions();
+            }
+        });
+    }
+
+    if (manualSaleForm) {
+        manualSaleForm.addEventListener("submit", (event) => {
+            if (
+                productSearchInput &&
+                productIdInput &&
+                !productIdInput.value
+            ) {
+                event.preventDefault();
+
+                productSearchInput.setCustomValidity(
+                    "Выберите товар из выпадающего списка остатков"
+                );
+                productSearchInput.reportValidity();
+                renderProductSuggestions();
+            }
+        });
+    }
+
+    document.addEventListener("click", (event) => {
+        if (
+            productSuggestions &&
+            productSearchInput &&
+            !productSuggestions.contains(event.target) &&
+            event.target !== productSearchInput
+        ) {
+            closeProductSuggestions();
+        }
+    });
 
     const salesSearch = document.getElementById("salesSearch");
     const saleRows = Array.from(

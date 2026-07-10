@@ -1944,6 +1944,9 @@ def manual_sale_add():
             request.form.get("source"),
             request.form.get("custom_source"),
         ),
+        "product_id": (
+            request.form.get("product_id") or ""
+        ).strip(),
         "product_name": product_name,
         "quantity": quantity,
         "order_number": (
@@ -2020,6 +2023,11 @@ def manual_sale_update():
             request.form.get("source"),
             request.form.get("custom_source"),
         )
+        sale["product_id"] = (
+            request.form.get("product_id")
+            or sale.get("product_id")
+            or ""
+        ).strip()
         sale["product_name"] = product_name
         sale["quantity"] = quantity
         sale["order_number"] = (
@@ -2159,6 +2167,7 @@ def sales_page():
             ),
             "order_id": "",
             "order_number": stored_sale.get("order_number") or "",
+            "product_id": stored_sale.get("product_id") or "",
             "product_name": stored_sale.get("product_name") or "",
             "bitrix_product_name": "",
             "quantity": format_stock_number(quantity_number),
@@ -2181,9 +2190,24 @@ def sales_page():
         if order_number:
             unique_orders.add(order_number)
 
+    warehouse_items = [
+        {
+            "id": item.get("id") or "",
+            "name": item.get("name") or "",
+            "article": item.get("article") or "",
+            "code": item.get("code") or "",
+            "category": item.get("category") or "",
+            "stock": item.get("stock") or 0,
+            "stock_display": item.get("stock_display") or "0",
+        }
+        for item in get_warehouse_items()
+        if float(item.get("stock") or 0) > 0
+    ]
+
     return render_template(
         "sales.html",
         sales=sales,
+        warehouse_items=warehouse_items,
         total_sales=len(sales),
         total_orders=len(unique_orders),
         total_quantity=format_stock_number(total_quantity),
