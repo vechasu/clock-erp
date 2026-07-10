@@ -895,6 +895,7 @@
                                                         Количество: {{ product_quantity|float|round(0, "floor")|int }} шт.
                                                     </div>
 
+                                                    {% if not mapped_product %}
                                                     <form class="status-form product-map-form" method="post" action="/order/{{ detail_id }}/product-map" style="margin-top: 10px; display: grid; grid-template-columns: minmax(0, 1fr) 130px; gap: 8px; position: relative;">
                                                         <input type="hidden" name="bitrix_product_id" value="{{ product_id }}">
                                                         <input type="hidden" name="bitrix_product_name" value="{{ product_name }}">
@@ -928,6 +929,7 @@
 
                                                         <button type="submit">Сопоставить</button>
                                                     </form>
+                                                    {% endif %}
 
                                                     {% if mapped_product %}
                                                         <div class="product-meta" style="margin-top: 8px; color: #166534; font-weight: 800;">
@@ -950,6 +952,17 @@
                                             </div>
                                         {% endfor %}
                                     </div>
+
+                                        <form class="status-form" method="post" action="/order/{{ detail_id }}/stock-writeoff" style="margin-top: 14px;">
+                                            <button
+                                                class="button button-primary"
+                                                type="submit"
+                                                onclick="return confirm('Списать товары этого заказа со склада? Это создаст документ списания в МойСклад.');"
+                                            >
+                                                📉 Списать заказ со склада
+                                            </button>
+                                        </form>
+
                                 {% else %}
                                     <div class="empty small">
                                         Состав заказа пока не загружен.

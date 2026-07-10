@@ -276,6 +276,157 @@ def order_page(order_id):
 
 
 
+
+@app.route("/order/<int:order_id>/stock-writeoff", methods=["POST"])
+def order_stock_writeoff(order_id):
+    full_order = get_order(order_id)
+
+    if not full_order:
+        return redirect(url_for(
+            "order_page",
+            order_id=order_id,
+            notice="error",
+            message="Заказ не найден"
+        ))
+
+    if is_order_stock_written_off(order_id):
+        return redirect(url_for(
+            "order_page",
+            order_id=order_id,
+            notice="error",
+            message="Этот заказ уже был списан со склада"
+        ))
+
+    products = full_order.get("products") or []
+
+    if not products:
+        return redirect(url_for(
+            "order_page",
+            order_id=order_id,
+            notice="error",
+            message="В заказе нет товаров для списания"
+        ))
+
+    mappings = load_product_mappings()
+    warehouse_items = get_warehouse_items(force=True)
+
+    warehouse_by_id = {
+        str(item.get("id") or ""): item
+        for item in warehouse_items
+    }
+
+    prepared_items = []
+
+    for product in products:
+        bitrix_product_id = str(product.get("id") or product.get("ID") or "").strip()
+        bitrix_product_name = str(product.get("name") or product.get("NAME") or "Товар без названия").strip()
+
+        try:
+            quantity = float(str(product.get("quantity") or product.get("QUANTITY") or "1").replace(",", "."))
+        except Exception:
+            quantity = 1.0
+
+        mapping = mappings.get(bitrix_product_id)
+
+        if not mapping:
+            return redirect(url_for(
+                "order_page",
+                order_id=order_id,
+                notice="error",
+                message=f"Товар не сопоставлен со складом: {bitrix_product_name}"
+            ))
+
+        moysklad_product_id = str(mapping.get("moysklad_product_id") or "").strip()
+        warehouse_item = warehouse_by_id.get(moysklad_product_id)
+
+        if not warehouse_item:
+            return redirect(url_for(
+                "order_page",
+                order_id=order_id,
+                notice="error",
+                message=f"Товар склада не найден: {mapping.get('moysklad_product_name') or bitrix_product_name}"
+            ))
+
+        current_stock = float(warehouse_item.get("stock") or 0)
+
+        if current_stock < quantity:
+            return redirect(url_for(
+                "order_page",
+                order_id=order_id,
+                notice="error",
+                message=f"Недостаточно остатка: {warehouse_item.get('name')} — нужно {quantity:g}, есть {current_stock:g}"
+            ))
+
+        prepared_items.append({
+            "bitrix_product_id": bitrix_product_id,
+            "bitrix_product_name": bitrix_product_name,
+            "moysklad_product_id": moysklad_product_id,
+            "moysklad_product_name": warehouse_item.get("name"),
+            "quantity": quantity,
+            "stock_before": current_stock,
+            "stock_after": current_stock - quantity,
+        })
+
+    client = MoySkladClient()
+    order_number = full_order.get("number") or full_order.get("account_number") or full_order.get("ACCOUNT_NUMBER") or order_id
+
+    try:
+        for item in prepared_items:
+            reason = f"ТТТ ERP: списание по заказу №{order_number}. Товар Битрикс: {item['bitrix_product_name']}"
+
+            moysklad_document = client.create_stock_loss(
+                product_id=item["moysklad_product_id"],
+                quantity=item["quantity"],
+                reason=reason
+            )
+
+            add_stock_operation({
+                "id": str(uuid.uuid4()),
+                "created_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "product_id": item["moysklad_product_id"],
+                "product_name": item["moysklad_product_name"],
+                "type": "writeoff",
+                "label": "Списание по заказу",
+                "quantity": item["quantity"],
+                "stock_before": item["stock_before"],
+                "stock_after": item["stock_after"],
+                "diff": -item["quantity"],
+                "source": "Заказ Битрикс",
+                "reason": f"Заказ №{order_number}",
+                "order_id": str(order_id),
+                "order_number": str(order_number),
+                "bitrix_product_id": item["bitrix_product_id"],
+                "bitrix_product_name": item["bitrix_product_name"],
+                "status": "success",
+                "moysklad_document_id": moysklad_document.get("id") if isinstance(moysklad_document, dict) else "",
+                "moysklad_document_name": moysklad_document.get("name") if isinstance(moysklad_document, dict) else "",
+                "moysklad_document_url": (
+                    f"https://online.moysklad.ru/app/#loss/edit?id={moysklad_document.get('id')}"
+                    if isinstance(moysklad_document, dict) and moysklad_document.get("id")
+                    else ""
+                ),
+            })
+
+        WAREHOUSE_CACHE["items"] = []
+        WAREHOUSE_CACHE["loaded_at"] = 0
+
+        return redirect(url_for(
+            "order_page",
+            order_id=order_id,
+            notice="success",
+            message=f"Заказ №{order_number} списан со склада"
+        ))
+
+    except Exception as error:
+        print(f"Ошибка списания заказа {order_id}: {error}")
+        return redirect(url_for(
+            "order_page",
+            order_id=order_id,
+            notice="error",
+            message=f"Ошибка списания заказа: {error}"
+        ))
+
+
 @app.route("/order/<int:order_id>/product-map", methods=["POST"])
 def order_product_map(order_id):
     bitrix_product_id = (request.form.get("bitrix_product_id") or "").strip()
@@ -911,6 +1062,17 @@ def get_stock_operations_for_product(product_id, limit=10):
 
     return result[:limit]
 
+
+
+
+def is_order_stock_written_off(order_id):
+    order_id = str(order_id or "")
+
+    for operation in load_stock_operations():
+        if str(operation.get("order_id") or "") == order_id and operation.get("source") == "Заказ Битрикс":
+            return True
+
+    return False
 
 
 def is_recent_duplicate_stock_operation(product_id, operation_type, quantity, stock_before, stock_after, seconds=120):
