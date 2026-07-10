@@ -1855,11 +1855,241 @@ def repair_delete():
 
 
 
+def get_manual_sales_path():
+    from pathlib import Path
+
+    path = Path("instance/manual_sales.json")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def load_manual_sales():
+    import json
+
+    path = get_manual_sales_path()
+
+    if not path.exists():
+        return []
+
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
+def save_manual_sales(sales):
+    import json
+
+    path = get_manual_sales_path()
+    path.write_text(
+        json.dumps(sales, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
+def parse_manual_sale_quantity(value):
+    try:
+        quantity = int(str(value or "").strip())
+    except Exception:
+        return 0
+
+    return quantity if quantity in {1, 2, 3} else 0
+
+def normalize_manual_sale_source(value, custom_value=""):
+    source = str(value or "").strip()
+    custom_source = str(custom_value or "").strip()
+
+    if source == "__custom__":
+        return custom_source or "Свой вариант"
+
+    return source or "Свой вариант"
+
+@app.route("/sales/manual/add", methods=["POST"])
+def manual_sale_add():
+    from datetime import date
+    from uuid import uuid4
+    from flask import request, redirect, url_for
+
+    product_name = (request.form.get("product_name") or "").strip()
+    quantity = parse_manual_sale_quantity(request.form.get("quantity"))
+
+    if not product_name:
+        return redirect(
+            url_for(
+                "sales_page",
+                notice="error",
+                message="Укажите название товара",
+            )
+        )
+
+    if quantity <= 0:
+        return redirect(
+            url_for(
+                "sales_page",
+                notice="error",
+                message="Выберите количество: 1, 2 или 3",
+            )
+        )
+
+    sales = load_manual_sales()
+
+    sales.append({
+        "id": uuid4().hex,
+        "created_at": (
+            request.form.get("created_at")
+            or date.today().isoformat()
+        ).strip(),
+        "source": normalize_manual_sale_source(
+            request.form.get("source"),
+            request.form.get("custom_source"),
+        ),
+        "product_name": product_name,
+        "quantity": quantity,
+        "order_number": (
+            request.form.get("order_number") or ""
+        ).strip(),
+        "track_number": (
+            request.form.get("track_number") or ""
+        ).strip(),
+        "region": (
+            request.form.get("region") or ""
+        ).strip(),
+        "note": (
+            request.form.get("note") or ""
+        ).strip(),
+    })
+
+    save_manual_sales(sales)
+
+    return redirect(
+        url_for(
+            "sales_page",
+            notice="success",
+            message="Ручная продажа добавлена",
+        )
+    )
+
+
+@app.route("/sales/manual/update", methods=["POST"])
+def manual_sale_update():
+    from flask import request, redirect, url_for
+
+    sale_id = (request.form.get("sale_id") or "").strip()
+    product_name = (request.form.get("product_name") or "").strip()
+    quantity = parse_manual_sale_quantity(request.form.get("quantity"))
+
+    if not sale_id:
+        return redirect(
+            url_for(
+                "sales_page",
+                notice="error",
+                message="Продажа не найдена",
+            )
+        )
+
+    if not product_name:
+        return redirect(
+            url_for(
+                "sales_page",
+                notice="error",
+                message="Укажите название товара",
+            )
+        )
+
+    if quantity <= 0:
+        return redirect(
+            url_for(
+                "sales_page",
+                notice="error",
+                message="Выберите количество: 1, 2 или 3",
+            )
+        )
+
+    sales = load_manual_sales()
+    sale_found = False
+
+    for sale in sales:
+        if str(sale.get("id") or "") != sale_id:
+            continue
+
+        sale["created_at"] = (
+            request.form.get("created_at") or ""
+        ).strip()
+        sale["source"] = normalize_manual_sale_source(
+            request.form.get("source"),
+            request.form.get("custom_source"),
+        )
+        sale["product_name"] = product_name
+        sale["quantity"] = quantity
+        sale["order_number"] = (
+            request.form.get("order_number") or ""
+        ).strip()
+        sale["track_number"] = (
+            request.form.get("track_number") or ""
+        ).strip()
+        sale["region"] = (
+            request.form.get("region") or ""
+        ).strip()
+        sale["note"] = (
+            request.form.get("note") or ""
+        ).strip()
+
+        sale_found = True
+        break
+
+    if not sale_found:
+        return redirect(
+            url_for(
+                "sales_page",
+                notice="error",
+                message="Продажа не найдена",
+            )
+        )
+
+    save_manual_sales(sales)
+
+    return redirect(
+        url_for(
+            "sales_page",
+            notice="success",
+            message="Ручная продажа сохранена",
+        )
+    )
+
+
+@app.route("/sales/manual/delete", methods=["POST"])
+def manual_sale_delete():
+    from flask import request, redirect, url_for
+
+    sale_id = (request.form.get("sale_id") or "").strip()
+
+    sales = [
+        sale
+        for sale in load_manual_sales()
+        if str(sale.get("id") or "") != sale_id
+    ]
+
+    save_manual_sales(sales)
+
+    return redirect(
+        url_for(
+            "sales_page",
+            notice="success",
+            message="Ручная продажа удалена",
+        )
+    )
+
+
 @app.route("/sales")
 def sales_page():
-    operations = load_stock_operations()
+    from flask import request
 
-    sales = []
+    operations = load_stock_operations()
+    stored_manual_sales = load_manual_sales()
+
+    automatic_sales = []
+    manual_sales = []
     total_quantity = 0
 
     for operation in operations:
@@ -1880,25 +2110,76 @@ def sales_page():
         total_quantity += quantity_number
 
         order_id = str(operation.get("order_id") or "")
-        order_number = str(operation.get("order_number") or order_id or "")
+        order_number = str(
+            operation.get("order_number") or order_id or ""
+        )
 
-        sales.append({
+        automatic_sales.append({
+            "id": "",
+            "is_manual": False,
             "created_at": operation.get("created_at") or "",
+            "source": "Битрикс",
             "order_id": order_id,
             "order_number": order_number,
             "product_name": operation.get("product_name") or "",
-            "bitrix_product_name": operation.get("bitrix_product_name") or "",
+            "bitrix_product_name": (
+                operation.get("bitrix_product_name") or ""
+            ),
             "quantity": format_stock_number(quantity_number),
-            "reason": operation.get("reason") or "",
-            "document_name": operation.get("moysklad_document_name") or "",
-            "document_url": operation.get("moysklad_document_url") or "",
+            "quantity_value": quantity_number,
+            "track_number": (
+                operation.get("track_number")
+                or operation.get("shipment_number")
+                or ""
+            ),
+            "region": operation.get("region") or "",
+            "note": operation.get("reason") or "",
+            "document_name": (
+                operation.get("moysklad_document_name") or ""
+            ),
+            "document_url": (
+                operation.get("moysklad_document_url") or ""
+            ),
             "status": operation.get("status") or "",
         })
 
+    for stored_sale in reversed(stored_manual_sales):
+        quantity_number = parse_manual_sale_quantity(
+            stored_sale.get("quantity")
+        )
+
+        total_quantity += quantity_number
+
+        manual_sales.append({
+            "id": str(stored_sale.get("id") or ""),
+            "is_manual": True,
+            "created_at": stored_sale.get("created_at") or "",
+            "source": normalize_manual_sale_source(
+                stored_sale.get("source")
+            ),
+            "order_id": "",
+            "order_number": stored_sale.get("order_number") or "",
+            "product_name": stored_sale.get("product_name") or "",
+            "bitrix_product_name": "",
+            "quantity": format_stock_number(quantity_number),
+            "quantity_value": quantity_number,
+            "track_number": stored_sale.get("track_number") or "",
+            "region": stored_sale.get("region") or "",
+            "note": stored_sale.get("note") or "",
+            "document_name": "",
+            "document_url": "",
+            "status": "",
+        })
+
+    sales = manual_sales + automatic_sales
+
     unique_orders = set()
+
     for sale in sales:
-        if sale.get("order_number"):
-            unique_orders.add(sale["order_number"])
+        order_number = str(sale.get("order_number") or "").strip()
+
+        if order_number:
+            unique_orders.add(order_number)
 
     return render_template(
         "sales.html",
@@ -1906,8 +2187,9 @@ def sales_page():
         total_sales=len(sales),
         total_orders=len(unique_orders),
         total_quantity=format_stock_number(total_quantity),
+        notice=(request.args.get("notice") or "").strip(),
+        message=(request.args.get("message") or "").strip(),
     )
-
 
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5050, debug=True)
