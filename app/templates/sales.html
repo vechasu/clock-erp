@@ -248,7 +248,7 @@
 
         .sales-table {
             width: 100%;
-            min-width: 1800px;
+            min-width: 2010px;
             border-collapse: collapse;
             table-layout: fixed;
         }
@@ -313,6 +313,10 @@
 
         .col-track {
             width: 190px;
+        }
+
+        .col-delivery {
+            width: 205px;
         }
 
         .col-region {
@@ -678,6 +682,7 @@
                                 <th class="col-qty">К-во</th>
                                 <th class="col-order">№ заказа</th>
                                 <th class="col-track">Номер отправления</th>
+                                <th class="col-delivery">Способ доставки</th>
                                 <th class="col-region">Регион</th>
                                 <th class="col-note">Примечание</th>
                                 <th class="col-actions">Действия</th>
@@ -688,7 +693,7 @@
                             {% for sale in sales %}
                                 <tr
                                     class="sale-row{% if sale.is_manual %} manual-row{% endif %}"
-                                    data-search="{{ sale.created_at }} {{ sale.source }} {{ sale.product_name }} {{ sale.bitrix_product_name }} {{ sale.order_number }} {{ sale.track_number }} {{ sale.region }} {{ sale.note }}"
+                                    data-search="{{ sale.created_at }} {{ sale.source }} {{ sale.product_name }} {{ sale.bitrix_product_name }} {{ sale.order_number }} {{ sale.track_number }} {{ sale.delivery_method }} {{ sale.region }} {{ sale.note }}"
                                 >
                                     {% if sale.is_manual %}
                                         {% set edit_form_id = "edit-sale-" ~ sale.id %}
@@ -766,6 +771,30 @@
                                                 value="{{ sale.track_number }}"
                                                 form="{{ edit_form_id }}"
                                             >
+                                        </td>
+
+                                        <td class="col-delivery">
+                                            <select
+                                                class="table-control"
+                                                name="delivery_method"
+                                                form="{{ edit_form_id }}"
+                                                required
+                                            >
+                                                {% for delivery_option in [
+                                                    "Пункт выдачи заказов СДЭК",
+                                                    "Курьером СДЭК",
+                                                    "ТТТ Экспресс",
+                                                    "Почта России",
+                                                    "Экспресс.ру"
+                                                ] %}
+                                                    <option
+                                                        value="{{ delivery_option }}"
+                                                        {% if sale.delivery_method == delivery_option %}selected{% endif %}
+                                                    >
+                                                        {{ delivery_option }}
+                                                    </option>
+                                                {% endfor %}
+                                            </select>
                                         </td>
 
                                         <td class="col-region">
@@ -872,6 +901,10 @@
 
                                         <td class="col-track">
                                             {{ sale.track_number or "—" }}
+                                        </td>
+
+                                        <td class="col-delivery">
+                                            {{ sale.delivery_method or "—" }}
                                         </td>
 
                                         <td class="col-region">
@@ -1040,6 +1073,37 @@
                                 name="track_number"
                                 placeholder="Трек-номер"
                             >
+                        </div>
+
+                        <div class="field">
+                            <label for="delivery_method">
+                                Способ доставки
+                            </label>
+                            <select
+                                id="delivery_method"
+                                class="control"
+                                name="delivery_method"
+                                required
+                            >
+                                <option value="">
+                                    Выберите способ доставки
+                                </option>
+                                <option value="Пункт выдачи заказов СДЭК">
+                                    Пункт выдачи заказов СДЭК
+                                </option>
+                                <option value="Курьером СДЭК">
+                                    Курьером СДЭК
+                                </option>
+                                <option value="ТТТ Экспресс">
+                                    ТТТ Экспресс
+                                </option>
+                                <option value="Почта России">
+                                    Почта России
+                                </option>
+                                <option value="Экспресс.ру">
+                                    Экспресс.ру
+                                </option>
+                            </select>
                         </div>
 
                         <div class="field">

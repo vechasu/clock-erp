@@ -1955,6 +1955,9 @@ def manual_sale_add():
         "track_number": (
             request.form.get("track_number") or ""
         ).strip(),
+        "delivery_method": (
+            request.form.get("delivery_method") or ""
+        ).strip(),
         "region": (
             request.form.get("region") or ""
         ).strip(),
@@ -2035,6 +2038,9 @@ def manual_sale_update():
         ).strip()
         sale["track_number"] = (
             request.form.get("track_number") or ""
+        ).strip()
+        sale["delivery_method"] = (
+            request.form.get("delivery_method") or ""
         ).strip()
         sale["region"] = (
             request.form.get("region") or ""
@@ -2140,6 +2146,7 @@ def sales_page():
                 or operation.get("shipment_number")
                 or ""
             ),
+            "delivery_method": operation.get("delivery_method") or "",
             "region": operation.get("region") or "",
             "note": operation.get("reason") or "",
             "document_name": (
@@ -2173,6 +2180,7 @@ def sales_page():
             "quantity": format_stock_number(quantity_number),
             "quantity_value": quantity_number,
             "track_number": stored_sale.get("track_number") or "",
+            "delivery_method": stored_sale.get("delivery_method") or "",
             "region": stored_sale.get("region") or "",
             "note": stored_sale.get("note") or "",
             "document_name": "",
