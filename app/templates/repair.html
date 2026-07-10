@@ -35,101 +35,16 @@
         .status.done { background: #dcfce7; color: #166534; }
         .empty { padding: 30px; text-align: center; color: #6b7280; font-weight: 900; }
         @media (max-width: 1100px) { .main { padding: 20px; } .form-grid { grid-template-columns: 1fr; } .toolbar { flex-direction: column; align-items: stretch; } .search { max-width: none; } }
-    </style>
+
+        /* Заголовок страницы удалён для экономии места */
+        .main {
+            padding-top: 10px;
+        }
+        /* Конец компактного верха страницы */
+
+</style>
 </head>
 <body>
-    <div class="app">
-        {% include "_sidebar.html" %}
 
-        <main class="main">
-        <h1>Ремонт</h1>
-        <div class="subtitle">Заявки, гарантийные случаи и ремонт часов вместо Excel-таблицы</div>
-
-        {% if notice %}
-            <div class="notice {{ notice }}">{{ message }}</div>
-        {% endif %}
-
-        <section class="card">
-            <div class="card-title">Добавить ремонт</div>
-
-            <form method="post" action="/repair/add" class="form-grid">
-                <textarea name="comment" placeholder="Комментарий" required></textarea>
-                <input name="order_info" placeholder="Наш заказ или нет">
-                <input name="communication" placeholder="Где ведём общение">
-                <textarea name="problem" placeholder="В чём проблема с часами"></textarea>
-
-                <div>
-                    <select name="status">
-                        <option value="new">Новый</option>
-                        <option value="waiting">Ждём клиента / часы</option>
-                        <option value="in_progress">В работе</option>
-                        <option value="done">Готово</option>
-                    </select>
-                    <button class="btn btn-primary" type="submit">Добавить</button>
-                </div>
-            </form>
-        </section>
-
-        <section class="card">
-            <div class="toolbar">
-                <div class="card-title" style="margin: 0;">База ремонтов</div>
-
-                <form class="search" method="get" action="/repair">
-                    <input name="q" value="{{ q }}" placeholder="Поиск по ремонту">
-                    <button class="btn btn-soft" style="width: 120px; margin: 0;" type="submit">Найти</button>
-                </form>
-            </div>
-
-            <div class="table-wrap">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Дата</th>
-                            <th>Комментарий</th>
-                            <th>Наш заказ или нет</th>
-                            <th>Где ведём общение</th>
-                            <th>Проблема</th>
-                            <th>Статус</th>
-                            <th>Действие</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% if cases %}
-                            {% for case in cases %}
-                                <tr>
-                                    <td><strong>{{ case.created_at }}</strong></td>
-                                    <td>{{ case.comment }}</td>
-                                    <td>{{ case.order_info or "—" }}</td>
-                                    <td>{{ case.communication or "—" }}</td>
-                                    <td>{{ case.problem or "—" }}</td>
-                                    <td><span class="status {{ case.status }}">{{ status_labels.get(case.status, case.status) }}</span></td>
-                                    <td>
-                                        <form method="post" action="/repair/status">
-                                            <input type="hidden" name="case_id" value="{{ case.id }}">
-                                            <select name="status">
-                                                <option value="new" {% if case.status == "new" %}selected{% endif %}>Новый</option>
-                                                <option value="waiting" {% if case.status == "waiting" %}selected{% endif %}>Ждём</option>
-                                                <option value="in_progress" {% if case.status == "in_progress" %}selected{% endif %}>В работе</option>
-                                                <option value="done" {% if case.status == "done" %}selected{% endif %}>Готово</option>
-                                            </select>
-                                            <button class="btn btn-soft" type="submit">Обновить</button>
-                                        </form>
-
-                                        <form method="post" action="/repair/delete">
-                                            <input type="hidden" name="case_id" value="{{ case.id }}">
-                                            <button class="btn btn-danger" type="submit">Удалить</button>
-                                        </form>
-                                    </td>
-                                </tr>
-                            {% endfor %}
-                        {% else %}
-                            <tr><td colspan="7"><div class="empty">Пока нет ремонтов</div></td></tr>
-                        {% endif %}
-                    </tbody>
-                </table>
-            </div>
-        </section>
-        </main>
-    </div>
 </body>
 </html>

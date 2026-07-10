@@ -23,10 +23,16 @@
 
     .sidebar-top {
         position: absolute;
-        top: 14px;
-        right: 0;
-        min-height: 0;
+        top: 12px;
+        left: 18px;
+        right: 10px;
+        height: 42px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
         margin: 0;
+        z-index: 30;
     }
 
     .logo {
@@ -60,32 +66,45 @@
     }
 
     .sidebar-toggle {
-        position: absolute;
-        top: 1px;
-        right: -34px;
-        width: 30px;
-        height: 30px;
+        position: relative;
+        flex: 0 0 36px;
+        width: 36px;
+        height: 36px;
         display: flex;
         align-items: center;
         justify-content: center;
-        border: 1px solid #dbeafe;
-        border-radius: 50%;
-        background: white;
-        color: #0b1f3a;
-        font-size: 22px;
-        font-weight: 800;
-        line-height: 1;
+        padding: 0;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        border-radius: 11px;
+        background: rgba(255, 255, 255, 0.09);
+        color: #dbeafe;
         cursor: pointer;
-        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.16);
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 0.08),
+            0 4px 12px rgba(2, 12, 27, 0.18);
+        backdrop-filter: blur(8px);
         transition:
-            transform 0.2s ease,
-            background 0.2s ease;
+            background 0.2s ease,
+            border-color 0.2s ease,
+            transform 0.2s ease;
         z-index: 30;
     }
 
     .sidebar-toggle:hover {
-        background: #eff6ff;
-        transform: scale(1.06);
+        background: rgba(255, 255, 255, 0.17);
+        border-color: rgba(255, 255, 255, 0.3);
+        transform: translateY(-1px);
+    }
+
+    .sidebar-toggle-icon {
+        width: 18px;
+        height: 18px;
+        display: block;
+        transition: transform 0.25s ease;
+    }
+
+    .sidebar-toggle.is-collapsed .sidebar-toggle-icon {
+        transform: rotate(180deg);
     }
 
     .nav-title {
@@ -100,6 +119,7 @@
 
     .sidebar-nav {
         display: block;
+        padding-top: 54px;
     }
 
     .sidebar-link {
@@ -215,11 +235,105 @@
     }
     /* Конец единой высоты пунктов меню */
 
+
+    /* Дата и время в боковой панели */
+    .sidebar-datetime {
+        min-width: 0;
+        color: white;
+        white-space: nowrap;
+        line-height: 1;
+    }
+
+    .sidebar-time {
+        margin-bottom: 5px;
+        font-size: 17px;
+        font-weight: 850;
+        letter-spacing: 0.02em;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .sidebar-date {
+        overflow: hidden;
+        color: #9fb7d5;
+        font-size: 11px;
+        font-weight: 700;
+        line-height: 1.15;
+        text-overflow: ellipsis;
+        text-transform: capitalize;
+    }
+
+    .app.sidebar-collapsed .sidebar-top {
+        left: 10px;
+        right: 10px;
+        justify-content: center;
+    }
+
+    .app.sidebar-collapsed .sidebar-datetime {
+        display: none;
+    }
+    /* Конец даты и времени */
+
+
+    /* Статус ERP внизу боковой панели */
+    .sidebar-system-status {
+        position: absolute;
+        left: 18px;
+        right: 18px;
+        bottom: 18px;
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        min-height: 42px;
+        padding: 10px 12px;
+        border: 1px solid rgba(134, 239, 172, 0.16);
+        border-radius: 12px;
+        background: rgba(22, 163, 74, 0.10);
+        color: #dcfce7;
+        font-size: 13px;
+        font-weight: 800;
+        white-space: nowrap;
+        overflow: hidden;
+    }
+
+    .sidebar-system-dot {
+        flex: 0 0 9px;
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: #22c55e;
+        box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.12);
+    }
+
+    .sidebar-system-text {
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .app.sidebar-collapsed .sidebar-system-status {
+        left: 17px;
+        right: 17px;
+        justify-content: center;
+        padding: 0;
+        background: transparent;
+        border-color: transparent;
+    }
+
+    .app.sidebar-collapsed .sidebar-system-text {
+        display: none;
+    }
+    /* Конец статуса ERP */
+
 </style>
 
 <aside class="sidebar" id="appSidebar">
     <div class="sidebar-top">
-        
+        <div
+            class="sidebar-datetime"
+            aria-label="Текущие дата и время"
+        >
+            <div id="sidebarClock" class="sidebar-time">--:--</div>
+            <div id="sidebarDate" class="sidebar-date">Загрузка даты</div>
+        </div>
 
         <button
             id="sidebarToggle"
@@ -229,7 +343,20 @@
             aria-expanded="true"
             title="Свернуть боковую панель"
         >
-            ‹
+            <svg
+                class="sidebar-toggle-icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                aria-hidden="true"
+            >
+                <path
+                    d="M15 6L9 12L15 18"
+                    stroke="currentColor"
+                    stroke-width="2.4"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                />
+            </svg>
         </button>
     </div>
 
@@ -281,11 +408,24 @@
             <span class="sidebar-label">Ремонт</span>
         </a>
 
-        <div class="sidebar-link disabled" title="Настройки">
+        <a
+            class="sidebar-link {% if request.path.startswith('/settings') %}active{% endif %}"
+            href="/settings"
+            title="Настройки"
+        >
             <span class="sidebar-icon">⚙️</span>
             <span class="sidebar-label">Настройки</span>
-        </div>
+        </a>
     </nav>
+
+    <div
+        class="sidebar-system-status"
+        title="Система работает"
+    >
+        <span class="sidebar-system-dot"></span>
+        <span class="sidebar-system-text">ERP работает</span>
+    </div>
+
 </aside>
 
 <script>
@@ -302,7 +442,7 @@
         const applySidebarState = (collapsed) => {
             app.classList.toggle("sidebar-collapsed", collapsed);
 
-            toggle.textContent = collapsed ? "›" : "‹";
+            toggle.classList.toggle("is-collapsed", collapsed);
             toggle.setAttribute("aria-expanded", String(!collapsed));
             toggle.setAttribute(
                 "aria-label",
@@ -335,5 +475,41 @@
                 // Панель продолжит работать без сохранения состояния.
             }
         });
+    });
+</script>
+
+
+<script>
+    document.addEventListener("DOMContentLoaded", () => {
+        const clockElement = document.getElementById("sidebarClock");
+        const dateElement = document.getElementById("sidebarDate");
+
+        if (!clockElement || !dateElement) {
+            return;
+        }
+
+        const timeFormatter = new Intl.DateTimeFormat("ru-RU", {
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false
+        });
+
+        const dateFormatter = new Intl.DateTimeFormat("ru-RU", {
+            weekday: "short",
+            day: "numeric",
+            month: "long"
+        });
+
+        const updateSidebarDateTime = () => {
+            const now = new Date();
+
+            clockElement.textContent = timeFormatter.format(now);
+            dateElement.textContent = dateFormatter
+                .format(now)
+                .replace(".", "");
+        };
+
+        updateSidebarDateTime();
+        window.setInterval(updateSidebarDateTime, 1000);
     });
 </script>

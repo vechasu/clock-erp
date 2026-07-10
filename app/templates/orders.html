@@ -69,20 +69,22 @@
         }
 
         .main {
-            padding: 28px;
+            min-width: 0;
+            padding: 16px 28px 24px;
         }
 
         .topbar {
             display: flex;
             justify-content: space-between;
-            align-items: flex-start;
-            gap: 20px;
-            margin-bottom: 24px;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 10px;
         }
 
         .title h1 {
             margin: 0;
-            font-size: 30px;
+            font-size: 27px;
+            line-height: 1.1;
             letter-spacing: -0.04em;
         }
 
@@ -93,24 +95,24 @@
         }
 
         .sync-card {
+            min-width: 185px;
+            padding: 9px 13px;
             background: white;
             border: 1px solid #e5e7eb;
-            border-radius: 16px;
-            padding: 14px 16px;
-            min-width: 220px;
-            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+            border-radius: 13px;
+            box-shadow: 0 5px 16px rgba(15, 23, 42, 0.035);
         }
 
         .sync-label {
+            margin-bottom: 2px;
             color: #6b7280;
-            font-size: 13px;
-            margin-bottom: 4px;
+            font-size: 11px;
         }
 
         .sync-status {
-            font-size: 15px;
-            font-weight: 700;
             color: #16a34a;
+            font-size: 13px;
+            font-weight: 800;
         }
 
         .notice {
@@ -136,8 +138,8 @@
 
         .workspace {
             display: grid;
-            grid-template-columns: minmax(420px, 560px) 1fr;
-            gap: 20px;
+            grid-template-columns: minmax(420px, 560px) minmax(0, 1fr);
+            gap: 14px;
             align-items: start;
         }
 
@@ -150,19 +152,19 @@
         }
 
         .panel-header {
-            padding: 18px;
+            padding: 12px 14px;
             border-bottom: 1px solid #eef2f7;
         }
 
         .search {
             width: 100%;
-            height: 44px;
+            height: 40px;
+            padding: 0 13px;
             border: 1px solid #e5e7eb;
-            border-radius: 14px;
-            padding: 0 14px;
-            font-size: 15px;
-            outline: none;
+            border-radius: 11px;
             background: #f9fafb;
+            font-size: 14px;
+            outline: none;
         }
 
         .search:focus {
@@ -173,18 +175,18 @@
 
         .filters {
             display: flex;
-            gap: 8px;
-            margin-top: 12px;
             flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 8px;
         }
 
         .filter {
+            padding: 6px 9px;
             border: 1px solid #e5e7eb;
+            border-radius: 999px;
             background: white;
             color: #374151;
-            padding: 8px 11px;
-            border-radius: 999px;
-            font-size: 13px;
+            font-size: 12px;
             cursor: pointer;
         }
 
@@ -195,16 +197,16 @@
         }
 
         .orders-list {
-            max-height: calc(100vh - 230px);
+            max-height: calc(100vh - 168px);
             overflow: auto;
         }
 
         .order-row {
             display: block;
-            text-decoration: none;
-            color: inherit;
-            padding: 16px 18px;
+            padding: 12px 16px;
             border-bottom: 1px solid #f1f5f9;
+            color: inherit;
+            text-decoration: none;
             transition: background 0.15s ease;
         }
 
@@ -571,7 +573,7 @@
                 grid-template-columns: 1fr;
             }
         }
-    
+
         /* product map searchable dropdown */
         .product-row {
             grid-template-columns: minmax(0, 1fr) auto;
@@ -614,7 +616,182 @@
             line-height: 1.25 !important;
         }
 
-    </style>
+
+        /* Заголовок страницы удалён для экономии места */
+        .main {
+            padding-top: 10px;
+        }
+        /* Конец компактного верха страницы */
+
+
+        /* Сворачивание списка заказов */
+        .workspace {
+            position: relative;
+            transition:
+                grid-template-columns 0.25s ease,
+                gap 0.25s ease;
+        }
+
+        .orders-list-panel {
+            min-width: 0;
+            transition:
+                opacity 0.2s ease,
+                transform 0.25s ease;
+        }
+
+        .order-detail-panel {
+            position: relative;
+            min-width: 0;
+        }
+
+        .order-detail-panel .detail-header {
+            padding-left: 66px;
+        }
+
+        .orders-panel-toggle {
+            position: absolute;
+            top: 14px;
+            left: 14px;
+            z-index: 25;
+            width: 38px;
+            height: 38px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            border: 1px solid #dbe3ee;
+            border-radius: 11px;
+            background: #f8fafc;
+            color: #334155;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+            transition:
+                background 0.2s ease,
+                transform 0.2s ease;
+        }
+
+        .orders-panel-toggle:hover {
+            background: #eef2f7;
+            transform: translateY(-1px);
+        }
+
+        .orders-panel-toggle svg {
+            width: 19px;
+            height: 19px;
+            transition: transform 0.25s ease;
+        }
+
+        .workspace.orders-list-collapsed {
+            grid-template-columns: 0 minmax(0, 1fr);
+            gap: 0;
+        }
+
+        .workspace.orders-list-collapsed .orders-list-panel {
+            width: 0;
+            opacity: 0;
+            overflow: hidden;
+            border: 0;
+            box-shadow: none;
+            pointer-events: none;
+            transform: translateX(-16px);
+        }
+
+        .workspace.orders-list-collapsed .orders-panel-toggle svg {
+            transform: rotate(180deg);
+        }
+
+        @media (max-width: 1100px) {
+            .workspace.orders-list-collapsed {
+                grid-template-columns: 1fr;
+            }
+
+            .workspace.orders-list-collapsed .orders-list-panel {
+                display: none;
+            }
+        }
+        /* Конец сворачивания списка заказов */
+
+
+        /* Разворачивание списка всех заказов */
+        .orders-list-panel {
+            position: relative;
+        }
+
+        .orders-list-panel .panel-header {
+            padding-right: 62px;
+        }
+
+        .order-detail-toggle {
+            position: absolute;
+            top: 14px;
+            right: 14px;
+            z-index: 25;
+            width: 38px;
+            height: 38px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            border: 1px solid #dbe3ee;
+            border-radius: 11px;
+            background: #f8fafc;
+            color: #334155;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+            transition:
+                background 0.2s ease,
+                transform 0.2s ease;
+        }
+
+        .order-detail-toggle:hover {
+            background: #eef2f7;
+            transform: translateY(-1px);
+        }
+
+        .order-detail-toggle svg {
+            width: 19px;
+            height: 19px;
+            transition: transform 0.25s ease;
+        }
+
+        .workspace.order-detail-collapsed {
+            grid-template-columns: minmax(0, 1fr) 0;
+            gap: 0;
+        }
+
+        .workspace.order-detail-collapsed .orders-list-panel {
+            width: 100%;
+            opacity: 1;
+            transform: none;
+            pointer-events: auto;
+        }
+
+        .workspace.order-detail-collapsed .order-detail-panel {
+            width: 0;
+            opacity: 0;
+            overflow: hidden;
+            border: 0;
+            box-shadow: none;
+            pointer-events: none;
+            transform: translateX(16px);
+        }
+
+        .workspace.order-detail-collapsed .order-detail-toggle svg {
+            transform: rotate(180deg);
+        }
+
+        @media (max-width: 1100px) {
+            .workspace.order-detail-collapsed {
+                grid-template-columns: 1fr;
+            }
+
+            .workspace.order-detail-collapsed .order-detail-panel {
+                display: none;
+            }
+        }
+        /* Конец разворачивания списка всех заказов */
+
+</style>
 </head>
 
 <body>
@@ -622,16 +799,7 @@
     {% include "_sidebar.html" %}
 
     <main class="main">
-        <div class="topbar">
-            <div class="title">
-                <h1>Заказы</h1>
-            </div>
 
-            <div class="sync-card">
-                <div class="sync-label">Статус системы</div>
-                <div class="sync-status">● ERP работает</div>
-            </div>
-        </div>
 
         {% if request.args.get("notice") and request.args.get("message") %}
             <div class="notice notice-{{ request.args.get('notice') }}">
@@ -639,8 +807,31 @@
             </div>
         {% endif %}
 
-        <div class="workspace">
-            <section class="panel">
+        <div class="workspace" id="ordersWorkspace">
+            <section class="panel orders-list-panel" id="ordersListPanel">
+                <button
+                    id="orderDetailToggle"
+                    class="order-detail-toggle"
+                    type="button"
+                    aria-label="Скрыть карточку заказа"
+                    aria-expanded="true"
+                    title="Показать все заказы на весь экран"
+                >
+                    <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        aria-hidden="true"
+                    >
+                        <path
+                            d="M9 6L15 12L9 18"
+                            stroke="currentColor"
+                            stroke-width="2.4"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                        />
+                    </svg>
+                </button>
+
                 <div class="panel-header">
                     <input
                         class="search"
@@ -656,8 +847,8 @@
                         <button class="filter" type="button" data-filter="T">Не дозвонились</button>
                         <button class="filter" type="button" data-filter="D">Собранные</button>
                         <button class="filter" type="button" data-filter="C">Отказы</button>
-                        
-                        
+
+
                     </div>
                 </div>
 
@@ -731,7 +922,29 @@
                 </div>
             </section>
 
-            <section class="panel detail">
+            <section class="panel detail order-detail-panel">
+                <button
+                    id="ordersPanelToggle"
+                    class="orders-panel-toggle"
+                    type="button"
+                    aria-label="Скрыть список заказов"
+                    aria-expanded="true"
+                    title="Скрыть список заказов"
+                >
+                    <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        aria-hidden="true"
+                    >
+                        <path
+                            d="M15 6L9 12L15 18"
+                            stroke="currentColor"
+                            stroke-width="2.4"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                        />
+                    </svg>
+                </button>
                 {% if selected_order %}
                     {% set detail_id = selected_order.get("id") or selected_order.get("ID") %}
                     {% set detail_number = selected_order.get("number") or selected_order.get("account_number") or selected_order.get("ACCOUNT_NUMBER") or detail_id %}
@@ -1340,6 +1553,108 @@
 
             if (input) {
                 positionProductMapDropdown(input);
+            }
+        });
+    });
+</script>
+
+
+<script>
+    document.addEventListener("DOMContentLoaded", () => {
+        const workspace = document.getElementById("ordersWorkspace");
+        const listToggle = document.getElementById("ordersPanelToggle");
+        const detailToggle = document.getElementById("orderDetailToggle");
+
+        if (!workspace || !listToggle || !detailToggle) {
+            return;
+        }
+
+        const storageKey = "ttt-erp-orders-workspace-mode";
+        const oldStorageKey = "ttt-erp-orders-list-collapsed";
+
+        const applyWorkspaceMode = (mode) => {
+            const detailOnly = mode === "detail-only";
+            const listOnly = mode === "list-only";
+
+            workspace.classList.toggle(
+                "orders-list-collapsed",
+                detailOnly
+            );
+
+            workspace.classList.toggle(
+                "order-detail-collapsed",
+                listOnly
+            );
+
+            listToggle.setAttribute(
+                "aria-expanded",
+                String(!detailOnly)
+            );
+
+            listToggle.title = detailOnly
+                ? "Показать список заказов"
+                : "Открыть карточку заказа на весь экран";
+
+            detailToggle.setAttribute(
+                "aria-expanded",
+                String(!listOnly)
+            );
+
+            detailToggle.title = listOnly
+                ? "Показать карточку заказа"
+                : "Показать все заказы на весь экран";
+        };
+
+        let mode = "both";
+
+        try {
+            mode = localStorage.getItem(storageKey) || "both";
+
+            if (
+                mode === "both" &&
+                localStorage.getItem(oldStorageKey) === "1"
+            ) {
+                mode = "detail-only";
+            }
+        } catch (error) {
+            mode = "both";
+        }
+
+        if (!["both", "detail-only", "list-only"].includes(mode)) {
+            mode = "both";
+        }
+
+        applyWorkspaceMode(mode);
+
+        listToggle.addEventListener("click", () => {
+            const nextMode = workspace.classList.contains(
+                "orders-list-collapsed"
+            )
+                ? "both"
+                : "detail-only";
+
+            applyWorkspaceMode(nextMode);
+
+            try {
+                localStorage.setItem(storageKey, nextMode);
+            } catch (error) {
+                // Переключение продолжит работать без сохранения.
+            }
+        });
+
+        detailToggle.addEventListener("click", () => {
+            const nextMode = workspace.classList.contains(
+                "order-detail-collapsed"
+            )
+                ? "both"
+                : "list-only";
+
+            applyWorkspaceMode(nextMode);
+
+            try {
+                localStorage.setItem(storageKey, nextMode);
+            } catch (error) {
+                // Переключение продолжит работать без сохранения.
             }
         });
     });

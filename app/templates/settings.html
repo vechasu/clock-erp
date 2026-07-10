@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>Настройки</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            background: #f4f7fb;
+            color: #172033;
+            font-family:
+                Inter,
+                -apple-system,
+                BlinkMacSystemFont,
+                "Segoe UI",
+                sans-serif;
+        }
+
+        .main {
+            min-width: 0;
+            padding: 34px;
+        }
+
+        .page-header {
+            margin-bottom: 28px;
+        }
+
+        .page-header h1 {
+            margin: 0 0 8px;
+            font-size: 34px;
+            letter-spacing: -0.04em;
+        }
+
+        .page-header p {
+            margin: 0;
+            color: #64748b;
+            font-size: 15px;
+        }
+
+        .settings-card {
+            max-width: 860px;
+            padding: 28px;
+            border: 1px solid #e2e8f0;
+            border-radius: 20px;
+            background: white;
+            box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+        }
+
+        .settings-section {
+            margin-bottom: 30px;
+        }
+
+        .settings-section:last-of-type {
+            margin-bottom: 0;
+        }
+
+        .settings-section h2 {
+            margin: 0 0 6px;
+            font-size: 20px;
+        }
+
+        .settings-section p {
+            margin: 0 0 18px;
+            color: #64748b;
+            font-size: 14px;
+        }
+
+        .settings-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 18px;
+        }
+
+        .field {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .field-wide {
+            grid-column: span 2;
+        }
+
+        .field label {
+            font-size: 14px;
+            font-weight: 800;
+        }
+
+        .control {
+            width: 100%;
+            height: 46px;
+            padding: 0 14px;
+            border: 1px solid #cbd5e1;
+            border-radius: 12px;
+            background: white;
+            color: #172033;
+            font: inherit;
+            outline: none;
+        }
+
+        .control:focus {
+            border-color: #2563eb;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+        }
+
+        .hint {
+            color: #94a3b8;
+            font-size: 12px;
+        }
+
+        .actions {
+            display: flex;
+            justify-content: flex-end;
+            margin-top: 28px;
+            padding-top: 22px;
+            border-top: 1px solid #e2e8f0;
+        }
+
+        .button {
+            min-height: 44px;
+            padding: 0 20px;
+            border: 0;
+            border-radius: 12px;
+            background: #2563eb;
+            color: white;
+            font-size: 14px;
+            font-weight: 800;
+            cursor: pointer;
+        }
+
+        .button:hover {
+            background: #1d4ed8;
+        }
+
+        .notice {
+            max-width: 860px;
+            margin-bottom: 18px;
+            padding: 14px 16px;
+            border-radius: 12px;
+            font-weight: 700;
+        }
+
+        .notice-success {
+            border: 1px solid #86efac;
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        @media (max-width: 760px) {
+            .main {
+                padding: 18px;
+            }
+
+            .settings-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .field-wide {
+                grid-column: span 1;
+            }
+        }
+    
+        /* Заголовок страницы удалён для экономии места */
+        .main {
+            padding-top: 10px;
+        }
+        /* Конец компактного верха страницы */
+
+</style>
+</head>
+
+<body>
+<div class="app">
+    {% include "_sidebar.html" %}
+
+    <main class="main">
+        
+
+        {% if message %}
+            <div class="notice notice-{{ notice or 'success' }}">
+                {{ message }}
+            </div>
+        {% endif %}
+
+        <form class="settings-card" method="post">
+            <section class="settings-section">
+                <h2>Компания</h2>
+                <p>
+                    Названия, которые будут использоваться внутри системы.
+                </p>
+
+                <div class="settings-grid">
+                    <div class="field">
+                        <label for="company_name">
+                            Название компании
+                        </label>
+
+                        <input
+                            id="company_name"
+                            class="control"
+                            type="text"
+                            name="company_name"
+                            value="{{ settings.company_name }}"
+                            required
+                        >
+                    </div>
+
+                    <div class="field">
+                        <label for="erp_name">
+                            Название ERP
+                        </label>
+
+                        <input
+                            id="erp_name"
+                            class="control"
+                            type="text"
+                            name="erp_name"
+                            value="{{ settings.erp_name }}"
+                            required
+                        >
+                    </div>
+                </div>
+            </section>
+
+            <section class="settings-section">
+                <h2>Склад</h2>
+                <p>
+                    Параметры контроля товарных остатков.
+                </p>
+
+                <div class="settings-grid">
+                    <div class="field field-wide">
+                        <label for="low_stock_threshold">
+                            Минимальный остаток
+                        </label>
+
+                        <input
+                            id="low_stock_threshold"
+                            class="control"
+                            type="number"
+                            name="low_stock_threshold"
+                            value="{{ settings.low_stock_threshold }}"
+                            min="0"
+                            max="999"
+                        >
+
+                        <span class="hint">
+                            Позже товары с таким остатком или ниже будут
+                            выделяться как заканчивающиеся.
+                        </span>
+                    </div>
+                </div>
+            </section>
+
+            <div class="actions">
+                <button class="button" type="submit">
+                    Сохранить настройки
+                </button>
+            </div>
+        </form>
+    </main>
+</div>
+</body>
+</html>

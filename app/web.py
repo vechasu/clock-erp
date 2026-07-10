@@ -2532,5 +2532,98 @@ def sales_page():
     )
 
 
+DEFAULT_APP_SETTINGS = {
+    "company_name": "Tictactoy",
+    "erp_name": "Vechasu ERP",
+    "low_stock_threshold": 3,
+}
+
+
+def get_app_settings_path():
+    path = PROJECT_ROOT / "instance" / "settings.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def load_app_settings():
+    settings = DEFAULT_APP_SETTINGS.copy()
+    path = get_app_settings_path()
+
+    if not path.exists():
+        return settings
+
+    try:
+        stored_settings = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return settings
+
+    if isinstance(stored_settings, dict):
+        settings.update(stored_settings)
+
+    return settings
+
+
+def save_app_settings(settings):
+    path = get_app_settings_path()
+    path.write_text(
+        json.dumps(settings, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
+@app.route("/settings", methods=["GET", "POST"])
+def settings_page():
+    settings = load_app_settings()
+
+    if request.method == "POST":
+        company_name = (
+            request.form.get("company_name") or ""
+        ).strip()
+
+        erp_name = (
+            request.form.get("erp_name") or ""
+        ).strip()
+
+        currency = (
+            request.form.get("currency") or "RUB"
+        ).strip()
+
+        timezone = (
+            request.form.get("timezone") or "Europe/Moscow"
+        ).strip()
+
+        try:
+            low_stock_threshold = int(
+                request.form.get("low_stock_threshold") or 0
+            )
+        except ValueError:
+            low_stock_threshold = 0
+
+        low_stock_threshold = max(
+            0,
+            min(low_stock_threshold, 999),
+        )
+
+        settings = {
+            "company_name": company_name or "Tictactoy",
+            "erp_name": erp_name or "Vechasu ERP",
+            "low_stock_threshold": low_stock_threshold,
+        }
+
+        save_app_settings(settings)
+
+        return redirect(
+            "/settings?notice=success"
+            "&message=Настройки сохранены"
+        )
+
+    return render_template(
+        "settings.html",
+        settings=settings,
+        notice=(request.args.get("notice") or "").strip(),
+        message=(request.args.get("message") or "").strip(),
+    )
+
+
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5050, debug=True)

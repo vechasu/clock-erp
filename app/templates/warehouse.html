@@ -85,45 +85,75 @@
 
         .stats {
             display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 14px;
-            margin-bottom: 18px;
+            grid-template-columns: minmax(0, 1fr) minmax(280px, 0.65fr);
+            gap: 10px;
+            margin-bottom: 10px;
         }
 
         .stat {
+            min-height: 62px;
+            display: flex;
+            align-items: center;
+            padding: 10px 16px;
             background: white;
             border: 1px solid #e5e7eb;
-            border-radius: 16px;
-            padding: 16px;
-            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+            border-radius: 14px;
+            box-shadow: 0 5px 16px rgba(15, 23, 42, 0.035);
         }
 
-        .stat-head {
-            display: flex;
-            justify-content: space-between;
+                .stock-summary {
+            display: grid;
+            grid-template-columns: 1fr 1px 1fr;
             align-items: center;
-            gap: 12px;
+            width: 100%;
+        }
+
+                .stock-summary-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            min-height: 48px;
+        }
+
+                .stock-summary-divider {
+            width: 1px;
+            height: 38px;
+            background: #e5e7eb;
+            justify-self: center;
         }
 
         .stat-title {
+            margin-bottom: 3px;
             color: #6b7280;
-            font-size: 13px;
+            font-size: 12px;
             font-weight: 700;
-            margin-bottom: 6px;
         }
 
         .stat-value {
-            font-size: 26px;
-            font-weight: 800;
+            font-size: 22px;
+            font-weight: 850;
+            line-height: 1;
             letter-spacing: -0.04em;
         }
 
-        .stat-button {
-            background: #eef2ff;
-            color: #3730a3;
-            padding: 9px 12px;
-            border-radius: 10px;
-            font-size: 13px;
+        .add-position-card {
+            width: 100%;
+            min-height: 62px;
+            padding: 0 18px;
+            border: 1px solid #1d4ed8;
+            border-radius: 14px;
+            background: #2563eb;
+            color: white;
+            font-size: 14px;
+            font-weight: 850;
+            cursor: pointer;
+            box-shadow: 0 6px 18px rgba(37, 99, 235, 0.18);
+        }
+
+        .add-position-card:hover {
+            background: #1d4ed8;
         }
 
         .filter-pill {
@@ -146,12 +176,16 @@
 
         .add-card,
         .search-card {
+            margin-bottom: 10px;
+            padding: 10px;
             background: white;
             border: 1px solid #e5e7eb;
-            border-radius: 16px;
-            padding: 16px;
-            margin-bottom: 18px;
-            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+            border-radius: 14px;
+            box-shadow: 0 5px 16px rgba(15, 23, 42, 0.035);
+        }
+
+        .add-card.is-hidden {
+            display: none;
         }
 
         .add-title {
@@ -168,8 +202,23 @@
 
         .search-form {
             display: grid;
-            grid-template-columns: 1fr 120px;
-            gap: 10px;
+            grid-template-columns:
+                minmax(260px, 1fr)
+                auto
+                auto
+                110px;
+            gap: 8px;
+        }
+
+        .search-tool-button {
+            padding: 0 13px;
+            background: #eef2ff;
+            color: #3730a3;
+            white-space: nowrap;
+        }
+
+        .search-tool-button:hover {
+            background: #e0e7ff;
         }
 
         input[type="text"],
@@ -555,24 +604,78 @@
             font-weight: 900;
             margin-bottom: 18px;
         }
-    </style>
+
+        /* Компактная верхняя часть склада */
+        .main {
+            min-width: 0;
+            padding: 14px 28px 24px;
+        }
+
+        .topbar {
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .topbar h1 {
+            font-size: 27px;
+            line-height: 1.1;
+        }
+
+        .subtitle {
+            margin-top: 4px;
+            font-size: 13px;
+        }
+
+        .stats {
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .stat,
+        .add-position-card {
+            min-height: 52px;
+        }
+
+        .stat {
+            padding: 7px 14px;
+        }
+
+        .stock-summary-item {
+            min-height: 38px;
+        }
+
+        .stock-summary-divider {
+            height: 30px;
+        }
+
+        .search-card {
+            padding: 8px 10px;
+            margin-bottom: 8px;
+        }
+
+        .search-form input[type="text"],
+        .search-form button {
+            height: 40px;
+            padding-top: 0;
+            padding-bottom: 0;
+        }
+        /* Конец компактной верхней части склада */
+
+
+        /* Заголовок страницы удалён для экономии места */
+        .main {
+            padding-top: 10px;
+        }
+        /* Конец компактного верха страницы */
+
+</style>
 </head>
 <body>
     <div class="app">
         {% include "_sidebar.html" %}
 
         <main class="main">
-            <div class="topbar">
-                <div>
-                    <h1>Остатки</h1>
-                    <div class="subtitle">Товары и остатки из МойСклад</div>
-                </div>
 
-                <div class="sync-card">
-                    <div class="sync-label">Статус системы</div>
-                    <div class="sync-status">● ERP работает</div>
-                </div>
-            </div>
 
             {% if request.args.get("notice") and request.args.get("message") %}
                 <div class="notice notice-{{ request.args.get('notice') }}">
@@ -582,23 +685,28 @@
 
             <div class="stats">
                 <div class="stat">
-                    <div class="stat-title">Позиций</div>
-                    <div class="stat-value">{{ items|length }}</div>
-                </div>
-
-                <div class="stat">
-                    <div class="stat-head">
-                        <div>
-                            <div class="stat-title">Остаток</div>
-                            <div class="stat-value">{{ total_stock_display }}</div>
+                    <div class="stock-summary">
+                        <div class="stock-summary-item">
+                            <div class="stat-title">Позиций</div>
+                            <div class="stat-value">{{ items|length }}</div>
                         </div>
 
-                        <div class="stat-actions">
-                            <button class="stat-button" type="button" onclick="openCategoryDrawer()">Разделы</button>
-                            <button class="stat-button" type="button" onclick="openWarehouseMapDrawer()">Карта склада</button>
+                        <div class="stock-summary-divider"></div>
+
+                        <div class="stock-summary-item">
+                            <div class="stat-title">Остаток, единиц</div>
+                            <div class="stat-value">{{ total_stock_display }}</div>
                         </div>
                     </div>
                 </div>
+
+                <button
+                    class="add-position-card"
+                    type="button"
+                    onclick="toggleWarehouseAddCard()"
+                >
+                    + Добавить позицию в МойСклад
+                </button>
             </div>
 
             {% if selected_category %}
@@ -615,7 +723,7 @@
                 </div>
             {% endif %}
 
-            <div class="add-card">
+            <div class="add-card is-hidden" id="warehouseAddCard">
                 <div class="add-title">Добавить позицию в МойСклад</div>
 
                 <form class="add-form" method="post" action="/warehouse/add">
@@ -636,7 +744,29 @@
                         <input type="hidden" name="cell" value="{{ selected_cell }}">
                     {% endif %}
 
-                    <input type="text" name="q" value="{{ query }}" placeholder="Поиск по названию, артикулу или коду">
+                    <input
+                        type="text"
+                        name="q"
+                        value="{{ query }}"
+                        placeholder="Поиск по названию, артикулу, коду, разделу или ячейке"
+                    >
+
+                    <button
+                        class="search-tool-button"
+                        type="button"
+                        onclick="openCategoryDrawer()"
+                    >
+                        Разделы
+                    </button>
+
+                    <button
+                        class="search-tool-button"
+                        type="button"
+                        onclick="openWarehouseMapDrawer()"
+                    >
+                        Карта склада
+                    </button>
+
                     <button type="submit">Найти</button>
                 </form>
             </div>
@@ -780,7 +910,7 @@
         </div>
     </aside>
 
-    
+
     <aside id="warehouseMapDrawer" class="map-modal">
         <div class="drawer-header">
             <div>
@@ -1061,7 +1191,7 @@
                 }
             });
         }
-    
+
         const stockForm = document.getElementById("stockForm");
 
         if (stockForm) {
@@ -1083,5 +1213,26 @@
         }
 
     </script>
+
+<script>
+    function toggleWarehouseAddCard() {
+        const card = document.getElementById("warehouseAddCard");
+
+        if (!card) {
+            return;
+        }
+
+        card.classList.toggle("is-hidden");
+
+        if (!card.classList.contains("is-hidden")) {
+            const firstInput = card.querySelector('input[name="name"]');
+
+            if (firstInput) {
+                firstInput.focus();
+            }
+        }
+    }
+</script>
+
 </body>
 </html>

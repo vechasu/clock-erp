@@ -17,3 +17,4 @@ instance/stock_operations.json
 instance/product_mappings.json
 instance/manual_sales.json
 instance/automatic_sales_overrides.json
+instance/settings.json
