@@ -1452,6 +1452,55 @@ def save_repair_cases(cases):
     path.write_text(json.dumps(cases, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+
+@app.route("/stock-operations")
+def stock_operations_page():
+    q = (request.args.get("q") or "").strip()
+    operation_type = (request.args.get("type") or "").strip()
+
+    operations = load_stock_operations()
+
+    if operation_type:
+        operations = [
+            operation for operation in operations
+            if str(operation.get("type") or "") == operation_type
+        ]
+
+    if q:
+        q_lower = q.lower()
+
+        operations = [
+            operation for operation in operations
+            if q_lower in " ".join([
+                str(operation.get("product_name") or ""),
+                str(operation.get("label") or ""),
+                str(operation.get("reason") or ""),
+                str(operation.get("moysklad_document_name") or ""),
+                str(operation.get("source") or ""),
+            ]).lower()
+        ]
+
+    for operation in operations:
+        operation["quantity_display"] = format_stock_number(operation.get("quantity") or 0)
+        operation["stock_before_display"] = format_stock_number(operation.get("stock_before") or 0)
+        operation["stock_after_display"] = format_stock_number(operation.get("stock_after") or 0)
+        operation["diff_display"] = format_stock_number(operation.get("diff") or 0)
+
+    total_operations = len(operations)
+    total_writeoff = sum(1 for operation in operations if operation.get("type") == "writeoff")
+    total_enter = sum(1 for operation in operations if operation.get("type") == "enter")
+
+    return render_template(
+        "stock_operations.html",
+        operations=operations,
+        q=q,
+        operation_type=operation_type,
+        total_operations=total_operations,
+        total_writeoff=total_writeoff,
+        total_enter=total_enter,
+    )
+
+
 @app.route("/repair")
 def repair_page():
     from flask import render_template, request

@@ -82,6 +82,11 @@
             🏷 Остатки
         </a>
 
+
+        <a class="sidebar-link {% if request.path.startswith('/stock-operations') %}active{% endif %}" href="/stock-operations">
+            📒 Журнал операций
+        </a>
+
         <a class="sidebar-link {% if request.path.startswith('/repair') %}active{% endif %}" href="/repair">
             🛠 Ремонт
         </a>

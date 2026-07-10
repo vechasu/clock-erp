@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <title>ТТТ ERP — Журнал операций</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            background: #f6f7f9;
+            color: #111827;
+            font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+        }
+
+        .main {
+            padding: 28px;
+        }
+
+        .topbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 20px;
+            margin-bottom: 24px;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 30px;
+            letter-spacing: -0.04em;
+            font-weight: 800;
+        }
+
+        .subtitle {
+            margin: 8px 0 0;
+            color: #6b7280;
+            font-size: 15px;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 14px;
+            margin-bottom: 18px;
+        }
+
+        .stat {
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 16px;
+            padding: 16px;
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+        }
+
+        .stat-title {
+            color: #6b7280;
+            font-size: 13px;
+            font-weight: 700;
+            margin-bottom: 6px;
+        }
+
+        .stat-value {
+            font-size: 26px;
+            font-weight: 800;
+            letter-spacing: -0.04em;
+        }
+
+        .filters {
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 16px;
+            padding: 16px;
+            margin-bottom: 18px;
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+        }
+
+        .filters form {
+            display: grid;
+            grid-template-columns: 1fr 220px 160px;
+            gap: 12px;
+        }
+
+        input,
+        select,
+        button {
+            height: 46px;
+            border-radius: 12px;
+            border: 1px solid #d1d5db;
+            padding: 0 14px;
+            font-size: 15px;
+            font-family: inherit;
+        }
+
+        button {
+            background: #0f172a;
+            color: white;
+            font-weight: 800;
+            cursor: pointer;
+            border: none;
+        }
+
+        .table-card {
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th {
+            text-align: left;
+            color: #475569;
+            font-size: 13px;
+            background: #f8fafc;
+            padding: 14px 16px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        td {
+            padding: 14px 16px;
+            border-bottom: 1px solid #f1f5f9;
+            vertical-align: top;
+            font-size: 14px;
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        .product-name {
+            font-weight: 800;
+        }
+
+        .muted {
+            color: #64748b;
+            font-size: 13px;
+            margin-top: 4px;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 6px 10px;
+            border-radius: 999px;
+            font-size: 13px;
+            font-weight: 800;
+        }
+
+        .badge-enter {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .badge-writeoff {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .empty {
+            padding: 26px;
+            color: #64748b;
+            font-weight: 700;
+        }
+
+        a {
+            color: #2563eb;
+            font-weight: 800;
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+
+<body>
+<div class="app">
+    {% include "_sidebar.html" %}
+
+    <main class="main">
+        <div class="topbar">
+            <div>
+                <h1>Журнал операций</h1>
+                <p class="subtitle">Все движения товарных остатков из ТТТ ERP</p>
+            </div>
+        </div>
+
+        <div class="stats">
+            <div class="stat">
+                <div class="stat-title">Операций</div>
+                <div class="stat-value">{{ total_operations }}</div>
+            </div>
+
+            <div class="stat">
+                <div class="stat-title">Списаний</div>
+                <div class="stat-value">{{ total_writeoff }}</div>
+            </div>
+
+            <div class="stat">
+                <div class="stat-title">Оприходований</div>
+                <div class="stat-value">{{ total_enter }}</div>
+            </div>
+        </div>
+
+        <div class="filters">
+            <form method="get" action="/stock-operations">
+                <input type="text" name="q" value="{{ q }}" placeholder="Поиск по товару, причине или документу">
+
+                <select name="type">
+                    <option value="" {% if not operation_type %}selected{% endif %}>Все операции</option>
+                    <option value="writeoff" {% if operation_type == "writeoff" %}selected{% endif %}>Списания</option>
+                    <option value="enter" {% if operation_type == "enter" %}selected{% endif %}>Оприходования</option>
+                </select>
+
+                <button type="submit">Показать</button>
+            </form>
+        </div>
+
+        <div class="table-card">
+            {% if operations %}
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Дата</th>
+                            <th>Товар</th>
+                            <th>Операция</th>
+                            <th>Остаток</th>
+                            <th>Причина</th>
+                            <th>МойСклад</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for operation in operations %}
+                            <tr>
+                                <td>
+                                    <strong>{{ operation.created_at or "—" }}</strong>
+                                    <div class="muted">{{ operation.source or "ТТТ ERP" }}</div>
+                                </td>
+
+                                <td>
+                                    <div class="product-name">{{ operation.product_name or "Без названия" }}</div>
+                                    <div class="muted">{{ operation.product_id or "" }}</div>
+                                </td>
+
+                                <td>
+                                    {% if operation.type == "writeoff" %}
+                                        <span class="badge badge-writeoff">Списание</span>
+                                    {% elif operation.type == "enter" %}
+                                        <span class="badge badge-enter">Оприходование</span>
+                                    {% else %}
+                                        <span class="badge">{{ operation.label or "Операция" }}</span>
+                                    {% endif %}
+                                    <div class="muted">{{ operation.quantity_display }} шт.</div>
+                                </td>
+
+                                <td>
+                                    <strong>{{ operation.stock_before_display }} → {{ operation.stock_after_display }}</strong>
+                                    <div class="muted">Разница: {{ operation.diff_display }}</div>
+                                </td>
+
+                                <td>
+                                    {{ operation.reason or "—" }}
+                                </td>
+
+                                <td>
+                                    {% if operation.moysklad_document_url %}
+                                        <a href="{{ operation.moysklad_document_url }}" target="_blank">
+                                            {{ operation.moysklad_document_name or "Открыть" }}
+                                        </a>
+                                    {% else %}
+                                        {{ operation.moysklad_document_name or "—" }}
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            {% else %}
+                <div class="empty">Операций пока нет.</div>
+            {% endif %}
+        </div>
+    </main>
+</div>
+</body>
+</html>
