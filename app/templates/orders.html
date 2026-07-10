@@ -571,6 +571,49 @@
                 grid-template-columns: 1fr;
             }
         }
+    
+        /* product map searchable dropdown */
+        .product-row {
+            grid-template-columns: minmax(0, 1fr) auto;
+            overflow: visible;
+        }
+
+        .product-row > div:first-child {
+            min-width: 0;
+        }
+
+        .product-price {
+            white-space: nowrap;
+        }
+
+        .data-section,
+        .product-list,
+        .order-sections {
+            overflow: visible;
+        }
+
+        .product-map-form {
+            max-width: 100%;
+        }
+
+        .product-map-picker {
+            min-width: 0;
+        }
+
+        .product-map-options {
+            position: fixed !important;
+            z-index: 999999 !important;
+            right: auto !important;
+            max-height: 360px !important;
+            overflow-y: auto !important;
+            background: white !important;
+        }
+
+        .product-map-option {
+            white-space: normal !important;
+            line-height: 1.25 !important;
+        }
+
     </style>
 </head>
 
@@ -842,12 +885,59 @@
                                             {% set product_price = product.get("price") or product.get("PRICE") or "" %}
                                             {% set product_line_total = product_price|float * product_quantity|float %}
 
+                                            {% set product_id = product.get("id") or product.get("ID") or "" %}
+                                            {% set mapped_product = product_mappings.get(product_id|string) if product_mappings else none %}
+
                                             <div class="product-row">
                                                 <div>
                                                     <div class="product-name">{{ product_name }}</div>
                                                     <div class="product-meta">
                                                         Количество: {{ product_quantity|float|round(0, "floor")|int }} шт.
                                                     </div>
+
+                                                    <form class="status-form product-map-form" method="post" action="/order/{{ detail_id }}/product-map" style="margin-top: 10px; display: grid; grid-template-columns: minmax(0, 1fr) 130px; gap: 8px; position: relative;">
+                                                        <input type="hidden" name="bitrix_product_id" value="{{ product_id }}">
+                                                        <input type="hidden" name="bitrix_product_name" value="{{ product_name }}">
+                                                        <input type="hidden" class="product-map-hidden-id" name="moysklad_product_id" value="{% if mapped_product %}{{ mapped_product.moysklad_product_id }}{% endif %}">
+
+                                                        <div class="product-map-picker" style="position: relative;">
+                                                            <input
+                                                                type="text"
+                                                                class="product-map-combobox"
+                                                                value="{% if mapped_product %}{{ mapped_product.moysklad_product_name }}{% endif %}"
+                                                                placeholder="Сопоставить с товаром склада"
+                                                                autocomplete="off"
+                                                                style="width: 100%; height: 42px; border-radius: 12px; border: 1px solid #d1d5db; padding: 0 10px;"
+                                                            >
+
+                                                            <div class="product-map-options" style="display: none; position: absolute; z-index: 50; top: 48px; left: 0; right: 0; max-height: 260px; overflow: auto; background: white; border: 1px solid #d1d5db; border-radius: 12px; box-shadow: 0 14px 34px rgba(15, 23, 42, 0.18);">
+                                                                {% for item in warehouse_items or [] %}
+                                                                    <button
+                                                                        type="button"
+                                                                        class="product-map-option"
+                                                                        data-id="{{ item.id }}"
+                                                                        data-label="{{ item.name }} — остаток {{ item.stock_display or item.stock }}"
+                                                                        data-search="{{ item.name }} {{ item.article or '' }} {{ item.code or '' }} {{ item.category or '' }}"
+                                                                        style="width: 100%; text-align: left; display: block; padding: 10px 12px; border: 0; border-bottom: 1px solid #f1f5f9; background: white; color: #111827; font-weight: 700; cursor: pointer;"
+                                                                    >
+                                                                        {{ item.name }} — остаток {{ item.stock_display or item.stock }}
+                                                                    </button>
+                                                                {% endfor %}
+                                                            </div>
+                                                        </div>
+
+                                                        <button type="submit">Сопоставить</button>
+                                                    </form>
+
+                                                    {% if mapped_product %}
+                                                        <div class="product-meta" style="margin-top: 8px; color: #166534; font-weight: 800;">
+                                                            ✅ Склад: {{ mapped_product.moysklad_product_name }}
+                                                        </div>
+                                                    {% else %}
+                                                        <div class="product-meta" style="margin-top: 8px; color: #991b1b; font-weight: 800;">
+                                                            ⚠️ Товар ещё не сопоставлен со складом
+                                                        </div>
+                                                    {% endif %}
                                                 </div>
 
                                                 <div class="product-price">
@@ -1055,5 +1145,192 @@
 
     applyValueFormatting();
 </script>
+
+
+<script>
+    document.addEventListener("focusin", function(event) {
+        if (!event.target.classList.contains("product-map-combobox")) {
+            return;
+        }
+
+        const picker = event.target.closest(".product-map-picker");
+        const options = picker ? picker.querySelector(".product-map-options") : null;
+
+        if (options) {
+            options.style.display = "block";
+        }
+    });
+
+    document.addEventListener("input", function(event) {
+        if (!event.target.classList.contains("product-map-combobox")) {
+            return;
+        }
+
+        const input = event.target;
+        const form = input.closest(".product-map-form");
+        const hiddenId = form ? form.querySelector(".product-map-hidden-id") : null;
+        const picker = input.closest(".product-map-picker");
+        const optionsBox = picker ? picker.querySelector(".product-map-options") : null;
+
+        if (hiddenId) {
+            hiddenId.value = "";
+        }
+
+        if (!optionsBox) {
+            return;
+        }
+
+        optionsBox.style.display = "block";
+
+        const query = input.value.trim().toLowerCase();
+        let visibleCount = 0;
+
+        optionsBox.querySelectorAll(".product-map-option").forEach(function(option) {
+            const text = (option.dataset.search || option.textContent || "").toLowerCase();
+            const isVisible = !query || text.includes(query);
+
+            option.style.display = isVisible ? "block" : "none";
+
+            if (isVisible) {
+                visibleCount += 1;
+            }
+        });
+    });
+
+    document.addEventListener("click", function(event) {
+        const option = event.target.closest(".product-map-option");
+
+        if (option) {
+            const form = option.closest(".product-map-form");
+            const input = form ? form.querySelector(".product-map-combobox") : null;
+            const hiddenId = form ? form.querySelector(".product-map-hidden-id") : null;
+            const optionsBox = form ? form.querySelector(".product-map-options") : null;
+
+            if (input) {
+                input.value = option.dataset.label || option.textContent.trim();
+            }
+
+            if (hiddenId) {
+                hiddenId.value = option.dataset.id || "";
+            }
+
+            if (optionsBox) {
+                optionsBox.style.display = "none";
+            }
+
+            return;
+        }
+
+        document.querySelectorAll(".product-map-picker").forEach(function(picker) {
+            if (!picker.contains(event.target)) {
+                const optionsBox = picker.querySelector(".product-map-options");
+
+                if (optionsBox) {
+                    optionsBox.style.display = "none";
+                }
+            }
+        });
+    });
+</script>
+
+
+<script>
+    function positionProductMapDropdown(input) {
+        const form = input.closest(".product-map-form");
+        const optionsBox = form ? form.querySelector(".product-map-options") : null;
+
+        if (!optionsBox) {
+            return;
+        }
+
+        const rect = input.getBoundingClientRect();
+        const minWidth = 460;
+        const viewportPadding = 12;
+        const width = Math.min(
+            Math.max(rect.width, minWidth),
+            window.innerWidth - viewportPadding * 2
+        );
+
+        let left = rect.left;
+
+        if (left + width > window.innerWidth - viewportPadding) {
+            left = window.innerWidth - width - viewportPadding;
+        }
+
+        if (left < viewportPadding) {
+            left = viewportPadding;
+        }
+
+        const spaceBelow = window.innerHeight - rect.bottom - viewportPadding;
+        const spaceAbove = rect.top - viewportPadding;
+
+        let top = rect.bottom + 6;
+        let maxHeight = Math.min(360, Math.max(180, spaceBelow));
+
+        if (spaceBelow < 180 && spaceAbove > spaceBelow) {
+            maxHeight = Math.min(360, Math.max(180, spaceAbove));
+            top = rect.top - maxHeight - 6;
+        }
+
+        optionsBox.style.left = left + "px";
+        optionsBox.style.top = top + "px";
+        optionsBox.style.width = width + "px";
+        optionsBox.style.maxHeight = maxHeight + "px";
+        optionsBox.style.zIndex = "999999";
+    }
+
+    document.addEventListener("focusin", function(event) {
+        if (!event.target.classList.contains("product-map-combobox")) {
+            return;
+        }
+
+        const form = event.target.closest(".product-map-form");
+        const optionsBox = form ? form.querySelector(".product-map-options") : null;
+
+        if (optionsBox) {
+            positionProductMapDropdown(event.target);
+            optionsBox.style.display = "block";
+        }
+    });
+
+    document.addEventListener("input", function(event) {
+        if (!event.target.classList.contains("product-map-combobox")) {
+            return;
+        }
+
+        positionProductMapDropdown(event.target);
+    });
+
+    window.addEventListener("scroll", function() {
+        document.querySelectorAll(".product-map-options").forEach(function(optionsBox) {
+            if (optionsBox.style.display !== "block") {
+                return;
+            }
+
+            const form = optionsBox.closest(".product-map-form");
+            const input = form ? form.querySelector(".product-map-combobox") : null;
+
+            if (input) {
+                positionProductMapDropdown(input);
+            }
+        });
+    }, true);
+
+    window.addEventListener("resize", function() {
+        document.querySelectorAll(".product-map-options").forEach(function(optionsBox) {
+            if (optionsBox.style.display !== "block") {
+                return;
+            }
+
+            const form = optionsBox.closest(".product-map-form");
+            const input = form ? form.querySelector(".product-map-combobox") : null;
+
+            if (input) {
+                positionProductMapDropdown(input);
+            }
+        });
+    });
+</script>
+
 </body>
 </html>

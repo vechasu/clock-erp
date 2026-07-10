@@ -243,7 +243,9 @@ def index():
     return render_template(
         "orders.html",
         orders=orders,
-        selected_order=selected_order
+        selected_order=selected_order,
+        warehouse_items=get_warehouse_items(),
+        product_mappings=load_product_mappings()
     )
 
 
@@ -267,8 +269,69 @@ def order_page(order_id):
     return render_template(
         "orders.html",
         orders=orders,
-        selected_order=selected_order
+        selected_order=selected_order,
+        warehouse_items=get_warehouse_items(),
+        product_mappings=load_product_mappings()
     )
+
+
+
+@app.route("/order/<int:order_id>/product-map", methods=["POST"])
+def order_product_map(order_id):
+    bitrix_product_id = (request.form.get("bitrix_product_id") or "").strip()
+    bitrix_product_name = (request.form.get("bitrix_product_name") or "").strip()
+    moysklad_product_id = (request.form.get("moysklad_product_id") or "").strip()
+
+    if not bitrix_product_id:
+        return redirect(url_for(
+            "order_page",
+            order_id=order_id,
+            notice="error",
+            message="Не найден ID товара Битрикс"
+        ))
+
+    if not moysklad_product_id:
+        return redirect(url_for(
+            "order_page",
+            order_id=order_id,
+            notice="error",
+            message="Выбери товар склада для сопоставления"
+        ))
+
+    warehouse_items = get_warehouse_items()
+    selected_item = None
+
+    for item in warehouse_items:
+        if str(item.get("id") or "") == str(moysklad_product_id):
+            selected_item = item
+            break
+
+    if not selected_item:
+        return redirect(url_for(
+            "order_page",
+            order_id=order_id,
+            notice="error",
+            message="Товар склада не найден"
+        ))
+
+    mappings = load_product_mappings()
+
+    mappings[bitrix_product_id] = {
+        "bitrix_product_id": bitrix_product_id,
+        "bitrix_product_name": bitrix_product_name,
+        "moysklad_product_id": selected_item.get("id"),
+        "moysklad_product_name": selected_item.get("name"),
+        "moysklad_product_stock": selected_item.get("stock"),
+    }
+
+    save_product_mappings(mappings)
+
+    return redirect(url_for(
+        "order_page",
+        order_id=order_id,
+        notice="success",
+        message="Товар сопоставлен со складом"
+    ))
 
 
 @app.route("/order/<int:order_id>/status", methods=["POST"])
@@ -292,6 +355,36 @@ def order_status_update(order_id):
         notice="error",
         message=result.get("message", "Ошибка смены статуса")
     ))
+
+
+
+def get_product_mappings_path():
+    path = Path(app.instance_path)
+    path.mkdir(parents=True, exist_ok=True)
+    return path / "product_mappings.json"
+
+
+def load_product_mappings():
+    path = get_product_mappings_path()
+
+    if not path.exists():
+        return {}
+
+    try:
+        with path.open("r", encoding="utf-8") as file:
+            data = json.load(file)
+
+        return data if isinstance(data, dict) else {}
+
+    except Exception:
+        return {}
+
+
+def save_product_mappings(mappings):
+    path = get_product_mappings_path()
+
+    with path.open("w", encoding="utf-8") as file:
+        json.dump(mappings, file, ensure_ascii=False, indent=2)
 
 
 def format_stock_number(value):
