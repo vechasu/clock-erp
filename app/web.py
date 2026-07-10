@@ -1888,6 +1888,47 @@ def save_manual_sales(sales):
     )
 
 
+def get_automatic_sales_overrides_path():
+    from pathlib import Path
+
+    path = Path("instance/automatic_sales_overrides.json")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def load_automatic_sales_overrides():
+    import json
+
+    path = get_automatic_sales_overrides_path()
+
+    if not path.exists():
+        return {}
+
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def save_automatic_sales_overrides(overrides):
+    import json
+
+    path = get_automatic_sales_overrides_path()
+    temporary_path = path.with_suffix(".tmp")
+
+    temporary_path.write_text(
+        json.dumps(
+            overrides if isinstance(overrides, dict) else {},
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    temporary_path.replace(path)
+
+
 RUSSIAN_REGIONS = [
     "Алтайский край",
     "Амурская область",
@@ -1992,6 +2033,9 @@ def parse_manual_sale_quantity(value):
 def normalize_manual_sale_source(value, custom_value=""):
     source = str(value or "").strip()
     custom_source = str(custom_value or "").strip()
+
+    if source in {"Битрикс", "Заказ Битрикс"}:
+        return "Tictactoy"
 
     if source == "__custom__":
         return custom_source or "Свой вариант"
@@ -2188,60 +2232,228 @@ def manual_sale_delete():
     )
 
 
+@app.route("/sales/automatic/update", methods=["POST"])
+def automatic_sale_update():
+    from flask import request, redirect, url_for
+
+    operation_id = (
+        request.form.get("operation_id") or ""
+    ).strip()
+
+    product_name = (
+        request.form.get("product_name") or ""
+    ).strip()
+
+    quantity = parse_manual_sale_quantity(
+        request.form.get("quantity")
+    )
+
+    if not operation_id:
+        return redirect(
+            url_for(
+                "sales_page",
+                notice="error",
+                message="Автоматическая продажа не найдена",
+            )
+        )
+
+    operation_exists = any(
+        str(operation.get("id") or "").strip() == operation_id
+        and str(operation.get("source") or "") == "Заказ Битрикс"
+        and str(operation.get("type") or "") in {"writeoff", "loss"}
+        for operation in load_stock_operations()
+    )
+
+    if not operation_exists:
+        return redirect(
+            url_for(
+                "sales_page",
+                notice="error",
+                message="Исходная операция продажи не найдена",
+            )
+        )
+
+    if not product_name:
+        return redirect(
+            url_for(
+                "sales_page",
+                notice="error",
+                message="Укажите название товара",
+            )
+        )
+
+    if quantity <= 0:
+        return redirect(
+            url_for(
+                "sales_page",
+                notice="error",
+                message="Выберите количество от 1 до 25",
+            )
+        )
+
+    overrides = load_automatic_sales_overrides()
+
+    overrides[operation_id] = {
+        "created_at": (
+            request.form.get("created_at") or ""
+        ).strip(),
+        "source": (
+            request.form.get("source") or "Tictactoy"
+        ).strip(),
+        "product_name": product_name,
+        "quantity": quantity,
+        "order_number": (
+            request.form.get("order_number") or ""
+        ).strip(),
+        "track_number": (
+            request.form.get("track_number") or ""
+        ).strip(),
+        "delivery_method": (
+            request.form.get("delivery_method") or ""
+        ).strip(),
+        "region": (
+            request.form.get("region") or ""
+        ).strip(),
+        "note": (
+            request.form.get("note") or ""
+        ).strip(),
+    }
+
+    save_automatic_sales_overrides(overrides)
+
+    return redirect(
+        url_for(
+            "sales_page",
+            notice="success",
+            message="Автоматическая продажа сохранена",
+        )
+    )
+
+
 @app.route("/sales")
 def sales_page():
     from flask import request
 
     operations = load_stock_operations()
     stored_manual_sales = load_manual_sales()
+    automatic_overrides = load_automatic_sales_overrides()
 
     automatic_sales = []
     manual_sales = []
     total_quantity = 0
 
     for operation in operations:
-        source = str(operation.get("source") or "")
+        technical_source = str(operation.get("source") or "")
         operation_type = str(operation.get("type") or "")
 
-        if source != "Заказ Битрикс":
+        if technical_source != "Заказ Битрикс":
             continue
 
         if operation_type not in ["writeoff", "loss"]:
             continue
 
+        operation_id = str(operation.get("id") or "").strip()
+
+        if not operation_id:
+            continue
+
+        override = automatic_overrides.get(operation_id) or {}
+
+        if not isinstance(override, dict):
+            override = {}
+
         try:
-            quantity_number = float(operation.get("quantity") or 0)
+            original_quantity = float(
+                operation.get("quantity") or 0
+            )
         except Exception:
-            quantity_number = 0
+            original_quantity = 0
+
+        if "quantity" in override:
+            quantity_number = parse_manual_sale_quantity(
+                override.get("quantity")
+            )
+
+            if quantity_number <= 0:
+                quantity_number = original_quantity
+        else:
+            quantity_number = original_quantity
 
         total_quantity += quantity_number
 
         order_id = str(operation.get("order_id") or "")
-        order_number = str(
+        original_order_number = str(
             operation.get("order_number") or order_id or ""
         )
 
+        created_at = str(
+            override.get(
+                "created_at",
+                operation.get("created_at") or "",
+            )
+            or ""
+        )
+
         automatic_sales.append({
-            "id": "",
+            "id": operation_id,
             "is_manual": False,
-            "created_at": operation.get("created_at") or "",
-            "source": "Битрикс",
+            "created_at": created_at,
+            "created_at_input": created_at[:10],
+            "source": str(
+                override.get("source", "Tictactoy")
+                or "Tictactoy"
+            ),
             "order_id": order_id,
-            "order_number": order_number,
-            "product_name": operation.get("product_name") or "",
+            "order_number": str(
+                override.get(
+                    "order_number",
+                    original_order_number,
+                )
+                or ""
+            ),
+            "product_id": operation.get("product_id") or "",
+            "product_name": str(
+                override.get(
+                    "product_name",
+                    operation.get("product_name") or "",
+                )
+                or ""
+            ),
             "bitrix_product_name": (
                 operation.get("bitrix_product_name") or ""
             ),
             "quantity": format_stock_number(quantity_number),
             "quantity_value": quantity_number,
-            "track_number": (
-                operation.get("track_number")
-                or operation.get("shipment_number")
+            "track_number": str(
+                override.get(
+                    "track_number",
+                    operation.get("track_number")
+                    or operation.get("shipment_number")
+                    or "",
+                )
                 or ""
             ),
-            "delivery_method": operation.get("delivery_method") or "",
-            "region": operation.get("region") or "",
-            "note": operation.get("reason") or "",
+            "delivery_method": str(
+                override.get(
+                    "delivery_method",
+                    operation.get("delivery_method") or "",
+                )
+                or ""
+            ),
+            "region": str(
+                override.get(
+                    "region",
+                    operation.get("region") or "",
+                )
+                or ""
+            ),
+            "note": str(
+                override.get(
+                    "note",
+                    operation.get("reason") or "",
+                )
+                or ""
+            ),
             "document_name": (
                 operation.get("moysklad_document_name") or ""
             ),
@@ -2286,7 +2498,9 @@ def sales_page():
     unique_orders = set()
 
     for sale in sales:
-        order_number = str(sale.get("order_number") or "").strip()
+        order_number = str(
+            sale.get("order_number") or ""
+        ).strip()
 
         if order_number:
             unique_orders.add(order_number)
@@ -2316,6 +2530,7 @@ def sales_page():
         notice=(request.args.get("notice") or "").strip(),
         message=(request.args.get("message") or "").strip(),
     )
+
 
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5050, debug=True)

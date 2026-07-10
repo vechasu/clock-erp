@@ -213,6 +213,24 @@
             background: #fecaca;
         }
 
+        .button-edit {
+            color: #1d4ed8;
+            background: #dbeafe;
+        }
+
+        .button-edit:hover {
+            background: #bfdbfe;
+        }
+
+        .button-cancel {
+            color: #374151;
+            background: #e5e7eb;
+        }
+
+        .button-cancel:hover {
+            background: #d1d5db;
+        }
+
         .toolbar {
             display: flex;
             align-items: center;
@@ -283,11 +301,81 @@
         }
 
         .manual-row {
-            background: #fffbeb;
+            background: #ffffff;
         }
 
         .manual-row:hover {
-            background: #fef3c7 !important;
+            background: #f8fafc !important;
+        }
+
+        .manual-row.is-editing {
+            background: #eff6ff;
+        }
+
+        .manual-row.is-editing:hover {
+            background: #dbeafe !important;
+        }
+
+        .manual-edit-control {
+            display: none !important;
+        }
+
+        .manual-row.is-editing .manual-edit-control {
+            display: block !important;
+        }
+
+        .manual-row.is-editing .manual-view-value {
+            display: none !important;
+        }
+
+        .manual-edit-actions {
+            display: none !important;
+        }
+
+        .manual-row.is-editing .manual-view-actions {
+            display: none !important;
+        }
+
+        .manual-row.is-editing .manual-edit-actions {
+            display: flex !important;
+        }
+
+        .col-actions .button {
+            min-height: 34px;
+            padding: 7px 10px;
+            font-size: 12px;
+        }
+
+        .automatic-edit-control {
+            display: none !important;
+        }
+
+        .automatic-row.is-editing {
+            background: #eff6ff;
+        }
+
+        .automatic-row.is-editing:hover {
+            background: #dbeafe !important;
+        }
+
+        .automatic-row.is-editing .automatic-edit-control {
+            display: block !important;
+        }
+
+        .automatic-row.is-editing .automatic-view-value {
+            display: none !important;
+        }
+
+        .automatic-edit-actions {
+            display: none !important;
+        }
+
+        .automatic-row.is-editing .automatic-view-actions {
+            display: none !important;
+        }
+
+        .automatic-row.is-editing .automatic-edit-actions {
+            display: flex !important;
         }
 
         .col-date {
@@ -624,7 +712,7 @@
             <div>
                 <h1>Продажи</h1>
                 <p>
-                    Автоматические продажи из Битрикс и ручные продажи
+                    Автоматические продажи Tictactoy и ручные продажи
                     Wildberries, Amazon и других каналов.
                 </p>
             </div>
@@ -692,15 +780,19 @@
                         <tbody>
                             {% for sale in sales %}
                                 <tr
-                                    class="sale-row{% if sale.is_manual %} manual-row{% endif %}"
+                                    class="sale-row{% if sale.is_manual %} manual-row{% else %} automatic-row{% endif %}"
                                     data-search="{{ sale.created_at }} {{ sale.source }} {{ sale.product_name }} {{ sale.bitrix_product_name }} {{ sale.order_number }} {{ sale.track_number }} {{ sale.delivery_method }} {{ sale.region }} {{ sale.note }}"
                                 >
                                     {% if sale.is_manual %}
                                         {% set edit_form_id = "edit-sale-" ~ sale.id %}
 
                                         <td class="col-date">
+                                            <span class="manual-view-value">
+                                                {{ sale.created_at or "—" }}
+                                            </span>
+
                                             <input
-                                                class="table-control"
+                                                class="table-control manual-edit-control sale-edit-control"
                                                 type="date"
                                                 name="created_at"
                                                 value="{{ sale.created_at }}"
@@ -710,23 +802,33 @@
                                         </td>
 
                                         <td class="col-source">
+                                            <div class="manual-view-value">
+                                                <span class="source-badge">
+                                                    {{ sale.source }}
+                                                </span>
+
+                                                <span class="manual-badge">
+                                                    вручную
+                                                </span>
+                                            </div>
+
                                             <input
-                                                class="table-control"
+                                                class="table-control manual-edit-control sale-edit-control"
                                                 type="text"
                                                 name="source"
                                                 value="{{ sale.source }}"
                                                 form="{{ edit_form_id }}"
                                                 required
                                             >
-
-                                            <span class="manual-badge">
-                                                вручную
-                                            </span>
                                         </td>
 
                                         <td class="col-product">
+                                            <div class="product-name manual-view-value">
+                                                {{ sale.product_name or "—" }}
+                                            </div>
+
                                             <input
-                                                class="table-control"
+                                                class="table-control manual-edit-control sale-edit-control"
                                                 type="text"
                                                 name="product_name"
                                                 value="{{ sale.product_name }}"
@@ -736,8 +838,12 @@
                                         </td>
 
                                         <td class="col-qty">
+                                            <span class="manual-view-value">
+                                                {{ sale.quantity_value }}
+                                            </span>
+
                                             <select
-                                                class="table-control"
+                                                class="table-control manual-edit-control sale-edit-control"
                                                 name="quantity"
                                                 form="{{ edit_form_id }}"
                                                 required
@@ -754,8 +860,12 @@
                                         </td>
 
                                         <td class="col-order">
+                                            <span class="manual-view-value">
+                                                {{ sale.order_number or "—" }}
+                                            </span>
+
                                             <input
-                                                class="table-control"
+                                                class="table-control manual-edit-control sale-edit-control"
                                                 type="text"
                                                 name="order_number"
                                                 value="{{ sale.order_number }}"
@@ -764,8 +874,12 @@
                                         </td>
 
                                         <td class="col-track">
+                                            <span class="manual-view-value">
+                                                {{ sale.track_number or "—" }}
+                                            </span>
+
                                             <input
-                                                class="table-control"
+                                                class="table-control manual-edit-control sale-edit-control"
                                                 type="text"
                                                 name="track_number"
                                                 value="{{ sale.track_number }}"
@@ -774,12 +888,22 @@
                                         </td>
 
                                         <td class="col-delivery">
+                                            <span class="manual-view-value">
+                                                {{ sale.delivery_method or "—" }}
+                                            </span>
+
                                             <select
-                                                class="table-control"
+                                                class="table-control manual-edit-control sale-edit-control"
                                                 name="delivery_method"
                                                 form="{{ edit_form_id }}"
-                                                required
                                             >
+                                                <option
+                                                    value=""
+                                                    {% if not sale.delivery_method %}selected{% endif %}
+                                                >
+                                                    Не выбран
+                                                </option>
+
                                                 {% for delivery_option in [
                                                     "Пункт выдачи заказов СДЭК",
                                                     "Курьером СДЭК",
@@ -798,8 +922,12 @@
                                         </td>
 
                                         <td class="col-region">
+                                            <span class="manual-view-value">
+                                                {{ sale.region or "—" }}
+                                            </span>
+
                                             <input
-                                                class="table-control"
+                                                class="table-control manual-edit-control sale-edit-control"
                                                 type="text"
                                                 name="region"
                                                 value="{{ sale.region }}"
@@ -810,8 +938,12 @@
                                         </td>
 
                                         <td class="col-note">
+                                            <span class="manual-view-value">
+                                                {{ sale.note or "—" }}
+                                            </span>
+
                                             <textarea
-                                                class="table-control"
+                                                class="table-control manual-edit-control sale-edit-control"
                                                 name="note"
                                                 form="{{ edit_form_id }}"
                                             >{{ sale.note }}</textarea>
@@ -820,6 +952,7 @@
                                         <td class="col-actions">
                                             <form
                                                 id="{{ edit_form_id }}"
+                                                class="manual-edit-form editable-sale-form"
                                                 method="post"
                                                 action="/sales/manual/update"
                                             >
@@ -828,15 +961,20 @@
                                                     name="sale_id"
                                                     value="{{ sale.id }}"
                                                 >
+
+                                                <input
+                                                    type="hidden"
+                                                    name="product_id"
+                                                    value="{{ sale.product_id }}"
+                                                >
                                             </form>
 
-                                            <div class="action-buttons">
+                                            <div class="action-buttons manual-view-actions">
                                                 <button
-                                                    class="button button-save"
-                                                    type="submit"
-                                                    form="{{ edit_form_id }}"
+                                                    class="button button-edit js-edit-sale"
+                                                    type="button"
                                                 >
-                                                    Сохранить
+                                                    Редактировать
                                                 </button>
 
                                                 <form
@@ -858,69 +996,232 @@
                                                     </button>
                                                 </form>
                                             </div>
+
+                                            <div class="action-buttons manual-edit-actions">
+                                                <button
+                                                    class="button button-save"
+                                                    type="submit"
+                                                    form="{{ edit_form_id }}"
+                                                >
+                                                    Сохранить
+                                                </button>
+
+                                                <button
+                                                    class="button button-cancel js-cancel-sale"
+                                                    type="button"
+                                                >
+                                                    Отмена
+                                                </button>
+                                            </div>
                                         </td>
                                     {% else %}
+                                        {% set edit_form_id = "edit-automatic-sale-" ~ sale.id %}
+
                                         <td class="col-date">
-                                            {{ sale.created_at or "—" }}
+                                            <span class="automatic-view-value">
+                                                {{ sale.created_at or "—" }}
+                                            </span>
+
+                                            <input
+                                                class="table-control automatic-edit-control sale-edit-control"
+                                                type="date"
+                                                name="created_at"
+                                                value="{{ sale.created_at_input }}"
+                                                form="{{ edit_form_id }}"
+                                                required
+                                            >
                                         </td>
 
                                         <td class="col-source">
-                                            <span class="source-badge">
+                                            <span class="automatic-view-value source-badge">
                                                 {{ sale.source }}
                                             </span>
+
+                                            <input
+                                                class="table-control automatic-edit-control sale-edit-control"
+                                                type="text"
+                                                name="source"
+                                                value="{{ sale.source }}"
+                                                form="{{ edit_form_id }}"
+                                                required
+                                            >
                                         </td>
 
                                         <td class="col-product">
-                                            <div class="product-name">
+                                            <div class="product-name automatic-view-value">
                                                 {{ sale.product_name or "—" }}
                                             </div>
 
-                                            {% if sale.bitrix_product_name %}
-                                                <div class="product-bitrix">
-                                                    {{ sale.bitrix_product_name }}
-                                                </div>
-                                            {% endif %}
+                                            <input
+                                                class="table-control automatic-edit-control sale-edit-control"
+                                                type="text"
+                                                name="product_name"
+                                                value="{{ sale.product_name }}"
+                                                form="{{ edit_form_id }}"
+                                                required
+                                            >
                                         </td>
 
                                         <td class="col-qty">
-                                            {{ sale.quantity }}
+                                            <span class="automatic-view-value">
+                                                {{ sale.quantity }}
+                                            </span>
+
+                                            <select
+                                                class="table-control automatic-edit-control sale-edit-control"
+                                                name="quantity"
+                                                form="{{ edit_form_id }}"
+                                                required
+                                            >
+                                                {% for quantity_option in range(1, 26) %}
+                                                    <option
+                                                        value="{{ quantity_option }}"
+                                                        {% if sale.quantity_value == quantity_option %}selected{% endif %}
+                                                    >
+                                                        {{ quantity_option }}
+                                                    </option>
+                                                {% endfor %}
+                                            </select>
                                         </td>
 
                                         <td class="col-order">
-                                            {% if sale.order_id %}
-                                                <a
-                                                    class="order-link"
-                                                    href="/order/{{ sale.order_id }}"
-                                                >
-                                                    {{ sale.order_number }}
-                                                </a>
-                                            {% elif sale.order_number %}
-                                                {{ sale.order_number }}
-                                            {% else %}
-                                                <span class="placeholder">—</span>
-                                            {% endif %}
+                                            <span class="automatic-view-value">
+                                                {% if sale.order_id %}
+                                                    <a
+                                                        class="order-link"
+                                                        href="/order/{{ sale.order_id }}"
+                                                    >
+                                                        {{ sale.order_number }}
+                                                    </a>
+                                                {% else %}
+                                                    {{ sale.order_number or "—" }}
+                                                {% endif %}
+                                            </span>
+
+                                            <input
+                                                class="table-control automatic-edit-control sale-edit-control"
+                                                type="text"
+                                                name="order_number"
+                                                value="{{ sale.order_number }}"
+                                                form="{{ edit_form_id }}"
+                                            >
                                         </td>
 
                                         <td class="col-track">
-                                            {{ sale.track_number or "—" }}
+                                            <span class="automatic-view-value">
+                                                {{ sale.track_number or "—" }}
+                                            </span>
+
+                                            <input
+                                                class="table-control automatic-edit-control sale-edit-control"
+                                                type="text"
+                                                name="track_number"
+                                                value="{{ sale.track_number }}"
+                                                form="{{ edit_form_id }}"
+                                            >
                                         </td>
 
                                         <td class="col-delivery">
-                                            {{ sale.delivery_method or "—" }}
+                                            <span class="automatic-view-value">
+                                                {{ sale.delivery_method or "—" }}
+                                            </span>
+
+                                            <select
+                                                class="table-control automatic-edit-control sale-edit-control"
+                                                name="delivery_method"
+                                                form="{{ edit_form_id }}"
+                                            >
+                                                <option
+                                                    value=""
+                                                    {% if not sale.delivery_method %}selected{% endif %}
+                                                >
+                                                    Не выбран
+                                                </option>
+
+                                                {% for delivery_option in [
+                                                    "Пункт выдачи заказов СДЭК",
+                                                    "Курьером СДЭК",
+                                                    "ТТТ Экспресс",
+                                                    "Почта России",
+                                                    "Экспресс.ру"
+                                                ] %}
+                                                    <option
+                                                        value="{{ delivery_option }}"
+                                                        {% if sale.delivery_method == delivery_option %}selected{% endif %}
+                                                    >
+                                                        {{ delivery_option }}
+                                                    </option>
+                                                {% endfor %}
+                                            </select>
                                         </td>
 
                                         <td class="col-region">
-                                            {{ sale.region or "—" }}
+                                            <span class="automatic-view-value">
+                                                {{ sale.region or "—" }}
+                                            </span>
+
+                                            <input
+                                                class="table-control automatic-edit-control sale-edit-control"
+                                                type="text"
+                                                name="region"
+                                                value="{{ sale.region }}"
+                                                list="russian-regions-list"
+                                                autocomplete="off"
+                                                form="{{ edit_form_id }}"
+                                            >
                                         </td>
 
                                         <td class="col-note">
-                                            {{ sale.note or "—" }}
+                                            <span class="automatic-view-value">
+                                                {{ sale.note or "—" }}
+                                            </span>
+
+                                            <textarea
+                                                class="table-control automatic-edit-control sale-edit-control"
+                                                name="note"
+                                                form="{{ edit_form_id }}"
+                                            >{{ sale.note }}</textarea>
                                         </td>
 
                                         <td class="col-actions">
-                                            <span class="placeholder">
-                                                Автоматически
-                                            </span>
+                                            <form
+                                                id="{{ edit_form_id }}"
+                                                class="automatic-edit-form editable-sale-form"
+                                                method="post"
+                                                action="/sales/automatic/update"
+                                            >
+                                                <input
+                                                    type="hidden"
+                                                    name="operation_id"
+                                                    value="{{ sale.id }}"
+                                                >
+                                            </form>
+
+                                            <div class="action-buttons automatic-view-actions">
+                                                <button
+                                                    class="button button-edit js-edit-sale"
+                                                    type="button"
+                                                >
+                                                    Редактировать
+                                                </button>
+                                            </div>
+
+                                            <div class="action-buttons automatic-edit-actions">
+                                                <button
+                                                    class="button button-save"
+                                                    type="submit"
+                                                    form="{{ edit_form_id }}"
+                                                >
+                                                    Сохранить
+                                                </button>
+
+                                                <button
+                                                    class="button button-cancel js-cancel-sale"
+                                                    type="button"
+                                                >
+                                                    Отмена
+                                                </button>
+                                            </div>
                                         </td>
                                     {% endif %}
                                 </tr>
@@ -990,7 +1291,7 @@
                                 name="source"
                                 required
                             >
-                                <option value="Битрикс">Битрикс</option>
+                                <option value="Tictactoy">Tictactoy</option>
                                 <option value="Wildberries">Wildberries</option>
                                 <option value="Amazon">Amazon</option>
                                 <option value="Ziiiro сайт">Ziiiro сайт</option>
@@ -1529,6 +1830,60 @@
             });
         });
     }
+
+    const editableSaleForms = Array.from(
+        document.querySelectorAll(".editable-sale-form")
+    );
+
+    editableSaleForms.forEach((form) => {
+        const row = form.closest(".sale-row");
+
+        if (!row) {
+            return;
+        }
+
+        const editButton = row.querySelector(".js-edit-sale");
+        const cancelButton = row.querySelector(".js-cancel-sale");
+
+        if (editButton) {
+            editButton.addEventListener("click", () => {
+                document
+                    .querySelectorAll(".sale-row.is-editing")
+                    .forEach((otherRow) => {
+                        if (otherRow === row) {
+                            return;
+                        }
+
+                        const otherForm = otherRow.querySelector(
+                            ".editable-sale-form"
+                        );
+
+                        if (otherForm) {
+                            otherForm.reset();
+                        }
+
+                        otherRow.classList.remove("is-editing");
+                    });
+
+                row.classList.add("is-editing");
+
+                const firstControl = row.querySelector(
+                    ".sale-edit-control"
+                );
+
+                if (firstControl) {
+                    firstControl.focus();
+                }
+            });
+        }
+
+        if (cancelButton) {
+            cancelButton.addEventListener("click", () => {
+                form.reset();
+                row.classList.remove("is-editing");
+            });
+        }
+    });
 
     const dateInput = document.getElementById("created_at");
 
