@@ -1854,5 +1854,60 @@ def repair_delete():
 
 
 
+
+@app.route("/sales")
+def sales_page():
+    operations = load_stock_operations()
+
+    sales = []
+    total_quantity = 0
+
+    for operation in operations:
+        source = str(operation.get("source") or "")
+        operation_type = str(operation.get("type") or "")
+
+        if source != "Заказ Битрикс":
+            continue
+
+        if operation_type not in ["writeoff", "loss"]:
+            continue
+
+        try:
+            quantity_number = float(operation.get("quantity") or 0)
+        except Exception:
+            quantity_number = 0
+
+        total_quantity += quantity_number
+
+        order_id = str(operation.get("order_id") or "")
+        order_number = str(operation.get("order_number") or order_id or "")
+
+        sales.append({
+            "created_at": operation.get("created_at") or "",
+            "order_id": order_id,
+            "order_number": order_number,
+            "product_name": operation.get("product_name") or "",
+            "bitrix_product_name": operation.get("bitrix_product_name") or "",
+            "quantity": format_stock_number(quantity_number),
+            "reason": operation.get("reason") or "",
+            "document_name": operation.get("moysklad_document_name") or "",
+            "document_url": operation.get("moysklad_document_url") or "",
+            "status": operation.get("status") or "",
+        })
+
+    unique_orders = set()
+    for sale in sales:
+        if sale.get("order_number"):
+            unique_orders.add(sale["order_number"])
+
+    return render_template(
+        "sales.html",
+        sales=sales,
+        total_sales=len(sales),
+        total_orders=len(unique_orders),
+        total_quantity=format_stock_number(total_quantity),
+    )
+
+
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5050, debug=True)

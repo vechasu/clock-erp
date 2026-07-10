@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <title>ТТТ ERP — Продажи</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <style>
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            background: #f6f7fb;
+            color: #111827;
+            font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+
+        .app {
+            display: grid;
+            grid-template-columns: 260px 1fr;
+            min-height: 100vh;
+        }
+
+        .main { padding: 28px; }
+
+        .topbar {
+            display: flex;
+            justify-content: space-between;
+            gap: 18px;
+            align-items: flex-start;
+            margin-bottom: 22px;
+        }
+
+        .title h1 {
+            margin: 0 0 6px;
+            font-size: 30px;
+            letter-spacing: -0.03em;
+        }
+
+        .title p {
+            margin: 0;
+            color: #6b7280;
+            font-size: 14px;
+        }
+
+        .sync-card {
+            background: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-radius: 18px;
+            padding: 14px 16px;
+            min-width: 210px;
+            box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
+        }
+
+        .sync-label {
+            color: #6b7280;
+            font-size: 12px;
+            margin-bottom: 5px;
+        }
+
+        .sync-status {
+            color: #16a34a;
+            font-weight: 800;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 14px;
+            margin-bottom: 18px;
+        }
+
+        .stat-card {
+            background: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-radius: 18px;
+            padding: 18px;
+            box-shadow: 0 12px 30px rgba(15, 23, 42, 0.05);
+        }
+
+        .stat-label {
+            color: #6b7280;
+            font-size: 13px;
+            margin-bottom: 8px;
+        }
+
+        .stat-value {
+            font-size: 28px;
+            font-weight: 900;
+            letter-spacing: -0.04em;
+        }
+
+        .panel {
+            background: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-radius: 22px;
+            overflow: hidden;
+            box-shadow: 0 18px 40px rgba(15, 23, 42, 0.06);
+        }
+
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 14px;
+            padding: 16px;
+            border-bottom: 1px solid #e5e7eb;
+            background: #fbfdff;
+        }
+
+        .search {
+            width: 100%;
+            max-width: 440px;
+            border: 1px solid #d1d5db;
+            border-radius: 14px;
+            padding: 12px 14px;
+            font-size: 14px;
+            outline: none;
+            background: #ffffff;
+        }
+
+        .hint {
+            color: #6b7280;
+            font-size: 13px;
+            white-space: nowrap;
+        }
+
+        .sales-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .sales-table th {
+            text-align: left;
+            font-size: 12px;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            background: #f9fafb;
+            padding: 13px 16px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .sales-table td {
+            padding: 15px 16px;
+            border-bottom: 1px solid #eef2f7;
+            vertical-align: top;
+            font-size: 14px;
+        }
+
+        .sales-table tr:hover { background: #f9fafb; }
+
+        .order-link {
+            color: #2563eb;
+            text-decoration: none;
+            font-weight: 800;
+        }
+
+        .order-link:hover { text-decoration: underline; }
+
+        .product-main {
+            font-weight: 800;
+            margin-bottom: 4px;
+        }
+
+        .product-sub {
+            color: #6b7280;
+            font-size: 13px;
+        }
+
+        .qty { font-weight: 900; }
+
+        .doc-link {
+            display: inline-flex;
+            align-items: center;
+            text-decoration: none;
+            color: #111827;
+            background: #f3f4f6;
+            border-radius: 999px;
+            padding: 6px 10px;
+            font-size: 13px;
+            font-weight: 800;
+        }
+
+        .doc-link:hover { background: #e5e7eb; }
+
+        .empty {
+            padding: 50px 22px;
+            text-align: center;
+            color: #6b7280;
+        }
+
+        @media (max-width: 1100px) {
+            .app { grid-template-columns: 1fr; }
+            .sidebar { display: none; }
+            .stats { grid-template-columns: 1fr; }
+            .panel-header {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            .hint { white-space: normal; }
+            .sales-table { min-width: 860px; }
+            .table-wrap { overflow-x: auto; }
+        }
+    </style>
+</head>
+
+<body>
+<div class="app">
+    {% include "_sidebar.html" %}
+
+    <main class="main">
+        <div class="topbar">
+            <div class="title">
+                <h1>Продажи</h1>
+                <p>Продажи строятся из списаний заказов Битрикс со склада.</p>
+            </div>
+
+            <div class="sync-card">
+                <div class="sync-label">Статус раздела</div>
+                <div class="sync-status">● Читает журнал операций</div>
+            </div>
+        </div>
+
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-label">Строк продаж</div>
+                <div class="stat-value">{{ total_sales }}</div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-label">Заказов</div>
+                <div class="stat-value">{{ total_orders }}</div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-label">Списано единиц</div>
+                <div class="stat-value">{{ total_quantity }}</div>
+            </div>
+        </div>
+
+        <section class="panel">
+            <div class="panel-header">
+                <input id="salesSearch" class="search" type="text" placeholder="Поиск по заказу, товару или документу МойСклад">
+                <div class="hint">Деньги добавим следующим шагом через данные заказа Битрикс.</div>
+            </div>
+
+            {% if sales %}
+                <div class="table-wrap">
+                    <table class="sales-table">
+                        <thead>
+                            <tr>
+                                <th>Дата</th>
+                                <th>Заказ</th>
+                                <th>Товар</th>
+                                <th>Кол-во</th>
+                                <th>Документ</th>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+                            {% for sale in sales %}
+                                <tr class="sale-row" data-search="{{ sale.created_at }} {{ sale.order_number }} {{ sale.product_name }} {{ sale.bitrix_product_name }} {{ sale.document_name }}">
+                                    <td>{{ sale.created_at or "—" }}</td>
+
+                                    <td>
+                                        {% if sale.order_id %}
+                                            <a class="order-link" href="/order/{{ sale.order_id }}">№{{ sale.order_number }}</a>
+                                        {% else %}
+                                            —
+                                        {% endif %}
+                                    </td>
+
+                                    <td>
+                                        <div class="product-main">{{ sale.product_name or "—" }}</div>
+                                        {% if sale.bitrix_product_name %}
+                                            <div class="product-sub">Битрикс: {{ sale.bitrix_product_name }}</div>
+                                        {% endif %}
+                                    </td>
+
+                                    <td><span class="qty">{{ sale.quantity }}</span></td>
+
+                                    <td>
+                                        {% if sale.document_url %}
+                                            <a class="doc-link" href="{{ sale.document_url }}" target="_blank">
+                                                МойСклад {{ sale.document_name or "открыть" }}
+                                            </a>
+                                        {% elif sale.document_name %}
+                                            <span class="doc-link">МойСклад {{ sale.document_name }}</span>
+                                        {% else %}
+                                            —
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="empty">Продаж пока нет. Они появятся после списания заказа со склада.</div>
+            {% endif %}
+        </section>
+    </main>
+</div>
+
+<script>
+    const salesSearch = document.getElementById("salesSearch");
+    const saleRows = Array.from(document.querySelectorAll(".sale-row"));
+
+    if (salesSearch) {
+        salesSearch.addEventListener("input", () => {
+            const query = salesSearch.value.toLowerCase().trim();
+
+            saleRows.forEach(row => {
+                const text = (row.dataset.search || "").toLowerCase();
+                row.style.display = text.includes(query) ? "" : "none";
+            });
+        });
+    }
+</script>
+</body>
+</html>

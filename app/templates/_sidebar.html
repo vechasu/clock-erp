@@ -78,6 +78,10 @@
             📦 Заказы
         </a>
 
+        <a class="sidebar-link {% if request.path.startswith('/sales') %}active{% endif %}" href="/sales">
+            💰 Продажи
+        </a>
+
         <a class="sidebar-link {% if request.path.startswith('/warehouse') %}active{% endif %}" href="/warehouse">
             🏷 Остатки
         </a>
