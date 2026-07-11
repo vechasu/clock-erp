@@ -1756,103 +1756,396 @@ def stock_operations_page():
     )
 
 
+REPAIR_STATUS_LABELS = {
+    "new": "Новый",
+    "diagnostics": "Диагностика",
+    "waiting": "Ожидание",
+    "in_progress": "В работе",
+    "ready": "Готов",
+    "issued": "Выдан",
+}
+
+REPAIR_TYPE_LABELS = {
+    "paid": "Платный",
+    "warranty": "Гарантийный",
+    "service": "Сервисный",
+}
+
+
 @app.route("/repair")
 def repair_page():
     from flask import render_template, request
 
-    q = (request.args.get("q") or "").strip().lower()
+    q = (request.args.get("q") or "").strip()
+    status_filter = (request.args.get("status") or "").strip()
     notice = request.args.get("notice") or ""
     message = request.args.get("message") or ""
 
-    cases = load_repair_cases()
-    cases = sorted(cases, key=lambda item: item.get("created_at", ""), reverse=True)
+    all_cases = []
 
-    if q:
+    for original_case in load_repair_cases():
+        case = dict(original_case)
+
+        if case.get("status") == "done":
+            case["status"] = "ready"
+
+        case.setdefault("repair_number", "")
+        case.setdefault("accepted_at", "")
+        case.setdefault("due_date", "")
+        case.setdefault("client_name", "")
+        case.setdefault("client_phone", "")
+        case.setdefault("order_number", "")
+        case.setdefault("product_name", "")
+        case.setdefault("serial_number", "")
+        case.setdefault("equipment", "")
+        case.setdefault("problem", case.get("comment") or "")
+        case.setdefault("repair_type", "paid")
+        case.setdefault("master", "")
+        case.setdefault("responsible", "")
+        case.setdefault("estimate_cost", "")
+        case.setdefault("final_cost", "")
+        case.setdefault("status", "new")
+        case.setdefault("communication", "")
+        case.setdefault("internal_comment", "")
+        case.setdefault("updated_at", case.get("created_at") or "")
+
+        all_cases.append(case)
+
+    stats = {
+        "total": len(all_cases),
+        "new": sum(
+            1 for case in all_cases
+            if case.get("status") == "new"
+        ),
+        "active": sum(
+            1 for case in all_cases
+            if case.get("status") in {"diagnostics", "in_progress"}
+        ),
+        "waiting": sum(
+            1 for case in all_cases
+            if case.get("status") == "waiting"
+        ),
+        "ready": sum(
+            1 for case in all_cases
+            if case.get("status") == "ready"
+        ),
+    }
+
+    cases = all_cases
+
+    if status_filter in REPAIR_STATUS_LABELS:
         cases = [
             case for case in cases
-            if q in " ".join([
-                str(case.get("comment") or ""),
-                str(case.get("order_info") or ""),
-                str(case.get("communication") or ""),
+            if case.get("status") == status_filter
+        ]
+
+    if q:
+        q_lower = q.lower()
+
+        cases = [
+            case for case in cases
+            if q_lower in " ".join([
+                str(case.get("repair_number") or ""),
+                str(case.get("client_name") or ""),
+                str(case.get("client_phone") or ""),
+                str(case.get("order_number") or ""),
+                str(case.get("product_name") or ""),
+                str(case.get("serial_number") or ""),
+                str(case.get("equipment") or ""),
                 str(case.get("problem") or ""),
-                str(case.get("status") or ""),
+                str(case.get("master") or ""),
+                str(case.get("responsible") or ""),
+                str(case.get("communication") or ""),
+                str(case.get("internal_comment") or ""),
             ]).lower()
         ]
+
+    cases = sorted(
+        cases,
+        key=lambda item: (
+            item.get("accepted_at") or "",
+            item.get("created_at") or "",
+        ),
+        reverse=True,
+    )
 
     return render_template(
         "repair.html",
         cases=cases,
         q=q,
+        status_filter=status_filter,
         notice=notice,
         message=message,
-        status_labels={
-            "new": "Новый",
-            "waiting": "Ждём",
-            "in_progress": "В работе",
-            "done": "Готово",
-        },
+        stats=stats,
+        status_labels=REPAIR_STATUS_LABELS,
+        type_labels=REPAIR_TYPE_LABELS,
     )
 
 
 @app.route("/repair/add", methods=["POST"])
 def repair_add():
-    from flask import request, redirect
     from datetime import datetime
+    from flask import redirect, request
     import uuid
 
+    now = datetime.now()
     cases = load_repair_cases()
 
-    comment = (request.form.get("comment") or "").strip()
+    client_name = (request.form.get("client_name") or "").strip()
+    client_phone = (request.form.get("client_phone") or "").strip()
+    product_name = (request.form.get("product_name") or "").strip()
+    problem = (request.form.get("problem") or "").strip()
 
-    if not comment:
-        return redirect("/repair?notice=error&message=Комментарий обязателен")
+    if not client_name:
+        return redirect(
+            "/repair?notice=error&message=Укажите имя клиента"
+        )
+
+    if not client_phone:
+        return redirect(
+            "/repair?notice=error&message=Укажите телефон клиента"
+        )
+
+    if not product_name:
+        return redirect(
+            "/repair?notice=error&message=Укажите товар"
+        )
+
+    if not problem:
+        return redirect(
+            "/repair?notice=error&message=Опишите неисправность"
+        )
+
+    existing_numbers = {
+        str(case.get("repair_number") or "")
+        for case in cases
+    }
+
+    sequence = len(cases) + 1
+    repair_number = f"R-{now.year}-{sequence:04d}"
+
+    while repair_number in existing_numbers:
+        sequence += 1
+        repair_number = f"R-{now.year}-{sequence:04d}"
+
+    status = (request.form.get("status") or "new").strip()
+
+    if status not in REPAIR_STATUS_LABELS:
+        status = "new"
+
+    repair_type = (
+        request.form.get("repair_type") or "paid"
+    ).strip()
+
+    if repair_type not in REPAIR_TYPE_LABELS:
+        repair_type = "paid"
 
     cases.append({
         "id": str(uuid.uuid4()),
-        "created_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
-        "comment": comment,
-        "order_info": (request.form.get("order_info") or "").strip(),
-        "communication": (request.form.get("communication") or "").strip(),
-        "problem": (request.form.get("problem") or "").strip(),
-        "status": (request.form.get("status") or "new").strip(),
+        "repair_number": repair_number,
+        "created_at": now.strftime("%Y-%m-%d %H:%M"),
+        "updated_at": now.strftime("%Y-%m-%d %H:%M"),
+        "accepted_at": (
+            request.form.get("accepted_at")
+            or now.strftime("%Y-%m-%d")
+        ).strip(),
+        "due_date": (
+            request.form.get("due_date") or ""
+        ).strip(),
+        "client_name": client_name,
+        "client_phone": client_phone,
+        "order_number": (
+            request.form.get("order_number") or ""
+        ).strip(),
+        "product_name": product_name,
+        "serial_number": (
+            request.form.get("serial_number") or ""
+        ).strip(),
+        "equipment": (
+            request.form.get("equipment") or ""
+        ).strip(),
+        "problem": problem,
+        "repair_type": repair_type,
+        "master": (
+            request.form.get("master") or ""
+        ).strip(),
+        "responsible": (
+            request.form.get("responsible") or ""
+        ).strip(),
+        "estimate_cost": (
+            request.form.get("estimate_cost") or ""
+        ).strip(),
+        "final_cost": (
+            request.form.get("final_cost") or ""
+        ).strip(),
+        "status": status,
+        "communication": (
+            request.form.get("communication") or ""
+        ).strip(),
+        "internal_comment": (
+            request.form.get("internal_comment") or ""
+        ).strip(),
     })
 
     save_repair_cases(cases)
 
-    return redirect("/repair?notice=success&message=Ремонт добавлен")
+    return redirect(
+        "/repair?notice=success&message=Ремонт добавлен"
+    )
+
+
+@app.route("/repair/update", methods=["POST"])
+def repair_update():
+    from datetime import datetime
+    from flask import redirect, request
+
+    case_id = (request.form.get("case_id") or "").strip()
+    cases = load_repair_cases()
+    updated = False
+
+    status = (request.form.get("status") or "new").strip()
+
+    if status not in REPAIR_STATUS_LABELS:
+        status = "new"
+
+    repair_type = (
+        request.form.get("repair_type") or "paid"
+    ).strip()
+
+    if repair_type not in REPAIR_TYPE_LABELS:
+        repair_type = "paid"
+
+    for case in cases:
+        if case.get("id") != case_id:
+            continue
+
+        case.update({
+            "accepted_at": (
+                request.form.get("accepted_at") or ""
+            ).strip(),
+            "due_date": (
+                request.form.get("due_date") or ""
+            ).strip(),
+            "client_name": (
+                request.form.get("client_name") or ""
+            ).strip(),
+            "client_phone": (
+                request.form.get("client_phone") or ""
+            ).strip(),
+            "order_number": (
+                request.form.get("order_number") or ""
+            ).strip(),
+            "product_name": (
+                request.form.get("product_name") or ""
+            ).strip(),
+            "serial_number": (
+                request.form.get("serial_number") or ""
+            ).strip(),
+            "equipment": (
+                request.form.get("equipment") or ""
+            ).strip(),
+            "problem": (
+                request.form.get("problem") or ""
+            ).strip(),
+            "repair_type": repair_type,
+            "master": (
+                request.form.get("master") or ""
+            ).strip(),
+            "responsible": (
+                request.form.get("responsible") or ""
+            ).strip(),
+            "estimate_cost": (
+                request.form.get("estimate_cost") or ""
+            ).strip(),
+            "final_cost": (
+                request.form.get("final_cost") or ""
+            ).strip(),
+            "status": status,
+            "communication": (
+                request.form.get("communication") or ""
+            ).strip(),
+            "internal_comment": (
+                request.form.get("internal_comment") or ""
+            ).strip(),
+            "updated_at": datetime.now().strftime(
+                "%Y-%m-%d %H:%M"
+            ),
+        })
+
+        updated = True
+        break
+
+    if not updated:
+        return redirect(
+            "/repair?notice=error&message=Ремонт не найден"
+        )
+
+    save_repair_cases(cases)
+
+    return redirect(
+        "/repair?notice=success&message=Ремонт обновлён"
+    )
 
 
 @app.route("/repair/status", methods=["POST"])
 def repair_status():
-    from flask import request, redirect
+    from datetime import datetime
+    from flask import redirect, request
 
     case_id = (request.form.get("case_id") or "").strip()
     status = (request.form.get("status") or "new").strip()
 
+    if status not in REPAIR_STATUS_LABELS:
+        return redirect(
+            "/repair?notice=error&message=Некорректный статус"
+        )
+
     cases = load_repair_cases()
+    updated = False
 
     for case in cases:
         if case.get("id") == case_id:
             case["status"] = status
+            case["updated_at"] = datetime.now().strftime(
+                "%Y-%m-%d %H:%M"
+            )
+            updated = True
             break
+
+    if not updated:
+        return redirect(
+            "/repair?notice=error&message=Ремонт не найден"
+        )
 
     save_repair_cases(cases)
 
-    return redirect("/repair?notice=success&message=Статус обновлён")
+    return redirect(
+        "/repair?notice=success&message=Статус обновлён"
+    )
 
 
 @app.route("/repair/delete", methods=["POST"])
 def repair_delete():
-    from flask import request, redirect
+    from flask import redirect, request
 
     case_id = (request.form.get("case_id") or "").strip()
+    cases = load_repair_cases()
 
-    cases = [case for case in load_repair_cases() if case.get("id") != case_id]
-    save_repair_cases(cases)
+    filtered_cases = [
+        case for case in cases
+        if case.get("id") != case_id
+    ]
 
-    return redirect("/repair?notice=success&message=Ремонт удалён")
+    if len(filtered_cases) == len(cases):
+        return redirect(
+            "/repair?notice=error&message=Ремонт не найден"
+        )
 
+    save_repair_cases(filtered_cases)
 
+    return redirect(
+        "/repair?notice=success&message=Ремонт удалён"
+    )
 
 
 def get_manual_sales_path():

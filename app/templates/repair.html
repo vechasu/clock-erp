@@ -2,49 +2,1271 @@
 <html lang="ru">
 <head>
     <meta charset="utf-8">
-    <title>ТТТ ERP — Ремонт</title>
+    <title>Vechasu ERP — Ремонт</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
 
     <style>
-        body { margin: 0; background: #f6f7f9; color: #111827; font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; }
-        .main { padding: 28px; }
-        h1 { margin: 0 0 8px; font-size: 34px; letter-spacing: -0.04em; }
-        .subtitle { color: #6b7280; margin-bottom: 24px; }
-        .card { background: white; border: 1px solid #e5e7eb; border-radius: 20px; padding: 18px; margin-bottom: 20px; box-shadow: 0 18px 50px rgba(15, 23, 42, 0.08); }
-        .card-title { font-size: 18px; font-weight: 900; margin-bottom: 14px; }
-        .form-grid { display: grid; grid-template-columns: 1.2fr 0.9fr 1fr 1.3fr 0.8fr; gap: 10px; align-items: start; }
-        input, textarea, select { width: 100%; border: 1px solid #d1d5db; border-radius: 14px; padding: 12px 14px; font-size: 14px; font-family: inherit; box-sizing: border-box; }
-        textarea { min-height: 86px; resize: vertical; }
-        .btn { border: 0; border-radius: 14px; padding: 12px 14px; font-weight: 900; cursor: pointer; text-decoration: none; display: inline-flex; justify-content: center; align-items: center; }
-        .btn-primary { background: #111827; color: white; width: 100%; margin-top: 10px; }
-        .btn-soft { background: #eef2ff; color: #3730a3; width: 100%; margin-top: 8px; }
-        .btn-danger { background: #fee2e2; color: #991b1b; width: 100%; margin-top: 8px; }
-        .notice { padding: 14px 16px; border-radius: 16px; margin-bottom: 18px; font-weight: 900; }
-        .notice.success { background: #dcfce7; color: #166534; }
-        .notice.error { background: #fee2e2; color: #991b1b; }
-        .toolbar { display: flex; gap: 10px; align-items: center; justify-content: space-between; margin-bottom: 14px; }
-        .search { display: flex; gap: 10px; flex: 1; max-width: 620px; }
-        table { width: 100%; border-collapse: collapse; min-width: 1100px; }
-        th { text-align: left; background: #f9fafb; color: #374151; font-size: 13px; padding: 13px 12px; border-bottom: 1px solid #e5e7eb; }
-        td { padding: 13px 12px; border-bottom: 1px solid #eef2f7; vertical-align: top; font-size: 14px; line-height: 1.35; }
-        .table-wrap { overflow-x: auto; }
-        .status { display: inline-flex; padding: 7px 10px; border-radius: 999px; font-size: 12px; font-weight: 900; white-space: nowrap; }
-        .status.new { background: #dbeafe; color: #1d4ed8; }
-        .status.waiting { background: #fef3c7; color: #92400e; }
-        .status.in_progress { background: #ede9fe; color: #6d28d9; }
-        .status.done { background: #dcfce7; color: #166534; }
-        .empty { padding: 30px; text-align: center; color: #6b7280; font-weight: 900; }
-        @media (max-width: 1100px) { .main { padding: 20px; } .form-grid { grid-template-columns: 1fr; } .toolbar { flex-direction: column; align-items: stretch; } .search { max-width: none; } }
-
-        /* Заголовок страницы удалён для экономии места */
-        .main {
-            padding-top: 10px;
+        * {
+            box-sizing: border-box;
         }
-        /* Конец компактного верха страницы */
 
-</style>
+        :root {
+            --bg: #f4f6f8;
+            --card: #ffffff;
+            --border: #dfe3e8;
+            --border-strong: #cfd5dc;
+            --text: #111827;
+            --muted: #6b7280;
+            --blue: #2563eb;
+            --blue-dark: #1d4ed8;
+            --green: #059669;
+            --red: #dc2626;
+        }
+
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--text);
+            font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+
+        button,
+        input,
+        select,
+        textarea {
+            font: inherit;
+        }
+
+        button {
+            cursor: pointer;
+        }
+
+        .app {
+            display: grid;
+            grid-template-columns: 260px minmax(0, 1fr);
+            min-height: 100vh;
+        }
+
+        .main {
+            min-width: 0;
+            padding: 16px 26px 28px;
+            overflow: hidden;
+        }
+
+        .page-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 12px;
+        }
+
+        .page-title {
+            margin: 0 0 3px;
+            font-size: 27px;
+            line-height: 1.1;
+            letter-spacing: -0.03em;
+        }
+
+        .page-subtitle {
+            margin: 0;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .notice {
+            margin-bottom: 12px;
+            padding: 12px 14px;
+            border: 1px solid;
+            border-radius: 12px;
+            font-size: 14px;
+            font-weight: 750;
+        }
+
+        .notice-success {
+            color: #166534;
+            background: #dcfce7;
+            border-color: #86efac;
+        }
+
+        .notice-error {
+            color: #991b1b;
+            background: #fee2e2;
+            border-color: #fca5a5;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(105px, 1fr)) minmax(190px, 1.2fr);
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        .stat-card,
+        .add-button {
+            min-height: 54px;
+            border-radius: 14px;
+        }
+
+        .stat-card {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 9px 12px;
+            color: inherit;
+            text-decoration: none;
+            background: var(--card);
+            border: 1px solid var(--border);
+            transition: border-color 0.15s ease, transform 0.15s ease;
+        }
+
+        .stat-card:hover {
+            border-color: #9ca3af;
+            transform: translateY(-1px);
+        }
+
+        .stat-card.active {
+            border-color: var(--blue);
+            box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.08);
+        }
+
+        .stat-label {
+            color: var(--muted);
+            font-size: 11px;
+            font-weight: 800;
+        }
+
+        .stat-value {
+            font-size: 21px;
+            line-height: 1;
+            font-weight: 900;
+        }
+
+        .add-button {
+            border: none;
+            padding: 0 18px;
+            color: #ffffff;
+            background: var(--blue);
+            font-size: 14px;
+            font-weight: 850;
+            box-shadow: 0 5px 16px rgba(37, 99, 235, 0.16);
+        }
+
+        .add-button:hover {
+            background: var(--blue-dark);
+        }
+
+        .toolbar {
+            display: grid;
+            grid-template-columns: minmax(260px, 1fr) 210px auto;
+            gap: 9px;
+            margin-bottom: 10px;
+        }
+
+        .control {
+            width: 100%;
+            min-height: 40px;
+            border: 1px solid var(--border-strong);
+            border-radius: 10px;
+            padding: 9px 12px;
+            color: var(--text);
+            background: #ffffff;
+            outline: none;
+        }
+
+        textarea.control {
+            min-height: 88px;
+            resize: vertical;
+            line-height: 1.4;
+        }
+
+        .control:focus {
+            border-color: var(--blue);
+            box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+        }
+
+        .button {
+            min-height: 38px;
+            border: none;
+            border-radius: 9px;
+            padding: 8px 13px;
+            font-weight: 800;
+            white-space: nowrap;
+        }
+
+        .button-primary {
+            color: #ffffff;
+            background: var(--blue);
+        }
+
+        .button-primary:hover {
+            background: var(--blue-dark);
+        }
+
+        .button-edit {
+            color: #1d4ed8;
+            background: #dbeafe;
+        }
+
+        .button-edit:hover {
+            background: #bfdbfe;
+        }
+
+        .button-delete {
+            color: #991b1b;
+            background: #fee2e2;
+        }
+
+        .button-delete:hover {
+            background: #fecaca;
+        }
+
+        .button-secondary {
+            color: #374151;
+            background: #e5e7eb;
+        }
+
+        .button-secondary:hover {
+            background: #d1d5db;
+        }
+
+        .table-card {
+            overflow: hidden;
+            background: #ffffff;
+            border: 1px solid var(--border-strong);
+            border-radius: 14px;
+        }
+
+        .table-wrap {
+            overflow-x: auto;
+        }
+
+        .repair-table {
+            width: 100%;
+            min-width: 1680px;
+            border-collapse: collapse;
+            table-layout: fixed;
+        }
+
+        .repair-table th,
+        .repair-table td {
+            padding: 9px 10px;
+            border-right: 1px solid #e1e5ea;
+            border-bottom: 1px solid #e1e5ea;
+            text-align: left;
+            vertical-align: top;
+            font-size: 13px;
+            line-height: 1.35;
+        }
+
+        .repair-table th {
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            color: #4b5563;
+            background: #f8fafc;
+            font-size: 11px;
+            font-weight: 850;
+            text-transform: uppercase;
+            letter-spacing: 0.025em;
+        }
+
+        .repair-table th:last-child,
+        .repair-table td:last-child {
+            border-right: none;
+        }
+
+        .repair-table tbody tr:last-child td {
+            border-bottom: none;
+        }
+
+        .repair-table tbody tr:hover {
+            background: #fafcff;
+        }
+
+        .col-number { width: 120px; }
+        .col-date { width: 115px; }
+        .col-status { width: 150px; }
+        .col-client { width: 190px; }
+        .col-product { width: 230px; }
+        .col-problem { width: 280px; }
+        .col-master { width: 150px; }
+        .col-price { width: 130px; }
+        .col-due { width: 115px; }
+        .col-actions { width: 210px; }
+
+        .repair-number {
+            font-weight: 900;
+        }
+
+        .minor {
+            margin-top: 3px;
+            color: var(--muted);
+            font-size: 11px;
+        }
+
+        .cell-title {
+            font-weight: 800;
+        }
+
+        .problem-text {
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+        }
+
+        .status-badge,
+        .type-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 999px;
+            padding: 6px 9px;
+            font-size: 11px;
+            font-weight: 850;
+            white-space: nowrap;
+        }
+
+        .status-new {
+            color: #1d4ed8;
+            background: #dbeafe;
+        }
+
+        .status-diagnostics {
+            color: #6d28d9;
+            background: #ede9fe;
+        }
+
+        .status-waiting {
+            color: #92400e;
+            background: #fef3c7;
+        }
+
+        .status-in_progress {
+            color: #075985;
+            background: #cffafe;
+        }
+
+        .status-ready {
+            color: #166534;
+            background: #dcfce7;
+        }
+
+        .status-issued {
+            color: #374151;
+            background: #e5e7eb;
+        }
+
+        .type-paid {
+            color: #1d4ed8;
+            background: #eff6ff;
+        }
+
+        .type-warranty {
+            color: #166534;
+            background: #ecfdf5;
+        }
+
+        .type-service {
+            color: #6d28d9;
+            background: #f5f3ff;
+        }
+
+        .quick-status {
+            width: 100%;
+            margin-top: 7px;
+            padding: 6px 7px;
+            border: 1px solid var(--border-strong);
+            border-radius: 8px;
+            background: #ffffff;
+            font-size: 11px;
+        }
+
+        .action-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .empty {
+            padding: 48px 24px;
+            text-align: center;
+            color: var(--muted);
+        }
+
+        .empty-title {
+            margin-bottom: 5px;
+            color: #374151;
+            font-size: 17px;
+            font-weight: 900;
+        }
+
+        .modal {
+            position: fixed;
+            inset: 0;
+            z-index: 1000;
+            display: none;
+            align-items: flex-start;
+            justify-content: center;
+            overflow-y: auto;
+            padding: 28px 18px;
+            background: rgba(15, 23, 42, 0.52);
+            backdrop-filter: blur(3px);
+        }
+
+        .modal.open {
+            display: flex;
+        }
+
+        .modal-dialog {
+            width: min(1080px, 100%);
+            overflow: hidden;
+            background: #ffffff;
+            border: 1px solid #d1d5db;
+            border-radius: 18px;
+            box-shadow: 0 26px 80px rgba(15, 23, 42, 0.28);
+        }
+
+        .modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 17px 20px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .modal-title {
+            margin: 0;
+            font-size: 20px;
+        }
+
+        .modal-subtitle {
+            margin: 3px 0 0;
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .modal-close {
+            width: 38px;
+            height: 38px;
+            border: none;
+            border-radius: 10px;
+            color: #4b5563;
+            background: #f3f4f6;
+            font-size: 22px;
+        }
+
+        .modal-close:hover {
+            background: #e5e7eb;
+        }
+
+        .modal-body {
+            padding: 20px;
+        }
+
+        .form-section {
+            margin-bottom: 20px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .form-section:last-child {
+            margin-bottom: 0;
+            padding-bottom: 0;
+            border-bottom: none;
+        }
+
+        .section-title {
+            margin: 0 0 11px;
+            font-size: 14px;
+            font-weight: 900;
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        .field {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .field-span-2 {
+            grid-column: span 2;
+        }
+
+        .field-span-4 {
+            grid-column: span 4;
+        }
+
+        .field label {
+            color: #4b5563;
+            font-size: 12px;
+            font-weight: 800;
+        }
+
+        .required {
+            color: var(--red);
+        }
+
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            padding: 15px 20px;
+            border-top: 1px solid #e5e7eb;
+            background: #f9fafb;
+        }
+
+        body.modal-open {
+            overflow: hidden;
+        }
+
+        @media (max-width: 1180px) {
+            .stats {
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+            }
+
+            .form-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .field-span-4 {
+                grid-column: span 2;
+            }
+        }
+
+        @media (max-width: 820px) {
+            .app {
+                display: block;
+            }
+
+            .main {
+                padding: 14px;
+            }
+
+            .stats {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .toolbar {
+                grid-template-columns: 1fr;
+            }
+
+            .form-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .field-span-2,
+            .field-span-4 {
+                grid-column: span 1;
+            }
+
+            .modal {
+                padding: 10px;
+            }
+        }
+    </style>
 </head>
-<body>
 
+<body>
+<div class="app">
+    {% include "_sidebar.html" %}
+
+    <main class="main">
+        <header class="page-header">
+            <div>
+                <h1 class="page-title">Ремонт</h1>
+                <p class="page-subtitle">
+                    Приём, диагностика, контроль сроков и выдача клиенту
+                </p>
+            </div>
+        </header>
+
+        {% if message %}
+            <div class="notice notice-{{ notice or 'success' }}">
+                {{ message }}
+            </div>
+        {% endif %}
+
+        <section class="stats">
+            <a
+                class="stat-card{% if not status_filter %} active{% endif %}"
+                href="/repair"
+            >
+                <span class="stat-label">Всего</span>
+                <span class="stat-value">{{ stats.total }}</span>
+            </a>
+
+            <a
+                class="stat-card{% if status_filter == 'new' %} active{% endif %}"
+                href="/repair?status=new"
+            >
+                <span class="stat-label">Новые</span>
+                <span class="stat-value">{{ stats.new }}</span>
+            </a>
+
+            <div class="stat-card">
+                <span class="stat-label">В работе</span>
+                <span class="stat-value">{{ stats.active }}</span>
+            </div>
+
+            <a
+                class="stat-card{% if status_filter == 'waiting' %} active{% endif %}"
+                href="/repair?status=waiting"
+            >
+                <span class="stat-label">Ожидают</span>
+                <span class="stat-value">{{ stats.waiting }}</span>
+            </a>
+
+            <a
+                class="stat-card{% if status_filter == 'ready' %} active{% endif %}"
+                href="/repair?status=ready"
+            >
+                <span class="stat-label">Готовы</span>
+                <span class="stat-value">{{ stats.ready }}</span>
+            </a>
+
+            <button id="openCreateRepair" class="add-button" type="button">
+                + Принять в ремонт
+            </button>
+        </section>
+
+        <form class="toolbar" method="get" action="/repair">
+            <input
+                class="control"
+                type="search"
+                name="q"
+                value="{{ q }}"
+                placeholder="Поиск по номеру, клиенту, телефону, заказу, товару или мастеру"
+            >
+
+            <select class="control" name="status">
+                <option value="">Все статусы</option>
+
+                {% for status_key, status_name in status_labels.items() %}
+                    <option
+                        value="{{ status_key }}"
+                        {% if status_filter == status_key %}selected{% endif %}
+                    >
+                        {{ status_name }}
+                    </option>
+                {% endfor %}
+            </select>
+
+            <button class="button button-primary" type="submit">
+                Найти
+            </button>
+        </form>
+
+        <section class="table-card">
+            {% if cases %}
+                <div class="table-wrap">
+                    <table class="repair-table">
+                        <thead>
+                            <tr>
+                                <th class="col-number">Ремонт</th>
+                                <th class="col-date">Принят</th>
+                                <th class="col-status">Статус</th>
+                                <th class="col-client">Клиент</th>
+                                <th class="col-product">Товар</th>
+                                <th class="col-problem">Неисправность</th>
+                                <th class="col-master">Исполнитель</th>
+                                <th class="col-price">Стоимость</th>
+                                <th class="col-due">Срок</th>
+                                <th class="col-actions">Действия</th>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+                            {% for case in cases %}
+                                <tr>
+                                    <td>
+                                        <div class="repair-number">
+                                            {{ case.repair_number or "Без номера" }}
+                                        </div>
+
+                                        <div class="minor">
+                                            {{ type_labels.get(case.repair_type, case.repair_type) }}
+                                        </div>
+
+                                        {% if case.order_number %}
+                                            <div class="minor">
+                                                Заказ: {{ case.order_number }}
+                                            </div>
+                                        {% endif %}
+                                    </td>
+
+                                    <td>
+                                        <div class="cell-title">
+                                            {{ case.accepted_at or "—" }}
+                                        </div>
+
+                                        <div class="minor">
+                                            Создан: {{ case.created_at or "—" }}
+                                        </div>
+                                    </td>
+
+                                    <td>
+                                        <span class="status-badge status-{{ case.status }}">
+                                            {{ status_labels.get(case.status, case.status) }}
+                                        </span>
+
+                                        <form method="post" action="/repair/status">
+                                            <input type="hidden" name="case_id" value="{{ case.id }}">
+
+                                            <select
+                                                class="quick-status"
+                                                name="status"
+                                                onchange="this.form.submit()"
+                                                aria-label="Изменить статус"
+                                            >
+                                                {% for status_key, status_name in status_labels.items() %}
+                                                    <option
+                                                        value="{{ status_key }}"
+                                                        {% if case.status == status_key %}selected{% endif %}
+                                                    >
+                                                        {{ status_name }}
+                                                    </option>
+                                                {% endfor %}
+                                            </select>
+                                        </form>
+                                    </td>
+
+                                    <td>
+                                        <div class="cell-title">
+                                            {{ case.client_name or "—" }}
+                                        </div>
+
+                                        <div class="minor">
+                                            {{ case.client_phone or "Телефон не указан" }}
+                                        </div>
+
+                                        {% if case.responsible %}
+                                            <div class="minor">
+                                                Ответственный: {{ case.responsible }}
+                                            </div>
+                                        {% endif %}
+                                    </td>
+
+                                    <td>
+                                        <div class="cell-title">
+                                            {{ case.product_name or "—" }}
+                                        </div>
+
+                                        {% if case.serial_number %}
+                                            <div class="minor">
+                                                S/N: {{ case.serial_number }}
+                                            </div>
+                                        {% endif %}
+
+                                        {% if case.equipment %}
+                                            <div class="minor">
+                                                Комплект: {{ case.equipment }}
+                                            </div>
+                                        {% endif %}
+                                    </td>
+
+                                    <td>
+                                        <div class="problem-text">
+                                            {{ case.problem or "—" }}
+                                        </div>
+
+                                        {% if case.internal_comment %}
+                                            <div class="minor">
+                                                Внутренний комментарий: {{ case.internal_comment }}
+                                            </div>
+                                        {% endif %}
+                                    </td>
+
+                                    <td>
+                                        <div class="cell-title">
+                                            {{ case.master or "Не назначен" }}
+                                        </div>
+
+                                        <span class="type-badge type-{{ case.repair_type }}">
+                                            {{ type_labels.get(case.repair_type, case.repair_type) }}
+                                        </span>
+                                    </td>
+
+                                    <td>
+                                        <div class="cell-title">
+                                            {% if case.final_cost %}
+                                                {{ case.final_cost }} ₽
+                                            {% elif case.estimate_cost %}
+                                                ~ {{ case.estimate_cost }} ₽
+                                            {% else %}
+                                                —
+                                            {% endif %}
+                                        </div>
+
+                                        {% if case.estimate_cost and case.final_cost %}
+                                            <div class="minor">
+                                                Оценка: {{ case.estimate_cost }} ₽
+                                            </div>
+                                        {% endif %}
+                                    </td>
+
+                                    <td>
+                                        <div class="cell-title">
+                                            {{ case.due_date or "Не указан" }}
+                                        </div>
+
+                                        <div class="minor">
+                                            Обновлён: {{ case.updated_at or "—" }}
+                                        </div>
+                                    </td>
+
+                                    <td>
+                                        <div class="action-row">
+                                            <button
+                                                class="button button-edit js-edit-repair"
+                                                type="button"
+                                                data-json-id="repair-json-{{ loop.index }}"
+                                            >
+                                                Открыть
+                                            </button>
+
+                                            <form
+                                                method="post"
+                                                action="/repair/delete"
+                                                onsubmit="return confirm('Удалить ремонт {{ case.repair_number }}?');"
+                                            >
+                                                <input type="hidden" name="case_id" value="{{ case.id }}">
+
+                                                <button class="button button-delete" type="submit">
+                                                    Удалить
+                                                </button>
+                                            </form>
+                                        </div>
+
+                                        <script
+                                            id="repair-json-{{ loop.index }}"
+                                            type="application/json"
+                                        >{{ case | tojson }}</script>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="empty">
+                    <div class="empty-title">Ремонтов не найдено</div>
+                    <div>
+                        Добавьте первый ремонт или измените параметры поиска.
+                    </div>
+                </div>
+            {% endif %}
+        </section>
+    </main>
+</div>
+
+<div id="repairModal" class="modal" aria-hidden="true">
+    <div class="modal-dialog">
+        <form id="repairForm" method="post" action="/repair/add">
+            <header class="modal-header">
+                <div>
+                    <h2 id="modalTitle" class="modal-title">
+                        Принять товар в ремонт
+                    </h2>
+
+                    <p id="modalSubtitle" class="modal-subtitle">
+                        Создайте карточку и зафиксируйте состояние товара
+                    </p>
+                </div>
+
+                <button
+                    id="closeRepairModal"
+                    class="modal-close"
+                    type="button"
+                    aria-label="Закрыть"
+                >
+                    ×
+                </button>
+            </header>
+
+            <div class="modal-body">
+                <input id="caseId" type="hidden" name="case_id">
+
+                <section class="form-section">
+                    <h3 class="section-title">Клиент и заказ</h3>
+
+                    <div class="form-grid">
+                        <div class="field">
+                            <label>
+                                Имя клиента <span class="required">*</span>
+                            </label>
+                            <input
+                                id="clientName"
+                                class="control"
+                                type="text"
+                                name="client_name"
+                                required
+                            >
+                        </div>
+
+                        <div class="field">
+                            <label>
+                                Телефон <span class="required">*</span>
+                            </label>
+                            <input
+                                id="clientPhone"
+                                class="control"
+                                type="text"
+                                name="client_phone"
+                                placeholder="+7..."
+                                required
+                            >
+                        </div>
+
+                        <div class="field">
+                            <label>Номер заказа</label>
+                            <input
+                                id="orderNumber"
+                                class="control"
+                                type="text"
+                                name="order_number"
+                            >
+                        </div>
+
+                        <div class="field">
+                            <label>Ответственный сотрудник</label>
+                            <input
+                                id="responsible"
+                                class="control"
+                                type="text"
+                                name="responsible"
+                            >
+                        </div>
+                    </div>
+                </section>
+
+                <section class="form-section">
+                    <h3 class="section-title">Товар и неисправность</h3>
+
+                    <div class="form-grid">
+                        <div class="field field-span-2">
+                            <label>
+                                Товар <span class="required">*</span>
+                            </label>
+                            <input
+                                id="productName"
+                                class="control"
+                                type="text"
+                                name="product_name"
+                                placeholder="Бренд, модель, цвет"
+                                required
+                            >
+                        </div>
+
+                        <div class="field">
+                            <label>Серийный номер</label>
+                            <input
+                                id="serialNumber"
+                                class="control"
+                                type="text"
+                                name="serial_number"
+                            >
+                        </div>
+
+                        <div class="field">
+                            <label>Комплектация</label>
+                            <input
+                                id="equipment"
+                                class="control"
+                                type="text"
+                                name="equipment"
+                                placeholder="Коробка, ремешок..."
+                            >
+                        </div>
+
+                        <div class="field field-span-4">
+                            <label>
+                                Описание неисправности <span class="required">*</span>
+                            </label>
+                            <textarea
+                                id="problem"
+                                class="control"
+                                name="problem"
+                                required
+                            ></textarea>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="form-section">
+                    <h3 class="section-title">Работа и сроки</h3>
+
+                    <div class="form-grid">
+                        <div class="field">
+                            <label>Дата приёма</label>
+                            <input
+                                id="acceptedAt"
+                                class="control"
+                                type="date"
+                                name="accepted_at"
+                            >
+                        </div>
+
+                        <div class="field">
+                            <label>Плановая дата готовности</label>
+                            <input
+                                id="dueDate"
+                                class="control"
+                                type="date"
+                                name="due_date"
+                            >
+                        </div>
+
+                        <div class="field">
+                            <label>Тип ремонта</label>
+                            <select id="repairType" class="control" name="repair_type">
+                                {% for type_key, type_name in type_labels.items() %}
+                                    <option value="{{ type_key }}">
+                                        {{ type_name }}
+                                    </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <div class="field">
+                            <label>Статус</label>
+                            <select id="status" class="control" name="status">
+                                {% for status_key, status_name in status_labels.items() %}
+                                    <option value="{{ status_key }}">
+                                        {{ status_name }}
+                                    </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <div class="field">
+                            <label>Мастер</label>
+                            <input
+                                id="master"
+                                class="control"
+                                type="text"
+                                name="master"
+                            >
+                        </div>
+
+                        <div class="field">
+                            <label>Предварительная стоимость</label>
+                            <input
+                                id="estimateCost"
+                                class="control"
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                name="estimate_cost"
+                            >
+                        </div>
+
+                        <div class="field">
+                            <label>Итоговая стоимость</label>
+                            <input
+                                id="finalCost"
+                                class="control"
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                name="final_cost"
+                            >
+                        </div>
+                    </div>
+                </section>
+
+                <section class="form-section">
+                    <h3 class="section-title">Коммуникация и заметки</h3>
+
+                    <div class="form-grid">
+                        <div class="field field-span-2">
+                            <label>История общения с клиентом</label>
+                            <textarea
+                                id="communication"
+                                class="control"
+                                name="communication"
+                                placeholder="Созвоны, согласование цены, сообщения..."
+                            ></textarea>
+                        </div>
+
+                        <div class="field field-span-2">
+                            <label>Внутренний комментарий</label>
+                            <textarea
+                                id="internalComment"
+                                class="control"
+                                name="internal_comment"
+                                placeholder="Информация только для сотрудников"
+                            ></textarea>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <footer class="modal-footer">
+                <button
+                    id="cancelRepairModal"
+                    class="button button-secondary"
+                    type="button"
+                >
+                    Отмена
+                </button>
+
+                <button
+                    id="submitRepairButton"
+                    class="button button-primary"
+                    type="submit"
+                >
+                    Создать ремонт
+                </button>
+            </footer>
+        </form>
+    </div>
+</div>
+
+<script>
+    const modal = document.getElementById("repairModal");
+    const form = document.getElementById("repairForm");
+    const modalTitle = document.getElementById("modalTitle");
+    const modalSubtitle = document.getElementById("modalSubtitle");
+    const submitButton = document.getElementById("submitRepairButton");
+
+    const fields = {
+        case_id: document.getElementById("caseId"),
+        accepted_at: document.getElementById("acceptedAt"),
+        due_date: document.getElementById("dueDate"),
+        client_name: document.getElementById("clientName"),
+        client_phone: document.getElementById("clientPhone"),
+        order_number: document.getElementById("orderNumber"),
+        product_name: document.getElementById("productName"),
+        serial_number: document.getElementById("serialNumber"),
+        equipment: document.getElementById("equipment"),
+        problem: document.getElementById("problem"),
+        repair_type: document.getElementById("repairType"),
+        master: document.getElementById("master"),
+        responsible: document.getElementById("responsible"),
+        estimate_cost: document.getElementById("estimateCost"),
+        final_cost: document.getElementById("finalCost"),
+        status: document.getElementById("status"),
+        communication: document.getElementById("communication"),
+        internal_comment: document.getElementById("internalComment")
+    };
+
+    function todayIso() {
+        const now = new Date();
+        const offset = now.getTimezoneOffset();
+        return new Date(now.getTime() - offset * 60000)
+            .toISOString()
+            .slice(0, 10);
+    }
+
+    function openModal() {
+        modal.classList.add("open");
+        modal.setAttribute("aria-hidden", "false");
+        document.body.classList.add("modal-open");
+    }
+
+    function closeModal() {
+        modal.classList.remove("open");
+        modal.setAttribute(
+        document.body.classList.remove("modal-open");
+    }
+
+    function setField(name, value) {
+        if (!fields[name]) {
+            return;
+        }
+
+        fields[name].value = value === null || value === undefined
+            ? ""
+            : String(value);
+    }
+
+    function openCreateModal() {
+        form.reset();
+        form.action = "/repair/add";
+
+        Object.keys(fields).forEach(function (name) {
+            setField(name, "");
+        });
+
+        setField("accepted_at", todayIso());
+        setField("repair_type", "paid");
+        setField("status", "new");
+
+        modalTitle.textContent = "Принять товар в ремонт";
+        modalSubtitle.textContent =
+            "Создайте карточку и зафиксируйте состояние товара";
+        submitButton.textContent = "Создать ремонт";
+
+        openModal();
+        fields.client_name.focus();
+    }
+
+    function openEditModal(data) {
+        form.reset();
+        form.action = "/repair/update";
+
+        Object.keys(fields).forEach(function (name) {
+            setField(name, data[name]);
+        });
+
+        modalTitle.textContent =
+            "Ремонт " + (data.repair_number || "");
+        modalSubtitle.textContent =
+            "Измените данные, стоимость, исполнителя или статус";
+        submitButton.textContent = "Сохранить изменения";
+
+        openModal();
+    }
+
+    document
+        .getElementById("openCreateRepair")
+        .addEventListener("click", openCreateModal);
+
+    document
+        .getElementById("closeRepairModal")
+        .addEventListener("click", closeModal);
+
+    document
+        .getElementById("cancelRepairModal")
+        .addEventListener("click", closeModal);
+
+    document.querySelectorAll(".js-edit-repair").forEach(function (button) {
+        button.addEventListener("click", function () {
+            const jsonElement = document.getElementById(
+                button.dataset.jsonId
+            );
+
+            if (!jsonElement) {
+                return;
+            }
+
+            try {
+                const data = JSON.parse(jsonElement.textContent);
+                openEditModal(data);
+            } catch (error) {
+                console.error("Не удалось открыть ремонт", error);
+            }
+        });
+    });
+
+    modal.addEventListener("click", function (event) {
+        if (event.target === modal) {
+            closeModal();
+        }
+    });
+
+    document.addEventListener("keydown", function (event) {
+        if (event.key === "Escape" && modal.classList.contains("open")) {
+            closeModal();
+        }
+    });
+</script>
 </body>
 </html>
