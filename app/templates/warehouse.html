@@ -700,13 +700,6 @@
                     </div>
                 </div>
 
-                <button
-                    class="add-position-card"
-                    type="button"
-                    onclick="toggleWarehouseAddCard()"
-                >
-                    + Добавить позицию в МойСклад
-                </button>
             </div>
 
             {% if selected_category %}
@@ -723,20 +716,15 @@
                 </div>
             {% endif %}
 
-            <div class="add-card is-hidden" id="warehouseAddCard">
-                <div class="add-title">Добавить позицию в МойСклад</div>
-
-                <form class="add-form" method="post" action="/warehouse/add">
-                    <input type="text" name="name" placeholder="Название товара" required>
-                    <input type="text" name="article" placeholder="Артикул">
-                    <button type="submit">Добавить</button>
-                </form>
-            </div>
 
             <div class="search-card">
                 <form class="search-form" method="get" action="/warehouse">
                     {% if selected_category %}
                         <input type="hidden" name="category" value="{{ selected_category }}">
+                    {% endif %}
+
+                    {% if selected_brand %}
+                        <input type="hidden" name="brand" value="{{ selected_brand }}">
                     {% endif %}
 
                     {% if selected_cell %}
@@ -753,9 +741,9 @@
                     <button
                         class="search-tool-button"
                         type="button"
-                        onclick="openCategoryDrawer()"
+                        onclick="openFilterDrawer()"
                     >
-                        Разделы
+                        Фильтры
                     </button>
 
                     <button
@@ -788,7 +776,7 @@
                                 <tr>
                                     <td>
                                         <div class="name">{{ item.name }}</div>
-                                        <div class="muted">{{ item.category }}</div>
+                                        <div class="muted">{{ item.brand }} · {{ item.category }}</div>
                                     </td>
 
                                     <td>{{ item.article or "—" }}</td>
@@ -813,7 +801,8 @@
                                                     data-id="{{ item.id|e }}"
                                                     data-name="{{ item.name|e }}"
                                                     data-article="{{ (item.article or '')|e }}"
-                                                    data-category="{{ item.category|e }}"
+                                                    data-brand="{{ item.brand|e }}"
+                                                      data-category="{{ item.category|e }}"
                                                     data-stock="{{ item.stock_display|e }}"
                                                     data-cell="{{ item.cell|e }}"
                                                     data-cell-source="{{ item.cell_source|e }}"
@@ -846,63 +835,77 @@
 
     <div id="drawerBackdrop" class="drawer-backdrop" onclick="closeAllDrawers()"></div>
 
-    <aside id="categoryDrawer" class="drawer">
+    <aside id="filterDrawer" class="drawer">
         <div class="drawer-header">
             <div>
-                <div class="drawer-title">Разделы склада</div>
-                <div class="drawer-subtitle">Позиции по брендам и категориям</div>
+                <div class="drawer-title">Фильтры товаров</div>
+                <div class="drawer-subtitle">Выбери бренд и категорию одновременно</div>
             </div>
 
             <button class="close-button" type="button" onclick="closeAllDrawers()">×</button>
         </div>
 
-        {% macro render_category_options(nodes, level=0) %}
+        {% macro render_category_options(nodes, selected_value="", level=0) %}
             {% for node in nodes %}
-                <option value="{{ node.path }}">{{ "— " * level }}{{ node.name }} · {{ node.count }}</option>
+                <option
+                    value="{{ node.path }}"
+                    {% if selected_value == node.path %}selected{% endif %}
+                >
+                    {{ "— " * level }}{{ node.name }} · {{ node.count }}
+                </option>
 
                 {% if node.children %}
-                    {{ render_category_options(node.children, level + 1) }}
+                    {{ render_category_options(node.children, selected_value, level + 1) }}
                 {% endif %}
             {% endfor %}
         {% endmacro %}
 
-        <form class="category-cell-form" method="post" action="/warehouse/category-cell">
-            <div class="category-cell-form-title">Назначить ячейку разделу</div>
+        <form class="category-cell-form" method="get" action="/warehouse">
+            {% if query %}
+                <input type="hidden" name="q" value="{{ query }}">
+            {% endif %}
 
-            <select name="category" required>
-                <option value="">Выбери раздел</option>
-                {{ render_category_options(category_tree) }}
+            {% if selected_cell %}
+                <input type="hidden" name="cell" value="{{ selected_cell }}">
+            {% endif %}
+
+            <div class="category-cell-form-title">Бренд</div>
+
+            <input
+                id="brandSelect"
+                type="text"
+                name="brand"
+                list="brandOptions"
+                value="{{ selected_brand }}"
+                placeholder="Все бренды — начни вводить название"
+                autocomplete="off"
+            >
+
+            <datalist id="brandOptions">
+                {% for brand in brand_groups %}
+                    <option
+                        value="{{ brand.name }}"
+                        label="{{ brand.count }} позиций"
+                    ></option>
+                {% endfor %}
+            </datalist>
+
+            <div class="category-cell-form-title" style="margin-top: 14px;">
+                Категория
+            </div>
+
+            <select name="category">
+                <option value="">Все категории</option>
+                {{ render_category_options(category_tree, selected_category) }}
             </select>
 
-            <input type="text" name="cell" placeholder="Например A-01">
-
-            <button type="submit">Сохранить для раздела</button>
+            <button type="submit">Применить фильтры</button>
         </form>
 
-        <div class="category-list">
-            <a class="category-link {% if not selected_category %}active{% endif %}" href="/warehouse{% if query %}?q={{ query|urlencode }}{% endif %}">
-                <span>Все товары</span>
-                <span class="category-count">{{ items|length }}</span>
+        <div style="margin-top: 16px;">
+            <a class="category-link" href="{{ url_for('warehouse_page') }}">
+                <span>Сбросить фильтры</span>
             </a>
-
-            {% macro render_nodes(nodes, level=0) %}
-                {% for node in nodes %}
-                    <a
-                        class="category-link {% if selected_category == node.path %}active{% endif %}"
-                        style="margin-left: {{ level * 14 }}px"
-                        href="/warehouse?category={{ node.path|urlencode }}{% if query %}&q={{ query|urlencode }}{% endif %}"
-                    >
-                        <span>{{ node.name }}</span>
-                        <span class="category-count">{{ node.count }}</span>
-                    </a>
-
-                    {% if node.children %}
-                        {{ render_nodes(node.children, level + 1) }}
-                    {% endif %}
-                {% endfor %}
-            {% endmacro %}
-
-            {{ render_nodes(category_tree) }}
         </div>
     </aside>
 
@@ -917,11 +920,24 @@
             <button class="close-button" type="button" onclick="closeAllDrawers()">×</button>
         </div>
 
+        <form class="category-cell-form" method="post" action="/warehouse/category-cell">
+            <div class="category-cell-form-title">Назначить ячейку разделу</div>
+
+            <select name="category" required>
+                <option value="">Выбери раздел</option>
+                {{ render_category_options(category_tree) }}
+            </select>
+
+            <input type="text" name="cell" placeholder="Например A-01">
+
+            <button type="submit">Сохранить для раздела</button>
+        </form>
+
         <div class="warehouse-map-grid">
             {% for group in cell_groups %}
                 <a
                     class="warehouse-map-cell {% if selected_cell == group.cell %}active{% endif %}"
-                    href="/warehouse?cell={{ group.cell|urlencode }}{% if query %}&q={{ query|urlencode }}{% endif %}"
+                    href="{{ url_for('warehouse_page', cell=group.cell, brand=selected_brand, category=selected_category, q=query) }}"
                 >
                     <div class="warehouse-map-title">{{ group.cell }}</div>
 
@@ -960,6 +976,11 @@
             <div class="product-detail-card">
                 <div class="product-detail-label">Остаток</div>
                 <div id="detailStock" class="product-detail-value">—</div>
+            </div>
+
+            <div class="product-detail-card">
+                <div class="product-detail-label">Бренд</div>
+                <div id="detailBrand" class="product-detail-value">—</div>
             </div>
 
             <div class="product-detail-card">
@@ -1089,10 +1110,10 @@
             }).join("");
         }
 
-        function openCategoryDrawer() {
+        function openFilterDrawer() {
             closeAllDrawers();
             document.getElementById("drawerBackdrop").classList.add("open");
-            document.getElementById("categoryDrawer").classList.add("open");
+            document.getElementById("filterDrawer").classList.add("open");
         }
 
         function openWarehouseMapDrawer() {
@@ -1106,6 +1127,7 @@
 
             const productName = button.dataset.name || "—";
             const productArticle = button.dataset.article || "—";
+            const productBrand = button.dataset.brand || "Без бренда";
             const productCategory = button.dataset.category || "Без категории";
             const productStock = button.dataset.stock || "0";
 
@@ -1147,6 +1169,7 @@
 
             document.getElementById("detailName").textContent = productName;
             document.getElementById("detailStock").textContent = productStock;
+            document.getElementById("detailBrand").textContent = productBrand;
             document.getElementById("detailCategory").textContent = productCategory;
             document.getElementById("detailCell").textContent = productCell
                 ? (productCellSourceLabel ? `${productCell} · ${productCellSourceLabel}` : productCell)
@@ -1163,8 +1186,40 @@
             document.getElementById("editDrawer").classList.add("open");
         }
 
+        function filterBrandOptions(value) {
+            const select = document.getElementById("brandSelect");
+
+            if (!select) {
+                return;
+            }
+
+            const searchValue = (value || "").trim().toLowerCase();
+
+            Array.from(select.options).forEach(function(option, index) {
+                if (index === 0) {
+                    option.hidden = false;
+                    option.disabled = false;
+                    return;
+                }
+
+                const matches = (
+                    !searchValue
+                    || option.textContent.toLowerCase().includes(searchValue)
+                );
+
+                option.hidden = !matches;
+                option.disabled = !matches;
+            });
+
+            const selectedOption = select.options[select.selectedIndex];
+
+            if (selectedOption && selectedOption.hidden) {
+                select.value = "";
+            }
+        }
+
         function closeAllDrawers() {
-            const ids = ["drawerBackdrop", "categoryDrawer", "warehouseMapDrawer", "editDrawer"];
+            const ids = ["drawerBackdrop", "filterDrawer", "warehouseMapDrawer", "editDrawer"];
 
             ids.forEach(function(id) {
                 const element = document.getElementById(id);

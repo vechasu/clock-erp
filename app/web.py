@@ -750,6 +750,22 @@ def build_category_tree(items):
     return convert(tree)
 
 
+def build_brand_groups(items):
+    counts = {}
+
+    for item in items:
+        brand = item.get("brand") or "Без бренда"
+        counts[brand] = counts.get(brand, 0) + 1
+
+    return [
+        {
+            "name": brand,
+            "count": counts[brand],
+        }
+        for brand in sorted(counts, key=str.lower)
+    ]
+
+
 def item_in_category(item, selected_category):
     if not selected_category:
         return True
@@ -766,13 +782,21 @@ def item_in_category(item, selected_category):
 def warehouse_page():
     query = request.args.get("q", "").strip()
     selected_category = request.args.get("category", "").strip()
+    selected_brand = request.args.get("brand", "").strip()
     selected_cell = request.args.get("cell", "").strip()
 
     all_items = get_warehouse_items(force=request.args.get("refresh") == "1")
     category_tree = build_category_tree(all_items)
+    brand_groups = build_brand_groups(all_items)
     cell_groups = build_cell_groups(all_items)
 
     items = all_items
+
+    if selected_brand:
+        items = [
+            item for item in items
+            if (item.get("brand") or "Без бренда") == selected_brand
+        ]
 
     if selected_category:
         items = [
@@ -812,8 +836,10 @@ def warehouse_page():
         items=items,
         query=query,
         selected_category=selected_category,
+        selected_brand=selected_brand,
         selected_cell=selected_cell,
         category_tree=category_tree,
+        brand_groups=brand_groups,
         cell_groups=cell_groups,
         total_stock=total_stock,
         total_stock_display=format_stock_number(total_stock),
@@ -1478,7 +1504,18 @@ def get_warehouse_items(limit=1000, force=False):
             name = product.get("name") or ""
             article = product.get("article") or ""
             code = product.get("code") or ""
-            category = product.get("pathName") or "Без категории"
+            raw_category = product.get("pathName") or "Без категории"
+            path_parts = split_category_path(raw_category)
+
+            if len(path_parts) >= 2:
+                brand = path_parts[0]
+                category = "/".join(path_parts[1:]) or "Без категории"
+            elif path_parts:
+                brand = "Без бренда"
+                category = path_parts[0]
+            else:
+                brand = "Без бренда"
+                category = "Без категории"
 
             stock_row = (
                 stock_by_code.get(wh_key(code))
@@ -1509,6 +1546,13 @@ def get_warehouse_items(limit=1000, force=False):
 
             category_cell, category_cell_path = get_category_cell(category, category_cells)
 
+            # Поддержка назначений, созданных до разделения бренда и категории.
+            if not category_cell:
+                category_cell, category_cell_path = get_category_cell(
+                    raw_category,
+                    category_cells,
+                )
+
             if product_cell:
                 cell = product_cell
                 cell_source = "product"
@@ -1531,7 +1575,9 @@ def get_warehouse_items(limit=1000, force=False):
                 "name": name,
                 "article": article,
                 "code": code,
+                "brand": brand,
                 "category": category,
+                "raw_category": raw_category,
                 "cell": cell,
                 "cell_source": cell_source,
                 "cell_source_label": format_cell_source(cell_source),
@@ -1545,6 +1591,7 @@ def get_warehouse_items(limit=1000, force=False):
         save_warehouse_cells(product_cells)
 
         items.sort(key=lambda item: (
+            item.get("brand") or "",
             item.get("category") or "",
             item.get("name") or ""
         ))
