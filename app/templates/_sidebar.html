@@ -391,6 +391,15 @@
         </a>
 
         <a
+            class="sidebar-link {% if request.path.startswith('/receipts') %}active{% endif %}"
+            href="/receipts"
+            title="Приход"
+        >
+            <span class="sidebar-icon">📥</span>
+            <span class="sidebar-label">Приход</span>
+        </a>
+
+        <a
             class="sidebar-link {% if request.path.startswith('/stock-operations') %}active{% endif %}"
             href="/stock-operations"
             title="Журнал операций"

@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Приход — Vechasu ERP</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            background: #f5f7fb;
+            color: #172033;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+
+        button,
+        input,
+        select,
+        textarea {
+            font: inherit;
+        }
+
+        .page-shell {
+            min-height: 100vh;
+            padding-left: 250px;
+        }
+
+        .page-content {
+            max-width: 1550px;
+            margin: 0 auto;
+            padding: 32px;
+        }
+
+        .page-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 24px;
+            margin-bottom: 24px;
+        }
+
+        .page-title {
+            margin: 0;
+            font-size: 30px;
+            line-height: 1.2;
+        }
+
+        .page-subtitle {
+            margin: 8px 0 0;
+            color: #667085;
+            font-size: 15px;
+        }
+
+        .primary-button {
+            border: 0;
+            border-radius: 12px;
+            padding: 12px 18px;
+            background: #172033;
+            color: white;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .primary-button:hover {
+            opacity: 0.9;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .stat-card,
+        .panel {
+            background: white;
+            border: 1px solid #e6e9f0;
+            border-radius: 18px;
+            box-shadow: 0 8px 24px rgba(16, 24, 40, 0.04);
+        }
+
+        .stat-card {
+            padding: 20px;
+        }
+
+        .stat-label {
+            color: #667085;
+            font-size: 13px;
+            margin-bottom: 8px;
+        }
+
+        .stat-value {
+            font-size: 25px;
+            font-weight: 750;
+        }
+
+        .notice {
+            padding: 14px 18px;
+            margin-bottom: 20px;
+            border-radius: 12px;
+            font-weight: 650;
+        }
+
+        .notice-success {
+            background: #ecfdf3;
+            color: #067647;
+            border: 1px solid #abefc6;
+        }
+
+        .notice-error {
+            background: #fef3f2;
+            color: #b42318;
+            border: 1px solid #fecdca;
+        }
+
+        .panel {
+            overflow: hidden;
+        }
+
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            padding: 20px 22px;
+            border-bottom: 1px solid #e6e9f0;
+        }
+
+        .panel-title {
+            margin: 0;
+            font-size: 18px;
+        }
+
+        .empty-state {
+            padding: 60px 24px;
+            text-align: center;
+            color: #667085;
+        }
+
+        .table-wrap {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th,
+        td {
+            padding: 15px 18px;
+            text-align: left;
+            border-bottom: 1px solid #eef0f4;
+            vertical-align: top;
+            white-space: nowrap;
+        }
+
+        th {
+            color: #667085;
+            background: #fafbfc;
+            font-size: 12px;
+            font-weight: 750;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+
+        td {
+            font-size: 14px;
+        }
+
+        tbody tr:hover {
+            background: #fafbfc;
+        }
+
+        .document-number {
+            font-weight: 750;
+        }
+
+        .supplier-name {
+            font-weight: 650;
+        }
+
+        .secondary-text {
+            color: #667085;
+            font-size: 12px;
+            margin-top: 4px;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: #ecfdf3;
+            color: #067647;
+            font-size: 12px;
+            font-weight: 750;
+        }
+
+        .document-link {
+            color: #175cd3;
+            text-decoration: none;
+            font-weight: 650;
+        }
+
+        .document-link:hover {
+            text-decoration: underline;
+        }
+
+        details {
+            white-space: normal;
+        }
+
+        summary {
+            color: #175cd3;
+            cursor: pointer;
+            font-weight: 650;
+        }
+
+        .positions-list {
+            min-width: 440px;
+            margin-top: 12px;
+            border: 1px solid #e6e9f0;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .position-line {
+            display: grid;
+            grid-template-columns: minmax(200px, 1fr) 70px 110px 110px;
+            gap: 12px;
+            padding: 10px 12px;
+            border-bottom: 1px solid #eef0f4;
+            font-size: 12px;
+        }
+
+        .position-line:last-child {
+            border-bottom: 0;
+        }
+
+        .position-name {
+            font-weight: 650;
+        }
+
+        .modal {
+            position: fixed;
+            inset: 0;
+            z-index: 1000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            background: rgba(16, 24, 40, 0.55);
+        }
+
+        .modal.open {
+            display: flex;
+        }
+
+        .modal-card {
+            width: min(1150px, 100%);
+            max-height: 92vh;
+            overflow-y: auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 30px 80px rgba(16, 24, 40, 0.25);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            padding: 22px 24px;
+            border-bottom: 1px solid #e6e9f0;
+        }
+
+        .modal-title {
+            margin: 0;
+            font-size: 22px;
+        }
+
+        .close-button {
+            width: 38px;
+            height: 38px;
+            border: 0;
+            border-radius: 10px;
+            background: #f2f4f7;
+            font-size: 22px;
+            cursor: pointer;
+        }
+
+        .form-body {
+            padding: 24px;
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 16px;
+            margin-bottom: 22px;
+        }
+
+        .field {
+            display: flex;
+            flex-direction: column;
+            gap: 7px;
+        }
+
+        .field-full {
+            grid-column: 1 / -1;
+        }
+
+        .field label {
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+        .field input,
+        .field select,
+        .field textarea {
+            width: 100%;
+            border: 1px solid #d0d5dd;
+            border-radius: 10px;
+            padding: 11px 12px;
+            background: white;
+            color: #172033;
+            outline: none;
+        }
+
+        .field input:focus,
+        .field select:focus,
+        .field textarea:focus {
+            border-color: #667085;
+            box-shadow: 0 0 0 3px rgba(102, 112, 133, 0.12);
+        }
+
+        .positions-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 12px;
+        }
+
+        .positions-title {
+            margin: 0;
+            font-size: 17px;
+        }
+
+        .add-row-button {
+            border: 1px solid #d0d5dd;
+            border-radius: 10px;
+            padding: 9px 13px;
+            background: white;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .receipt-position {
+            display: grid;
+            grid-template-columns: minmax(280px, 1fr) 110px 150px 130px 42px;
+            gap: 10px;
+            align-items: end;
+            padding: 14px;
+            margin-bottom: 10px;
+            border: 1px solid #e6e9f0;
+            border-radius: 14px;
+            background: #fafbfc;
+        }
+
+        .receipt-position .field {
+            gap: 5px;
+        }
+
+        .product-meta {
+            min-height: 18px;
+            color: #667085;
+            font-size: 11px;
+        }
+
+        .line-total {
+            min-height: 44px;
+            display: flex;
+            align-items: center;
+            padding: 0 12px;
+            border-radius: 10px;
+            background: white;
+            border: 1px solid #e6e9f0;
+            font-weight: 750;
+        }
+
+        .remove-row-button {
+            width: 42px;
+            height: 42px;
+            border: 0;
+            border-radius: 10px;
+            background: #fef3f2;
+            color: #b42318;
+            font-size: 20px;
+            cursor: pointer;
+        }
+
+        .receipt-summary {
+            display: flex;
+            justify-content: flex-end;
+            gap: 28px;
+            padding: 18px 0;
+            font-size: 15px;
+        }
+
+        .summary-value {
+            font-weight: 800;
+        }
+
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+            padding: 18px 24px;
+            border-top: 1px solid #e6e9f0;
+        }
+
+        .secondary-button {
+            border: 1px solid #d0d5dd;
+            border-radius: 12px;
+            padding: 11px 17px;
+            background: white;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        @media (max-width: 900px) {
+            .page-shell {
+                padding-left: 0;
+            }
+
+            .stats-grid,
+            .form-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .receipt-position {
+                grid-template-columns: 1fr 1fr;
+            }
+
+            .receipt-position .product-field {
+                grid-column: 1 / -1;
+            }
+
+            .page-header {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    {% include "_sidebar.html" %}
+
+    <div class="page-shell">
+        <main class="page-content">
+            <header class="page-header">
+                <div>
+                    <h1 class="page-title">Приход</h1>
+                    <p class="page-subtitle">
+                        Приёмка товаров и проведение оприходований в МойСклад
+                    </p>
+                </div>
+
+                <button class="primary-button" type="button" onclick="openReceiptModal()">
+                    + Новый приход
+                </button>
+            </header>
+
+            {% if message %}
+                <div class="notice {% if notice == 'error' %}notice-error{% else %}notice-success{% endif %}">
+                    {{ message }}
+                </div>
+            {% endif %}
+
+            <section class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-label">Документов прихода</div>
+                    <div class="stat-value">{{ total_receipts }}</div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-label">Принято единиц товара</div>
+                    <div class="stat-value">{{ total_quantity }}</div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-label">Общая закупочная стоимость</div>
+                    <div class="stat-value">{{ "%.2f"|format(total_amount) }} ₽</div>
+                </div>
+            </section>
+
+            <section class="panel">
+                <div class="panel-header">
+                    <h2 class="panel-title">История приходов</h2>
+                </div>
+
+                {% if receipts %}
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Дата</th>
+                                    <th>Документ</th>
+                                    <th>Поставщик</th>
+                                    <th>Накладная</th>
+                                    <th>Товары</th>
+                                    <th>Количество</th>
+                                    <th>Сумма</th>
+                                    <th>Статус</th>
+                                    <th>МойСклад</th>
+                                </tr>
+                            </thead>
+
+                            <tbody>
+                                {% for receipt in receipts %}
+                                    <tr>
+                                        <td>
+                                            {{ receipt.receipt_date or receipt.created_at }}
+                                            <div class="secondary-text">{{ receipt.created_at }}</div>
+                                        </td>
+
+                                        <td>
+                                            <div class="document-number">{{ receipt.number }}</div>
+                                            {% if receipt.note %}
+                                                <div class="secondary-text">{{ receipt.note }}</div>
+                                            {% endif %}
+                                        </td>
+
+                                        <td>
+                                            <div class="supplier-name">{{ receipt.supplier }}</div>
+                                        </td>
+
+                                        <td>{{ receipt.invoice_number or "—" }}</td>
+
+                                        <td>
+                                            <details>
+                                                <summary>
+                                                    {{ receipt.positions_count }} поз.
+                                                </summary>
+
+                                                <div class="positions-list">
+                                                    {% for position in receipt.positions %}
+                                                        <div class="position-line">
+                                                            <div>
+                                                                <div class="position-name">
+                                                                    {{ position.product_name }}
+                                                                </div>
+                                                                <div class="secondary-text">
+                                                                    {{ position.article or position.code or "Без артикула" }}
+                                                                </div>
+                                                            </div>
+
+                                                            <div>{{ position.quantity }} шт.</div>
+                                                            <div>{{ "%.2f"|format(position.purchase_price) }} ₽</div>
+                                                            <div>{{ "%.2f"|format(position.line_total) }} ₽</div>
+                                                        </div>
+                                                    {% endfor %}
+                                                </div>
+                                            </details>
+                                        </td>
+
+                                        <td>{{ receipt.total_quantity }}</td>
+                                        <td>{{ "%.2f"|format(receipt.total_amount) }} ₽</td>
+
+                                        <td>
+                                            <span class="status-badge">
+                                                {{ receipt.status_label or "Проведён" }}
+                                            </span>
+                                        </td>
+
+                                        <td>
+                                            {% if receipt.moysklad_document_url %}
+                                                <a
+                                                    class="document-link"
+                                                    href="{{ receipt.moysklad_document_url }}"
+                                                    target="_blank"
+                                                    rel="noopener"
+                                                >
+                                                    Открыть
+                                                </a>
+                                            {% else %}
+                                                —
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="empty-state">
+                        Приходов пока нет. Создайте первый документ приёмки товара.
+                    </div>
+                {% endif %}
+            </section>
+        </main>
+    </div>
+
+    <div class="modal" id="receiptModal">
+        <div class="modal-card">
+            <form method="post" action="/receipts/create" id="receiptForm">
+                <div class="modal-header">
+                    <div>
+                        <h2 class="modal-title">Новый приход</h2>
+                        <div class="secondary-text">
+                            После проведения остатки увеличатся в МойСклад
+                        </div>
+                    </div>
+
+                    <button class="close-button" type="button" onclick="closeReceiptModal()">
+                        ×
+                    </button>
+                </div>
+
+                <div class="form-body">
+                    <div class="form-grid">
+                        <div class="field">
+                            <label for="supplier">Поставщик *</label>
+                            <input
+                                id="supplier"
+                                name="supplier"
+                                type="text"
+                                required
+                                placeholder="Название поставщика"
+                            >
+                        </div>
+
+                        <div class="field">
+                            <label for="invoice_number">Номер накладной</label>
+                            <input
+                                id="invoice_number"
+                                name="invoice_number"
+                                type="text"
+                                placeholder="Например, НК-154"
+                            >
+                        </div>
+
+                        <div class="field">
+                            <label for="receipt_date">Дата прихода *</label>
+                            <input
+                                id="receipt_date"
+                                name="receipt_date"
+                                type="date"
+                                value="{{ today }}"
+                                required
+                            >
+                        </div>
+
+                        <div class="field field-full">
+                            <label for="note">Комментарий</label>
+                            <textarea
+                                id="note"
+                                name="note"
+                                rows="2"
+                                placeholder="Дополнительная информация"
+                            ></textarea>
+                        </div>
+                    </div>
+
+                    <div class="positions-header">
+                        <h3 class="positions-title">Товары</h3>
+
+                        <button class="add-row-button" type="button" onclick="addPositionRow()">
+                            + Добавить товар
+                        </button>
+                    </div>
+
+                    <div id="positionsContainer"></div>
+
+                    <div class="receipt-summary">
+                        <div>
+                            Общее количество:
+                            <span class="summary-value" id="totalQuantity">0</span>
+                        </div>
+
+                        <div>
+                            Общая сумма:
+                            <span class="summary-value" id="totalAmount">0.00 ₽</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button class="secondary-button" type="button" onclick="closeReceiptModal()">
+                        Отмена
+                    </button>
+
+                    <button class="primary-button" type="submit">
+                        Провести приход
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <template id="positionTemplate">
+        <div class="receipt-position">
+            <div class="field product-field">
+                <label>Товар *</label>
+
+                <select name="product_id" required onchange="updateProductMeta(this)">
+                    <option value="">Выберите товар</option>
+
+                    {% for item in warehouse_items %}
+                        <option
+                            value="{{ item.id }}"
+                            data-article="{{ item.article }}"
+                            data-code="{{ item.code }}"
+                            data-stock="{{ item.stock_display }}"
+                            data-cell="{{ item.cell }}"
+                        >
+                            {{ item.name }}
+                            {% if item.article %} · {{ item.article }}{% endif %}
+                        </option>
+                    {% endfor %}
+                </select>
+
+                <div class="product-meta">
+                    Выберите товар из каталога
+                </div>
+            </div>
+
+            <div class="field">
+                <label>Количество *</label>
+                <input
+                    name="quantity"
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    value="1"
+                    required
+                    oninput="recalculateReceipt()"
+                >
+            </div>
+
+            <div class="field">
+                <label>Закупочная цена, ₽</label>
+                <input
+                    name="purchase_price"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value="0"
+                    oninput="recalculateReceipt()"
+                >
+            </div>
+
+            <div class="field">
+                <label>Сумма</label>
+                <div class="line-total">0.00 ₽</div>
+            </div>
+
+            <button
+                class="remove-row-button"
+                type="button"
+                title="Удалить товар"
+                onclick="removePositionRow(this)"
+            >
+                ×
+            </button>
+        </div>
+    </template>
+
+    <script>
+        const modal = document.getElementById("receiptModal");
+        const container = document.getElementById("positionsContainer");
+        const template = document.getElementById("positionTemplate");
+
+        function openReceiptModal() {
+            modal.classList.add("open");
+
+            if (!container.children.length) {
+                addPositionRow();
+            }
+        }
+
+        function closeReceiptModal() {
+            modal.classList.remove("open");
+        }
+
+        function addPositionRow() {
+            container.appendChild(template.content.cloneNode(true));
+            recalculateReceipt();
+        }
+
+        function removePositionRow(button) {
+            const rows = container.querySelectorAll(".receipt-position");
+
+            if (rows.length === 1) {
+                const row = button.closest(".receipt-position");
+                row.querySelector('select[name="product_id"]').value = "";
+                row.querySelector('input[name="quantity"]').value = "1";
+                row.querySelector('input[name="purchase_price"]').value = "0";
+                row.querySelector(".product-meta").textContent = "Выберите товар из каталога";
+            } else {
+                button.closest(".receipt-position").remove();
+            }
+
+            recalculateReceipt();
+        }
+
+        function updateProductMeta(select) {
+            const row = select.closest(".receipt-position");
+            const meta = row.querySelector(".product-meta");
+            const option = select.options[select.selectedIndex];
+
+            if (!option || !option.value) {
+                meta.textContent = "Выберите товар из каталога";
+                return;
+            }
+
+            const details = [];
+
+            if (option.dataset.article) {
+                details.push("Артикул: " + option.dataset.article);
+            } else if (option.dataset.code) {
+                details.push("Код: " + option.dataset.code);
+            }
+
+            details.push("Остаток: " + (option.dataset.stock || "0"));
+
+            if (option.dataset.cell) {
+                details.push("Ячейка: " + option.dataset.cell);
+            }
+
+            meta.textContent = details.join(" · ");
+        }
+
+        function recalculateReceipt() {
+            let totalQuantity = 0;
+            let totalAmount = 0;
+
+            container.querySelectorAll(".receipt-position").forEach((row) => {
+                const quantity = Number(
+                    row.querySelector('input[name="quantity"]').value || 0
+                );
+
+                const price = Number(
+                    row.querySelector('input[name="purchase_price"]').value || 0
+                );
+
+                const lineTotal = quantity * price;
+
+                totalQuantity += quantity;
+                totalAmount += lineTotal;
+
+                row.querySelector(".line-total").textContent =
+                    lineTotal.toFixed(2) + " ₽";
+            });
+
+            document.getElementById("totalQuantity").textContent =
+                totalQuantity.toFixed(2).replace(".00", "");
+
+            document.getElementById("totalAmount").textContent =
+                totalAmount.toFixed(2) + " ₽";
+        }
+
+        modal.addEventListener("click", (event) => {
+            if (event.target === modal) {
+                closeReceiptModal();
+            }
+        });
+
+        document.addEventListener("keydown", (event) => {
+            if (event.key === "Escape") {
+                closeReceiptModal();
+            }
+        });
+    </script>
+</body>
+</html>

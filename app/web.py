@@ -2825,6 +2825,294 @@ def sales_page():
     )
 
 
+
+def get_receipts_path():
+    path = PROJECT_ROOT / "instance" / "receipts.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def load_receipts():
+    path = get_receipts_path()
+
+    if not path.exists():
+        return []
+
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+
+    return data if isinstance(data, list) else []
+
+
+def save_receipts(receipts):
+    get_receipts_path().write_text(
+        json.dumps(receipts, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
+def parse_receipt_number(value, default=0):
+    try:
+        return float(str(value or "").strip().replace(" ", "").replace(",", "."))
+    except (TypeError, ValueError):
+        return default
+
+
+def generate_receipt_number(receipts):
+    from datetime import datetime
+
+    year = datetime.now().year
+    prefix = f"PR-{year}-"
+    numbers = []
+
+    for receipt in receipts:
+        number = str(receipt.get("number") or "")
+
+        if not number.startswith(prefix):
+            continue
+
+        try:
+            numbers.append(int(number.replace(prefix, "", 1)))
+        except ValueError:
+            continue
+
+    return f"{prefix}{max(numbers, default=0) + 1:04d}"
+
+
+@app.route("/receipts")
+def receipts_page():
+    from datetime import datetime
+    from flask import request
+
+    receipts = load_receipts()
+
+    warehouse_items = [
+        {
+            "id": item.get("id") or "",
+            "name": item.get("name") or "",
+            "article": item.get("article") or "",
+            "code": item.get("code") or "",
+            "category": item.get("category") or "",
+            "cell": item.get("cell") or "",
+            "stock": item.get("stock") or 0,
+            "stock_display": item.get("stock_display") or "0",
+        }
+        for item in get_warehouse_items()
+    ]
+
+    total_quantity = sum(
+        parse_receipt_number(receipt.get("total_quantity"))
+        for receipt in receipts
+    )
+    total_amount = sum(
+        parse_receipt_number(receipt.get("total_amount"))
+        for receipt in receipts
+    )
+
+    return render_template(
+        "receipts.html",
+        receipts=receipts,
+        warehouse_items=warehouse_items,
+        today=datetime.now().strftime("%Y-%m-%d"),
+        total_receipts=len(receipts),
+        total_quantity=format_stock_number(total_quantity),
+        total_amount=total_amount,
+        notice=(request.args.get("notice") or "").strip(),
+        message=(request.args.get("message") or "").strip(),
+    )
+
+
+@app.route("/receipts/create", methods=["POST"])
+def receipt_create():
+    from datetime import datetime
+    from flask import request, redirect, url_for
+    import uuid
+
+    supplier = (request.form.get("supplier") or "").strip()
+    invoice_number = (request.form.get("invoice_number") or "").strip()
+    receipt_date = (
+        request.form.get("receipt_date")
+        or datetime.now().strftime("%Y-%m-%d")
+    ).strip()
+    note = (request.form.get("note") or "").strip()
+
+    product_ids = request.form.getlist("product_id")
+    quantities = request.form.getlist("quantity")
+    purchase_prices = request.form.getlist("purchase_price")
+
+    if not supplier:
+        return redirect(url_for(
+            "receipts_page",
+            notice="error",
+            message="Укажите поставщика",
+        ))
+
+    catalog = {
+        str(item.get("id") or ""): item
+        for item in get_warehouse_items(force=True)
+    }
+
+    positions = []
+
+    for index, product_id in enumerate(product_ids):
+        product_id = str(product_id or "").strip()
+
+        if not product_id:
+            continue
+
+        product = catalog.get(product_id)
+
+        if not product:
+            return redirect(url_for(
+                "receipts_page",
+                notice="error",
+                message="Один из товаров не найден в каталоге",
+            ))
+
+        quantity = parse_receipt_number(
+            quantities[index] if index < len(quantities) else 0
+        )
+        purchase_price = parse_receipt_number(
+            purchase_prices[index] if index < len(purchase_prices) else 0
+        )
+
+        if quantity <= 0:
+            return redirect(url_for(
+                "receipts_page",
+                notice="error",
+                message=f"Количество товара «{product.get('name')}» должно быть больше нуля",
+            ))
+
+        if purchase_price < 0:
+            return redirect(url_for(
+                "receipts_page",
+                notice="error",
+                message="Закупочная цена не может быть отрицательной",
+            ))
+
+        stock_before = parse_receipt_number(product.get("stock"))
+
+        positions.append({
+            "product_id": product_id,
+            "product_name": product.get("name") or "",
+            "article": product.get("article") or "",
+            "code": product.get("code") or "",
+            "cell": product.get("cell") or "",
+            "quantity": quantity,
+            "purchase_price": purchase_price,
+            "line_total": round(quantity * purchase_price, 2),
+            "stock_before": stock_before,
+            "stock_after": stock_before + quantity,
+        })
+
+    if not positions:
+        return redirect(url_for(
+            "receipts_page",
+            notice="error",
+            message="Добавьте хотя бы один товар",
+        ))
+
+    receipts = load_receipts()
+    receipt_id = str(uuid.uuid4())
+    receipt_number = generate_receipt_number(receipts)
+
+    reason_parts = [
+        f"Vechasu ERP: приход {receipt_number}",
+        f"Поставщик: {supplier}",
+    ]
+
+    if invoice_number:
+        reason_parts.append(f"Накладная: {invoice_number}")
+
+    if note:
+        reason_parts.append(f"Комментарий: {note}")
+
+    reason = ". ".join(reason_parts)
+
+    try:
+        client = MoySkladClient()
+        moysklad_document = client.create_stock_enter_many(
+            positions=positions,
+            reason=reason,
+        )
+
+        created_at = datetime.now().strftime("%Y-%m-%d %H:%M")
+        total_quantity = sum(position["quantity"] for position in positions)
+        total_amount = round(
+            sum(position["line_total"] for position in positions),
+            2,
+        )
+
+        receipt = {
+            "id": receipt_id,
+            "number": receipt_number,
+            "created_at": created_at,
+            "receipt_date": receipt_date,
+            "supplier": supplier,
+            "invoice_number": invoice_number,
+            "note": note,
+            "status": "posted",
+            "status_label": "Проведён",
+            "positions": positions,
+            "positions_count": len(positions),
+            "total_quantity": total_quantity,
+            "total_amount": total_amount,
+            "moysklad_document_id": (moysklad_document or {}).get("id"),
+            "moysklad_document_name": (moysklad_document or {}).get("name"),
+            "moysklad_document_url": (
+                ((moysklad_document or {}).get("meta") or {}).get("uuidHref")
+            ),
+        }
+
+        receipts.insert(0, receipt)
+        save_receipts(receipts)
+
+        for position in positions:
+            add_stock_operation({
+                "id": str(uuid.uuid4()),
+                "created_at": created_at,
+                "product_id": position["product_id"],
+                "product_name": position["product_name"],
+                "type": "enter",
+                "label": "Приход",
+                "quantity": position["quantity"],
+                "stock_before": position["stock_before"],
+                "stock_after": position["stock_after"],
+                "diff": position["quantity"],
+                "source": "Приход",
+                "reason": reason,
+                "status": "success",
+                "receipt_id": receipt_id,
+                "receipt_number": receipt_number,
+                "supplier": supplier,
+                "invoice_number": invoice_number,
+                "purchase_price": position["purchase_price"],
+                "moysklad_document_id": receipt["moysklad_document_id"],
+                "moysklad_document_name": receipt["moysklad_document_name"],
+                "moysklad_document_url": receipt["moysklad_document_url"],
+            })
+
+        WAREHOUSE_CACHE["items"] = []
+        WAREHOUSE_CACHE["loaded_at"] = 0
+
+        return redirect(url_for(
+            "receipts_page",
+            notice="success",
+            message=f"Приход {receipt_number} проведён",
+        ))
+
+    except Exception as error:
+        print(f"Ошибка проведения прихода: {error}")
+
+        return redirect(url_for(
+            "receipts_page",
+            notice="error",
+            message=f"Ошибка проведения прихода: {error}",
+        ))
+
+
 DEFAULT_APP_SETTINGS = {
     "company_name": "Tictactoy",
     "erp_name": "Vechasu ERP",

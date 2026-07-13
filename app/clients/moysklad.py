@@ -284,6 +284,68 @@ class MoySkladClient:
         return self.post("/entity/enter", payload)
 
 
+    def create_stock_enter_many(self, positions, reason=None):
+        organization = self.get_default_organization()
+        store = self.get_default_store()
+
+        if not organization:
+            raise ValueError("В МойСклад не найдена организация")
+
+        if not store:
+            raise ValueError("В МойСклад не найден склад")
+
+        prepared_positions = []
+
+        for position in positions:
+            product_id = str(position.get("product_id") or "").strip()
+
+            try:
+                quantity = float(position.get("quantity") or 0)
+                purchase_price = float(position.get("purchase_price") or 0)
+            except (TypeError, ValueError):
+                raise ValueError("Количество и закупочная цена должны быть числами")
+
+            if not product_id:
+                raise ValueError("У одной из позиций отсутствует ID товара")
+
+            if quantity <= 0:
+                raise ValueError("Количество товара должно быть больше нуля")
+
+            if purchase_price < 0:
+                raise ValueError("Закупочная цена не может быть отрицательной")
+
+            prepared_positions.append({
+                "quantity": quantity,
+                "price": int(round(purchase_price * 100)),
+                "overhead": 0,
+                "reason": (
+                    position.get("reason")
+                    or reason
+                    or "Приход из Vechasu ERP"
+                ),
+                "assortment": {
+                    "meta": self.get_product_meta(product_id)
+                }
+            })
+
+        if not prepared_positions:
+            raise ValueError("В приходе нет товаров")
+
+        payload = {
+            "applicable": True,
+            "description": reason or "Приход из Vechasu ERP",
+            "organization": {
+                "meta": organization["meta"]
+            },
+            "store": {
+                "meta": store["meta"]
+            },
+            "positions": prepared_positions
+        }
+
+        return self.post("/entity/enter", payload)
+
+
     def get_stock(self, limit=20):
         data = self.get("/report/stock/all", params={"limit": limit})
         if not data:
