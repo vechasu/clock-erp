@@ -799,9 +799,6 @@ def warehouse_page():
             item for item in items
             if query_lower in (item.get("name") or "").lower()
             or query_lower in (item.get("article") or "").lower()
-            or query_lower in (item.get("code") or "").lower()
-            or query_lower in (item.get("category") or "").lower()
-            or query_lower in (item.get("cell") or "").lower()
         ]
 
     total_stock = sum(float(item.get("stock") or 0) for item in items)
@@ -910,15 +907,17 @@ def warehouse_update_cell():
 
 @app.route("/warehouse/add", methods=["POST"])
 def warehouse_add_product():
-    name = request.form.get("name", "").strip()
-    code = request.form.get("code", "").strip()
-    article = request.form.get("article", "").strip()
+    import uuid
 
-    if not name or not code:
+    name = request.form.get("name", "").strip()
+    article = request.form.get("article", "").strip()
+    code = f"VECHASU-{uuid.uuid4().hex[:12].upper()}"
+
+    if not name:
         return redirect(url_for(
             "warehouse_page",
             notice="error",
-            message="Название и код обязательны"
+            message="Название товара обязательно"
         ))
 
     try:
@@ -954,7 +953,6 @@ def warehouse_add_product():
 def warehouse_edit_product():
     product_id = request.form.get("product_id", "").strip()
     name = request.form.get("name", "").strip()
-    code = request.form.get("code", "").strip()
     article = request.form.get("article", "").strip()
 
     if not product_id:
@@ -964,11 +962,11 @@ def warehouse_edit_product():
             message="Не найден ID товара"
         ))
 
-    if not name or not code:
+    if not name:
         return redirect(url_for(
             "warehouse_page",
             notice="error",
-            message="Название и код обязательны"
+            message="Название товара обязательно"
         ))
 
     try:
@@ -976,7 +974,6 @@ def warehouse_edit_product():
         result = client.update_product(
             product_id=product_id,
             name=name,
-            code=code,
             article=article
         )
 
@@ -1238,27 +1235,18 @@ def warehouse_update_stock():
 
 @app.route("/warehouse/archive", methods=["POST"])
 def warehouse_archive_product():
-    code = request.form.get("code", "").strip()
+    product_id = request.form.get("product_id", "").strip()
 
-    if not code:
+    if not product_id:
         return redirect(url_for(
             "warehouse_page",
             notice="error",
-            message="Не указан код товара"
+            message="Не найден ID товара"
         ))
 
     try:
         client = MoySkladClient()
-        product = client.find_product_by_code(code)
-
-        if not product:
-            return redirect(url_for(
-                "warehouse_page",
-                notice="error",
-                message="Товар не найден в МойСклад"
-            ))
-
-        result = client.archive_product(product.get("id"))
+        result = client.archive_product(product_id)
 
         WAREHOUSE_CACHE["items"] = []
         WAREHOUSE_CACHE["loaded_at"] = 0
@@ -1283,9 +1271,6 @@ def warehouse_archive_product():
             notice="error",
             message="Ошибка удаления позиции"
         ))
-
-
-
 
 
 WAREHOUSE_CELLS_FILE = PROJECT_ROOT / "instance" / "warehouse_cells.json"

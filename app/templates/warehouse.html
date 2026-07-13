@@ -729,7 +729,6 @@
                 <form class="add-form" method="post" action="/warehouse/add">
                     <input type="text" name="name" placeholder="Название товара" required>
                     <input type="text" name="article" placeholder="Артикул">
-                    <input type="text" name="code" placeholder="Код" required>
                     <button type="submit">Добавить</button>
                 </form>
             </div>
@@ -748,7 +747,7 @@
                         type="text"
                         name="q"
                         value="{{ query }}"
-                        placeholder="Поиск по названию, артикулу, коду, разделу или ячейке"
+                        placeholder="Поиск по названию или артикулу"
                     >
 
                     <button
@@ -778,7 +777,6 @@
                             <tr>
                                 <th>Название</th>
                                 <th>Артикул</th>
-                                <th>Код</th>
                                 <th>Остаток</th>
                                 <th>Ячейка</th>
                                 <th>Действие</th>
@@ -794,7 +792,6 @@
                                     </td>
 
                                     <td>{{ item.article or "—" }}</td>
-                                    <td>{{ item.code or "—" }}</td>
 
                                     <td class="{% if item.stock <= 0 %}stock-zero{% else %}stock-good{% endif %}">
                                         {{ item.stock_display }}
@@ -816,7 +813,6 @@
                                                     data-id="{{ item.id|e }}"
                                                     data-name="{{ item.name|e }}"
                                                     data-article="{{ (item.article or '')|e }}"
-                                                    data-code="{{ item.code|e }}"
                                                     data-category="{{ item.category|e }}"
                                                     data-stock="{{ item.stock_display|e }}"
                                                     data-cell="{{ item.cell|e }}"
@@ -829,7 +825,7 @@
                                                 </button>
 
                                                 <form method="post" action="/warehouse/archive" onsubmit="return confirm('Убрать позицию в архив МойСклад?');">
-                                                    <input type="hidden" name="code" value="{{ item.code }}">
+                                                    <input type="hidden" name="product_id" value="{{ item.id }}">
                                                     <button class="delete-button" type="submit">Убрать</button>
                                                 </form>
                                             </div>
@@ -972,11 +968,6 @@
             </div>
 
             <div class="product-detail-card">
-                <div class="product-detail-label">Код</div>
-                <div id="detailCode" class="product-detail-value">—</div>
-            </div>
-
-            <div class="product-detail-card">
                 <div class="product-detail-label">Ячейка</div>
                 <div id="detailCell" class="product-detail-value">—</div>
             </div>
@@ -999,11 +990,6 @@
             <div class="field">
                 <label>Артикул</label>
                 <input id="editArticle" type="text" name="article">
-            </div>
-
-            <div class="field">
-                <label>Код</label>
-                <input id="editCode" type="text" name="code" required>
             </div>
 
             <div class="drawer-actions">
@@ -1120,7 +1106,6 @@
 
             const productName = button.dataset.name || "—";
             const productArticle = button.dataset.article || "—";
-            const productCode = button.dataset.code || "—";
             const productCategory = button.dataset.category || "Без категории";
             const productStock = button.dataset.stock || "0";
 
@@ -1163,7 +1148,6 @@
             document.getElementById("detailName").textContent = productName;
             document.getElementById("detailStock").textContent = productStock;
             document.getElementById("detailCategory").textContent = productCategory;
-            document.getElementById("detailCode").textContent = productCode;
             document.getElementById("detailCell").textContent = productCell
                 ? (productCellSourceLabel ? `${productCell} · ${productCellSourceLabel}` : productCell)
                 : "—";
@@ -1174,7 +1158,6 @@
             document.getElementById("editCell").value = productCell;
             document.getElementById("editName").value = button.dataset.name || "";
             document.getElementById("editArticle").value = button.dataset.article || "";
-            document.getElementById("editCode").value = button.dataset.code || "";
 
             document.getElementById("drawerBackdrop").classList.add("open");
             document.getElementById("editDrawer").classList.add("open");
