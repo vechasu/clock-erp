@@ -788,7 +788,7 @@
             }
         }
 
-    
+
         .stock-column-title {
             display: inline-flex;
             align-items: center;
@@ -846,7 +846,7 @@
             transform: translateX(12px);
         }
 
-    
+
         .brand-combobox {
             position: relative;
             width: 100%;
@@ -957,6 +957,1349 @@
             display: none;
         }
 
+
+        .add-card .add-form {
+            display: grid;
+            grid-template-columns:
+                minmax(220px, 1.4fr)
+                minmax(160px, 1fr)
+                minmax(130px, 0.7fr)
+                minmax(180px, 1fr)
+                minmax(170px, 0.8fr);
+            gap: 10px;
+            align-items: center;
+        }
+
+        .add-card .add-form input,
+        .add-card .add-form button {
+            width: 100%;
+            height: 46px;
+            min-height: 46px;
+            margin: 0;
+            padding: 0 15px;
+            border-radius: 14px;
+            font-size: 15px;
+            box-sizing: border-box;
+        }
+
+        .add-card .add-form input {
+            border: 1px solid #d1d5db;
+            background: #ffffff;
+            color: #111827;
+            outline: none;
+        }
+
+        .add-card .add-form input:focus {
+            border-color: #22c55e;
+            box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.12);
+        }
+
+        .add-card .add-form button {
+            border: 1px solid #16a34a;
+            background: #22c55e;
+            color: #ffffff;
+            font-weight: 800;
+            cursor: pointer;
+            box-shadow: 0 5px 14px rgba(34, 197, 94, 0.20);
+        }
+
+        .add-card .add-form button:hover {
+            background: #16a34a;
+            border-color: #15803d;
+        }
+
+        @media (max-width: 1180px) {
+            .add-card .add-form {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .add-card .add-form button {
+                grid-column: 1 / -1;
+            }
+        }
+
+
+        .add-form button[type="submit"] {
+            background: #2563eb;
+            border: 1px solid #1d4ed8;
+            color: white;
+            box-shadow: 0 6px 18px rgba(37, 99, 235, 0.18);
+        }
+
+        .add-form button[type="submit"]:hover {
+            background: #1d4ed8;
+        }
+
+
+        /* SaaS toolbar redesign v2 */
+        .search-card {
+            margin-bottom: 12px;
+            padding: 8px;
+            background: rgba(255, 255, 255, 0.98);
+            border: 1px solid #e5eaf2;
+            border-radius: 16px;
+            box-shadow:
+                0 8px 24px rgba(15, 23, 42, 0.045),
+                0 1px 2px rgba(15, 23, 42, 0.03);
+        }
+
+        .search-form {
+            display: grid;
+            grid-template-columns:
+                minmax(280px, 1fr)
+                auto
+                auto
+                auto;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .search-form input[type="text"],
+        .search-form button {
+            height: 44px;
+            min-height: 44px;
+            padding-top: 0;
+            padding-bottom: 0;
+        }
+
+        .search-input-wrap input[type="text"] {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            color: #172033;
+            transition:
+                background 0.18s ease,
+                border-color 0.18s ease,
+                box-shadow 0.18s ease;
+        }
+
+        .search-input-wrap input[type="text"]:hover {
+            background: #ffffff;
+            border-color: #cbd5e1;
+        }
+
+        .search-input-wrap input[type="text"]:focus {
+            background: #ffffff;
+            border-color: #93b4ff;
+            box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.09);
+        }
+
+        .search-tool-button {
+            min-width: 112px;
+            padding: 0 16px;
+            background: #f4f7ff;
+            color: #41516f;
+            border: 1px solid #e1e8f5;
+            border-radius: 12px;
+            box-shadow: none;
+            white-space: nowrap;
+            transition:
+                background 0.18s ease,
+                color 0.18s ease,
+                border-color 0.18s ease,
+                transform 0.18s ease;
+        }
+
+        .search-tool-button:hover {
+            background: #edf3ff;
+            color: #1d4ed8;
+            border-color: #d4e0ff;
+            transform: translateY(-1px);
+        }
+
+        .search-form .add-position-card {
+            width: auto;
+            min-width: 176px;
+            min-height: 44px;
+            height: 44px;
+            padding: 0 18px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid #2563eb;
+            border-radius: 12px;
+            background: #2563eb;
+            color: #ffffff;
+            font-size: 14px;
+            font-weight: 800;
+            white-space: nowrap;
+            box-shadow: 0 7px 17px rgba(37, 99, 235, 0.18);
+            transition:
+                background 0.18s ease,
+                border-color 0.18s ease,
+                box-shadow 0.18s ease,
+                transform 0.18s ease;
+        }
+
+        .search-form .add-position-card:hover {
+            background: #1d4ed8;
+            border-color: #1d4ed8;
+            box-shadow: 0 9px 21px rgba(37, 99, 235, 0.23);
+            transform: translateY(-1px);
+        }
+
+        .search-tool-button:active,
+        .search-form .add-position-card:active {
+            transform: translateY(0);
+        }
+
+        @media (max-width: 900px) {
+            .search-form {
+                grid-template-columns: 1fr 1fr;
+            }
+
+            .search-input-wrap {
+                grid-column: 1 / -1;
+            }
+
+            .search-tool-button,
+            .search-form .add-position-card {
+                width: 100%;
+                min-width: 0;
+            }
+        }
+
+
+        /* SaaS product drawer redesign */
+        #editDrawer {
+            top: 0;
+            right: -100vw;
+            width: 100vw;
+            max-width: 100vw;
+            height: 100vh;
+            padding: 28px 32px;
+            background: #f8faff;
+            border-left: none;
+            box-shadow: none;
+            scrollbar-width: thin;
+            scrollbar-color: #cbd5e1 transparent;
+            z-index: 70;
+        }
+
+        #editDrawer .drawer-header {
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid #e8edf5;
+        }
+
+        #editDrawer .drawer-title {
+            color: #172033;
+            font-size: 25px;
+            font-weight: 850;
+            letter-spacing: -0.035em;
+        }
+
+        #editDrawer .drawer-subtitle {
+            margin-top: 4px;
+            color: #7a8599;
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        #editDrawer .close-button {
+            width: 36px;
+            height: 36px;
+            flex: 0 0 36px;
+            border: 1px solid #e4e9f1;
+            border-radius: 50%;
+            background: #ffffff;
+            color: #64748b;
+            font-size: 18px;
+            box-shadow: 0 3px 10px rgba(15, 23, 42, 0.05);
+            transition:
+                color 0.18s ease,
+                border-color 0.18s ease,
+                background 0.18s ease,
+                transform 0.18s ease;
+        }
+
+        #editDrawer .close-button:hover {
+            background: #f1f5f9;
+            border-color: #d8e0eb;
+            color: #172033;
+            transform: rotate(4deg);
+        }
+
+        #editDrawer .product-detail-grid {
+            gap: 10px;
+            margin-bottom: 14px;
+        }
+
+        #editDrawer .product-detail-card {
+            min-width: 0;
+            padding: 13px 14px;
+            background: #ffffff;
+            border: 1px solid #e5eaf2;
+            border-radius: 15px;
+            box-shadow:
+                0 5px 16px rgba(15, 23, 42, 0.035),
+                0 1px 2px rgba(15, 23, 42, 0.025);
+            transition:
+                border-color 0.18s ease,
+                box-shadow 0.18s ease,
+                transform 0.18s ease;
+        }
+
+        #editDrawer .product-detail-card:hover {
+            border-color: #d8e2f1;
+            box-shadow: 0 8px 20px rgba(15, 23, 42, 0.055);
+            transform: translateY(-1px);
+        }
+
+        #editDrawer .product-detail-card:last-child {
+            grid-column: 1 / -1;
+        }
+
+        #editDrawer .product-detail-label {
+            margin-bottom: 6px;
+            color: #7b879b;
+            font-size: 11px;
+            font-weight: 750;
+            letter-spacing: 0.02em;
+        }
+
+        #editDrawer .product-detail-value {
+            color: #172033;
+            font-size: 15px;
+            font-weight: 800;
+            line-height: 1.3;
+        }
+
+        #editDrawer #detailStock {
+            display: inline-flex;
+            align-items: center;
+            min-width: 30px;
+            padding: 4px 9px;
+            border-radius: 999px;
+            background: #ecfdf3;
+            color: #15803d;
+            font-size: 14px;
+            font-weight: 850;
+        }
+
+        #editDrawer .moysklad-link {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            min-height: 44px;
+            margin-bottom: 0;
+            padding: 0 16px;
+            background: #ffffff;
+            color: #2563eb;
+            border: 1px solid #cfddff;
+            border-radius: 13px;
+            font-size: 14px;
+            font-weight: 800;
+            box-shadow: 0 5px 14px rgba(37, 99, 235, 0.06);
+            transition:
+                color 0.18s ease,
+                background 0.18s ease,
+                border-color 0.18s ease,
+                box-shadow 0.18s ease,
+                transform 0.18s ease;
+        }
+
+        #editDrawer .moysklad-link::after {
+            content: "↗";
+            font-size: 15px;
+            font-weight: 900;
+        }
+
+        #editDrawer .moysklad-link:hover {
+            background: #f5f8ff;
+            color: #1d4ed8;
+            border-color: #adc5ff;
+            box-shadow: 0 8px 18px rgba(37, 99, 235, 0.10);
+            transform: translateY(-1px);
+        }
+
+        #editDrawer .drawer-section-title {
+            margin: 24px 0 10px;
+            padding-top: 20px;
+            border-top: 1px solid #e7ecf4;
+            color: #172033;
+            font-size: 15px;
+            font-weight: 850;
+            letter-spacing: -0.015em;
+        }
+
+        #editDrawer .drawer-form {
+            gap: 12px;
+            padding: 14px;
+            background: #ffffff;
+            border: 1px solid #e5eaf2;
+            border-radius: 16px;
+            box-shadow: 0 5px 16px rgba(15, 23, 42, 0.035);
+        }
+
+        #editDrawer .field label {
+            margin-bottom: 7px;
+            color: #536079;
+            font-size: 12px;
+            font-weight: 750;
+        }
+
+        #editDrawer input[type="text"],
+        #editDrawer input[type="number"],
+        #editDrawer textarea {
+            width: 100%;
+            border: 1px solid #dce3ed;
+            border-radius: 12px;
+            background: #fbfcfe;
+            color: #172033;
+            font-family: inherit;
+            font-size: 14px;
+            outline: none;
+            transition:
+                background 0.18s ease,
+                border-color 0.18s ease,
+                box-shadow 0.18s ease;
+        }
+
+        #editDrawer input[type="text"],
+        #editDrawer input[type="number"] {
+            min-height: 44px;
+            padding: 0 13px;
+        }
+
+        #editDrawer textarea {
+            min-height: 86px;
+            padding: 11px 13px;
+            resize: vertical;
+            line-height: 1.45;
+        }
+
+        #editDrawer input:hover,
+        #editDrawer textarea:hover {
+            background: #ffffff;
+            border-color: #cbd5e1;
+        }
+
+        #editDrawer input:focus,
+        #editDrawer textarea:focus {
+            background: #ffffff;
+            border-color: #8eb0ff;
+            box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.09);
+        }
+
+        #editDrawer .drawer-actions {
+            gap: 9px;
+            margin-top: 2px;
+        }
+
+        #editDrawer .drawer-actions button,
+        #editDrawer .drawer-form > button[type="submit"] {
+            min-height: 43px;
+            border-radius: 12px;
+            transition:
+                background 0.18s ease,
+                border-color 0.18s ease,
+                box-shadow 0.18s ease,
+                transform 0.18s ease;
+        }
+
+        #editDrawer .drawer-actions button[type="submit"],
+        #editDrawer .drawer-form > button[type="submit"] {
+            background: #2563eb;
+            color: #ffffff;
+            border: 1px solid #2563eb;
+            box-shadow: 0 6px 15px rgba(37, 99, 235, 0.17);
+        }
+
+        #editDrawer .drawer-actions button[type="submit"]:hover,
+        #editDrawer .drawer-form > button[type="submit"]:hover {
+            background: #1d4ed8;
+            border-color: #1d4ed8;
+            box-shadow: 0 8px 19px rgba(37, 99, 235, 0.22);
+            transform: translateY(-1px);
+        }
+
+        #editDrawer .cancel-button {
+            background: #f2f5f9;
+            color: #526078;
+            border: 1px solid #e5eaf1;
+            box-shadow: none;
+        }
+
+        #editDrawer .cancel-button:hover {
+            background: #e9eef5;
+            color: #172033;
+            border-color: #dbe2eb;
+            transform: translateY(-1px);
+        }
+
+        #editDrawer .future-card {
+            margin-top: 0;
+            padding: 12px 13px;
+            background: #f7f9fd;
+            color: #64748b;
+            border: 1px solid #e3e9f2;
+            border-radius: 12px;
+            font-size: 13px;
+            font-weight: 650;
+            line-height: 1.5;
+        }
+
+        #editDrawer #currentStockText {
+            background: #eef6ff;
+            color: #1d4ed8;
+            border-color: #d7e7ff;
+            font-size: 15px;
+            font-weight: 850;
+        }
+
+        #editDrawer #stockHistoryList {
+            margin-bottom: 12px;
+            background: #ffffff;
+            box-shadow: 0 5px 16px rgba(15, 23, 42, 0.035);
+        }
+
+        #editDrawer button:active,
+        #editDrawer .moysklad-link:active {
+            transform: translateY(0);
+        }
+
+
+        #editDrawer.open {
+            right: 0;
+        }
+
+        #editDrawer .drawer-header,
+        #editDrawer .product-detail-grid,
+        #editDrawer .moysklad-link,
+        #editDrawer .drawer-section-title,
+        #editDrawer .drawer-form,
+        #editDrawer #stockHistoryList {
+            max-width: 920px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        #editDrawer .drawer-backdrop {
+            z-index: 65;
+        }
+
+        @media (max-width: 560px) {
+            #editDrawer {
+                width: 100vw;
+                max-width: 100vw;
+                padding: 18px;
+            }
+
+            #editDrawer .product-detail-grid {
+                grid-template-columns: 1fr;
+            }
+
+            #editDrawer .product-detail-card:last-child {
+                grid-column: auto;
+            }
+        }
+
+
+        /* Карточка после боковой панели */
+        #editDrawer {
+            left: 260px;
+            right: auto;
+            width: calc(100vw - 260px);
+            max-width: none;
+            transform: translateX(100%);
+            transition: transform 0.24s ease;
+        }
+
+        #editDrawer.open {
+            left: 260px;
+            right: auto;
+            transform: translateX(0);
+        }
+
+        body:has(.app.sidebar-collapsed) #editDrawer,
+        body:has(.app.sidebar-collapsed) #editDrawer.open {
+            left: 76px;
+            width: calc(100vw - 76px);
+        }
+
+        body.edit-drawer-open #drawerBackdrop {
+            left: 260px;
+            width: calc(100vw - 260px);
+        }
+
+        body.edit-drawer-open:has(.app.sidebar-collapsed) #drawerBackdrop {
+            left: 76px;
+            width: calc(100vw - 76px);
+        }
+
+        @media (max-width: 700px) {
+            #editDrawer,
+            #editDrawer.open,
+            body:has(.app.sidebar-collapsed) #editDrawer,
+            body:has(.app.sidebar-collapsed) #editDrawer.open {
+                left: 0;
+                width: 100vw;
+            }
+
+            body.edit-drawer-open #drawerBackdrop,
+            body.edit-drawer-open:has(.app.sidebar-collapsed) #drawerBackdrop {
+                left: 0;
+                width: 100vw;
+            }
+        }
+
+
+        /* Полноширинная аналитика склада */
+        .stats {
+            grid-template-columns: minmax(0, 1fr);
+            width: 100%;
+        }
+
+        .stats .stat {
+            width: 100%;
+        }
+
+
+        /* Выравнивание действий таблицы справа */
+        .table-card th:last-child,
+        .table-card td:last-child {
+            width: 205px;
+            min-width: 205px;
+            padding-right: 24px;
+            text-align: right;
+        }
+
+        .table-card .row-actions {
+            justify-content: flex-end;
+            width: 100%;
+            white-space: nowrap;
+        }
+
+        .table-card .row-actions form {
+            margin: 0;
+        }
+
+
+        /* Центрирование данных таблицы */
+        .table-card th:nth-child(2),
+        .table-card th:nth-child(3),
+        .table-card th:nth-child(4),
+        .table-card th:nth-child(5),
+        .table-card th:nth-child(6),
+        .table-card td:nth-child(2),
+        .table-card td:nth-child(3),
+        .table-card td:nth-child(4),
+        .table-card td:nth-child(5),
+        .table-card td:nth-child(6) {
+            text-align: center;
+        }
+
+        .table-card .stock-column-title {
+            justify-content: center;
+        }
+
+
+        /* Центрирование колонки действий */
+        .table-card th:last-child,
+        .table-card td:last-child {
+            text-align: center;
+        }
+
+        .table-card .row-actions {
+            justify-content: center;
+        }
+
+
+        /* filter-ui-like-products */
+
+        #filterDrawer {
+            padding: 22px;
+            background: #f7f9fd;
+        }
+
+        #filterDrawer .drawer-header {
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid #e8edf5;
+        }
+
+        #filterDrawer .drawer-title {
+            color: #172033;
+            font-size: 25px;
+            font-weight: 850;
+            letter-spacing: -0.035em;
+        }
+
+        #filterDrawer .drawer-subtitle {
+            margin-top: 4px;
+            color: #7a8599;
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        #filterDrawer .close-button {
+            width: 36px;
+            height: 36px;
+            flex: 0 0 36px;
+            padding: 0;
+            border: 1px solid #e4e9f1;
+            border-radius: 50%;
+            background: #ffffff;
+            color: #64748b;
+            font-size: 18px;
+            box-shadow: 0 3px 10px rgba(15, 23, 42, 0.05);
+        }
+
+        #filterDrawer .close-button:hover {
+            background: #f1f5f9;
+            border-color: #d8e0eb;
+            color: #172033;
+        }
+
+        #filterDrawer .category-cell-form {
+            gap: 10px;
+            padding: 15px;
+            background: #ffffff;
+            border: 1px solid #e5eaf2;
+            border-radius: 16px;
+            box-shadow:
+                0 5px 16px rgba(15, 23, 42, 0.035),
+                0 1px 2px rgba(15, 23, 42, 0.025);
+        }
+
+        #filterDrawer .category-cell-form-title {
+            color: #536079;
+            font-size: 12px;
+            font-weight: 750;
+        }
+
+        #filterDrawer .brand-combobox-trigger,
+        #filterDrawer .filter-select-wrap select {
+            width: 100%;
+            height: 48px;
+            min-height: 48px;
+            margin: 0;
+            padding: 0 46px 0 15px;
+            border: 1px solid #dce3ed;
+            border-radius: 14px;
+            background: #fbfcfe;
+            color: #172033;
+            font-family: inherit;
+            font-size: 15px;
+            font-weight: 500;
+            outline: none;
+            box-shadow: none;
+            box-sizing: border-box;
+        }
+
+        #filterDrawer .brand-combobox-trigger {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            text-align: left;
+        }
+
+        #filterDrawer .brand-combobox-trigger:hover,
+        #filterDrawer .filter-select-wrap select:hover {
+            background: #ffffff;
+            border-color: #c8d2df;
+        }
+
+        #filterDrawer .brand-combobox-trigger:focus,
+        #filterDrawer .filter-select-wrap select:focus {
+            background: #ffffff;
+            border-color: #8eb0ff;
+            box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.09);
+        }
+
+        #filterDrawer .filter-select-wrap {
+            position: relative;
+            width: 100%;
+        }
+
+        #filterDrawer .filter-select-wrap select {
+            appearance: none;
+            -webkit-appearance: none;
+            cursor: pointer;
+        }
+
+        #filterDrawer .filter-select-wrap::after {
+            content: "";
+            position: absolute;
+            top: 50%;
+            right: 18px;
+            width: 8px;
+            height: 8px;
+            border-right: 2px solid #64748b;
+            border-bottom: 2px solid #64748b;
+            transform: translateY(-70%) rotate(45deg);
+            pointer-events: none;
+        }
+
+        #filterDrawer .brand-combobox-arrow {
+            width: 8px;
+            height: 8px;
+            flex: 0 0 8px;
+            margin-right: 3px;
+            border-right: 2px solid #64748b;
+            border-bottom: 2px solid #64748b;
+            font-size: 0;
+            transform: translateY(-2px) rotate(45deg);
+            transition: transform 0.18s ease;
+        }
+
+        #filterDrawer .brand-combobox.open .brand-combobox-arrow {
+            transform: translateY(2px) rotate(225deg);
+        }
+
+        #filterDrawer .brand-combobox-dropdown {
+            border: 1px solid #dce3ed;
+            border-radius: 14px;
+            box-shadow: 0 16px 40px rgba(15, 23, 42, 0.14);
+        }
+
+        #filterDrawer .brand-combobox-search {
+            border-color: #dce3ed;
+            background: #fbfcfe;
+        }
+
+        #filterDrawer .category-cell-form > button[type="submit"] {
+            min-height: 44px;
+            margin-top: 4px;
+            border: 1px solid #2563eb;
+            border-radius: 12px;
+            background: #2563eb;
+            color: #ffffff;
+            box-shadow: 0 6px 15px rgba(37, 99, 235, 0.17);
+        }
+
+        #filterDrawer .category-cell-form > button[type="submit"]:hover {
+            background: #1d4ed8;
+            border-color: #1d4ed8;
+        }
+
+        #filterDrawer > div[style="margin-top: 16px;"] {
+            margin-top: 10px !important;
+        }
+
+        #filterDrawer .category-link {
+            justify-content: center;
+            min-height: 44px;
+            padding: 0 14px;
+            align-items: center;
+            border: 1px solid #e5eaf1;
+            border-radius: 12px;
+            background: #ffffff;
+            color: #64748b;
+        }
+
+        #filterDrawer .category-link:hover {
+            background: #eef2f7;
+            color: #172033;
+        }
+
+
+        /* identical-filter-selects */
+
+        #filterDrawer .brand-combobox-trigger,
+        #filterDrawer .filter-select-wrap select {
+            position: relative;
+            display: block;
+            width: 100%;
+            height: 48px;
+            min-height: 48px;
+            margin: 0;
+            padding: 0 48px 0 15px;
+            border: 1px solid #dce3ed;
+            border-radius: 14px;
+            background: #fbfcfe;
+            color: #172033;
+            font-family: inherit;
+            font-size: 15px;
+            font-weight: 500;
+            line-height: 46px;
+            text-align: left;
+            outline: none;
+            box-shadow: none;
+            box-sizing: border-box;
+            appearance: none;
+            -webkit-appearance: none;
+        }
+
+        #filterDrawer .brand-combobox-trigger {
+            cursor: pointer;
+        }
+
+        #filterDrawer .brand-combobox-trigger:hover,
+        #filterDrawer .filter-select-wrap select:hover {
+            border-color: #c8d2df;
+            background: #ffffff;
+        }
+
+        #filterDrawer .brand-combobox-trigger:focus,
+        #filterDrawer .brand-combobox-trigger:focus-visible,
+        #filterDrawer .filter-select-wrap select:focus,
+        #filterDrawer .filter-select-wrap select:focus-visible {
+            border-color: #8eb0ff;
+            background: #ffffff;
+            outline: none;
+            box-shadow: none;
+        }
+
+        #filterDrawer .brand-combobox-arrow {
+            display: none;
+        }
+
+        #filterDrawer .brand-combobox-trigger::after,
+        #filterDrawer .filter-select-wrap::after {
+            content: "";
+            position: absolute;
+            top: 50%;
+            right: 18px;
+            width: 9px;
+            height: 9px;
+            border-right: 2px solid #64748b;
+            border-bottom: 2px solid #64748b;
+            transform: translateY(-70%) rotate(45deg);
+            pointer-events: none;
+            box-sizing: border-box;
+        }
+
+        #filterDrawer .brand-combobox.open
+        .brand-combobox-trigger::after {
+            transform: translateY(-30%) rotate(225deg);
+        }
+
+
+        /* identical-filter-arrows-fix */
+
+        #filterDrawer .brand-combobox-arrow {
+            display: none !important;
+        }
+
+        #filterDrawer .brand-combobox-trigger,
+        #filterDrawer .filter-select-wrap {
+            position: relative;
+        }
+
+        #filterDrawer .brand-combobox-trigger::after,
+        #filterDrawer .filter-select-wrap::after {
+            content: "";
+            position: absolute;
+            top: 50%;
+            right: 18px;
+            width: 10px;
+            height: 10px;
+            margin-top: -7px;
+            border-right: 2px solid #64748b;
+            border-bottom: 2px solid #64748b;
+            transform: rotate(45deg);
+            pointer-events: none;
+            box-sizing: border-box;
+        }
+
+        #filterDrawer .brand-combobox.open .brand-combobox-trigger::after {
+            margin-top: -3px;
+            transform: rotate(225deg);
+        }
+
+
+        /* warehouse-map-products-ui */
+
+        #warehouseMapDrawer.map-modal {
+            width: 920px;
+            max-width: calc(100vw - 48px);
+            max-height: calc(100vh - 48px);
+            padding: 24px;
+            border: 1px solid #e5eaf2;
+            border-radius: 22px;
+            background: #f7f9fd;
+            box-shadow:
+                0 32px 90px rgba(15, 23, 42, 0.28),
+                0 4px 14px rgba(15, 23, 42, 0.08);
+            scrollbar-width: thin;
+            scrollbar-color: #cbd5e1 transparent;
+        }
+
+        #warehouseMapDrawer .drawer-header {
+            align-items: center;
+            margin-bottom: 18px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid #e5eaf2;
+        }
+
+        #warehouseMapDrawer .drawer-title {
+            color: #172033;
+            font-size: 25px;
+            font-weight: 850;
+            letter-spacing: -0.035em;
+        }
+
+        #warehouseMapDrawer .drawer-subtitle {
+            margin-top: 4px;
+            color: #7a8599;
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        #warehouseMapDrawer .close-button {
+            width: 36px;
+            height: 36px;
+            flex: 0 0 36px;
+            padding: 0;
+            border: 1px solid #e4e9f1;
+            border-radius: 50%;
+            background: #ffffff;
+            color: #64748b;
+            font-size: 18px;
+            box-shadow: 0 3px 10px rgba(15, 23, 42, 0.05);
+            transition:
+                background 0.18s ease,
+                border-color 0.18s ease,
+                color 0.18s ease,
+                transform 0.18s ease;
+        }
+
+        #warehouseMapDrawer .close-button:hover {
+            background: #f1f5f9;
+            border-color: #d8e0eb;
+            color: #172033;
+            transform: rotate(4deg);
+        }
+
+        #warehouseMapDrawer .category-cell-form {
+            display: grid;
+            grid-template-columns: minmax(220px, 1.2fr) minmax(180px, 0.8fr) auto;
+            gap: 10px;
+            align-items: end;
+            margin-bottom: 18px;
+            padding: 15px;
+            border: 1px solid #e5eaf2;
+            border-radius: 16px;
+            background: #ffffff;
+            box-shadow:
+                0 5px 16px rgba(15, 23, 42, 0.035),
+                0 1px 2px rgba(15, 23, 42, 0.025);
+        }
+
+        #warehouseMapDrawer .category-cell-form-title {
+            grid-column: 1 / -1;
+            margin: 0 0 1px;
+            color: #172033;
+            font-size: 14px;
+            font-weight: 850;
+            letter-spacing: -0.01em;
+        }
+
+        #warehouseMapDrawer .category-cell-form select,
+        #warehouseMapDrawer .category-cell-form input[type="text"] {
+            width: 100%;
+            height: 46px;
+            min-height: 46px;
+            margin: 0;
+            padding: 0 14px;
+            border: 1px solid #dce3ed;
+            border-radius: 13px;
+            background: #fbfcfe;
+            color: #172033;
+            font-family: inherit;
+            font-size: 14px;
+            outline: none;
+            box-shadow: none;
+            box-sizing: border-box;
+            transition:
+                background 0.18s ease,
+                border-color 0.18s ease,
+                box-shadow 0.18s ease;
+        }
+
+        #warehouseMapDrawer .category-cell-form select:hover,
+        #warehouseMapDrawer .category-cell-form input[type="text"]:hover {
+            border-color: #c7d1df;
+            background: #ffffff;
+        }
+
+        #warehouseMapDrawer .category-cell-form select:focus,
+        #warehouseMapDrawer .category-cell-form input[type="text"]:focus {
+            border-color: #8eb0ff;
+            background: #ffffff;
+            box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.09);
+        }
+
+        #warehouseMapDrawer .category-cell-form > button[type="submit"] {
+            width: auto;
+            min-width: 190px;
+            height: 46px;
+            min-height: 46px;
+            margin: 0;
+            padding: 0 18px;
+            border: 1px solid #2563eb;
+            border-radius: 13px;
+            background: #2563eb;
+            color: #ffffff;
+            font-size: 13px;
+            font-weight: 800;
+            white-space: nowrap;
+            box-shadow: 0 6px 15px rgba(37, 99, 235, 0.17);
+            transition:
+                background 0.18s ease,
+                border-color 0.18s ease,
+                box-shadow 0.18s ease,
+                transform 0.18s ease;
+        }
+
+        #warehouseMapDrawer .category-cell-form > button[type="submit"]:hover {
+            background: #1d4ed8;
+            border-color: #1d4ed8;
+            box-shadow: 0 8px 19px rgba(37, 99, 235, 0.22);
+            transform: translateY(-1px);
+        }
+
+        #warehouseMapDrawer .warehouse-map-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 11px;
+        }
+
+        #warehouseMapDrawer .warehouse-map-cell {
+            min-width: 0;
+            padding: 15px;
+            border: 1px solid #e5eaf2;
+            border-radius: 16px;
+            background: #ffffff;
+            color: #172033;
+            box-shadow:
+                0 5px 16px rgba(15, 23, 42, 0.035),
+                0 1px 2px rgba(15, 23, 42, 0.025);
+            transition:
+                background 0.18s ease,
+                border-color 0.18s ease,
+                box-shadow 0.18s ease,
+                transform 0.18s ease;
+        }
+
+        #warehouseMapDrawer .warehouse-map-cell:hover {
+            background: #ffffff;
+            border-color: #adc5ff;
+            box-shadow: 0 8px 20px rgba(37, 99, 235, 0.09);
+            transform: translateY(-1px);
+        }
+
+        #warehouseMapDrawer .warehouse-map-cell.active {
+            border-color: #8eb0ff;
+            background: #eef4ff;
+            box-shadow:
+                0 0 0 3px rgba(37, 99, 235, 0.07),
+                0 8px 20px rgba(37, 99, 235, 0.08);
+        }
+
+        #warehouseMapDrawer .warehouse-map-title {
+            margin-bottom: 10px;
+            color: #172033;
+            font-size: 18px;
+            font-weight: 850;
+            letter-spacing: -0.025em;
+        }
+
+        #warehouseMapDrawer .warehouse-map-meta {
+            padding-bottom: 10px;
+            border-bottom: 1px solid #edf1f6;
+            color: #536079;
+            font-size: 12px;
+            font-weight: 750;
+            line-height: 1.55;
+        }
+
+        #warehouseMapDrawer .warehouse-map-preview {
+            margin-top: 10px;
+            color: #69768c;
+            font-size: 12px;
+            font-weight: 650;
+            line-height: 1.5;
+            word-break: break-word;
+        }
+
+        #warehouseMapDrawer .warehouse-map-cell.active
+        .warehouse-map-title {
+            color: #1d4ed8;
+        }
+
+        @media (max-width: 800px) {
+            #warehouseMapDrawer .category-cell-form {
+                grid-template-columns: 1fr;
+            }
+
+            #warehouseMapDrawer .category-cell-form > button[type="submit"] {
+                width: 100%;
+            }
+
+            #warehouseMapDrawer .warehouse-map-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+
+        @media (max-width: 560px) {
+            #warehouseMapDrawer.map-modal {
+                width: calc(100vw - 20px);
+                max-width: calc(100vw - 20px);
+                max-height: calc(100vh - 20px);
+                padding: 17px;
+                border-radius: 18px;
+            }
+
+            #warehouseMapDrawer .warehouse-map-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+
+        /* warehouse-resizable-columns */
+
+        .table-card table.resizable-products-table {
+            width: 100%;
+            table-layout: fixed;
+        }
+
+        .table-card table.resizable-products-table th {
+            position: relative;
+        }
+
+        .column-resize-handle {
+            position: absolute;
+            top: 0;
+            right: -5px;
+            z-index: 8;
+            width: 10px;
+            height: 100%;
+            cursor: col-resize;
+            touch-action: none;
+        }
+
+        .column-resize-handle::after {
+            content: "";
+            position: absolute;
+            top: 18%;
+            bottom: 18%;
+            left: 4px;
+            width: 2px;
+            border-radius: 999px;
+            background: transparent;
+            transition: background 0.15s ease;
+        }
+
+        .column-resize-handle:hover::after,
+        .column-resize-handle.is-active::after {
+            background: #2563eb;
+        }
+
+        html.resizing-columns,
+        html.resizing-columns * {
+            cursor: col-resize !important;
+            user-select: none !important;
+        }
+
+
+        /* add-product-brand-category-grid */
+
+        .add-card .add-form {
+            grid-template-columns:
+                minmax(220px, 1.45fr)
+                minmax(125px, 0.8fr)
+                minmax(135px, 0.85fr)
+                minmax(150px, 1fr)
+                minmax(120px, 0.7fr)
+                minmax(145px, 0.85fr)
+                minmax(165px, 0.9fr);
+        }
+
+        @media (max-width: 1450px) {
+            .add-card .add-form {
+                grid-template-columns:
+                    repeat(4, minmax(150px, 1fr));
+            }
+
+            .add-card .add-form button {
+                grid-column: span 2;
+            }
+        }
+
+        @media (max-width: 850px) {
+            .add-card .add-form {
+                grid-template-columns: 1fr 1fr;
+            }
+
+            .add-card .add-form button {
+                grid-column: 1 / -1;
+            }
+        }
+
+        @media (max-width: 560px) {
+            .add-card .add-form {
+                grid-template-columns: 1fr;
+            }
+
+            .add-card .add-form button {
+                grid-column: auto;
+            }
+        }
+
+
+        /* warehouse-safe-sort */
+
+        .warehouse-sort-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            color: inherit;
+            font: inherit;
+            font-weight: inherit;
+            cursor: pointer;
+            user-select: none;
+            white-space: nowrap;
+        }
+
+        .warehouse-sort-label:hover,
+        .warehouse-sort-label.is-active {
+            color: #2563eb;
+        }
+
+        .warehouse-sort-arrow {
+            color: #9ca3af;
+            font-size: 11px;
+            font-weight: 900;
+        }
+
+        .warehouse-sort-label.is-active .warehouse-sort-arrow {
+            color: #2563eb;
+        }
+
+        .table-card th:nth-child(2),
+        .table-card th:nth-child(3),
+        .table-card th:nth-child(4),
+        .table-card th:nth-child(5),
+        .table-card th:nth-child(6),
+        .table-card th:nth-child(7),
+        .table-card td:nth-child(2),
+        .table-card td:nth-child(3),
+        .table-card td:nth-child(4),
+        .table-card td:nth-child(5),
+        .table-card td:nth-child(6),
+        .table-card td:nth-child(7) {
+            text-align: center;
+        }
+
+        .table-card th:nth-child(2) .warehouse-sort-label,
+        .table-card th:nth-child(3) .warehouse-sort-label,
+        .table-card th:nth-child(4) .warehouse-sort-label,
+        .table-card th:nth-child(5) .warehouse-sort-label,
+        .table-card th:nth-child(6) .warehouse-sort-label,
+        .table-card th:nth-child(7) .warehouse-sort-label {
+            justify-content: center;
+        }
+
+        .created-column {
+            white-space: nowrap;
+        }
+
     </style>
 </head>
 <body>
@@ -987,11 +2330,13 @@
                             <div class="stat-value">{{ total_stock_display }}</div>
                         </div>
 
-                        
+
                     </div>
                 </div>
 
             </div>
+
+
 
             {% if selected_category %}
                 <div class="filter-pill">
@@ -1010,6 +2355,8 @@
 
             <div class="search-card">
                 <form class="search-form" method="get" action="/warehouse">
+                    <input type="hidden" name="sort_by" value="{{ sort_by }}">
+                    <input type="hidden" name="sort_dir" value="{{ sort_dir }}">
                     {% if selected_category %}
                         <input type="hidden" name="category" value="{{ selected_category }}">
                     {% endif %}
@@ -1062,7 +2409,71 @@
                         Карта склада
                     </button>
 
-                    <button type="submit">Найти</button>
+                    <button
+                        class="add-position-card"
+                        type="button"
+                        onclick="toggleWarehouseAddCard()"
+                    >
+                        + Добавить товар
+                    </button>
+                </form>
+            </div>
+
+            <div class="add-card is-hidden" id="warehouseAddCard">
+                <div class="add-title">Добавить товар в МойСклад</div>
+
+                <form
+                    class="add-form"
+                    method="post"
+                    action="/warehouse/add"
+                    onsubmit="return lockWarehouseAddForm(this)"
+                >
+                    <input
+                        type="hidden"
+                        name="request_id"
+                        value="{{ add_request_id }}"
+                    >
+                    <input
+                        type="text"
+                        name="name"
+                        placeholder="Название товара"
+                        required
+                    >
+
+                    <input
+                        type="text"
+                        name="article"
+                        placeholder="Артикул"
+                    >
+
+                    <input
+                        type="text"
+                        name="brand"
+                        placeholder="Бренд"
+                    >
+
+                    <input
+                        type="text"
+                        name="category"
+                        placeholder="Категория"
+                    >
+
+                    <input
+                        type="number"
+                        name="stock"
+                        min="0"
+                        step="1"
+                        value="0"
+                        placeholder="Начальный остаток"
+                    >
+
+                    <input
+                        type="text"
+                        name="cell"
+                        placeholder="Ячейка, например A-01"
+                    >
+
+                    <button type="submit">Добавить товар</button>
                 </form>
             </div>
 
@@ -1071,11 +2482,85 @@
                     <table>
                         <thead>
                             <tr>
-                                <th>Название</th>
-                                <th>Артикул</th>
+                                <th>
+                                    <span
+                                        class="warehouse-sort-label{% if sort_by == 'name' %} is-active{% endif %}"
+                                        data-sort-field="name"
+                                        onclick="sortWarehouseTable(this.dataset.sortField)"
+                                        title="А → Я / A → Z. Повторное нажатие: Я → А / Z → A"
+                                    >
+                                        Название
+                                        <span class="warehouse-sort-arrow">
+                                            {% if sort_by == "name" %}
+                                                {% if sort_dir == "asc" %}↑{% else %}↓{% endif %}
+                                            {% else %}↕{% endif %}
+                                        </span>
+                                    </span>
+                                </th>
+
+                                <th>
+                                    <span
+                                        class="warehouse-sort-label{% if sort_by == 'article' %} is-active{% endif %}"
+                                        data-sort-field="article"
+                                        onclick="sortWarehouseTable(this.dataset.sortField)"
+                                        title="А → Я / A → Z. Повторное нажатие: Я → А / Z → A"
+                                    >
+                                        Артикул
+                                        <span class="warehouse-sort-arrow">
+                                            {% if sort_by == "article" %}
+                                                {% if sort_dir == "asc" %}↑{% else %}↓{% endif %}
+                                            {% else %}↕{% endif %}
+                                        </span>
+                                    </span>
+                                </th>
+
+                                <th>
+                                    <span
+                                        class="warehouse-sort-label{% if sort_by == 'brand' %} is-active{% endif %}"
+                                        data-sort-field="brand"
+                                        onclick="sortWarehouseTable(this.dataset.sortField)"
+                                        title="А → Я / A → Z. Повторное нажатие: Я → А / Z → A"
+                                    >
+                                        Бренд
+                                        <span class="warehouse-sort-arrow">
+                                            {% if sort_by == "brand" %}
+                                                {% if sort_dir == "asc" %}↑{% else %}↓{% endif %}
+                                            {% else %}↕{% endif %}
+                                        </span>
+                                    </span>
+                                </th>
+
+                                <th>
+                                    <span
+                                        class="warehouse-sort-label{% if sort_by == 'category' %} is-active{% endif %}"
+                                        data-sort-field="category"
+                                        onclick="sortWarehouseTable(this.dataset.sortField)"
+                                        title="А → Я / A → Z. Повторное нажатие: Я → А / Z → A"
+                                    >
+                                        Категория
+                                        <span class="warehouse-sort-arrow">
+                                            {% if sort_by == "category" %}
+                                                {% if sort_dir == "asc" %}↑{% else %}↓{% endif %}
+                                            {% else %}↕{% endif %}
+                                        </span>
+                                    </span>
+                                </th>
+
                                 <th>
                                     <div class="stock-column-title">
-                                        <span>Остаток</span>
+                                        <span
+                                            class="warehouse-sort-label{% if sort_by == 'stock' %} is-active{% endif %}"
+                                            data-sort-field="stock"
+                                            onclick="sortWarehouseTable(this.dataset.sortField)"
+                                            title="По возрастанию. Повторное нажатие: по убыванию"
+                                        >
+                                            Остаток
+                                            <span class="warehouse-sort-arrow">
+                                                {% if sort_by == "stock" %}
+                                                    {% if sort_dir == "asc" %}↑{% else %}↓{% endif %}
+                                                {% else %}↕{% endif %}
+                                            </span>
+                                        </span>
 
                                         <form
                                             class="stock-header-toggle-form"
@@ -1098,6 +2583,9 @@
                                                 <input type="hidden" name="cell" value="{{ selected_cell }}">
                                             {% endif %}
 
+                                            <input type="hidden" name="sort_by" value="{{ sort_by }}">
+                                            <input type="hidden" name="sort_dir" value="{{ sort_dir }}">
+
                                             <label
                                                 class="stock-mini-toggle"
                                                 title="Скрыть товары с нулевым остатком"
@@ -1115,7 +2603,39 @@
                                         </form>
                                     </div>
                                 </th>
-                                <th>Ячейка</th>
+
+                                <th class="created-column">
+                                    <span
+                                        class="warehouse-sort-label{% if sort_by == 'created_at' %} is-active{% endif %}"
+                                        data-sort-field="created_at"
+                                        onclick="sortWarehouseTable(this.dataset.sortField)"
+                                        title="Старые → новые. Повторное нажатие: новые → старые"
+                                    >
+                                        Добавлено
+                                        <span class="warehouse-sort-arrow">
+                                            {% if sort_by == "created_at" %}
+                                                {% if sort_dir == "asc" %}↑{% else %}↓{% endif %}
+                                            {% else %}↕{% endif %}
+                                        </span>
+                                    </span>
+                                </th>
+
+                                <th>
+                                    <span
+                                        class="warehouse-sort-label{% if sort_by == 'cell' %} is-active{% endif %}"
+                                        data-sort-field="cell"
+                                        onclick="sortWarehouseTable(this.dataset.sortField)"
+                                        title="А → Я / A → Z. Повторное нажатие: Я → А / Z → A"
+                                    >
+                                        Ячейка
+                                        <span class="warehouse-sort-arrow">
+                                            {% if sort_by == "cell" %}
+                                                {% if sort_dir == "asc" %}↑{% else %}↓{% endif %}
+                                            {% else %}↕{% endif %}
+                                        </span>
+                                    </span>
+                                </th>
+
                                 <th>Действие</th>
                             </tr>
                         </thead>
@@ -1130,13 +2650,20 @@
                                 >
                                     <td>
                                         <div class="name">{{ item.name }}</div>
-                                        <div class="muted">{{ item.brand }} · {{ item.category }}</div>
                                     </td>
 
                                     <td>{{ item.article or "—" }}</td>
 
+                                    <td>{{ item.brand or "Без бренда" }}</td>
+
+                                    <td>{{ item.category or "Без категории" }}</td>
+
                                     <td class="{% if item.stock <= 0 %}stock-zero{% else %}stock-good{% endif %}">
                                         {{ item.stock_display }}
+                                    </td>
+
+                                    <td class="created-column">
+                                        {{ item.created_at_display }}
                                     </td>
 
                                     <td>
@@ -1167,7 +2694,11 @@
                                                     Карточка
                                                 </button>
 
-                                                <form method="post" action="/warehouse/archive" onsubmit="return confirm('Убрать позицию в архив МойСклад?');">
+                                                <form
+                                                    method="post"
+                                                    action="/warehouse/archive"
+                                                    onsubmit="return archiveWarehouseProduct(event, this)"
+                                                >
                                                     <input type="hidden" name="product_id" value="{{ item.id }}">
                                                     <button class="delete-button" type="submit">Убрать</button>
                                                 </form>
@@ -1292,10 +2823,12 @@
                 Категория
             </div>
 
-            <select name="category">
-                <option value="">Все категории</option>
-                {{ render_category_options(category_tree, selected_category) }}
-            </select>
+            <div class="filter-select-wrap">
+                <select name="category">
+                    <option value="">Все категории</option>
+                    {{ render_category_options(category_tree, selected_category) }}
+                </select>
+            </div>
 
             <button type="submit">Применить фильтры</button>
         </form>
@@ -1582,6 +3115,8 @@
 
             document.getElementById("drawerBackdrop").classList.add("open");
             document.getElementById("editDrawer").classList.add("open");
+            document.body.classList.add("edit-drawer-open");
+            document.body.style.overflow = "hidden";
         }
 
         function filterBrandOptions(value) {
@@ -1626,6 +3161,9 @@
                     element.classList.remove("open");
                 }
             });
+
+            document.body.style.overflow = "";
+            document.body.classList.remove("edit-drawer-open");
         }
 
         const warehouseSearchInput = document.getElementById("warehouseSearchInput");
@@ -1967,6 +3505,420 @@
         });
 
 </script>
+
+
+<!-- warehouse-auto-submit-search -->
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        const searchInput = document.getElementById("warehouseSearchInput");
+
+        if (!searchInput) {
+            return;
+        }
+
+        const searchForm = searchInput.closest("form");
+
+        if (!searchForm) {
+            return;
+        }
+
+        let searchTimer = null;
+
+        if (sessionStorage.getItem("warehouseSearchKeepFocus") === "1") {
+            sessionStorage.removeItem("warehouseSearchKeepFocus");
+
+            searchInput.focus();
+
+            const valueLength = searchInput.value.length;
+            searchInput.setSelectionRange(valueLength, valueLength);
+        }
+
+        searchInput.addEventListener("input", function () {
+            clearTimeout(searchTimer);
+
+            searchTimer = setTimeout(function () {
+                sessionStorage.setItem("warehouseSearchKeepFocus", "1");
+                searchForm.requestSubmit();
+            }, 350);
+        });
+    });
+</script>
+
+
+<script id="warehouse-resizable-columns-script">
+    document.addEventListener("DOMContentLoaded", function () {
+        const table = document.querySelector(".table-card table");
+
+        if (!table || table.dataset.columnResizeReady === "1") {
+            return;
+        }
+
+        const headers = Array.from(
+            table.querySelectorAll("thead th")
+        );
+
+        if (headers.length < 2) {
+            return;
+        }
+
+        const initialWidths = headers.map(function (header) {
+            return header.getBoundingClientRect().width;
+        });
+
+        const initialTotal = initialWidths.reduce(function (sum, width) {
+            return sum + width;
+        }, 0);
+
+        if (!initialTotal) {
+            return;
+        }
+
+        table.dataset.columnResizeReady = "1";
+        table.classList.add("resizable-products-table");
+
+        const colgroup = document.createElement("colgroup");
+        colgroup.dataset.resizableColumns = "1";
+
+        initialWidths.forEach(function (width) {
+            const column = document.createElement("col");
+            column.style.width = (
+                width / initialTotal * 100
+            ).toFixed(4) + "%";
+
+            colgroup.appendChild(column);
+        });
+
+        table.insertBefore(colgroup, table.firstChild);
+
+        const columns = Array.from(colgroup.children);
+
+        const minimumWidths = headers.map(function (_, index) {
+            if (index === 0) {
+                return 220;
+            }
+
+            if (index === headers.length - 1) {
+                return 150;
+            }
+
+            return 90;
+        });
+
+        headers.slice(0, -1).forEach(function (header, index) {
+            const handle = document.createElement("span");
+            handle.className = "column-resize-handle";
+            handle.title = "Потяни, чтобы изменить ширину столбца";
+            header.appendChild(handle);
+
+            handle.addEventListener("pointerdown", function (event) {
+                event.preventDefault();
+                event.stopPropagation();
+
+                const tableWidth = table.getBoundingClientRect().width;
+
+                if (!tableWidth) {
+                    return;
+                }
+
+                const leftWidth = headers[index]
+                    .getBoundingClientRect().width;
+
+                const rightWidth = headers[index + 1]
+                    .getBoundingClientRect().width;
+
+                const leftStart = leftWidth / tableWidth * 100;
+                const rightStart = rightWidth / tableWidth * 100;
+                const pairTotal = leftStart + rightStart;
+
+                const minimumLeft =
+                    minimumWidths[index] / tableWidth * 100;
+
+                const minimumRight =
+                    minimumWidths[index + 1] / tableWidth * 100;
+
+                const startX = event.clientX;
+
+                handle.classList.add("is-active");
+                document.documentElement.classList.add(
+                    "resizing-columns"
+                );
+
+                handle.setPointerCapture(event.pointerId);
+
+                function moveColumn(moveEvent) {
+                    const delta = (
+                        moveEvent.clientX - startX
+                    ) / tableWidth * 100;
+
+                    const maximumLeft = pairTotal - minimumRight;
+
+                    const newLeft = Math.min(
+                        maximumLeft,
+                        Math.max(minimumLeft, leftStart + delta)
+                    );
+
+                    const newRight = pairTotal - newLeft;
+
+                    columns[index].style.width =
+                        newLeft.toFixed(4) + "%";
+
+                    columns[index + 1].style.width =
+                        newRight.toFixed(4) + "%";
+                }
+
+                function finishResize() {
+                    handle.classList.remove("is-active");
+                    document.documentElement.classList.remove(
+                        "resizing-columns"
+                    );
+
+                    handle.removeEventListener(
+                        "pointermove",
+                        moveColumn
+                    );
+
+                    handle.removeEventListener(
+                        "pointerup",
+                        finishResize
+                    );
+
+                    handle.removeEventListener(
+                        "pointercancel",
+                        finishResize
+                    );
+                }
+
+                handle.addEventListener(
+                    "pointermove",
+                    moveColumn
+                );
+
+                handle.addEventListener(
+                    "pointerup",
+                    finishResize
+                );
+
+                handle.addEventListener(
+                    "pointercancel",
+                    finishResize
+                );
+            });
+        });
+    });
+</script>
+
+
+    <script>
+        function sortWarehouseTable(field) {
+            const params = new URLSearchParams(window.location.search);
+            const currentField = params.get("sort_by") || "name";
+            const currentDirection = params.get("sort_dir") || "asc";
+
+            const nextDirection =
+                currentField === field && currentDirection === "asc"
+                    ? "desc"
+                    : "asc";
+
+            params.set("sort_by", field);
+            params.set("sort_dir", nextDirection);
+
+            window.location.href = "/warehouse?" + params.toString();
+        }
+    </script>
+
+
+    <script>
+        function lockWarehouseAddForm(form) {
+            if (form.dataset.submitting === "1") {
+                return false;
+            }
+
+            form.dataset.submitting = "1";
+
+            const button = form.querySelector(
+                'button[type="submit"]'
+            );
+
+            if (button) {
+                button.disabled = true;
+                button.textContent = "Добавляем...";
+            }
+
+            return true;
+        }
+    </script>
+
+
+    <script>
+        function confirmAndRememberWarehouseScroll() {
+            const confirmed = confirm(
+                "Убрать позицию в архив МойСклад?"
+            );
+
+            if (!confirmed) {
+                return false;
+            }
+
+            sessionStorage.setItem(
+                "warehouseScrollPosition",
+                String(window.scrollY)
+            );
+
+            return true;
+        }
+
+        document.addEventListener("DOMContentLoaded", function () {
+            const savedPosition = sessionStorage.getItem(
+                "warehouseScrollPosition"
+            );
+
+            if (savedPosition === null) {
+                return;
+            }
+
+            sessionStorage.removeItem(
+                "warehouseScrollPosition"
+            );
+
+            const scrollPosition = Number(savedPosition);
+
+            if (!Number.isFinite(scrollPosition)) {
+                return;
+            }
+
+            requestAnimationFrame(function () {
+                requestAnimationFrame(function () {
+                    window.scrollTo({
+                        top: scrollPosition,
+                        left: 0,
+                        behavior: "auto"
+                    });
+                });
+            });
+        });
+    </script>
+
+
+    <script>
+        async function archiveWarehouseProduct(event, form) {
+            event.preventDefault();
+
+            if (form.dataset.submitting === "1") {
+                return false;
+            }
+
+            const confirmed = confirm(
+                "Убрать позицию в архив МойСклад?"
+            );
+
+            if (!confirmed) {
+                return false;
+            }
+
+            form.dataset.submitting = "1";
+
+            const button = form.querySelector(
+                'button[type="submit"]'
+            );
+
+            const originalText = button
+                ? button.textContent
+                : "Убрать";
+
+            if (button) {
+                button.disabled = true;
+                button.textContent = "Убираем...";
+            }
+
+            const row = form.closest("tr");
+
+            try {
+                const response = await fetch(form.action, {
+                    method: "POST",
+                    body: new FormData(form),
+                    headers: {
+                        "X-Requested-With": "XMLHttpRequest"
+                    }
+                });
+
+                const data = await response.json();
+
+                if (!response.ok || !data.ok) {
+                    throw new Error(
+                        data.message ||
+                        "Не удалось убрать товар"
+                    );
+                }
+
+                if (row) {
+                    const stock = Number(
+                        row.dataset.stock || 0
+                    );
+
+                    row.remove();
+
+                    const positions = document.getElementById(
+                        "visiblePositionsCount"
+                    );
+
+                    if (positions) {
+                        const current = Number(
+                            positions.textContent.trim()
+                        );
+
+                        if (Number.isFinite(current)) {
+                            positions.textContent = String(
+                                Math.max(0, current - 1)
+                            );
+                        }
+                    }
+
+                    const statValues =
+                        document.querySelectorAll(
+                            ".stock-summary-item .stat-value"
+                        );
+
+                    if (statValues.length > 1) {
+                        const currentStock = Number(
+                            statValues[1].textContent
+                                .replace(/\s/g, "")
+                                .replace(",", ".")
+                        );
+
+                        if (
+                            Number.isFinite(currentStock) &&
+                            Number.isFinite(stock)
+                        ) {
+                            statValues[1].textContent =
+                                new Intl.NumberFormat(
+                                    "ru-RU",
+                                    {
+                                        maximumFractionDigits: 3
+                                    }
+                                ).format(
+                                    Math.max(
+                                        0,
+                                        currentStock - stock
+                                    )
+                                );
+                        }
+                    }
+                }
+
+                return false;
+            } catch (error) {
+                form.dataset.submitting = "0";
+
+                if (button) {
+                    button.disabled = false;
+                    button.textContent = originalText;
+                }
+
+                alert(error.message);
+                return false;
+            }
+        }
+    </script>
 
 </body>
 </html>

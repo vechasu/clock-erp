@@ -25,3 +25,10 @@ instance/warehouse_cells.json
 outputs/
 *.backup-*
 *.broken-*
+
+# Время добавления товаров и защита повторных запросов
+instance/warehouse_created_at.json
+instance/warehouse_add_requests.json
+
+# Временные копии шаблонов
+*.bak-*

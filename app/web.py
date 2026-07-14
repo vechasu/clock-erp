@@ -7,9 +7,12 @@ if str(PROJECT_ROOT) not in sys.path:
 
 import time
 import json
+import os
+import fcntl
+import uuid
 import requests
 from app.clients.moysklad import MoySkladClient
-from flask import Flask, render_template, request, redirect, url_for
+from flask import Flask, render_template, request, redirect, url_for, jsonify
 
 app = Flask(__name__)
 
@@ -32,6 +35,126 @@ WAREHOUSE_CACHE = {
 }
 
 WAREHOUSE_CACHE_SECONDS = 300
+
+
+WAREHOUSE_ADD_REQUESTS_PATH = (
+    PROJECT_ROOT / "instance" / "warehouse_add_requests.json"
+)
+
+
+def claim_warehouse_add_request(request_id):
+    request_id = str(request_id or "").strip()
+
+    if not request_id:
+        return True
+
+    WAREHOUSE_ADD_REQUESTS_PATH.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    now = time.time()
+
+    with WAREHOUSE_ADD_REQUESTS_PATH.open(
+        "a+",
+        encoding="utf-8",
+    ) as file:
+        fcntl.flock(file.fileno(), fcntl.LOCK_EX)
+
+        file.seek(0)
+        raw_data = file.read().strip()
+
+        try:
+            data = json.loads(raw_data) if raw_data else {}
+        except (TypeError, ValueError):
+            data = {}
+
+        if not isinstance(data, dict):
+            data = {}
+
+        cleaned_data = {}
+
+        for key, value in data.items():
+            try:
+                timestamp = float(value)
+            except (TypeError, ValueError):
+                continue
+
+            if now - timestamp < 86400:
+                cleaned_data[str(key)] = timestamp
+
+        if request_id in cleaned_data:
+            fcntl.flock(file.fileno(), fcntl.LOCK_UN)
+            return False
+
+        cleaned_data[request_id] = now
+
+        file.seek(0)
+        file.truncate()
+
+        json.dump(
+            cleaned_data,
+            file,
+            ensure_ascii=False,
+            indent=2,
+        )
+
+        file.flush()
+        os.fsync(file.fileno())
+        fcntl.flock(file.fileno(), fcntl.LOCK_UN)
+
+    return True
+
+
+WAREHOUSE_CREATED_AT_PATH = (
+    PROJECT_ROOT / "instance" / "warehouse_created_at.json"
+)
+
+
+def load_warehouse_created_at():
+    try:
+        if not WAREHOUSE_CREATED_AT_PATH.exists():
+            return {}
+
+        data = json.loads(
+            WAREHOUSE_CREATED_AT_PATH.read_text(encoding="utf-8")
+        )
+
+        return data if isinstance(data, dict) else {}
+    except Exception as error:
+        print("Ошибка чтения времени добавления товаров:", error)
+        return {}
+
+
+def save_warehouse_created_at(data):
+    WAREHOUSE_CREATED_AT_PATH.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    WAREHOUSE_CREATED_AT_PATH.write_text(
+        json.dumps(
+            data,
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+
+def record_warehouse_created_at(product_id):
+    product_id = str(product_id or "").strip()
+
+    if not product_id:
+        return 0
+
+    data = load_warehouse_created_at()
+    timestamp = time.time()
+
+    data[product_id] = timestamp
+    save_warehouse_created_at(data)
+
+    return timestamp
 
 STATUS_NAMES = {
     "N": "Не подтвержден",
@@ -785,6 +908,24 @@ def warehouse_page():
     selected_brand = request.args.get("brand", "").strip()
     selected_cell = request.args.get("cell", "").strip()
     hide_zero = request.args.get("hide_zero", "").strip() == "1"
+    sort_by = request.args.get("sort_by", "name").strip()
+    sort_dir = request.args.get("sort_dir", "asc").strip()
+
+    allowed_sort_fields = {
+        "name",
+        "article",
+        "brand",
+        "category",
+        "stock",
+        "created_at",
+        "cell",
+    }
+
+    if sort_by not in allowed_sort_fields:
+        sort_by = "name"
+
+    if sort_dir not in {"asc", "desc"}:
+        sort_dir = "asc"
 
     all_items = get_warehouse_items(force=request.args.get("refresh") == "1")
     category_tree = build_category_tree(all_items)
@@ -826,6 +967,53 @@ def warehouse_page():
             or query_lower in (item.get("article") or "").lower()
         ]
 
+    if sort_by == "created_at":
+        items_with_time = [
+            item
+            for item in items
+            if float(item.get("created_at") or 0) > 0
+        ]
+
+        items_without_time = [
+            item
+            for item in items
+            if float(item.get("created_at") or 0) <= 0
+        ]
+
+        items_with_time.sort(
+            key=lambda item: float(item.get("created_at") or 0),
+            reverse=sort_dir == "desc",
+        )
+
+        items = items_with_time + items_without_time
+    else:
+        sort_functions = {
+            "name": lambda item: str(
+                item.get("name") or ""
+            ).casefold(),
+            "article": lambda item: str(
+                item.get("article") or ""
+            ).casefold(),
+            "brand": lambda item: str(
+                item.get("brand") or ""
+            ).casefold(),
+            "category": lambda item: str(
+                item.get("category") or ""
+            ).casefold(),
+            "stock": lambda item: float(
+                item.get("stock") or 0
+            ),
+            "cell": lambda item: str(
+                item.get("cell") or ""
+            ).casefold(),
+        }
+
+        items = sorted(
+            items,
+            key=sort_functions[sort_by],
+            reverse=sort_dir == "desc",
+        )
+
     visible_positions = sum(
         1
         for item in items
@@ -846,6 +1034,9 @@ def warehouse_page():
         selected_brand=selected_brand,
         selected_cell=selected_cell,
         hide_zero=hide_zero,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+        add_request_id=uuid.uuid4().hex,
         visible_positions=visible_positions,
         category_tree=category_tree,
         brand_groups=brand_groups,
@@ -946,6 +1137,11 @@ def warehouse_add_product():
 
     name = request.form.get("name", "").strip()
     article = request.form.get("article", "").strip()
+    brand = request.form.get("brand", "").strip()
+    category = request.form.get("category", "").strip()
+    cell = request.form.get("cell", "").strip()
+    stock_raw = request.form.get("stock", "0").strip().replace(",", ".")
+    request_id = request.form.get("request_id", "").strip()
     code = f"VECHASU-{uuid.uuid4().hex[:12].upper()}"
 
     if not name:
@@ -956,31 +1152,120 @@ def warehouse_add_product():
         ))
 
     try:
+        stock = float(stock_raw or 0)
+    except ValueError:
+        return redirect(url_for(
+            "warehouse_page",
+            notice="error",
+            message="Остаток должен быть числом"
+        ))
+
+    if stock < 0:
+        return redirect(url_for(
+            "warehouse_page",
+            notice="error",
+            message="Начальный остаток не может быть отрицательным"
+        ))
+
+    if not claim_warehouse_add_request(request_id):
+        return redirect(url_for(
+            "warehouse_page",
+            notice="error",
+            message="Повторное добавление остановлено: этот запрос уже обработан"
+        ))
+
+    try:
         client = MoySkladClient()
-        product = client.create_product(name=name, code=code, article=article or None)
+
+        folder_parts = []
+
+        if brand:
+            folder_parts.append(brand)
+
+        if category:
+            folder_parts.append(category)
+        elif brand:
+            folder_parts.append("Без категории")
+
+        product_folder = None
+
+        if folder_parts:
+            product_folder = client.get_or_create_product_folder(
+                "/".join(folder_parts)
+            )
+
+        product = client.create_product(
+            name=name,
+            code=code,
+            article=article or None,
+            product_folder=product_folder,
+        )
+
+        if not product:
+            return redirect(url_for(
+                "warehouse_page",
+                notice="error",
+                message="МойСклад не создал товар"
+            ))
+
+        product_id = str(product.get("id") or "").strip()
+
+        if not product_id:
+            return redirect(url_for(
+                "warehouse_page",
+                notice="error",
+                message="Товар создан, но МойСклад не вернул его ID"
+            ))
+
+        record_warehouse_created_at(product_id)
+
+        completed_actions = []
+
+        if brand:
+            completed_actions.append(f"бренд {brand}")
+
+        if category:
+            completed_actions.append(f"категория {category}")
+
+        if stock > 0:
+            client.create_stock_enter(
+                product_id=product_id,
+                quantity=stock,
+                reason="Начальный остаток при создании товара в Vechasu ERP",
+            )
+            completed_actions.append(f"остаток {format_stock_number(stock)}")
+
+        if cell:
+            set_warehouse_cell(product_id, cell)
+            client.update_product_cell_attribute(product_id, cell)
+            completed_actions.append(f"ячейка {cell}")
 
         WAREHOUSE_CACHE["items"] = []
         WAREHOUSE_CACHE["loaded_at"] = 0
 
-        if product:
-            return redirect(url_for(
-                "warehouse_page",
-                notice="success",
-                message="Позиция добавлена в МойСклад"
-            ))
+        message = "Товар добавлен в МойСклад"
+
+        if completed_actions:
+            message += ": " + ", ".join(completed_actions)
 
         return redirect(url_for(
             "warehouse_page",
-            notice="error",
-            message="МойСклад не создал позицию"
+            refresh="1",
+            notice="success",
+            message=message,
         ))
 
     except Exception as error:
-        print(f"Ошибка добавления позиции: {error}")
+        print(f"Ошибка добавления товара: {error}")
+
+        WAREHOUSE_CACHE["items"] = []
+        WAREHOUSE_CACHE["loaded_at"] = 0
+
         return redirect(url_for(
             "warehouse_page",
+            refresh="1",
             notice="error",
-            message="Ошибка добавления позиции"
+            message="Товар мог быть создан, но остаток или ячейка не сохранились"
         ))
 
 
@@ -1271,8 +1556,18 @@ def warehouse_update_stock():
 @app.route("/warehouse/archive", methods=["POST"])
 def warehouse_archive_product():
     product_id = request.form.get("product_id", "").strip()
+    is_ajax = (
+        request.headers.get("X-Requested-With")
+        == "XMLHttpRequest"
+    )
 
     if not product_id:
+        if is_ajax:
+            return jsonify(
+                ok=False,
+                message="Не найден ID товара",
+            ), 400
+
         return redirect(url_for(
             "warehouse_page",
             notice="error",
@@ -1283,15 +1578,27 @@ def warehouse_archive_product():
         client = MoySkladClient()
         result = client.archive_product(product_id)
 
-        WAREHOUSE_CACHE["items"] = []
-        WAREHOUSE_CACHE["loaded_at"] = 0
-
         if result:
+            WAREHOUSE_CACHE["items"] = []
+            WAREHOUSE_CACHE["loaded_at"] = 0
+
+            if is_ajax:
+                return jsonify(
+                    ok=True,
+                    message="Позиция убрана в архив МойСклад",
+                )
+
             return redirect(url_for(
                 "warehouse_page",
                 notice="success",
                 message="Позиция убрана в архив МойСклад"
             ))
+
+        if is_ajax:
+            return jsonify(
+                ok=False,
+                message="МойСклад не убрал позицию",
+            ), 502
 
         return redirect(url_for(
             "warehouse_page",
@@ -1301,6 +1608,13 @@ def warehouse_archive_product():
 
     except Exception as error:
         print(f"Ошибка архивации позиции: {error}")
+
+        if is_ajax:
+            return jsonify(
+                ok=False,
+                message="Ошибка удаления позиции",
+            ), 500
+
         return redirect(url_for(
             "warehouse_page",
             notice="error",
@@ -1481,6 +1795,7 @@ def get_warehouse_items(limit=1000, force=False):
 
         product_cells = load_warehouse_cells()
         category_cells = load_warehouse_category_cells()
+        created_at_map = load_warehouse_created_at()
 
         product_response = client.get("/entity/product", params={"limit": limit, "expand": "attributes"})
         product_rows = product_response.get("rows", []) if product_response else []
@@ -1575,6 +1890,22 @@ def get_warehouse_items(limit=1000, force=False):
                 cell_source = ""
                 cell_source_path = ""
 
+            try:
+                created_at = float(
+                    created_at_map.get(product_id) or 0
+                )
+            except (TypeError, ValueError):
+                created_at = 0
+
+            created_at_display = (
+                time.strftime(
+                    "%d.%m.%Y %H:%M",
+                    time.localtime(created_at),
+                )
+                if created_at > 0
+                else "до 14.07.2026"
+            )
+
             items.append({
                 "id": product_id,
                 "moysklad_url": (
@@ -1595,6 +1926,8 @@ def get_warehouse_items(limit=1000, force=False):
                 "stock_display": format_stock_number(stock_value),
                 "reserve": reserve_value,
                 "quantity": quantity_value,
+                "created_at": created_at,
+                "created_at_display": created_at_display,
             })
 
         save_warehouse_cells(product_cells)

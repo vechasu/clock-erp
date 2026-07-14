@@ -378,7 +378,118 @@ class MoySkladClient:
 
         print("Stock not found")
         return None
-    def create_product(self, name, code, article=None):
+
+    @staticmethod
+    def normalize_product_folder_path(value):
+        parts = [
+            part.strip()
+            for part in str(value or "").replace("\\", "/").split("/")
+            if part.strip()
+        ]
+
+        return "/".join(parts).lower()
+
+
+    def get_product_folders(self):
+        response = self.get(
+            "/entity/productfolder",
+            params={"limit": 1000},
+        )
+
+        if not response:
+            return []
+
+        return response.get("rows", [])
+
+
+    def find_product_folder_by_path(self, folder_path, folders=None):
+        target = self.normalize_product_folder_path(folder_path)
+
+        if not target:
+            return None
+
+        if folders is None:
+            folders = self.get_product_folders()
+
+        for folder in folders:
+            name = str(folder.get("name") or "").strip()
+            path_name = str(folder.get("pathName") or "").strip()
+
+            full_path = "/".join(
+                part
+                for part in (path_name, name)
+                if part
+            )
+
+            possible_paths = {
+                self.normalize_product_folder_path(path_name),
+                self.normalize_product_folder_path(full_path),
+            }
+
+            if target in possible_paths:
+                return folder
+
+        return None
+
+
+    def get_or_create_product_folder(self, folder_path):
+        parts = [
+            part.strip()
+            for part in str(folder_path or "").replace("\\", "/").split("/")
+            if part.strip()
+        ]
+
+        if not parts:
+            return None
+
+        folders = self.get_product_folders()
+        parent_folder = None
+        current_parts = []
+
+        for part in parts:
+            current_parts.append(part)
+            current_path = "/".join(current_parts)
+
+            folder = self.find_product_folder_by_path(
+                current_path,
+                folders=folders,
+            )
+
+            if not folder:
+                payload = {
+                    "name": part,
+                }
+
+                if parent_folder and parent_folder.get("meta"):
+                    payload["productFolder"] = {
+                        "meta": parent_folder["meta"],
+                    }
+
+                folder = self.post(
+                    "/entity/productfolder",
+                    payload,
+                )
+
+                if not folder:
+                    raise ValueError(
+                        "МойСклад не создал папку товара: "
+                        + current_path
+                    )
+
+                folders.append(folder)
+
+            parent_folder = folder
+
+        return parent_folder
+
+
+    def create_product(
+        self,
+        name,
+        code,
+        article=None,
+        product_folder=None,
+    ):
         payload = {
             "name": name,
             "code": code,
@@ -387,10 +498,16 @@ class MoySkladClient:
         if article:
             payload["article"] = article
 
+        if product_folder and product_folder.get("meta"):
+            payload["productFolder"] = {
+                "meta": product_folder["meta"],
+            }
+
         response = requests.post(
             f"{self.BASE_URL}/entity/product",
             headers=self.headers,
             json=payload,
+            timeout=8,
         )
 
         print("Status:", response.status_code)
