@@ -18,3 +18,10 @@ instance/product_mappings.json
 instance/manual_sales.json
 instance/automatic_sales_overrides.json
 instance/settings.json
+
+# Локальные данные и резервные копии
+instance/warehouse_category_cells.json
+instance/warehouse_cells.json
+outputs/
+*.backup-*
+*.broken-*
