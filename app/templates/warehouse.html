@@ -653,6 +653,48 @@
             margin-bottom: 8px;
         }
 
+        .search-input-wrap {
+            position: relative;
+            flex: 1 1 auto;
+        }
+
+        .search-input-wrap input[type="text"] {
+            width: 100%;
+            padding-right: 42px;
+        }
+
+        .search-clear-button {
+            position: absolute;
+            top: 50%;
+            right: 14px;
+            transform: translateY(-50%);
+            width: 18px;
+            height: 18px;
+            border: none;
+            background: transparent;
+            color: #94a3b8;
+            font-size: 22px;
+            font-weight: 400;
+            line-height: 1;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            opacity: 0.72;
+            transition: color 0.15s ease, opacity 0.15s ease;
+        }
+
+        .search-clear-button:hover {
+            background: transparent;
+            color: #475569;
+            opacity: 1;
+        }
+
+        .search-clear-button.is-hidden {
+            display: none;
+        }
+
         .search-form input[type="text"],
         .search-form button {
             height: 40px;
@@ -668,7 +710,254 @@
         }
         /* Конец компактного верха страницы */
 
-</style>
+
+        .zero-stock-toggle-form {
+            margin-left: auto;
+        }
+
+        .zero-stock-toggle {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-height: 38px;
+            padding-left: 16px;
+            border-left: 1px solid #e5e7eb;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .zero-stock-toggle-text {
+            font-size: 12px;
+            font-weight: 600;
+            line-height: 1.2;
+            color: #4b5563;
+            white-space: nowrap;
+        }
+
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 42px;
+            height: 24px;
+            flex: 0 0 auto;
+        }
+
+        .toggle-switch input {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            opacity: 0;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            inset: 0;
+            border-radius: 999px;
+            background: #d1d5db;
+            transition: 0.2s ease;
+        }
+
+        .toggle-slider::after {
+            content: "";
+            position: absolute;
+            top: 3px;
+            left: 3px;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #ffffff;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22);
+            transition: 0.2s ease;
+        }
+
+        .toggle-switch input:checked + .toggle-slider {
+            background: #111827;
+        }
+
+        .toggle-switch input:checked + .toggle-slider::after {
+            transform: translateX(18px);
+        }
+
+        @media (max-width: 760px) {
+            .zero-stock-toggle {
+                padding-left: 10px;
+            }
+
+            .zero-stock-toggle-text {
+                display: none;
+            }
+        }
+
+    
+        .stock-column-title {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+        }
+
+        .stock-header-toggle-form {
+            display: inline-flex;
+            align-items: center;
+            margin: 0;
+        }
+
+        .stock-mini-toggle {
+            position: relative;
+            display: inline-block;
+            width: 26px;
+            height: 14px;
+            cursor: pointer;
+        }
+
+        .stock-mini-toggle input {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .stock-mini-slider {
+            position: absolute;
+            inset: 0;
+            border-radius: 999px;
+            background: #d1d5db;
+            transition: none;
+        }
+
+        .stock-mini-slider::after {
+            content: "";
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #ffffff;
+            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.25);
+            transition: none;
+        }
+
+        .stock-mini-toggle input:checked + .stock-mini-slider {
+            background: #2563eb;
+        }
+
+        .stock-mini-toggle input:checked + .stock-mini-slider::after {
+            transform: translateX(12px);
+        }
+
+    
+        .brand-combobox {
+            position: relative;
+            width: 100%;
+        }
+
+        .category-cell-form .brand-combobox-trigger {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 100%;
+            height: 48px;
+            padding: 0 16px;
+            border: 1px solid #d1d5db;
+            border-radius: 14px;
+            background: #ffffff;
+            color: #111827;
+            font-size: 16px;
+            font-weight: 500;
+            text-align: left;
+            cursor: pointer;
+            box-shadow: none;
+        }
+
+        .category-cell-form .brand-combobox-trigger:hover {
+            border-color: #9ca3af;
+            background: #ffffff;
+        }
+
+        .brand-combobox-arrow {
+            color: #6b7280;
+            font-size: 13px;
+            transition: transform 0.18s ease;
+        }
+
+        .brand-combobox.open .brand-combobox-arrow {
+            transform: rotate(180deg);
+        }
+
+        .brand-combobox-dropdown {
+            position: absolute;
+            top: calc(100% + 7px);
+            left: 0;
+            right: 0;
+            z-index: 100;
+            display: none;
+            padding: 10px;
+            border: 1px solid #d1d5db;
+            border-radius: 14px;
+            background: #ffffff;
+            box-shadow: 0 16px 40px rgba(15, 23, 42, 0.16);
+        }
+
+        .brand-combobox.open .brand-combobox-dropdown {
+            display: block;
+        }
+
+        .brand-combobox-search {
+            width: 100%;
+            height: 42px;
+            margin: 0 0 8px;
+            padding: 0 13px;
+            border: 1px solid #d1d5db;
+            border-radius: 11px;
+            background: #ffffff;
+            color: #111827;
+            font-size: 14px;
+            outline: none;
+        }
+
+        .brand-combobox-search:focus {
+            border-color: #2563eb;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.10);
+        }
+
+        .brand-combobox-options {
+            max-height: 270px;
+            overflow-y: auto;
+        }
+
+        .category-cell-form .brand-combobox-option {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 100%;
+            min-height: 40px;
+            padding: 9px 11px;
+            border: 0;
+            border-radius: 10px;
+            background: transparent;
+            color: #374151;
+            font-size: 14px;
+            font-weight: 650;
+            text-align: left;
+            cursor: pointer;
+            box-shadow: none;
+        }
+
+        .category-cell-form .brand-combobox-option:hover {
+            background: #f3f4f6;
+        }
+
+        .category-cell-form .brand-combobox-option.active {
+            background: #dbeafe;
+            color: #1d4ed8;
+        }
+
+        .brand-combobox-option[hidden] {
+            display: none;
+        }
+
+    </style>
 </head>
 <body>
     <div class="app">
@@ -688,7 +977,7 @@
                     <div class="stock-summary">
                         <div class="stock-summary-item">
                             <div class="stat-title">Позиций</div>
-                            <div class="stat-value">{{ items|length }}</div>
+                            <div id="visiblePositionsCount" class="stat-value">{{ visible_positions }}</div>
                         </div>
 
                         <div class="stock-summary-divider"></div>
@@ -697,6 +986,8 @@
                             <div class="stat-title">Остаток, единиц</div>
                             <div class="stat-value">{{ total_stock_display }}</div>
                         </div>
+
+                        
                     </div>
                 </div>
 
@@ -731,12 +1022,29 @@
                         <input type="hidden" name="cell" value="{{ selected_cell }}">
                     {% endif %}
 
-                    <input
-                        type="text"
-                        name="q"
-                        value="{{ query }}"
-                        placeholder="Поиск по названию или артикулу"
-                    >
+                    {% if hide_zero %}
+                        <input type="hidden" name="hide_zero" value="1">
+                    {% endif %}
+
+                    <div class="search-input-wrap">
+                        <input
+                            id="warehouseSearchInput"
+                            type="text"
+                            name="q"
+                            value="{{ query }}"
+                            placeholder="Поиск по названию или артикулу"
+                        >
+                        <button
+                            id="warehouseSearchClear"
+                            class="search-clear-button{% if not query %} is-hidden{% endif %}"
+                            type="button"
+                            onclick="clearWarehouseSearch()"
+                            aria-label="Очистить поиск"
+                            title="Очистить поиск"
+                        >
+                            ×
+                        </button>
+                    </div>
 
                     <button
                         class="search-tool-button"
@@ -765,7 +1073,48 @@
                             <tr>
                                 <th>Название</th>
                                 <th>Артикул</th>
-                                <th>Остаток</th>
+                                <th>
+                                    <div class="stock-column-title">
+                                        <span>Остаток</span>
+
+                                        <form
+                                            class="stock-header-toggle-form"
+                                            method="get"
+                                            action="/warehouse"
+                                        >
+                                            {% if query %}
+                                                <input type="hidden" name="q" value="{{ query }}">
+                                            {% endif %}
+
+                                            {% if selected_brand %}
+                                                <input type="hidden" name="brand" value="{{ selected_brand }}">
+                                            {% endif %}
+
+                                            {% if selected_category %}
+                                                <input type="hidden" name="category" value="{{ selected_category }}">
+                                            {% endif %}
+
+                                            {% if selected_cell %}
+                                                <input type="hidden" name="cell" value="{{ selected_cell }}">
+                                            {% endif %}
+
+                                            <label
+                                                class="stock-mini-toggle"
+                                                title="Скрыть товары с нулевым остатком"
+                                                aria-label="Скрыть товары с нулевым остатком"
+                                            >
+                                                <input
+                                                    type="checkbox"
+                                                    name="hide_zero"
+                                                    value="1"
+                                                    {% if hide_zero %}checked{% endif %}
+                                                    onchange="toggleZeroStockRows(this.checked)"
+                                                >
+                                                <span class="stock-mini-slider"></span>
+                                            </label>
+                                        </form>
+                                    </div>
+                                </th>
                                 <th>Ячейка</th>
                                 <th>Действие</th>
                             </tr>
@@ -773,7 +1122,12 @@
 
                         <tbody>
                             {% for item in items %}
-                                <tr>
+                                <tr
+                                    data-stock="{{ item.stock }}"
+                                    data-name="{{ item.name|lower|e }}"
+                                    data-article="{{ (item.article or '')|lower|e }}"
+                                    {% if hide_zero and item.stock <= 0 %}hidden{% endif %}
+                                >
                                     <td>
                                         <div class="name">{{ item.name }}</div>
                                         <div class="muted">{{ item.brand }} · {{ item.category }}</div>
@@ -869,26 +1223,70 @@
                 <input type="hidden" name="cell" value="{{ selected_cell }}">
             {% endif %}
 
+            {% if hide_zero %}
+                <input type="hidden" name="hide_zero" value="1">
+            {% endif %}
+
             <div class="category-cell-form-title">Бренд</div>
 
-            <input
-                id="brandSelect"
-                type="text"
-                name="brand"
-                list="brandOptions"
-                value="{{ selected_brand }}"
-                placeholder="Все бренды — начни вводить название"
-                autocomplete="off"
-            >
+            <div id="brandCombobox" class="brand-combobox">
+                <input
+                    id="brandHiddenInput"
+                    type="hidden"
+                    name="brand"
+                    value="{{ selected_brand }}"
+                >
 
-            <datalist id="brandOptions">
-                {% for brand in brand_groups %}
-                    <option
-                        value="{{ brand.name }}"
-                        label="{{ brand.count }} позиций"
-                    ></option>
-                {% endfor %}
-            </datalist>
+                <button
+                    class="brand-combobox-trigger"
+                    type="button"
+                    aria-expanded="false"
+                    onclick="toggleBrandDropdown(event)"
+                >
+                    <span id="brandComboboxValue">
+                        {{ selected_brand or "Все бренды" }}
+                    </span>
+
+                    <span class="brand-combobox-arrow">▾</span>
+                </button>
+
+                <div id="brandDropdown" class="brand-combobox-dropdown">
+                    <input
+                        id="brandSearchInput"
+                        class="brand-combobox-search"
+                        type="search"
+                        placeholder="Поиск бренда"
+                        autocomplete="off"
+                        oninput="filterBrandList(this.value)"
+                    >
+
+                    <div class="brand-combobox-options">
+                        <button
+                            class="brand-combobox-option {% if not selected_brand %}active{% endif %}"
+                            type="button"
+                            data-brand=""
+                            data-brand-search="все бренды"
+                            onclick="selectBrandOption(this)"
+                        >
+                            <span>Все бренды</span>
+                            <span>{{ brand_groups | sum(attribute='count') }}</span>
+                        </button>
+
+                        {% for brand in brand_groups %}
+                            <button
+                                class="brand-combobox-option {% if selected_brand == brand.name %}active{% endif %}"
+                                type="button"
+                                data-brand="{{ brand.name|e }}"
+                                data-brand-search="{{ brand.name|lower|e }}"
+                                onclick="selectBrandOption(this)"
+                            >
+                                <span>{{ brand.name }}</span>
+                                <span>{{ brand.count }}</span>
+                            </button>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
 
             <div class="category-cell-form-title" style="margin-top: 14px;">
                 Категория
@@ -903,7 +1301,7 @@
         </form>
 
         <div style="margin-top: 16px;">
-            <a class="category-link" href="{{ url_for('warehouse_page') }}">
+            <a class="category-link" href="{{ url_for('warehouse_page', hide_zero='1' if hide_zero else None) }}">
                 <span>Сбросить фильтры</span>
             </a>
         </div>
@@ -937,7 +1335,7 @@
             {% for group in cell_groups %}
                 <a
                     class="warehouse-map-cell {% if selected_cell == group.cell %}active{% endif %}"
-                    href="{{ url_for('warehouse_page', cell=group.cell, brand=selected_brand, category=selected_category, q=query) }}"
+                    href="{{ url_for('warehouse_page', cell=group.cell, brand=selected_brand, category=selected_category, q=query, hide_zero='1' if hide_zero else None) }}"
                 >
                     <div class="warehouse-map-title">{{ group.cell }}</div>
 
@@ -1230,6 +1628,68 @@
             });
         }
 
+        const warehouseSearchInput = document.getElementById("warehouseSearchInput");
+        const warehouseSearchClear = document.getElementById("warehouseSearchClear");
+
+        function syncWarehouseSearchClear() {
+            if (!warehouseSearchInput || !warehouseSearchClear) {
+                return;
+            }
+
+            warehouseSearchClear.classList.toggle(
+                "is-hidden",
+                !warehouseSearchInput.value.trim()
+            );
+        }
+
+        function clearWarehouseSearch() {
+            if (!warehouseSearchInput) {
+                return;
+            }
+
+            warehouseSearchInput.value = "";
+            syncWarehouseSearchClear();
+            warehouseSearchInput.focus();
+
+            const rows = document.querySelectorAll(
+                "tbody tr[data-name][data-article]"
+            );
+
+            rows.forEach(function(row) {
+                row.hidden = false;
+            });
+
+            const toggle = document.querySelector(
+                '.stock-mini-toggle input[name="hide_zero"]'
+            );
+
+            if (toggle && toggle.checked) {
+                toggleZeroStockRows(true, false);
+            } else {
+                const counter = document.getElementById(
+                    "visiblePositionsCount"
+                );
+
+                if (counter) {
+                    counter.textContent = String(rows.length);
+                }
+            }
+
+            const url = new URL(window.location.href);
+            url.searchParams.delete("q");
+
+            window.history.replaceState(
+                {},
+                "",
+                url.pathname + url.search + url.hash
+            );
+        }
+
+        if (warehouseSearchInput) {
+            warehouseSearchInput.addEventListener("input", syncWarehouseSearchClear);
+            syncWarehouseSearchClear();
+        }
+
         const stockForm = document.getElementById("stockForm");
 
         if (stockForm) {
@@ -1270,6 +1730,242 @@
             }
         }
     }
+
+        function syncHideZeroControls(hideZero) {
+            const forms = document.querySelectorAll(
+                'form.search-form, #filterDrawer form[method="get"]'
+            );
+
+            forms.forEach(function(form) {
+                let input = form.querySelector(
+                    'input[type="hidden"][name="hide_zero"]'
+                );
+
+                if (hideZero) {
+                    if (!input) {
+                        input = document.createElement("input");
+                        input.type = "hidden";
+                        input.name = "hide_zero";
+                        form.appendChild(input);
+                    }
+
+                    input.value = "1";
+                } else if (input) {
+                    input.remove();
+                }
+            });
+
+            document.querySelectorAll('a[href]').forEach(function(link) {
+                let linkUrl;
+
+                try {
+                    linkUrl = new URL(
+                        link.getAttribute("href"),
+                        window.location.origin
+                    );
+                } catch (error) {
+                    return;
+                }
+
+                if (
+                    linkUrl.origin !== window.location.origin
+                    || linkUrl.pathname !== "/warehouse"
+                ) {
+                    return;
+                }
+
+                if (hideZero) {
+                    linkUrl.searchParams.set("hide_zero", "1");
+                } else {
+                    linkUrl.searchParams.delete("hide_zero");
+                }
+
+                link.setAttribute(
+                    "href",
+                    linkUrl.pathname + linkUrl.search + linkUrl.hash
+                );
+            });
+        }
+
+
+        function toggleZeroStockRows(hideZero, updateAddress = true) {
+            const rows = Array.from(
+                document.querySelectorAll("tbody tr[data-stock]")
+            );
+
+            rows.forEach(function(row) {
+                const stock = Number.parseFloat(
+                    row.dataset.stock || "0"
+                );
+
+                row.hidden = hideZero && stock <= 0;
+            });
+
+            const visibleCount = rows.filter(function(row) {
+                return !row.hidden;
+            }).length;
+
+            const counter = document.getElementById(
+                "visiblePositionsCount"
+            );
+
+            if (counter) {
+                counter.textContent = String(visibleCount);
+            }
+
+            syncHideZeroControls(hideZero);
+
+            if (updateAddress) {
+                const url = new URL(window.location.href);
+
+                if (hideZero) {
+                    url.searchParams.set("hide_zero", "1");
+                } else {
+                    url.searchParams.delete("hide_zero");
+                }
+
+                window.history.replaceState(
+                    {},
+                    "",
+                    url.pathname + url.search + url.hash
+                );
+            }
+        }
+
+
+        document.addEventListener("DOMContentLoaded", function() {
+            const toggle = document.querySelector(
+                '.stock-mini-toggle input[name="hide_zero"]'
+            );
+
+            toggleZeroStockRows(
+                Boolean(toggle && toggle.checked),
+                false
+            );
+        });
+
+
+        function setBrandDropdownOpen(isOpen) {
+            const combobox = document.getElementById("brandCombobox");
+            const trigger = combobox
+                ? combobox.querySelector(".brand-combobox-trigger")
+                : null;
+
+            if (!combobox) {
+                return;
+            }
+
+            combobox.classList.toggle("open", isOpen);
+
+            if (trigger) {
+                trigger.setAttribute(
+                    "aria-expanded",
+                    isOpen ? "true" : "false"
+                );
+            }
+
+            if (isOpen) {
+                const search = document.getElementById("brandSearchInput");
+
+                window.setTimeout(function() {
+                    if (search) {
+                        search.focus();
+                    }
+                }, 20);
+            }
+        }
+
+
+        function toggleBrandDropdown(event) {
+            if (event) {
+                event.stopPropagation();
+            }
+
+            const combobox = document.getElementById("brandCombobox");
+
+            if (!combobox) {
+                return;
+            }
+
+            setBrandDropdownOpen(
+                !combobox.classList.contains("open")
+            );
+        }
+
+
+        function filterBrandList(value) {
+            const query = (value || "").trim().toLowerCase();
+
+            document
+                .querySelectorAll(".brand-combobox-option")
+                .forEach(function(option) {
+                    const brandName = (
+                        option.dataset.brandSearch || ""
+                    ).toLowerCase();
+
+                    option.hidden = (
+                        Boolean(query)
+                        && !brandName.includes(query)
+                    );
+                });
+        }
+
+
+        function selectBrandOption(button) {
+            const brand = button.dataset.brand || "";
+            const hiddenInput = document.getElementById(
+                "brandHiddenInput"
+            );
+            const valueElement = document.getElementById(
+                "brandComboboxValue"
+            );
+            const searchInput = document.getElementById(
+                "brandSearchInput"
+            );
+
+            if (hiddenInput) {
+                hiddenInput.value = brand;
+            }
+
+            if (valueElement) {
+                valueElement.textContent = brand || "Все бренды";
+            }
+
+            document
+                .querySelectorAll(".brand-combobox-option")
+                .forEach(function(option) {
+                    option.classList.remove("active");
+                });
+
+            button.classList.add("active");
+
+            if (searchInput) {
+                searchInput.value = "";
+            }
+
+            filterBrandList("");
+            setBrandDropdownOpen(false);
+        }
+
+
+        document.addEventListener("click", function(event) {
+            const combobox = document.getElementById("brandCombobox");
+
+            if (
+                combobox
+                && !combobox.contains(event.target)
+            ) {
+                setBrandDropdownOpen(false);
+            }
+        });
+
+
+        document.addEventListener("keydown", function(event) {
+            if (event.key === "Escape") {
+                setBrandDropdownOpen(false);
+            }
+        });
+
 </script>
 
 </body>

@@ -784,6 +784,7 @@ def warehouse_page():
     selected_category = request.args.get("category", "").strip()
     selected_brand = request.args.get("brand", "").strip()
     selected_cell = request.args.get("cell", "").strip()
+    hide_zero = request.args.get("hide_zero", "").strip() == "1"
 
     all_items = get_warehouse_items(force=request.args.get("refresh") == "1")
     category_tree = build_category_tree(all_items)
@@ -825,6 +826,12 @@ def warehouse_page():
             or query_lower in (item.get("article") or "").lower()
         ]
 
+    visible_positions = sum(
+        1
+        for item in items
+        if not hide_zero or float(item.get("stock") or 0) > 0
+    )
+
     total_stock = sum(float(item.get("stock") or 0) for item in items)
     total_reserve = sum(float(item.get("reserve") or 0) for item in items)
     total_available = sum(float(item.get("quantity") or 0) for item in items)
@@ -838,6 +845,8 @@ def warehouse_page():
         selected_category=selected_category,
         selected_brand=selected_brand,
         selected_cell=selected_cell,
+        hide_zero=hide_zero,
+        visible_positions=visible_positions,
         category_tree=category_tree,
         brand_groups=brand_groups,
         cell_groups=cell_groups,
