@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1"
+    >
+    <title>Отчёт по продажам — Vechasu ERP</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            background: #f3f6fb;
+            color: #172033;
+            font-family:
+             
+                -apple-system,
+                BlinkMacSystemFont,
+                "Segoe UI",
+                sans-serif;
+        }
+
+        .report-page {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 28px;
+        }
+
+        .report-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 20px;
+            margin-bottom: 22px;
+        }
+
+        .report-header h1 {
+            margin: 0 0 6px;
+            font-size: 27px;
+        }
+
+        .report-header p {
+            margin: 0;
+            color: #64748b;
+        }
+
+        .back-link {
+            color: #2563eb;
+            font-weight: 700;
+            text-decoration: none;
+        }
+
+        .filter-card,
+        .report-table-card {
+            background: #ffffff;
+            border: 1px solid #dce3ed;
+            border-radius: 15px;
+            box-shadow: 0 8px 25px rgba(15, 23, 42, 0.06);
+        }
+
+        .filter-card {
+            padding: 20px;
+            margin-bottom: 18px;
+        }
+
+        .filter-grid {
+            display: grid;
+            grid-template-columns:
+                repeat(4, minmax(160px, 1fr));
+            gap: 14px;
+        }
+
+        .field {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .field label {
+            color: #475569;
+            font-size: 12px;
+            font-weight: 800;
+        }
+
+        .control {
+            width: 100%;
+            min-height: 42px;
+            padding: 9px 11px;
+            border: 1px solid #cbd5e1;
+            border-radius: 9px;
+            background: #ffffff;
+            color: #172033;
+            font: inherit;
+        }
+
+        .report-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 18px;
+        }
+
+        .button {
+            min-height: 42px;
+            padding: 10px 16px;
+            border: none;
+            border-radius: 9px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 800;
+            text-decoration: none;
+        }
+
+        .button-primary {
+            background: #2563eb;
+            color: #ffffff;
+        }
+
+        .button-excel {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .button-pdf {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .button-reset {
+            background: #e2e8f0;
+            color: #334155;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns:
+                repeat(3, minmax(160px, 1fr));
+            gap: 14px;
+            margin-bottom: 18px;
+        }
+
+        .stat-card {
+            padding: 18px;
+            background: #ffffff;
+            border: 1px solid #dce3ed;
+            border-radius: 13px;
+        }
+
+        .stat-label {
+            color: #64748b;
+            font-size: 12px;
+            font-weight: 800;
+        }
+
+        .stat-value {
+            margin-top: 7px;
+            font-size: 27px;
+            font-weight: 900;
+        }
+
+        .report-table-card {
+            overflow: auto;
+        }
+
+        table {
+            width: 100%;
+            min-width: 1300px;
+            border-collapse: collapse;
+        }
+
+        th,
+        td {
+            padding: 11px 10px;
+            border-bottom: 1px solid #e2e8f0;
+            text-align: left;
+            vertical-align: top;
+            font-size: 12px;
+        }
+
+        th {
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            background: #eff6ff;
+            color: #1e3a8a;
+            font-size: 11px;
+            text-transform: uppercase;
+        }
+
+        tbody tr:hover {
+            background: #f8fafc;
+        }
+
+        .empty {
+            padding: 42px;
+            color: #64748b;
+            text-align: center;
+        }
+
+        @media (max-width: 1000px) {
+            .filter-grid {
+                grid-template-columns:
+                    repeat(2, minmax(150px, 1fr));
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <main class="report-page">
+        <header class="report-header">
+            <div>
+                <h1>Отчёт по продажам</h1>
+                <p>
+                    Сформирован {{ generated_at }}
+                </p>
+            </div>
+
+            <a class="back-link" href="/sales">
+                ← Вернуться к продажам
+            </a>
+        </header>
+
+        <form
+            id="salesReportForm"
+            class="filter-card"
+            method="get"
+            action="/sales/report"
+        >
+            <div class="filter-grid">
+                <div class="field">
+                    <label for="date_from">Дата с</label>
+                    <input
+                        id="date_from"
+                        class="control"
+                        type="date"
+                        name="date_from"
+                        value="{{ filters.date_from }}"
+                    >
+                </div>
+
+                <div class="field">
+                    <label for="date_to">Дата по</label>
+                    <input
+                        id="date_to"
+                        class="control"
+                        type="date"
+                        name="date_to"
+                        value="{{ filters.date_to }}"
+                    >
+                </div>
+
+                <div class="field">
+                    <label for="sale_type">Тип продажи</label>
+                    <select
+                        id="sale_type"
+                        class="control"
+                        name="sale_type"
+                    >
+                        <option value="">Все продажи</option>
+                        <option
+                            value="manual"
+                            {% if filters.sale_type == "manual" %}selected{% endif %}
+                        >
+                            Ручные
+                        </option>
+                        <option
+                            value="automatic"
+                            {% if filters.sale_type == "automatic" %}selected{% endif %}
+                        >
+                            Автоматические
+                        </option>
+                    </select>
+                </div>
+
+                <div class="field">
+                    <label for="source">Источник</label>
+                    <select
+                        id="source"
+                        class="control"
+                        name="source"
+                    >
+                        <option value="">Все источники</option>
+
+                        {% for value in sources %}
+                            <option
+                                value="{{ value }}"
+                                {% if filters.source == value %}selected{% endif %}
+                            >
+                                {{ value }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="field">
+                    <label for="product">Товар</label>
+                    <input
+                        id="product"
+                        class="control"
+                        type="search"
+                        name="product"
+                        value="{{ filters.product }}"
+                        list="reportProducts"
+                        placeholder="Название товара"
+                    >
+
+                    <datalist id="reportProducts">
+                        {% for value in products %}
+                            <option value="{{ value }}"></option>
+                        {% endfor %}
+                    </datalist>
+                </div>
+
+                <div class="field">
+                    <label for="delivery_method">
+                        Способ доставки
+                    </label>
+
+                    <select
+                        id="delivery_method"
+                        class="control"
+                        name="delivery_method"
+                    >
+                        <option value="">
+                            Все способы
+                        </option>
+
+                        {% for value in delivery_methods %}
+                            <option
+                                value="{{ value }}"
+                                {% if filters.delivery_method == value %}selected{% endif %}
+                            >
+                                {{ value }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="field">
+                    <label for="region">Регион</label>
+
+                    <select
+                        id="region"
+                        class="control"
+                        name="region"
+                    >
+                        <option value="">Все регионы</option>
+
+                        {% for value in regions %}
+                            <option
+                                value="{{ value }}"
+                                {% if filters.region == value %}selected{% endif %}
+                            >
+                                {{ value }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="field">
+                    <label for="city">Город</label>
+
+                    <select
+                        id="city"
+                        class="control"
+                        name="city"
+                    >
+                        <option value="">Все города</option>
+
+                        {% for value in cities %}
+                            <option
+                                value="{{ value }}"
+                                {% if filters.city == value %}selected{% endif %}
+                            >
+                                {{ value }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+
+            <div class="report-actions">
+                <button
+                    class="button button-primary"
+                    type="submit"
+                >
+                    Показать отчёт
+                </button>
+
+                <button
+                    class="button button-excel"
+                    type="submit"
+                    formaction="/sales/report.xlsx"
+                    formmethod="get"
+                >
+                    Скачать Excel
+                </button>
+
+                <button
+                    class="button button-pdf"
+                    type="submit"
+                    formaction="/sales/report.pdf"
+                    formmethod="get"
+                >
+                    Скачать PDF
+                </button>
+
+                <a
+                    class="button button-reset"
+                    href="/sales/report"
+                >
+                    Сбросить фильтры
+                </a>
+            </div>
+        </form>
+
+        <section class="stats">
+            <article class="stat-card">
+                <div class="stat-label">Продаж</div>
+                <div class="stat-value">
+                    {{ total_sales }}
+                </div>
+            </article>
+
+            <article class="stat-card">
+                <div class="stat-label">Заказов</div>
+                <div class="stat-value">
+                    {{ total_orders }}
+                </div>
+            </article>
+
+            <article class="stat-card">
+                <div class="stat-label">
+                    Продано единиц
+                </div>
+                <div class="stat-value">
+                    {{ total_quantity }}
+                </div>
+            </article>
+        </section>
+
+        <section class="report-table-card">
+            {% if sales %}
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Дата</th>
+                            <th>Тип</th>
+                            <th>Источник</th>
+                            <th>Товар</th>
+                            <th>Количество</th>
+                            <th>Заказ</th>
+                            <th>Трек-номер</th>
+                            <th>Доставка</th>
+                            <th>Регион</th>
+                            <th>Город</th>
+                            <th>Примечание</th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                        {% for sale in sales %}
+                            <tr>
+                                <td>{{ sale.created_at or "—" }}</td>
+                                <td>
+                                    {{ sale.sale_type_label }}
+                                </td>
+                                <td>{{ sale.source or "—" }}</td>
+                                <td>
+                                    {{ sale.product_name or "—" }}
+                                </td>
+                                <td>
+                                    {{ sale.quantity_value }}
+                                </td>
+                                <td>
+                                    {{ sale.order_number or "—" }}
+                                </td>
+                                <td>
+                                    {{ sale.track_number or "—" }}
+                                </td>
+                                <td>
+                                    {{ sale.delivery_method or "—" }}
+                                </td>
+                                <td>
+                                    {{ sale.region or "—" }}
+                                </td>
+                                <td>{{ sale.city or "—" }}</td>
+                                <td>{{ sale.note or "—" }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            {% else %}
+                <div class="empty">
+                    По выбранным условиям продаж не найдено
+                </div>
+            {% endif %}
+        </section>
+    </main>
+</body>
+</html>
