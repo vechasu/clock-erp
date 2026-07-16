@@ -55,6 +55,26 @@ class MoySkladClient:
 
         return response.json()
 
+    # === RECEIPT DOCUMENT ACTIONS CLIENT V1 ===
+    def delete(self, endpoint):
+        response = requests.delete(
+            f"{self.BASE_URL}{endpoint}",
+            headers=self.headers,
+            timeout=8,
+        )
+
+        if response.status_code == 404:
+            return True
+
+        if response.status_code >= 400:
+            print("Delete error:", response.status_code)
+            print(response.text)
+            return False
+
+        return True
+    # === RECEIPT DOCUMENT ACTIONS CLIENT V1 END ===
+
+
     def archive_product(self, product_id):
         return self.put(
             f"/entity/product/{product_id}",
@@ -284,39 +304,67 @@ class MoySkladClient:
         return self.post("/entity/enter", payload)
 
 
-    def create_stock_enter_many(self, positions, reason=None):
+    def build_stock_enter_payload(
+        self,
+        positions,
+        reason=None,
+        moment=None,
+    ):
         organization = self.get_default_organization()
         store = self.get_default_store()
 
         if not organization:
-            raise ValueError("В МойСклад не найдена организация")
+            raise ValueError(
+                "В МойСклад не найдена организация"
+            )
 
         if not store:
-            raise ValueError("В МойСклад не найден склад")
+            raise ValueError(
+                "В МойСклад не найден склад"
+            )
 
         prepared_positions = []
 
         for position in positions:
-            product_id = str(position.get("product_id") or "").strip()
+            product_id = str(
+                position.get("product_id") or ""
+            ).strip()
 
             try:
-                quantity = float(position.get("quantity") or 0)
-                purchase_price = float(position.get("purchase_price") or 0)
+                quantity = float(
+                    position.get("quantity") or 0
+                )
+                purchase_price = float(
+                    position.get("purchase_price") or 0
+                )
             except (TypeError, ValueError):
-                raise ValueError("Количество и закупочная цена должны быть числами")
+                raise ValueError(
+                    "Количество и закупочная цена "
+                    "должны быть числами"
+                )
 
             if not product_id:
-                raise ValueError("У одной из позиций отсутствует ID товара")
+                raise ValueError(
+                    "У позиции отсутствует ID товара"
+                )
 
             if quantity <= 0:
-                raise ValueError("Количество товара должно быть больше нуля")
+                raise ValueError(
+                    "Количество товара должно быть "
+                    "больше нуля"
+                )
 
             if purchase_price < 0:
-                raise ValueError("Закупочная цена не может быть отрицательной")
+                raise ValueError(
+                    "Закупочная цена не может быть "
+                    "отрицательной"
+                )
 
             prepared_positions.append({
                 "quantity": quantity,
-                "price": int(round(purchase_price * 100)),
+                "price": int(
+                    round(purchase_price * 100)
+                ),
                 "overhead": 0,
                 "reason": (
                     position.get("reason")
@@ -324,26 +372,106 @@ class MoySkladClient:
                     or "Приход из Vechasu ERP"
                 ),
                 "assortment": {
-                    "meta": self.get_product_meta(product_id)
-                }
+                    "meta": self.get_product_meta(
+                        product_id
+                    )
+                },
             })
 
         if not prepared_positions:
-            raise ValueError("В приходе нет товаров")
+            raise ValueError(
+                "В приходе нет товаров"
+            )
 
         payload = {
             "applicable": True,
-            "description": reason or "Приход из Vechasu ERP",
+            "description": (
+                reason
+                or "Приход из Vechasu ERP"
+            ),
             "organization": {
                 "meta": organization["meta"]
             },
             "store": {
                 "meta": store["meta"]
             },
-            "positions": prepared_positions
+            "positions": prepared_positions,
         }
 
-        return self.post("/entity/enter", payload)
+        moment_value = str(
+            moment or ""
+        ).strip()
+
+        if moment_value:
+            if len(moment_value) == 10:
+                moment_value += " 00:00:00.000"
+
+            payload["moment"] = moment_value
+
+        return payload
+
+
+    def create_stock_enter_many(
+        self,
+        positions,
+        reason=None,
+        moment=None,
+    ):
+        payload = self.build_stock_enter_payload(
+            positions=positions,
+            reason=reason,
+            moment=moment,
+        )
+
+        return self.post(
+            "/entity/enter",
+            payload,
+        )
+
+
+    # === RECEIPT DOCUMENT ACTIONS CLIENT V1 ===
+    def update_stock_enter_many(
+        self,
+        document_id,
+        positions,
+        reason=None,
+        moment=None,
+    ):
+        document_id = str(
+            document_id or ""
+        ).strip()
+
+        if not document_id:
+            raise ValueError(
+                "Не указан ID документа прихода"
+            )
+
+        payload = self.build_stock_enter_payload(
+            positions=positions,
+            reason=reason,
+            moment=moment,
+        )
+
+        return self.put(
+            f"/entity/enter/{document_id}",
+            payload,
+        )
+
+
+    def delete_stock_enter(self, document_id):
+        document_id = str(
+            document_id or ""
+        ).strip()
+
+        if not document_id:
+            raise ValueError(
+                "Не указан ID документа прихода"
+            )
+
+        return self.delete(
+            f"/entity/enter/{document_id}"
+        )
+    # === RECEIPT DOCUMENT ACTIONS CLIENT V1 END ===
 
 
     def get_stock(self, limit=20):

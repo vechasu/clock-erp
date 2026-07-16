@@ -32,3 +32,4 @@ instance/warehouse_add_requests.json
 
 # Временные копии шаблонов
 *.bak-*
+instance/receipts.json

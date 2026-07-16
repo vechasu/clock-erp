@@ -1732,6 +1732,20 @@
         }
         /* SALES PRICE TABLE CSS V2 END */
 
+
+        /* EDIT CUSTOM DELIVERY CSS V1 */
+        .manual-row.is-editing
+        .js-edit-custom-delivery.is-hidden,
+        .automatic-row.is-editing
+        .js-edit-custom-delivery.is-hidden {
+            display: none !important;
+        }
+
+        .js-edit-custom-delivery {
+            margin-top: 6px;
+        }
+        /* EDIT CUSTOM DELIVERY CSS V1 END */
+
 </style>
 </head>
 
@@ -2064,8 +2078,17 @@
                                                 {{ sale.delivery_method or "—" }}
                                             </span>
 
+                                            <!-- EDIT CUSTOM DELIVERY V1 -->
+                                            {% set standard_delivery_methods = [
+                                                    "Пункт выдачи заказов СДЭК",
+                                                    "Курьером СДЭК",
+                                                    "ТТТ Экспресс",
+                                                    "Почта России",
+                                                    "Экспресс.ру"
+                                            ] %}
+
                                             <select
-                                                class="table-control manual-edit-control sale-edit-control"
+                                                class="table-control manual-edit-control sale-edit-control js-edit-delivery-select"
                                                 name="delivery_method"
                                                 form="{{ edit_form_id }}"
                                             >
@@ -2076,13 +2099,7 @@
                                                     Не выбран
                                                 </option>
 
-                                                {% for delivery_option in [
-                                                    "Пункт выдачи заказов СДЭК",
-                                                    "Курьером СДЭК",
-                                                    "ТТТ Экспресс",
-                                                    "Почта России",
-                                                    "Экспресс.ру"
-                                                ] %}
+                                                {% for delivery_option in standard_delivery_methods %}
                                                     <option
                                                         value="{{ delivery_option }}"
                                                         {% if sale.delivery_method == delivery_option %}selected{% endif %}
@@ -2090,7 +2107,25 @@
                                                         {{ delivery_option }}
                                                     </option>
                                                 {% endfor %}
+
+                                                <option
+                                                    value="__custom__"
+                                                    {% if sale.delivery_method and sale.delivery_method not in standard_delivery_methods %}selected{% endif %}
+                                                >
+                                                    Свой вариант
+                                                </option>
                                             </select>
+
+                                            <input
+                                                class="table-control manual-edit-control sale-edit-control js-edit-custom-delivery is-hidden"
+                                                type="text"
+                                                name="custom_delivery_method"
+                                                value="{{ sale.delivery_method if sale.delivery_method and sale.delivery_method not in standard_delivery_methods else '' }}"
+                                                placeholder="Свой способ доставки"
+                                                autocomplete="off"
+                                                form="{{ edit_form_id }}"
+                                            >
+                                            <!-- EDIT CUSTOM DELIVERY V1 END -->
                                         </td>
 
                                         <td class="col-region">
@@ -2367,8 +2402,17 @@
                                                 {{ sale.delivery_method or "—" }}
                                             </span>
 
+                                            <!-- EDIT CUSTOM DELIVERY V1 -->
+                                            {% set standard_delivery_methods = [
+                                                    "Пункт выдачи заказов СДЭК",
+                                                    "Курьером СДЭК",
+                                                    "ТТТ Экспресс",
+                                                    "Почта России",
+                                                    "Экспресс.ру"
+                                            ] %}
+
                                             <select
-                                                class="table-control automatic-edit-control sale-edit-control"
+                                                class="table-control automatic-edit-control sale-edit-control js-edit-delivery-select"
                                                 name="delivery_method"
                                                 form="{{ edit_form_id }}"
                                             >
@@ -2379,13 +2423,7 @@
                                                     Не выбран
                                                 </option>
 
-                                                {% for delivery_option in [
-                                                    "Пункт выдачи заказов СДЭК",
-                                                    "Курьером СДЭК",
-                                                    "ТТТ Экспресс",
-                                                    "Почта России",
-                                                    "Экспресс.ру"
-                                                ] %}
+                                                {% for delivery_option in standard_delivery_methods %}
                                                     <option
                                                         value="{{ delivery_option }}"
                                                         {% if sale.delivery_method == delivery_option %}selected{% endif %}
@@ -2393,7 +2431,25 @@
                                                         {{ delivery_option }}
                                                     </option>
                                                 {% endfor %}
+
+                                                <option
+                                                    value="__custom__"
+                                                    {% if sale.delivery_method and sale.delivery_method not in standard_delivery_methods %}selected{% endif %}
+                                                >
+                                                    Свой вариант
+                                                </option>
                                             </select>
+
+                                            <input
+                                                class="table-control automatic-edit-control sale-edit-control js-edit-custom-delivery is-hidden"
+                                                type="text"
+                                                name="custom_delivery_method"
+                                                value="{{ sale.delivery_method if sale.delivery_method and sale.delivery_method not in standard_delivery_methods else '' }}"
+                                                placeholder="Свой способ доставки"
+                                                autocomplete="off"
+                                                form="{{ edit_form_id }}"
+                                            >
+                                            <!-- EDIT CUSTOM DELIVERY V1 END -->
                                         </td>
 
                                         <td class="col-region">
@@ -4516,6 +4572,69 @@
         }
     })();
     // SALES PRICE EDIT PREVIEW V2 END
+</script>
+
+
+<script>
+    // EDIT CUSTOM DELIVERY SCRIPT V1
+    (() => {
+        function synchronizeEditDelivery(select) {
+            const cell = select.closest(
+                ".col-delivery"
+            );
+
+            const customInput = cell
+                ? cell.querySelector(
+                    ".js-edit-custom-delivery"
+                )
+                : null;
+
+            if (!customInput) {
+                return;
+            }
+
+            const isCustom =
+                select.value === "__custom__";
+
+            customInput.classList.toggle(
+                "is-hidden",
+                !isCustom
+            );
+
+            customInput.required = isCustom;
+        }
+
+        function initializeEditDelivery() {
+            document
+                .querySelectorAll(
+                    ".js-edit-delivery-select"
+                )
+                .forEach((select) => {
+                    select.addEventListener(
+                        "change",
+                        () => {
+                            synchronizeEditDelivery(
+                                select
+                            );
+                        }
+                    );
+
+                    synchronizeEditDelivery(
+                        select
+                    );
+                });
+        }
+
+        if (document.readyState === "loading") {
+            document.addEventListener(
+                "DOMContentLoaded",
+                initializeEditDelivery
+            );
+        } else {
+            initializeEditDelivery();
+        }
+    })();
+    // EDIT CUSTOM DELIVERY SCRIPT V1 END
 </script>
 
 </body>

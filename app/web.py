@@ -4552,7 +4552,14 @@ def receipts_page():
             "name": item.get("name") or "",
             "article": item.get("article") or "",
             "code": item.get("code") or "",
+            # === SIMPLE RECEIPT FORM V1 ===
+            "brand": (
+                item.get("brand")
+                or item.get("manufacturer")
+                or ""
+            ),
             "category": item.get("category") or "",
+            # === SIMPLE RECEIPT FORM V1 END ===
             "cell": item.get("cell") or "",
             "stock": item.get("stock") or 0,
             "stock_display": item.get("stock_display") or "0",
@@ -4579,6 +4586,12 @@ def receipts_page():
         total_amount=total_amount,
         notice=(request.args.get("notice") or "").strip(),
         message=(request.args.get("message") or "").strip(),
+        open_receipt_modal=(
+            request.args.get(
+                "open_receipt_modal"
+            )
+            == "1"
+        ),
     )
 
 
@@ -4588,8 +4601,31 @@ def receipt_create():
     from flask import request, redirect, url_for
     import uuid
 
-    supplier = (request.form.get("supplier") or "").strip()
-    invoice_number = (request.form.get("invoice_number") or "").strip()
+    # === SIMPLE RECEIPT FORM V1 ===
+    submitted_brand = (
+        request.form.get("brand") or ""
+    ).strip()
+
+    submitted_category = (
+        request.form.get("category") or ""
+    ).strip()
+
+    # === NEW PRODUCT IN RECEIPT BACKEND V1 ===
+    new_product_name = (
+        request.form.get("new_product_name") or ""
+    ).strip()
+    # === NEW PRODUCT IN RECEIPT BACKEND V1 END ===
+
+    # === RECEIPT CREATE NEXT V2 ===
+    submit_mode = (
+        request.form.get("submit_mode")
+        or "close"
+    ).strip()
+    # === RECEIPT CREATE NEXT V2 END ===
+
+
+    # === SIMPLE RECEIPT FORM V1 END ===
+
     receipt_date = (
         request.form.get("receipt_date")
         or datetime.now().strftime("%Y-%m-%d")
@@ -4600,17 +4636,122 @@ def receipt_create():
     quantities = request.form.getlist("quantity")
     purchase_prices = request.form.getlist("purchase_price")
 
-    if not supplier:
-        return redirect(url_for(
-            "receipts_page",
-            notice="error",
-            message="Укажите поставщика",
-        ))
-
     catalog = {
         str(item.get("id") or ""): item
         for item in get_warehouse_items(force=True)
     }
+
+    created_new_product = False
+
+    # === NEW PRODUCT IN RECEIPT BACKEND V1 ===
+    if product_ids and product_ids[0] == "__new__":
+        if not new_product_name:
+            return redirect(url_for(
+                "receipts_page",
+                notice="error",
+                message="Укажите название нового товара",
+            ))
+
+        if not submitted_brand:
+            return redirect(url_for(
+                "receipts_page",
+                notice="error",
+                message="Укажите бренд нового товара",
+            ))
+
+        if not submitted_category:
+            return redirect(url_for(
+                "receipts_page",
+                notice="error",
+                message="Укажите категорию нового товара",
+            ))
+
+        try:
+            product_client = MoySkladClient()
+
+            product_folder = (
+                product_client
+                .get_or_create_product_folder(
+                    "/".join([
+                        submitted_brand,
+                        submitted_category,
+                    ])
+                )
+            )
+
+            product_code = (
+                "VECHASU-"
+                + uuid.uuid4().hex[:12].upper()
+            )
+
+            created_product = (
+                product_client.create_product(
+                    name=new_product_name,
+                    code=product_code,
+                    article=None,
+                    product_folder=product_folder,
+                )
+            )
+
+            if not created_product:
+                raise ValueError(
+                    "МойСклад не создал товар"
+                )
+
+            new_product_id = str(
+                created_product.get("id") or ""
+            ).strip()
+
+            if not new_product_id:
+                raise ValueError(
+                    "МойСклад не вернул ID товара"
+                )
+
+            record_warehouse_created_at(
+                new_product_id
+            )
+
+            catalog[new_product_id] = {
+                "id": new_product_id,
+                "name": (
+                    created_product.get("name")
+                    or new_product_name
+                ),
+                "article": (
+                    created_product.get("article")
+                    or ""
+                ),
+                "code": (
+                    created_product.get("code")
+                    or product_code
+                ),
+                "brand": submitted_brand,
+                "category": submitted_category,
+                "cell": "",
+                "stock": 0,
+            }
+
+            product_ids = [new_product_id]
+            created_new_product = True
+
+        except Exception as error:
+            print(
+                "Ошибка создания товара из прихода: "
+                + str(error)
+            )
+
+            WAREHOUSE_CACHE["items"] = []
+            WAREHOUSE_CACHE["loaded_at"] = 0
+
+            return redirect(url_for(
+                "receipts_page",
+                notice="error",
+                message=(
+                    "Ошибка создания нового товара: "
+                    + str(error)
+                ),
+            ))
+    # === NEW PRODUCT IN RECEIPT BACKEND V1 END ===
 
     positions = []
 
@@ -4652,7 +4793,22 @@ def receipt_create():
 
         stock_before = parse_receipt_number(product.get("stock"))
 
+        position_brand = (
+            submitted_brand
+            or product.get("brand")
+            or product.get("manufacturer")
+            or ""
+        )
+
+        position_category = (
+            submitted_category
+            or product.get("category")
+            or ""
+        )
+
         positions.append({
+            "brand": str(position_brand).strip(),
+            "category": str(position_category).strip(),
             "product_id": product_id,
             "product_name": product.get("name") or "",
             "article": product.get("article") or "",
@@ -4676,13 +4832,26 @@ def receipt_create():
     receipt_id = str(uuid.uuid4())
     receipt_number = generate_receipt_number(receipts)
 
+    first_position = positions[0]
+
     reason_parts = [
         f"Vechasu ERP: приход {receipt_number}",
-        f"Поставщик: {supplier}",
+        (
+            "Товар: "
+            f"{first_position['product_name']}"
+        ),
     ]
 
-    if invoice_number:
-        reason_parts.append(f"Накладная: {invoice_number}")
+    if first_position.get("brand"):
+        reason_parts.append(
+            f"Бренд: {first_position['brand']}"
+        )
+
+    if first_position.get("category"):
+        reason_parts.append(
+            "Категория: "
+            f"{first_position['category']}"
+        )
 
     if note:
         reason_parts.append(f"Комментарий: {note}")
@@ -4694,6 +4863,7 @@ def receipt_create():
         moysklad_document = client.create_stock_enter_many(
             positions=positions,
             reason=reason,
+            moment=receipt_date,
         )
 
         created_at = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -4708,8 +4878,25 @@ def receipt_create():
             "number": receipt_number,
             "created_at": created_at,
             "receipt_date": receipt_date,
-            "supplier": supplier,
-            "invoice_number": invoice_number,
+            "brand": first_position.get("brand") or "",
+            "category": (
+                first_position.get("category") or ""
+            ),
+            "product_id": (
+                first_position.get("product_id") or ""
+            ),
+            "product_name": (
+                first_position.get("product_name") or ""
+            ),
+            "quantity": (
+                first_position.get("quantity") or 0
+            ),
+            "purchase_price": (
+                first_position.get("purchase_price") or 0
+            ),
+            # Старые ключи оставлены пустыми для совместимости.
+            "supplier": "",
+            "invoice_number": "",
             "note": note,
             "status": "posted",
             "status_label": "Проведён",
@@ -4744,8 +4931,10 @@ def receipt_create():
                 "status": "success",
                 "receipt_id": receipt_id,
                 "receipt_number": receipt_number,
-                "supplier": supplier,
-                "invoice_number": invoice_number,
+                "brand": position.get("brand") or "",
+                "category": position.get("category") or "",
+                "supplier": "",
+                "invoice_number": "",
                 "purchase_price": position["purchase_price"],
                 "moysklad_document_id": receipt["moysklad_document_id"],
                 "moysklad_document_name": receipt["moysklad_document_name"],
@@ -4755,10 +4944,28 @@ def receipt_create():
         WAREHOUSE_CACHE["items"] = []
         WAREHOUSE_CACHE["loaded_at"] = 0
 
+        if created_new_product:
+            success_message = (
+                f"Товар «{first_position['product_name']}» "
+                f"создан, приход {receipt_number} проведён"
+            )
+        else:
+            success_message = (
+                f"Приход {receipt_number} проведён"
+            )
+
+        if submit_mode == "create_next":
+            return redirect(url_for(
+                "receipts_page",
+                notice="success",
+                message=success_message,
+                open_receipt_modal="1",
+            ))
+
         return redirect(url_for(
             "receipts_page",
             notice="success",
-            message=f"Приход {receipt_number} проведён",
+            message=success_message,
         ))
 
     except Exception as error:
@@ -4769,6 +4976,393 @@ def receipt_create():
             notice="error",
             message=f"Ошибка проведения прихода: {error}",
         ))
+
+
+# === RECEIPT ROW ACTIONS BACKEND V1 ===
+@app.route("/receipts/update", methods=["POST"])
+def receipt_update():
+    from flask import request, redirect, url_for
+
+    receipt_id = (
+        request.form.get("receipt_id") or ""
+    ).strip()
+
+    receipt_date = (
+        request.form.get("receipt_date") or ""
+    ).strip()
+
+    brand = (
+        request.form.get("brand") or ""
+    ).strip()
+
+    category = (
+        request.form.get("category") or ""
+    ).strip()
+
+    note = (
+        request.form.get("note") or ""
+    ).strip()
+
+    quantity = parse_receipt_number(
+        request.form.get("quantity")
+    )
+
+    purchase_price = parse_receipt_number(
+        request.form.get("purchase_price")
+    )
+
+    if not receipt_id:
+        return redirect(url_for(
+            "receipts_page",
+            notice="error",
+            message="Приход не найден",
+        ))
+
+    if not receipt_date:
+        return redirect(url_for(
+            "receipts_page",
+            notice="error",
+            message="Укажите дату прихода",
+        ))
+
+    if not brand:
+        return redirect(url_for(
+            "receipts_page",
+            notice="error",
+            message="Укажите бренд",
+        ))
+
+    if not category:
+        return redirect(url_for(
+            "receipts_page",
+            notice="error",
+            message="Укажите категорию",
+        ))
+
+    if quantity <= 0:
+        return redirect(url_for(
+            "receipts_page",
+            notice="error",
+            message=(
+                "Количество должно быть больше нуля"
+            ),
+        ))
+
+    if purchase_price < 0:
+        return redirect(url_for(
+            "receipts_page",
+            notice="error",
+            message=(
+                "Закупочная цена не может быть "
+                "отрицательной"
+            ),
+        ))
+
+    receipts = load_receipts()
+    receipt = None
+
+    for item in receipts:
+        if str(item.get("id") or "") == receipt_id:
+            receipt = item
+            break
+
+    if not receipt:
+        return redirect(url_for(
+            "receipts_page",
+            notice="error",
+            message="Приход не найден",
+        ))
+
+    positions = receipt.get("positions") or []
+
+    if len(positions) != 1:
+        return redirect(url_for(
+            "receipts_page",
+            notice="error",
+            message=(
+                "Редактирование доступно только "
+                "для прихода с одной позицией"
+            ),
+        ))
+
+    old_position = positions[0]
+
+    product_id = str(
+        receipt.get("product_id")
+        or old_position.get("product_id")
+        or ""
+    ).strip()
+
+    product_name = str(
+        receipt.get("product_name")
+        or old_position.get("product_name")
+        or ""
+    ).strip()
+
+    document_id = str(
+        receipt.get("moysklad_document_id") or ""
+    ).strip()
+
+    if not product_id or not document_id:
+        return redirect(url_for(
+            "receipts_page",
+            notice="error",
+            message=(
+                "У прихода нет связанного товара "
+                "или документа МоегоСклада"
+            ),
+        ))
+
+    line_total = round(
+        quantity * purchase_price,
+        2,
+    )
+
+    updated_position = dict(old_position)
+    updated_position.update({
+        "brand": brand,
+        "category": category,
+        "product_id": product_id,
+        "product_name": product_name,
+        "quantity": quantity,
+        "purchase_price": purchase_price,
+        "line_total": line_total,
+    })
+
+    reason_parts = [
+        "Vechasu ERP: приход "
+        + str(receipt.get("number") or ""),
+        "Товар: " + product_name,
+        "Бренд: " + brand,
+        "Категория: " + category,
+    ]
+
+    if note:
+        reason_parts.append(
+            "Комментарий: " + note
+        )
+
+    reason = ". ".join(reason_parts)
+
+    try:
+        client = MoySkladClient()
+
+        result = client.update_stock_enter_many(
+            document_id=document_id,
+            positions=[updated_position],
+            reason=reason,
+            moment=receipt_date,
+        )
+
+        if not result:
+            raise ValueError(
+                "МойСклад не обновил приход"
+            )
+
+        receipt.update({
+            "receipt_date": receipt_date,
+            "brand": brand,
+            "category": category,
+            "product_id": product_id,
+            "product_name": product_name,
+            "quantity": quantity,
+            "purchase_price": purchase_price,
+            "note": note,
+            "positions": [updated_position],
+            "positions_count": 1,
+            "total_quantity": quantity,
+            "total_amount": line_total,
+            "moysklad_document_name": (
+                result.get("name")
+                or receipt.get(
+                    "moysklad_document_name"
+                )
+            ),
+            "moysklad_document_url": (
+                (
+                    result.get("meta")
+                    or {}
+                ).get("uuidHref")
+                or receipt.get(
+                    "moysklad_document_url"
+                )
+            ),
+        })
+
+        save_receipts(receipts)
+
+        operations = load_stock_operations()
+
+        for operation in operations:
+            if (
+                str(
+                    operation.get("receipt_id")
+                    or ""
+                )
+                != receipt_id
+            ):
+                continue
+
+            stock_before = parse_receipt_number(
+                operation.get("stock_before")
+            )
+
+            operation.update({
+                "product_id": product_id,
+                "product_name": product_name,
+                "brand": brand,
+                "category": category,
+                "quantity": quantity,
+                "diff": quantity,
+                "stock_after": (
+                    stock_before + quantity
+                ),
+                "purchase_price": purchase_price,
+                "reason": reason,
+                "moysklad_document_name": (
+                    receipt.get(
+                        "moysklad_document_name"
+                    )
+                ),
+                "moysklad_document_url": (
+                    receipt.get(
+                        "moysklad_document_url"
+                    )
+                ),
+            })
+
+        save_stock_operations(operations)
+
+        WAREHOUSE_CACHE["items"] = []
+        WAREHOUSE_CACHE["loaded_at"] = 0
+
+        return redirect(url_for(
+            "receipts_page",
+            notice="success",
+            message=(
+                "Приход "
+                + str(receipt.get("number") or "")
+                + " обновлён"
+            ),
+        ))
+
+    except Exception as error:
+        print(
+            "Ошибка редактирования прихода: "
+            + str(error)
+        )
+
+        return redirect(url_for(
+            "receipts_page",
+            notice="error",
+            message=(
+                "Ошибка редактирования прихода: "
+                + str(error)
+            ),
+        ))
+
+
+@app.route("/receipts/delete", methods=["POST"])
+def receipt_delete():
+    from flask import request, redirect, url_for
+
+    receipt_id = (
+        request.form.get("receipt_id") or ""
+    ).strip()
+
+    receipts = load_receipts()
+
+    receipt = next(
+        (
+            item
+            for item in receipts
+            if str(item.get("id") or "")
+            == receipt_id
+        ),
+        None,
+    )
+
+    if not receipt:
+        return redirect(url_for(
+            "receipts_page",
+            notice="error",
+            message="Приход не найден",
+        ))
+
+    document_id = str(
+        receipt.get("moysklad_document_id") or ""
+    ).strip()
+
+    if not document_id:
+        return redirect(url_for(
+            "receipts_page",
+            notice="error",
+            message=(
+                "У прихода нет документа "
+                "МоегоСклада"
+            ),
+        ))
+
+    try:
+        client = MoySkladClient()
+
+        deleted = client.delete_stock_enter(
+            document_id
+        )
+
+        if not deleted:
+            raise ValueError(
+                "МойСклад не удалил приход"
+            )
+
+        receipts = [
+            item
+            for item in receipts
+            if str(item.get("id") or "")
+            != receipt_id
+        ]
+
+        save_receipts(receipts)
+
+        operations = [
+            operation
+            for operation in load_stock_operations()
+            if str(
+                operation.get("receipt_id") or ""
+            )
+            != receipt_id
+        ]
+
+        save_stock_operations(operations)
+
+        WAREHOUSE_CACHE["items"] = []
+        WAREHOUSE_CACHE["loaded_at"] = 0
+
+        return redirect(url_for(
+            "receipts_page",
+            notice="success",
+            message=(
+                "Приход "
+
+                + " удалён"
+            ),
+        ))
+
+    except Exception as error:
+        print(
+            "Ошибка удаления прихода: "
+            + str(error)
+        )
+
+        return redirect(url_for(
+            "receipts_page",
+            notice="error",
+            message=(
+                "Ошибка удаления прихода: "
+                + str(error)
+            ),
+        ))
+# === RECEIPT ROW ACTIONS BACKEND V1 END ===
 
 
 DEFAULT_APP_SETTINGS = {
