@@ -2689,6 +2689,158 @@ RUSSIAN_REGIONS = [
 ]
 
 
+def get_russian_region_cities():
+    import json
+    from datetime import datetime, timedelta, timezone
+    from pathlib import Path
+    from urllib.request import Request, urlopen
+
+    cache_path = Path("instance/russian_region_cities.json")
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+
+    max_cache_age = timedelta(days=30)
+
+    def load_cache(require_fresh=False):
+        if not cache_path.exists():
+            return None
+
+        try:
+            payload = json.loads(
+                cache_path.read_text(encoding="utf-8")
+            )
+
+            regions = payload.get("regions")
+
+            if not isinstance(regions, dict):
+                return None
+
+            if require_fresh:
+                generated_at = datetime.fromisoformat(
+                    str(payload.get("generated_at") or "")
+                )
+
+                if generated_at.tzinfo is None:
+                    generated_at = generated_at.replace(
+                        tzinfo=timezone.utc
+                    )
+
+                if (
+                    datetime.now(timezone.utc) - generated_at
+                    > max_cache_age
+                ):
+                    return None
+
+            return regions
+        except Exception:
+            return None
+
+    fresh_cache = load_cache(require_fresh=True)
+
+    if fresh_cache is not None:
+        return fresh_cache
+
+    try:
+        request_object = Request(
+            "https://api.hh.ru/areas",
+            headers={
+                "User-Agent": "VechasuERP/1.0",
+                "Accept": "application/json",
+            },
+        )
+
+        with urlopen(request_object, timeout=15) as response:
+            countries = json.loads(
+                response.read().decode("utf-8")
+            )
+
+        russia = next(
+            (
+                country
+                for country in countries
+                if country.get("name") == "Россия"
+            ),
+            None,
+        )
+
+        if not russia:
+            raise ValueError(
+                "Россия не найдена в справочнике территорий"
+            )
+
+        region_cities = {}
+
+        def collect_leaf_areas(nodes):
+            names = []
+
+            for node in nodes or []:
+                name = str(node.get("name") or "").strip()
+                children = node.get("areas") or []
+
+                if children:
+                    names.extend(collect_leaf_areas(children))
+                elif name:
+                    names.append(name)
+
+            return names
+
+        federal_cities = {
+            "Москва",
+            "Санкт-Петербург",
+            "Севастополь",
+        }
+
+        for region in russia.get("areas") or []:
+            region_name = str(
+                region.get("name") or ""
+            ).strip()
+
+            if not region_name:
+                continue
+
+            cities = collect_leaf_areas(
+                region.get("areas") or []
+            )
+
+            if region_name in federal_cities:
+                cities.append(region_name)
+
+            region_cities[region_name] = sorted(
+                set(cities),
+                key=str.casefold,
+            )
+
+        payload = {
+            "generated_at": datetime.now(
+                timezone.utc
+            ).isoformat(),
+            "regions": region_cities,
+        }
+
+        temporary_path = cache_path.with_suffix(".tmp")
+        temporary_path.write_text(
+            json.dumps(
+                payload,
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        temporary_path.replace(cache_path)
+
+        return region_cities
+
+    except Exception:
+        old_cache = load_cache(require_fresh=False)
+
+        if old_cache is not None:
+            return old_cache
+
+        return {
+            region: []
+            for region in RUSSIAN_REGIONS
+        }
+
+
 def parse_manual_sale_quantity(value):
     try:
         quantity = int(str(value or "").strip())
@@ -2764,6 +2916,9 @@ def manual_sale_add():
         ).strip(),
         "region": (
             request.form.get("region") or ""
+        ).strip(),
+        "city": (
+            request.form.get("city") or ""
         ).strip(),
         "note": (
             request.form.get("note") or ""
@@ -2848,6 +3003,9 @@ def manual_sale_update():
         ).strip()
         sale["region"] = (
             request.form.get("region") or ""
+        ).strip()
+        sale["city"] = (
+            request.form.get("city") or ""
         ).strip()
         sale["note"] = (
             request.form.get("note") or ""
@@ -2981,6 +3139,9 @@ def automatic_sale_update():
         "region": (
             request.form.get("region") or ""
         ).strip(),
+        "city": (
+            request.form.get("city") or ""
+        ).strip(),
         "note": (
             request.form.get("note") or ""
         ).strip(),
@@ -2995,6 +3156,812 @@ def automatic_sale_update():
             message="Автоматическая продажа сохранена",
         )
     )
+
+
+
+# === SALES REPORTS START ===
+
+from datetime import datetime
+
+
+def build_sales_report_records():
+    operations = load_stock_operations()
+    stored_manual_sales = load_manual_sales()
+    automatic_overrides = load_automatic_sales_overrides()
+
+    automatic_sales = []
+    manual_sales = []
+
+    for operation in operations:
+        technical_source = str(operation.get("source") or "")
+        operation_type = str(operation.get("type") or "")
+
+        if technical_source != "Заказ Битрикс":
+            continue
+
+        if operation_type not in {"writeoff", "loss"}:
+            continue
+
+        operation_id = str(operation.get("id") or "").strip()
+
+        if not operation_id:
+            continue
+
+        override = automatic_overrides.get(operation_id) or {}
+
+        if not isinstance(override, dict):
+            override = {}
+
+        try:
+            original_quantity = float(
+                operation.get("quantity") or 0
+            )
+        except Exception:
+            original_quantity = 0
+
+        if "quantity" in override:
+            quantity_number = parse_manual_sale_quantity(
+                override.get("quantity")
+            )
+
+            if quantity_number <= 0:
+                quantity_number = original_quantity
+        else:
+            quantity_number = original_quantity
+
+        order_id = str(operation.get("order_id") or "")
+        original_order_number = str(
+            operation.get("order_number") or order_id or ""
+        )
+
+        created_at = str(
+            override.get(
+                "created_at",
+                operation.get("created_at") or "",
+            )
+            or ""
+        )
+
+        automatic_sales.append({
+            "id": operation_id,
+            "sale_type": "automatic",
+            "sale_type_label": "Автоматическая",
+            "is_manual": False,
+            "created_at": created_at,
+            "source": str(
+                override.get("source", "Tictactoy")
+                or "Tictactoy"
+            ),
+            "order_number": str(
+                override.get(
+                    "order_number",
+                    original_order_number,
+                )
+                or ""
+            ),
+            "product_id": str(
+                operation.get("product_id") or ""
+            ),
+            "product_name": str(
+                override.get(
+                    "product_name",
+                    operation.get("product_name") or "",
+                )
+                or ""
+            ),
+            "quantity_value": quantity_number,
+            "track_number": str(
+                override.get(
+                    "track_number",
+                    operation.get("track_number")
+                    or operation.get("shipment_number")
+                    or "",
+                )
+                or ""
+            ),
+            "delivery_method": str(
+                override.get(
+                    "delivery_method",
+                    operation.get("delivery_method") or "",
+                )
+                or ""
+            ),
+            "region": str(
+                override.get(
+                    "region",
+                    operation.get("region") or "",
+                )
+                or ""
+            ),
+            "city": str(
+                override.get(
+                    "city",
+                    operation.get("city")
+                    or operation.get("town")
+                    or "",
+                )
+                or ""
+            ),
+            "note": str(
+                override.get(
+                    "note",
+                    operation.get("reason") or "",
+                )
+                or ""
+            ),
+        })
+
+    for stored_sale in reversed(stored_manual_sales):
+        quantity_number = parse_manual_sale_quantity(
+            stored_sale.get("quantity")
+        )
+
+        manual_sales.append({
+            "id": str(stored_sale.get("id") or ""),
+            "sale_type": "manual",
+            "sale_type_label": "Ручная",
+            "is_manual": True,
+            "created_at": str(
+                stored_sale.get("created_at") or ""
+            ),
+            "source": normalize_manual_sale_source(
+                stored_sale.get("source")
+            ),
+            "order_number": str(
+                stored_sale.get("order_number") or ""
+            ),
+            "product_id": str(
+                stored_sale.get("product_id") or ""
+            ),
+            "product_name": str(
+                stored_sale.get("product_name") or ""
+            ),
+            "quantity_value": quantity_number,
+            "track_number": str(
+                stored_sale.get("track_number") or ""
+            ),
+            "delivery_method": str(
+                stored_sale.get("delivery_method") or ""
+            ),
+            "region": str(
+                stored_sale.get("region") or ""
+            ),
+            "city": str(
+                stored_sale.get("city") or ""
+            ),
+            "note": str(
+                stored_sale.get("note") or ""
+            ),
+        })
+
+    sales = manual_sales + automatic_sales
+
+    return sorted(
+        sales,
+        key=lambda sale: str(
+            sale.get("created_at") or ""
+        ),
+        reverse=True,
+    )
+
+
+def get_sales_report_filters():
+    return {
+        "date_from": (
+            request.args.get("date_from") or ""
+        ).strip(),
+        "date_to": (
+            request.args.get("date_to") or ""
+        ).strip(),
+        "sale_type": (
+            request.args.get("sale_type") or ""
+        ).strip(),
+        "source": (
+            request.args.get("source") or ""
+        ).strip(),
+        "product": (
+            request.args.get("product") or ""
+        ).strip(),
+        "delivery_method": (
+            request.args.get("delivery_method") or ""
+        ).strip(),
+        "region": (
+            request.args.get("region") or ""
+        ).strip(),
+        "city": (
+            request.args.get("city") or ""
+        ).strip(),
+    }
+
+
+def filter_sales_report_records(sales, filters):
+    result = []
+
+    product_query = str(
+        filters.get("product") or ""
+    ).casefold()
+
+    for sale in sales:
+        sale_date = str(
+            sale.get("created_at") or ""
+        )[:10]
+
+        if (
+            filters.get("date_from")
+            and sale_date < filters["date_from"]
+        ):
+            continue
+
+        if (
+            filters.get("date_to")
+            and sale_date > filters["date_to"]
+        ):
+            continue
+
+        if (
+            filters.get("sale_type")
+            and sale.get("sale_type")
+            != filters["sale_type"]
+        ):
+            continue
+
+        if (
+            filters.get("source")
+            and sale.get("source")
+            != filters["source"]
+        ):
+            continue
+
+        if product_query:
+            product_text = " ".join([
+                str(sale.get("product_name") or ""),
+                str(sale.get("product_id") or ""),
+            ]).casefold()
+
+            if product_query not in product_text:
+                continue
+
+        if (
+            filters.get("delivery_method")
+            and sale.get("delivery_method")
+            != filters["delivery_method"]
+        ):
+            continue
+
+        if (
+            filters.get("region")
+            and sale.get("region")
+            != filters["region"]
+        ):
+            continue
+
+        if (
+            filters.get("city")
+            and sale.get("city")
+            != filters["city"]
+        ):
+            continue
+
+        result.append(sale)
+
+    return result
+
+
+def build_sales_report_context():
+    all_sales = build_sales_report_records()
+    filters = get_sales_report_filters()
+    sales = filter_sales_report_records(
+        all_sales,
+        filters,
+    )
+
+    unique_orders = {
+        str(sale.get("order_number") or "").strip()
+        for sale in sales
+        if str(sale.get("order_number") or "").strip()
+    }
+
+    total_quantity = sum(
+        float(sale.get("quantity_value") or 0)
+        for sale in sales
+    )
+
+    def unique_values(field):
+        return sorted(
+            {
+                str(sale.get(field) or "").strip()
+                for sale in all_sales
+                if str(sale.get(field) or "").strip()
+            },
+            key=str.casefold,
+        )
+
+    return {
+        "sales": sales,
+        "filters": filters,
+        "total_sales": len(sales),
+        "total_orders": len(unique_orders),
+        "total_quantity": format_stock_number(
+            total_quantity
+        ),
+        "sources": unique_values("source"),
+        "products": unique_values("product_name"),
+        "delivery_methods": unique_values(
+            "delivery_method"
+        ),
+        "regions": unique_values("region"),
+        "cities": unique_values("city"),
+        "generated_at": datetime.now().strftime(
+            "%d.%m.%Y %H:%M"
+        ),
+    }
+
+
+def sales_report_filename(extension):
+    return "sales-report-{}.{}".format(
+        datetime.now().strftime("%Y-%m-%d"),
+        extension,
+    )
+
+
+@app.route("/sales/report")
+def sales_report_page():
+    context = build_sales_report_context()
+
+    return render_template(
+        "sales_report.html",
+        **context
+    )
+
+
+@app.route("/sales/report.xlsx")
+def sales_report_excel():
+    from io import BytesIO
+    from flask import Response
+    from openpyxl import Workbook
+    from openpyxl.styles import (
+        Alignment,
+        Border,
+        Font,
+        PatternFill,
+        Side,
+    )
+
+    context = build_sales_report_context()
+    sales = context["sales"]
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Продажи"
+
+    sheet["A1"] = "Отчёт по продажам"
+    sheet["A1"].font = Font(
+        bold=True,
+        size=16,
+    )
+
+    sheet["A2"] = "Сформирован"
+    sheet["B2"] = context["generated_at"]
+    sheet["D2"] = "Продаж"
+    sheet["E2"] = context["total_sales"]
+    sheet["G2"] = "Заказов"
+    sheet["H2"] = context["total_orders"]
+    sheet["J2"] = "Единиц"
+    sheet["K2"] = context["total_quantity"]
+
+    headers = [
+        "Дата",
+        "Тип",
+        "Источник",
+        "Товар",
+        "Количество",
+        "Номер заказа",
+        "Трек-номер",
+        "Способ доставки",
+        "Регион",
+        "Город",
+        "Примечание",
+    ]
+
+    header_row = 4
+
+    for column, value in enumerate(
+        headers,
+        start=1,
+    ):
+        cell = sheet.cell(
+            row=header_row,
+            column=column,
+            value=value,
+        )
+        cell.font = Font(
+            bold=True,
+            color="FFFFFF",
+        )
+        cell.fill = PatternFill(
+            "solid",
+            fgColor="2563EB",
+        )
+        cell.alignment = Alignment(
+            horizontal="center",
+            vertical="center",
+            wrap_text=True,
+        )
+
+    for row_number, sale in enumerate(
+        sales,
+        start=header_row + 1,
+    ):
+        values = [
+            sale.get("created_at") or "",
+            sale.get("sale_type_label") or "",
+            sale.get("source") or "",
+            sale.get("product_name") or "",
+            sale.get("quantity_value") or 0,
+            sale.get("order_number") or "",
+            sale.get("track_number") or "",
+            sale.get("delivery_method") or "",
+            sale.get("region") or "",
+            sale.get("city") or "",
+            sale.get("note") or "",
+        ]
+
+        for column, value in enumerate(
+            values,
+            start=1,
+        ):
+            cell = sheet.cell(
+                row=row_number,
+                column=column,
+                value=value,
+            )
+            cell.alignment = Alignment(
+                vertical="top",
+                wrap_text=True,
+            )
+
+    thin_side = Side(
+        style="thin",
+        color="D1D5DB",
+    )
+
+    for row in sheet.iter_rows(
+        min_row=header_row,
+        max_row=max(header_row, sheet.max_row),
+        min_col=1,
+        max_col=len(headers),
+    ):
+        for cell in row:
+            cell.border = Border(
+                left=thin_side,
+                right=thin_side,
+                top=thin_side,
+                bottom=thin_side,
+            )
+
+    widths = [
+        14,
+        16,
+        18,
+        34,
+        12,
+        18,
+        24,
+        24,
+        24,
+        20,
+        40,
+    ]
+
+    for index, width in enumerate(
+        widths,
+        start=1,
+    ):
+        sheet.column_dimensions[
+            chr(64 + index)
+        ].width = width
+
+    sheet.freeze_panes = "A5"
+    sheet.auto_filter.ref = (
+        "A{}:K{}".format(
+            header_row,
+            max(header_row, sheet.max_row),
+        )
+    )
+
+    output = BytesIO()
+    workbook.save(output)
+
+    return Response(
+        output.getvalue(),
+        mimetype=(
+            "application/vnd.openxmlformats-"
+            "officedocument.spreadsheetml.sheet"
+        ),
+        headers={
+            "Content-Disposition": (
+                'attachment; filename="{}"'
+            ).format(
+                sales_report_filename("xlsx")
+            )
+        },
+    )
+
+
+@app.route("/sales/report.pdf")
+def sales_report_pdf():
+    from io import BytesIO
+    from html import escape
+    from flask import Response
+    from reportlab.lib import colors
+    from reportlab.lib.enums import TA_CENTER
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.styles import (
+        ParagraphStyle,
+        getSampleStyleSheet,
+    )
+    from reportlab.lib.units import mm
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    from reportlab.platypus import (
+        Paragraph,
+        SimpleDocTemplate,
+        Spacer,
+        Table,
+        TableStyle,
+    )
+
+    context = build_sales_report_context()
+    sales = context["sales"]
+
+    regular_font = (
+        "/usr/share/fonts/dejavu/DejaVuSans.ttf"
+    )
+    bold_font = (
+        "/usr/share/fonts/dejavu/"
+        "DejaVuSans-Bold.ttf"
+    )
+
+    registered = pdfmetrics.getRegisteredFontNames()
+
+    if "VechasuSans" not in registered:
+        pdfmetrics.registerFont(
+            TTFont(
+                "VechasuSans",
+                regular_font,
+            )
+        )
+
+    if "VechasuSansBold" not in registered:
+        pdfmetrics.registerFont(
+            TTFont(
+                "VechasuSansBold",
+                bold_font,
+            )
+        )
+
+    output = BytesIO()
+
+    document = SimpleDocTemplate(
+        output,
+        pagesize=landscape(A4),
+        leftMargin=8 * mm,
+        rightMargin=8 * mm,
+        topMargin=8 * mm,
+        bottomMargin=8 * mm,
+        title="Отчёт по продажам",
+    )
+
+    styles = getSampleStyleSheet()
+
+    title_style = ParagraphStyle(
+        "SalesReportTitle",
+        parent=styles["Title"],
+        fontName="VechasuSansBold",
+        fontSize=16,
+        leading=20,
+        alignment=TA_CENTER,
+        spaceAfter=6,
+    )
+
+    info_style = ParagraphStyle(
+        "SalesReportInfo",
+        parent=styles["Normal"],
+        fontName="VechasuSans",
+        fontSize=8,
+        leading=11,
+    )
+
+    header_style = ParagraphStyle(
+        "SalesReportHeader",
+        parent=info_style,
+        fontName="VechasuSansBold",
+        textColor=colors.white,
+        alignment=TA_CENTER,
+    )
+
+    cell_style = ParagraphStyle(
+        "SalesReportCell",
+        parent=info_style,
+        fontSize=6.5,
+        leading=8,
+    )
+
+    centered_cell_style = ParagraphStyle(
+        "SalesReportCenteredCell",
+        parent=cell_style,
+        alignment=TA_CENTER,
+    )
+
+    story = [
+        Paragraph(
+            "Отчёт по продажам",
+            title_style,
+        ),
+        Paragraph(
+            (
+                "Сформирован: {} &nbsp;&nbsp; "
+                "Продаж: {} &nbsp;&nbsp; "
+                "Заказов: {} &nbsp;&nbsp; "
+                "Продано единиц: {}"
+            ).format(
+                escape(context["generated_at"]),
+                context["total_sales"],
+                context["total_orders"],
+                escape(str(context["total_quantity"])),
+            ),
+            info_style,
+        ),
+        Spacer(1, 5 * mm),
+    ]
+
+    headers = [
+        "Дата",
+        "Тип",
+        "Источник",
+        "Товар",
+        "Кол-во",
+        "Заказ",
+        "Трек-номер",
+        "Доставка",
+        "Регион",
+        "Город",
+        "Примечание",
+    ]
+
+    table_data = [[
+        Paragraph(
+            escape(header),
+            header_style,
+        )
+        for header in headers
+    ]]
+
+    for sale in sales:
+        values = [
+            sale.get("created_at") or "",
+            sale.get("sale_type_label") or "",
+            sale.get("source") or "",
+            sale.get("product_name") or "",
+            format_stock_number(
+                sale.get("quantity_value") or 0
+            ),
+            sale.get("order_number") or "",
+            sale.get("track_number") or "",
+            sale.get("delivery_method") or "",
+            sale.get("region") or "",
+            sale.get("city") or "",
+            sale.get("note") or "",
+        ]
+
+        row = []
+
+        for index, value in enumerate(values):
+            style = (
+                centered_cell_style
+                if index in {0, 1, 4}
+                else cell_style
+            )
+
+            row.append(
+                Paragraph(
+                    escape(str(value)),
+                    style,
+                )
+            )
+
+        table_data.append(row)
+
+    table = Table(
+        table_data,
+        repeatRows=1,
+        colWidths=[
+            18 * mm,
+            18 * mm,
+            20 * mm,
+            34 * mm,
+            12 * mm,
+            20 * mm,
+            28 * mm,
+            27 * mm,
+            27 * mm,
+            23 * mm,
+            47 * mm,
+        ],
+    )
+
+    table.setStyle(TableStyle([
+        (
+            "BACKGROUND",
+            (0, 0),
+            (-1, 0),
+            colors.HexColor("#2563EB"),
+        ),
+        (
+            "GRID",
+            (0, 0),
+            (-1, -1),
+            0.35,
+            colors.HexColor("#CBD5E1"),
+        ),
+        (
+            "VALIGN",
+            (0, 0),
+            (-1, -1),
+            "TOP",
+        ),
+        (
+            "LEFTPADDING",
+            (0, 0),
+            (-1, -1),
+            3,
+        ),
+        (
+            "RIGHTPADDING",
+            (0, 0),
+            (-1, -1),
+            3,
+        ),
+        (
+            "TOPPADDING",
+            (0, 0),
+            (-1, -1),
+            3,
+        ),
+        (
+            "BOTTOMPADDING",
+            (0, 0),
+            (-1, -1),
+            3,
+        ),
+        (
+            "ROWBACKGROUNDS",
+            (0, 1),
+            (-1, -1),
+            [
+                colors.white,
+                colors.HexColor("#F8FAFC"),
+            ],
+        ),
+    ]))
+
+    story.append(table)
+    document.build(story)
+
+    return Response(
+        output.getvalue(),
+        mimetype="application/pdf",
+        headers={
+            "Content-Disposition": (
+                'attachment; filename="{}"'
+            ).format(
+                sales_report_filename("pdf")
+            )
+        },
+    )
+
+
+# === SALES REPORTS END ===
 
 
 @app.route("/sales")
@@ -3114,6 +4081,15 @@ def sales_page():
                 )
                 or ""
             ),
+            "city": str(
+                override.get(
+                    "city",
+                    operation.get("city")
+                    or operation.get("town")
+                    or "",
+                )
+                or ""
+            ),
             "note": str(
                 override.get(
                     "note",
@@ -3154,6 +4130,7 @@ def sales_page():
             "track_number": stored_sale.get("track_number") or "",
             "delivery_method": stored_sale.get("delivery_method") or "",
             "region": stored_sale.get("region") or "",
+            "city": stored_sale.get("city") or "",
             "note": stored_sale.get("note") or "",
             "document_name": "",
             "document_url": "",
@@ -3186,11 +4163,17 @@ def sales_page():
         if float(item.get("stock") or 0) > 0
     ]
 
+    russian_region_cities = get_russian_region_cities()
+
     return render_template(
         "sales.html",
         sales=sales,
         warehouse_items=warehouse_items,
-        russian_regions=RUSSIAN_REGIONS,
+        russian_regions=sorted(
+            russian_region_cities.keys(),
+            key=str.casefold,
+        ),
+        russian_region_cities=russian_region_cities,
         total_sales=len(sales),
         total_orders=len(unique_orders),
         total_quantity=format_stock_number(total_quantity),
@@ -3494,6 +4477,242 @@ DEFAULT_APP_SETTINGS = {
 }
 
 
+NAVIGATION_DEFINITIONS = [
+    {
+        "key": "orders",
+        "label": "Заказы",
+        "description": "Заказы интернет-магазина и карточки заказов.",
+        "icon": "📦",
+        "href": "/",
+        "position": 1,
+        "active_exact": ["/"],
+        "active_prefixes": ["/order"],
+    },
+    {
+        "key": "products",
+        "label": "Товары",
+        "description": "Каталог, остатки, ячейки и управление товарами.",
+        "icon": "🏷",
+        "href": "/warehouse",
+        "position": 2,
+        "active_exact": [],
+        "active_prefixes": ["/warehouse"],
+    },
+    {
+        "key": "sales",
+        "label": "Продажи",
+        "description": "Ручные продажи, источники и отчёты.",
+        "icon": "💰",
+        "href": "/sales",
+        "position": 3,
+        "active_exact": [],
+        "active_prefixes": ["/sales"],
+    },
+    {
+        "key": "receipts",
+        "label": "Приход",
+        "description": "Оформление и проведение поступлений товара.",
+        "icon": "📥",
+        "href": "/receipts",
+        "position": 4,
+        "active_exact": [],
+        "active_prefixes": ["/receipts"],
+    },
+    {
+        "key": "stock_operations",
+        "label": "Журнал операций",
+        "description": "История складских движений и операций.",
+        "icon": "📒",
+        "href": "/stock-operations",
+        "position": 5,
+        "active_exact": [],
+        "active_prefixes": ["/stock-operations"],
+    },
+    {
+        "key": "repair",
+        "label": "Ремонт",
+        "description": "Учёт ремонтных обращений и статусов.",
+        "icon": "🛠",
+        "href": "/repair",
+        "position": 6,
+        "active_exact": [],
+        "active_prefixes": ["/repair"],
+    },
+    {
+        "key": "settings",
+        "label": "Настройки",
+        "description": "Управление компанией, системой и вкладками.",
+        "icon": "⚙️",
+        "href": "/settings",
+        "position": 7,
+        "active_exact": [],
+        "active_prefixes": ["/settings"],
+        "required": True,
+    },
+]
+
+
+def get_navigation_settings_path():
+    path = PROJECT_ROOT / "instance" / "navigation_settings.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def get_default_navigation_settings():
+    return {
+        item["key"]: {
+            "enabled": True,
+            "position": item["position"],
+        }
+        for item in NAVIGATION_DEFINITIONS
+    }
+
+
+def load_navigation_settings():
+    settings = get_default_navigation_settings()
+    path = get_navigation_settings_path()
+
+    if not path.exists():
+        return settings
+
+    try:
+        stored_settings = json.loads(
+            path.read_text(encoding="utf-8")
+        )
+    except (OSError, json.JSONDecodeError):
+        return settings
+
+    if not isinstance(stored_settings, dict):
+        return settings
+
+    for item in NAVIGATION_DEFINITIONS:
+        key = item["key"]
+        stored_item = stored_settings.get(key)
+
+        if not isinstance(stored_item, dict):
+            continue
+
+        enabled = bool(
+            stored_item.get(
+                "enabled",
+                settings[key]["enabled"],
+            )
+        )
+
+        try:
+            position = int(
+                stored_item.get(
+                    "position",
+                    settings[key]["position"],
+                )
+            )
+        except (TypeError, ValueError):
+            position = settings[key]["position"]
+
+        settings[key] = {
+            "enabled": enabled,
+            "position": max(1, position),
+        }
+
+    # Настройки нельзя скрыть, иначе пользователь потеряет
+    # доступ к управлению вкладками.
+    settings["settings"]["enabled"] = True
+
+    return settings
+
+
+def save_navigation_settings(settings):
+    path = get_navigation_settings_path()
+    normalized_settings = get_default_navigation_settings()
+
+    for item in NAVIGATION_DEFINITIONS:
+        key = item["key"]
+        source = settings.get(key, {})
+
+        enabled = bool(source.get("enabled", True))
+
+        if item.get("required"):
+            enabled = True
+
+        try:
+            position = int(
+                source.get("position", item["position"])
+            )
+        except (TypeError, ValueError):
+            position = item["position"]
+
+        normalized_settings[key] = {
+            "enabled": enabled,
+            "position": max(1, position),
+        }
+
+    temporary_path = path.with_suffix(".json.tmp")
+
+    temporary_path.write_text(
+        json.dumps(
+            normalized_settings,
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    temporary_path.replace(path)
+
+
+def get_navigation_items(include_disabled=False):
+    navigation_settings = load_navigation_settings()
+    current_path = request.path
+    items = []
+
+    for definition in NAVIGATION_DEFINITIONS:
+        key = definition["key"]
+        item_settings = navigation_settings.get(key, {})
+
+        enabled = bool(item_settings.get("enabled", True))
+
+        if definition.get("required"):
+            enabled = True
+
+        if not include_disabled and not enabled:
+            continue
+
+        item = dict(definition)
+        item["enabled"] = enabled
+        item["position"] = item_settings.get(
+            "position",
+            definition["position"],
+        )
+
+        item["active"] = (
+            current_path in definition.get("active_exact", [])
+            or any(
+                current_path.startswith(prefix)
+                for prefix in definition.get(
+                    "active_prefixes",
+                    [],
+                )
+            )
+        )
+
+        items.append(item)
+
+    return sorted(
+        items,
+        key=lambda item: (
+            item["position"],
+            item["label"],
+        ),
+    )
+
+
+@app.context_processor
+def inject_sidebar_navigation():
+    return {
+        "sidebar_navigation_items": get_navigation_items(),
+    }
+
+
 def get_app_settings_path():
     path = PROJECT_ROOT / "instance" / "settings.json"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -3529,6 +4748,7 @@ def save_app_settings(settings):
 @app.route("/settings", methods=["GET", "POST"])
 def settings_page():
     settings = load_app_settings()
+    navigation_settings = load_navigation_settings()
 
     if request.method == "POST":
         company_name = (
@@ -3537,14 +4757,6 @@ def settings_page():
 
         erp_name = (
             request.form.get("erp_name") or ""
-        ).strip()
-
-        currency = (
-            request.form.get("currency") or "RUB"
-        ).strip()
-
-        timezone = (
-            request.form.get("timezone") or "Europe/Moscow"
         ).strip()
 
         try:
@@ -3565,7 +4777,34 @@ def settings_page():
             "low_stock_threshold": low_stock_threshold,
         }
 
+        updated_navigation_settings = {}
+
+        for item in NAVIGATION_DEFINITIONS:
+            key = item["key"]
+            current_item = navigation_settings.get(key, {})
+
+            if item.get("required"):
+                enabled = True
+            else:
+                enabled = (
+                    request.form.get(
+                        f"navigation_{key}"
+                    )
+                    == "on"
+                )
+
+            updated_navigation_settings[key] = {
+                "enabled": enabled,
+                "position": current_item.get(
+                    "position",
+                    item["position"],
+                ),
+            }
+
         save_app_settings(settings)
+        save_navigation_settings(
+            updated_navigation_settings
+        )
 
         return redirect(
             "/settings?notice=success"
@@ -3575,6 +4814,9 @@ def settings_page():
     return render_template(
         "settings.html",
         settings=settings,
+        navigation_items=get_navigation_items(
+            include_disabled=True
+        ),
         notice=(request.args.get("notice") or "").strip(),
         message=(request.args.get("message") or "").strip(),
     )

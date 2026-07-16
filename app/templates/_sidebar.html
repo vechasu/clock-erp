@@ -363,68 +363,21 @@
     
 
     <nav class="sidebar-nav">
-        <a
-            class="sidebar-link {% if request.path == '/' or request.path.startswith('/order') %}active{% endif %}"
-            href="/"
-            title="Заказы"
-        >
-            <span class="sidebar-icon">📦</span>
-            <span class="sidebar-label">Заказы</span>
-        </a>
+        {% for item in sidebar_navigation_items %}
+            <a
+                class="sidebar-link{% if item.active %} active{% endif %}"
+                href="{{ item.href }}"
+                title="{{ item.label }}"
+            >
+                <span class="sidebar-icon">
+                    {{ item.icon }}
+                </span>
 
-        <a
-            class="sidebar-link {% if request.path.startswith('/warehouse') %}active{% endif %}"
-            href="/warehouse"
-            title="Товары"
-        >
-            <span class="sidebar-icon">🏷</span>
-            <span class="sidebar-label">Товары</span>
-        </a>
-
-        <a
-            class="sidebar-link {% if request.path.startswith('/sales') %}active{% endif %}"
-            href="/sales"
-            title="Продажи"
-        >
-            <span class="sidebar-icon">💰</span>
-            <span class="sidebar-label">Продажи</span>
-        </a>
-
-        <a
-            class="sidebar-link {% if request.path.startswith('/receipts') %}active{% endif %}"
-            href="/receipts"
-            title="Приход"
-        >
-            <span class="sidebar-icon">📥</span>
-            <span class="sidebar-label">Приход</span>
-        </a>
-
-        <a
-            class="sidebar-link {% if request.path.startswith('/stock-operations') %}active{% endif %}"
-            href="/stock-operations"
-            title="Журнал операций"
-        >
-            <span class="sidebar-icon">📒</span>
-            <span class="sidebar-label">Журнал операций</span>
-        </a>
-
-        <a
-            class="sidebar-link {% if request.path.startswith('/repair') %}active{% endif %}"
-            href="/repair"
-            title="Ремонт"
-        >
-            <span class="sidebar-icon">🛠</span>
-            <span class="sidebar-label">Ремонт</span>
-        </a>
-
-        <a
-            class="sidebar-link {% if request.path.startswith('/settings') %}active{% endif %}"
-            href="/settings"
-            title="Настройки"
-        >
-            <span class="sidebar-icon">⚙️</span>
-            <span class="sidebar-label">Настройки</span>
-        </a>
+                <span class="sidebar-label">
+                    {{ item.label }}
+                </span>
+            </a>
+        {% endfor %}
     </nav>
 
     <div
