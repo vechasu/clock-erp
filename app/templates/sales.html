@@ -921,6 +921,817 @@
             user-select: none !important;
         }
 
+
+
+
+
+
+
+
+
+
+
+        /* Чистовая компоновка страницы продаж */
+        .main {
+            height: 100vh;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            padding-bottom: 10px;
+        }
+
+        .stats {
+            flex: 0 0 auto;
+            margin-bottom: 10px;
+        }
+
+        .sales-data-card {
+            flex: 1 1 auto;
+            display: flex;
+            min-height: 0;
+            overflow: hidden;
+            flex-direction: column;
+            border: 1px solid #d7dde5;
+            border-radius: 16px;
+            background: #ffffff;
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.045);
+        }
+
+        .sales-data-toolbar {
+            flex: 0 0 auto;
+            width: 100%;
+            margin: 0;
+            padding: 11px 12px;
+            border-bottom: 1px solid #d7dde5;
+            background: #f8fafc;
+        }
+
+        .sales-data-toolbar .search {
+            width: 100%;
+            max-width: none;
+            height: 38px;
+        }
+
+        .sales-data-card .table-card {
+            flex: 1 1 auto;
+            display: flex;
+            min-height: 0;
+            overflow: hidden;
+            flex-direction: column;
+            border: 0;
+            border-radius: 0;
+        }
+
+        .sales-data-card .table-wrap {
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow: auto;
+        }
+
+        .sales-data-card .sales-table {
+            width: 100%;
+            min-width: 0 !important;
+            table-layout: fixed;
+        }
+
+        .sales-table th,
+        .sales-table td {
+            padding: 6px 7px;
+            font-size: 12px;
+        }
+
+        /*
+         * Дата фиксируется принудительно:
+         * механизм изменения ширины больше не сможет её сжать.
+         */
+        .sales-table th.col-date,
+        .sales-table td.col-date {
+            width: 104px !important;
+            min-width: 104px !important;
+            max-width: 104px !important;
+            white-space: nowrap !important;
+            font-size: 12px;
+        }
+
+        .sales-table .col-source {
+            width: 8%;
+        }
+
+        .sales-table .col-product {
+            width: 16%;
+        }
+
+        .sales-table .col-qty {
+            width: 5%;
+        }
+
+        .sales-table .col-order {
+            width: 8%;
+        }
+
+        .sales-table .col-track {
+            width: 11%;
+        }
+
+        .sales-table .col-delivery {
+            width: 10%;
+        }
+
+        .sales-table .col-region {
+            width: 9%;
+        }
+
+        .sales-table .col-city {
+            width: 7%;
+        }
+
+        .sales-table .col-note {
+            width: auto;
+        }
+
+        /*
+         * Только необходимая ширина:
+         * две кнопки по 25px + промежуток.
+         */
+        .sales-table th.col-actions,
+        .sales-table td.col-actions {
+            width: 62px !important;
+            min-width: 62px !important;
+            max-width: 62px !important;
+            padding-right: 3px !important;
+            padding-left: 3px !important;
+            text-align: center;
+            white-space: nowrap !important;
+        }
+
+        .sales-table th.col-actions {
+            font-size: 10px;
+        }
+
+        .col-actions form {
+            margin: 0;
+        }
+
+        .col-actions .manual-view-actions,
+        .col-actions .automatic-view-actions {
+            width: 100%;
+            justify-content: center;
+            gap: 2px;
+        }
+
+        .col-actions .button-icon-only {
+            flex: 0 0 25px;
+            width: 25px;
+            min-width: 25px;
+            height: 25px;
+            min-height: 25px;
+            padding: 0;
+            border-radius: 6px;
+        }
+
+        .col-actions .button-icon-only svg {
+            width: 12px;
+            height: 12px;
+        }
+
+        /*
+         * Явное закрытие таблицы.
+         * Линия теперь толще остальных границ.
+         */
+        .sales-table tbody tr:last-child td {
+            border-bottom:
+                2px solid #cbd5e1 !important;
+        }
+
+        .sales-table th.col-date
+        .sales-column-resize-handle,
+        .sales-table th.col-actions
+        .sales-column-resize-handle {
+            display: none !important;
+        }
+
+        @media (max-width: 1200px) {
+            .sales-data-card .sales-table {
+                min-width: 1050px !important;
+            }
+        }
+        /* Конец чистовой компоновки страницы продаж */
+
+
+
+        /* Тонкая подстройка даты, примечания и действий */
+
+        /* Дате даём чуть больше места */
+        .sales-table th.col-date,
+        .sales-table td.col-date {
+            width: 112px !important;
+            min-width: 112px !important;
+            max-width: 112px !important;
+            white-space: nowrap !important;
+        }
+
+        /* Источник и заказ чуть компактнее */
+        .sales-table .col-source {
+            width: 7.5% !important;
+        }
+
+        .sales-table .col-order {
+            width: 7% !important;
+        }
+
+        .sales-table .col-city {
+            width: 6.5% !important;
+        }
+
+        /*
+         * Примечанию отдаём больше воздуха,
+         * чтобы текст не зажимался.
+         */
+        .sales-table .col-note {
+            width: 12% !important;
+        }
+
+        /*
+         * Действия делаем максимально компактными:
+         * только под две маленькие иконки.
+         */
+        .sales-table th.col-actions,
+        .sales-table td.col-actions {
+            width: 52px !important;
+            min-width: 52px !important;
+            max-width: 52px !important;
+            padding-left: 2px !important;
+            padding-right: 2px !important;
+            text-align: center;
+            white-space: nowrap !important;
+        }
+
+        .sales-table th.col-actions {
+            font-size: 10px;
+            line-height: 1.05;
+        }
+
+        .col-actions .manual-view-actions,
+        .col-actions .automatic-view-actions {
+            width: 100%;
+            justify-content: center;
+            gap: 1px;
+        }
+
+        .col-actions .button-icon-only {
+            flex: 0 0 22px;
+            width: 22px;
+            min-width: 22px;
+            height: 22px;
+            min-height: 22px;
+            padding: 0;
+            border-radius: 6px;
+        }
+
+        .col-actions .button-icon-only svg {
+            width: 11px;
+            height: 11px;
+        }
+
+        /* Конец тонкой подстройки даты, примечания и действий */
+
+
+        /* Финальная ручная настройка ширины даты и действий */
+
+        /* Дата получает больше места */
+        .sales-table th.col-date,
+        .sales-table td.col-date {
+            width: 118px !important;
+            min-width: 118px !important;
+            max-width: 118px !important;
+            white-space: nowrap !important;
+        }
+
+        /* Примечание можно чуть свободнее */
+        .sales-table .col-note {
+            width: 11.5% !important;
+        }
+
+        /*
+         * Действия делаем шириной ровно под заголовок
+         * и две кнопки, без лишнего пустого воздуха.
+         */
+        .sales-table th.col-actions,
+        .sales-table td.col-actions {
+            width: 108px !important;
+            min-width: 108px !important;
+            max-width: 108px !important;
+            padding-left: 6px !important;
+            padding-right: 6px !important;
+            text-align: center;
+            white-space: nowrap !important;
+        }
+
+        .sales-table th.col-actions {
+            font-size: 12px;
+        }
+
+        .col-actions .manual-view-actions,
+        .col-actions .automatic-view-actions {
+            width: 100%;
+            justify-content: center;
+            gap: 6px;
+        }
+
+        .col-actions .button-icon-only {
+            flex: 0 0 24px;
+            width: 24px;
+            min-width: 24px;
+            height: 24px;
+            min-height: 24px;
+            padding: 0;
+            border-radius: 7px;
+        }
+
+        .col-actions .button-icon-only svg {
+            width: 12px;
+            height: 12px;
+        }
+
+        /* Конец финальной ручной настройки ширины даты и действий */
+
+
+        /* Окончательные размеры даты и действий v2 */
+        .sales-table th.col-date,
+        .sales-table td.col-date {
+            width: 118px !important;
+            min-width: 118px !important;
+            max-width: 118px !important;
+            white-space: nowrap !important;
+        }
+
+        .sales-table th.col-actions,
+        .sales-table td.col-actions {
+            width: 104px !important;
+            min-width: 104px !important;
+            max-width: 104px !important;
+            padding-right: 5px !important;
+            padding-left: 5px !important;
+            text-align: center;
+            white-space: nowrap !important;
+        }
+
+        .sales-table .col-note {
+            width: 12% !important;
+        }
+
+        .col-actions .manual-view-actions,
+        .col-actions .automatic-view-actions {
+            width: 100%;
+            justify-content: center;
+            gap: 5px;
+        }
+
+        .col-actions .button-icon-only {
+            flex: 0 0 25px;
+            width: 25px;
+            min-width: 25px;
+            height: 25px;
+            min-height: 25px;
+            padding: 0;
+            border-radius: 7px;
+        }
+
+        .col-actions .button-icon-only svg {
+            width: 12px;
+            height: 12px;
+        }
+
+        .sales-table tbody tr:last-child td {
+            border-bottom: 2px solid #cbd5e1 !important;
+        }
+        /* Конец окончательных размеров даты и действий v2 */
+
+
+        /* Фильтр продаж по дате и диапазону */
+        .sales-data-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .sales-data-toolbar .search {
+            flex: 1 1 auto;
+            min-width: 260px;
+        }
+
+        .sales-date-filter {
+            display: flex;
+            flex: 0 0 auto;
+            align-items: flex-end;
+            gap: 6px;
+        }
+
+        .sales-date-field {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+
+        .sales-date-field span {
+            padding-left: 2px;
+            color: #64748b;
+            font-size: 10px;
+            font-weight: 800;
+            line-height: 1;
+        }
+
+        .sales-date-input {
+            width: 132px;
+            height: 38px;
+            padding: 0 8px;
+            border: 1px solid #d7dde5;
+            border-radius: 9px;
+            background: #ffffff;
+            color: #172033;
+            font: inherit;
+            font-size: 12px;
+            outline: none;
+        }
+
+        .sales-date-input:focus {
+            border-color: #2563eb;
+            box-shadow:
+                0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+
+        .sales-date-separator {
+            align-self: center;
+            margin-top: 12px;
+            color: #94a3b8;
+            font-weight: 800;
+        }
+
+        .sales-date-clear {
+            height: 38px;
+            padding: 0 10px;
+            border: 1px solid #d7dde5;
+            border-radius: 9px;
+            background: #ffffff;
+            color: #475569;
+            font-size: 11px;
+            font-weight: 800;
+            cursor: pointer;
+        }
+
+        .sales-date-clear:hover:not(:disabled) {
+            border-color: #bfdbfe;
+            background: #eff6ff;
+            color: #1d4ed8;
+        }
+
+        .sales-date-clear:disabled {
+            cursor: default;
+            opacity: 0.45;
+        }
+
+        .sales-filter-count {
+            min-width: 72px;
+            align-self: center;
+            margin-top: 12px;
+            color: #64748b;
+            font-size: 11px;
+            font-weight: 750;
+            white-space: nowrap;
+        }
+
+        .sales-filter-empty-cell {
+            height: 110px;
+            border-right: 0 !important;
+            text-align: center !important;
+            color: #64748b;
+            font-size: 13px !important;
+        }
+
+        @media (max-width: 1250px) {
+            .sales-data-toolbar {
+                flex-wrap: wrap;
+            }
+
+            .sales-data-toolbar .search {
+                flex-basis: 100%;
+            }
+
+            .sales-date-filter {
+                width: 100%;
+            }
+
+            .sales-filter-count {
+                margin-left: auto;
+            }
+        }
+        /* Конец фильтра продаж по дате и диапазону */
+
+
+
+        /* Дружелюбная панель поиска и фильтра дат */
+        .sales-data-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: nowrap;
+        }
+
+        .sales-data-toolbar .search {
+            flex: 1 1 auto;
+            min-width: 320px;
+            height: 42px;
+            margin: 0;
+        }
+
+        .sales-date-filter {
+            display: flex;
+            flex: 0 0 auto;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 10px;
+            border: 1px solid #dbe2ea;
+            border-radius: 12px;
+            background: #f8fafc;
+        }
+
+        .sales-date-field {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            margin: 0;
+        }
+
+        .sales-date-field span {
+            padding: 0;
+            color: #64748b;
+            font-size: 12px;
+            font-weight: 800;
+            line-height: 1;
+            white-space: nowrap;
+        }
+
+        .sales-date-input {
+            width: 138px;
+            height: 38px;
+            padding: 0 10px;
+            border: 1px solid #d7dde5;
+            border-radius: 10px;
+            background: #ffffff;
+            color: #172033;
+            font-size: 12px;
+            font-weight: 700;
+            outline: none;
+        }
+
+        .sales-date-separator {
+            color: #94a3b8;
+            font-size: 14px;
+            font-weight: 900;
+            line-height: 1;
+        }
+
+        .sales-date-clear {
+            height: 38px;
+            padding: 0 12px;
+            border: 1px solid #d7dde5;
+            border-radius: 10px;
+            background: #ffffff;
+            color: #475569;
+            font-size: 12px;
+            font-weight: 800;
+            cursor: pointer;
+        }
+
+        .sales-date-clear:hover:not(:disabled) {
+            border-color: #bfdbfe;
+            background: #eff6ff;
+            color: #1d4ed8;
+        }
+
+        .sales-date-clear:disabled {
+            opacity: 0.5;
+            cursor: default;
+        }
+
+        .sales-filter-count {
+            min-width: auto;
+            color: #64748b;
+            font-size: 12px;
+            font-weight: 800;
+            white-space: nowrap;
+        }
+
+        @media (max-width: 1350px) {
+            .sales-data-toolbar {
+                flex-wrap: wrap;
+                align-items: stretch;
+            }
+
+            .sales-data-toolbar .search {
+                flex-basis: 100%;
+            }
+
+            .sales-date-filter {
+                width: 100%;
+                justify-content: flex-start;
+                flex-wrap: wrap;
+            }
+        }
+        /* Конец дружелюбной панели поиска и фильтра дат */
+
+
+        /* Компактная горизонтальная панель дат v2 */
+        .sales-data-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: nowrap;
+        }
+
+        .sales-data-toolbar .search {
+            flex: 1 1 auto;
+            min-width: 340px;
+            height: 40px;
+            margin: 0;
+        }
+
+        .sales-date-filter {
+            display: flex;
+            flex: 0 0 auto;
+            align-items: center;
+            gap: 8px;
+            padding: 0;
+            border: none;
+            border-radius: 0;
+            background: transparent;
+            box-shadow: none;
+        }
+
+        .sales-date-field {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            margin: 0;
+        }
+
+        .sales-date-field span {
+            padding: 0;
+            color: #64748b;
+            font-size: 12px;
+            font-weight: 800;
+            line-height: 1;
+            white-space: nowrap;
+        }
+
+        .sales-date-input {
+            width: 132px;
+            height: 40px;
+            padding: 0 10px;
+            border: 1px solid #d7dde5;
+            border-radius: 10px;
+            background: #ffffff;
+            color: #172033;
+            font-size: 12px;
+            font-weight: 700;
+            outline: none;
+            box-shadow: none;
+        }
+
+        .sales-date-input:focus {
+            border-color: #2563eb;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
+        }
+
+        .sales-date-separator {
+            color: #94a3b8;
+            font-size: 14px;
+            font-weight: 900;
+            line-height: 1;
+        }
+
+        .sales-date-clear {
+            height: 40px;
+            padding: 0 12px;
+            border: 1px solid #d7dde5;
+            border-radius: 10px;
+            background: #ffffff;
+            color: #64748b;
+            font-size: 12px;
+            font-weight: 800;
+            cursor: pointer;
+            box-shadow: none;
+        }
+
+        .sales-date-clear:hover:not(:disabled) {
+            border-color: #cbd5e1;
+            background: #f8fafc;
+            color: #334155;
+        }
+
+        .sales-date-clear:disabled {
+            opacity: 0.5;
+            cursor: default;
+        }
+
+        .sales-filter-count {
+            display: inline-flex;
+            align-items: center;
+            height: 28px;
+            padding: 0 10px;
+            border-radius: 999px;
+            background: #eef2f7;
+            color: #64748b;
+            font-size: 12px;
+            font-weight: 800;
+            white-space: nowrap;
+        }
+
+        @media (max-width: 1380px) {
+            .sales-data-toolbar {
+                flex-wrap: wrap;
+                align-items: stretch;
+            }
+
+            .sales-data-toolbar .search {
+                flex-basis: 100%;
+            }
+
+            .sales-date-filter {
+                width: 100%;
+                flex-wrap: wrap;
+                justify-content: flex-start;
+            }
+        }
+        /* Конец компактной горизонтальной панели дат v2 */
+
+
+        /* MANUAL SALE PRICE CSS V1 */
+        .manual-sale-total-preview {
+            min-height: 18px;
+            margin-top: 6px;
+            color: #059669;
+            font-size: 12px;
+            font-weight: 800;
+            line-height: 1.3;
+        }
+
+        #unit_price::-webkit-inner-spin-button,
+        #unit_price::-webkit-outer-spin-button {
+            margin: 0;
+        }
+        /* MANUAL SALE PRICE CSS V1 END */
+
+
+        /* SALES PRICE TABLE CSS V2 */
+        .quantity-price-view {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 3px;
+            line-height: 1.1;
+        }
+
+        .quantity-price-view strong {
+            font-size: 12px;
+        }
+
+        .sale-amount {
+            color: #059669;
+            font-size: 10px;
+            font-weight: 850;
+            white-space: nowrap;
+        }
+
+        .quantity-price-edit {
+            width: 100%;
+            gap: 4px;
+        }
+
+        .manual-row.is-editing .quantity-price-edit,
+        .automatic-row.is-editing .quantity-price-edit {
+            display: flex !important;
+            flex-direction: column;
+        }
+
+        .sale-price-input {
+            min-height: 30px;
+            padding: 4px;
+            font-size: 10px;
+            text-align: center;
+        }
+
+        .sale-edit-total-preview {
+            color: #059669;
+            font-size: 9px;
+            font-weight: 800;
+            line-height: 1.2;
+            text-align: center;
+            white-space: nowrap;
+        }
+        /* SALES PRICE TABLE CSS V2 END */
+
 </style>
 </head>
 
@@ -968,16 +1779,66 @@
             </button>
         </div>
 
-        <div class="toolbar">
-            <input
-                id="salesSearch"
-                class="search"
-                type="text"
-                placeholder="Поиск по источнику, товару, заказу, треку, региону, городу или примечанию"
-            >
-        </div>
+        <section class="sales-data-card">
 
-        <section class="table-card">
+            <div class="toolbar sales-data-toolbar">
+                <input
+                    id="salesSearch"
+                    class="search"
+                    type="text"
+                    placeholder="Поиск по источнику, товару, заказу, треку, региону, городу или примечанию"
+                >
+
+                <div
+                    class="sales-date-filter"
+                    aria-label="Фильтр продаж по дате"
+                >
+                    <label class="sales-date-field">
+                        <span>С</span>
+
+                        <input
+                            id="salesDateFrom"
+                            class="sales-date-input"
+                            type="date"
+                        >
+                    </label>
+
+                    <span
+                        class="sales-date-separator"
+                        aria-hidden="true"
+                    >
+                        —
+                    </span>
+
+                    <label class="sales-date-field">
+                        <span>По</span>
+
+                        <input
+                            id="salesDateTo"
+                            class="sales-date-input"
+                            type="date"
+                        >
+                    </label>
+
+                    <button
+                        id="clearSalesDateFilter"
+                        class="sales-date-clear"
+                        type="button"
+                        disabled
+                    >
+                        Сбросить
+                    </button>
+
+                    <span
+                        id="salesFilterCount"
+                        class="sales-filter-count"
+                        aria-live="polite"
+                    ></span>
+                </div>
+            </div>
+
+
+            <section class="table-card">
             {% if sales %}
                 <div class="table-wrap">
                     <table class="sales-table">
@@ -1118,27 +1979,57 @@
                                             </div>
                                         </td>
 
+                                        <!-- SALES PRICE TABLE V2 -->
                                         <td class="col-qty">
-                                            <span class="manual-view-value">
-                                                {{ sale.quantity_value }}
-                                            </span>
+                                            <div class="manual-view-value quantity-price-view">
+                                                <strong>
+                                                    {{ sale.quantity_value }}
+                                                </strong>
 
-                                            <select
-                                                class="table-control manual-edit-control sale-edit-control"
-                                                name="quantity"
-                                                form="{{ edit_form_id }}"
-                                                required
-                                            >
-                                                {% for quantity_option in range(1, 26) %}
-                                                    <option
-                                                        value="{{ quantity_option }}"
-                                                        {% if sale.quantity_value == quantity_option %}selected{% endif %}
-                                                    >
-                                                        {{ quantity_option }}
-                                                    </option>
-                                                {% endfor %}
-                                            </select>
+                                                {% if sale.total_amount is not none %}
+                                                    <span class="sale-amount">
+                                                        {{ sale.total_amount_display }}
+                                                    </span>
+                                                {% endif %}
+                                            </div>
+
+                                            <div class="manual-edit-control quantity-price-edit">
+                                                <select
+                                                    class="table-control sale-edit-control"
+                                                    name="quantity"
+                                                    form="{{ edit_form_id }}"
+                                                    required
+                                                >
+                                                    {% for quantity_option in range(1, 26) %}
+                                                        <option
+                                                            value="{{ quantity_option }}"
+                                                            {% if sale.quantity_value == quantity_option %}selected{% endif %}
+                                                        >
+                                                            {{ quantity_option }}
+                                                        </option>
+                                                    {% endfor %}
+                                                </select>
+
+                                                <input
+                                                    class="table-control sale-edit-control sale-price-input"
+                                                    type="number"
+                                                    name="unit_price"
+                                                    value="{{ sale.unit_price if sale.unit_price is not none else '' }}"
+                                                    min="1"
+                                                    step="1"
+                                                    inputmode="decimal"
+                                                    placeholder="Цена"
+                                                    form="{{ edit_form_id }}"
+                                                    required
+                                                >
+
+                                                <div class="sale-edit-total-preview">
+                                                    Итого:
+                                                    {{ sale.total_amount_display or "—" }}
+                                                </div>
+                                            </div>
                                         </td>
+                                        <!-- SALES PRICE TABLE V2 END -->
 
                                         <td class="col-order">
                                             <span class="manual-view-value">
@@ -1385,25 +2276,53 @@
                                         </td>
 
                                         <td class="col-qty">
-                                            <span class="automatic-view-value">
-                                                {{ sale.quantity }}
-                                            </span>
+                                            <div class="automatic-view-value quantity-price-view">
+                                                <strong>
+                                                    {{ sale.quantity }}
+                                                </strong>
 
-                                            <select
-                                                class="table-control automatic-edit-control sale-edit-control"
-                                                name="quantity"
-                                                form="{{ edit_form_id }}"
-                                                required
-                                            >
-                                                {% for quantity_option in range(1, 26) %}
-                                                    <option
-                                                        value="{{ quantity_option }}"
-                                                        {% if sale.quantity_value == quantity_option %}selected{% endif %}
-                                                    >
-                                                        {{ quantity_option }}
-                                                    </option>
-                                                {% endfor %}
-                                            </select>
+                                                {% if sale.total_amount is not none %}
+                                                    <span class="sale-amount">
+                                                        {{ sale.total_amount_display }}
+                                                    </span>
+                                                {% endif %}
+                                            </div>
+
+                                            <div class="automatic-edit-control quantity-price-edit">
+                                                <select
+                                                    class="table-control sale-edit-control"
+                                                    name="quantity"
+                                                    form="{{ edit_form_id }}"
+                                                    required
+                                                >
+                                                    {% for quantity_option in range(1, 26) %}
+                                                        <option
+                                                            value="{{ quantity_option }}"
+                                                            {% if sale.quantity_value == quantity_option %}selected{% endif %}
+                                                        >
+                                                            {{ quantity_option }}
+                                                        </option>
+                                                    {% endfor %}
+                                                </select>
+
+                                                <input
+                                                    class="table-control sale-edit-control sale-price-input"
+                                                    type="number"
+                                                    name="unit_price"
+                                                    value="{{ sale.unit_price if sale.unit_price is not none else '' }}"
+                                                    min="1"
+                                                    step="1"
+                                                    inputmode="decimal"
+                                                    placeholder="Цена"
+                                                    form="{{ edit_form_id }}"
+                                                    required
+                                                >
+
+                                                <div class="sale-edit-total-preview">
+                                                    Итого:
+                                                    {{ sale.total_amount_display or "—" }}
+                                                </div>
+                                            </div>
                                         </td>
 
                                         <td class="col-order">
@@ -1583,6 +2502,7 @@
                     Продаж пока нет.
                 </div>
             {% endif %}
+            </section>
         </section>
 
         <div
@@ -1708,6 +2628,33 @@
                             </select>
                         </div>
 
+                        <!-- MANUAL SALE PRICE FIELD V1 -->
+                        <div class="field">
+                            <label for="unit_price">
+                                Цена за единицу, ₽
+                            </label>
+
+                            <input
+                                id="unit_price"
+                                class="control"
+                                type="number"
+                                name="unit_price"
+                                min="1"
+                                step="1"
+                                inputmode="decimal"
+                                placeholder="Например, 7500"
+                                required
+                            >
+
+                            <div
+                                id="manualSaleTotalPreview"
+                                class="manual-sale-total-preview"
+                            >
+                                Итого: —
+                            </div>
+                        </div>
+                        <!-- MANUAL SALE PRICE FIELD V1 END -->
+
                         <div class="field">
                             <label for="order_number">Номер заказа</label>
                             <input
@@ -1760,9 +2707,32 @@
                                 <option value="Экспресс.ру">
                                     Экспресс.ру
                                 </option>
+                                <option value="__custom__">
+                                    Свой вариант
+                                </option>
                             </select>
                         </div>
 
+
+                        <!-- CUSTOM DELIVERY MODAL V1 -->
+                        <div
+                            id="customDeliveryMethodField"
+                            class="field is-hidden"
+                        >
+                            <label for="custom_delivery_method">
+                                Свой способ доставки
+                            </label>
+
+                            <input
+                                id="custom_delivery_method"
+                                class="control"
+                                type="text"
+                                name="custom_delivery_method"
+                                placeholder="Введите способ доставки"
+                                autocomplete="off"
+                            >
+                        </div>
+                        <!-- CUSTOM DELIVERY MODAL V1 END -->
                         <div class="field">
                             <label for="region">Регион</label>
                             <input
@@ -2017,6 +2987,55 @@
 
         updateCustomSourceField();
     }
+
+    // CUSTOM DELIVERY MODAL SCRIPT V1
+    const deliveryMethodSelect = document.getElementById(
+        "delivery_method"
+    );
+
+    const customDeliveryMethodField =
+        document.getElementById(
+            "customDeliveryMethodField"
+        );
+
+    const customDeliveryMethodInput =
+        document.getElementById(
+            "custom_delivery_method"
+        );
+
+    function updateCustomDeliveryMethodField() {
+        if (
+            !deliveryMethodSelect
+            || !customDeliveryMethodField
+            || !customDeliveryMethodInput
+        ) {
+            return;
+        }
+
+        const isCustom =
+            deliveryMethodSelect.value === "__custom__";
+
+        customDeliveryMethodField.classList.toggle(
+            "is-hidden",
+            !isCustom
+        );
+
+        customDeliveryMethodInput.required = isCustom;
+
+        if (!isCustom) {
+            customDeliveryMethodInput.value = "";
+        }
+    }
+
+    if (deliveryMethodSelect) {
+        deliveryMethodSelect.addEventListener(
+            "change",
+            updateCustomDeliveryMethodField
+        );
+
+        updateCustomDeliveryMethodField();
+    }
+    // CUSTOM DELIVERY MODAL SCRIPT V1 END
 
     const warehouseItems = {{ warehouse_items | tojson }};
     const manualSaleForm = document.getElementById("manualSaleForm");
@@ -2753,8 +3772,7 @@
             return;
         }
 
-        const storageKey =
-            "vechasu-sales-column-widths-v5";
+        const storageKey = "vechasu-sales-column-widths-v5-layout-v2";
 
         const measuredWidths = headers.map((header) => {
             return header.getBoundingClientRect().width;
@@ -2835,6 +3853,15 @@
 
         headers.slice(0, -1).forEach(
             (header, index) => {
+                const isLockedBoundary = (
+                    index === 0
+                    || index === headers.length - 2
+                );
+
+                if (isLockedBoundary) {
+                    return;
+                }
+
                 const handle =
                     document.createElement("span");
 
@@ -2871,7 +3898,7 @@
 
                         const startX = event.clientX;
                         const minimumPixels = [
-                            90,
+                            118,
                             90,
                             155,
                             55,
@@ -2881,7 +3908,7 @@
                             95,
                             85,
                             110,
-                            180
+                            104
                         ];
 
                         const minimumLeft =
@@ -2982,26 +4009,198 @@
         );
     })();
 
-    const salesSearch = document.getElementById("salesSearch");
+    const salesSearch =
+        document.getElementById("salesSearch");
+
+    const salesDateFrom =
+        document.getElementById("salesDateFrom");
+
+    const salesDateTo =
+        document.getElementById("salesDateTo");
+
+    const clearSalesDateFilter =
+        document.getElementById("clearSalesDateFilter");
+
+    const salesFilterCount =
+        document.getElementById("salesFilterCount");
+
     const saleRows = Array.from(
         document.querySelectorAll(".sale-row")
     );
 
-    if (salesSearch) {
-        salesSearch.addEventListener("input", () => {
-            const query = salesSearch.value.toLowerCase().trim();
+    const salesTableBody =
+        document.querySelector(".sales-table tbody");
 
-            saleRows.forEach((row) => {
-                const text = (
-                    row.dataset.search || ""
-                ).toLowerCase();
+    let salesFilterEmptyRow = null;
 
-                row.style.display = text.includes(query)
+    if (salesTableBody) {
+        salesFilterEmptyRow =
+            document.createElement("tr");
+
+        salesFilterEmptyRow.className =
+            "sales-filter-empty-row";
+
+        salesFilterEmptyRow.style.display = "none";
+
+        const emptyCell =
+            document.createElement("td");
+
+        emptyCell.colSpan = 11;
+        emptyCell.className =
+            "sales-filter-empty-cell";
+
+        emptyCell.textContent =
+            "За выбранный период продаж не найдено.";
+
+        salesFilterEmptyRow.appendChild(emptyCell);
+        salesTableBody.appendChild(salesFilterEmptyRow);
+    }
+
+    const applySalesFilters = () => {
+        const query = (
+            salesSearch?.value || ""
+        ).toLowerCase().trim();
+
+        const selectedFrom =
+            salesDateFrom?.value || "";
+
+        const selectedTo =
+            salesDateTo?.value || "";
+
+        /*
+         * Одна заполненная дата означает точный день.
+         * Две заполненные даты означают диапазон включительно.
+         */
+        let dateFrom = selectedFrom;
+        let dateTo = selectedTo;
+
+        if (dateFrom && !dateTo) {
+            dateTo = dateFrom;
+        }
+
+        if (!dateFrom && dateTo) {
+            dateFrom = dateTo;
+        }
+
+        if (
+            dateFrom
+            && dateTo
+            && dateFrom > dateTo
+        ) {
+            [dateFrom, dateTo] = [dateTo, dateFrom];
+        }
+
+        let visibleCount = 0;
+
+        saleRows.forEach((row) => {
+            const searchableText = (
+                row.dataset.search || ""
+            ).toLowerCase();
+
+            const rowDate = (
+                row.dataset.sortDate || ""
+            ).trim();
+
+            const matchesSearch =
+                !query
+                || searchableText.includes(query);
+
+            const matchesDate = (
+                !dateFrom
+                || (
+                    rowDate
+                    && rowDate >= dateFrom
+                    && rowDate <= dateTo
+                )
+            );
+
+            const isVisible =
+                matchesSearch && matchesDate;
+
+            row.style.display =
+                isVisible ? "" : "none";
+
+            if (isVisible) {
+                visibleCount += 1;
+            }
+        });
+
+        const formatSalesCount = (count) => {
+            const mod10 = count % 10;
+            const mod100 = count % 100;
+
+            let word = "продаж";
+
+            if (mod10 === 1 && mod100 !== 11) {
+                word = "продажа";
+            } else if (
+                mod10 >= 2
+                && mod10 <= 4
+                && !(mod100 >= 12 && mod100 <= 14)
+            ) {
+                word = "продажи";
+            }
+
+            return `${count} ${word}`;
+        };
+
+        if (salesFilterCount) {
+            salesFilterCount.textContent =
+                formatSalesCount(visibleCount);
+        }
+
+        if (clearSalesDateFilter) {
+            clearSalesDateFilter.disabled =
+                !selectedFrom && !selectedTo;
+        }
+
+        if (salesFilterEmptyRow) {
+            salesFilterEmptyRow.style.display =
+                visibleCount === 0
                     ? ""
                     : "none";
-            });
-        });
+        }
+    };
+
+    if (salesSearch) {
+        salesSearch.addEventListener(
+            "input",
+            applySalesFilters
+        );
     }
+
+    if (salesDateFrom) {
+        salesDateFrom.addEventListener(
+            "change",
+            applySalesFilters
+        );
+    }
+
+    if (salesDateTo) {
+        salesDateTo.addEventListener(
+            "change",
+            applySalesFilters
+        );
+    }
+
+    if (clearSalesDateFilter) {
+        clearSalesDateFilter.addEventListener(
+            "click",
+            () => {
+                if (salesDateFrom) {
+                    salesDateFrom.value = "";
+                }
+
+                if (salesDateTo) {
+                    salesDateTo.value = "";
+                }
+
+                applySalesFilters();
+            }
+        );
+    }
+
+    applySalesFilters();
 
     const editableSaleForms = Array.from(
         document.querySelectorAll(".editable-sale-form")
@@ -3069,5 +4268,255 @@
             .slice(0, 10);
     }
 </script>
+
+<script>
+    /*
+     * Ширины даты и действий могли сохраниться в браузере
+     * после ручного растягивания колонок. Фиксируем их после
+     * выполнения основного скрипта таблицы.
+     */
+    (() => {
+        const lockSalesColumns = () => {
+            document
+                .querySelectorAll(".sales-table .col-date")
+                .forEach((element) => {
+                    element.style.setProperty(
+                        "width",
+                        "104px",
+                        "important"
+                    );
+                    element.style.setProperty(
+                        "min-width",
+                        "104px",
+                        "important"
+                    );
+                    element.style.setProperty(
+                        "max-width",
+                        "104px",
+                        "important"
+                    );
+                });
+
+            document
+                .querySelectorAll(".sales-table .col-actions")
+                .forEach((element) => {
+                    element.style.setProperty(
+                        "width",
+                        "62px",
+                        "important"
+                    );
+                    element.style.setProperty(
+                        "min-width",
+                        "62px",
+                        "important"
+                    );
+                    element.style.setProperty(
+                        "max-width",
+                        "62px",
+                        "important"
+                    );
+                });
+        };
+
+        document.addEventListener(
+            "DOMContentLoaded",
+            () => {
+                lockSalesColumns();
+                requestAnimationFrame(lockSalesColumns);
+                window.setTimeout(lockSalesColumns, 200);
+                window.setTimeout(lockSalesColumns, 800);
+            }
+        );
+
+        window.addEventListener(
+            "load",
+            lockSalesColumns
+        );
+    })();
+</script>
+
+
+<script>
+    // MANUAL SALE PRICE PREVIEW V1
+    (() => {
+        const initializeManualSalePrice = () => {
+            const quantity =
+                document.getElementById("quantity");
+
+            const unitPrice =
+                document.getElementById("unit_price");
+
+            const preview =
+                document.getElementById(
+                    "manualSaleTotalPreview"
+                );
+
+            if (!quantity || !unitPrice || !preview) {
+                return;
+            }
+
+            const formatter = new Intl.NumberFormat(
+                "ru-RU",
+                {
+                    style: "currency",
+                    currency: "RUB",
+                    minimumFractionDigits: 0,
+                    maximumFractionDigits: 2,
+                }
+            );
+
+            const updateTotal = () => {
+                const quantityValue = Number(
+                    quantity.value || 0
+                );
+
+                const priceValue = Number(
+                    String(unitPrice.value || "")
+                        .replace(",", ".")
+                );
+
+                if (
+                    !Number.isFinite(quantityValue)
+                    || !Number.isFinite(priceValue)
+                    || quantityValue <= 0
+                    || priceValue <= 0
+                ) {
+                    preview.textContent = "Итого: —";
+                    return;
+                }
+
+                preview.textContent =
+                    "Итого: "
+                    + formatter.format(
+                        quantityValue * priceValue
+                    );
+            };
+
+            quantity.addEventListener(
+                "change",
+                updateTotal
+            );
+
+            unitPrice.addEventListener(
+                "input",
+                updateTotal
+            );
+
+            updateTotal();
+        };
+
+        if (
+            document.readyState === "loading"
+        ) {
+            document.addEventListener(
+                "DOMContentLoaded",
+                initializeManualSalePrice
+            );
+        } else {
+            initializeManualSalePrice();
+        }
+    })();
+    // MANUAL SALE PRICE PREVIEW V1 END
+</script>
+
+
+<script>
+    // SALES PRICE EDIT PREVIEW V2
+    (() => {
+        const formatter = new Intl.NumberFormat(
+            "ru-RU",
+            {
+                style: "currency",
+                currency: "RUB",
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 2,
+            }
+        );
+
+        const initializePriceInput = (priceInput) => {
+            const formId =
+                priceInput.getAttribute("form");
+
+            const form = formId
+                ? document.getElementById(formId)
+                : null;
+
+            if (!form) {
+                return;
+            }
+
+            const quantity =
+                form.elements.namedItem("quantity");
+
+            const preview = priceInput
+                .closest(".quantity-price-edit")
+                ?.querySelector(
+                    ".sale-edit-total-preview"
+                );
+
+            if (!quantity || !preview) {
+                return;
+            }
+
+            const update = () => {
+                const quantityValue = Number(
+                    quantity.value || 0
+                );
+
+                const priceValue = Number(
+                    String(priceInput.value || "")
+                        .replace(",", ".")
+                );
+
+                if (
+                    !Number.isFinite(quantityValue)
+                    || !Number.isFinite(priceValue)
+                    || quantityValue <= 0
+                    || priceValue <= 0
+                ) {
+                    preview.textContent = "Итого: —";
+                    return;
+                }
+
+                preview.textContent =
+                    "Итого: "
+                    + formatter.format(
+                        quantityValue * priceValue
+                    );
+            };
+
+            quantity.addEventListener(
+                "change",
+                update
+            );
+
+            priceInput.addEventListener(
+                "input",
+                update
+            );
+
+            update();
+        };
+
+        const initialize = () => {
+            document
+                .querySelectorAll(
+                    ".sale-price-input"
+                )
+                .forEach(initializePriceInput);
+        };
+
+        if (document.readyState === "loading") {
+            document.addEventListener(
+                "DOMContentLoaded",
+                initialize
+            );
+        } else {
+            initialize();
+        }
+    })();
+    // SALES PRICE EDIT PREVIEW V2 END
+</script>
+
 </body>
 </html>

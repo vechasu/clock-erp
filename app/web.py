@@ -2849,6 +2849,82 @@ def parse_manual_sale_quantity(value):
 
     return quantity if 1 <= quantity <= 25 else 0
 
+# === SALES PRICE FUNCTIONS V1 ===
+def parse_sale_price(value):
+    from decimal import Decimal, InvalidOperation
+
+    raw_value = str(value or "").strip()
+
+    if not raw_value:
+        return None
+
+    normalized = (
+        raw_value
+        .replace("\xa0", "")
+        .replace(" ", "")
+        .replace("₽", "")
+        .replace(",", ".")
+    )
+
+    try:
+        price = Decimal(normalized)
+    except (InvalidOperation, ValueError):
+        return None
+
+    if price < 1:
+        return None
+
+    return float(price.quantize(Decimal("0.01")))
+
+
+def calculate_sale_amount(unit_price, quantity):
+    from decimal import Decimal, InvalidOperation
+
+    if unit_price is None:
+        return None
+
+    try:
+        price = Decimal(str(unit_price))
+        quantity_value = Decimal(str(quantity or 0))
+        amount = price * quantity_value
+    except (InvalidOperation, ValueError, TypeError):
+        return None
+
+    return float(amount.quantize(Decimal("0.01")))
+
+
+def format_sale_money(value):
+    from decimal import Decimal, InvalidOperation
+
+    if value is None:
+        return ""
+
+    try:
+        amount = Decimal(str(value)).quantize(
+            Decimal("0.01")
+        )
+    except (InvalidOperation, ValueError):
+        return ""
+
+    if amount == amount.to_integral():
+        formatted = "{:,}".format(
+            int(amount)
+        ).replace(",", " ")
+    else:
+        formatted = "{:,.2f}".format(amount)
+        formatted = (
+            formatted
+            .replace(",", "X")
+            .replace(".", ",")
+            .replace("X", " ")
+        )
+
+    return f"{formatted} ₽"
+
+
+# === SALES PRICE FUNCTIONS V1 END ===
+
+
 def normalize_manual_sale_source(value, custom_value=""):
     source = str(value or "").strip()
     custom_source = str(custom_value or "").strip()
@@ -2861,6 +2937,28 @@ def normalize_manual_sale_source(value, custom_value=""):
 
     return source or "Свой вариант"
 
+# === CUSTOM DELIVERY BACKEND V1 ===
+def normalize_manual_delivery_method(
+    value,
+    custom_value="",
+):
+    delivery_method = str(value or "").strip()
+    custom_delivery_method = str(
+        custom_value or ""
+    ).strip()
+
+    if delivery_method == "__custom__":
+        return (
+            custom_delivery_method
+            or "Свой вариант"
+        )
+
+    return delivery_method
+
+
+# === CUSTOM DELIVERY BACKEND V1 END ===
+
+
 @app.route("/sales/manual/add", methods=["POST"])
 def manual_sale_add():
     from datetime import date
@@ -2869,6 +2967,16 @@ def manual_sale_add():
 
     product_name = (request.form.get("product_name") or "").strip()
     quantity = parse_manual_sale_quantity(request.form.get("quantity"))
+
+    # === MANUAL SALE ADD PRICE V1 ===
+    unit_price = parse_sale_price(
+        request.form.get("unit_price")
+    )
+    total_amount = calculate_sale_amount(
+        unit_price,
+        quantity,
+    )
+    # === MANUAL SALE ADD PRICE V1 END ===
 
     if not product_name:
         return redirect(
@@ -2888,6 +2996,17 @@ def manual_sale_add():
             )
         )
 
+    # === MANUAL SALE PRICE VALIDATION V1 ===
+    if unit_price is None:
+        return redirect(
+            url_for(
+                "sales_page",
+                notice="error",
+                message="Укажите цену продажи не меньше 1 ₽",
+            )
+        )
+    # === MANUAL SALE PRICE VALIDATION V1 END ===
+
     sales = load_manual_sales()
 
     sales.append({
@@ -2905,15 +3024,20 @@ def manual_sale_add():
         ).strip(),
         "product_name": product_name,
         "quantity": quantity,
+        "unit_price": unit_price,
+        "total_amount": total_amount,
         "order_number": (
             request.form.get("order_number") or ""
         ).strip(),
         "track_number": (
             request.form.get("track_number") or ""
         ).strip(),
-        "delivery_method": (
-            request.form.get("delivery_method") or ""
-        ).strip(),
+        "delivery_method": normalize_manual_delivery_method(
+            request.form.get("delivery_method"),
+            request.form.get(
+                "custom_delivery_method"
+            ),
+        ),
         "region": (
             request.form.get("region") or ""
         ).strip(),
@@ -2944,6 +3068,17 @@ def manual_sale_update():
     product_name = (request.form.get("product_name") or "").strip()
     quantity = parse_manual_sale_quantity(request.form.get("quantity"))
 
+    # === SALES PRICE EDIT AND TABLE V2 ===
+    unit_price = parse_sale_price(
+        request.form.get("unit_price")
+    )
+
+    total_amount = calculate_sale_amount(
+        unit_price,
+        quantity,
+    )
+    # === SALES PRICE EDIT AND TABLE V2 END ===
+
     if not sale_id:
         return redirect(
             url_for(
@@ -2971,6 +3106,15 @@ def manual_sale_update():
             )
         )
 
+    if unit_price is None:
+        return redirect(
+            url_for(
+                "sales_page",
+                notice="error",
+                message="Укажите цену продажи не меньше 1 ₽",
+            )
+        )
+
     sales = load_manual_sales()
     sale_found = False
 
@@ -2992,6 +3136,8 @@ def manual_sale_update():
         ).strip()
         sale["product_name"] = product_name
         sale["quantity"] = quantity
+        sale["unit_price"] = unit_price
+        sale["total_amount"] = total_amount
         sale["order_number"] = (
             request.form.get("order_number") or ""
         ).strip()
@@ -2999,8 +3145,15 @@ def manual_sale_update():
             request.form.get("track_number") or ""
         ).strip()
         sale["delivery_method"] = (
-            request.form.get("delivery_method") or ""
-        ).strip()
+            normalize_manual_delivery_method(
+                request.form.get(
+                    "delivery_method"
+                ),
+                request.form.get(
+                    "custom_delivery_method"
+                ),
+            )
+        )
         sale["region"] = (
             request.form.get("region") or ""
         ).strip()
@@ -3073,6 +3226,15 @@ def automatic_sale_update():
         request.form.get("quantity")
     )
 
+    unit_price = parse_sale_price(
+        request.form.get("unit_price")
+    )
+
+    total_amount = calculate_sale_amount(
+        unit_price,
+        quantity,
+    )
+
     if not operation_id:
         return redirect(
             url_for(
@@ -3116,6 +3278,15 @@ def automatic_sale_update():
             )
         )
 
+    if unit_price is None:
+        return redirect(
+            url_for(
+                "sales_page",
+                notice="error",
+                message="Укажите цену продажи не меньше 1 ₽",
+            )
+        )
+
     overrides = load_automatic_sales_overrides()
 
     overrides[operation_id] = {
@@ -3127,15 +3298,20 @@ def automatic_sale_update():
         ).strip(),
         "product_name": product_name,
         "quantity": quantity,
+        "unit_price": unit_price,
+        "total_amount": total_amount,
         "order_number": (
             request.form.get("order_number") or ""
         ).strip(),
         "track_number": (
             request.form.get("track_number") or ""
         ).strip(),
-        "delivery_method": (
-            request.form.get("delivery_method") or ""
-        ).strip(),
+        "delivery_method": normalize_manual_delivery_method(
+            request.form.get("delivery_method"),
+            request.form.get(
+                "custom_delivery_method"
+            ),
+        ),
         "region": (
             request.form.get("region") or ""
         ).strip(),
@@ -3250,6 +3426,30 @@ def build_sales_report_records():
                 or ""
             ),
             "quantity_value": quantity_number,
+            **{
+                "unit_price": parse_sale_price(
+                    override.get("unit_price")
+                ),
+                "unit_price_display": format_sale_money(
+                    parse_sale_price(
+                        override.get("unit_price")
+                    )
+                ),
+                "total_amount": calculate_sale_amount(
+                    parse_sale_price(
+                        override.get("unit_price")
+                    ),
+                    quantity_number,
+                ),
+                "total_amount_display": format_sale_money(
+                    calculate_sale_amount(
+                        parse_sale_price(
+                            override.get("unit_price")
+                        ),
+                        quantity_number,
+                    )
+                ),
+            },
             "track_number": str(
                 override.get(
                     "track_number",
@@ -3317,6 +3517,30 @@ def build_sales_report_records():
                 stored_sale.get("product_name") or ""
             ),
             "quantity_value": quantity_number,
+            **{
+                "unit_price": parse_sale_price(
+                    stored_sale.get("unit_price")
+                ),
+                "unit_price_display": format_sale_money(
+                    parse_sale_price(
+                        stored_sale.get("unit_price")
+                    )
+                ),
+                "total_amount": calculate_sale_amount(
+                    parse_sale_price(
+                        stored_sale.get("unit_price")
+                    ),
+                    quantity_number,
+                ),
+                "total_amount_display": format_sale_money(
+                    calculate_sale_amount(
+                        parse_sale_price(
+                            stored_sale.get("unit_price")
+                        ),
+                        quantity_number,
+                    )
+                ),
+            },
             "track_number": str(
                 stored_sale.get("track_number") or ""
             ),
@@ -3466,6 +3690,14 @@ def build_sales_report_context():
         for sale in sales
     )
 
+    # === SALES REPORT PRICE V1 ===
+    total_revenue = sum(
+        float(sale.get("total_amount") or 0)
+        for sale in sales
+        if sale.get("total_amount") is not None
+    )
+    # === SALES REPORT PRICE V1 END ===
+
     def unique_values(field):
         return sorted(
             {
@@ -3483,6 +3715,10 @@ def build_sales_report_context():
         "total_orders": len(unique_orders),
         "total_quantity": format_stock_number(
             total_quantity
+        ),
+        "total_revenue": total_revenue,
+        "total_revenue_display": format_sale_money(
+            total_revenue
         ),
         "sources": unique_values("source"),
         "products": unique_values("product_name"),
@@ -3549,12 +3785,20 @@ def sales_report_excel():
     sheet["J2"] = "Единиц"
     sheet["K2"] = context["total_quantity"]
 
+    # === SALES EXCEL PRICE V1 ===
+    sheet["M2"] = "Выручка"
+    sheet["N2"] = context["total_revenue"]
+    sheet["N2"].number_format = '#,##0.00 "₽"'
+    # === SALES EXCEL PRICE V1 END ===
+
     headers = [
         "Дата",
         "Тип",
         "Источник",
         "Товар",
         "Количество",
+        "Цена за единицу, ₽",
+        "Сумма, ₽",
         "Номер заказа",
         "Трек-номер",
         "Способ доставки",
@@ -3598,6 +3842,8 @@ def sales_report_excel():
             sale.get("source") or "",
             sale.get("product_name") or "",
             sale.get("quantity_value") or 0,
+            sale.get("unit_price"),
+            sale.get("total_amount"),
             sale.get("order_number") or "",
             sale.get("track_number") or "",
             sale.get("delivery_method") or "",
@@ -3619,6 +3865,12 @@ def sales_report_excel():
                 vertical="top",
                 wrap_text=True,
             )
+
+            if (
+                column in {6, 7}
+                and value is not None
+            ):
+                cell.number_format = '#,##0.00 "₽"'
 
     thin_side = Side(
         style="thin",
@@ -3646,6 +3898,8 @@ def sales_report_excel():
         34,
         12,
         18,
+        18,
+        18,
         24,
         24,
         24,
@@ -3663,7 +3917,7 @@ def sales_report_excel():
 
     sheet.freeze_panes = "A5"
     sheet.auto_filter.ref = (
-        "A{}:K{}".format(
+        "A{}:M{}".format(
             header_row,
             max(header_row, sheet.max_row),
         )
@@ -3690,6 +3944,7 @@ def sales_report_excel():
 
 @app.route("/sales/report.pdf")
 def sales_report_pdf():
+    # === SALES PDF PRICE V1 ===
     from io import BytesIO
     from html import escape
     from flask import Response
@@ -3776,6 +4031,8 @@ def sales_report_pdf():
         "SalesReportHeader",
         parent=info_style,
         fontName="VechasuSansBold",
+        fontSize=5.8,
+        leading=7,
         textColor=colors.white,
         alignment=TA_CENTER,
     )
@@ -3803,12 +4060,16 @@ def sales_report_pdf():
                 "Сформирован: {} &nbsp;&nbsp; "
                 "Продаж: {} &nbsp;&nbsp; "
                 "Заказов: {} &nbsp;&nbsp; "
-                "Продано единиц: {}"
+                "Продано единиц: {} &nbsp;&nbsp; "
+                "Выручка: {}"
             ).format(
                 escape(context["generated_at"]),
                 context["total_sales"],
                 context["total_orders"],
                 escape(str(context["total_quantity"])),
+                escape(
+                    context["total_revenue_display"]
+                ),
             ),
             info_style,
         ),
@@ -3821,6 +4082,8 @@ def sales_report_pdf():
         "Источник",
         "Товар",
         "Кол-во",
+        "Цена",
+        "Сумма",
         "Заказ",
         "Трек-номер",
         "Доставка",
@@ -3846,6 +4109,8 @@ def sales_report_pdf():
             format_stock_number(
                 sale.get("quantity_value") or 0
             ),
+            sale.get("unit_price_display") or "—",
+            sale.get("total_amount_display") or "—",
             sale.get("order_number") or "",
             sale.get("track_number") or "",
             sale.get("delivery_method") or "",
@@ -3859,7 +4124,7 @@ def sales_report_pdf():
         for index, value in enumerate(values):
             style = (
                 centered_cell_style
-                if index in {0, 1, 4}
+                if index in {0, 1, 4, 5, 6}
                 else cell_style
             )
 
@@ -3876,17 +4141,19 @@ def sales_report_pdf():
         table_data,
         repeatRows=1,
         colWidths=[
-            18 * mm,
-            18 * mm,
-            20 * mm,
-            34 * mm,
-            12 * mm,
-            20 * mm,
-            28 * mm,
-            27 * mm,
-            27 * mm,
-            23 * mm,
-            47 * mm,
+            18 * mm,  # Дата
+            15 * mm,  # Тип
+            18 * mm,  # Источник
+            32 * mm,  # Товар
+            11 * mm,  # Количество
+            18 * mm,  # Цена
+            20 * mm,  # Сумма
+            18 * mm,  # Заказ
+            25 * mm,  # Трек
+            28 * mm,  # Доставка
+            27 * mm,  # Регион
+            20 * mm,  # Город
+            29 * mm,  # Примечание
         ],
     )
 
@@ -4015,6 +4282,15 @@ def sales_page():
 
         total_quantity += quantity_number
 
+        unit_price = parse_sale_price(
+            override.get("unit_price")
+        )
+
+        total_amount = calculate_sale_amount(
+            unit_price,
+            quantity_number,
+        )
+
         order_id = str(operation.get("order_id") or "")
         original_order_number = str(
             operation.get("order_number") or order_id or ""
@@ -4058,6 +4334,14 @@ def sales_page():
             ),
             "quantity": format_stock_number(quantity_number),
             "quantity_value": quantity_number,
+            "unit_price": unit_price,
+            "unit_price_display": format_sale_money(
+                unit_price
+            ),
+            "total_amount": total_amount,
+            "total_amount_display": format_sale_money(
+                total_amount
+            ),
             "track_number": str(
                 override.get(
                     "track_number",
@@ -4113,6 +4397,15 @@ def sales_page():
 
         total_quantity += quantity_number
 
+        unit_price = parse_sale_price(
+            stored_sale.get("unit_price")
+        )
+
+        total_amount = calculate_sale_amount(
+            unit_price,
+            quantity_number,
+        )
+
         manual_sales.append({
             "id": str(stored_sale.get("id") or ""),
             "is_manual": True,
@@ -4127,6 +4420,14 @@ def sales_page():
             "bitrix_product_name": "",
             "quantity": format_stock_number(quantity_number),
             "quantity_value": quantity_number,
+            "unit_price": unit_price,
+            "unit_price_display": format_sale_money(
+                unit_price
+            ),
+            "total_amount": total_amount,
+            "total_amount_display": format_sale_money(
+                total_amount
+            ),
             "track_number": stored_sale.get("track_number") or "",
             "delivery_method": stored_sale.get("delivery_method") or "",
             "region": stored_sale.get("region") or "",
