@@ -2532,6 +2532,266 @@ def sales_page():
     )
 
 
+def parse_analytics_date(value):
+    from datetime import date
+
+    raw_value = str(value or "").strip()
+
+    if not raw_value:
+        return None
+
+    try:
+        return date.fromisoformat(raw_value[:10])
+    except ValueError:
+        return None
+
+
+def build_analytics_data(
+    operations,
+    manual_sales,
+    automatic_overrides,
+    warehouse_items,
+    requested_period="30",
+    today=None,
+):
+    from datetime import date, timedelta
+
+    period_days = {
+        "7": 7,
+        "30": 30,
+        "90": 90,
+        "all": None,
+    }
+    period_labels = {
+        "7": "7 дней",
+        "30": "30 дней",
+        "90": "90 дней",
+        "all": "Всё время",
+    }
+
+    period = requested_period if requested_period in period_days else "30"
+    days = period_days[period]
+    today = today or date.today()
+    start_date = today - timedelta(days=days - 1) if days else None
+
+    def is_in_period(item_date):
+        if days is None:
+            return True
+
+        return item_date is not None and start_date <= item_date <= today
+
+    def quantity_value(value):
+        try:
+            return max(0.0, float(str(value or 0).replace(",", ".")))
+        except (TypeError, ValueError):
+            return 0.0
+
+    sales_rows = []
+
+    for operation in operations if isinstance(operations, list) else []:
+        operation_id = str(operation.get("id") or "").strip()
+        operation_type = str(operation.get("type") or "")
+        operation_source = str(operation.get("source") or "")
+
+        if (
+            operation_source != "Заказ Битрикс"
+            or operation_type not in {"writeoff", "loss"}
+        ):
+            continue
+
+        override = (
+            automatic_overrides.get(operation_id) or {}
+            if isinstance(automatic_overrides, dict)
+            else {}
+        )
+
+        original_quantity = quantity_value(operation.get("quantity"))
+        overridden_quantity = parse_manual_sale_quantity(
+            override.get("quantity")
+        ) if "quantity" in override else 0
+        quantity = overridden_quantity or original_quantity
+        created_at = override.get(
+            "created_at",
+            operation.get("created_at") or "",
+        )
+
+        sales_rows.append({
+            "date": parse_analytics_date(created_at),
+            "product_key": str(
+                operation.get("product_id")
+                or override.get("product_name")
+                or operation.get("product_name")
+                or "Без названия"
+            ),
+            "product_name": str(
+                override.get(
+                    "product_name",
+                    operation.get("product_name") or "Без названия",
+                )
+                or "Без названия"
+            ),
+            "source": str(override.get("source", "Tictactoy") or "Tictactoy"),
+            "quantity": quantity,
+        })
+
+    for sale in manual_sales if isinstance(manual_sales, list) else []:
+        quantity = parse_manual_sale_quantity(sale.get("quantity"))
+
+        if quantity <= 0:
+            continue
+
+        sales_rows.append({
+            "date": parse_analytics_date(sale.get("created_at")),
+            "product_key": str(
+                sale.get("product_id")
+                or sale.get("product_name")
+                or "Без названия"
+            ),
+            "product_name": str(sale.get("product_name") or "Без названия"),
+            "source": normalize_manual_sale_source(sale.get("source")),
+            "quantity": quantity,
+        })
+
+    receipt_rows = []
+
+    for operation in operations if isinstance(operations, list) else []:
+        if str(operation.get("type") or "") != "enter":
+            continue
+
+        quantity = quantity_value(operation.get("quantity"))
+
+        if quantity <= 0:
+            continue
+
+        receipt_rows.append({
+            "date": parse_analytics_date(operation.get("created_at")),
+            "product_key": str(
+                operation.get("product_id")
+                or operation.get("product_name")
+                or "Без названия"
+            ),
+            "product_name": str(operation.get("product_name") or "Без названия"),
+            "quantity": quantity,
+        })
+
+    filtered_sales = [
+        row for row in sales_rows
+        if is_in_period(row.get("date"))
+    ]
+    filtered_receipts = [
+        row for row in receipt_rows
+        if is_in_period(row.get("date"))
+    ]
+
+    def aggregate_rows(rows, key_name, label_name):
+        aggregated = {}
+
+        for row in rows:
+            key = str(row.get(key_name) or "Без названия")
+            label = str(row.get(label_name) or "Без названия")
+
+            if key not in aggregated:
+                aggregated[key] = {
+                    "name": label,
+                    "quantity": 0.0,
+                    "operations": 0,
+                }
+
+            aggregated[key]["quantity"] += quantity_value(row.get("quantity"))
+            aggregated[key]["operations"] += 1
+
+        result = sorted(
+            aggregated.values(),
+            key=lambda item: (-item["quantity"], item["name"].lower()),
+        )
+        max_quantity = result[0]["quantity"] if result else 0
+
+        for item in result:
+            item["quantity_display"] = format_stock_number(item["quantity"])
+            item["bar_width"] = (
+                round(item["quantity"] / max_quantity * 100, 1)
+                if max_quantity > 0
+                else 0
+            )
+
+        return result
+
+    sales_by_product = aggregate_rows(
+        filtered_sales,
+        "product_key",
+        "product_name",
+    )
+    receipts_by_product = aggregate_rows(
+        filtered_receipts,
+        "product_key",
+        "product_name",
+    )
+    sales_by_source = aggregate_rows(
+        filtered_sales,
+        "source",
+        "source",
+    )
+
+    products = []
+
+    for item in warehouse_items if isinstance(warehouse_items, list) else []:
+        stock = to_float(item.get("stock"))
+        products.append({
+            "name": str(item.get("name") or "Без названия"),
+            "article": str(item.get("article") or ""),
+            "category": str(item.get("category") or "Без категории"),
+            "stock": stock,
+            "stock_display": format_stock_number(stock),
+        })
+
+    products.sort(key=lambda item: (-item["stock"], item["name"].lower()))
+
+    sales_quantity = sum(row["quantity"] for row in filtered_sales)
+    receipts_quantity = sum(row["quantity"] for row in filtered_receipts)
+    total_stock = sum(item["stock"] for item in products)
+
+    return {
+        "period": period,
+        "period_label": period_labels[period],
+        "sales": {
+            "rows": len(filtered_sales),
+            "quantity": format_stock_number(sales_quantity),
+            "products": len(sales_by_product),
+            "top_products": sales_by_product[:10],
+            "sources": sales_by_source[:8],
+        },
+        "receipts": {
+            "operations": len(filtered_receipts),
+            "quantity": format_stock_number(receipts_quantity),
+            "products": len(receipts_by_product),
+            "top_products": receipts_by_product[:10],
+        },
+        "products": {
+            "positions": len(products),
+            "in_stock": sum(1 for item in products if item["stock"] > 0),
+            "out_of_stock": sum(1 for item in products if item["stock"] <= 0),
+            "total_stock": format_stock_number(total_stock),
+            "top_stock": products[:10],
+        },
+    }
+
+
+@app.route("/analytics")
+def analytics_page():
+    analytics = build_analytics_data(
+        operations=load_stock_operations(),
+        manual_sales=load_manual_sales(),
+        automatic_overrides=load_automatic_sales_overrides(),
+        warehouse_items=get_warehouse_items(),
+        requested_period=(request.args.get("period") or "30").strip(),
+    )
+
+    return render_template(
+        "analytics.html",
+        analytics=analytics,
+    )
+
+
 DEFAULT_APP_SETTINGS = {
     "company_name": "Tictactoy",
     "erp_name": "Vechasu ERP",

@@ -382,6 +382,15 @@
         </a>
 
         <a
+            class="sidebar-link {% if request.path.startswith('/analytics') %}active{% endif %}"
+            href="/analytics"
+            title="Аналитика"
+        >
+            <span class="sidebar-icon">📊</span>
+            <span class="sidebar-label">Аналитика</span>
+        </a>
+
+        <a
             class="sidebar-link {% if request.path.startswith('/warehouse') %}active{% endif %}"
             href="/warehouse"
             title="Остатки"

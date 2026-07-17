@@ -791,6 +791,156 @@
         }
         /* Конец разворачивания списка всех заказов */
 
+
+        /* Трёхпозиционный ползунок панелей заказов */
+        .workspace {
+            position: relative;
+            margin-top: 16px;
+            transition:
+                grid-template-columns 0.48s cubic-bezier(0.22, 1, 0.36, 1),
+                gap 0.48s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        .orders-list-panel,
+        .order-detail-panel {
+            min-width: 0;
+            transition:
+                opacity 0.30s ease,
+                transform 0.48s cubic-bezier(0.22, 1, 0.36, 1),
+                width 0.48s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        .orders-list-panel .panel-header {
+            padding-right: 14px;
+        }
+
+        .order-detail-panel .detail-header {
+            padding-left: 24px;
+        }
+
+        .orders-layout-switch {
+            --thumb-position: 44px;
+
+            position: absolute;
+            top: -11px;
+            left: 50%;
+            z-index: 50;
+            transform: translateX(-50%);
+
+            width: 138px;
+            height: 44px;
+            display: grid;
+            grid-template-columns: repeat(3, 42px);
+            gap: 2px;
+            padding: 4px;
+
+            border: 1px solid #d4deea;
+            border-radius: 15px;
+            background: rgba(255, 255, 255, 0.98);
+            box-shadow:
+                0 8px 22px rgba(15, 23, 42, 0.14),
+                0 1px 3px rgba(15, 23, 42, 0.08);
+
+            backdrop-filter: blur(12px);
+            user-select: none;
+        }
+
+        .orders-layout-switch[data-mode="list-only"] {
+            --thumb-position: 0px;
+        }
+
+        .orders-layout-switch[data-mode="both"] {
+            --thumb-position: 44px;
+        }
+
+        .orders-layout-switch[data-mode="detail-only"] {
+            --thumb-position: 88px;
+        }
+
+        .orders-layout-thumb {
+            position: absolute;
+            top: 4px;
+            left: 4px;
+            width: 42px;
+            height: 34px;
+            border-radius: 11px;
+            background: #2563eb;
+            box-shadow:
+                0 5px 14px rgba(37, 99, 235, 0.32),
+                inset 0 1px 0 rgba(255, 255, 255, 0.22);
+            transform: translateX(var(--thumb-position));
+            transition:
+                transform 0.38s cubic-bezier(0.22, 1, 0.36, 1),
+                box-shadow 0.25s ease;
+            pointer-events: none;
+        }
+
+        .orders-layout-option {
+            position: relative;
+            z-index: 2;
+            width: 42px;
+            height: 34px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            border: 0;
+            border-radius: 11px;
+            background: transparent;
+            color: #64748b;
+            cursor: pointer;
+            touch-action: manipulation;
+            transition:
+                color 0.22s ease,
+                transform 0.16s ease,
+                background 0.22s ease;
+        }
+
+        .orders-layout-option:hover {
+            color: #1d4ed8;
+            background: rgba(37, 99, 235, 0.06);
+        }
+
+        .orders-layout-option:active {
+            transform: scale(0.92);
+        }
+
+        .orders-layout-option:focus-visible {
+            outline: 2px solid #60a5fa;
+            outline-offset: 2px;
+        }
+
+        .orders-layout-option[aria-checked="true"] {
+            color: white;
+            background: transparent;
+        }
+
+        .orders-layout-option[aria-checked="true"]:hover {
+            color: white;
+            background: transparent;
+        }
+
+        .orders-layout-option svg {
+            width: 18px;
+            height: 18px;
+            pointer-events: none;
+        }
+
+        @media (max-width: 1100px) {
+            .orders-layout-switch {
+                top: 8px;
+            }
+
+            .orders-list-panel .panel-header {
+                padding-top: 60px;
+            }
+
+            .order-detail-panel .detail-header {
+                padding-top: 60px;
+            }
+        }
+        /* Конец трёхпозиционного ползунка */
+
 </style>
 </head>
 
@@ -808,29 +958,68 @@
         {% endif %}
 
         <div class="workspace" id="ordersWorkspace">
-            <section class="panel orders-list-panel" id="ordersListPanel">
+            <div
+                id="ordersLayoutSwitch"
+                class="orders-layout-switch"
+                data-mode="both"
+                role="radiogroup"
+                aria-label="Размер панелей заказов"
+            >
+                <div class="orders-layout-thumb"></div>
+
                 <button
-                    id="orderDetailToggle"
-                    class="order-detail-toggle"
+                    class="orders-layout-option"
                     type="button"
-                    aria-label="Скрыть карточку заказа"
-                    aria-expanded="true"
-                    title="Показать все заказы на весь экран"
+                    data-layout-mode="list-only"
+                    role="radio"
+                    aria-label="Все заказы на весь экран"
+                    title="Все заказы на весь экран"
                 >
-                    <svg
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        aria-hidden="true"
-                    >
-                        <path
-                            d="M9 6L15 12L9 18"
-                            stroke="currentColor"
-                            stroke-width="2.4"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                        />
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <rect x="4" y="4" width="16" height="16" rx="3"
+                              stroke="currentColor" stroke-width="2"/>
+                        <path d="M8 9H16M8 12H16M8 15H14"
+                              stroke="currentColor" stroke-width="2"
+                              stroke-linecap="round"/>
                     </svg>
                 </button>
+
+                <button
+                    class="orders-layout-option"
+                    type="button"
+                    data-layout-mode="both"
+                    role="radio"
+                    aria-label="Показать обе панели"
+                    title="Показать обе панели"
+                >
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <rect x="3" y="4" width="18" height="16" rx="3"
+                              stroke="currentColor" stroke-width="2"/>
+                        <path d="M10 5V19"
+                              stroke="currentColor" stroke-width="2"/>
+                    </svg>
+                </button>
+
+                <button
+                    class="orders-layout-option"
+                    type="button"
+                    data-layout-mode="detail-only"
+                    role="radio"
+                    aria-label="Карточка заказа на весь экран"
+                    title="Карточка заказа на весь экран"
+                >
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <rect x="4" y="4" width="16" height="16" rx="3"
+                              stroke="currentColor" stroke-width="2"/>
+                        <path d="M8 9H16M8 13H13"
+                              stroke="currentColor" stroke-width="2"
+                              stroke-linecap="round"/>
+                    </svg>
+                </button>
+            </div>
+
+
+            <section class="panel orders-list-panel" id="ordersListPanel">
 
                 <div class="panel-header">
                     <input
@@ -923,28 +1112,6 @@
             </section>
 
             <section class="panel detail order-detail-panel">
-                <button
-                    id="ordersPanelToggle"
-                    class="orders-panel-toggle"
-                    type="button"
-                    aria-label="Скрыть список заказов"
-                    aria-expanded="true"
-                    title="Скрыть список заказов"
-                >
-                    <svg
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        aria-hidden="true"
-                    >
-                        <path
-                            d="M15 6L9 12L15 18"
-                            stroke="currentColor"
-                            stroke-width="2.4"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                        />
-                    </svg>
-                </button>
                 {% if selected_order %}
                     {% set detail_id = selected_order.get("id") or selected_order.get("ID") %}
                     {% set detail_number = selected_order.get("number") or selected_order.get("account_number") or selected_order.get("ACCOUNT_NUMBER") or detail_id %}
@@ -1561,100 +1728,128 @@
 
 <script>
     document.addEventListener("DOMContentLoaded", () => {
-        const workspace = document.getElementById("ordersWorkspace");
-        const listToggle = document.getElementById("ordersPanelToggle");
-        const detailToggle = document.getElementById("orderDetailToggle");
+        const workspace = document.getElementById(
+            "ordersWorkspace"
+        );
 
-        if (!workspace || !listToggle || !detailToggle) {
+        const switcher = document.getElementById(
+            "ordersLayoutSwitch"
+        );
+
+        const options = Array.from(
+            switcher
+                ? switcher.querySelectorAll("[data-layout-mode]")
+                : []
+        );
+
+        if (!workspace || !switcher || options.length !== 3) {
             return;
         }
 
         const storageKey = "ttt-erp-orders-workspace-mode";
-        const oldStorageKey = "ttt-erp-orders-list-collapsed";
 
-        const applyWorkspaceMode = (mode) => {
-            const detailOnly = mode === "detail-only";
-            const listOnly = mode === "list-only";
+        const modes = [
+            "list-only",
+            "both",
+            "detail-only"
+        ];
 
-            workspace.classList.toggle(
-                "orders-list-collapsed",
-                detailOnly
-            );
+        const applyMode = (mode, save = true) => {
+            const safeMode = modes.includes(mode)
+                ? mode
+                : "both";
 
             workspace.classList.toggle(
                 "order-detail-collapsed",
-                listOnly
+                safeMode === "list-only"
             );
 
-            listToggle.setAttribute(
-                "aria-expanded",
-                String(!detailOnly)
+            workspace.classList.toggle(
+                "orders-list-collapsed",
+                safeMode === "detail-only"
             );
 
-            listToggle.title = detailOnly
-                ? "Показать список заказов"
-                : "Открыть карточку заказа на весь экран";
+            workspace.dataset.layoutMode = safeMode;
+            switcher.dataset.mode = safeMode;
 
-            detailToggle.setAttribute(
-                "aria-expanded",
-                String(!listOnly)
-            );
+            options.forEach((option) => {
+                const active =
+                    option.dataset.layoutMode === safeMode;
 
-            detailToggle.title = listOnly
-                ? "Показать карточку заказа"
-                : "Показать все заказы на весь экран";
+                option.setAttribute(
+                    "aria-checked",
+                    String(active)
+                );
+            });
+
+            if (!save) {
+                return;
+            }
+
+            try {
+                localStorage.setItem(
+                    storageKey,
+                    safeMode
+                );
+            } catch (error) {
+                // Переключение продолжит работать без сохранения.
+            }
         };
 
-        let mode = "both";
+        let savedMode = "both";
 
         try {
-            mode = localStorage.getItem(storageKey) || "both";
-
-            if (
-                mode === "both" &&
-                localStorage.getItem(oldStorageKey) === "1"
-            ) {
-                mode = "detail-only";
-            }
+            savedMode =
+                localStorage.getItem(storageKey) || "both";
         } catch (error) {
-            mode = "both";
+            savedMode = "both";
         }
 
-        if (!["both", "detail-only", "list-only"].includes(mode)) {
-            mode = "both";
-        }
+        applyMode(savedMode, false);
 
-        applyWorkspaceMode(mode);
+        options.forEach((option) => {
+            option.addEventListener("click", (event) => {
+                event.preventDefault();
+                event.stopPropagation();
 
-        listToggle.addEventListener("click", () => {
-            const nextMode = workspace.classList.contains(
-                "orders-list-collapsed"
-            )
-                ? "both"
-                : "detail-only";
-
-            applyWorkspaceMode(nextMode);
-
-            try {
-                localStorage.setItem(storageKey, nextMode);
-            } catch (error) {
-                // Переключение продолжит работать без сохранения.
-            }
+                applyMode(option.dataset.layoutMode);
+            });
         });
 
-        detailToggle.addEventListener("click", () => {
-            const nextMode = workspace.classList.contains(
-                "order-detail-collapsed"
-            )
-                ? "both"
-                : "list-only";
+        switcher.addEventListener("keydown", (event) => {
+            if (
+                event.key !== "ArrowLeft"
+                && event.key !== "ArrowRight"
+            ) {
+                return;
+            }
 
-            applyWorkspaceMode(nextMode);
+            event.preventDefault();
 
-            try {
-                localStorage.setItem(storageKey, nextMode);
-            } catch (error) {
-                // Переключение продолжит работать без сохранения.
+            const currentMode =
+                switcher.dataset.mode || "both";
+
+            const currentIndex = modes.indexOf(currentMode);
+
+            const direction =
+                event.key === "ArrowRight" ? 1 : -1;
+
+            const nextIndex = Math.max(
+                0,
+                Math.min(2, currentIndex + direction)
+            );
+
+            const nextMode = modes[nextIndex];
+
+            applyMode(nextMode);
+
+            const nextOption = options.find(
+                (option) =>
+                    option.dataset.layoutMode === nextMode
+            );
+
+            if (nextOption) {
+                nextOption.focus();
             }
         });
     });
