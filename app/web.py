@@ -4595,6 +4595,83 @@ def receipts_page():
     )
 
 
+# === RECEIPTS REPORT PAGE V1 ===
+@app.route("/receipts/report")
+def receipts_report():
+    from datetime import datetime
+    from flask import request
+
+    date_from = (
+        request.args.get("date_from") or ""
+    ).strip()
+
+    date_to = (
+        request.args.get("date_to") or ""
+    ).strip()
+
+    if date_from and date_to and date_from > date_to:
+        date_from, date_to = date_to, date_from
+
+    receipts = []
+
+    for receipt in load_receipts():
+        receipt_date = str(
+            receipt.get("receipt_date")
+            or receipt.get("created_at")
+            or ""
+        )[:10]
+
+        if date_from and receipt_date < date_from:
+            continue
+
+        if date_to and receipt_date > date_to:
+            continue
+
+        receipts.append(receipt)
+
+    receipts.sort(
+        key=lambda receipt: (
+            str(
+                receipt.get("receipt_date")
+                or receipt.get("created_at")
+                or ""
+            ),
+            str(receipt.get("number") or ""),
+        ),
+        reverse=True,
+    )
+
+    total_quantity = sum(
+        parse_receipt_number(
+            receipt.get("total_quantity")
+        )
+        for receipt in receipts
+    )
+
+    total_amount = sum(
+        parse_receipt_number(
+            receipt.get("total_amount")
+        )
+        for receipt in receipts
+    )
+
+    return render_template(
+        "receipts_report.html",
+        receipts=receipts,
+        date_from=date_from,
+        date_to=date_to,
+        total_receipts=len(receipts),
+        total_quantity=format_stock_number(
+            total_quantity
+        ),
+        total_amount=total_amount,
+        generated_at=datetime.now().strftime(
+            "%d.%m.%Y %H:%M"
+        ),
+    )
+# === RECEIPTS REPORT PAGE V1 END ===
+
+
 @app.route("/receipts/create", methods=["POST"])
 def receipt_create():
     from datetime import datetime
