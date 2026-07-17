@@ -20,7 +20,7 @@
     "position": 5
   },
   "repair": {
-    "enabled": false,
+    "enabled": true,
     "position": 6
   },
   "settings": {

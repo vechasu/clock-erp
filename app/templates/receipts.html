@@ -995,6 +995,166 @@
         }
         /* RECEIPT PRODUCT NAME ONLY CSS V1 END */
 
+
+        /* RECEIPTS DATE FILTER SORT V1 */
+        .receipt-filter-toolbar {
+            display: flex;
+            align-items: flex-end;
+            gap: 12px;
+        }
+
+        .receipt-filter-toolbar .search {
+            flex: 1 1 auto;
+            min-width: 240px;
+            max-width: none;
+        }
+
+        .receipt-date-group {
+            display: flex;
+            flex: 0 0 auto;
+            align-items: flex-end;
+            gap: 7px;
+        }
+
+        .receipt-date-field {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .receipt-date-field span {
+            padding-left: 2px;
+            color: #64748b;
+            font-size: 10px;
+            font-weight: 800;
+        }
+
+        .receipt-date-input {
+            width: 137px;
+            height: 40px;
+            padding: 0 9px;
+            border: 1px solid #cfd5dc;
+            border-radius: 10px;
+            background: #ffffff;
+            color: #172033;
+            font: inherit;
+            font-size: 12px;
+            outline: none;
+        }
+
+        .receipt-date-input:focus {
+            border-color: #2563eb;
+            box-shadow:
+                0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+
+        .receipt-date-divider {
+            align-self: center;
+            margin-top: 15px;
+            color: #94a3b8;
+            font-weight: 800;
+        }
+
+        .receipt-date-clear {
+            height: 40px;
+            padding: 0 12px;
+            border: 1px solid #cfd5dc;
+            border-radius: 10px;
+            background: #ffffff;
+            color: #475569;
+            font-size: 11px;
+            font-weight: 800;
+            cursor: pointer;
+        }
+
+        .receipt-date-clear:hover:not(:disabled) {
+            background: #f1f5f9;
+        }
+
+        .receipt-date-clear:disabled {
+            cursor: default;
+            opacity: 0.45;
+        }
+
+        .receipt-filter-count {
+            min-width: 82px;
+            align-self: center;
+            margin-top: 15px;
+            color: #64748b;
+            font-size: 11px;
+            font-weight: 750;
+            white-space: nowrap;
+        }
+
+        .receipt-sort-button {
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 5px;
+            width: 100%;
+            padding: 0;
+            border: 0;
+            background: transparent;
+            color: inherit;
+            font: inherit;
+            font-weight: 800;
+            text-align: left;
+            cursor: pointer;
+        }
+
+        .col-qty .receipt-sort-button {
+            justify-content: center;
+        }
+
+        .receipt-sort-button span {
+            color: #94a3b8;
+            font-size: 11px;
+        }
+
+        .receipt-sort-button span.is-active {
+            color: #2563eb;
+        }
+
+        @media (max-width: 1180px) {
+            .receipt-filter-toolbar {
+                flex-wrap: wrap;
+            }
+
+            .receipt-filter-toolbar .search {
+                flex-basis: 100%;
+            }
+
+            .receipt-date-group {
+                width: 100%;
+            }
+
+            .receipt-filter-count {
+                margin-left: auto;
+            }
+        }
+        /* RECEIPTS DATE FILTER SORT V1 END */
+
+
+        /* RECEIPTS REPORT BUTTON CSS V1 */
+        .receipt-report-button {
+            height: 40px;
+            padding: 0 15px;
+            border: 1px solid #2563eb;
+            border-radius: 10px;
+            background: #2563eb;
+            color: #ffffff;
+            font-size: 11px;
+            font-weight: 800;
+            white-space: nowrap;
+            cursor: pointer;
+        }
+
+        .receipt-report-button:hover {
+            border-color: #1d4ed8;
+            background: #1d4ed8;
+        }
+        /* RECEIPTS REPORT BUTTON CSS V1 END */
+
 </style>
 </head>
 
@@ -1041,14 +1201,69 @@
             </button>
         </section>
 
-        <div class="toolbar">
+        <div class="toolbar receipt-filter-toolbar">
             <input
                 class="search"
                 id="receiptSearch"
                 type="search"
-                placeholder="Поиск по документу, поставщику или накладной"
+                placeholder="Поиск по документу, бренду, категории или товару"
                 oninput="filterReceipts()"
             >
+
+            <div class="receipt-date-group">
+                <label class="receipt-date-field">
+                    <span>С</span>
+
+                    <input
+                        class="receipt-date-input"
+                        id="receiptDateFrom"
+                        type="date"
+                        onchange="filterReceipts()"
+                    >
+                </label>
+
+                <span class="receipt-date-divider">
+                    —
+                </span>
+
+                <label class="receipt-date-field">
+                    <span>По</span>
+
+                    <input
+                        class="receipt-date-input"
+                        id="receiptDateTo"
+                        type="date"
+                        onchange="filterReceipts()"
+                    >
+                </label>
+
+                <button
+                    class="receipt-date-clear"
+                    id="receiptDateClear"
+                    type="button"
+                    onclick="clearReceiptDateFilter()"
+                    disabled
+                >
+                    Сбросить
+                </button>
+
+                <!-- RECEIPTS REPORT BUTTON V1 -->
+                <button
+                    class="receipt-report-button"
+                    type="button"
+                    onclick="openReceiptsReport()"
+                >
+                    &#1057;&#1092;&#1086;&#1088;&#1084;&#1080;&#1088;&#1086;&#1074;&#1072;&#1090;&#1100; &#1086;&#1090;&#1095;&#1105;&#1090;
+                </button>
+                <!-- RECEIPTS REPORT BUTTON V1 END -->
+
+                <span
+                    class="receipt-filter-count"
+                    id="receiptFilterCount"
+                >
+                    {{ total_receipts }} приходов
+                </span>
+            </div>
         </div>
 
         <section class="table-card">
@@ -1057,14 +1272,133 @@
                     <table class="receipts-table">
                         <thead>
                             <tr>
-                                <th class="col-date">Дата</th>
-                                <th class="col-number">Документ</th>
-                                <th class="col-supplier">Бренд</th>
-                                <th class="col-invoice">Категория</th>
-                                <th class="col-products">Товар</th>
-                                <th class="col-qty">К-во</th>
-                                <th class="col-amount">Сумма</th>
-                                <th class="col-status">Статус</th>
+                                <th class="col-date">
+                                    <button
+                                        class="receipt-sort-button"
+                                        type="button"
+                                        onclick="sortReceipts('date')"
+                                    >
+                                        Дата
+
+                                        <span
+                                            data-receipt-sort="date"
+                                        >
+                                            ↕
+                                        </span>
+                                    </button>
+                                </th>
+
+                                <th class="col-number">
+                                    <button
+                                        class="receipt-sort-button"
+                                        type="button"
+                                        onclick="sortReceipts('document')"
+                                    >
+                                        Документ
+
+                                        <span
+                                            data-receipt-sort="document"
+                                        >
+                                            ↕
+                                        </span>
+                                    </button>
+                                </th>
+
+                                <th class="col-supplier">
+                                    <button
+                                        class="receipt-sort-button"
+                                        type="button"
+                                        onclick="sortReceipts('brand')"
+                                    >
+                                        Бренд
+
+                                        <span
+                                            data-receipt-sort="brand"
+                                        >
+                                            ↕
+                                        </span>
+                                    </button>
+                                </th>
+
+                                <th class="col-invoice">
+                                    <button
+                                        class="receipt-sort-button"
+                                        type="button"
+                                        onclick="sortReceipts('category')"
+                                    >
+                                        Категория
+
+                                        <span
+                                            data-receipt-sort="category"
+                                        >
+                                            ↕
+                                        </span>
+                                    </button>
+                                </th>
+
+                                <th class="col-products">
+                                    <button
+                                        class="receipt-sort-button"
+                                        type="button"
+                                        onclick="sortReceipts('product')"
+                                    >
+                                        Товар
+
+                                        <span
+                                            data-receipt-sort="product"
+                                        >
+                                            ↕
+                                        </span>
+                                    </button>
+                                </th>
+
+                                <th class="col-qty">
+                                    <button
+                                        class="receipt-sort-button"
+                                        type="button"
+                                        onclick="sortReceipts('quantity')"
+                                    >
+                                        К-во
+
+                                        <span
+                                            data-receipt-sort="quantity"
+                                        >
+                                            ↕
+                                        </span>
+                                    </button>
+                                </th>
+
+                                <th class="col-amount">
+                                    <button
+                                        class="receipt-sort-button"
+                                        type="button"
+                                        onclick="sortReceipts('amount')"
+                                    >
+                                        Сумма
+
+                                        <span
+                                            data-receipt-sort="amount"
+                                        >
+                                            ↕
+                                        </span>
+                                    </button>
+                                </th>
+
+                                <th class="col-status">
+                                    <button
+                                        class="receipt-sort-button"
+                                        type="button"
+                                        onclick="sortReceipts('status')"
+                                    >
+                                        Статус
+
+                                        <span
+                                            data-receipt-sort="status"
+                                        >
+                                            ↕
+                                        </span>
+                                    </button>
+                                </th>
                                 <th class="col-actions">
                                     Действия
                                 </th>
@@ -1088,6 +1422,14 @@
                                         (receipt.product_name or '') ~ ' ' ~
                                         (receipt.note or '')
                                     )|lower }}"
+                                    data-date="{{ receipt.receipt_date or receipt.created_at or '' }}"
+                                    data-document="{{ receipt.number or '' }}"
+                                    data-brand="{{ receipt.brand or receipt.supplier or '' }}"
+                                    data-category="{{ receipt.category or receipt.invoice_number or '' }}"
+                                    data-product="{{ receipt.product_name or (receipt_position.product_name if receipt_position else '') }}"
+                                    data-quantity="{{ receipt.total_quantity or 0 }}"
+                                    data-amount="{{ receipt.total_amount or 0 }}"
+                                    data-status="{{ receipt.status_label or 'Проведён' }}"
                                 >
                                     <td class="col-date">
                                         <span class="receipt-view-value">
@@ -2021,16 +2363,238 @@
         details.classList.toggle("is-open");
     }
 
+    // RECEIPTS DATE FILTER SORT SCRIPT V1
+    let receiptSortKey = "";
+    let receiptSortDirection = "asc";
+
+    function getReceiptRows() {
+        return Array.from(
+            document.querySelectorAll(
+                "#receiptsTableBody .receipt-row"
+            )
+        );
+    }
+
+    function receiptCountLabel(count) {
+        const lastTwo = count % 100;
+        const lastOne = count % 10;
+
+        if (lastTwo >= 11 && lastTwo <= 14) {
+            return count + " приходов";
+        }
+
+        if (lastOne === 1) {
+            return count + " приход";
+        }
+
+        if (lastOne >= 2 && lastOne <= 4) {
+            return count + " прихода";
+        }
+
+        return count + " приходов";
+    }
+
+    function parseReceiptNumericValue(value) {
+        const normalized = String(value || "")
+            .replace(/\s/g, "")
+            .replace(",", ".");
+
+        const number = Number(normalized);
+
+        return Number.isFinite(number)
+            ? number
+            : 0;
+    }
+
     function filterReceipts() {
         const query = (
-            document.getElementById("receiptSearch").value || ""
+            document.getElementById(
+                "receiptSearch"
+            ).value || ""
         ).trim().toLowerCase();
 
-        document.querySelectorAll(".receipt-row").forEach((row) => {
-            const searchText = row.dataset.search || "";
-            row.style.display = searchText.includes(query) ? "" : "none";
+        const dateFrom = (
+            document.getElementById(
+                "receiptDateFrom"
+            ).value || ""
+        ).trim();
+
+        const dateTo = (
+            document.getElementById(
+                "receiptDateTo"
+            ).value || ""
+        ).trim();
+
+        let visibleCount = 0;
+
+        getReceiptRows().forEach((row) => {
+            const searchText =
+                row.dataset.search || "";
+
+            const receiptDate = (
+                row.dataset.date || ""
+            ).slice(0, 10);
+
+            const matchesSearch =
+                searchText.includes(query);
+
+            const matchesDateFrom =
+                !dateFrom
+                || receiptDate >= dateFrom;
+
+            const matchesDateTo =
+                !dateTo
+                || receiptDate <= dateTo;
+
+            const isVisible =
+                matchesSearch
+                && matchesDateFrom
+                && matchesDateTo;
+
+            row.style.display =
+                isVisible ? "" : "none";
+
+            if (isVisible) {
+                visibleCount += 1;
+            }
+        });
+
+        const clearButton =
+            document.getElementById(
+                "receiptDateClear"
+            );
+
+        clearButton.disabled =
+            !dateFrom && !dateTo;
+
+        document.getElementById(
+            "receiptFilterCount"
+        ).textContent =
+            receiptCountLabel(visibleCount);
+    }
+
+    function clearReceiptDateFilter() {
+        document.getElementById(
+            "receiptDateFrom"
+        ).value = "";
+
+        document.getElementById(
+            "receiptDateTo"
+        ).value = "";
+
+        filterReceipts();
+    }
+
+    function getReceiptSortValue(row, key) {
+        if (
+            key === "quantity"
+            || key === "amount"
+        ) {
+            return parseReceiptNumericValue(
+                row.dataset[key]
+            );
+        }
+
+        return String(
+            row.dataset[key] || ""
+        ).trim().toLocaleLowerCase("ru");
+    }
+
+    function updateReceiptSortIndicators() {
+        document.querySelectorAll(
+            "[data-receipt-sort]"
+        ).forEach((indicator) => {
+            const isActive =
+                indicator.dataset.receiptSort
+                === receiptSortKey;
+
+            indicator.classList.toggle(
+                "is-active",
+                isActive
+            );
+
+            indicator.textContent =
+                isActive
+                    ? (
+                        receiptSortDirection
+                        === "asc"
+                            ? "▲"
+                            : "▼"
+                    )
+                    : "↕";
         });
     }
+
+    function sortReceipts(key) {
+        if (receiptSortKey === key) {
+            receiptSortDirection =
+                receiptSortDirection === "asc"
+                    ? "desc"
+                    : "asc";
+        } else {
+            receiptSortKey = key;
+
+            receiptSortDirection = (
+                key === "date"
+                || key === "quantity"
+                || key === "amount"
+            )
+                ? "desc"
+                : "asc";
+        }
+
+        const body = document.getElementById(
+            "receiptsTableBody"
+        );
+
+        const rows = getReceiptRows();
+
+        rows.sort((leftRow, rightRow) => {
+            const leftValue =
+                getReceiptSortValue(
+                    leftRow,
+                    key
+                );
+
+            const rightValue =
+                getReceiptSortValue(
+                    rightRow,
+                    key
+                );
+
+            let result = 0;
+
+            if (
+                typeof leftValue === "number"
+                && typeof rightValue === "number"
+            ) {
+                result = leftValue - rightValue;
+            } else {
+                result = String(leftValue)
+                    .localeCompare(
+                        String(rightValue),
+                        "ru",
+                        {
+                            numeric: true,
+                            sensitivity: "base",
+                        }
+                    );
+            }
+
+            return receiptSortDirection
+                === "asc"
+                    ? result
+                    : -result;
+        });
+
+        rows.forEach((row) => {
+            body.appendChild(row);
+        });
+
+        updateReceiptSortIndicators();
+        filterReceipts();
+    }
+    // RECEIPTS DATE FILTER SORT SCRIPT V1 END
 
     receiptModal.addEventListener("click", (event) => {
         if (event.target === receiptModal) {
@@ -2116,5 +2680,45 @@
     // RECEIPT ROW ACTIONS SCRIPT V1 END
 
 </script>
+
+<script>
+    // RECEIPTS REPORT BUTTON SCRIPT V1
+    function openReceiptsReport() {
+        const dateFrom =
+            document.getElementById(
+                "receiptDateFrom"
+            );
+
+        const dateTo =
+            document.getElementById(
+                "receiptDateTo"
+            );
+
+        const params =
+            new URLSearchParams();
+
+        if (dateFrom && dateFrom.value) {
+            params.set(
+                "date_from",
+                dateFrom.value
+            );
+        }
+
+        if (dateTo && dateTo.value) {
+            params.set(
+                "date_to",
+                dateTo.value
+            );
+        }
+
+        const query = params.toString();
+
+        window.location.href =
+            "/receipts/report"
+            + (query ? "?" + query : "");
+    }
+    // RECEIPTS REPORT BUTTON SCRIPT V1 END
+</script>
+
 </body>
 </html>

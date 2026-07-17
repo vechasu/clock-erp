@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>&#1054;&#1090;&#1095;&#1105;&#1090; &#1087;&#1086; &#1087;&#1088;&#1080;&#1093;&#1086;&#1076;&#1072;&#1084;</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            background: #f3f5f7;
+            color: #172033;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+
+        .app {
+            min-height: 100vh;
+            display: grid;
+            grid-template-columns: 260px minmax(0, 1fr);
+        }
+
+        .main {
+            min-width: 0;
+            padding: 24px;
+            overflow: hidden;
+        }
+
+        .page-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 20px;
+            margin-bottom: 16px;
+        }
+
+        .page-header h1 {
+            margin: 0 0 6px;
+            font-size: 28px;
+        }
+
+        .page-header p {
+            margin: 0;
+            color: #64748b;
+            font-size: 13px;
+        }
+
+        .back-button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 40px;
+            padding: 9px 14px;
+            border: 1px solid #cbd5e1;
+            border-radius: 10px;
+            background: #ffffff;
+            color: #334155;
+            font-size: 12px;
+            font-weight: 800;
+            text-decoration: none;
+            white-space: nowrap;
+        }
+
+        .report-period {
+            margin-bottom: 14px;
+            padding: 13px 16px;
+            border: 1px solid #d7dce2;
+            border-radius: 13px;
+            background: #ffffff;
+            color: #475569;
+            font-size: 13px;
+        }
+
+        .report-period strong {
+            color: #172033;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+            margin-bottom: 14px;
+        }
+
+        .stat-card {
+            padding: 15px 17px;
+            border: 1px solid #d7dce2;
+            border-radius: 13px;
+            background: #ffffff;
+        }
+
+        .stat-label {
+            margin-bottom: 7px;
+            color: #64748b;
+            font-size: 11px;
+            font-weight: 800;
+            text-transform: uppercase;
+        }
+
+        .stat-value {
+            font-size: 23px;
+            font-weight: 900;
+        }
+
+        .table-card {
+            overflow: hidden;
+            border: 1px solid #cfd5dc;
+            border-radius: 14px;
+            background: #ffffff;
+        }
+
+        .table-wrap {
+            overflow-x: auto;
+        }
+
+        .report-table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+        }
+
+        .report-table th,
+        .report-table td {
+            padding: 9px 10px;
+            border-right: 1px solid #d9dee5;
+            border-bottom: 1px solid #d9dee5;
+            text-align: left;
+            vertical-align: middle;
+            font-size: 12px;
+            overflow-wrap: anywhere;
+        }
+
+        .report-table th:last-child,
+        .report-table td:last-child {
+            border-right: none;
+        }
+
+        .report-table tbody tr:last-child td {
+            border-bottom: none;
+        }
+
+        .report-table th {
+            background: #eef1f4;
+            font-weight: 850;
+            white-space: nowrap;
+        }
+
+        .report-table tbody tr:hover {
+            background: #f8fafc;
+        }
+
+        .col-date {
+            width: 10%;
+        }
+
+        .col-document {
+            width: 14%;
+        }
+
+        .col-brand {
+            width: 11%;
+        }
+
+        .col-category {
+            width: 13%;
+        }
+
+        .col-product {
+            width: 22%;
+        }
+
+        .col-quantity {
+            width: 8%;
+            text-align: center !important;
+        }
+
+        .col-amount {
+            width: 12%;
+        }
+
+        .col-status {
+            width: 10%;
+        }
+
+        .document-number,
+        .product-name {
+            font-weight: 800;
+        }
+
+        .document-note {
+            margin-top: 4px;
+            color: #64748b;
+            font-size: 10px;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            min-height: 24px;
+            padding: 4px 8px;
+            border-radius: 999px;
+            background: #dcfce7;
+            color: #166534;
+            font-size: 10px;
+            font-weight: 850;
+        }
+
+        .empty {
+            padding: 50px 20px;
+            color: #64748b;
+            text-align: center;
+        }
+
+        @media (max-width: 900px) {
+            .app {
+                grid-template-columns: 1fr;
+            }
+
+            .stats {
+                grid-template-columns: 1fr;
+            }
+
+            .report-table {
+                min-width: 950px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+<div class="app">
+    {% include "_sidebar.html" %}
+
+    <main class="main">
+        <header class="page-header">
+            <div>
+                <h1>
+                    &#1054;&#1090;&#1095;&#1105;&#1090; &#1087;&#1086; &#1087;&#1088;&#1080;&#1093;&#1086;&#1076;&#1072;&#1084;
+                </h1>
+
+                <p>
+                    &#1057;&#1092;&#1086;&#1088;&#1084;&#1080;&#1088;&#1086;&#1074;&#1072;&#1085;:
+                    {{ generated_at }}
+                </p>
+            </div>
+
+            <a class="back-button" href="/receipts">
+                &#8592;
+                &#1042;&#1077;&#1088;&#1085;&#1091;&#1090;&#1100;&#1089;&#1103;
+                &#1082;
+                &#1087;&#1088;&#1080;&#1093;&#1086;&#1076;&#1091;
+            </a>
+        </header>
+
+        <section class="report-period">
+            &#1055;&#1077;&#1088;&#1080;&#1086;&#1076;:
+
+            <strong>
+                {% if date_from and date_to %}
+                    {{ date_from }} &mdash; {{ date_to }}
+                {% elif date_from %}
+                    &#1089; {{ date_from }}
+                {% elif date_to %}
+                    &#1087;&#1086; {{ date_to }}
+                {% else %}
+                    &#1079;&#1072; &#1074;&#1089;&#1105; &#1074;&#1088;&#1077;&#1084;&#1103;
+                {% endif %}
+            </strong>
+        </section>
+
+        <section class="stats">
+            <div class="stat-card">
+                <div class="stat-label">
+                    &#1044;&#1086;&#1082;&#1091;&#1084;&#1077;&#1085;&#1090;&#1086;&#1074;
+                    &#1087;&#1088;&#1080;&#1093;&#1086;&#1076;&#1072;
+                </div>
+
+                <div class="stat-value">
+                    {{ total_receipts }}
+                </div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-label">
+                    &#1055;&#1088;&#1080;&#1085;&#1103;&#1090;&#1086;
+                    &#1077;&#1076;&#1080;&#1085;&#1080;&#1094;
+                </div>
+
+                <div class="stat-value">
+                    {{ total_quantity }}
+                </div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-label">
+                    &#1047;&#1072;&#1082;&#1091;&#1087;&#1086;&#1095;&#1085;&#1072;&#1103;
+                    &#1089;&#1090;&#1086;&#1080;&#1084;&#1086;&#1089;&#1090;&#1100;
+                </div>
+
+                <div class="stat-value">
+                    {{ "%.2f"|format(total_amount or 0) }}
+                    &#8381;
+                </div>
+            </div>
+        </section>
+
+        <section class="table-card">
+            {% if receipts %}
+                <div class="table-wrap">
+                    <table class="report-table">
+                        <thead>
+                            <tr>
+                                <th class="col-date">
+                                    &#1044;&#1072;&#1090;&#1072;
+                                </th>
+
+                                <th class="col-document">
+                                    &#1044;&#1086;&#1082;&#1091;&#1084;&#1077;&#1085;&#1090;
+                                </th>
+
+                                <th class="col-brand">
+                                    &#1041;&#1088;&#1077;&#1085;&#1076;
+                                </th>
+
+                                <th class="col-category">
+                                    &#1050;&#1072;&#1090;&#1077;&#1075;&#1086;&#1088;&#1080;&#1103;
+                                </th>
+
+                                <th class="col-product">
+                                    &#1058;&#1086;&#1074;&#1072;&#1088;
+                                </th>
+
+                                <th class="col-quantity">
+                                    &#1050;-&#1074;&#1086;
+                                </th>
+
+                                <th class="col-amount">
+                                    &#1057;&#1091;&#1084;&#1084;&#1072;
+                                </th>
+
+                                <th class="col-status">
+                                    &#1057;&#1090;&#1072;&#1090;&#1091;&#1089;
+                                </th>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+                            {% for receipt in receipts %}
+                                {% set position = receipt.positions[0] if receipt.positions else none %}
+
+                                <tr>
+                                    <td class="col-date">
+                                        {{ receipt.receipt_date or receipt.created_at or "-" }}
+                                    </td>
+
+                                    <td class="col-document">
+                                        <div class="document-number">
+                                            {{ receipt.number or "-" }}
+                                        </div>
+
+                                        {% if receipt.note %}
+                                            <div class="document-note">
+                                                {{ receipt.note }}
+                                            </div>
+                                        {% endif %}
+                                    </td>
+
+                                    <td class="col-brand">
+                                        {{ receipt.brand or receipt.supplier or "-" }}
+                                    </td>
+
+                                    <td class="col-category">
+                                        {{ receipt.category or receipt.invoice_number or "-" }}
+                                    </td>
+
+                                    <td class="col-product">
+                                        <div class="product-name">
+                                            {{ receipt.product_name or (position.product_name if position else "-") }}
+                                        </div>
+                                    </td>
+
+                                    <td class="col-quantity">
+                                        {{ receipt.total_quantity or 0 }}
+                                    </td>
+
+                                    <td class="col-amount">
+                                        {{ "%.2f"|format(receipt.total_amount or 0) }}
+                                        &#8381;
+                                    </td>
+
+                                    <td class="col-status">
+                                        <span class="status-badge">
+                                            {% if receipt.status_label %}
+                                                {{ receipt.status_label }}
+                                            {% else %}
+                                                &#1055;&#1088;&#1086;&#1074;&#1077;&#1076;&#1105;&#1085;
+                                            {% endif %}
+                                        </span>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="empty">
+                    &#1047;&#1072;
+                    &#1074;&#1099;&#1073;&#1088;&#1072;&#1085;&#1085;&#1099;&#1081;
+                    &#1087;&#1077;&#1088;&#1080;&#1086;&#1076;
+                    &#1087;&#1088;&#1080;&#1093;&#1086;&#1076;&#1086;&#1074;
+                    &#1085;&#1077;&#1090;.
+                </div>
+            {% endif %}
+        </section>
+    </main>
+</div>
+</body>
+</html>
