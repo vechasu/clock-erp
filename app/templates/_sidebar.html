@@ -1,8 +1,62 @@
+{% macro sidebar_icon(key) -%}
+    {% if key == "orders" %}
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M4 7.5L12 3l8 4.5v9L12 21l-8-4.5v-9Z" />
+            <path d="M4.5 7.5 12 12l7.5-4.5M12 12v9" />
+        </svg>
+    {% elif key == "products" %}
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M20 13 13 20a2 2 0 0 1-2.8 0L4 13.8A2 2 0 0 1 4 11V5a1 1 0 0 1 1-1h6a2 2 0 0 1 1.4.6L20 12.2a1 1 0 0 1 0 1.4Z" />
+            <path d="M8.5 8.5h.01" />
+        </svg>
+    {% elif key == "sales" %}
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M6 8h12l1 12H5L6 8Z" />
+            <path d="M9 9V6a3 3 0 0 1 6 0v3" />
+        </svg>
+    {% elif key == "receipts" %}
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M4 13h4l2 3h4l2-3h4v7H4v-7Z" />
+            <path d="M12 3v9m0 0 3-3m-3 3L9 9" />
+        </svg>
+    {% elif key == "analytics" %}
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M4 20V10m6 10V4m6 16v-7m4 7H2" />
+        </svg>
+    {% elif key == "stock_operations" %}
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M6 4h12a2 2 0 0 1 2 2v14H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" />
+            <path d="M8 8h8M8 12h8M8 16h5" />
+        </svg>
+    {% elif key == "repair" %}
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M14.7 6.3a4 4 0 0 0-5-5L12 3.6 9.6 6 7.3 3.7a4 4 0 0 0 5 5L5 16a2 2 0 1 0 3 3l7.3-7.3a4 4 0 0 0 5-5L18 9l-3-3 2.3-2.3Z" />
+        </svg>
+    {% else %}
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" />
+            <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3A1.7 1.7 0 0 0 10 3v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z" />
+        </svg>
+    {% endif %}
+{%- endmacro %}
+
+<script>
+    (() => {
+        try {
+            if (localStorage.getItem("ttt-erp-sidebar-collapsed") === "1") {
+                document.querySelector(".app")?.classList.add("sidebar-collapsed");
+            }
+        } catch (error) {
+            // Начальное состояние останется раскрытым.
+        }
+    })();
+</script>
+
 <style>
     .app {
         min-height: 100vh;
         display: grid;
-        grid-template-columns: 260px minmax(0, 1fr);
+        grid-template-columns: 244px minmax(0, 1fr);
         transition: grid-template-columns 0.25s ease;
     }
 
@@ -12,93 +66,121 @@
 
     .sidebar {
         position: relative;
-        min-width: 0;
-        background: #0b1f3a;
-        color: white;
-        padding: 24px 18px;
-        transition: padding 0.25s ease;
-        box-shadow: 4px 0 18px rgba(15, 23, 42, 0.12);
         z-index: 20;
+        min-width: 0;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        box-sizing: border-box;
+        padding: 16px 15px;
+        background: #0b2745;
+        color: #f8fafc;
+        box-shadow: 4px 0 18px rgba(15, 23, 42, 0.12);
+        transition: padding 0.25s ease;
     }
 
-    .sidebar-top {
-        position: absolute;
-        top: 12px;
-        left: 18px;
-        right: 10px;
-        height: 42px;
+    .sidebar-brand {
+        min-width: 0;
+        min-height: 44px;
         display: flex;
         align-items: center;
-        justify-content: space-between;
-        gap: 12px;
-        margin: 0;
-        z-index: 30;
+        gap: 10px;
     }
 
-    .logo {
+    .sidebar-brand-link {
+        min-width: 0;
+        flex: 1 1 auto;
         display: flex;
         align-items: center;
-        justify-content: center;
-        width: 100%;
-        color: white;
-        font-size: 22px;
+        gap: 10px;
+        color: #f8fafc;
+        text-decoration: none;
+    }
+
+    .sidebar-brand-link:hover {
+        color: #f8fafc;
+        text-decoration: none;
+    }
+
+    .sidebar-logo-mark {
+        flex: 0 0 34px;
+        width: 34px;
+        height: 34px;
+        display: grid;
+        place-items: center;
+        border: 1px solid rgba(147, 197, 253, 0.28);
+        border-radius: 11px;
+        background: rgba(96, 165, 250, 0.14);
+        color: #bfdbfe;
+        font-size: 15px;
         font-weight: 800;
         letter-spacing: -0.04em;
-        text-decoration: none;
-        white-space: nowrap;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    }
+
+    .sidebar-brand-copy {
+        min-width: 0;
         overflow: hidden;
+        white-space: nowrap;
     }
 
-    .logo:hover {
-        color: white;
-        text-decoration: none;
+    .sidebar-brand-title {
+        display: block;
+        overflow: hidden;
+        color: #f8fafc;
+        font-size: 18px;
+        font-weight: 700;
+        line-height: 1.15;
+        letter-spacing: -0.02em;
+        text-overflow: ellipsis;
     }
 
-    .logo span {
-        color: #bfdbfe;
-    }
-
-    .logo-compact {
-        display: none;
-        color: white;
-        font-size: 22px;
-        font-weight: 900;
+    .sidebar-brand-subtitle {
+        display: block;
+        margin-top: 3px;
+        overflow: hidden;
+        color: #94a3b8;
+        font-size: 12px;
+        font-weight: 500;
+        line-height: 1.2;
+        text-overflow: ellipsis;
     }
 
     .sidebar-toggle {
-        position: relative;
-        flex: 0 0 36px;
-        width: 36px;
-        height: 36px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
+        flex: 0 0 32px;
+        width: 32px;
+        height: 32px;
+        display: grid;
+        place-items: center;
         padding: 0;
-        border: 1px solid rgba(255, 255, 255, 0.18);
-        border-radius: 11px;
-        background: rgba(255, 255, 255, 0.09);
-        color: #dbeafe;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.06);
+        color: #bfdbfe;
         cursor: pointer;
-        box-shadow:
-            inset 0 1px 0 rgba(255, 255, 255, 0.08),
-            0 4px 12px rgba(2, 12, 27, 0.18);
-        backdrop-filter: blur(8px);
         transition:
             background 0.2s ease,
             border-color 0.2s ease,
+            color 0.2s ease,
             transform 0.2s ease;
-        z-index: 30;
     }
 
     .sidebar-toggle:hover {
-        background: rgba(255, 255, 255, 0.17);
-        border-color: rgba(255, 255, 255, 0.3);
+        border-color: rgba(147, 197, 253, 0.38);
+        background: rgba(255, 255, 255, 0.12);
+        color: #f8fafc;
         transform: translateY(-1px);
     }
 
+    .sidebar-toggle:focus-visible {
+        outline: 2px solid #60a5fa;
+        outline-offset: 2px;
+    }
+
     .sidebar-toggle-icon {
-        width: 18px;
-        height: 18px;
+        width: 17px;
+        height: 17px;
         display: block;
         transition: transform 0.25s ease;
     }
@@ -107,59 +189,81 @@
         transform: rotate(180deg);
     }
 
-    .nav-title {
-        font-size: 12px;
-        color: #bfdbfe;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        margin-bottom: 10px;
-        white-space: nowrap;
-        overflow: hidden;
+    .sidebar-nav {
+        min-width: 0;
+        margin-top: 28px;
     }
 
-    .sidebar-nav {
-        display: block;
-        padding-top: 54px;
+    .sidebar-nav-group-title {
+        height: 15px;
+        margin: 0 10px 8px;
+        overflow: hidden;
+        color: #7890ad;
+        font-size: 10px;
+        font-weight: 700;
+        line-height: 15px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        white-space: nowrap;
+    }
+
+    .sidebar-nav-group-title:not(:first-child) {
+        margin-top: 20px;
     }
 
     .sidebar-link {
+        position: relative;
+        width: 100%;
+        height: 49px;
         display: flex;
         align-items: center;
         gap: 11px;
-        min-height: 44px;
-        padding: 11px 12px;
-        border-radius: 12px;
-        color: #dbeafe;
-        font-size: 15px;
-        font-weight: 800;
+        box-sizing: border-box;
         margin-bottom: 6px;
-        text-decoration: none;
-        line-height: 1.2;
-        white-space: nowrap;
+        padding: 0 12px;
         overflow: hidden;
+        border-radius: 13px;
+        color: #cbd5e1;
+        font-size: 15px;
+        font-weight: 600;
+        line-height: 1.2;
+        text-decoration: none;
+        white-space: nowrap;
         transition:
             background 0.2s ease,
             color 0.2s ease;
     }
 
-    .sidebar-link:hover {
+    .sidebar-link::before {
+        position: absolute;
+        top: 11px;
+        bottom: 11px;
+        left: 0;
+        width: 3px;
+        border-radius: 0 3px 3px 0;
         background: transparent;
-        color: white;
+        content: "";
+        transition: background 0.2s ease;
+    }
+
+    .sidebar-link:hover {
+        background: rgba(255, 255, 255, 0.07);
+        color: #f8fafc;
         text-decoration: none;
     }
 
+    .sidebar-link.active,
     .sidebar-link.active:hover {
-        background: rgba(255, 255, 255, 0.18);
+        background: rgba(96, 165, 250, 0.16);
+        color: #f8fafc;
     }
 
-    .sidebar-link.active {
-        background: rgba(255, 255, 255, 0.18);
-        color: white;
-        box-shadow: inset 3px 0 0 #93c5fd;
+    .sidebar-link.active::before {
+        background: #60a5fa;
     }
 
     .sidebar-link.disabled {
-        opacity: 0.6;
+        opacity: 0.55;
         cursor: default;
         pointer-events: none;
     }
@@ -167,8 +271,26 @@
     .sidebar-icon {
         flex: 0 0 22px;
         width: 22px;
-        text-align: center;
-        font-size: 17px;
+        height: 22px;
+        display: grid;
+        place-items: center;
+        color: #9fb3c8;
+        transition: color 0.2s ease;
+    }
+
+    .sidebar-icon svg {
+        width: 22px;
+        height: 22px;
+        display: block;
+        stroke: currentColor;
+        stroke-width: 1.8;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+    }
+
+    .sidebar-link:hover .sidebar-icon,
+    .sidebar-link.active .sidebar-icon {
+        color: #bfdbfe;
     }
 
     .sidebar-label {
@@ -176,132 +298,32 @@
         text-overflow: ellipsis;
     }
 
-    .app.sidebar-collapsed .sidebar {
-        padding-left: 12px;
-        padding-right: 12px;
-    }
-
-    .app.sidebar-collapsed .logo-full,
-    .app.sidebar-collapsed .nav-title,
-    .app.sidebar-collapsed .sidebar-label {
-        display: none;
-    }
-
-    .app.sidebar-collapsed .logo-compact {
-        display: block;
-    }
-
-    .app.sidebar-collapsed .sidebar-link {
-        justify-content: center;
-        gap: 0;
-        padding-left: 10px;
-        padding-right: 10px;
-    }
-
-    .app.sidebar-collapsed .sidebar-link.active {
-        box-shadow: none;
-        outline: 2px solid rgba(147, 197, 253, 0.9);
-    }
-
-    @media (max-width: 1100px) {
-        .app,
-        .app.sidebar-collapsed {
-            grid-template-columns: 1fr;
-        }
-
-        .sidebar {
-            display: none;
-        }
-    }
-
-    /* Единая высота пунктов меню */
-    .sidebar-link,
-    .sidebar-link.active,
-    .sidebar-link.disabled {
-        width: 100%;
-        height: 48px;
-        min-height: 48px;
-        padding: 0 12px;
-        box-sizing: border-box;
-        margin-bottom: 6px;
-    }
-
-    .app.sidebar-collapsed .sidebar-link,
-    .app.sidebar-collapsed .sidebar-link.active,
-    .app.sidebar-collapsed .sidebar-link.disabled {
-        height: 48px;
-        min-height: 48px;
-        padding: 0 10px;
-    }
-    /* Конец единой высоты пунктов меню */
-
-
-    /* Дата и время в боковой панели */
-    .sidebar-datetime {
-        min-width: 0;
-        color: white;
-        white-space: nowrap;
-        line-height: 1;
-    }
-
-    .sidebar-time {
-        margin-bottom: 5px;
-        font-size: 17px;
-        font-weight: 850;
-        letter-spacing: 0.02em;
-        font-variant-numeric: tabular-nums;
-    }
-
-    .sidebar-date {
-        overflow: hidden;
-        color: #9fb7d5;
-        font-size: 11px;
-        font-weight: 700;
-        line-height: 1.15;
-        text-overflow: ellipsis;
-        text-transform: capitalize;
-    }
-
-    .app.sidebar-collapsed .sidebar-top {
-        left: 10px;
-        right: 10px;
-        justify-content: center;
-    }
-
-    .app.sidebar-collapsed .sidebar-datetime {
-        display: none;
-    }
-    /* Конец даты и времени */
-
-
-    /* Статус ERP внизу боковой панели */
     .sidebar-system-status {
-        position: absolute;
-        left: 18px;
-        right: 18px;
-        bottom: 18px;
+        min-width: 0;
+        min-height: 40px;
         display: flex;
         align-items: center;
         gap: 9px;
-        min-height: 42px;
-        padding: 10px 12px;
-        border: 1px solid rgba(134, 239, 172, 0.16);
-        border-radius: 12px;
-        background: rgba(22, 163, 74, 0.10);
-        color: #dcfce7;
-        font-size: 13px;
-        font-weight: 800;
-        white-space: nowrap;
+        box-sizing: border-box;
+        margin-top: auto;
+        padding: 0 12px;
         overflow: hidden;
+        border: 1px solid rgba(134, 239, 172, 0.12);
+        border-radius: 12px;
+        background: rgba(22, 163, 74, 0.08);
+        color: #d1fae5;
+        font-size: 13px;
+        font-weight: 600;
+        white-space: nowrap;
     }
 
     .sidebar-system-dot {
-        flex: 0 0 9px;
-        width: 9px;
-        height: 9px;
+        flex: 0 0 8px;
+        width: 8px;
+        height: 8px;
         border-radius: 50%;
         background: #22c55e;
-        box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.12);
+        box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.12);
     }
 
     .sidebar-system-text {
@@ -309,31 +331,80 @@
         text-overflow: ellipsis;
     }
 
-    .app.sidebar-collapsed .sidebar-system-status {
-        left: 17px;
-        right: 17px;
-        justify-content: center;
-        padding: 0;
-        background: transparent;
-        border-color: transparent;
+    .app.sidebar-collapsed .sidebar {
+        padding-right: 15px;
+        padding-left: 15px;
     }
 
+    .app.sidebar-collapsed .sidebar-brand {
+        min-height: 80px;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .app.sidebar-collapsed .sidebar-brand-link {
+        flex: 0 0 34px;
+    }
+
+    .app.sidebar-collapsed .sidebar-brand-copy,
+    .app.sidebar-collapsed .sidebar-nav-group-title,
+    .app.sidebar-collapsed .sidebar-label,
     .app.sidebar-collapsed .sidebar-system-text {
         display: none;
     }
-    /* Конец статуса ERP */
 
+    .app.sidebar-collapsed .sidebar-nav {
+        margin-top: 18px;
+    }
+
+    .app.sidebar-collapsed .sidebar-link {
+        justify-content: center;
+        gap: 0;
+        padding-right: 12px;
+        padding-left: 12px;
+    }
+
+    .app.sidebar-collapsed .sidebar-system-status {
+        justify-content: center;
+        padding: 0;
+        border-color: transparent;
+        background: transparent;
+    }
+
+    @media (max-width: 1100px) {
+        .app,
+        .app.sidebar-collapsed {
+            grid-template-columns: minmax(0, 1fr);
+        }
+
+        .sidebar {
+            display: none;
+        }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .app,
+        .sidebar,
+        .sidebar-toggle-icon {
+            transition: none;
+        }
+    }
 </style>
 
 <aside class="sidebar" id="appSidebar">
-    <div class="sidebar-top">
-        <div
-            class="sidebar-datetime"
-            aria-label="Текущие дата и время"
+    <div class="sidebar-brand">
+        <a
+            class="sidebar-brand-link"
+            href="/"
+            aria-label="TTT ERP — главная"
+            title="TTT ERP"
         >
-            <div id="sidebarClock" class="sidebar-time">--:--</div>
-            <div id="sidebarDate" class="sidebar-date">Загрузка даты</div>
-        </div>
+            <span class="sidebar-logo-mark" aria-hidden="true">TTT</span>
+            <span class="sidebar-brand-copy">
+                <span class="sidebar-brand-title">TTT ERP</span>
+                <span class="sidebar-brand-subtitle">Управление магазином</span>
+            </span>
+        </a>
 
         <button
             id="sidebarToggle"
@@ -360,34 +431,35 @@
         </button>
     </div>
 
-    
-
-    <nav class="sidebar-nav">
+    <nav class="sidebar-nav" aria-label="Основная навигация">
+        {% set navigation_group = namespace(current="") %}
         {% for item in sidebar_navigation_items %}
+            {% set item_group = "system" if item.key == "settings" else "main" %}
+            {% if item_group != navigation_group.current %}
+                <div class="sidebar-nav-group-title">
+                    {{ "Система" if item_group == "system" else "Основное" }}
+                </div>
+                {% set navigation_group.current = item_group %}
+            {% endif %}
+
             <a
                 class="sidebar-link{% if item.active %} active{% endif %}"
                 href="{{ item.href }}"
                 title="{{ item.label }}"
+                {% if item.active %}aria-current="page"{% endif %}
             >
                 <span class="sidebar-icon">
-                    {{ item.icon }}
+                    {{ sidebar_icon(item.key) }}
                 </span>
-
-                <span class="sidebar-label">
-                    {{ item.label }}
-                </span>
+                <span class="sidebar-label">{{ item.label }}</span>
             </a>
         {% endfor %}
     </nav>
 
-    <div
-        class="sidebar-system-status"
-        title="Система работает"
-    >
+    <div class="sidebar-system-status" title="Система работает">
         <span class="sidebar-system-dot"></span>
-        <span class="sidebar-system-text">ERP работает</span>
+        <span class="sidebar-system-text">Система работает</span>
     </div>
-
 </aside>
 
 <script>
@@ -403,7 +475,6 @@
 
         const applySidebarState = (collapsed) => {
             app.classList.toggle("sidebar-collapsed", collapsed);
-
             toggle.classList.toggle("is-collapsed", collapsed);
             toggle.setAttribute("aria-expanded", String(!collapsed));
             toggle.setAttribute(
@@ -417,15 +488,7 @@
                 : "Свернуть боковую панель";
         };
 
-        let collapsed = false;
-
-        try {
-            collapsed = localStorage.getItem(storageKey) === "1";
-        } catch (error) {
-            collapsed = false;
-        }
-
-        applySidebarState(collapsed);
+        applySidebarState(app.classList.contains("sidebar-collapsed"));
 
         toggle.addEventListener("click", () => {
             const nextState = !app.classList.contains("sidebar-collapsed");
@@ -437,41 +500,5 @@
                 // Панель продолжит работать без сохранения состояния.
             }
         });
-    });
-</script>
-
-
-<script>
-    document.addEventListener("DOMContentLoaded", () => {
-        const clockElement = document.getElementById("sidebarClock");
-        const dateElement = document.getElementById("sidebarDate");
-
-        if (!clockElement || !dateElement) {
-            return;
-        }
-
-        const timeFormatter = new Intl.DateTimeFormat("ru-RU", {
-            hour: "2-digit",
-            minute: "2-digit",
-            hour12: false
-        });
-
-        const dateFormatter = new Intl.DateTimeFormat("ru-RU", {
-            weekday: "short",
-            day: "numeric",
-            month: "long"
-        });
-
-        const updateSidebarDateTime = () => {
-            const now = new Date();
-
-            clockElement.textContent = timeFormatter.format(now);
-            dateElement.textContent = dateFormatter
-                .format(now)
-                .replace(".", "");
-        };
-
-        updateSidebarDateTime();
-        window.setInterval(updateSidebarDateTime, 1000);
     });
 </script>
