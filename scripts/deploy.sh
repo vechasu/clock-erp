@@ -101,9 +101,16 @@ fi
 PREVIOUS_COMMIT="$(git rev-parse HEAD)"
 
 git fetch "$REMOTE_NAME" "$EXPECTED_BRANCH"
-git merge --ff-only "$REMOTE_NAME/$EXPECTED_BRANCH"
+FETCHED_COMMIT="$(git rev-parse FETCH_HEAD)"
+git merge --ff-only "$FETCHED_COMMIT"
 
 CURRENT_COMMIT="$(git rev-parse HEAD)"
+if [[ "$CURRENT_COMMIT" != "$FETCHED_COMMIT" ]]; then
+    printf 'Updated commit %s does not match fetched commit %s\n' \
+        "$CURRENT_COMMIT" "$FETCHED_COMMIT" >&2
+    false
+fi
+
 if [[ "$CURRENT_COMMIT" != "$PREVIOUS_COMMIT" ]]; then
     DEPLOY_UPDATED=1
 fi
