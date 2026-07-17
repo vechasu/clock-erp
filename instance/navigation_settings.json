@@ -16,7 +16,7 @@
     "position": 4
   },
   "analytics": {
-    "enabled": true,
+    "enabled": false,
     "position": 5
   },
   "stock_operations": {

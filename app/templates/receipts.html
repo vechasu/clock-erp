@@ -2344,7 +2344,7 @@
                         onclick="applyReceiptImport()"
                         disabled
                     >
-                        Добавить
+                        Добавить позиции в приход
                     </button>
                 </div>
             </div>
@@ -2354,6 +2354,54 @@
 <!-- RECEIPTS EXCEL IMPORT MODAL V1 END -->
 
 
+
+<script>
+    // RECEIPT MODAL EMERGENCY FALLBACK V1
+    window.openReceiptModal = function () {
+        const modal = document.getElementById(
+            "receiptModal"
+        );
+
+        if (modal) {
+            modal.classList.add("is-open");
+        }
+    };
+
+    window.closeReceiptModal = function () {
+        const modal = document.getElementById(
+            "receiptModal"
+        );
+
+        if (modal) {
+            modal.classList.remove("is-open");
+        }
+    };
+    // RECEIPT MODAL EMERGENCY FALLBACK V1 END
+</script>
+
+<script>
+    // RECEIPT IMPORT MODAL FALLBACK V1
+    window.openReceiptImportModal = function () {
+        const modal = document.getElementById(
+            "receiptImportModal"
+        );
+
+        if (modal) {
+            modal.classList.add("is-open");
+        }
+    };
+
+    window.closeReceiptImportModal = function () {
+        const modal = document.getElementById(
+            "receiptImportModal"
+        );
+
+        if (modal) {
+            modal.classList.remove("is-open");
+        }
+    };
+    // RECEIPT IMPORT MODAL FALLBACK V1 END
+</script>
 
 <script>
     // SIMPLE RECEIPT FORM SCRIPT V1
@@ -2476,7 +2524,7 @@
     let receiptImportSummary = null;
 
     function escapeReceiptImportHtml(value) {
-        return String(value ?? "")
+        return String(value == null ? "" : value)
             .replaceAll("&", "&amp;")
             .replaceAll("<", "&lt;")
             .replaceAll(">", "&gt;")
@@ -2775,9 +2823,11 @@
                         + "</td>"
                         + "<td>"
                         + escapeReceiptImportHtml(
-                            row.source_rows
-                                ?.join(", ")
-                                || row.row_number
+                            Array.isArray(
+                                row.source_rows
+                            )
+                                ? row.source_rows.join(", ")
+                                : row.row_number
                         )
                         + "</td>"
                         + "<td>"
