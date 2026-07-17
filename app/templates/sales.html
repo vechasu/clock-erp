@@ -1748,8 +1748,8 @@
 
         /* Широкая таблица продаж прокручивается по горизонтали. */
         .sales-data-card .sales-table {
-            width: 1580px;
-            min-width: 1580px !important;
+            width: 1710px;
+            min-width: 1710px !important;
         }
 
         .sales-table .col-brand {
@@ -1760,6 +1760,12 @@
         .sales-table .col-category {
             width: 170px !important;
             min-width: 170px;
+        }
+
+        .sales-table .col-price {
+            width: 130px !important;
+            min-width: 130px;
+            white-space: nowrap;
         }
 </style>
 </head>
@@ -1909,6 +1915,12 @@
                                         <span class="sales-sort-arrow">↕</span>
                                     </span>
                                 </th>
+                                <th class="col-price">
+                                    <span class="sales-sort-label" data-sort-field="price" onclick="sortSalesTable('price')">
+                                        Цена, ₽
+                                        <span class="sales-sort-arrow">↕</span>
+                                    </span>
+                                </th>
                                 <th class="col-order">
                                     <span class="sales-sort-label" data-sort-field="order" onclick="sortSalesTable('order')">
                                         № заказа
@@ -1960,6 +1972,7 @@
                                     data-sort-brand="{{ sale.brand }}"
                                     data-sort-category="{{ sale.category }}"
                                     data-sort-quantity="{{ sale.quantity }}"
+                                    data-sort-price="{{ sale.unit_price if sale.unit_price is not none else '' }}"
                                     data-sort-order="{{ sale.order_number }}"
                                     data-sort-track="{{ sale.track_number }}"
                                     data-sort-delivery="{{ sale.delivery_method }}"
@@ -2050,19 +2063,13 @@
 
                                         <!-- SALES PRICE TABLE V2 -->
                                         <td class="col-qty">
-                                            <div class="manual-view-value quantity-price-view">
+                                            <div class="manual-view-value">
                                                 <strong>
                                                     {{ sale.quantity_value }}
                                                 </strong>
-
-                                                {% if sale.total_amount is not none %}
-                                                    <span class="sale-amount">
-                                                        {{ sale.total_amount_display }}
-                                                    </span>
-                                                {% endif %}
                                             </div>
 
-                                            <div class="manual-edit-control quantity-price-edit">
+                                            <div class="manual-edit-control">
                                                 <select
                                                     class="table-control sale-edit-control"
                                                     name="quantity"
@@ -2078,7 +2085,23 @@
                                                         </option>
                                                     {% endfor %}
                                                 </select>
+                                            </div>
+                                        </td>
 
+                                        <td class="col-price">
+                                            <div class="manual-view-value quantity-price-view">
+                                                <strong>
+                                                    {{ sale.unit_price_display or "—" }}
+                                                </strong>
+
+                                                {% if sale.total_amount is not none %}
+                                                    <span class="sale-amount">
+                                                        Итого: {{ sale.total_amount_display }}
+                                                    </span>
+                                                {% endif %}
+                                            </div>
+
+                                            <div class="manual-edit-control quantity-price-edit">
                                                 <input
                                                     class="table-control sale-edit-control sale-price-input"
                                                     type="number"
@@ -2392,19 +2415,13 @@
                                         </td>
 
                                         <td class="col-qty">
-                                            <div class="automatic-view-value quantity-price-view">
+                                            <div class="automatic-view-value">
                                                 <strong>
                                                     {{ sale.quantity }}
                                                 </strong>
-
-                                                {% if sale.total_amount is not none %}
-                                                    <span class="sale-amount">
-                                                        {{ sale.total_amount_display }}
-                                                    </span>
-                                                {% endif %}
                                             </div>
 
-                                            <div class="automatic-edit-control quantity-price-edit">
+                                            <div class="automatic-edit-control">
                                                 <select
                                                     class="table-control sale-edit-control"
                                                     name="quantity"
@@ -2420,7 +2437,23 @@
                                                         </option>
                                                     {% endfor %}
                                                 </select>
+                                            </div>
+                                        </td>
 
+                                        <td class="col-price">
+                                            <div class="automatic-view-value quantity-price-view">
+                                                <strong>
+                                                    {{ sale.unit_price_display or "—" }}
+                                                </strong>
+
+                                                {% if sale.total_amount is not none %}
+                                                    <span class="sale-amount">
+                                                        Итого: {{ sale.total_amount_display }}
+                                                    </span>
+                                                {% endif %}
+                                            </div>
+
+                                            <div class="automatic-edit-control quantity-price-edit">
                                                 <input
                                                     class="table-control sale-edit-control sale-price-input"
                                                     type="number"
@@ -2790,7 +2823,7 @@
                         <!-- MANUAL SALE PRICE FIELD V1 -->
                         <div class="field">
                             <label for="unit_price">
-                                Цена за единицу, ₽
+                                Цена, ₽
                             </label>
 
                             <input
@@ -3861,7 +3894,7 @@
 
             const rawValue = row.dataset[key] || "";
 
-            if (field === "quantity") {
+            if (field === "quantity" || field === "price") {
                 const number = Number(
                     String(rawValue)
                         .replace(",", ".")
