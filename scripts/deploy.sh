@@ -19,7 +19,7 @@ cd "$PROJECT_ROOT"
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 \
     || fail "Локальная папка не является Git-репозиторием"
 
-current_branch="$(git branch --show-current)"
+current_branch="$(git symbolic-ref --quiet --short HEAD || true)"
 [[ "$current_branch" == "$EXPECTED_BRANCH" ]] \
     || fail "Ожидалась локальная ветка main, текущая ветка: ${current_branch:-detached HEAD}"
 
@@ -84,7 +84,7 @@ cd "$PROJECT_DIR"
 
 git rev-parse --is-inside-work-tree >/dev/null 2>&1
 
-server_branch="$(git branch --show-current)"
+server_branch="$(git symbolic-ref --quiet --short HEAD || true)"
 if [[ "$server_branch" != "$EXPECTED_BRANCH" ]]; then
     printf 'Server branch must be main, current branch: %s\n' \
         "${server_branch:-detached HEAD}" >&2
