@@ -5427,6 +5427,7 @@ def receipts_import_preview():
 def receipt_create():
     from datetime import datetime
     from flask import request, redirect, url_for
+    import json as receipt_json
     import uuid
 
     # === SIMPLE RECEIPT FORM V1 ===
@@ -5460,6 +5461,53 @@ def receipt_create():
     ).strip()
     note = (request.form.get("note") or "").strip()
 
+    raw_import_payload = (
+        request.form.get("import_payload") or ""
+    ).strip()
+
+    import_rows = []
+
+    if raw_import_payload:
+        try:
+            parsed_import_payload = receipt_json.loads(
+                raw_import_payload
+            )
+        except (TypeError, ValueError):
+            return redirect(url_for(
+                "receipts_page",
+                notice="error",
+                message=(
+                    "Не удалось прочитать данные "
+                    "импорта из Excel"
+                ),
+                open_receipt_modal="1",
+            ))
+
+        if not isinstance(parsed_import_payload, list):
+            return redirect(url_for(
+                "receipts_page",
+                notice="error",
+                message="Неверный формат импорта",
+                open_receipt_modal="1",
+            ))
+
+        import_rows = [
+            row
+            for row in parsed_import_payload
+            if isinstance(row, dict)
+        ]
+
+        if not import_rows:
+            return redirect(url_for(
+                "receipts_page",
+                notice="error",
+                message=(
+                    "В импорте нет доступных "
+                    "для проведения строк"
+                ),
+                open_receipt_modal="1",
+            ))
+
     product_ids = request.form.getlist("product_id")
     quantities = request.form.getlist("quantity")
     purchase_prices = request.form.getlist("purchase_price")
@@ -5470,6 +5518,252 @@ def receipt_create():
     }
 
     created_new_product = False
+
+    # === RECEIPTS IMPORT CREATE MANY V1 ===
+    imported_position_metadata = {}
+
+    if import_rows:
+        product_ids = []
+        quantities = []
+        purchase_prices = []
+
+        # Общие поля ручной формы не должны
+        # переопределять бренд и категорию импорта.
+        submitted_brand = ""
+        submitted_category = ""
+
+        import_product_client = None
+
+        for import_index, import_row in enumerate(
+            import_rows,
+            start=1,
+        ):
+            import_name = str(
+                import_row.get("name") or ""
+            ).strip()
+
+            import_article = str(
+                import_row.get("article") or ""
+            ).strip()
+
+            import_code = str(
+                import_row.get("code") or ""
+            ).strip()
+
+            import_brand = str(
+                import_row.get("brand") or ""
+            ).strip()
+
+            import_category = str(
+                import_row.get("category")
+                or import_row.get("collection")
+                or ""
+            ).strip()
+
+            import_product_id = str(
+                import_row.get("product_id") or ""
+            ).strip()
+
+            import_quantity = parse_receipt_number(
+                import_row.get("quantity"),
+                default=0,
+            )
+
+            import_purchase_price = (
+                parse_receipt_number(
+                    import_row.get("purchase_price"),
+                    default=0,
+                )
+            )
+
+            if import_quantity <= 0:
+                return redirect(url_for(
+                    "receipts_page",
+                    notice="error",
+                    message=(
+                        "Строка импорта "
+                        f"{import_index}: количество "
+                        "должно быть больше нуля"
+                    ),
+                    open_receipt_modal="1",
+                ))
+
+            if import_purchase_price < 0:
+                return redirect(url_for(
+                    "receipts_page",
+                    notice="error",
+                    message=(
+                        "Строка импорта "
+                        f"{import_index}: закупочная "
+                        "цена не может быть отрицательной"
+                    ),
+                    open_receipt_modal="1",
+                ))
+
+            if import_product_id:
+                if import_product_id not in catalog:
+                    return redirect(url_for(
+                        "receipts_page",
+                        notice="error",
+                        message=(
+                            "Один из импортируемых "
+                            "товаров больше не найден "
+                            "в каталоге"
+                        ),
+                        open_receipt_modal="1",
+                    ))
+            else:
+                if not import_name:
+                    return redirect(url_for(
+                        "receipts_page",
+                        notice="error",
+                        message=(
+                            "Для нового товара "
+                            "не указано название"
+                        ),
+                        open_receipt_modal="1",
+                    ))
+
+                if not import_brand:
+                    return redirect(url_for(
+                        "receipts_page",
+                        notice="error",
+                        message=(
+                            f"Для товара «{import_name}» "
+                            "не указан бренд"
+                        ),
+                        open_receipt_modal="1",
+                    ))
+
+                if not import_category:
+                    return redirect(url_for(
+                        "receipts_page",
+                        notice="error",
+                        message=(
+                            f"Для товара «{import_name}» "
+                            "не указана категория "
+                            "или коллекция"
+                        ),
+                        open_receipt_modal="1",
+                    ))
+
+                try:
+                    if import_product_client is None:
+                        import_product_client = (
+                            MoySkladClient()
+                        )
+
+                    import_product_folder = (
+                        import_product_client
+                        .get_or_create_product_folder(
+                            "/".join([
+                                import_brand,
+                                import_category,
+                            ])
+                        )
+                    )
+
+                    generated_code = (
+                        import_code
+                        or (
+                            "VECHASU-"
+                            + uuid.uuid4()
+                            .hex[:12]
+                            .upper()
+                        )
+                    )
+
+                    created_product = (
+                        import_product_client
+                        .create_product(
+                            name=import_name,
+                            code=generated_code,
+                            article=(
+                                import_article or None
+                            ),
+                            product_folder=(
+                                import_product_folder
+                            ),
+                        )
+                    )
+
+                    if not created_product:
+                        raise ValueError(
+                            "МойСклад не создал товар"
+                        )
+
+                    import_product_id = str(
+                        created_product.get("id") or ""
+                    ).strip()
+
+                    if not import_product_id:
+                        raise ValueError(
+                            "МойСклад не вернул "
+                            "ID нового товара"
+                        )
+
+                    record_warehouse_created_at(
+                        import_product_id
+                    )
+
+                    catalog[import_product_id] = {
+                        "id": import_product_id,
+                        "name": (
+                            created_product.get("name")
+                            or import_name
+                        ),
+                        "article": (
+                            created_product.get("article")
+                            or import_article
+                        ),
+                        "code": (
+                            created_product.get("code")
+                            or generated_code
+                        ),
+                        "brand": import_brand,
+                        "category": import_category,
+                        "cell": str(
+                            import_row.get("cell") or ""
+                        ).strip(),
+                        "stock": 0,
+                    }
+
+                    created_new_product = True
+
+                except Exception as error:
+                    print(
+                        "Ошибка создания товара "
+                        "из Excel: "
+                        + str(error)
+                    )
+
+                    WAREHOUSE_CACHE["items"] = []
+                    WAREHOUSE_CACHE["loaded_at"] = 0
+
+                    return redirect(url_for(
+                        "receipts_page",
+                        notice="error",
+                        message=(
+                            "Не удалось создать товар "
+                            f"«{import_name}»: "
+                            + str(error)
+                        ),
+                        open_receipt_modal="1",
+                    ))
+
+            product_ids.append(import_product_id)
+            quantities.append(import_quantity)
+            purchase_prices.append(
+                import_purchase_price
+            )
+
+            imported_position_metadata[
+                import_product_id
+            ] = {
+                "brand": import_brand,
+                "category": import_category,
+            }
+    # === RECEIPTS IMPORT CREATE MANY V1 END ===
 
     # === NEW PRODUCT IN RECEIPT BACKEND V1 ===
     if product_ids and product_ids[0] == "__new__":
@@ -5621,15 +5915,24 @@ def receipt_create():
 
         stock_before = parse_receipt_number(product.get("stock"))
 
+        imported_metadata = (
+            imported_position_metadata.get(
+                product_id,
+                {},
+            )
+        )
+
         position_brand = (
-            submitted_brand
+            imported_metadata.get("brand")
+            or submitted_brand
             or product.get("brand")
             or product.get("manufacturer")
             or ""
         )
 
         position_category = (
-            submitted_category
+            imported_metadata.get("category")
+            or submitted_category
             or product.get("category")
             or ""
         )
