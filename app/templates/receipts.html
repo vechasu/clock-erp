@@ -1155,7 +1155,281 @@
         }
         /* RECEIPTS REPORT BUTTON CSS V1 END */
 
-</style>
+
+        /* RECEIPTS EXCEL IMPORT UI V1 */
+        .receipt-import-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 16px;
+            padding: 12px;
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            border-radius: 12px;
+        }
+
+        .receipt-import-toolbar-text {
+            min-width: 0;
+        }
+
+        .receipt-import-toolbar-title {
+            margin: 0 0 3px;
+            color: #1e3a8a;
+            font-size: 14px;
+            font-weight: 850;
+        }
+
+        .receipt-import-toolbar-description {
+            margin: 0;
+            color: #64748b;
+            font-size: 12px;
+        }
+
+        .receipt-import-button {
+            flex: 0 0 auto;
+            color: #1d4ed8;
+            background: #ffffff;
+            border: 1px solid #93c5fd;
+        }
+
+        .receipt-import-button:hover {
+            background: #dbeafe;
+        }
+
+        .receipt-import-selected {
+            display: none;
+            margin-bottom: 16px;
+            padding: 12px 14px;
+            background: #ecfdf5;
+            border: 1px solid #86efac;
+            border-radius: 12px;
+        }
+
+        .receipt-import-selected.is-visible {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .receipt-import-selected strong {
+            display: block;
+            color: #166534;
+            font-size: 14px;
+        }
+
+        .receipt-import-selected span {
+            display: block;
+            margin-top: 3px;
+            color: #4b5563;
+            font-size: 12px;
+        }
+
+        .receipt-import-reset {
+            border: none;
+            color: #b91c1c;
+            background: transparent;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 800;
+        }
+
+        .receipt-import-dialog {
+            width: min(1240px, 100%);
+        }
+
+        .receipt-import-upload {
+            display: grid;
+            grid-template-columns:
+                minmax(260px, 1fr)
+                minmax(180px, 0.45fr)
+                auto;
+            gap: 10px;
+            align-items: end;
+            margin-bottom: 16px;
+        }
+
+        .receipt-import-file {
+            min-height: 42px;
+            padding: 8px 10px;
+        }
+
+        .receipt-import-message {
+            display: none;
+            margin-bottom: 14px;
+            padding: 11px 13px;
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 750;
+        }
+
+        .receipt-import-message.is-error {
+            display: block;
+            color: #991b1b;
+            background: #fee2e2;
+            border: 1px solid #fca5a5;
+        }
+
+        .receipt-import-message.is-loading {
+            display: block;
+            color: #1e40af;
+            background: #dbeafe;
+            border: 1px solid #93c5fd;
+        }
+
+        .receipt-import-stats {
+            display: none;
+            grid-template-columns:
+                repeat(6, minmax(110px, 1fr));
+            gap: 8px;
+            margin-bottom: 14px;
+        }
+
+        .receipt-import-stats.is-visible {
+            display: grid;
+        }
+
+        .receipt-import-stat {
+            padding: 10px 11px;
+            background: #f8fafc;
+            border: 1px solid #dfe3e8;
+            border-radius: 10px;
+        }
+
+        .receipt-import-stat-label {
+            color: #6b7280;
+            font-size: 10px;
+            font-weight: 800;
+            text-transform: uppercase;
+        }
+
+        .receipt-import-stat-value {
+            margin-top: 4px;
+            color: #111827;
+            font-size: 18px;
+            font-weight: 900;
+        }
+
+        .receipt-import-preview {
+            display: none;
+            max-height: 420px;
+            overflow: auto;
+            border: 1px solid #d1d5db;
+            border-radius: 12px;
+        }
+
+        .receipt-import-preview.is-visible {
+            display: block;
+        }
+
+        .receipt-import-table {
+            width: 100%;
+            min-width: 1120px;
+            border-collapse: collapse;
+        }
+
+        .receipt-import-table th,
+        .receipt-import-table td {
+            padding: 8px 9px;
+            border-right: 1px solid #e5e7eb;
+            border-bottom: 1px solid #e5e7eb;
+            text-align: left;
+            vertical-align: middle;
+            font-size: 12px;
+        }
+
+        .receipt-import-table th {
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            background: #eef1f4;
+            font-weight: 850;
+            white-space: nowrap;
+        }
+
+        .receipt-import-table th:last-child,
+        .receipt-import-table td:last-child {
+            border-right: none;
+        }
+
+        .receipt-import-row-error {
+            background: #fff7f7;
+        }
+
+        .receipt-import-product-name {
+            font-weight: 800;
+        }
+
+        .receipt-import-product-meta {
+            margin-top: 2px;
+            color: #6b7280;
+            font-size: 10px;
+        }
+
+        .receipt-import-status {
+            display: inline-flex;
+            min-height: 24px;
+            align-items: center;
+            padding: 3px 8px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 850;
+        }
+
+        .receipt-import-status-found {
+            color: #166534;
+            background: #dcfce7;
+        }
+
+        .receipt-import-status-new {
+            color: #1d4ed8;
+            background: #dbeafe;
+        }
+
+        .receipt-import-status-error {
+            color: #991b1b;
+            background: #fee2e2;
+        }
+
+        .receipt-import-warning {
+            max-width: 260px;
+            color: #92400e;
+            font-size: 10px;
+            line-height: 1.35;
+        }
+
+        .receipt-import-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 14px;
+            margin-top: 16px;
+        }
+
+        .receipt-import-footer-info {
+            color: #6b7280;
+            font-size: 12px;
+        }
+
+        @media (max-width: 900px) {
+            .receipt-import-upload {
+                grid-template-columns: 1fr;
+            }
+
+            .receipt-import-stats {
+                grid-template-columns:
+                    repeat(2, minmax(0, 1fr));
+            }
+
+            .receipt-import-toolbar {
+                align-items: stretch;
+                flex-direction: column;
+            }
+        }
+        /* RECEIPTS EXCEL IMPORT UI V1 END */
+
+    </style>
 </head>
 
 <body>
@@ -1728,6 +2002,54 @@
 
         <div class="modal-body">
             <form method="post" action="/receipts/create" id="receiptForm">
+                <!-- RECEIPTS EXCEL IMPORT TOOLBAR V1 -->
+                <input
+                    id="receiptImportPayload"
+                    name="import_payload"
+                    type="hidden"
+                    value=""
+                >
+
+                <div class="receipt-import-toolbar">
+                    <div class="receipt-import-toolbar-text">
+                        <div class="receipt-import-toolbar-title">
+                            Массовое добавление товаров
+                        </div>
+                        <p class="receipt-import-toolbar-description">
+                            Загрузите Excel, проверьте строки и добавьте их в приход
+                        </p>
+                    </div>
+
+                    <button
+                        class="button receipt-import-button"
+                        type="button"
+                        onclick="openReceiptImportModal()"
+                    >
+                        Импорт из Excel
+                    </button>
+                </div>
+
+                <div
+                    class="receipt-import-selected"
+                    id="receiptImportSelected"
+                >
+                    <div>
+                        <strong id="receiptImportSelectedTitle">
+                            Импорт добавлен
+                        </strong>
+                        <span id="receiptImportSelectedMeta"></span>
+                    </div>
+
+                    <button
+                        class="receipt-import-reset"
+                        type="button"
+                        onclick="resetReceiptImport()"
+                    >
+                        Удалить импорт
+                    </button>
+                </div>
+                <!-- RECEIPTS EXCEL IMPORT TOOLBAR V1 END -->
+
                 <!-- SIMPLE RECEIPT FORM V1 -->
                 <div class="form-grid receipt-simple-grid">
                     <div class="field">
@@ -1897,6 +2219,141 @@
     </div>
 </div>
 
+<!-- RECEIPTS EXCEL IMPORT MODAL V1 -->
+<div class="modal" id="receiptImportModal">
+    <div class="modal-dialog receipt-import-dialog">
+        <div class="modal-header">
+            <div>
+                <h2>Импорт прихода из Excel</h2>
+                <p>
+                    Сначала ERP проверит файл. Остатки пока не изменятся.
+                </p>
+            </div>
+
+            <button
+                class="modal-close"
+                type="button"
+                onclick="closeReceiptImportModal()"
+            >
+                ×
+            </button>
+        </div>
+
+        <div class="modal-body">
+            <div class="receipt-import-upload">
+                <div class="field">
+                    <label for="receiptImportFile">
+                        Excel-файл *
+                    </label>
+
+                    <input
+                        class="control receipt-import-file"
+                        id="receiptImportFile"
+                        type="file"
+                        accept=".xlsx,.xlsm"
+                    >
+                </div>
+
+                <div class="field">
+                    <label for="receiptImportSheet">
+                        Лист
+                    </label>
+
+                    <select
+                        class="control"
+                        id="receiptImportSheet"
+                    >
+                        <option value="">
+                            Первый лист
+                        </option>
+                    </select>
+                </div>
+
+                <button
+                    class="button button-primary"
+                    id="receiptImportAnalyzeButton"
+                    type="button"
+                    onclick="analyzeReceiptImport()"
+                >
+                    Проверить файл
+                </button>
+            </div>
+
+            <div
+                class="receipt-import-message"
+                id="receiptImportMessage"
+            ></div>
+
+            <div
+                class="receipt-import-stats"
+                id="receiptImportStats"
+            ></div>
+
+            <div
+                class="receipt-import-preview"
+                id="receiptImportPreview"
+            >
+                <table class="receipt-import-table">
+                    <thead>
+                        <tr>
+                            <th>
+                                <input
+                                    id="receiptImportSelectAll"
+                                    type="checkbox"
+                                    checked
+                                    onchange="toggleReceiptImportRows(this.checked)"
+                                >
+                            </th>
+                            <th>Статус</th>
+                            <th>Строка</th>
+                            <th>Товар</th>
+                            <th>Артикул</th>
+                            <th>Бренд / категория</th>
+                            <th>Количество</th>
+                            <th>Цена</th>
+                            <th>Сумма</th>
+                            <th>Проверка</th>
+                        </tr>
+                    </thead>
+
+                    <tbody id="receiptImportTableBody"></tbody>
+                </table>
+            </div>
+
+            <div class="receipt-import-footer">
+                <div
+                    class="receipt-import-footer-info"
+                    id="receiptImportFooterInfo"
+                >
+                    Выберите файл для проверки
+                </div>
+
+                <div class="modal-actions">
+                    <button
+                        class="button button-secondary"
+                        type="button"
+                        onclick="closeReceiptImportModal()"
+                    >
+                        Отмена
+                    </button>
+
+                    <button
+                        class="button button-primary"
+                        id="receiptImportApplyButton"
+                        type="button"
+                        onclick="applyReceiptImport()"
+                        disabled
+                    >
+                        Добавить
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<!-- RECEIPTS EXCEL IMPORT MODAL V1 END -->
+
+
 
 <script>
     // SIMPLE RECEIPT FORM SCRIPT V1
@@ -1943,6 +2400,619 @@
 
     let receiptSelectedProduct = null;
     let receiptActiveSuggestionIndex = -1;
+
+    // RECEIPTS EXCEL IMPORT SCRIPT V1
+    const receiptImportModal =
+        document.getElementById(
+            "receiptImportModal"
+        );
+
+    const receiptImportFile =
+        document.getElementById(
+            "receiptImportFile"
+        );
+
+    const receiptImportSheet =
+        document.getElementById(
+            "receiptImportSheet"
+        );
+
+    const receiptImportPayload =
+        document.getElementById(
+            "receiptImportPayload"
+        );
+
+    const receiptImportStats =
+        document.getElementById(
+            "receiptImportStats"
+        );
+
+    const receiptImportPreview =
+        document.getElementById(
+            "receiptImportPreview"
+        );
+
+    const receiptImportTableBody =
+        document.getElementById(
+            "receiptImportTableBody"
+        );
+
+    const receiptImportMessage =
+        document.getElementById(
+            "receiptImportMessage"
+        );
+
+    const receiptImportApplyButton =
+        document.getElementById(
+            "receiptImportApplyButton"
+        );
+
+    const receiptImportAnalyzeButton =
+        document.getElementById(
+            "receiptImportAnalyzeButton"
+        );
+
+    const receiptImportFooterInfo =
+        document.getElementById(
+            "receiptImportFooterInfo"
+        );
+
+    const receiptImportSelected =
+        document.getElementById(
+            "receiptImportSelected"
+        );
+
+    const receiptImportSelectedTitle =
+        document.getElementById(
+            "receiptImportSelectedTitle"
+        );
+
+    const receiptImportSelectedMeta =
+        document.getElementById(
+            "receiptImportSelectedMeta"
+        );
+
+    let receiptImportRows = [];
+    let receiptImportSummary = null;
+
+    function escapeReceiptImportHtml(value) {
+        return String(value ?? "")
+            .replaceAll("&", "&amp;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;")
+            .replaceAll('"', "&quot;")
+            .replaceAll("'", "&#039;");
+    }
+
+    function formatReceiptImportNumber(value) {
+        const number = Number(value || 0);
+
+        return new Intl.NumberFormat(
+            "ru-RU",
+            {
+                maximumFractionDigits: 2,
+            }
+        ).format(
+            Number.isFinite(number)
+                ? number
+                : 0
+        );
+    }
+
+    function openReceiptImportModal() {
+        receiptImportModal.classList.add(
+            "is-open"
+        );
+    }
+
+    function closeReceiptImportModal() {
+        receiptImportModal.classList.remove(
+            "is-open"
+        );
+    }
+
+    function showReceiptImportMessage(
+        message,
+        state
+    ) {
+        receiptImportMessage.textContent =
+            message || "";
+
+        receiptImportMessage.className =
+            "receipt-import-message";
+
+        if (state) {
+            receiptImportMessage.classList.add(
+                "is-" + state
+            );
+        }
+    }
+
+    function getReceiptImportManualFields() {
+        return [
+            document.getElementById(
+                "receipt_brand"
+            ),
+            document.getElementById(
+                "receipt_category"
+            ),
+            document.getElementById(
+                "receipt_product_search"
+            ),
+            document.getElementById(
+                "receipt_product_id"
+            ),
+            document.getElementById(
+                "receipt_new_product_name"
+            ),
+            document.getElementById(
+                "receipt_quantity"
+            ),
+            document.getElementById(
+                "receipt_purchase_price"
+            ),
+        ].filter(Boolean);
+    }
+
+    function setReceiptManualFieldsEnabled(
+        enabled
+    ) {
+        getReceiptImportManualFields()
+            .forEach((field) => {
+                field.disabled = !enabled;
+
+                const fieldContainer =
+                    field.closest(".field");
+
+                if (fieldContainer) {
+                    fieldContainer.style.display =
+                        enabled ? "" : "none";
+                }
+            });
+    }
+
+    function resetReceiptImport() {
+        receiptImportPayload.value = "";
+        receiptImportRows = [];
+        receiptImportSummary = null;
+
+        setReceiptManualFieldsEnabled(true);
+
+        receiptImportSelected.classList.remove(
+            "is-visible"
+        );
+
+        receiptImportSelectedTitle.textContent =
+            "Импорт добавлен";
+
+        receiptImportSelectedMeta.textContent =
+            "";
+
+        receiptImportApplyButton.disabled = true;
+
+        if (receiptImportFile) {
+            receiptImportFile.value = "";
+        }
+
+        receiptImportStats.classList.remove(
+            "is-visible"
+        );
+
+        receiptImportPreview.classList.remove(
+            "is-visible"
+        );
+
+        receiptImportTableBody.innerHTML = "";
+
+        receiptImportFooterInfo.textContent =
+            "Выберите файл для проверки";
+
+        showReceiptImportMessage("", "");
+    }
+
+    function updateReceiptImportSheetOptions(
+        sheetNames,
+        activeSheet
+    ) {
+        const names = Array.isArray(sheetNames)
+            ? sheetNames
+            : [];
+
+        receiptImportSheet.innerHTML =
+            names.map((sheetName) => {
+                const selected =
+                    sheetName === activeSheet
+                        ? " selected"
+                        : "";
+
+                return (
+                    '<option value="'
+                    + escapeReceiptImportHtml(
+                        sheetName
+                    )
+                    + '"'
+                    + selected
+                    + ">"
+                    + escapeReceiptImportHtml(
+                        sheetName
+                    )
+                    + "</option>"
+                );
+            }).join("");
+
+        if (!names.length) {
+            receiptImportSheet.innerHTML =
+                '<option value="">Первый лист</option>';
+        }
+    }
+
+    function renderReceiptImportPreview(data) {
+        receiptImportRows = Array.isArray(
+            data.rows
+        )
+            ? data.rows
+            : [];
+
+        receiptImportSummary =
+            data.summary || {};
+
+        updateReceiptImportSheetOptions(
+            data.sheet_names,
+            data.sheet
+        );
+
+        const summaryItems = [
+            [
+                "Строк",
+                receiptImportSummary.input_rows,
+            ],
+            [
+                "Найдено",
+                receiptImportSummary.found,
+            ],
+            [
+                "Новых",
+                receiptImportSummary.new,
+            ],
+            [
+                "Дубликатов",
+                receiptImportSummary.duplicates,
+            ],
+            [
+                "Ошибок",
+                receiptImportSummary.errors,
+            ],
+            [
+                "Сумма",
+                formatReceiptImportNumber(
+                    receiptImportSummary.total_amount
+                ) + " ₽",
+            ],
+        ];
+
+        receiptImportStats.innerHTML =
+            summaryItems.map((item) => {
+                return (
+                    '<div class="receipt-import-stat">'
+                    + '<div class="receipt-import-stat-label">'
+                    + escapeReceiptImportHtml(
+                        item[0]
+                    )
+                    + "</div>"
+                    + '<div class="receipt-import-stat-value">'
+                    + escapeReceiptImportHtml(
+                        item[1]
+                    )
+                    + "</div>"
+                    + "</div>"
+                );
+            }).join("");
+
+        receiptImportStats.classList.add(
+            "is-visible"
+        );
+
+        receiptImportTableBody.innerHTML =
+            receiptImportRows.map(
+                (row, index) => {
+                    const canImport =
+                        Boolean(row.can_import);
+
+                    const checked = canImport
+                        ? " checked"
+                        : "";
+
+                    const disabled = canImport
+                        ? ""
+                        : " disabled";
+
+                    const rowClass = canImport
+                        ? ""
+                        : " receipt-import-row-error";
+
+                    const messages =
+                        Array.isArray(row.messages)
+                            ? row.messages.join("; ")
+                            : "";
+
+                    const productMeta = [
+                        row.code
+                            ? "Код: " + row.code
+                            : "",
+                        row.collection
+                            ? (
+                                "Коллекция: "
+                                + row.collection
+                            )
+                            : "",
+                    ].filter(Boolean).join(" · ");
+
+                    return (
+                        '<tr class="'
+                        + rowClass.trim()
+                        + '">'
+                        + "<td>"
+                        + '<input class="receipt-import-row-checkbox"'
+                        + ' type="checkbox"'
+                        + ' data-index="'
+                        + index
+                        + '"'
+                        + checked
+                        + disabled
+                        + ">"
+                        + "</td>"
+                        + "<td>"
+                        + '<span class="receipt-import-status '
+                        + "receipt-import-status-"
+                        + escapeReceiptImportHtml(
+                            row.status
+                        )
+                        + '">'
+                        + escapeReceiptImportHtml(
+                            row.status_label
+                        )
+                        + "</span>"
+                        + "</td>"
+                        + "<td>"
+                        + escapeReceiptImportHtml(
+                            row.source_rows
+                                ?.join(", ")
+                                || row.row_number
+                        )
+                        + "</td>"
+                        + "<td>"
+                        + '<div class="receipt-import-product-name">'
+                        + escapeReceiptImportHtml(
+                            row.name || "Без названия"
+                        )
+                        + "</div>"
+                        + (
+                            productMeta
+                                ? (
+                                    '<div class="receipt-import-product-meta">'
+                                    + escapeReceiptImportHtml(
+                                        productMeta
+                                    )
+                                    + "</div>"
+                                )
+                                : ""
+                        )
+                        + "</td>"
+                        + "<td>"
+                        + escapeReceiptImportHtml(
+                            row.article || "—"
+                        )
+                        + "</td>"
+                        + "<td>"
+                        + escapeReceiptImportHtml(
+                            row.brand || "—"
+                        )
+                        + '<div class="receipt-import-product-meta">'
+                        + escapeReceiptImportHtml(
+                            row.category || "—"
+                        )
+                        + "</div>"
+                        + "</td>"
+                        + "<td>"
+                        + formatReceiptImportNumber(
+                            row.quantity
+                        )
+                        + "</td>"
+                        + "<td>"
+                        + formatReceiptImportNumber(
+                            row.purchase_price
+                        )
+                        + " ₽</td>"
+                        + "<td>"
+                        + formatReceiptImportNumber(
+                            row.line_total
+                        )
+                        + " ₽</td>"
+                        + '<td><div class="receipt-import-warning">'
+                        + escapeReceiptImportHtml(
+                            messages || "Готово"
+                        )
+                        + "</div></td>"
+                        + "</tr>"
+                    );
+                }
+            ).join("");
+
+        receiptImportPreview.classList.add(
+            "is-visible"
+        );
+
+        const importableCount =
+            receiptImportRows.filter(
+                (row) => row.can_import
+            ).length;
+
+        receiptImportApplyButton.disabled =
+            importableCount === 0;
+
+        receiptImportFooterInfo.textContent =
+            "Лист «"
+            + data.sheet
+            + "»: готово к импорту "
+            + importableCount
+            + " позиций";
+
+        showReceiptImportMessage("", "");
+    }
+
+    async function analyzeReceiptImport() {
+        const file =
+            receiptImportFile.files[0];
+
+        if (!file) {
+            showReceiptImportMessage(
+                "Выберите Exc
+                "error"
+            );
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append("file", file);
+
+        if (receiptImportSheet.value) {
+            formData.append(
+                "sheet",
+                receiptImportSheet.value
+            );
+        }
+
+        receiptImportAnalyzeButton.disabled =
+            true;
+
+        receiptImportApplyButton.disabled =
+            true;
+
+        showReceiptImportMessage(
+            "ERP читает и проверяет файл…",
+            "loading"
+        );
+
+        try {
+            const response = await fetch(
+                "/receipts/import/preview",
+                {
+                    method: "POST",
+                    body: formData,
+                }
+            );
+
+            const data = await response.json();
+
+            if (!response.ok || !data.ok) {
+                throw new Error(
+                    data.message
+                    || "Не удалось проверить файл"
+                );
+            }
+
+            renderReceiptImportPreview(data);
+        } catch (error) {
+            showReceiptImportMessage(
+                error.message
+                || "Ошибка проверки Excel",
+                "error"
+            );
+        } finally {
+            receiptImportAnalyzeButton.disabled =
+                false;
+        }
+    }
+
+    function toggleReceiptImportRows(checked) {
+        document
+            .querySelectorAll(
+                ".receipt-import-row-checkbox"
+            )
+            .forEach((checkbox) => {
+                if (!checkbox.disabled) {
+                    checkbox.checked = checked;
+                }
+            });
+    }
+
+    function applyReceiptImport() {
+        const selectedRows = [];
+
+        document
+            .querySelectorAll(
+                ".receipt-import-row-checkbox:checked"
+            )
+            .forEach((checkbox) => {
+                const index = Number(
+                    checkbox.dataset.index
+                );
+
+                const row =
+                    receiptImportRows[index];
+
+                if (row && row.can_import) {
+                    selectedRows.push(row);
+                }
+            });
+
+        if (!selectedRows.length) {
+            showReceiptImportMessage(
+                "Выберите хотя бы одну позицию",
+                "error"
+            );
+            return;
+        }
+
+        const totalQuantity =
+            selectedRows.reduce(
+                (total, row) => {
+                    return (
+                        total
+                        + Number(row.quantity || 0)
+                    );
+                },
+                0
+            );
+
+        const totalAmount =
+            selectedRows.reduce(
+                (total, row) => {
+                    return (
+                        total
+                        + Number(row.line_total || 0)
+                    );
+                },
+                0
+            );
+
+        receiptImportPayload.value =
+            JSON.stringify(selectedRows);
+
+        setReceiptManualFieldsEnabled(false);
+
+        receiptImportSelectedTitle.textContent =
+            "Добавлено позиций: "
+            + selectedRows.length;
+
+        receiptImportSelectedMeta.textContent =
+            "Количество: "
+            + formatReceiptImportNumber(
+                totalQuantity
+            )
+            + " · Сумма: "
+            + formatReceiptImportNumber(
+                totalAmount
+            )
+            + " ₽";
+
+        receiptImportSelected.classList.add(
+            "is-visible"
+        );
+
+        closeReceiptImportModal();
+    }
+    // RECEIPTS EXCEL IMPORT SCRIPT V1 END
 
     function openReceiptModal() {
         receiptModal.classList.add("is-open");
@@ -2216,6 +3286,13 @@
         receiptProductSearch.addEventListener(
             "input",
             () => {
+                if (
+                    receiptImportPayload
+                    && receiptImportPayload.value.trim()
+                ) {
+                    return;
+                }
+
                 const value =
                     receiptProductSearch.value.trim();
 
@@ -2596,6 +3673,15 @@
     }
     // RECEIPTS DATE FILTER SORT SCRIPT V1 END
 
+    receiptImportModal.addEventListener(
+    
+        (event) => {
+            if (event.target === receiptImportModal) {
+                closeReceiptImportModal();
+            }
+        }
+    );
+
     receiptModal.addEventListener("click", (event) => {
         if (event.target === receiptModal) {
             closeReceiptModal();
@@ -2604,6 +3690,16 @@
 
     document.addEventListener("keydown", (event) => {
         if (event.key === "Escape") {
+            if (
+                receiptImportModal
+                && receiptImportModal.classList.contains(
+                    "is-open"
+                )
+            ) {
+                closeReceiptImportModal();
+                return;
+            }
+
             closeReceiptModal();
         }
     });
