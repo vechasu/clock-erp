@@ -18,3 +18,18 @@ instance/product_mappings.json
 instance/manual_sales.json
 instance/automatic_sales_overrides.json
 instance/settings.json
+
+# Локальные данные и резервные копии
+instance/warehouse_category_cells.json
+instance/warehouse_cells.json
+outputs/
+*.backup-*
+*.broken-*
+
+# Время добавления товаров и защита повторных запросов
+instance/warehouse_created_at.json
+instance/warehouse_add_requests.json
+
+# Временные копии шаблонов
+*.bak-*
+instance/receipts.json

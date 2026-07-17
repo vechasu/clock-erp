@@ -77,8 +77,8 @@
                 <div class="stat-group-title">Продажи · {{ analytics.period_label }}</div>
                 <div class="stat-row">
                     <div><div class="stat-value">{{ analytics.sales.quantity }}</div><div class="stat-label">продано единиц</div></div>
+                    <div><div class="stat-value">{{ analytics.sales.revenue }}</div><div class="stat-label">выручка</div></div>
                     <div><div class="stat-value">{{ analytics.sales.rows }}</div><div class="stat-label">строк продаж</div></div>
-                    <div><div class="stat-value">{{ analytics.sales.products }}</div><div class="stat-label">товаров</div></div>
                 </div>
             </div>
 
@@ -86,8 +86,8 @@
                 <div class="stat-group-title">Приходы · {{ analytics.period_label }}</div>
                 <div class="stat-row">
                     <div><div class="stat-value">{{ analytics.receipts.quantity }}</div><div class="stat-label">принято единиц</div></div>
+                    <div><div class="stat-value">{{ analytics.receipts.amount }}</div><div class="stat-label">сумма закупок</div></div>
                     <div><div class="stat-value">{{ analytics.receipts.operations }}</div><div class="stat-label">операций</div></div>
-                    <div><div class="stat-value">{{ analytics.receipts.products }}</div><div class="stat-label">товаров</div></div>
                 </div>
             </div>
 

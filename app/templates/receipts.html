@@ -1,0 +1,2120 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <title>ТТТ ERP — Приход</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            background: #f4f6f8;
+            color: #111827;
+            font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+
+        button,
+        input,
+        select,
+        textarea {
+            font: inherit;
+        }
+
+        .app {
+            display: grid;
+            grid-template-columns: 260px 1fr;
+            min-height: 100vh;
+        }
+
+        .main {
+            min-width: 0;
+            padding: 16px 26px 24px;
+            overflow: hidden;
+        }
+
+        .page-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 10px;
+        }
+
+        .page-header h1 {
+            margin: 0 0 3px;
+            font-size: 27px;
+            line-height: 1.1;
+            letter-spacing: -0.03em;
+        }
+
+        .page-header p {
+            margin: 0;
+            color: #6b7280;
+            font-size: 13px;
+            line-height: 1.25;
+        }
+
+        .notice {
+            margin-bottom: 12px;
+            border-radius: 12px;
+            padding: 12px 14px;
+            font-size: 14px;
+            font-weight: 700;
+        }
+
+        .notice-success {
+            color: #166534;
+            background: #dcfce7;
+            border: 1px solid #86efac;
+        }
+
+        .notice-error {
+            color: #991b1b;
+            background: #fee2e2;
+            border: 1px solid #fca5a5;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns:
+                repeat(3, minmax(0, 1fr))
+                minmax(210px, 0.9fr);
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .stat-card {
+            min-height: 44px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 7px 12px;
+            background: #ffffff;
+            border: 1px solid #dfe3e8;
+            border-radius: 14px;
+        }
+
+        .stat-label {
+            margin: 0;
+            color: #6b7280;
+            font-size: 11px;
+            font-weight: 750;
+        }
+
+        .stat-value {
+            font-size: 20px;
+            line-height: 1;
+            font-weight: 900;
+        }
+
+        .button {
+            min-height: 40px;
+            border: none;
+            border-radius: 9px;
+            padding: 9px 14px;
+            cursor: pointer;
+            font-weight: 800;
+            white-space: nowrap;
+        }
+
+        .stats-action-button {
+            width: 100%;
+            min-height: 44px;
+            padding: 0 16px;
+            border-radius: 14px;
+            background: #2563eb;
+            color: #ffffff;
+            font-size: 14px;
+            font-weight: 850;
+            box-shadow: 0 5px 16px rgba(37, 99, 235, 0.16);
+        }
+
+        .stats-action-button:hover {
+            background: #1d4ed8;
+        }
+
+        .button-primary {
+            color: #ffffff;
+            background: #2563eb;
+        }
+
+        .button-primary:hover {
+            background: #1d4ed8;
+        }
+
+        .button-secondary {
+            color: #374151;
+            background: #e5e7eb;
+        }
+
+        .button-secondary:hover {
+            background: #d1d5db;
+        }
+
+        .toolbar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+
+        .search {
+            width: 100%;
+            max-width: 660px;
+            height: 40px;
+            border: 1px solid #cfd5dc;
+            border-radius: 10px;
+            padding: 0 13px;
+            background: #ffffff;
+            outline: none;
+            font-size: 14px;
+        }
+
+        .search:focus {
+            border-color: #2563eb;
+        }
+
+        .table-card {
+            overflow: hidden;
+            background: #ffffff;
+            border: 1px solid #cfd5dc;
+            border-radius: 14px;
+        }
+
+        .table-wrap {
+            overflow-x: auto;
+        }
+
+        .receipts-table {
+            width: 100%;
+            min-width: 1180px;
+            border-collapse: collapse;
+            table-layout: fixed;
+        }
+
+        .receipts-table th,
+        .receipts-table td {
+            padding: 8px 10px;
+            border-right: 1px solid #d9dee5;
+            border-bottom: 1px solid #d9dee5;
+            text-align: left;
+            vertical-align: middle;
+            font-size: 13px;
+        }
+
+        .receipts-table th:last-child,
+        .receipts-table td:last-child {
+            border-right: none;
+        }
+
+        .receipts-table tbody tr:last-child td {
+            border-bottom: none;
+        }
+
+        .receipts-table th {
+            background: #eef1f4;
+            font-weight: 800;
+            white-space: nowrap;
+        }
+
+        .receipts-table tbody tr:hover {
+            background: #f8fafc;
+        }
+
+        .col-date {
+            width: 120px;
+        }
+
+        .col-number {
+            width: 135px;
+        }
+
+        .col-supplier {
+            width: 190px;
+        }
+
+        .col-invoice {
+            width: 140px;
+        }
+
+        .col-products {
+            width: 220px;
+        }
+
+        .col-qty {
+            width: 95px;
+            text-align: center !important;
+        }
+
+        .col-amount {
+            width: 125px;
+        }
+
+        .col-status {
+            width: 110px;
+        }
+
+        .col-link {
+            width: 105px;
+        }
+
+        .document-number,
+        .supplier-name {
+            font-weight: 800;
+        }
+
+        .secondary-text {
+            margin-top: 3px;
+            color: #6b7280;
+            font-size: 11px;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            min-height: 26px;
+            border-radius: 999px;
+            padding: 4px 9px;
+            color: #166534;
+            background: #dcfce7;
+            font-size: 12px;
+            font-weight: 800;
+        }
+
+        .document-link {
+            color: #2563eb;
+            text-decoration: none;
+            font-weight: 800;
+        }
+
+        .document-link:hover {
+            text-decoration: underline;
+        }
+
+        .positions-toggle {
+            border: none;
+            padding: 0;
+            color: #2563eb;
+            background: transparent;
+            cursor: pointer;
+            font-weight: 800;
+        }
+
+        .positions-toggle:hover {
+            text-decoration: underline;
+        }
+
+        .positions-details {
+            display: none;
+            margin-top: 8px;
+            padding: 8px;
+            background: #f8fafc;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+        }
+
+        .positions-details.is-open {
+            display: block;
+        }
+
+        .position-item {
+            padding: 7px 0;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .position-item:last-child {
+            border-bottom: none;
+        }
+
+        .position-name {
+            font-weight: 800;
+        }
+
+        .position-meta {
+            margin-top: 3px;
+            color: #6b7280;
+            font-size: 11px;
+        }
+
+        .empty {
+            padding: 45px 20px;
+            text-align: center;
+            color: #6b7280;
+        }
+
+        .modal {
+            position: fixed;
+            inset: 0;
+            z-index: 1000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            background: rgba(17, 24, 39, 0.58);
+        }
+
+        .modal.is-open {
+            display: flex;
+        }
+
+        .modal-dialog {
+            width: min(980px, 100%);
+            max-height: calc(100vh - 40px);
+            overflow-y: auto;
+            background: #ffffff;
+            border-radius: 16px;
+            box-shadow: 0 24px 70px rgba(17, 24, 39, 0.3);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 20px;
+            padding: 20px 22px 15px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .modal-header h2 {
+            margin: 0 0 5px;
+            font-size: 21px;
+        }
+
+        .modal-header p {
+            margin: 0;
+            color: #6b7280;
+            font-size: 13px;
+        }
+
+        .modal-close {
+            width: 36px;
+            height: 36px;
+            flex: 0 0 auto;
+            border: none;
+            border-radius: 9px;
+            background: #f3f4f6;
+            cursor: pointer;
+            font-size: 24px;
+            line-height: 1;
+        }
+
+        .modal-close:hover {
+            background: #e5e7eb;
+        }
+
+        .modal-body {
+            padding: 20px 22px 22px;
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 12px;
+            margin-bottom: 18px;
+        }
+
+        .field {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .field-wide {
+            grid-column: 1 / -1;
+        }
+
+        .field label {
+            color: #4b5563;
+            font-size: 12px;
+            font-weight: 800;
+        }
+
+        .control {
+            width: 100%;
+            min-height: 42px;
+            border: 1px solid #cfd5dc;
+            border-radius: 9px;
+            padding: 9px 11px;
+            background: #ffffff;
+            outline: none;
+        }
+
+        textarea.control {
+            min-height: 72px;
+            resize: vertical;
+        }
+
+        .control:focus {
+            border-color: #2563eb;
+            box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+        }
+
+        .positions-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin: 0 0 10px;
+        }
+
+        .positions-header h3 {
+            margin: 0;
+            font-size: 17px;
+        }
+
+        .add-position-button {
+            min-height: 36px;
+            color: #1d4ed8;
+            background: #dbeafe;
+        }
+
+        .add-position-button:hover {
+            background: #bfdbfe;
+        }
+
+        .receipt-position {
+            display: grid;
+            grid-template-columns:
+                minmax(260px, 1.8fr)
+                minmax(90px, 0.55fr)
+                minmax(120px, 0.7fr)
+                minmax(110px, 0.65fr)
+                42px;
+            gap: 10px;
+            align-items: end;
+            margin-bottom: 8px;
+            padding: 10px;
+            background: #f8fafc;
+            border: 1px solid #dfe3e8;
+            border-radius: 10px;
+        }
+
+        .product-meta {
+            min-height: 15px;
+            color: #6b7280;
+            font-size: 11px;
+        }
+
+        .line-total {
+            min-height: 42px;
+            display: flex;
+            align-items: center;
+            padding: 9px 11px;
+            background: #ffffff;
+            border: 1px solid #cfd5dc;
+            border-radius: 9px;
+            font-weight: 800;
+        }
+
+        .remove-position-button {
+            width: 42px;
+            height: 42px;
+            border: none;
+            border-radius: 9px;
+            color: #991b1b;
+            background: #fee2e2;
+            cursor: pointer;
+            font-size: 20px;
+        }
+
+        .remove-position-button:hover {
+            background: #fecaca;
+        }
+
+        .receipt-summary {
+            display: flex;
+            justify-content: flex-end;
+            gap: 30px;
+            margin-top: 14px;
+            padding-top: 14px;
+            border-top: 1px solid #e5e7eb;
+            font-size: 14px;
+        }
+
+        .summary-value {
+            font-weight: 900;
+        }
+
+        .modal-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 18px;
+        }
+
+        @media (max-width: 900px) {
+            .app {
+                grid-template-columns: 1fr;
+            }
+
+            .main {
+                padding: 14px;
+            }
+
+            .stats {
+                grid-template-columns: 1fr 1fr;
+            }
+
+            .form-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .receipt-position {
+                grid-template-columns: 1fr 1fr;
+            }
+
+            .receipt-position .product-field {
+                grid-column: 1 / -1;
+            }
+        }
+
+
+
+        /* RECEIPT PRODUCT COMBOBOX CSS V1 */
+        .receipt-product-combobox {
+            position: relative;
+        }
+
+        .receipt-product-suggestions {
+            position: absolute;
+            z-index: 50;
+            top: calc(100% + 6px);
+            left: 0;
+            right: 0;
+            display: none;
+            max-height: 300px;
+            overflow-y: auto;
+            background: #ffffff;
+            border: 1px solid #cbd5e1;
+            border-radius: 12px;
+            box-shadow:
+                0 14px 35px rgba(15, 23, 42, 0.18);
+        }
+
+        .receipt-product-suggestions.is-open {
+            display: block;
+        }
+
+        .receipt-product-suggestion {
+            width: 100%;
+            padding: 11px 13px;
+            border: 0;
+            border-bottom: 1px solid #eef2f7;
+            background: #ffffff;
+            text-align: left;
+            cursor: pointer;
+        }
+
+        .receipt-product-suggestion:last-child {
+            border-bottom: 0;
+        }
+
+        .receipt-product-suggestion:hover,
+        .receipt-product-suggestion.is-active {
+            background: #eff6ff;
+        }
+
+        .receipt-new-product-suggestion {
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            color: #1d4ed8;
+            background: #eff6ff;
+            font-weight: 700;
+        }
+
+        .receipt-product-suggestion-name {
+            color: #172033;
+            font-size: 14px;
+            font-weight: 700;
+        }
+
+        .receipt-product-suggestion-meta {
+            margin-top: 3px;
+            color: #64748b;
+            font-size: 12px;
+            line-height: 1.35;
+        }
+        /* RECEIPT PRODUCT COMBOBOX CSS V1 END */
+
+
+        /* RECEIPT CREATE NEXT CSS V2 */
+        .button-next-receipt {
+            min-height: 42px;
+            padding: 9px 16px;
+            border: 1px solid #bfdbfe;
+            border-radius: 10px;
+            background: #dbeafe;
+            color: #1d4ed8;
+            font-weight: 800;
+            white-space: nowrap;
+            cursor: pointer;
+        }
+
+        .button-next-receipt:hover {
+            background: #bfdbfe;
+        }
+
+        @media (max-width: 900px) {
+            .modal-actions {
+                flex-wrap: wrap;
+            }
+        }
+        /* RECEIPT CREATE NEXT CSS V2 END */
+
+
+        /* RECEIPT ROW ACTIONS CSS V1 */
+        .receipts-table .col-actions,
+        th.col-actions,
+        td.col-actions {
+            width: 104px;
+            min-width: 104px;
+            max-width: 104px;
+            padding-right: 6px !important;
+            padding-left: 6px !important;
+            text-align: center;
+            white-space: nowrap;
+        }
+
+        .receipt-table-control {
+            width: 100%;
+            min-height: 34px;
+            padding: 6px 8px;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            background: #ffffff;
+            color: #172033;
+            font: inherit;
+            font-size: 12px;
+            outline: none;
+        }
+
+        .receipt-table-control:focus {
+            border-color: #2563eb;
+            box-shadow:
+                0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+
+        .receipt-edit-control {
+            display: none !important;
+        }
+
+        .receipt-row.is-editing {
+            background: #eff6ff;
+        }
+
+        .receipt-row.is-editing:hover {
+            background: #dbeafe;
+        }
+
+        .receipt-row.is-editing
+        .receipt-view-value {
+            display: none !important;
+        }
+
+        .receipt-row.is-editing
+        .receipt-edit-control {
+            display: block !important;
+        }
+
+        .receipt-view-actions,
+        .receipt-edit-actions {
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+        }
+
+        .receipt-view-actions {
+            display: flex;
+        }
+
+        .receipt-edit-actions {
+            display: none;
+            flex-direction: column;
+        }
+
+        .receipt-row.is-editing
+        .receipt-view-actions {
+            display: none;
+        }
+
+        .receipt-row.is-editing
+        .receipt-edit-actions {
+            display: flex;
+        }
+
+        .receipt-action-button {
+            display: inline-flex;
+            flex: 0 0 25px;
+            align-items: center;
+            justify-content: center;
+            width: 25px;
+            min-width: 25px;
+            height: 25px;
+            min-height: 25px;
+            padding: 0;
+            border: 0;
+            border-radius: 7px;
+            cursor: pointer;
+        }
+
+        .receipt-action-button svg {
+            width: 12px;
+            height: 12px;
+            pointer-events: none;
+        }
+
+        .receipt-edit-button {
+            background: #dbeafe;
+            color: #1d4ed8;
+        }
+
+        .receipt-edit-button:hover {
+            background: #bfdbfe;
+        }
+
+        .receipt-delete-button {
+            background: #fee2e2;
+            color: #dc2626;
+        }
+
+        .receipt-delete-button:hover {
+            background: #fecaca;
+        }
+
+        .receipt-save-button,
+        .receipt-cancel-button {
+            width: 100%;
+            min-height: 27px;
+            padding: 4px 7px;
+            border: 0;
+            border-radius: 7px;
+            font-size: 10px;
+            font-weight: 800;
+            cursor: pointer;
+        }
+
+        .receipt-save-button {
+            background: #2563eb;
+            color: #ffffff;
+        }
+
+        .receipt-save-button:hover {
+            background: #1d4ed8;
+        }
+
+        .receipt-cancel-button {
+            background: #e5e7eb;
+            color: #475569;
+        }
+
+        .receipt-cancel-button:hover {
+            background: #d1d5db;
+        }
+
+        .receipt-note-input {
+            min-width: 130px;
+            min-height: 58px;
+            resize: vertical;
+        }
+
+        .receipt-number-input {
+            min-width: 74px;
+        }
+
+        .receipt-price-editor small,
+        .receipt-fixed-product small {
+            display: block;
+            margin-top: 4px;
+            color: #64748b;
+            font-size: 9px;
+            line-height: 1.25;
+        }
+
+        .receipt-fixed-product {
+            min-width: 150px;
+            color: #172033;
+            font-size: 12px;
+            font-weight: 700;
+            white-space: normal;
+        }
+        /* RECEIPT ROW ACTIONS CSS V1 END */
+
+
+        /* RECEIPT VISIBLE ACTIONS V1 */
+        .receipts-table {
+            width: 100% !important;
+            min-width: 0 !important;
+            table-layout: fixed;
+        }
+
+        .receipts-table th.col-date,
+        .receipts-table td.col-date {
+            width: 9%;
+        }
+
+        .receipts-table th.col-number,
+        .receipts-table th.col-document,
+        .receipts-table td.col-document {
+            width: 12%;
+        }
+
+        .receipts-table th.col-supplier,
+        .receipts-table th.col-brand,
+        .receipts-table td.col-brand {
+            width: 11%;
+        }
+
+        .receipts-table th.col-invoice,
+        .receipts-table th.col-category,
+        .receipts-table td.col-category {
+            width: 12%;
+        }
+
+        .receipts-table th.col-products,
+        .receipts-table td.col-products {
+            width: 17%;
+        }
+
+        .receipts-table th.col-qty,
+        .receipts-table td.col-qty {
+            width: 7%;
+        }
+
+        .receipts-table th.col-amount,
+        .receipts-table td.col-amount {
+            width: 10%;
+        }
+
+        .receipts-table th.col-status,
+        .receipts-table td.col-status {
+            width: 8%;
+        }
+
+        .receipts-table th.col-link,
+        .receipts-table td.col-link {
+            width: 6%;
+            text-align: center;
+        }
+
+        .receipts-table th.col-actions,
+        .receipts-table td.col-actions {
+            position: sticky;
+            right: 0;
+            z-index: 3;
+            width: 8% !important;
+            min-width: 88px !important;
+            max-width: 96px !important;
+            background: #ffffff;
+            box-shadow:
+                -5px 0 9px rgba(15, 23, 42, 0.07);
+        }
+
+        .receipts-table th.col-actions {
+            z-index: 5;
+            background: #eef1f4;
+        }
+
+        .receipts-table tbody tr:hover
+        td.col-actions {
+            background: #f8fafc;
+        }
+
+        .receipts-table tbody tr.is-editing
+        td.col-actions {
+            background: #eff6ff;
+        }
+
+        .receipts-table th,
+        .receipts-table td {
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .receipts-table .positions-details,
+        .receipts-table .receipt-edit-control,
+        .receipts-table .receipt-view-actions,
+        .receipts-table .receipt-edit-actions {
+            overflow: visible;
+        }
+
+        .receipt-view-actions form {
+            display: flex;
+            margin: 0;
+        }
+        /* RECEIPT VISIBLE ACTIONS V1 END */
+
+
+        /* RECEIPT MOYSKLAD ACTION CSS V2 */
+        .receipts-table th.col-products,
+        .receipts-table td.col-products {
+            width: 21%;
+        }
+
+        .receipts-table th.col-actions,
+        .receipts-table td.col-actions {
+            width: 11% !important;
+            min-width: 112px !important;
+            max-width: 128px !important;
+        }
+
+        .receipt-view-actions {
+            gap: 6px;
+        }
+
+        .receipt-moysklad-button {
+            background: #ede9fe;
+            color: #6d28d9;
+            text-decoration: none;
+        }
+
+        .receipt-moysklad-button:hover {
+            background: #ddd6fe;
+        }
+
+        .receipt-moysklad-button.is-disabled {
+            background: #f1f5f9;
+            color: #94a3b8;
+            cursor: default;
+        }
+        /* RECEIPT MOYSKLAD ACTION CSS V2 END */
+
+
+        /* RECEIPT PRODUCT NAME ONLY CSS V1 */
+        .receipt-product-name-only {
+            color: #172033;
+            font-weight: 700;
+            line-height: 1.35;
+            white-space: normal;
+            overflow-wrap: anywhere;
+        }
+        /* RECEIPT PRODUCT NAME ONLY CSS V1 END */
+
+</style>
+</head>
+
+<body>
+<div class="app">
+    {% include "_sidebar.html" %}
+
+    <main class="main">
+        <header class="page-header">
+            <div>
+                <h1>Приход</h1>
+                <p>Приёмка товаров и проведение оприходований в МойСклад</p>
+            </div>
+        </header>
+
+        {% if message %}
+            <div class="notice {% if notice == 'error' %}notice-error{% else %}notice-success{% endif %}">
+                {{ message }}
+            </div>
+        {% endif %}
+
+        <section class="stats">
+            <div class="stat-card">
+                <div class="stat-label">Документов прихода</div>
+                <div class="stat-value">{{ total_receipts }}</div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-label">Принято единиц</div>
+                <div class="stat-value">{{ total_quantity }}</div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-label">Закупочная стоимость</div>
+                <div class="stat-value">{{ "%.2f"|format(total_amount) }} ₽</div>
+            </div>
+
+            <button
+                class="button stats-action-button"
+                type="button"
+                onclick="openReceiptModal()"
+            >
+                + Новый приход
+            </button>
+        </section>
+
+        <div class="toolbar">
+            <input
+                class="search"
+                id="receiptSearch"
+                type="search"
+                placeholder="Поиск по документу, поставщику или накладной"
+                oninput="filterReceipts()"
+            >
+        </div>
+
+        <section class="table-card">
+            {% if receipts %}
+                <div class="table-wrap">
+                    <table class="receipts-table">
+                        <thead>
+                            <tr>
+                                <th class="col-date">Дата</th>
+                                <th class="col-number">Документ</th>
+                                <th class="col-supplier">Бренд</th>
+                                <th class="col-invoice">Категория</th>
+                                <th class="col-products">Товар</th>
+                                <th class="col-qty">К-во</th>
+                                <th class="col-amount">Сумма</th>
+                                <th class="col-status">Статус</th>
+                                <th class="col-actions">
+                                    Действия
+                                </th>
+                            </tr>
+                        </thead>
+
+                                                <!-- RECEIPT ROW ACTIONS UI V1 -->
+                        <tbody id="receiptsTableBody">
+                            {% for receipt in receipts %}
+                                {% set edit_form_id = "edit-receipt-" ~ receipt.id %}
+                                {% set receipt_position = receipt.positions[0] if receipt.positions else none %}
+                                {% set receipt_quantity = receipt.quantity if receipt.quantity is defined and receipt.quantity is not none else receipt.total_quantity %}
+                                {% set receipt_price = receipt.purchase_price if receipt.purchase_price is defined and receipt.purchase_price is not none else (receipt_position.purchase_price if receipt_position else 0) %}
+
+                                <tr
+                                    class="receipt-row"
+                                    data-search="{{ (
+                                        (receipt.number or '') ~ ' ' ~
+                                        (receipt.brand or receipt.supplier or '') ~ ' ' ~
+                                        (receipt.category or receipt.invoice_number or '') ~ ' ' ~
+                                        (receipt.product_name or '') ~ ' ' ~
+                                        (receipt.note or '')
+                                    )|lower }}"
+                                >
+                                    <td class="col-date">
+                                        <span class="receipt-view-value">
+                                            {{ receipt.receipt_date or receipt.created_at }}
+                                        </span>
+
+                                        <input
+                                            class="receipt-table-control receipt-edit-control"
+                                            type="date"
+                                            name="receipt_date"
+                                            value="{{ receipt.receipt_date }}"
+                                            form="{{ edit_form_id }}"
+                                            required
+                                        >
+                                    </td>
+
+                                    <td class="col-document">
+                                        <div class="receipt-view-value">
+                                            <div class="document-number">
+                                                {{ receipt.number }}
+                                            </div>
+
+                                            {% if receipt.note %}
+                                                <div class="secondary-text">
+                                                    {{ receipt.note }}
+                                                </div>
+                                            {% endif %}
+                                        </div>
+
+                                        <textarea
+                                            class="receipt-table-control receipt-edit-control receipt-note-input"
+                                            name="note"
+                                            placeholder="Комментарий"
+                                            form="{{ edit_form_id }}"
+                                        >{{ receipt.note }}</textarea>
+                                    </td>
+
+                                    <td class="col-brand">
+                                        <span class="receipt-view-value supplier-name">
+                                            {{ receipt.brand or receipt.supplier or "—" }}
+                                        </span>
+
+                                        <input
+                                            class="receipt-table-control receipt-edit-control"
+                                            type="text"
+                                            name="brand"
+                                            value="{{ receipt.brand or receipt.supplier or '' }}"
+                                            form="{{ edit_form_id }}"
+                                            required
+                                        >
+                                    </td>
+
+                                    <td class="col-category">
+                                        <span class="receipt-view-value">
+                                            {{ receipt.category or receipt.invoice_number or "—" }}
+                                        </span>
+
+                                        <input
+                                            class="receipt-table-control receipt-edit-control"
+                                            type="text"
+                                            name="category"
+                                            value="{{ receipt.category or receipt.invoice_number or '' }}"
+                                            form="{{ edit_form_id }}"
+                                            required
+                                        >
+                                    </td>
+
+                                    <td class="col-products">
+                                        <!-- RECEIPT PRODUCT NAME ONLY V1 -->
+                                        <div class="receipt-view-value receipt-product-name-only">
+                                            {{ receipt.product_name or (receipt_position.product_name if receipt_position else "—") }}
+                                        </div>
+                                        <!-- RECEIPT PRODUCT NAME ONLY V1 END -->
+
+                                        <div class="receipt-edit-control receipt-fixed-product">
+                                            {{ receipt.product_name or (receipt_position.product_name if receipt_position else "Товар") }}
+                                            <small>
+                                                Товар в проведённом приходе не меняется
+                                            </small>
+                                        </div>
+                                    </td>
+
+                                    <td class="col-qty">
+                                        <span class="receipt-view-value">
+                                            {{ receipt.total_quantity }}
+                                        </span>
+
+                                        <input
+                                            class="receipt-table-control receipt-edit-control receipt-number-input"
+                                            type="number"
+                                            name="quantity"
+                                            value="{{ receipt_quantity }}"
+                                            min="0.01"
+                                            step="0.01"
+                                            form="{{ edit_form_id }}"
+                                            required
+                                        >
+                                    </td>
+
+                                    <td class="col-amount">
+                                        <span class="receipt-view-value">
+                                            {{ "%.2f"|format(receipt.total_amount) }} ₽
+                                        </span>
+
+                                        <div class="receipt-edit-control receipt-price-editor">
+                                            <input
+                                                class="receipt-table-control receipt-number-input"
+                                                type="number"
+                                                name="purchase_price"
+                                                value="{{ receipt_price }}"
+                                                min="0"
+                                                step="0.01"
+                                                placeholder="Цена"
+                                                form="{{ edit_form_id }}"
+                                                required
+                                            >
+
+                                            <small>
+                                                Цена за единицу
+                                            </small>
+                                        </div>
+                                    </td>
+
+                                    <td class="col-status">
+                                        <span class="status-badge">
+                                            {{ receipt.status_label or "Проведён" }}
+                                        </span>
+                                    </td>
+
+                                    <td class="col-actions">
+                                        <form
+                                            id="{{ edit_form_id }}"
+                                            class="receipt-edit-form"
+                                            method="post"
+                                            action="/receipts/update"
+                                        >
+                                            <input
+                                                type="hidden"
+                                                name="receipt_id"
+                                                value="{{ receipt.id }}"
+                                            >
+                                        </form>
+
+                                        <div class="receipt-view-actions">
+                                            <!-- RECEIPT MOYSKLAD ACTION V2 -->
+                                            {% if receipt.moysklad_document_url %}
+                                                <a
+                                                    class="receipt-action-button receipt-moysklad-button"
+                                                    href="{{ receipt.moysklad_document_url }}"
+                                                    target="_blank"
+                                                    rel="noopener"
+                                                    title="Открыть в МойСклад"
+                                                    aria-label="Открыть в МойСклад"
+                                                >
+                                                    <svg
+                                                        viewBox="0 0 24 24"
+                                                        fill="none"
+                                                        stroke="currentColor"
+                                                        stroke-width="2"
+                                                        stroke-linecap="round"
+                                                        stroke-linejoin="round"
+                                                        aria-hidden="true"
+                                                    >
+                                                        <path d="M14 3h7v7"/>
+                                                        <path d="M10 14L21 3"/>
+                                                        <path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/>
+                                                    </svg>
+                                                </a>
+                                            {% else %}
+                                                <span
+                                                    class="receipt-action-button receipt-moysklad-button is-disabled"
+                                                    title="Документ МоегоСклада недоступен"
+                                                    aria-label="Документ МоегоСклада недоступен"
+                                                >
+                                                    <svg
+                                                        viewBox="0 0 24 24"
+                                                        fill="none"
+                                                        stroke="currentColor"
+                                                        stroke-width="2"
+                                                        stroke-linecap="round"
+                                                        stroke-linejoin="round"
+                                                        aria-hidden="true"
+                                                    >
+                                                        <path d="M14 3h7v7"/>
+                                                        <path d="M10 14L21 3"/>
+                                                        <path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/>
+                                                    </svg>
+                                                </span>
+                                            {% endif %}
+                                            <!-- RECEIPT MOYSKLAD ACTION V2 END -->
+
+                                            <button
+                                                class="receipt-action-button receipt-edit-button js-edit-receipt"
+                                                type="button"
+                                                title="Изменить приход"
+                                                aria-label="Изменить приход"
+                                            >
+                                                <svg
+                                                    viewBox="0 0 24 24"
+                                                    fill="none"
+                                                    stroke="currentColor"
+                                                    stroke-width="2"
+                                                    stroke-linecap="round"
+                                                    stroke-linejoin="round"
+                                                    aria-hidden="true"
+                                                >
+                                                    <path d="M12 20h9"/>
+                                                    <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                                                </svg>
+                                            </button>
+
+                                            <form
+                                                method="post"
+                                                action="/receipts/delete"
+                                                onsubmit="return confirm('Удалить этот приход? Остаток будет отменён в МойСклад.');"
+                                            >
+                                                <input
+                                                    type="hidden"
+                                                    name="receipt_id"
+                                                    value="{{ receipt.id }}"
+                                                >
+
+                                                <button
+                                                    class="receipt-action-button receipt-delete-button"
+                                                    type="submit"
+                                                    title="Удалить приход"
+                                                    aria-label="Удалить приход"
+                                                >
+                                                    <svg
+                                                        viewBox="0 0 24 24"
+                                                        fill="none"
+                                                        stroke="currentColor"
+                                                        stroke-width="2"
+                                                        stroke-linecap="round"
+                                                        stroke-linejoin="round"
+                                                        aria-hidden="true"
+                                                    >
+                                                        <path d="M3 6h18"/>
+                                                        <path d="M8 6V4h8v2"/>
+                                                        <path d="M19 6l-1 14H6L5 6"/>
+                                                        <path d="M10 11v6"/>
+                                                        <path d="M14 11v6"/>
+                                                    </svg>
+                                                </button>
+                                            </form>
+                                        </div>
+
+                                        <div class="receipt-edit-actions">
+                                            <button
+                                                class="receipt-save-button"
+                                                type="submit"
+                                                form="{{ edit_form_id }}"
+                                            >
+                                                Сохранить
+                                            </button>
+
+                                            <button
+                                                class="receipt-cancel-button js-cancel-receipt"
+                                                type="button"
+                                            >
+                                                Отмена
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                        <!-- RECEIPT ROW ACTIONS UI V1 END -->
+                    </table>
+                </div>
+            {% else %}
+                <div class="empty">
+                    Приходов пока нет. Нажмите «Новый приход».
+                </div>
+            {% endif %}
+        </section>
+    </main>
+</div>
+
+<div class="modal" id="receiptModal">
+    <div class="modal-dialog">
+        <div class="modal-header">
+            <div>
+                <h2>Новый приход</h2>
+                <p>После проведения остатки увеличатся в МойСклад</p>
+            </div>
+
+            <button
+                class="modal-close"
+                type="button"
+                onclick="closeReceiptModal()"
+            >
+                ×
+            </button>
+        </div>
+
+        <div class="modal-body">
+            <form method="post" action="/receipts/create" id="receiptForm">
+                <!-- SIMPLE RECEIPT FORM V1 -->
+                <div class="form-grid receipt-simple-grid">
+                    <div class="field">
+                        <label for="receipt_date">
+                            Дата *
+                        </label>
+
+                        <input
+                            class="control"
+                            id="receipt_date"
+                            name="receipt_date"
+                            type="date"
+                            value="{{ today }}"
+                            required
+                        >
+                    </div>
+
+                    <div class="field">
+                        <label for="receipt_brand">
+                            Бренд *
+                        </label>
+
+                        <input
+                            class="control"
+                            id="receipt_brand"
+                            name="brand"
+                            type="text"
+                            placeholder="Бренд товара"
+                            autocomplete="off"
+                            required
+                        >
+                    </div>
+
+                    <div class="field">
+                        <label for="receipt_category">
+                            Категория *
+                        </label>
+
+                        <input
+                            class="control"
+                            id="receipt_category"
+                            name="category"
+                            type="text"
+                            placeholder="Категория товара"
+                            autocomplete="off"
+                            required
+                        >
+                    </div>
+
+                    <!-- RECEIPT PRODUCT COMBOBOX V1 -->
+                    <div
+                        class="field receipt-product-field receipt-product-combobox"
+                    >
+                        <label for="receipt_product_search">
+                            Товар *
+                        </label>
+
+                        <input
+                            class="control"
+                            id="receipt_product_search"
+                            type="text"
+                            placeholder="Введите название, артикул или код"
+                            autocomplete="off"
+                            required
+                        >
+
+                        <input
+                            id="receipt_product_id"
+                            name="product_id"
+                            type="hidden"
+                            value="__new__"
+                        >
+
+                        <input
+                            id="receipt_new_product_name"
+                            name="new_product_name"
+                            type="hidden"
+                        >
+
+                        <div
+                            id="receiptProductSuggestions"
+                            class="receipt-product-suggestions"
+                        ></div>
+                    </div>
+                    <!-- RECEIPT PRODUCT COMBOBOX V1 END -->
+
+                    <div class="field">
+                        <label for="receipt_quantity">
+                            Количество *
+                        </label>
+
+                        <input
+                            class="control"
+                            id="receipt_quantity"
+                            name="quantity"
+                            type="number"
+                            min="1"
+                            step="1"
+                            value="1"
+                            required
+                        >
+                    </div>
+
+                    <div class="field">
+                        <label for="receipt_purchase_price">
+                            Закупочная цена, ₽ *
+                        </label>
+
+                        <input
+                            class="control"
+                            id="receipt_purchase_price"
+                            name="purchase_price"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            placeholder="Например, 5000"
+                            required
+                        >
+                    </div>
+
+                    <div class="field field-wide">
+                        <label for="note">
+                            Комментарий
+                        </label>
+
+                        <textarea
+                            class="control"
+                            id="note"
+                            name="note"
+                            placeholder="Дополнительная информация"
+                        ></textarea>
+                    </div>
+                </div>
+                <!-- SIMPLE RECEIPT FORM V1 END -->
+
+                <div class="modal-actions">
+                    <!-- RECEIPT CREATE NEXT V2 -->
+                    <button
+                        class="button button-secondary"
+                        type="button"
+                        onclick="closeReceiptModal()"
+                    >
+                        Отмена
+                    </button>
+
+                    <button
+                        class="button button-next-receipt"
+                        type="submit"
+                        name="submit_mode"
+                        value="create_next"
+                    >
+                        Создать и оформить следующий приход
+                    </button>
+
+                    <button
+                        class="button button-primary"
+                        type="submit"
+                        name="submit_mode"
+                        value="close"
+                    >
+                        Провести приход
+                    </button>
+                    <!-- RECEIPT CREATE NEXT V2 END -->
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+
+<script>
+    // SIMPLE RECEIPT FORM SCRIPT V1
+    const receiptModal =
+        document.getElementById("receiptModal");
+
+    const receiptProducts =
+        {{ warehouse_items | tojson }};
+
+    const receiptProductSearch =
+        document.getElementById(
+            "receipt_product_search"
+        );
+
+    const receiptProductId =
+        document.getElementById(
+            "receipt_product_id"
+        );
+
+    const receiptNewProductName =
+        document.getElementById(
+            "receipt_new_product_name"
+        );
+
+    const receiptProductSuggestions =
+        document.getElementById(
+            "receiptProductSuggestions"
+        );
+
+    const receiptBrand =
+        document.getElementById(
+            "receipt_brand"
+        );
+
+    const receiptCategory =
+        document.getElementById(
+            "receipt_category"
+        );
+
+    const receiptForm =
+        document.getElementById(
+            "receiptForm"
+        );
+
+    let receiptSelectedProduct = null;
+    let receiptActiveSuggestionIndex = -1;
+
+    function openReceiptModal() {
+        receiptModal.classList.add("is-open");
+    }
+
+    function closeReceiptModal() {
+        receiptModal.classList.remove("is-open");
+    }
+
+
+    // RECEIPT CREATE NEXT SCRIPT V2
+    const shouldOpenReceiptModal =
+        {{ open_receipt_modal | tojson }};
+
+    if (shouldOpenReceiptModal) {
+        openReceiptModal();
+    }
+    // RECEIPT CREATE NEXT SCRIPT V2 END
+
+    // RECEIPT PRODUCT SEARCH SCRIPT V1
+    function normalizeReceiptProduct(value) {
+        return String(value || "")
+            .toLowerCase()
+            .replaceAll("ё", "е")
+            .trim();
+    }
+
+    function getReceiptProductSearchText(product) {
+        return normalizeReceiptProduct([
+            product.name,
+            product.article,
+            product.code,
+            product.brand,
+            product.category,
+        ].join(" "));
+    }
+
+    function closeReceiptProductSuggestions() {
+        if (!receiptProductSuggestions) {
+            return;
+        }
+
+        receiptProductSuggestions.classList.remove(
+            "is-open"
+        );
+
+        receiptActiveSuggestionIndex = -1;
+    }
+
+    function setReceiptNewProductMode(
+        productName,
+        clearClassification = false
+    ) {
+        receiptSelectedProduct = null;
+
+        receiptProductId.value = "__new__";
+        receiptNewProductName.value =
+            String(productName || "").trim();
+
+        if (clearClassification) {
+            receiptBrand.value = "";
+            receiptCategory.value = "";
+        }
+    }
+
+    function selectReceiptExistingProduct(product) {
+        receiptSelectedProduct = product;
+
+        receiptProductSearch.value =
+            product.name || "";
+
+        receiptProductId.value =
+            product.id || "";
+
+        receiptNewProductName.value = "";
+
+        receiptBrand.value =
+            product.brand || "";
+
+        receiptCategory.value =
+            product.category || "";
+
+        closeReceiptProductSuggestions();
+    }
+
+    function getReceiptFilteredProducts(query) {
+        const normalizedQuery =
+            normalizeReceiptProduct(query);
+
+        return receiptProducts
+            .filter((product) => {
+                if (!normalizedQuery) {
+                    return true;
+                }
+
+                return getReceiptProductSearchText(
+                    product
+                ).includes(normalizedQuery);
+            })
+            .slice(0, 50);
+    }
+
+    function updateReceiptActiveSuggestion() {
+        const buttons = Array.from(
+            receiptProductSuggestions
+                .querySelectorAll(
+                    ".receipt-product-suggestion"
+                )
+        );
+
+        buttons.forEach((button, index) => {
+            button.classList.toggle(
+                "is-active",
+                index === receiptActiveSuggestionIndex
+            );
+        });
+
+        const activeButton =
+            buttons[receiptActiveSuggestionIndex];
+
+        if (activeButton) {
+            activeButton.scrollIntoView({
+                block: "nearest",
+            });
+        }
+    }
+
+    function renderReceiptProductSuggestions() {
+        if (
+            !receiptProductSearch
+            || !receiptProductSuggestions
+        ) {
+            return;
+        }
+
+        const query =
+            receiptProductSearch.value.trim();
+
+        const products =
+            getReceiptFilteredProducts(query);
+
+        receiptProductSuggestions.innerHTML = "";
+        receiptActiveSuggestionIndex = 0;
+
+        const newProductButton =
+            document.createElement("button");
+
+        newProductButton.type = "button";
+        newProductButton.className =
+            "receipt-product-suggestion "
+            + "receipt-new-product-suggestion "
+            + "is-active";
+
+        newProductButton.textContent = query
+            ? `＋ Создать новый товар «${query}»`
+            : "＋ Новый товар";
+
+        newProductButton.addEventListener(
+            "mousedown",
+            (event) => {
+                event.preventDefault();
+
+                setReceiptNewProductMode(
+                    query,
+                    true
+                );
+
+                closeReceiptProductSuggestions();
+                receiptProductSearch.focus();
+            }
+        );
+
+        receiptProductSuggestions.appendChild(
+            newProductButton
+        );
+
+        products.forEach((product) => {
+            const button =
+                document.createElement("button");
+
+            button.type = "button";
+            button.className =
+                "receipt-product-suggestion";
+
+            const name =
+                document.createElement("div");
+
+            name.className =
+                "receipt-product-suggestion-name";
+
+            name.textContent =
+                product.name || "Товар без названия";
+
+            const meta =
+                document.createElement("div");
+
+            meta.className =
+                "receipt-product-suggestion-meta";
+
+            const parts = [];
+
+            if (product.article) {
+                parts.push(
+                    `Артикул: ${product.article}`
+                );
+            } else if (product.code) {
+                parts.push(
+                    `Код: ${product.code}`
+                );
+            }
+
+            if (product.brand) {
+                parts.push(product.brand);
+            }
+
+            if (product.category) {
+                parts.push(product.category);
+            }
+
+            meta.textContent =
+                parts.join(" · ")
+                || "Без дополнительной информации";
+
+            button.appendChild(name);
+            button.appendChild(meta);
+
+            button.addEventListener(
+                "mousedown",
+                (event) => {
+                    event.preventDefault();
+
+                    selectReceiptExistingProduct(
+                        product
+                    );
+                }
+            );
+
+            receiptProductSuggestions.appendChild(
+                button
+            );
+        });
+
+        receiptProductSuggestions.classList.add(
+            "is-open"
+        );
+    }
+
+    function findExactReceiptProduct(value) {
+        const normalizedValue =
+            normalizeReceiptProduct(value);
+
+        if (!normalizedValue) {
+            return null;
+        }
+
+        return receiptProducts.find(
+            (product) => {
+                return normalizeReceiptProduct(
+                    product.name
+                ) === normalizedValue;
+            }
+        ) || null;
+    }
+
+    if (receiptProductSearch) {
+        receiptProductSearch.addEventListener(
+            "focus",
+            renderReceiptProductSuggestions
+        );
+
+        receiptProductSearch.addEventListener(
+            "input",
+            () => {
+                const value =
+                    receiptProductSearch.value.trim();
+
+                if (
+                    receiptSelectedProduct
+                    && normalizeReceiptProduct(
+                        receiptSelectedProduct.name
+                    ) !== normalizeReceiptProduct(
+                        value
+                    )
+                ) {
+                    setReceiptNewProductMode(
+                        value,
+                        true
+                    );
+                } else if (!receiptSelectedProduct) {
+                    setReceiptNewProductMode(
+                        value
+                    );
+                }
+
+                renderReceiptProductSuggestions();
+            }
+        );
+
+        receiptProductSearch.addEventListener(
+            "keydown",
+            (event) => {
+                const buttons = Array.from(
+                    receiptProductSuggestions
+                        .querySelectorAll(
+                            ".receipt-product-suggestion"
+                        )
+                );
+
+                if (event.key === "ArrowDown") {
+                    event.preventDefault();
+
+                    receiptActiveSuggestionIndex =
+                        Math.min(
+                            receiptActiveSuggestionIndex + 1,
+                            buttons.length - 1
+                        );
+
+                    updateReceiptActiveSuggestion();
+                }
+
+                if (event.key === "ArrowUp") {
+                    event.preventDefault();
+
+                    receiptActiveSuggestionIndex =
+                        Math.max(
+                            receiptActiveSuggestionIndex - 1,
+                            0
+                        );
+
+                    updateReceiptActiveSuggestion();
+                }
+
+                if (
+                    event.key === "Enter"
+                    && receiptProductSuggestions
+                        .classList.contains("is-open")
+                ) {
+                    event.preventDefault();
+
+                    const activeButton =
+                        buttons[
+                            receiptActiveSuggestionIndex
+                        ];
+
+                    if (activeButton) {
+                        activeButton.dispatchEvent(
+                            new MouseEvent(
+                                "mousedown"
+                            )
+                        );
+                    }
+                }
+
+                if (event.key === "Escape") {
+                    closeReceiptProductSuggestions();
+                }
+            }
+        );
+    }
+
+    if (receiptForm) {
+        receiptForm.addEventListener(
+            "submit",
+            () => {
+                const value =
+                    receiptProductSearch.value.trim();
+
+                if (
+                    receiptSelectedProduct
+                    && normalizeReceiptProduct(
+                        receiptSelectedProduct.name
+                    ) === normalizeReceiptProduct(
+                        value
+                    )
+                ) {
+                    return;
+                }
+
+                const exactProduct =
+                    findExactReceiptProduct(value);
+
+                if (exactProduct) {
+                    selectReceiptExistingProduct(
+                        exactProduct
+                    );
+
+                    return;
+                }
+
+                setReceiptNewProductMode(value);
+            }
+        );
+    }
+
+    document.addEventListener(
+        "mousedown",
+        (event) => {
+            const combobox = event.target.closest(
+                ".receipt-product-combobox"
+            );
+
+            if (!combobox) {
+                closeReceiptProductSuggestions();
+            }
+        }
+    );
+    // RECEIPT PRODUCT SEARCH SCRIPT V1 END
+
+    // SIMPLE RECEIPT FORM SCRIPT V1 END
+
+    function togglePositions(button) {
+        const details = button.nextElementSibling;
+
+        if (!details) {
+            return;
+        }
+
+        details.classList.toggle("is-open");
+    }
+
+    function filterReceipts() {
+        const query = (
+            document.getElementById("receiptSearch").value || ""
+        ).trim().toLowerCase();
+
+        document.querySelectorAll(".receipt-row").forEach((row) => {
+            const searchText = row.dataset.search || "";
+            row.style.display = searchText.includes(query) ? "" : "none";
+        });
+    }
+
+    receiptModal.addEventListener("click", (event) => {
+        if (event.target === receiptModal) {
+            closeReceiptModal();
+        }
+    });
+
+    document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+            closeReceiptModal();
+        }
+    });
+
+    // RECEIPT ROW ACTIONS SCRIPT V1
+    document
+        .querySelectorAll(".js-edit-receipt")
+        .forEach((button) => {
+            button.addEventListener(
+                "click",
+                () => {
+                    const row = button.closest(
+                        ".receipt-row"
+                    );
+
+                    document
+                        .querySelectorAll(
+                            ".receipt-row.is-editing"
+                        )
+                        .forEach((editingRow) => {
+                            if (editingRow !== row) {
+                                const form =
+                                    editingRow.querySelector(
+                                        ".receipt-edit-form"
+                                    );
+
+                                if (form) {
+                                    form.reset();
+                                }
+
+                                editingRow.classList.remove(
+                                    "is-editing"
+                                );
+                            }
+                        });
+
+                    if (row) {
+                        row.classList.add(
+                            "is-editing"
+                        );
+                    }
+                }
+            );
+        });
+
+    document
+        .querySelectorAll(".js-cancel-receipt")
+        .forEach((button) => {
+            button.addEventListener(
+                "click",
+                () => {
+                    const row = button.closest(
+                        ".receipt-row"
+                    );
+
+                    if (!row) {
+                        return;
+                    }
+
+                    const form = row.querySelector(
+                        ".receipt-edit-form"
+                    );
+
+                    if (form) {
+                        form.reset();
+                    }
+
+                    row.classList.remove(
+                        "is-editing"
+                    );
+                }
+            );
+        });
+    // RECEIPT ROW ACTIONS SCRIPT V1 END
+
+</script>
+</body>
+</html>

@@ -1,0 +1,30 @@
+{
+  "orders": {
+    "enabled": false,
+    "position": 1
+  },
+  "products": {
+    "enabled": true,
+    "position": 2
+  },
+  "sales": {
+    "enabled": true,
+    "position": 3
+  },
+  "receipts": {
+    "enabled": true,
+    "position": 4
+  },
+  "stock_operations": {
+    "enabled": false,
+    "position": 5
+  },
+  "repair": {
+    "enabled": false,
+    "position": 6
+  },
+  "settings": {
+    "enabled": true,
+    "position": 7
+  }
+}

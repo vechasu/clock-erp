@@ -156,6 +156,134 @@
             color: #166534;
         }
 
+
+        .navigation-list {
+            display: grid;
+            gap: 12px;
+        }
+
+        .navigation-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 18px;
+            min-height: 72px;
+            padding: 14px 16px;
+            border: 1px solid #e2e8f0;
+            border-radius: 15px;
+            background: #f8fafc;
+            cursor: pointer;
+            transition:
+                border-color 0.2s ease,
+                background 0.2s ease,
+                transform 0.2s ease;
+        }
+
+        .navigation-item:hover {
+            border-color: #bfdbfe;
+            background: #f8fbff;
+            transform: translateY(-1px);
+        }
+
+        .navigation-item-required {
+            cursor: default;
+        }
+
+        .navigation-item-required:hover {
+            border-color: #e2e8f0;
+            background: #f8fafc;
+            transform: none;
+        }
+
+        .navigation-item-main {
+            display: flex;
+            align-items: center;
+            min-width: 0;
+            gap: 13px;
+        }
+
+        .navigation-item-icon {
+            display: flex;
+            flex: 0 0 42px;
+            width: 42px;
+            height: 42px;
+            align-items: center;
+            justify-content: center;
+            border-radius: 12px;
+            background: #eaf2ff;
+            font-size: 20px;
+        }
+
+        .navigation-item-text {
+            min-width: 0;
+        }
+
+        .navigation-item-title {
+            margin-bottom: 4px;
+            font-size: 14px;
+            font-weight: 850;
+        }
+
+        .navigation-item-description {
+            color: #64748b;
+            font-size: 12px;
+            line-height: 1.4;
+        }
+
+        .navigation-required-label {
+            display: inline-block;
+            margin-left: 6px;
+            color: #64748b;
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        .module-toggle {
+            position: relative;
+            flex: 0 0 48px;
+            width: 48px;
+            height: 27px;
+            margin: 0;
+            border: 0;
+            border-radius: 999px;
+            appearance: none;
+            background: #cbd5e1;
+            cursor: pointer;
+            outline: none;
+            transition: background 0.2s ease;
+        }
+
+        .module-toggle::after {
+            position: absolute;
+            top: 3px;
+            left: 3px;
+            width: 21px;
+            height: 21px;
+            border-radius: 50%;
+            background: white;
+            box-shadow: 0 2px 5px rgba(15, 23, 42, 0.22);
+            content: "";
+            transition: transform 0.2s ease;
+        }
+
+        .module-toggle:checked {
+            background: #2563eb;
+        }
+
+        .module-toggle:checked::after {
+            transform: translateX(21px);
+        }
+
+        .module-toggle:focus-visible {
+            box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.16);
+        }
+
+        .module-toggle:disabled {
+            background: #93c5fd;
+            cursor: not-allowed;
+            opacity: 0.75;
+        }
+
         @media (max-width: 760px) {
             .main {
                 padding: 18px;
@@ -259,6 +387,55 @@
                             выделяться как заканчивающиеся.
                         </span>
                     </div>
+                </div>
+            </section>
+
+
+            <section class="settings-section">
+                <h2>Вкладки бокового меню</h2>
+
+                <p>
+                    Оставьте в навигации только те разделы,
+                    которыми пользуется ваша компания.
+                </p>
+
+                <div class="navigation-list">
+                    {% for item in navigation_items %}
+                        <label
+                            class="navigation-item{% if item.required %} navigation-item-required{% endif %}"
+                        >
+                            <span class="navigation-item-main">
+                                <span class="navigation-item-icon">
+                                    {{ item.icon }}
+                                </span>
+
+                                <span class="navigation-item-text">
+                                    <span class="navigation-item-title">
+                                        {{ item.label }}
+
+                                        {% if item.required %}
+                                            <span class="navigation-required-label">
+                                                обязательная
+                                            </span>
+                                        {% endif %}
+                                    </span>
+
+                                    <span class="navigation-item-description">
+                                        {{ item.description }}
+                                    </span>
+                                </span>
+                            </span>
+
+                            <input
+                                class="module-toggle"
+                                type="checkbox"
+                                name="navigation_{{ item.key }}"
+                                {% if item.enabled %}checked{% endif %}
+                                {% if item.required %}disabled{% endif %}
+                                aria-label="Показывать вкладку {{ item.label }}"
+                            >
+                        </label>
+                    {% endfor %}
                 </div>
             </section>
 

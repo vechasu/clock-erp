@@ -82,7 +82,8 @@
             display: grid;
             grid-template-columns:
                 repeat(3, minmax(0, 1fr))
-                minmax(210px, 0.9fr);
+                minmax(190px, 0.9fr)
+                minmax(190px, 0.9fr);
             gap: 8px;
             margin-bottom: 8px;
         }
@@ -128,8 +129,27 @@
             box-shadow: 0 5px 16px rgba(37, 99, 235, 0.16);
         }
 
+        .stats-action-button {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-decoration: none;
+        }
+
         .stats-action-button:hover {
             background: #1d4ed8;
+        }
+
+        .stats-report-button {
+            border: 1px solid #bfdbfe;
+            background: #eff6ff;
+            color: #1d4ed8;
+            box-shadow: none;
+        }
+
+        .stats-report-button:hover {
+            border-color: #93c5fd;
+            background: #dbeafe;
         }
 
         .form-card {
@@ -295,7 +315,7 @@
 
         .sales-table {
             width: 100%;
-            min-width: 2010px;
+            min-width: 1240px;
             border-collapse: collapse;
             table-layout: fixed;
         }
@@ -370,9 +390,41 @@
         }
 
         .col-actions .button {
-            min-height: 34px;
-            padding: 7px 10px;
+            min-height: 32px;
+            padding: 6px 9px;
+            border-radius: 9px;
             font-size: 12px;
+            line-height: 1;
+        }
+
+        .col-actions .manual-view-actions,
+        .col-actions .manual-edit-actions,
+        .col-actions .automatic-view-actions,
+        .col-actions .automatic-edit-actions {
+            align-items: center;
+            gap: 6px;
+            flex-wrap: nowrap;
+        }
+
+
+        .col-actions .button-icon-only {
+            width: 34px;
+            min-width: 34px;
+            height: 34px;
+            min-height: 34px;
+            padding: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 9px;
+            font-size: 0;
+        }
+
+        .col-actions .button-icon-only svg {
+            width: 16px;
+            height: 16px;
+            display: block;
+            pointer-events: none;
         }
 
         .automatic-edit-control {
@@ -408,44 +460,82 @@
         }
 
         .col-date {
-            width: 135px;
+            width: 7%;
         }
 
         .col-source {
-            width: 145px;
+            width: 7.5%;
         }
 
         .col-product {
-            width: 285px;
+            width: 15.5%;
         }
 
         .col-qty {
-            width: 85px;
+            width: 5%;
             text-align: center !important;
         }
 
         .col-order {
-            width: 130px;
+            width: 7%;
         }
 
         .col-track {
-            width: 190px;
+            width: 10%;
         }
 
         .col-delivery {
-            width: 205px;
+            width: 9%;
         }
 
         .col-region {
-            width: 190px;
+            width: 8%;
+        }
+
+        .col-city {
+            width: 7%;
         }
 
         .col-note {
-            width: 285px;
+            width: 9%;
         }
 
         .col-actions {
-            width: 190px;
+            width: 16%;
+        }
+
+        .sales-table th,
+        .sales-table td {
+            min-width: 0;
+            word-break: normal;
+            overflow-wrap: normal;
+            hyphens: none;
+        }
+
+        .sales-table th {
+            white-space: normal;
+            line-height: 1.2;
+        }
+
+        .sales-table .col-date,
+        .sales-table .col-qty,
+        .sales-table .col-order,
+        .sales-table .col-actions {
+            white-space: nowrap;
+        }
+
+        .sales-table .col-track {
+            overflow-wrap: anywhere;
+        }
+
+        .sales-table .source-badge {
+            white-space: nowrap;
+        }
+
+        .sales-table .table-control {
+            width: 100%;
+            min-width: 0;
+            box-sizing: border-box;
         }
 
         .table-control {
@@ -598,6 +688,27 @@
             grid-column: 1 / -1;
         }
 
+        /* Поиск товара при редактировании ручной продажи */
+        .manual-product-search-box {
+            position: relative;
+        }
+
+        .manual-product-edit-suggestions {
+            position: fixed;
+            z-index: 5000;
+            display: none;
+            max-height: 300px;
+            overflow-y: auto;
+            background: #ffffff;
+            border: 1px solid #cfd5dc;
+            border-radius: 10px;
+            box-shadow: 0 18px 45px rgba(17, 24, 39, 0.22);
+        }
+
+        .manual-product-edit-suggestions.is-open {
+            display: block;
+        }
+
         .product-search-field {
             position: relative;
             z-index: 20;
@@ -741,6 +852,900 @@
         }
         /* Конец компактного верха страницы */
 
+
+        /* sales-sort-and-resize */
+
+        .sales-table th {
+            position: relative;
+        }
+
+        .sales-sort-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            color: inherit;
+            font: inherit;
+            font-weight: inherit;
+            line-height: 1.2;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .sales-sort-label:hover,
+        .sales-sort-label.is-active {
+            color: #2563eb;
+        }
+
+        .sales-sort-arrow {
+            flex: 0 0 auto;
+            color: #9ca3af;
+            font-size: 11px;
+            font-weight: 900;
+        }
+
+        .sales-sort-label.is-active .sales-sort-arrow {
+            color: #2563eb;
+        }
+
+        .sales-column-resize-handle {
+            position: absolute;
+            top: 0;
+            right: -5px;
+            z-index: 8;
+            width: 10px;
+            height: 100%;
+            cursor: col-resize;
+            touch-action: none;
+        }
+
+        .sales-column-resize-handle::after {
+            content: "";
+            position: absolute;
+            top: 18%;
+            bottom: 18%;
+            left: 4px;
+            width: 2px;
+            border-radius: 999px;
+            background: #d7dde5;
+            transition: background 0.15s ease;
+        }
+
+        .sales-column-resize-handle:hover::after,
+        .sales-column-resize-handle.is-active::after {
+            background: #2563eb;
+        }
+
+        html.sales-resizing-columns,
+        html.sales-resizing-columns * {
+            cursor: col-resize !important;
+            user-select: none !important;
+        }
+
+
+
+
+
+
+
+
+
+
+
+        /* Чистовая компоновка страницы продаж */
+        .main {
+            height: 100vh;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            padding-bottom: 10px;
+        }
+
+        .stats {
+            flex: 0 0 auto;
+            margin-bottom: 10px;
+        }
+
+        .sales-data-card {
+            flex: 1 1 auto;
+            display: flex;
+            min-height: 0;
+            overflow: hidden;
+            flex-direction: column;
+            border: 1px solid #d7dde5;
+            border-radius: 16px;
+            background: #ffffff;
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.045);
+        }
+
+        .sales-data-toolbar {
+            flex: 0 0 auto;
+            width: 100%;
+            margin: 0;
+            padding: 11px 12px;
+            border-bottom: 1px solid #d7dde5;
+            background: #f8fafc;
+        }
+
+        .sales-data-toolbar .search {
+            width: 100%;
+            max-width: none;
+            height: 38px;
+        }
+
+        .sales-data-card .table-card {
+            flex: 1 1 auto;
+            display: flex;
+            min-height: 0;
+            overflow: hidden;
+            flex-direction: column;
+            border: 0;
+            border-radius: 0;
+        }
+
+        .sales-data-card .table-wrap {
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow: auto;
+        }
+
+        .sales-data-card .sales-table {
+            width: 100%;
+            min-width: 0 !important;
+            table-layout: fixed;
+        }
+
+        .sales-table th,
+        .sales-table td {
+            padding: 6px 7px;
+            font-size: 12px;
+        }
+
+        /*
+         * Дата фиксируется принудительно:
+         * механизм изменения ширины больше не сможет её сжать.
+         */
+        .sales-table th.col-date,
+        .sales-table td.col-date {
+            width: 104px !important;
+            min-width: 104px !important;
+            max-width: 104px !important;
+            white-space: nowrap !important;
+            font-size: 12px;
+        }
+
+        .sales-table .col-source {
+            width: 8%;
+        }
+
+        .sales-table .col-product {
+            width: 16%;
+        }
+
+        .sales-table .col-qty {
+            width: 5%;
+        }
+
+        .sales-table .col-order {
+            width: 8%;
+        }
+
+        .sales-table .col-track {
+            width: 11%;
+        }
+
+        .sales-table .col-delivery {
+            width: 10%;
+        }
+
+        .sales-table .col-region {
+            width: 9%;
+        }
+
+        .sales-table .col-city {
+            width: 7%;
+        }
+
+        .sales-table .col-note {
+            width: auto;
+        }
+
+        /*
+         * Только необходимая ширина:
+         * две кнопки по 25px + промежуток.
+         */
+        .sales-table th.col-actions,
+        .sales-table td.col-actions {
+            width: 62px !important;
+            min-width: 62px !important;
+            max-width: 62px !important;
+            padding-right: 3px !important;
+            padding-left: 3px !important;
+            text-align: center;
+            white-space: nowrap !important;
+        }
+
+        .sales-table th.col-actions {
+            font-size: 10px;
+        }
+
+        .col-actions form {
+            margin: 0;
+        }
+
+        .col-actions .manual-view-actions,
+        .col-actions .automatic-view-actions {
+            width: 100%;
+            justify-content: center;
+            gap: 2px;
+        }
+
+        .col-actions .button-icon-only {
+            flex: 0 0 25px;
+            width: 25px;
+            min-width: 25px;
+            height: 25px;
+            min-height: 25px;
+            padding: 0;
+            border-radius: 6px;
+        }
+
+        .col-actions .button-icon-only svg {
+            width: 12px;
+            height: 12px;
+        }
+
+        /*
+         * Явное закрытие таблицы.
+         * Линия теперь толще остальных границ.
+         */
+        .sales-table tbody tr:last-child td {
+            border-bottom:
+                2px solid #cbd5e1 !important;
+        }
+
+        .sales-table th.col-date
+        .sales-column-resize-handle,
+        .sales-table th.col-actions
+        .sales-column-resize-handle {
+            display: none !important;
+        }
+
+        @media (max-width: 1200px) {
+            .sales-data-card .sales-table {
+                min-width: 1050px !important;
+            }
+        }
+        /* Конец чистовой компоновки страницы продаж */
+
+
+
+        /* Тонкая подстройка даты, примечания и действий */
+
+        /* Дате даём чуть больше места */
+        .sales-table th.col-date,
+        .sales-table td.col-date {
+            width: 112px !important;
+            min-width: 112px !important;
+            max-width: 112px !important;
+            white-space: nowrap !important;
+        }
+
+        /* Источник и заказ чуть компактнее */
+        .sales-table .col-source {
+            width: 7.5% !important;
+        }
+
+        .sales-table .col-order {
+            width: 7% !important;
+        }
+
+        .sales-table .col-city {
+            width: 6.5% !important;
+        }
+
+        /*
+         * Примечанию отдаём больше воздуха,
+         * чтобы текст не зажимался.
+         */
+        .sales-table .col-note {
+            width: 12% !important;
+        }
+
+        /*
+         * Действия делаем максимально компактными:
+         * только под две маленькие иконки.
+         */
+        .sales-table th.col-actions,
+        .sales-table td.col-actions {
+            width: 52px !important;
+            min-width: 52px !important;
+            max-width: 52px !important;
+            padding-left: 2px !important;
+            padding-right: 2px !important;
+            text-align: center;
+            white-space: nowrap !important;
+        }
+
+        .sales-table th.col-actions {
+            font-size: 10px;
+            line-height: 1.05;
+        }
+
+        .col-actions .manual-view-actions,
+        .col-actions .automatic-view-actions {
+            width: 100%;
+            justify-content: center;
+            gap: 1px;
+        }
+
+        .col-actions .button-icon-only {
+            flex: 0 0 22px;
+            width: 22px;
+            min-width: 22px;
+            height: 22px;
+            min-height: 22px;
+            padding: 0;
+            border-radius: 6px;
+        }
+
+        .col-actions .button-icon-only svg {
+            width: 11px;
+            height: 11px;
+        }
+
+        /* Конец тонкой подстройки даты, примечания и действий */
+
+
+        /* Финальная ручная настройка ширины даты и действий */
+
+        /* Дата получает больше места */
+        .sales-table th.col-date,
+        .sales-table td.col-date {
+            width: 118px !important;
+            min-width: 118px !important;
+            max-width: 118px !important;
+            white-space: nowrap !important;
+        }
+
+        /* Примечание можно чуть свободнее */
+        .sales-table .col-note {
+            width: 11.5% !important;
+        }
+
+        /*
+         * Действия делаем шириной ровно под заголовок
+         * и две кнопки, без лишнего пустого воздуха.
+         */
+        .sales-table th.col-actions,
+        .sales-table td.col-actions {
+            width: 108px !important;
+            min-width: 108px !important;
+            max-width: 108px !important;
+            padding-left: 6px !important;
+            padding-right: 6px !important;
+            text-align: center;
+            white-space: nowrap !important;
+        }
+
+        .sales-table th.col-actions {
+            font-size: 12px;
+        }
+
+        .col-actions .manual-view-actions,
+        .col-actions .automatic-view-actions {
+            width: 100%;
+            justify-content: center;
+            gap: 6px;
+        }
+
+        .col-actions .button-icon-only {
+            flex: 0 0 24px;
+            width: 24px;
+            min-width: 24px;
+            height: 24px;
+            min-height: 24px;
+            padding: 0;
+            border-radius: 7px;
+        }
+
+        .col-actions .button-icon-only svg {
+            width: 12px;
+            height: 12px;
+        }
+
+        /* Конец финальной ручной настройки ширины даты и действий */
+
+
+        /* Окончательные размеры даты и действий v2 */
+        .sales-table th.col-date,
+        .sales-table td.col-date {
+            width: 118px !important;
+            min-width: 118px !important;
+            max-width: 118px !important;
+            white-space: nowrap !important;
+        }
+
+        .sales-table th.col-actions,
+        .sales-table td.col-actions {
+            width: 104px !important;
+            min-width: 104px !important;
+            max-width: 104px !important;
+            padding-right: 5px !important;
+            padding-left: 5px !important;
+            text-align: center;
+            white-space: nowrap !important;
+        }
+
+        .sales-table .col-note {
+            width: 12% !important;
+        }
+
+        .col-actions .manual-view-actions,
+        .col-actions .automatic-view-actions {
+            width: 100%;
+            justify-content: center;
+            gap: 5px;
+        }
+
+        .col-actions .button-icon-only {
+            flex: 0 0 25px;
+            width: 25px;
+            min-width: 25px;
+            height: 25px;
+            min-height: 25px;
+            padding: 0;
+            border-radius: 7px;
+        }
+
+        .col-actions .button-icon-only svg {
+            width: 12px;
+            height: 12px;
+        }
+
+        .sales-table tbody tr:last-child td {
+            border-bottom: 2px solid #cbd5e1 !important;
+        }
+        /* Конец окончательных размеров даты и действий v2 */
+
+
+        /* Фильтр продаж по дате и диапазону */
+        .sales-data-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .sales-data-toolbar .search {
+            flex: 1 1 auto;
+            min-width: 260px;
+        }
+
+        .sales-date-filter {
+            display: flex;
+            flex: 0 0 auto;
+            align-items: flex-end;
+            gap: 6px;
+        }
+
+        .sales-date-field {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+
+        .sales-date-field span {
+            padding-left: 2px;
+            color: #64748b;
+            font-size: 10px;
+            font-weight: 800;
+            line-height: 1;
+        }
+
+        .sales-date-input {
+            width: 132px;
+            height: 38px;
+            padding: 0 8px;
+            border: 1px solid #d7dde5;
+            border-radius: 9px;
+            background: #ffffff;
+            color: #172033;
+            font: inherit;
+            font-size: 12px;
+            outline: none;
+        }
+
+        .sales-date-input:focus {
+            border-color: #2563eb;
+            box-shadow:
+                0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+
+        .sales-date-separator {
+            align-self: center;
+            margin-top: 12px;
+            color: #94a3b8;
+            font-weight: 800;
+        }
+
+        .sales-date-clear {
+            height: 38px;
+            padding: 0 10px;
+            border: 1px solid #d7dde5;
+            border-radius: 9px;
+            background: #ffffff;
+            color: #475569;
+            font-size: 11px;
+            font-weight: 800;
+            cursor: pointer;
+        }
+
+        .sales-date-clear:hover:not(:disabled) {
+            border-color: #bfdbfe;
+            background: #eff6ff;
+            color: #1d4ed8;
+        }
+
+        .sales-date-clear:disabled {
+            cursor: default;
+            opacity: 0.45;
+        }
+
+        .sales-filter-count {
+            min-width: 72px;
+            align-self: center;
+            margin-top: 12px;
+            color: #64748b;
+            font-size: 11px;
+            font-weight: 750;
+            white-space: nowrap;
+        }
+
+        .sales-filter-empty-cell {
+            height: 110px;
+            border-right: 0 !important;
+            text-align: center !important;
+            color: #64748b;
+            font-size: 13px !important;
+        }
+
+        @media (max-width: 1250px) {
+            .sales-data-toolbar {
+                flex-wrap: wrap;
+            }
+
+            .sales-data-toolbar .search {
+                flex-basis: 100%;
+            }
+
+            .sales-date-filter {
+                width: 100%;
+            }
+
+            .sales-filter-count {
+                margin-left: auto;
+            }
+        }
+        /* Конец фильтра продаж по дате и диапазону */
+
+
+
+        /* Дружелюбная панель поиска и фильтра дат */
+        .sales-data-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: nowrap;
+        }
+
+        .sales-data-toolbar .search {
+            flex: 1 1 auto;
+            min-width: 320px;
+            height: 42px;
+            margin: 0;
+        }
+
+        .sales-date-filter {
+            display: flex;
+            flex: 0 0 auto;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 10px;
+            border: 1px solid #dbe2ea;
+            border-radius: 12px;
+            background: #f8fafc;
+        }
+
+        .sales-date-field {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            margin: 0;
+        }
+
+        .sales-date-field span {
+            padding: 0;
+            color: #64748b;
+            font-size: 12px;
+            font-weight: 800;
+            line-height: 1;
+            white-space: nowrap;
+        }
+
+        .sales-date-input {
+            width: 138px;
+            height: 38px;
+            padding: 0 10px;
+            border: 1px solid #d7dde5;
+            border-radius: 10px;
+            background: #ffffff;
+            color: #172033;
+            font-size: 12px;
+            font-weight: 700;
+            outline: none;
+        }
+
+        .sales-date-separator {
+            color: #94a3b8;
+            font-size: 14px;
+            font-weight: 900;
+            line-height: 1;
+        }
+
+        .sales-date-clear {
+            height: 38px;
+            padding: 0 12px;
+            border: 1px solid #d7dde5;
+            border-radius: 10px;
+            background: #ffffff;
+            color: #475569;
+            font-size: 12px;
+            font-weight: 800;
+            cursor: pointer;
+        }
+
+        .sales-date-clear:hover:not(:disabled) {
+            border-color: #bfdbfe;
+            background: #eff6ff;
+            color: #1d4ed8;
+        }
+
+        .sales-date-clear:disabled {
+            opacity: 0.5;
+            cursor: default;
+        }
+
+        .sales-filter-count {
+            min-width: auto;
+            color: #64748b;
+            font-size: 12px;
+            font-weight: 800;
+            white-space: nowrap;
+        }
+
+        @media (max-width: 1350px) {
+            .sales-data-toolbar {
+                flex-wrap: wrap;
+                align-items: stretch;
+            }
+
+            .sales-data-toolbar .search {
+                flex-basis: 100%;
+            }
+
+            .sales-date-filter {
+                width: 100%;
+                justify-content: flex-start;
+                flex-wrap: wrap;
+            }
+        }
+        /* Конец дружелюбной панели поиска и фильтра дат */
+
+
+        /* Компактная горизонтальная панель дат v2 */
+        .sales-data-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: nowrap;
+        }
+
+        .sales-data-toolbar .search {
+            flex: 1 1 auto;
+            min-width: 340px;
+            height: 40px;
+            margin: 0;
+        }
+
+        .sales-date-filter {
+            display: flex;
+            flex: 0 0 auto;
+            align-items: center;
+            gap: 8px;
+            padding: 0;
+            border: none;
+            border-radius: 0;
+            background: transparent;
+            box-shadow: none;
+        }
+
+        .sales-date-field {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            margin: 0;
+        }
+
+        .sales-date-field span {
+            padding: 0;
+            color: #64748b;
+            font-size: 12px;
+            font-weight: 800;
+            line-height: 1;
+            white-space: nowrap;
+        }
+
+        .sales-date-input {
+            width: 132px;
+            height: 40px;
+            padding: 0 10px;
+            border: 1px solid #d7dde5;
+            border-radius: 10px;
+            background: #ffffff;
+            color: #172033;
+            font-size: 12px;
+            font-weight: 700;
+            outline: none;
+            box-shadow: none;
+        }
+
+        .sales-date-input:focus {
+            border-color: #2563eb;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
+        }
+
+        .sales-date-separator {
+            color: #94a3b8;
+            font-size: 14px;
+            font-weight: 900;
+            line-height: 1;
+        }
+
+        .sales-date-clear {
+            height: 40px;
+            padding: 0 12px;
+            border: 1px solid #d7dde5;
+            border-radius: 10px;
+            background: #ffffff;
+            color: #64748b;
+            font-size: 12px;
+            font-weight: 800;
+            cursor: pointer;
+            box-shadow: none;
+        }
+
+        .sales-date-clear:hover:not(:disabled) {
+            border-color: #cbd5e1;
+            background: #f8fafc;
+            color: #334155;
+        }
+
+        .sales-date-clear:disabled {
+            opacity: 0.5;
+            cursor: default;
+        }
+
+        .sales-filter-count {
+            display: inline-flex;
+            align-items: center;
+            height: 28px;
+            padding: 0 10px;
+            border-radius: 999px;
+            background: #eef2f7;
+            color: #64748b;
+            font-size: 12px;
+            font-weight: 800;
+            white-space: nowrap;
+        }
+
+        @media (max-width: 1380px) {
+            .sales-data-toolbar {
+                flex-wrap: wrap;
+                align-items: stretch;
+            }
+
+            .sales-data-toolbar .search {
+                flex-basis: 100%;
+            }
+
+            .sales-date-filter {
+                width: 100%;
+                flex-wrap: wrap;
+                justify-content: flex-start;
+            }
+        }
+        /* Конец компактной горизонтальной панели дат v2 */
+
+
+        /* MANUAL SALE PRICE CSS V1 */
+        .manual-sale-total-preview {
+            min-height: 18px;
+            margin-top: 6px;
+            color: #059669;
+            font-size: 12px;
+            font-weight: 800;
+            line-height: 1.3;
+        }
+
+        #unit_price::-webkit-inner-spin-button,
+        #unit_price::-webkit-outer-spin-button {
+            margin: 0;
+        }
+        /* MANUAL SALE PRICE CSS V1 END */
+
+
+        /* SALES PRICE TABLE CSS V2 */
+        .quantity-price-view {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 3px;
+            line-height: 1.1;
+        }
+
+        .quantity-price-view strong {
+            font-size: 12px;
+        }
+
+        .sale-amount {
+            color: #059669;
+            font-size: 10px;
+            font-weight: 850;
+            white-space: nowrap;
+        }
+
+        .quantity-price-edit {
+            width: 100%;
+            gap: 4px;
+        }
+
+        .manual-row.is-editing .quantity-price-edit,
+        .automatic-row.is-editing .quantity-price-edit {
+            display: flex !important;
+            flex-direction: column;
+        }
+
+        .sale-price-input {
+            min-height: 30px;
+            padding: 4px;
+            font-size: 10px;
+            text-align: center;
+        }
+
+        .sale-edit-total-preview {
+            color: #059669;
+            font-size: 9px;
+            font-weight: 800;
+            line-height: 1.2;
+            text-align: center;
+            white-space: nowrap;
+        }
+        /* SALES PRICE TABLE CSS V2 END */
+
+
+        /* EDIT CUSTOM DELIVERY CSS V1 */
+        .manual-row.is-editing
+        .js-edit-custom-delivery.is-hidden,
+        .automatic-row.is-editing
+        .js-edit-custom-delivery.is-hidden {
+            display: none !important;
+        }
+
+        .js-edit-custom-delivery {
+            margin-top: 6px;
+        }
+        /* EDIT CUSTOM DELIVERY CSS V1 END */
+
 </style>
 </head>
 
@@ -772,6 +1777,13 @@
                 <div class="stat-value">{{ total_quantity }}</div>
             </div>
 
+            <a
+                class="button stats-action-button stats-report-button"
+                href="/sales/report"
+            >
+                Сформировать отчёт
+            </a>
+
             <button
                 id="openManualSaleModal"
                 class="button stats-action-button"
@@ -781,30 +1793,131 @@
             </button>
         </div>
 
-        <div class="toolbar">
-            <input
-                id="salesSearch"
-                class="search"
-                type="text"
-                placeholder="Поиск по источнику, товару, заказу, треку, региону или примечанию"
-            >
-        </div>
+        <section class="sales-data-card">
 
-        <section class="table-card">
+            <div class="toolbar sales-data-toolbar">
+                <input
+                    id="salesSearch"
+                    class="search"
+                    type="text"
+                    placeholder="Поиск по источнику, товару, заказу, треку, региону, городу или примечанию"
+                >
+
+                <div
+                    class="sales-date-filter"
+                    aria-label="Фильтр продаж по дате"
+                >
+                    <label class="sales-date-field">
+                        <span>С</span>
+
+                        <input
+                            id="salesDateFrom"
+                            class="sales-date-input"
+                            type="date"
+                        >
+                    </label>
+
+                    <span
+                        class="sales-date-separator"
+                        aria-hidden="true"
+                    >
+                        —
+                    </span>
+
+                    <label class="sales-date-field">
+                        <span>По</span>
+
+                        <input
+                            id="salesDateTo"
+                            class="sales-date-input"
+                            type="date"
+                        >
+                    </label>
+
+                    <button
+                        id="clearSalesDateFilter"
+                        class="sales-date-clear"
+                        type="button"
+                        disabled
+                    >
+                        Сбросить
+                    </button>
+
+                    <span
+                        id="salesFilterCount"
+                        class="sales-filter-count"
+                        aria-live="polite"
+                    ></span>
+                </div>
+            </div>
+
+
+            <section class="table-card">
             {% if sales %}
                 <div class="table-wrap">
                     <table class="sales-table">
                         <thead>
                             <tr>
-                                <th class="col-date">Дата</th>
-                                <th class="col-source">Источник</th>
-                                <th class="col-product">Товар</th>
-                                <th class="col-qty">К-во</th>
-                                <th class="col-order">№ заказа</th>
-                                <th class="col-track">Номер отправления</th>
-                                <th class="col-delivery">Способ доставки</th>
-                                <th class="col-region">Регион</th>
-                                <th class="col-note">Примечание</th>
+                                <th class="col-date">
+                                    <span class="sales-sort-label" data-sort-field="date" onclick="sortSalesTable('date')">
+                                        Дата
+                                        <span class="sales-sort-arrow">↕</span>
+                                    </span>
+                                </th>
+                                <th class="col-source">
+                                    <span class="sales-sort-label" data-sort-field="source" onclick="sortSalesTable('source')">
+                                        Источник
+                                        <span class="sales-sort-arrow">↕</span>
+                                    </span>
+                                </th>
+                                <th class="col-product">
+                                    <span class="sales-sort-label" data-sort-field="product" onclick="sortSalesTable('product')">
+                                        Товар
+                                        <span class="sales-sort-arrow">↕</span>
+                                    </span>
+                                </th>
+                                <th class="col-qty">
+                                    <span class="sales-sort-label" data-sort-field="quantity" onclick="sortSalesTable('quantity')">
+                                        К-во
+                                        <span class="sales-sort-arrow">↕</span>
+                                    </span>
+                                </th>
+                                <th class="col-order">
+                                    <span class="sales-sort-label" data-sort-field="order" onclick="sortSalesTable('order')">
+                                        № заказа
+                                        <span class="sales-sort-arrow">↕</span>
+                                    </span>
+                                </th>
+                                <th class="col-track">
+                                    <span class="sales-sort-label" data-sort-field="track" onclick="sortSalesTable('track')">
+                                        Номер отправления
+                                        <span class="sales-sort-arrow">↕</span>
+                                    </span>
+                                </th>
+                                <th class="col-delivery">
+                                    <span class="sales-sort-label" data-sort-field="delivery" onclick="sortSalesTable('delivery')">
+                                        Способ доставки
+                                        <span class="sales-sort-arrow">↕</span>
+                                    </span>
+                                </th>
+                                <th class="col-region">
+                                    <span class="sales-sort-label" data-sort-field="region" onclick="sortSalesTable('region')">
+                                        Регион
+                                        <span class="sales-sort-arrow">↕</span>
+                                    </span>
+                                </th>
+                                <th class="col-city">
+                                    <span class="sales-sort-label" data-sort-field="city" onclick="sortSalesTable('city')">
+                                        Город
+                                        <span class="sales-sort-arrow">↕</span>
+                                    </span>
+                                </th>
+                                <th class="col-note">
+                                    <span class="sales-sort-label" data-sort-field="note" onclick="sortSalesTable('note')">
+                                        Примечание
+                                        <span class="sales-sort-arrow">↕</span>
+                                    </span>
+                                </th>
                                 <th class="col-actions">Действия</th>
                             </tr>
                         </thead>
@@ -813,7 +1926,17 @@
                             {% for sale in sales %}
                                 <tr
                                     class="sale-row{% if sale.is_manual %} manual-row{% else %} automatic-row{% endif %}"
-                                    data-search="{{ sale.created_at }} {{ sale.source }} {{ sale.product_name }} {{ sale.bitrix_product_name }} {{ sale.order_number }} {{ sale.track_number }} {{ sale.delivery_method }} {{ sale.region }} {{ sale.note }}"
+                                    data-search="{{ sale.created_at }} {{ sale.source }} {{ sale.product_name }} {{ sale.bitrix_product_name }} {{ sale.order_number }} {{ sale.track_number }} {{ sale.delivery_method }} {{ sale.region }} {{ sale.city }} {{ sale.note }}"
+                                    data-sort-date="{{ sale.created_at }}"
+                                    data-sort-source="{{ sale.source }}"
+                                    data-sort-product="{{ sale.product_name or sale.bitrix_product_name }}"
+                                    data-sort-quantity="{{ sale.quantity }}"
+                                    data-sort-order="{{ sale.order_number }}"
+                                    data-sort-track="{{ sale.track_number }}"
+                                    data-sort-delivery="{{ sale.delivery_method }}"
+                                    data-sort-region="{{ sale.region }}"
+                                    data-sort-city="{{ sale.city }}"
+                                    data-sort-note="{{ sale.note }}"
                                 >
                                     {% if sale.is_manual %}
                                         {% set edit_form_id = "edit-sale-" ~ sale.id %}
@@ -838,10 +1961,6 @@
                                                 <span class="source-badge">
                                                     {{ sale.source }}
                                                 </span>
-
-                                                <span class="manual-badge">
-                                                    вручную
-                                                </span>
                                             </div>
 
                                             <input
@@ -859,37 +1978,72 @@
                                                 {{ sale.product_name or "—" }}
                                             </div>
 
-                                            <input
-                                                class="table-control manual-edit-control sale-edit-control"
-                                                type="text"
-                                                name="product_name"
-                                                value="{{ sale.product_name }}"
-                                                form="{{ edit_form_id }}"
-                                                required
-                                            >
+                                            <div class="manual-product-search-box manual-edit-control">
+                                                <input
+                                                    class="table-control sale-edit-control js-manual-product-search"
+                                                    type="text"
+                                                    name="product_name"
+                                                    value="{{ sale.product_name }}"
+                                                    data-current-product-id="{{ sale.product_id }}"
+                                                    placeholder="Найти товар"
+                                                    autocomplete="off"
+                                                    form="{{ edit_form_id }}"
+                                                    required
+                                                >
+                                            </div>
                                         </td>
 
+                                        <!-- SALES PRICE TABLE V2 -->
                                         <td class="col-qty">
-                                            <span class="manual-view-value">
-                                                {{ sale.quantity_value }}
-                                            </span>
+                                            <div class="manual-view-value quantity-price-view">
+                                                <strong>
+                                                    {{ sale.quantity_value }}
+                                                </strong>
 
-                                            <select
-                                                class="table-control manual-edit-control sale-edit-control"
-                                                name="quantity"
-                                                form="{{ edit_form_id }}"
-                                                required
-                                            >
-                                                {% for quantity_option in range(1, 26) %}
-                                                    <option
-                                                        value="{{ quantity_option }}"
-                                                        {% if sale.quantity_value == quantity_option %}selected{% endif %}
-                                                    >
-                                                        {{ quantity_option }}
-                                                    </option>
-                                                {% endfor %}
-                                            </select>
+                                                {% if sale.total_amount is not none %}
+                                                    <span class="sale-amount">
+                                                        {{ sale.total_amount_display }}
+                                                    </span>
+                                                {% endif %}
+                                            </div>
+
+                                            <div class="manual-edit-control quantity-price-edit">
+                                                <select
+                                                    class="table-control sale-edit-control"
+                                                    name="quantity"
+                                                    form="{{ edit_form_id }}"
+                                                    required
+                                                >
+                                                    {% for quantity_option in range(1, 26) %}
+                                                        <option
+                                                            value="{{ quantity_option }}"
+                                                            {% if sale.quantity_value == quantity_option %}selected{% endif %}
+                                                        >
+                                                            {{ quantity_option }}
+                                                        </option>
+                                                    {% endfor %}
+                                                </select>
+
+                                                <input
+                                                    class="table-control sale-edit-control sale-price-input"
+                                                    type="number"
+                                                    name="unit_price"
+                                                    value="{{ sale.unit_price if sale.unit_price is not none else '' }}"
+                                                    min="1"
+                                                    step="1"
+                                                    inputmode="decimal"
+                                                    placeholder="Цена"
+                                                    form="{{ edit_form_id }}"
+                                                    required
+                                                >
+
+                                                <div class="sale-edit-total-preview">
+                                                    Итого:
+                                                    {{ sale.total_amount_display or "—" }}
+                                                </div>
+                                            </div>
                                         </td>
+                                        <!-- SALES PRICE TABLE V2 END -->
 
                                         <td class="col-order">
                                             <span class="manual-view-value">
@@ -924,8 +2078,17 @@
                                                 {{ sale.delivery_method or "—" }}
                                             </span>
 
+                                            <!-- EDIT CUSTOM DELIVERY V1 -->
+                                            {% set standard_delivery_methods = [
+                                                    "Пункт выдачи заказов СДЭК",
+                                                    "Курьером СДЭК",
+                                                    "ТТТ Экспресс",
+                                                    "Почта России",
+                                                    "Экспресс.ру"
+                                            ] %}
+
                                             <select
-                                                class="table-control manual-edit-control sale-edit-control"
+                                                class="table-control manual-edit-control sale-edit-control js-edit-delivery-select"
                                                 name="delivery_method"
                                                 form="{{ edit_form_id }}"
                                             >
@@ -936,13 +2099,7 @@
                                                     Не выбран
                                                 </option>
 
-                                                {% for delivery_option in [
-                                                    "Пункт выдачи заказов СДЭК",
-                                                    "Курьером СДЭК",
-                                                    "ТТТ Экспресс",
-                                                    "Почта России",
-                                                    "Экспресс.ру"
-                                                ] %}
+                                                {% for delivery_option in standard_delivery_methods %}
                                                     <option
                                                         value="{{ delivery_option }}"
                                                         {% if sale.delivery_method == delivery_option %}selected{% endif %}
@@ -950,7 +2107,25 @@
                                                         {{ delivery_option }}
                                                     </option>
                                                 {% endfor %}
+
+                                                <option
+                                                    value="__custom__"
+                                                    {% if sale.delivery_method and sale.delivery_method not in standard_delivery_methods %}selected{% endif %}
+                                                >
+                                                    Свой вариант
+                                                </option>
                                             </select>
+
+                                            <input
+                                                class="table-control manual-edit-control sale-edit-control js-edit-custom-delivery is-hidden"
+                                                type="text"
+                                                name="custom_delivery_method"
+                                                value="{{ sale.delivery_method if sale.delivery_method and sale.delivery_method not in standard_delivery_methods else '' }}"
+                                                placeholder="Свой способ доставки"
+                                                autocomplete="off"
+                                                form="{{ edit_form_id }}"
+                                            >
+                                            <!-- EDIT CUSTOM DELIVERY V1 END -->
                                         </td>
 
                                         <td class="col-region">
@@ -959,11 +2134,27 @@
                                             </span>
 
                                             <input
-                                                class="table-control manual-edit-control sale-edit-control"
+                                                class="table-control manual-edit-control sale-edit-control js-region-input"
                                                 type="text"
                                                 name="region"
                                                 value="{{ sale.region }}"
                                                 list="russian-regions-list"
+                                                autocomplete="off"
+                                                form="{{ edit_form_id }}"
+                                            >
+                                        </td>
+
+                                        <td class="col-city">
+                                            <span class="manual-view-value">
+                                                {{ sale.city or "—" }}
+                                            </span>
+
+                                            <input
+                                                class="table-control manual-edit-control sale-edit-control js-city-input"
+                                                type="text"
+                                                name="city"
+                                                value="{{ sale.city }}"
+                                                placeholder="Город"
                                                 autocomplete="off"
                                                 form="{{ edit_form_id }}"
                                             >
@@ -1003,10 +2194,21 @@
 
                                             <div class="action-buttons manual-view-actions">
                                                 <button
-                                                    class="button button-edit js-edit-sale"
+                                                    class="button button-edit button-icon-only js-edit-sale"
                                                     type="button"
+                                                    title="Изменить продажу"
+                                                    aria-label="Изменить продажу"
                                                 >
-                                                    Редактировать
+                                                    <svg viewBox="0 0 24 24"
+                                                         fill="none"
+                                                         stroke="currentColor"
+                                                         stroke-width="2"
+                                                         stroke-linecap="round"
+                                                         stroke-linejoin="round"
+                                                         aria-hidden="true">
+                                                        <path d="M12 20h9"/>
+                                                        <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                                                    </svg>
                                                 </button>
 
                                                 <form
@@ -1021,10 +2223,24 @@
                                                     >
 
                                                     <button
-                                                        class="button button-delete"
+                                                        class="button button-delete button-icon-only"
                                                         type="submit"
+                                                        title="Удалить продажу"
+                                                        aria-label="Удалить продажу"
                                                     >
-                                                        Удалить
+                                                        <svg viewBox="0 0 24 24"
+                                                             fill="none"
+                                                             stroke="currentColor"
+                                                             stroke-width="2"
+                                                             stroke-linecap="round"
+                                                             stroke-linejoin="round"
+                                                             aria-hidden="true">
+                                                            <path d="M3 6h18"/>
+                                                            <path d="M8 6V4h8v2"/>
+                                                            <path d="M19 6l-1 14H6L5 6"/>
+                                                            <path d="M10 11v6"/>
+                                                            <path d="M14 11v6"/>
+                                                        </svg>
                                                     </button>
                                                 </form>
                                             </div>
@@ -1095,25 +2311,53 @@
                                         </td>
 
                                         <td class="col-qty">
-                                            <span class="automatic-view-value">
-                                                {{ sale.quantity }}
-                                            </span>
+                                            <div class="automatic-view-value quantity-price-view">
+                                                <strong>
+                                                    {{ sale.quantity }}
+                                                </strong>
 
-                                            <select
-                                                class="table-control automatic-edit-control sale-edit-control"
-                                                name="quantity"
-                                                form="{{ edit_form_id }}"
-                                                required
-                                            >
-                                                {% for quantity_option in range(1, 26) %}
-                                                    <option
-                                                        value="{{ quantity_option }}"
-                                                        {% if sale.quantity_value == quantity_option %}selected{% endif %}
-                                                    >
-                                                        {{ quantity_option }}
-                                                    </option>
-                                                {% endfor %}
-                                            </select>
+                                                {% if sale.total_amount is not none %}
+                                                    <span class="sale-amount">
+                                                        {{ sale.total_amount_display }}
+                                                    </span>
+                                                {% endif %}
+                                            </div>
+
+                                            <div class="automatic-edit-control quantity-price-edit">
+                                                <select
+                                                    class="table-control sale-edit-control"
+                                                    name="quantity"
+                                                    form="{{ edit_form_id }}"
+                                                    required
+                                                >
+                                                    {% for quantity_option in range(1, 26) %}
+                                                        <option
+                                                            value="{{ quantity_option }}"
+                                                            {% if sale.quantity_value == quantity_option %}selected{% endif %}
+                                                        >
+                                                            {{ quantity_option }}
+                                                        </option>
+                                                    {% endfor %}
+                                                </select>
+
+                                                <input
+                                                    class="table-control sale-edit-control sale-price-input"
+                                                    type="number"
+                                                    name="unit_price"
+                                                    value="{{ sale.unit_price if sale.unit_price is not none else '' }}"
+                                                    min="1"
+                                                    step="1"
+                                                    inputmode="decimal"
+                                                    placeholder="Цена"
+                                                    form="{{ edit_form_id }}"
+                                                    required
+                                                >
+
+                                                <div class="sale-edit-total-preview">
+                                                    Итого:
+                                                    {{ sale.total_amount_display or "—" }}
+                                                </div>
+                                            </div>
                                         </td>
 
                                         <td class="col-order">
@@ -1158,8 +2402,17 @@
                                                 {{ sale.delivery_method or "—" }}
                                             </span>
 
+                                            <!-- EDIT CUSTOM DELIVERY V1 -->
+                                            {% set standard_delivery_methods = [
+                                                    "Пункт выдачи заказов СДЭК",
+                                                    "Курьером СДЭК",
+                                                    "ТТТ Экспресс",
+                                                    "Почта России",
+                                                    "Экспресс.ру"
+                                            ] %}
+
                                             <select
-                                                class="table-control automatic-edit-control sale-edit-control"
+                                                class="table-control automatic-edit-control sale-edit-control js-edit-delivery-select"
                                                 name="delivery_method"
                                                 form="{{ edit_form_id }}"
                                             >
@@ -1170,13 +2423,7 @@
                                                     Не выбран
                                                 </option>
 
-                                                {% for delivery_option in [
-                                                    "Пункт выдачи заказов СДЭК",
-                                                    "Курьером СДЭК",
-                                                    "ТТТ Экспресс",
-                                                    "Почта России",
-                                                    "Экспресс.ру"
-                                                ] %}
+                                                {% for delivery_option in standard_delivery_methods %}
                                                     <option
                                                         value="{{ delivery_option }}"
                                                         {% if sale.delivery_method == delivery_option %}selected{% endif %}
@@ -1184,7 +2431,25 @@
                                                         {{ delivery_option }}
                                                     </option>
                                                 {% endfor %}
+
+                                                <option
+                                                    value="__custom__"
+                                                    {% if sale.delivery_method and sale.delivery_method not in standard_delivery_methods %}selected{% endif %}
+                                                >
+                                                    Свой вариант
+                                                </option>
                                             </select>
+
+                                            <input
+                                                class="table-control automatic-edit-control sale-edit-control js-edit-custom-delivery is-hidden"
+                                                type="text"
+                                                name="custom_delivery_method"
+                                                value="{{ sale.delivery_method if sale.delivery_method and sale.delivery_method not in standard_delivery_methods else '' }}"
+                                                placeholder="Свой способ доставки"
+                                                autocomplete="off"
+                                                form="{{ edit_form_id }}"
+                                            >
+                                            <!-- EDIT CUSTOM DELIVERY V1 END -->
                                         </td>
 
                                         <td class="col-region">
@@ -1193,11 +2458,27 @@
                                             </span>
 
                                             <input
-                                                class="table-control automatic-edit-control sale-edit-control"
+                                                class="table-control automatic-edit-control sale-edit-control js-region-input"
                                                 type="text"
                                                 name="region"
                                                 value="{{ sale.region }}"
                                                 list="russian-regions-list"
+                                                autocomplete="off"
+                                                form="{{ edit_form_id }}"
+                                            >
+                                        </td>
+
+                                        <td class="col-city">
+                                            <span class="automatic-view-value">
+                                                {{ sale.city or "—" }}
+                                            </span>
+
+                                            <input
+                                                class="table-control automatic-edit-control sale-edit-control js-city-input"
+                                                type="text"
+                                                name="city"
+                                                value="{{ sale.city }}"
+                                                placeholder="Город"
                                                 autocomplete="off"
                                                 form="{{ edit_form_id }}"
                                             >
@@ -1231,10 +2512,21 @@
 
                                             <div class="action-buttons automatic-view-actions">
                                                 <button
-                                                    class="button button-edit js-edit-sale"
+                                                    class="button button-edit button-icon-only js-edit-sale"
                                                     type="button"
+                                                    title="Изменить продажу"
+                                                    aria-label="Изменить продажу"
                                                 >
-                                                    Редактировать
+                                                    <svg viewBox="0 0 24 24"
+                                                         fill="none"
+                                                         stroke="currentColor"
+                                                         stroke-width="2"
+                                                         stroke-linecap="round"
+                                                         stroke-linejoin="round"
+                                                         aria-hidden="true">
+                                                        <path d="M12 20h9"/>
+                                                        <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                                                    </svg>
                                                 </button>
                                             </div>
 
@@ -1266,6 +2558,7 @@
                     Продаж пока нет.
                 </div>
             {% endif %}
+            </section>
         </section>
 
         <div
@@ -1391,6 +2684,33 @@
                             </select>
                         </div>
 
+                        <!-- MANUAL SALE PRICE FIELD V1 -->
+                        <div class="field">
+                            <label for="unit_price">
+                                Цена за единицу, ₽
+                            </label>
+
+                            <input
+                                id="unit_price"
+                                class="control"
+                                type="number"
+                                name="unit_price"
+                                min="1"
+                                step="1"
+                                inputmode="decimal"
+                                placeholder="Например, 7500"
+                                required
+                            >
+
+                            <div
+                                id="manualSaleTotalPreview"
+                                class="manual-sale-total-preview"
+                            >
+                                Итого: —
+                            </div>
+                        </div>
+                        <!-- MANUAL SALE PRICE FIELD V1 END -->
+
                         <div class="field">
                             <label for="order_number">Номер заказа</label>
                             <input
@@ -1443,14 +2763,37 @@
                                 <option value="Экспресс.ру">
                                     Экспресс.ру
                                 </option>
+                                <option value="__custom__">
+                                    Свой вариант
+                                </option>
                             </select>
                         </div>
 
+
+                        <!-- CUSTOM DELIVERY MODAL V1 -->
+                        <div
+                            id="customDeliveryMethodField"
+                            class="field is-hidden"
+                        >
+                            <label for="custom_delivery_method">
+                                Свой способ доставки
+                            </label>
+
+                            <input
+                                id="custom_delivery_method"
+                                class="control"
+                                type="text"
+                                name="custom_delivery_method"
+                                placeholder="Введите способ доставки"
+                                autocomplete="off"
+                            >
+                        </div>
+                        <!-- CUSTOM DELIVERY MODAL V1 END -->
                         <div class="field">
                             <label for="region">Регион</label>
                             <input
                                 id="region"
-                                class="control"
+                                class="control js-region-input"
                                 type="text"
                                 name="region"
                                 list="russian-regions-list"
@@ -1463,6 +2806,18 @@
                                     <option value="{{ region_option }}"></option>
                                 {% endfor %}
                             </datalist>
+                        </div>
+
+                        <div class="field">
+                            <label for="city">Город</label>
+                            <input
+                                id="city"
+                                class="control js-city-input"
+                                type="text"
+                                name="city"
+                                placeholder="Сначала выберите регион"
+                                autocomplete="off"
+                            >
                         </div>
 
                         <div class="field field-wide">
@@ -1499,6 +2854,102 @@
 </div>
 
 <script>
+
+    const russianRegionCities = {{ russian_region_cities | tojson }};
+
+    function normalizeRegionName(value) {
+        return String(value || "")
+            .trim()
+            .toLowerCase()
+            .replace(/[—–]/g, "-")
+            .replace(/\s+/g, " ");
+    }
+
+    function getCitiesForRegion(regionName) {
+        if (russianRegionCities[regionName]) {
+            return russianRegionCities[regionName];
+        }
+
+        const normalizedRegion = normalizeRegionName(regionName);
+        const matchedRegion = Object.keys(russianRegionCities).find(
+            (name) => normalizeRegionName(name) === normalizedRegion
+        );
+
+        return matchedRegion
+            ? russianRegionCities[matchedRegion]
+            : [];
+    }
+
+    const cityInputs = Array.from(
+        document.querySelectorAll(".js-city-input")
+    );
+
+    cityInputs.forEach((cityInput, index) => {
+        const row = cityInput.closest(".sale-row");
+        const container = row || cityInput.closest("form");
+
+        if (!container) {
+            return;
+        }
+
+        const regionInput = container.querySelector(
+            ".js-region-input"
+        );
+
+        if (!regionInput) {
+            return;
+        }
+
+        const datalist = document.createElement("datalist");
+        const datalistId = `russian-cities-list-${index}`;
+
+        datalist.id = datalistId;
+        cityInput.setAttribute("list", datalistId);
+        cityInput.insertAdjacentElement("afterend", datalist);
+
+        function renderCityOptions(clearCity=false) {
+            const cities = getCitiesForRegion(regionInput.value);
+
+            datalist.replaceChildren();
+
+            cities.forEach((cityName) => {
+                const option = document.createElement("option");
+                option.value = cityName;
+                datalist.appendChild(option);
+            });
+
+            if (clearCity) {
+                cityInput.value = "";
+            }
+
+            cityInput.placeholder = regionInput.value.trim()
+                ? (
+                    cities.length
+                        ? "Начните вводить город"
+                        : "Введите город вручную"
+                )
+                : "Сначала выберите регион";
+        }
+
+        regionInput.addEventListener("input", () => {
+            renderCityOptions(false);
+        });
+
+        regionInput.addEventListener("change", () => {
+            renderCityOptions(true);
+            cityInput.focus();
+        });
+
+        const relatedForm = cityInput.form || cityInput.closest("form");
+
+        if (relatedForm) {
+            relatedForm.addEventListener("reset", () => {
+                setTimeout(() => renderCityOptions(false), 0);
+            });
+        }
+
+        renderCityOptions(false);
+    });
 
     const manualSaleModal = document.getElementById(
         "manualSaleModal"
@@ -1592,6 +3043,55 @@
 
         updateCustomSourceField();
     }
+
+    // CUSTOM DELIVERY MODAL SCRIPT V1
+    const deliveryMethodSelect = document.getElementById(
+        "delivery_method"
+    );
+
+    const customDeliveryMethodField =
+        document.getElementById(
+            "customDeliveryMethodField"
+        );
+
+    const customDeliveryMethodInput =
+        document.getElementById(
+            "custom_delivery_method"
+        );
+
+    function updateCustomDeliveryMethodField() {
+        if (
+            !deliveryMethodSelect
+            || !customDeliveryMethodField
+            || !customDeliveryMethodInput
+        ) {
+            return;
+        }
+
+        const isCustom =
+            deliveryMethodSelect.value === "__custom__";
+
+        customDeliveryMethodField.classList.toggle(
+            "is-hidden",
+            !isCustom
+        );
+
+        customDeliveryMethodInput.required = isCustom;
+
+        if (!isCustom) {
+            customDeliveryMethodInput.value = "";
+        }
+    }
+
+    if (deliveryMethodSelect) {
+        deliveryMethodSelect.addEventListener(
+            "change",
+            updateCustomDeliveryMethodField
+        );
+
+        updateCustomDeliveryMethodField();
+    }
+    // CUSTOM DELIVERY MODAL SCRIPT V1 END
 
     const warehouseItems = {{ warehouse_items | tojson }};
     const manualSaleForm = document.getElementById("manualSaleForm");
@@ -1842,26 +3342,921 @@
         }
     });
 
-    const salesSearch = document.getElementById("salesSearch");
+
+    // Поиск товара при редактировании ручной продажи
+    (function initializeManualProductSearches() {
+        const inputs = Array.from(
+            document.querySelectorAll(
+                ".js-manual-product-search"
+            )
+        );
+
+        if (
+            !inputs.length ||
+            !Array.isArray(warehouseItems)
+        ) {
+            return;
+        }
+
+        function normalize(value) {
+            return String(value || "")
+                .trim()
+                .toLocaleLowerCase("ru");
+        }
+
+        function getSearchText(item) {
+            return normalize([
+                item.name,
+                item.article,
+                item.code,
+                item.category,
+            ].filter(Boolean).join(" "));
+        }
+
+        function getProductId(item) {
+            return String(
+                item.id ||
+                item.product_id ||
+                ""
+            );
+        }
+
+        function closePanel(panel) {
+            panel.classList.remove("is-open");
+        }
+
+        inputs.forEach((input) => {
+            const formId = input.getAttribute("form");
+            const form = formId
+                ? document.getElementById(formId)
+                : null;
+
+            const productIdInput = form
+                ? form.querySelector(
+                    'input[name="product_id"]'
+                )
+                : null;
+
+            const panel = document.createElement("div");
+            panel.className =
+                "manual-product-edit-suggestions";
+
+            document.body.appendChild(panel);
+
+            let visibleItems = [];
+            let activeIndex = -1;
+
+            function positionPanel() {
+                const rect =
+                    input.getBoundingClientRect();
+
+                const width = Math.min(
+                    Math.max(rect.width, 380),
+                    window.innerWidth - 24
+                );
+
+                const left = Math.min(
+                    Math.max(12, rect.left),
+                    window.innerWidth - width - 12
+                );
+
+                panel.style.width = width + "px";
+                panel.style.left = left + "px";
+                panel.style.top =
+                    rect.bottom + 6 + "px";
+            }
+
+            function updateActiveItem() {
+                const buttons = Array.from(
+                    panel.querySelectorAll(
+                        ".product-suggestion"
+                    )
+                );
+
+                buttons.forEach((button, index) => {
+                    button.classList.toggle(
+                        "is-active",
+                        index === activeIndex
+                    );
+                });
+
+                if (buttons[activeIndex]) {
+                    buttons[activeIndex].scrollIntoView({
+                        block: "nearest",
+                    });
+                }
+            }
+
+            function selectItem(item) {
+                const productId = getProductId(item);
+
+                input.value = item.name || "";
+
+                if (productIdInput) {
+                    productIdInput.value = productId;
+                }
+
+                input.setCustomValidity("");
+                closePanel(panel);
+            }
+
+            function renderSuggestions() {
+                const query = normalize(input.value);
+
+                visibleItems = warehouseItems
+                    .filter((item) => {
+                        if (!query) {
+                            return true;
+                        }
+
+                        return getSearchText(item)
+                            .includes(query);
+                    })
+                    .slice(0, 40);
+
+                panel.innerHTML = "";
+                activeIndex = -1;
+
+                if (!visibleItems.length) {
+                    const empty =
+                        document.createElement("div");
+
+                    empty.className =
+                        "product-suggestions-empty";
+
+                    empty.textContent =
+                        "Товары не найдены";
+
+                    panel.appendChild(empty);
+                } else {
+                    visibleItems.forEach((item) => {
+                        const button =
+                            document.createElement("button");
+
+                        button.type = "button";
+                        button.className =
+                            "product-suggestion";
+
+                        const main =
+                            document.createElement("div");
+
+                        main.className =
+                            "product-suggestion-main";
+
+                        const name =
+                            document.createElement("div");
+
+                        name.className =
+                            "product-suggestion-name";
+
+                        name.textContent =
+                            item.name ||
+                            "Товар без названия";
+
+                        const meta =
+                            document.createElement("div");
+
+                        meta.className =
+                            "product-suggestion-meta";
+
+                        const details = [];
+
+                        if (item.article) {
+                            details.push(
+                                `Артикул: ${item.article}`
+                            );
+                        }
+
+                        if (item.code) {
+                            details.push(
+                                `Код: ${item.code}`
+                            );
+                        }
+
+                        meta.textContent =
+                            details.join(" · ") ||
+                            "Без артикула";
+
+                        const stock =
+                            document.createElement("div");
+
+                        stock.className =
+                            "product-suggestion-stock";
+
+                        stock.textContent =
+                            `Остаток: ${
+                                item.stock_display ?? "—"
+                            }`;
+
+                        main.appendChild(name);
+                        main.appendChild(meta);
+                        button.appendChild(main);
+                        button.appendChild(stock);
+
+                        button.addEventListener(
+                            "mousedown",
+                            (event) => {
+                                event.preventDefault();
+                                selectItem(item);
+                            }
+                        );
+
+                        panel.appendChild(button);
+                    });
+                }
+
+                positionPanel();
+                panel.classList.add("is-open");
+            }
+
+            input.addEventListener("focus", () => {
+                renderSuggestions();
+            });
+
+            input.addEventListener("click", () => {
+                renderSuggestions();
+            });
+
+            input.addEventListener("input", () => {
+                if (productIdInput) {
+                    productIdInput.value = "";
+                }
+
+                input.setCustomValidity("");
+                renderSuggestions();
+            });
+
+            input.addEventListener(
+                "keydown",
+                (event) => {
+                    if (
+                        event.key === "ArrowDown" &&
+                        visibleItems.length
+                    ) {
+                        event.preventDefault();
+
+                        activeIndex = Math.min(
+                            activeIndex + 1,
+                            visibleItems.length - 1
+                        );
+
+                        updateActiveItem();
+                    }
+
+                    if (
+                        event.key === "ArrowUp" &&
+                        visibleItems.length
+                    ) {
+                        event.preventDefault();
+
+                        activeIndex = Math.max(
+                            activeIndex - 1,
+                            0
+                        );
+
+                        updateActiveItem();
+                    }
+
+                    if (
+                        event.key === "Enter" &&
+                        activeIndex >= 0
+                    ) {
+                        event.preventDefault();
+
+                        selectItem(
+                            visibleItems[activeIndex]
+                        );
+                    }
+
+                    if (event.key === "Escape") {
+                        closePanel(panel);
+                    }
+                }
+            );
+
+            if (form) {
+                form.addEventListener(
+                    "submit",
+                    (event) => {
+                        if (
+                            !productIdInput ||
+                            !productIdInput.value
+                        ) {
+                            event.preventDefault();
+
+                            input.setCustomValidity(
+                                "Выберите товар из найденного списка"
+                            );
+
+                            input.reportValidity();
+                            renderSuggestions();
+                        }
+                    }
+                );
+            }
+
+            document.addEventListener(
+                "mousedown",
+                (event) => {
+                    if (
+                        event.target !== input &&
+                        !panel.contains(event.target)
+                    ) {
+                        closePanel(panel);
+                    }
+                }
+            );
+
+            window.addEventListener(
+                "resize",
+                () => closePanel(panel)
+            );
+
+            document.addEventListener(
+                "scroll",
+                () => closePanel(panel),
+                true
+            );
+        });
+    })();
+
+    // sales-sort-and-resize
+
+    window.sortSalesTable = function (field) {
+        const table = document.querySelector(".sales-table");
+        const tableBody = table
+            ? table.querySelector("tbody")
+            : null;
+
+        if (!table || !tableBody) {
+            return;
+        }
+
+        const currentField = table.dataset.sortField || "";
+        const currentDirection =
+            table.dataset.sortDirection || "";
+
+        const nextDirection =
+            currentField === field &&
+            currentDirection === "asc"
+                ? "desc"
+                : "asc";
+
+        function getValue(row) {
+            const key =
+                "sort" +
+                field.charAt(0).toUpperCase() +
+                field.slice(1);
+
+            const rawValue = row.dataset[key] || "";
+
+            if (field === "quantity") {
+                const number = Number(
+                    String(rawValue)
+                        .replace(",", ".")
+                        .replace(/[^\d.-]/g, "")
+                );
+
+                return Number.isFinite(number)
+                    ? number
+                    : null;
+            }
+
+            if (field === "date") {
+                const time = Date.parse(rawValue);
+                return Number.isNaN(time) ? null : time;
+            }
+
+            return String(rawValue)
+                .trim()
+                .toLocaleLowerCase("ru");
+        }
+
+        const rows = Array.from(
+            tableBody.querySelectorAll(".sale-row")
+        ).map((row, index) => ({
+            row,
+            index,
+            value: getValue(row),
+        }));
+
+        rows.sort((first, second) => {
+            const firstEmpty =
+                first.value === null ||
+                first.value === "";
+
+            const secondEmpty =
+                second.value === null ||
+                second.value === "";
+
+            if (firstEmpty !== secondEmpty) {
+                return firstEmpty ? 1 : -1;
+            }
+
+            let result = 0;
+
+            if (
+                typeof first.value === "number" &&
+                typeof second.value === "number"
+            ) {
+                result = first.value - second.value;
+            } else {
+                result = String(first.value).localeCompare(
+                    String(second.value),
+                    "ru",
+                    {
+                        numeric: true,
+                        sensitivity: "base",
+                    }
+                );
+            }
+
+            if (result === 0) {
+                result = first.index - second.index;
+            }
+
+            return nextDirection === "asc"
+                ? result
+                : -result;
+        });
+
+        rows.forEach(({ row }) => {
+            tableBody.appendChild(row);
+        });
+
+        table.dataset.sortField = field;
+        table.dataset.sortDirection = nextDirection;
+
+        document
+            .querySelectorAll(".sales-sort-label")
+            .forEach((label) => {
+                const isActive =
+                    label.dataset.sortField === field;
+
+                label.classList.toggle(
+                    "is-active",
+                    isActive
+                );
+
+                const arrow = label.querySelector(
+                    ".sales-sort-arrow"
+                );
+
+                if (arrow) {
+                    arrow.textContent = isActive
+                        ? nextDirection === "asc"
+                            ? "↑"
+                            : "↓"
+                        : "↕";
+                }
+            });
+    };
+
+
+    (function initializeSalesColumnResize() {
+        const table = document.querySelector(".sales-table");
+
+        if (!table) {
+            return;
+        }
+
+        const headers = Array.from(
+            table.querySelectorAll("thead th")
+        );
+
+        if (headers.length < 2) {
+            return;
+        }
+
+        const storageKey = "vechasu-sales-column-widths-v5-layout-v2";
+
+        const measuredWidths = headers.map((header) => {
+            return header.getBoundingClientRect().width;
+        });
+
+        const totalWidth = measuredWidths.reduce(
+            (sum, width) => sum + width,
+            0
+        );
+
+        if (!totalWidth) {
+            return;
+        }
+
+        let widths = measuredWidths.map((width) => {
+            return width / totalWidth * 100;
+        });
+
+        try {
+            const saved = JSON.parse(
+                localStorage.getItem(storageKey)
+            );
+
+            if (
+                Array.isArray(saved) &&
+                saved.length === headers.length &&
+                saved.every(
+                    (width) =>
+                        typeof width === "number" &&
+                        width > 0
+                )
+            ) {
+                widths = saved;
+            }
+        } catch (error) {
+            // Используем исходные ширины.
+        }
+
+        const oldColgroup = table.querySelector(
+            'colgroup[data-sales-columns="1"]'
+        );
+
+        if (oldColgroup) {
+            oldColgroup.remove();
+        }
+
+        const colgroup = document.createElement("colgroup");
+        colgroup.dataset.salesColumns = "1";
+
+        widths.forEach((width) => {
+            const column = document.createElement("col");
+            column.style.width = width.toFixed(4) + "%";
+            colgroup.appendChild(column);
+        });
+
+        table.insertBefore(colgroup, table.firstChild);
+
+        const columns = Array.from(colgroup.children);
+
+        function saveWidths() {
+            try {
+                localStorage.setItem(
+                    storageKey,
+                    JSON.stringify(
+                        columns.map((column) => {
+                            return (
+                                parseFloat(
+                                    column.style.width
+                                ) || 0
+                            );
+                        })
+                    )
+                );
+            } catch (error) {
+                // Таблица продолжит работать без сохранения.
+            }
+        }
+
+        headers.slice(0, -1).forEach(
+            (header, index) => {
+                const isLockedBoundary = (
+                    index === 0
+                    || index === headers.length - 2
+                );
+
+                if (isLockedBoundary) {
+                    return;
+                }
+
+                const handle =
+                    document.createElement("span");
+
+                handle.className =
+                    "sales-column-resize-handle";
+
+                handle.title =
+                    "Потяни для изменения ширины";
+
+                header.appendChild(handle);
+
+                handle.addEventListener(
+                    "mousedown",
+                    (event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+
+                        const tableWidth =
+                            table.getBoundingClientRect().width;
+
+                        const leftStart =
+                            header.getBoundingClientRect().width /
+                            tableWidth *
+                            100;
+
+                        const rightStart =
+                            headers[index + 1]
+                                .getBoundingClientRect().width /
+                            tableWidth *
+                            100;
+
+                        const pairTotal =
+                            leftStart + rightStart;
+
+                        const startX = event.clientX;
+                        const minimumPixels = [
+                            118,
+                            90,
+                            155,
+                            55,
+                            85,
+                            115,
+                            110,
+                            95,
+                            85,
+                            110,
+                            104
+                        ];
+
+                        const minimumLeft =
+                            minimumPixels[index] /
+                            tableWidth *
+                            100;
+
+                        const minimumRight =
+                            minimumPixels[index + 1] /
+                            tableWidth *
+                            100;
+
+                        handle.classList.add("is-active");
+
+                        document.documentElement.classList.add(
+                            "sales-resizing-columns"
+                        );
+
+                        function move(moveEvent) {
+                            const delta =
+                                (
+                                    moveEvent.clientX -
+                                    startX
+                                ) /
+                                tableWidth *
+                                100;
+
+                            const newLeft = Math.min(
+                                pairTotal - minimumRight,
+                                Math.max(
+                                    minimumLeft,
+                                    leftStart + delta
+                                )
+                            );
+
+                            const newRight =
+                                pairTotal - newLeft;
+
+                            columns[index].style.width =
+                                newLeft.toFixed(4) + "%";
+
+                            columns[index + 1].style.width =
+                                newRight.toFixed(4) + "%";
+                        }
+
+                        function finish() {
+                            document.removeEventListener(
+                                "mousemove",
+                                move
+                            );
+
+                            document.removeEventListener(
+                                "mouseup",
+                                finish
+                            );
+
+                            handle.classList.remove(
+                                "is-active"
+                            );
+
+                            document.documentElement.classList.remove(
+                                "sales-resizing-columns"
+                            );
+
+                            saveWidths();
+                        }
+
+                        document.addEventListener(
+                            "mousemove",
+                            move
+                        );
+
+                        document.addEventListener(
+                            "mouseup",
+                            finish
+                        );
+                    }
+                );
+
+                handle.addEventListener(
+                    "dblclick",
+                    (event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+
+                        try {
+                            localStorage.removeItem(
+                                storageKey
+                            );
+                        } catch (error) {
+                            // Перезагрузка всё равно выполнится.
+                        }
+
+                        window.location.reload();
+                    }
+                );
+            }
+        );
+    })();
+
+    const salesSearch =
+        document.getElementById("salesSearch");
+
+    const salesDateFrom =
+        document.getElementById("salesDateFrom");
+
+    const salesDateTo =
+        document.getElementById("salesDateTo");
+
+    const clearSalesDateFilter =
+        document.getElementById("clearSalesDateFilter");
+
+    const salesFilterCount =
+        document.getElementById("salesFilterCount");
+
     const saleRows = Array.from(
         document.querySelectorAll(".sale-row")
     );
 
-    if (salesSearch) {
-        salesSearch.addEventListener("input", () => {
-            const query = salesSearch.value.toLowerCase().trim();
+    const salesTableBody =
+        document.querySelector(".sales-table tbody");
 
-            saleRows.forEach((row) => {
-                const text = (
-                    row.dataset.search || ""
-                ).toLowerCase();
+    let salesFilterEmptyRow = null;
 
-                row.style.display = text.includes(query)
+    if (salesTableBody) {
+        salesFilterEmptyRow =
+            document.createElement("tr");
+
+        salesFilterEmptyRow.className =
+            "sales-filter-empty-row";
+
+        salesFilterEmptyRow.style.display = "none";
+
+        const emptyCell =
+            document.createElement("td");
+
+        emptyCell.colSpan = 11;
+        emptyCell.className =
+            "sales-filter-empty-cell";
+
+        emptyCell.textContent =
+            "За выбранный период продаж не найдено.";
+
+        salesFilterEmptyRow.appendChild(emptyCell);
+        salesTableBody.appendChild(salesFilterEmptyRow);
+    }
+
+    const applySalesFilters = () => {
+        const query = (
+            salesSearch?.value || ""
+        ).toLowerCase().trim();
+
+        const selectedFrom =
+            salesDateFrom?.value || "";
+
+        const selectedTo =
+            salesDateTo?.value || "";
+
+        /*
+         * Одна заполненная дата означает точный день.
+         * Две заполненные даты означают диапазон включительно.
+         */
+        let dateFrom = selectedFrom;
+        let dateTo = selectedTo;
+
+        if (dateFrom && !dateTo) {
+            dateTo = dateFrom;
+        }
+
+        if (!dateFrom && dateTo) {
+            dateFrom = dateTo;
+        }
+
+        if (
+            dateFrom
+            && dateTo
+            && dateFrom > dateTo
+        ) {
+            [dateFrom, dateTo] = [dateTo, dateFrom];
+        }
+
+        let visibleCount = 0;
+
+        saleRows.forEach((row) => {
+            const searchableText = (
+                row.dataset.search || ""
+            ).toLowerCase();
+
+            const rowDate = (
+                row.dataset.sortDate || ""
+            ).trim();
+
+            const matchesSearch =
+                !query
+                || searchableText.includes(query);
+
+            const matchesDate = (
+                !dateFrom
+                || (
+                    rowDate
+                    && rowDate >= dateFrom
+                    && rowDate <= dateTo
+                )
+            );
+
+            const isVisible =
+                matchesSearch && matchesDate;
+
+            row.style.display =
+                isVisible ? "" : "none";
+
+            if (isVisible) {
+                visibleCount += 1;
+            }
+        });
+
+        const formatSalesCount = (count) => {
+            const mod10 = count % 10;
+            const mod100 = count % 100;
+
+            let word = "продаж";
+
+            if (mod10 === 1 && mod100 !== 11) {
+                word = "продажа";
+            } else if (
+                mod10 >= 2
+                && mod10 <= 4
+                && !(mod100 >= 12 && mod100 <= 14)
+            ) {
+                word = "продажи";
+            }
+
+            return `${count} ${word}`;
+        };
+
+        if (salesFilterCount) {
+            salesFilterCount.textContent =
+                formatSalesCount(visibleCount);
+        }
+
+        if (clearSalesDateFilter) {
+            clearSalesDateFilter.disabled =
+                !selectedFrom && !selectedTo;
+        }
+
+        if (salesFilterEmptyRow) {
+            salesFilterEmptyRow.style.display =
+                visibleCount === 0
                     ? ""
                     : "none";
-            });
-        });
+        }
+    };
+
+    if (salesSearch) {
+        salesSearch.addEventListener(
+            "input",
+            applySalesFilters
+        );
     }
+
+    if (salesDateFrom) {
+        salesDateFrom.addEventListener(
+            "change",
+            applySalesFilters
+        );
+    }
+
+    if (salesDateTo) {
+        salesDateTo.addEventListener(
+            "change",
+            applySalesFilters
+        );
+    }
+
+    if (clearSalesDateFilter) {
+        clearSalesDateFilter.addEventListener(
+            "click",
+            () => {
+                if (salesDateFrom) {
+                    salesDateFrom.value = "";
+                }
+
+                if (salesDateTo) {
+                    salesDateTo.value = "";
+                }
+
+                applySalesFilters();
+            }
+        );
+    }
+
+    applySalesFilters();
 
     const editableSaleForms = Array.from(
         document.querySelectorAll(".editable-sale-form")
@@ -1929,5 +4324,318 @@
             .slice(0, 10);
     }
 </script>
+
+<script>
+    /*
+     * Ширины даты и действий могли сохраниться в браузере
+     * после ручного растягивания колонок. Фиксируем их после
+     * выполнения основного скрипта таблицы.
+     */
+    (() => {
+        const lockSalesColumns = () => {
+            document
+                .querySelectorAll(".sales-table .col-date")
+                .forEach((element) => {
+                    element.style.setProperty(
+                        "width",
+                        "104px",
+                        "important"
+                    );
+                    element.style.setProperty(
+                        "min-width",
+                        "104px",
+                        "important"
+                    );
+                    element.style.setProperty(
+                        "max-width",
+                        "104px",
+                        "important"
+                    );
+                });
+
+            document
+                .querySelectorAll(".sales-table .col-actions")
+                .forEach((element) => {
+                    element.style.setProperty(
+                        "width",
+                        "62px",
+                        "important"
+                    );
+                    element.style.setProperty(
+                        "min-width",
+                        "62px",
+                        "important"
+                    );
+                    element.style.setProperty(
+                        "max-width",
+                        "62px",
+                        "important"
+                    );
+                });
+        };
+
+        document.addEventListener(
+            "DOMContentLoaded",
+            () => {
+                lockSalesColumns();
+                requestAnimationFrame(lockSalesColumns);
+                window.setTimeout(lockSalesColumns, 200);
+                window.setTimeout(lockSalesColumns, 800);
+            }
+        );
+
+        window.addEventListener(
+            "load",
+            lockSalesColumns
+        );
+    })();
+</script>
+
+
+<script>
+    // MANUAL SALE PRICE PREVIEW V1
+    (() => {
+        const initializeManualSalePrice = () => {
+            const quantity =
+                document.getElementById("quantity");
+
+            const unitPrice =
+                document.getElementById("unit_price");
+
+            const preview =
+                document.getElementById(
+                    "manualSaleTotalPreview"
+                );
+
+            if (!quantity || !unitPrice || !preview) {
+                return;
+            }
+
+            const formatter = new Intl.NumberFormat(
+                "ru-RU",
+                {
+                    style: "currency",
+                    currency: "RUB",
+                    minimumFractionDigits: 0,
+                    maximumFractionDigits: 2,
+                }
+            );
+
+            const updateTotal = () => {
+                const quantityValue = Number(
+                    quantity.value || 0
+                );
+
+                const priceValue = Number(
+                    String(unitPrice.value || "")
+                        .replace(",", ".")
+                );
+
+                if (
+                    !Number.isFinite(quantityValue)
+                    || !Number.isFinite(priceValue)
+                    || quantityValue <= 0
+                    || priceValue <= 0
+                ) {
+                    preview.textContent = "Итого: —";
+                    return;
+                }
+
+                preview.textContent =
+                    "Итого: "
+                    + formatter.format(
+                        quantityValue * priceValue
+                    );
+            };
+
+            quantity.addEventListener(
+                "change",
+                updateTotal
+            );
+
+            unitPrice.addEventListener(
+                "input",
+                updateTotal
+            );
+
+            updateTotal();
+        };
+
+        if (
+            document.readyState === "loading"
+        ) {
+            document.addEventListener(
+                "DOMContentLoaded",
+                initializeManualSalePrice
+            );
+        } else {
+            initializeManualSalePrice();
+        }
+    })();
+    // MANUAL SALE PRICE PREVIEW V1 END
+</script>
+
+
+<script>
+    // SALES PRICE EDIT PREVIEW V2
+    (() => {
+        const formatter = new Intl.NumberFormat(
+            "ru-RU",
+            {
+                style: "currency",
+                currency: "RUB",
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 2,
+            }
+        );
+
+        const initializePriceInput = (priceInput) => {
+            const formId =
+                priceInput.getAttribute("form");
+
+            const form = formId
+                ? document.getElementById(formId)
+                : null;
+
+            if (!form) {
+                return;
+            }
+
+            const quantity =
+                form.elements.namedItem("quantity");
+
+            const preview = priceInput
+                .closest(".quantity-price-edit")
+                ?.querySelector(
+                    ".sale-edit-total-preview"
+                );
+
+            if (!quantity || !preview) {
+                return;
+            }
+
+            const update = () => {
+                const quantityValue = Number(
+                    quantity.value || 0
+                );
+
+                const priceValue = Number(
+                    String(priceInput.value || "")
+                        .replace(",", ".")
+                );
+
+                if (
+                    !Number.isFinite(quantityValue)
+                    || !Number.isFinite(priceValue)
+                    || quantityValue <= 0
+                    || priceValue <= 0
+                ) {
+                    preview.textContent = "Итого: —";
+                    return;
+                }
+
+                preview.textContent =
+                    "Итого: "
+                    + formatter.format(
+                        quantityValue * priceValue
+                    );
+            };
+
+            quantity.addEventListener(
+                "change",
+                update
+            );
+
+            priceInput.addEventListener(
+                "input",
+                update
+            );
+
+            update();
+        };
+
+        const initialize = () => {
+            document
+                .querySelectorAll(
+                    ".sale-price-input"
+                )
+                .forEach(initializePriceInput);
+        };
+
+        if (document.readyState === "loading") {
+            document.addEventListener(
+                "DOMContentLoaded",
+                initialize
+            );
+        } else {
+            initialize();
+        }
+    })();
+    // SALES PRICE EDIT PREVIEW V2 END
+</script>
+
+
+<script>
+    // EDIT CUSTOM DELIVERY SCRIPT V1
+    (() => {
+        function synchronizeEditDelivery(select) {
+            const cell = select.closest(
+                ".col-delivery"
+            );
+
+            const customInput = cell
+                ? cell.querySelector(
+                    ".js-edit-custom-delivery"
+                )
+                : null;
+
+            if (!customInput) {
+                return;
+            }
+
+            const isCustom =
+                select.value === "__custom__";
+
+            customInput.classList.toggle(
+                "is-hidden",
+                !isCustom
+            );
+
+            customInput.required = isCustom;
+        }
+
+        function initializeEditDelivery() {
+            document
+                .querySelectorAll(
+                    ".js-edit-delivery-select"
+                )
+                .forEach((select) => {
+                    select.addEventListener(
+                        "change",
+                        () => {
+                            synchronizeEditDelivery(
+                                select
+                            );
+                        }
+                    );
+
+                    synchronizeEditDelivery(
+                        select
+                    );
+                });
+        }
+
+        if (document.readyState === "loading") {
+            document.addEventListener(
+                "DOMContentLoaded",
+                initializeEditDelivery
+            );
+        } else {
+            initializeEditDelivery();
+        }
+    })();
+    // EDIT CUSTOM DELIVERY SCRIPT V1 END
+</script>
+
 </body>
 </html>
