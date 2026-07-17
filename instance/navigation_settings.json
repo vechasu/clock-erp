@@ -24,7 +24,7 @@
     "position": 5
   },
   "repair": {
-    "enabled": true,
+    "enabled": false,
     "position": 6
   },
   "settings": {
