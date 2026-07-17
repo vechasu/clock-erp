@@ -1011,8 +1011,8 @@
 
         .receipt-date-group {
             display: flex;
-            flex: 0 0 auto;
-            align-items: flex-end;
+            flex: 1 1 auto;
+            align-items: center;
             gap: 7px;
         }
 
@@ -1050,7 +1050,6 @@
 
         .receipt-date-divider {
             align-self: center;
-            margin-top: 15px;
             color: #94a3b8;
             font-weight: 800;
         }
@@ -1074,16 +1073,6 @@
         .receipt-date-clear:disabled {
             cursor: default;
             opacity: 0.45;
-        }
-
-        .receipt-filter-count {
-            min-width: 82px;
-            align-self: center;
-            margin-top: 15px;
-            color: #64748b;
-            font-size: 11px;
-            font-weight: 750;
-            white-space: nowrap;
         }
 
         .receipt-sort-button {
@@ -1127,16 +1116,13 @@
             .receipt-date-group {
                 width: 100%;
             }
-
-            .receipt-filter-count {
-                margin-left: auto;
-            }
         }
         /* RECEIPTS DATE FILTER SORT V1 END */
 
 
         /* RECEIPTS REPORT BUTTON CSS V1 */
         .receipt-report-button {
+            flex: 1 1 auto;
             height: 40px;
             padding: 0 15px;
             border: 1px solid #2563eb;
@@ -1486,12 +1472,11 @@
 
             <div class="receipt-date-group">
                 <label class="receipt-date-field">
-                    <span>С</span>
-
                     <input
                         class="receipt-date-input"
                         id="receiptDateFrom"
                         type="date"
+                        aria-label="Дата с"
                         onchange="filterReceipts()"
                     >
                 </label>
@@ -1501,12 +1486,11 @@
                 </span>
 
                 <label class="receipt-date-field">
-                    <span>По</span>
-
                     <input
                         class="receipt-date-input"
                         id="receiptDateTo"
                         type="date"
+                        aria-label="Дата по"
                         onchange="filterReceipts()"
                     >
                 </label>
@@ -1531,12 +1515,6 @@
                 </button>
                 <!-- RECEIPTS REPORT BUTTON V1 END -->
 
-                <span
-                    class="receipt-filter-count"
-                    id="receiptFilterCount"
-                >
-                    {{ total_receipts }} приходов
-                </span>
             </div>
         </div>
 
@@ -2916,7 +2894,7 @@
 
         if (!file) {
             showReceiptImportMessage(
-                "Выберите Exc
+                "Выберите Excel-файл",
                 "error"
             );
             return;
@@ -3502,25 +3480,6 @@
         );
     }
 
-    function receiptCountLabel(count) {
-        const lastTwo = count % 100;
-        const lastOne = count % 10;
-
-        if (lastTwo >= 11 && lastTwo <= 14) {
-            return count + " приходов";
-        }
-
-        if (lastOne === 1) {
-            return count + " приход";
-        }
-
-        if (lastOne >= 2 && lastOne <= 4) {
-            return count + " прихода";
-        }
-
-        return count + " приходов";
-    }
-
     function parseReceiptNumericValue(value) {
         const normalized = String(value || "")
             .replace(/\s/g, "")
@@ -3552,8 +3511,6 @@
             ).value || ""
         ).trim();
 
-        let visibleCount = 0;
-
         getReceiptRows().forEach((row) => {
             const searchText =
                 row.dataset.search || "";
@@ -3580,10 +3537,6 @@
 
             row.style.display =
                 isVisible ? "" : "none";
-
-            if (isVisible) {
-                visibleCount += 1;
-            }
         });
 
         const clearButton =
@@ -3593,11 +3546,6 @@
 
         clearButton.disabled =
             !dateFrom && !dateTo;
-
-        document.getElementById(
-            "receiptFilterCount"
-        ).textContent =
-            receiptCountLabel(visibleCount);
     }
 
     function clearReceiptDateFilter() {

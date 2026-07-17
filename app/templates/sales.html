@@ -1363,7 +1363,6 @@
 
         .sales-date-separator {
             align-self: center;
-            margin-top: 12px;
             color: #94a3b8;
             font-weight: 800;
         }
@@ -1391,16 +1390,6 @@
             opacity: 0.45;
         }
 
-        .sales-filter-count {
-            min-width: 72px;
-            align-self: center;
-            margin-top: 12px;
-            color: #64748b;
-            font-size: 11px;
-            font-weight: 750;
-            white-space: nowrap;
-        }
-
         .sales-filter-empty-cell {
             height: 110px;
             border-right: 0 !important;
@@ -1420,10 +1409,6 @@
 
             .sales-date-filter {
                 width: 100%;
-            }
-
-            .sales-filter-count {
-                margin-left: auto;
             }
         }
         /* Конец фильтра продаж по дате и диапазону */
@@ -1515,14 +1500,6 @@
             cursor: default;
         }
 
-        .sales-filter-count {
-            min-width: auto;
-            color: #64748b;
-            font-size: 12px;
-            font-weight: 800;
-            white-space: nowrap;
-        }
-
         @media (max-width: 1350px) {
             .sales-data-toolbar {
                 flex-wrap: wrap;
@@ -1559,7 +1536,7 @@
 
         .sales-date-filter {
             display: flex;
-            flex: 0 0 auto;
+            flex: 1 1 auto;
             align-items: center;
             gap: 8px;
             padding: 0;
@@ -1605,6 +1582,7 @@
         }
 
         .sales-date-separator {
+            margin-top: 0;
             color: #94a3b8;
             font-size: 14px;
             font-weight: 900;
@@ -1612,6 +1590,7 @@
         }
 
         .sales-date-clear {
+            flex: 1 1 auto;
             height: 40px;
             padding: 0 12px;
             border: 1px solid #d7dde5;
@@ -1633,19 +1612,6 @@
         .sales-date-clear:disabled {
             opacity: 0.5;
             cursor: default;
-        }
-
-        .sales-filter-count {
-            display: inline-flex;
-            align-items: center;
-            height: 28px;
-            padding: 0 10px;
-            border-radius: 999px;
-            background: #eef2f7;
-            color: #64748b;
-            font-size: 12px;
-            font-weight: 800;
-            white-space: nowrap;
         }
 
         @media (max-width: 1380px) {
@@ -1861,12 +1827,6 @@
                     >
                         Сбросить
                     </button>
-
-                    <span
-                        id="salesFilterCount"
-                        class="sales-filter-count"
-                        aria-live="polite"
-                    ></span>
                 </div>
             </div>
 
@@ -4259,9 +4219,6 @@
     const clearSalesDateFilter =
         document.getElementById("clearSalesDateFilter");
 
-    const salesFilterCount =
-        document.getElementById("salesFilterCount");
-
     const saleRows = Array.from(
         document.querySelectorAll(".sale-row")
     );
@@ -4362,30 +4319,6 @@
                 visibleCount += 1;
             }
         });
-
-        const formatSalesCount = (count) => {
-            const mod10 = count % 10;
-            const mod100 = count % 100;
-
-            let word = "продаж";
-
-            if (mod10 === 1 && mod100 !== 11) {
-                word = "продажа";
-            } else if (
-                mod10 >= 2
-                && mod10 <= 4
-                && !(mod100 >= 12 && mod100 <= 14)
-            ) {
-                word = "продажи";
-            }
-
-            return `${count} ${word}`;
-        };
-
-        if (salesFilterCount) {
-            salesFilterCount.textContent =
-                formatSalesCount(visibleCount);
-        }
 
         if (clearSalesDateFilter) {
             clearSalesDateFilter.disabled =
