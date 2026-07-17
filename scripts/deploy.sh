@@ -41,7 +41,10 @@ readonly EXPECTED_BRANCH="main"
 readonly REMOTE_NAME="origin"
 readonly PROJECT_DIR="/opt/clock-erp"
 readonly SERVICE_NAME="clock-erp"
-readonly HEALTHCHECK_URL="http://127.0.0.1:5000/"
+readonly HEALTHCHECK_URLS=(
+    "http://127.0.0.1:5000/"
+    "http://127.0.0.1:5000/analytics?period=all"
+)
 
 PREVIOUS_COMMIT=""
 DEPLOY_UPDATED=0
@@ -148,23 +151,26 @@ PYTHON_CHECK
 systemctl restart "$SERVICE_NAME"
 systemctl is-active --quiet "$SERVICE_NAME"
 
-http_ok=0
-for attempt in {1..10}; do
-    if curl --fail --silent --show-error \
-        --max-time 10 \
-        --output /dev/null \
-        "$HEALTHCHECK_URL"; then
-        http_ok=1
-        break
+for healthcheck_url in "${HEALTHCHECK_URLS[@]}"; do
+    http_ok=0
+
+    for attempt in {1..10}; do
+        if curl --fail --silent --show-error \
+            --max-time 10 \
+            --output /dev/null \
+            "$healthcheck_url"; then
+            http_ok=1
+            break
+        fi
+
+        sleep 1
+    done
+
+    if [[ "$http_ok" != "1" ]]; then
+        printf 'HTTP health check failed: %s\n' "$healthcheck_url" >&2
+        false
     fi
-
-    sleep 1
 done
-
-if [[ "$http_ok" != "1" ]]; then
-    printf 'HTTP health check failed: %s\n' "$HEALTHCHECK_URL" >&2
-    false
-fi
 
 trap - ERR
 printf 'DEPLOY_COMMIT=%s\n' "$CURRENT_COMMIT"

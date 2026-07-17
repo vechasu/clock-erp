@@ -5443,7 +5443,7 @@ def receipt_delete():
 
 
 def parse_analytics_date(value):
-    from datetime import date
+    from datetime import datetime
 
     raw_value = str(value or "").strip()
 
@@ -5451,7 +5451,7 @@ def parse_analytics_date(value):
         return None
 
     try:
-        return date.fromisoformat(raw_value[:10])
+        return datetime.strptime(raw_value[:10], "%Y-%m-%d").date()
     except ValueError:
         return None
 
