@@ -220,7 +220,7 @@
         }
 
         .report-table-card table {
-            min-width: 1320px;
+            min-width: 1540px;
         }
 
         .money-cell {
@@ -498,6 +498,8 @@
                             <th>Тип</th>
                             <th>Источник</th>
                             <th>Товар</th>
+                            <th>Бренд</th>
+                            <th>Категория</th>
                             <th>Количество</th>
                             <th>Цена</th>
                             <th>Сумма</th>
@@ -521,6 +523,8 @@
                                 <td>
                                     {{ sale.product_name or "—" }}
                                 </td>
+                                <td>{{ sale.brand or "—" }}</td>
+                                <td>{{ sale.category or "—" }}</td>
                                 <td>
                                     {{ sale.quantity_value }}
                                 </td>

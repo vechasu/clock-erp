@@ -1746,6 +1746,21 @@
         }
         /* EDIT CUSTOM DELIVERY CSS V1 END */
 
+        /* Широкая таблица продаж прокручивается по горизонтали. */
+        .sales-data-card .sales-table {
+            width: 1580px;
+            min-width: 1580px !important;
+        }
+
+        .sales-table .col-brand {
+            width: 120px !important;
+            min-width: 120px;
+        }
+
+        .sales-table .col-category {
+            width: 170px !important;
+            min-width: 170px;
+        }
 </style>
 </head>
 
@@ -1876,6 +1891,18 @@
                                         <span class="sales-sort-arrow">↕</span>
                                     </span>
                                 </th>
+                                <th class="col-brand">
+                                    <span class="sales-sort-label" data-sort-field="brand" onclick="sortSalesTable('brand')">
+                                        Бренд
+                                        <span class="sales-sort-arrow">↕</span>
+                                    </span>
+                                </th>
+                                <th class="col-category">
+                                    <span class="sales-sort-label" data-sort-field="category" onclick="sortSalesTable('category')">
+                                        Категория
+                                        <span class="sales-sort-arrow">↕</span>
+                                    </span>
+                                </th>
                                 <th class="col-qty">
                                     <span class="sales-sort-label" data-sort-field="quantity" onclick="sortSalesTable('quantity')">
                                         К-во
@@ -1926,10 +1953,12 @@
                             {% for sale in sales %}
                                 <tr
                                     class="sale-row{% if sale.is_manual %} manual-row{% else %} automatic-row{% endif %}"
-                                    data-search="{{ sale.created_at }} {{ sale.source }} {{ sale.product_name }} {{ sale.bitrix_product_name }} {{ sale.order_number }} {{ sale.track_number }} {{ sale.delivery_method }} {{ sale.region }} {{ sale.city }} {{ sale.note }}"
+                                    data-search="{{ sale.created_at }} {{ sale.source }} {{ sale.product_name }} {{ sale.bitrix_product_name }} {{ sale.brand }} {{ sale.category }} {{ sale.order_number }} {{ sale.track_number }} {{ sale.delivery_method }} {{ sale.region }} {{ sale.city }} {{ sale.note }}"
                                     data-sort-date="{{ sale.created_at }}"
                                     data-sort-source="{{ sale.source }}"
                                     data-sort-product="{{ sale.product_name or sale.bitrix_product_name }}"
+                                    data-sort-brand="{{ sale.brand }}"
+                                    data-sort-category="{{ sale.category }}"
                                     data-sort-quantity="{{ sale.quantity }}"
                                     data-sort-order="{{ sale.order_number }}"
                                     data-sort-track="{{ sale.track_number }}"
@@ -1991,6 +2020,32 @@
                                                     required
                                                 >
                                             </div>
+                                        </td>
+
+                                        <td class="col-brand">
+                                            <span class="manual-view-value">
+                                                {{ sale.brand or "—" }}
+                                            </span>
+                                            <input
+                                                class="table-control manual-edit-control sale-edit-control"
+                                                type="text"
+                                                name="brand"
+                                                value="{{ sale.brand }}"
+                                                form="{{ edit_form_id }}"
+                                            >
+                                        </td>
+
+                                        <td class="col-category">
+                                            <span class="manual-view-value">
+                                                {{ sale.category or "—" }}
+                                            </span>
+                                            <input
+                                                class="table-control manual-edit-control sale-edit-control"
+                                                type="text"
+                                                name="category"
+                                                value="{{ sale.category }}"
+                                                form="{{ edit_form_id }}"
+                                            >
                                         </td>
 
                                         <!-- SALES PRICE TABLE V2 -->
@@ -2307,6 +2362,32 @@
                                                 value="{{ sale.product_name }}"
                                                 form="{{ edit_form_id }}"
                                                 required
+                                            >
+                                        </td>
+
+                                        <td class="col-brand">
+                                            <span class="automatic-view-value">
+                                                {{ sale.brand or "—" }}
+                                            </span>
+                                            <input
+                                                class="table-control automatic-edit-control sale-edit-control"
+                                                type="text"
+                                                name="brand"
+                                                value="{{ sale.brand }}"
+                                                form="{{ edit_form_id }}"
+                                            >
+                                        </td>
+
+                                        <td class="col-category">
+                                            <span class="automatic-view-value">
+                                                {{ sale.category or "—" }}
+                                            </span>
+                                            <input
+                                                class="table-control automatic-edit-control sale-edit-control"
+                                                type="text"
+                                                name="category"
+                                                value="{{ sale.category }}"
+                                                form="{{ edit_form_id }}"
                                             >
                                         </td>
 
@@ -2663,6 +2744,28 @@
                                 id="productSuggestions"
                                 class="product-suggestions"
                             ></div>
+                        </div>
+
+                        <div class="field">
+                            <label for="brand">Бренд</label>
+                            <input
+                                id="brand"
+                                class="control"
+                                type="text"
+                                name="brand"
+                                placeholder="Заполнится после выбора товара"
+                            >
+                        </div>
+
+                        <div class="field">
+                            <label for="category">Категория</label>
+                            <input
+                                id="category"
+                                class="control"
+                                type="text"
+                                name="category"
+                                placeholder="Заполнится после выбора товара"
+                            >
                         </div>
 
                         <div class="field">
@@ -3097,6 +3200,8 @@
     const manualSaleForm = document.getElementById("manualSaleForm");
     const productSearchInput = document.getElementById("product_name");
     const productIdInput = document.getElementById("product_id");
+    const productBrandInput = document.getElementById("brand");
+    const productCategoryInput = document.getElementById("category");
     const productSuggestions = document.getElementById(
         "productSuggestions"
     );
@@ -3116,6 +3221,7 @@
             item.name,
             item.article,
             item.code,
+            item.brand,
             item.category,
         ].join(" "));
     }
@@ -3136,6 +3242,12 @@
 
         productSearchInput.value = item.name || "";
         productIdInput.value = item.id || "";
+        if (productBrandInput) {
+            productBrandInput.value = item.brand || "";
+        }
+        if (productCategoryInput) {
+            productCategoryInput.value = item.category || "";
+        }
         productSearchInput.setCustomValidity("");
 
         closeProductSuggestions();
@@ -3229,8 +3341,12 @@
                 metaParts.push(`Код: ${item.code}`);
             }
 
+            if (item.brand) {
+                metaParts.push(`Бренд: ${item.brand}`);
+            }
+
             if (item.category) {
-                metaParts.push(item.category);
+                metaParts.push(`Категория: ${item.category}`);
             }
 
             meta.textContent = metaParts.join(" · ") || "Без артикула";
@@ -3369,6 +3485,7 @@
                 item.name,
                 item.article,
                 item.code,
+                item.brand,
                 item.category,
             ].filter(Boolean).join(" "));
         }
@@ -3394,6 +3511,16 @@
             const productIdInput = form
                 ? form.querySelector(
                     'input[name="product_id"]'
+                )
+                : null;
+            const brandInput = form
+                ? document.querySelector(
+                    'input[name="brand"][form="' + formId + '"]'
+                )
+                : null;
+            const categoryInput = form
+                ? document.querySelector(
+                    'input[name="category"][form="' + formId + '"]'
                 )
                 : null;
 
@@ -3454,6 +3581,12 @@
 
                 if (productIdInput) {
                     productIdInput.value = productId;
+                }
+                if (brandInput) {
+                    brandInput.value = item.brand || "";
+                }
+                if (categoryInput) {
+                    categoryInput.value = item.category || "";
                 }
 
                 input.setCustomValidity("");
@@ -3533,6 +3666,18 @@
                             );
                         }
 
+                        if (item.brand) {
+                            details.push(
+                                `Бренд: ${item.brand}`
+                            );
+                        }
+
+                        if (item.category) {
+                            details.push(
+                                `Категория: ${item.category}`
+                            );
+                        }
+
                         meta.textContent =
                             details.join(" · ") ||
                             "Без артикула";
@@ -3580,6 +3725,12 @@
             input.addEventListener("input", () => {
                 if (productIdInput) {
                     productIdInput.value = "";
+                }
+                if (productBrandInput) {
+                    productBrandInput.value = "";
+                }
+                if (productCategoryInput) {
+                    productCategoryInput.value = "";
                 }
 
                 input.setCustomValidity("");

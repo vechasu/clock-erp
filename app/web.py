@@ -3054,6 +3054,10 @@ def manual_sale_add():
             request.form.get("product_id") or ""
         ).strip(),
         "product_name": product_name,
+        "brand": (request.form.get("brand") or "").strip(),
+        "category": (
+            request.form.get("category") or ""
+        ).strip(),
         "quantity": quantity,
         "unit_price": unit_price,
         "total_amount": total_amount,
@@ -3166,6 +3170,12 @@ def manual_sale_update():
             or ""
         ).strip()
         sale["product_name"] = product_name
+        sale["brand"] = (
+            request.form.get("brand") or ""
+        ).strip()
+        sale["category"] = (
+            request.form.get("category") or ""
+        ).strip()
         sale["quantity"] = quantity
         sale["unit_price"] = unit_price
         sale["total_amount"] = total_amount
@@ -3328,6 +3338,10 @@ def automatic_sale_update():
             request.form.get("source") or "Tictactoy"
         ).strip(),
         "product_name": product_name,
+        "brand": (request.form.get("brand") or "").strip(),
+        "category": (
+            request.form.get("category") or ""
+        ).strip(),
         "quantity": quantity,
         "unit_price": unit_price,
         "total_amount": total_amount,
@@ -3371,10 +3385,46 @@ def automatic_sale_update():
 from datetime import datetime
 
 
+def build_sales_product_metadata_lookup(items):
+    by_id = {}
+    by_name = {}
+
+    for item in items if isinstance(items, list) else []:
+        product_id = str(item.get("id") or "").strip()
+        product_name = str(item.get("name") or "").strip()
+        metadata = {
+            "brand": str(item.get("brand") or "").strip(),
+            "category": str(item.get("category") or "").strip(),
+        }
+
+        if product_id:
+            by_id[product_id] = metadata
+
+        if product_name:
+            by_name[product_name.casefold()] = metadata
+
+    return {"by_id": by_id, "by_name": by_name}
+
+
+def get_sales_product_metadata(lookup, product_id, product_name):
+    product_id = str(product_id or "").strip()
+    product_name = str(product_name or "").strip().casefold()
+
+    return (
+        lookup["by_id"].get(product_id)
+        or lookup["by_name"].get(product_name)
+        or {"brand": "", "category": ""}
+    )
+
+
 def build_sales_report_records():
     operations = load_stock_operations()
     stored_manual_sales = load_manual_sales()
     automatic_overrides = load_automatic_sales_overrides()
+    all_warehouse_items = get_warehouse_items()
+    product_metadata_lookup = build_sales_product_metadata_lookup(
+        all_warehouse_items
+    )
 
     automatic_sales = []
     manual_sales = []
@@ -3428,6 +3478,12 @@ def build_sales_report_records():
             )
             or ""
         )
+        product_metadata = get_sales_product_metadata(
+            product_metadata_lookup,
+            operation.get("product_id"),
+            override.get("product_name")
+            or operation.get("product_name"),
+        )
 
         automatic_sales.append({
             "id": operation_id,
@@ -3453,6 +3509,24 @@ def build_sales_report_records():
                 override.get(
                     "product_name",
                     operation.get("product_name") or "",
+                )
+                or ""
+            ),
+            "brand": str(
+                override.get(
+                    "brand",
+                    operation.get("brand")
+                    or product_metadata.get("brand")
+                    or "",
+                )
+                or ""
+            ),
+            "category": str(
+                override.get(
+                    "category",
+                    operation.get("category")
+                    or product_metadata.get("category")
+                    or "",
                 )
                 or ""
             ),
@@ -3526,6 +3600,11 @@ def build_sales_report_records():
         quantity_number = parse_manual_sale_quantity(
             stored_sale.get("quantity")
         )
+        product_metadata = get_sales_product_metadata(
+            product_metadata_lookup,
+            stored_sale.get("product_id"),
+            stored_sale.get("product_name"),
+        )
 
         manual_sales.append({
             "id": str(stored_sale.get("id") or ""),
@@ -3546,6 +3625,16 @@ def build_sales_report_records():
             ),
             "product_name": str(
                 stored_sale.get("product_name") or ""
+            ),
+            "brand": str(
+                stored_sale.get("brand")
+                or product_metadata.get("brand")
+                or ""
+            ),
+            "category": str(
+                stored_sale.get("category")
+                or product_metadata.get("category")
+                or ""
             ),
             "quantity_value": quantity_number,
             **{
@@ -3827,6 +3916,8 @@ def sales_report_excel():
         "Тип",
         "Источник",
         "Товар",
+        "Бренд",
+        "Категория",
         "Количество",
         "Цена за единицу, ₽",
         "Сумма, ₽",
@@ -3872,6 +3963,8 @@ def sales_report_excel():
             sale.get("sale_type_label") or "",
             sale.get("source") or "",
             sale.get("product_name") or "",
+            sale.get("brand") or "",
+            sale.get("category") or "",
             sale.get("quantity_value") or 0,
             sale.get("unit_price"),
             sale.get("total_amount"),
@@ -3898,7 +3991,7 @@ def sales_report_excel():
             )
 
             if (
-                column in {6, 7}
+                column in {8, 9}
                 and value is not None
             ):
                 cell.number_format = '#,##0.00 "₽"'
@@ -3927,6 +4020,8 @@ def sales_report_excel():
         16,
         18,
         34,
+        20,
+        28,
         12,
         18,
         18,
@@ -3948,7 +4043,7 @@ def sales_report_excel():
 
     sheet.freeze_panes = "A5"
     sheet.auto_filter.ref = (
-        "A{}:M{}".format(
+        "A{}:O{}".format(
             header_row,
             max(header_row, sheet.max_row),
         )
@@ -3981,7 +4076,7 @@ def sales_report_pdf():
     from flask import Response
     from reportlab.lib import colors
     from reportlab.lib.enums import TA_CENTER
-    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.pagesizes import A3, landscape
     from reportlab.lib.styles import (
         ParagraphStyle,
         getSampleStyleSheet,
@@ -4030,7 +4125,7 @@ def sales_report_pdf():
 
     document = SimpleDocTemplate(
         output,
-        pagesize=landscape(A4),
+        pagesize=landscape(A3),
         leftMargin=8 * mm,
         rightMargin=8 * mm,
         topMargin=8 * mm,
@@ -4112,6 +4207,8 @@ def sales_report_pdf():
         "Тип",
         "Источник",
         "Товар",
+        "Бренд",
+        "Категория",
         "Кол-во",
         "Цена",
         "Сумма",
@@ -4137,6 +4234,8 @@ def sales_report_pdf():
             sale.get("sale_type_label") or "",
             sale.get("source") or "",
             sale.get("product_name") or "",
+            sale.get("brand") or "",
+            sale.get("category") or "",
             format_stock_number(
                 sale.get("quantity_value") or 0
             ),
@@ -4155,7 +4254,7 @@ def sales_report_pdf():
         for index, value in enumerate(values):
             style = (
                 centered_cell_style
-                if index in {0, 1, 4, 5, 6}
+                if index in {0, 1, 6, 7, 8}
                 else cell_style
             )
 
@@ -4175,7 +4274,9 @@ def sales_report_pdf():
             18 * mm,  # Дата
             15 * mm,  # Тип
             18 * mm,  # Источник
-            32 * mm,  # Товар
+            28 * mm,  # Товар
+            18 * mm,  # Бренд
+            22 * mm,  # Категория
             11 * mm,  # Количество
             18 * mm,  # Цена
             20 * mm,  # Сумма
@@ -4269,6 +4370,10 @@ def sales_page():
     operations = load_stock_operations()
     stored_manual_sales = load_manual_sales()
     automatic_overrides = load_automatic_sales_overrides()
+    all_warehouse_items = get_warehouse_items()
+    product_metadata_lookup = build_sales_product_metadata_lookup(
+        all_warehouse_items
+    )
 
     automatic_sales = []
     manual_sales = []
@@ -4334,6 +4439,12 @@ def sales_page():
             )
             or ""
         )
+        product_metadata = get_sales_product_metadata(
+            product_metadata_lookup,
+            operation.get("product_id"),
+            override.get("product_name")
+            or operation.get("product_name"),
+        )
 
         automatic_sales.append({
             "id": operation_id,
@@ -4357,6 +4468,24 @@ def sales_page():
                 override.get(
                     "product_name",
                     operation.get("product_name") or "",
+                )
+                or ""
+            ),
+            "brand": str(
+                override.get(
+                    "brand",
+                    operation.get("brand")
+                    or product_metadata.get("brand")
+                    or "",
+                )
+                or ""
+            ),
+            "category": str(
+                override.get(
+                    "category",
+                    operation.get("category")
+                    or product_metadata.get("category")
+                    or "",
                 )
                 or ""
             ),
@@ -4425,6 +4554,11 @@ def sales_page():
         quantity_number = parse_manual_sale_quantity(
             stored_sale.get("quantity")
         )
+        product_metadata = get_sales_product_metadata(
+            product_metadata_lookup,
+            stored_sale.get("product_id"),
+            stored_sale.get("product_name"),
+        )
 
         total_quantity += quantity_number
 
@@ -4448,6 +4582,16 @@ def sales_page():
             "order_number": stored_sale.get("order_number") or "",
             "product_id": stored_sale.get("product_id") or "",
             "product_name": stored_sale.get("product_name") or "",
+            "brand": (
+                stored_sale.get("brand")
+                or product_metadata.get("brand")
+                or ""
+            ),
+            "category": (
+                stored_sale.get("category")
+                or product_metadata.get("category")
+                or ""
+            ),
             "bitrix_product_name": "",
             "quantity": format_stock_number(quantity_number),
             "quantity_value": quantity_number,
@@ -4487,11 +4631,12 @@ def sales_page():
             "name": item.get("name") or "",
             "article": item.get("article") or "",
             "code": item.get("code") or "",
+            "brand": item.get("brand") or "",
             "category": item.get("category") or "",
             "stock": item.get("stock") or 0,
             "stock_display": item.get("stock_display") or "0",
         }
-        for item in get_warehouse_items()
+        for item in all_warehouse_items
         if float(item.get("stock") or 0) > 0
     ]
 
