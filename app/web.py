@@ -4672,6 +4672,726 @@ def receipts_report():
 # === RECEIPTS REPORT PAGE V1 END ===
 
 
+# === RECEIPTS EXCEL IMPORT PREVIEW V1 ===
+@app.route(
+    "/receipts/import/preview",
+    methods=["POST"],
+)
+def receipts_import_preview():
+    from flask import jsonify, request
+    from io import BytesIO
+    from openpyxl import load_workbook
+    import re
+
+    max_file_size = 15 * 1024 * 1024
+
+    uploaded_file = request.files.get("file")
+
+    if not uploaded_file or not uploaded_file.filename:
+        return jsonify({
+            "ok": False,
+            "message": "Выберите Excel-файл",
+        }), 400
+
+    filename = str(uploaded_file.filename).strip()
+    filename_lower = filename.lower()
+
+    if not filename_lower.endswith((".xlsx", ".xlsm")):
+        return jsonify({
+            "ok": False,
+            "message": (
+                "Поддерживаются только файлы "
+                ".xlsx и .xlsm"
+            ),
+        }), 400
+
+    file_data = uploaded_file.read()
+
+    if not file_data:
+        return jsonify({
+            "ok": False,
+            "message": "Загруженный файл пуст",
+        }), 400
+
+    if len(file_data) > max_file_size:
+        return jsonify({
+            "ok": False,
+            "message": (
+                "Файл слишком большой. "
+                "Максимальный размер — 15 МБ"
+            ),
+        }), 400
+
+    def stringify_excel_value(value):
+        if value is None:
+            return ""
+
+        if isinstance(value, float) and value.is_integer():
+            return str(int(value))
+
+        return str(value).strip()
+
+    def normalize_excel_text(value):
+        normalized = stringify_excel_value(value)
+        normalized = normalized.lower().replace("ё", "е")
+        normalized = re.sub(
+            r"[^a-zа-я0-9]+",
+            " ",
+            normalized,
+        )
+        return " ".join(normalized.split())
+
+    header_aliases = {
+        "name": {
+            "наименование",
+            "название",
+            "название товара",
+            "товар",
+            "модель",
+            "product",
+            "product name",
+            "name",
+        },
+        "article": {
+            "артикул",
+            "арт",
+            "артикул товара",
+            "sku",
+            "vendor code",
+        },
+        "code": {
+            "код",
+            "код товара",
+            "внутренний код",
+            "code",
+        },
+        "brand": {
+            "бренд",
+            "марка",
+            "производитель",
+            "brand",
+            "manufacturer",
+        },
+        "category": {
+            "категория",
+            "тип товара",
+            "группа",
+            "category",
+            "product category",
+        },
+        "collection": {
+            "коллекция",
+            "серия",
+            "линейка",
+            "collection",
+            "series",
+        },
+        "quantity": {
+            "количество",
+            "кол во",
+            "колво",
+            "количество шт",
+            "шт",
+            "остаток",
+            "qty",
+            "quantity",
+            "stock",
+        },
+        "purchase_price": {
+            "закупочная цена",
+            "цена закупки",
+            "закупка",
+            "закупочная стоимость",
+            "себестоимость",
+            "purchase price",
+            "cost",
+            "price",
+        },
+        "cell": {
+            "ячейка",
+            "ячейка склада",
+            "место хранения",
+            "cell",
+            "location",
+        },
+    }
+
+    normalized_aliases = {
+        field: {
+            normalize_excel_text(alias)
+            for alias in aliases
+        }
+        for field, aliases in header_aliases.items()
+    }
+
+    try:
+        workbook = load_workbook(
+            filename=BytesIO(file_data),
+            read_only=True,
+            data_only=True,
+        )
+    except Exception as error:
+        return jsonify({
+            "ok": False,
+            "message": (
+                "Не удалось прочитать Excel-файл: "
+                + str(error)
+            ),
+        }), 400
+
+    requested_sheet = (
+        request.form.get("sheet") or ""
+    ).strip()
+
+    if requested_sheet:
+        if requested_sheet not in workbook.sheetnames:
+            return jsonify({
+                "ok": False,
+                "message": "Указанный лист не найден",
+                "sheet_names": workbook.sheetnames,
+            }), 400
+
+        worksheet = workbook[requested_sheet]
+    else:
+        worksheet = workbook[
+            workbook.sheetnames[0]
+        ]
+
+    header_row_number = None
+    column_indexes = {}
+    header_values = []
+    best_score = 0
+
+    for row_number, row in enumerate(
+        worksheet.iter_rows(
+            min_row=1,
+            max_row=min(25, worksheet.max_row),
+            values_only=True,
+        ),
+        start=1,
+    ):
+        row_indexes = {}
+        row_headers = [
+            stringify_excel_value(value)
+            for value in row
+        ]
+
+        for column_index, value in enumerate(row):
+            normalized_value = normalize_excel_text(
+                value
+            )
+
+            if not normalized_value:
+                continue
+
+            for field, aliases in normalized_aliases.items():
+                if (
+                    field not in row_indexes
+                    and normalized_value in aliases
+                ):
+                    row_indexes[field] = column_index
+
+        score = len(row_indexes)
+
+        if (
+            score > best_score
+            and "quantity" in row_indexes
+            and any(
+                field in row_indexes
+                for field in (
+                    "name",
+                    "article",
+                    "code",
+                )
+            )
+        ):
+            best_score = score
+            header_row_number = row_number
+            column_indexes = row_indexes
+            header_values = row_headers
+
+    if not header_row_number:
+        return jsonify({
+            "ok": False,
+            "message": (
+                "Не удалось определить заголовки. "
+                "В таблице должны быть количество "
+                "и название, артикул или код товара"
+            ),
+            "sheet_names": workbook.sheetnames,
+        }), 400
+
+    catalog = get_warehouse_items(force=True)
+
+    catalog_by_id = {}
+    article_index = {}
+    code_index = {}
+    name_index = {}
+
+    def add_catalog_index(index, value, product):
+        key = normalize_excel_text(value)
+
+        if not key:
+            return
+
+        index.setdefault(key, []).append(product)
+
+    for product in catalog:
+        product_id = str(
+            product.get("id") or ""
+        ).strip()
+
+        if not product_id:
+            continue
+
+        catalog_by_id[product_id] = product
+
+        add_catalog_index(
+            article_index,
+            product.get("article"),
+            product,
+        )
+        add_catalog_index(
+            code_index,
+            product.get("code"),
+            product,
+        )
+        add_catalog_index(
+            name_index,
+            product.get("name"),
+            product,
+        )
+
+    def read_row_value(row, field):
+        column_index = column_indexes.get(field)
+
+        if column_index is None:
+            return ""
+
+        if column_index >= len(row):
+            return ""
+
+        return stringify_excel_value(
+            row[column_index]
+        )
+
+    preview_rows = []
+    aggregated_rows = {}
+    duplicate_count = 0
+    input_rows_count = 0
+    truncated = False
+
+    max_data_rows = 5000
+
+    for row_offset, row in enumerate(
+        worksheet.iter_rows(
+            min_row=header_row_number + 1,
+            values_only=True,
+        ),
+        start=1,
+    ):
+        if row_offset > max_data_rows:
+            truncated = True
+            break
+
+        excel_row_number = (
+            header_row_number + row_offset
+        )
+
+        name = read_row_value(row, "name")
+        article = read_row_value(row, "article")
+        code = read_row_value(row, "code")
+        brand = read_row_value(row, "brand")
+        category = read_row_value(row, "category")
+        collection = read_row_value(
+            row,
+            "collection",
+        )
+        cell = read_row_value(row, "cell")
+
+        raw_quantity = read_row_value(
+            row,
+            "quantity",
+        )
+        raw_purchase_price = read_row_value(
+            row,
+            "purchase_price",
+        )
+
+        identifying_values = [
+            name,
+            article,
+    
+            brand,
+            category,
+            collection,
+            raw_quantity,
+            raw_purchase_price,
+        ]
+
+        if not any(
+            stringify_excel_value(value)
+            for value in identifying_values
+        ):
+            continue
+
+        input_rows_count += 1
+
+        quantity = parse_receipt_number(
+            raw_quantity,
+            default=0,
+        )
+        purchase_price = parse_receipt_number(
+            raw_purchase_price,
+            default=0,
+        )
+
+        messages = []
+        matched_products = {}
+
+        lookup_values = (
+            (article_index, article, "артикулу"),
+            (code_index, code, "коду"),
+            (name_index, name, "названию"),
+        )
+
+        for index, lookup_value, lookup_label in lookup_values:
+            lookup_key = normalize_excel_text(
+                lookup_value
+            )
+
+            if not lookup_key:
+                continue
+
+            products = index.get(lookup_key, [])
+
+            if len(products) > 1:
+                messages.append(
+                    "В каталоге найдено несколько "
+                    f"товаров по {lookup_label}"
+                )
+
+            for product in products:
+                product_id = str(
+                    product.get("id") or ""
+                ).strip()
+
+                if product_id:
+                    matched_products[
+                        product_id
+                    ] = product
+
+        status = "new"
+        status_label = "Новый"
+        matched_product = None
+
+        if len(matched_products) > 1:
+            status = "error"
+            status_label = "Ошибка"
+            messages.append(
+                "Артикул, код и название указывают "
+                "на разные товары"
+            )
+        elif len(matched_products) == 1:
+            matched_product = next(
+                iter(matched_products.values())
+            )
+            status = "found"
+            status_label = "Найден"
+
+        if matched_product:
+            product_id = str(
+                matched_product.get("id") or ""
+            ).strip()
+
+            name = (
+                matched_product.get("name")
+                or name
+            )
+            article = (
+                matched_product.get("article")
+                or article
+            )
+            code = (
+                matched_product.get("code")
+                or code
+            )
+            brand = (
+                brand
+                or matched_product.get("brand")
+                or matched_product.get(
+                    "manufacturer"
+                )
+                or ""
+            )
+            category = (
+                category
+                or matched_product.get("category")
+                or collection
+                or ""
+            )
+            cell = (
+                matched_product.get("cell")
+                or cell
+            )
+            current_stock = parse_receipt_number(
+                matched_product.get("stock"),
+                default=0,
+            )
+        else:
+            product_id = ""
+            current_stock = 0
+            category = category or collection
+
+        if not name and status != "found":
+            status = "error"
+      
+            messages.append(
+                "Не указано название нового товара"
+            )
+
+        if quantity <= 0:
+            status = "error"
+            status_label = "Ошибка"
+            messages.append(
+                "Количество должно быть больше нуля"
+            )
+
+        if purchase_price < 0:
+            status = "error"
+            status_label = "Ошибка"
+            messages.append(
+                "Закупочная цена не может быть "
+                "отрицательной"
+            )
+
+        if status == "new" and not brand:
+            status = "error"
+            status_label = "Ошибка"
+            messages.append(
+                "Для нового товара не указан бренд"
+            )
+
+        if status == "new" and not category:
+            status = "error"
+            status_label = "Ошибка"
+            messages.append(
+                "Для нового товара не указана "
+                "категория или коллекция"
+            )
+
+        if (
+            "purchase_price"
+            not in column_indexes
+            or raw_purchase_price == ""
+        ):
+            messages.append(
+                "Закупочная цена не указана — "
+                "используется 0 ₽"
+            )
+
+        row_data = {
+            "row_number": excel_row_number,
+            "source_rows": [excel_row_number],
+            "status": status,
+            "status_label": status_label,
+            "can_import": status != "error",
+            "product_id": product_id,
+            "name": stringify_excel_value(name),
+            "article": stringify_excel_value(
+                article
+            ),
+            "code": stringify_excel_value(code),
+            "brand": stringify_excel_value(
+                brand
+            ),
+            "category": stringify_excel_value(
+                category
+            ),
+            "collection": stringify_excel_value(
+                collection
+            ),
+            "cell": stringify_excel_value(cell),
+            "quantity": quantity,
+            "purchase_price": purchase_price,
+            "line_total": round(
+                quantity * purchase_price,
+                2,
+            ),
+            "current_stock": current_stock,
+            "stock_after": (
+                current_stock + quantity
+            ),
+            "duplicate_count": 0,
+            "messages": messages,
+        }
+
+        if status == "error":
+            preview_rows.append(row_data)
+            continue
+
+        identity_key = (
+            product_id
+            or normalize_excel_text(article)
+            or normalize_excel_text(code)
+            or normalize_excel_text(name)
+        )
+
+        aggregation_key = (
+            status,
+            identity_key,
+        )
+
+        existing_row = aggregated_rows.get(
+            aggregation_key
+        )
+
+        if existing_row:
+            duplicate_count += 1
+
+            previous_quantity = parse_receipt_number(
+                existing_row.get("quantity"),
+                default=0,
+            )
+            previous_amount = parse_receipt_number(
+                existing_row.get("line_total"),
+                default=0,
+            )
+
+            combined_quantity = (
+                previous_quantity + quantity
+            )
+            combined_amount = (
+                previous_amount
+                + quantity * purchase_price
+            )
+
+            existing_row["quantity"] = (
+                combined_quantity
+            )
+            existing_row["line_total"] = round(
+                combined_amount,
+                2,
+            )
+            existing_row["purchase_price"] = (
+                round(
+                    combined_amount
+                    / combined_quantity,
+                    2,
+                )
+                if combined_quantity
+                else 0
+            )
+            existing_row["stock_after"] = (
+                existing_row["current_stock"]
+                + combined_quantity
+            )
+            existing_row["duplicate_count"] += 1
+            existing_row["source_rows"].append(
+                excel_row_number
+            )
+
+            duplicate_message = (
+                "Объединено строк Excel: "
+                + ", ".join(
+                    str(number)
+                    for number
+                    in existing_row["source_rows"]
+                )
+            )
+
+            existing_row["messages"] = [
+                message
+                for message
+                in existing_row["messages"]
+                if not message.startswith(
+                    "Объединено строк Excel:"
+                )
+            ]
+            existing_row["messages"].append(
+                duplicate_message
+            )
+        else:
+            aggregated_rows[
+                aggregation_key
+            ] = row_data
+            preview_rows.append(row_data)
+
+    importable_rows = [
+        row
+        for row in preview_rows
+        if row.get("can_import")
+    ]
+
+    found_rows = [
+        row
+        for row in importable_rows
+        if row.get("status") == "found"
+    ]
+
+    new_rows = [
+        row
+        for row in importable_rows
+        if row.get("status") == "new"
+    ]
+
+    error_rows = [
+        row
+        for row in preview_rows
+        if row.get("status") == "error"
+    ]
+
+    total_quantity = sum(
+        parse_receipt_number(
+            row.get("quantity"),
+            default=0,
+        )
+        for row in importable_rows
+    )
+
+    total_amount = round(
+        sum(
+            parse_receipt_number(
+                row.get("line_total"),
+                default=0,
+            )
+            for row in importable_rows
+        ),
+        2,
+    )
+
+    columns = {
+        field: (
+            header_values[index]
+            if index < len(header_values)
+            else ""
+        )
+        for field, index in column_indexes.items()
+    }
+
+    return jsonify({
+        "ok": True,
+        "filename": filename,
+        "sheet": worksheet.title,
+        "sheet_names": workbook.sheetnames,
+        "header_row": header_row_number,
+        "columns": columns,
+        "truncated": truncated,
+        "summary": {
+            "input_rows": input_rows_count,
+            "result_rows": len(preview_rows),
+            "found": len(found_rows),
+            "new": len(new_rows),
+            "duplicates": duplicate_count,
+            "errors": len(error_rows),
+            "total_quantity": total_quantity,
+            "total_amount": total_amount,
+        },
+        "rows": preview_rows,
+    })
+# === RECEIPTS EXCEL IMPORT PREVIEW V1 END ===
+
+
 @app.route("/receipts/create", methods=["POST"])
 def receipt_create():
     from datetime import datetime
