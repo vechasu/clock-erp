@@ -2715,9 +2715,40 @@ def get_russian_region_cities():
                 return None
 
             if require_fresh:
-                generated_at = datetime.fromisoformat(
-                    str(payload.get("generated_at") or "")
-                )
+                generated_at_value = str(
+                    payload.get("generated_at") or ""
+                ).strip()
+                generated_at_value = generated_at_value.rstrip("Z")
+
+                for separator in ("+", "-"):
+                    separator_index = generated_at_value.find(
+                        separator,
+                        10,
+                    )
+
+                    if separator_index != -1:
+                        generated_at_value = generated_at_value[
+                            :separator_index
+                        ]
+                        break
+
+                generated_at = None
+
+                for date_format in (
+                    "%Y-%m-%dT%H:%M:%S.%f",
+                    "%Y-%m-%dT%H:%M:%S",
+                ):
+                    try:
+                        generated_at = datetime.strptime(
+                            generated_at_value,
+                            date_format,
+                        )
+                        break
+                    except ValueError:
+                        continue
+
+                if generated_at is None:
+                    return None
 
                 if generated_at.tzinfo is None:
                     generated_at = generated_at.replace(
