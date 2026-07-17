@@ -17,18 +17,18 @@
   },
   "analytics": {
     "enabled": true,
-    "position": 4
+    "position": 5
   },
   "stock_operations": {
     "enabled": false,
-    "position": 5
+    "position": 6
   },
   "repair": {
     "enabled": false,
-    "position": 6
+    "position": 7
   },
   "settings": {
     "enabled": true,
-    "position": 7
+    "position": 8
   }
 }
