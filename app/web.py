@@ -5366,6 +5366,13 @@ def receipts_import_preview():
                 "используется 0 ₽"
             )
 
+        if status == "error":
+            status_label = "Ошибка"
+        elif status == "found":
+            status_label = "Найден"
+        else:
+            status_label = "Новый"
+
         row_data = {
             "row_number": excel_row_number,
             "source_rows": [excel_row_number],
