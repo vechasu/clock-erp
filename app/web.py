@@ -5021,7 +5021,7 @@ def receipts_import_preview():
         identifying_values = [
             name,
             article,
-    
+
             brand,
             category,
             collection,
@@ -5145,7 +5145,7 @@ def receipts_import_preview():
 
         if not name and status != "found":
             status = "error"
-      
+
             messages.append(
                 "Не указано название нового товара"
             )
