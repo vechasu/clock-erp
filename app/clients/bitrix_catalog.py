@@ -391,6 +391,7 @@ class BitrixCatalogReadOnlyClient:
             "total_pages": int(_number(payload.get("total_pages")) or 0),
             "next_page": int(_number(payload.get("next_page")) or 0) or None,
             "api_version": _text(payload.get("api_version")),
+            "generated_at": _text(payload.get("generated_at")),
         }
 
     def iter_products(self, limit=100, max_items=None, updated_from=None, include_inactive=False):
