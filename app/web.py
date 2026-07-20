@@ -5077,6 +5077,12 @@ def receipts_import_preview():
             workbook.sheetnames[0]
         ]
 
+    if (
+        worksheet.max_row is None
+        or worksheet.max_column is None
+    ):
+        worksheet.calculate_dimension(force=True)
+
     header_row_number = None
     column_indexes = {}
     header_values = []
@@ -5085,7 +5091,10 @@ def receipts_import_preview():
     for row_number, row in enumerate(
         worksheet.iter_rows(
             min_row=1,
-            max_row=min(25, worksheet.max_row),
+            max_row=min(
+                25,
+                worksheet.max_row or 0,
+            ),
             values_only=True,
         ),
         start=1,
