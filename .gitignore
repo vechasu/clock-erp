@@ -33,3 +33,8 @@ instance/warehouse_add_requests.json
 # Временные копии шаблонов
 *.bak-*
 instance/receipts.json
+
+# Собственный каталог Vechasu
+instance/catalog.db
+instance/catalog.db-shm
+instance/catalog.db-wal
