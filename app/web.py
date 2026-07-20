@@ -12,7 +12,11 @@ import fcntl
 import uuid
 import requests
 from app.clients.moysklad import MoySkladClient
-from flask import Flask, render_template, request, redirect, url_for, jsonify
+from app.catalog_db import CatalogDatabase
+from app.clients.bitrix_catalog import BitrixCatalogReadOnlyClient, BitrixCatalogReadOnlyError
+from app.services.bitrix_catalog_importer import BitrixCatalogImporter
+from app.services.catalog_reader import CatalogReader
+from flask import Flask, render_template, request, redirect, url_for, jsonify, abort
 
 app = Flask(__name__)
 
@@ -6941,6 +6945,78 @@ def analytics_page():
     return render_template(
         "analytics.html",
         analytics=analytics,
+    )
+
+
+def _positive_int(value, default, maximum):
+    try:
+        return max(1, min(int(value), maximum))
+    except (TypeError, ValueError):
+        return default
+
+
+@app.route("/catalog")
+def catalog_page():
+    reader = CatalogReader()
+    activity = (request.args.get("activity") or "all").strip()
+    if activity not in {"all", "active", "inactive"}:
+        activity = "all"
+    catalog = reader.list_products(
+        query=(request.args.get("q") or "").strip(),
+        activity=activity,
+        category_id=(request.args.get("category") or "").strip(),
+        page=_positive_int(request.args.get("page"), 1, 1000000),
+        per_page=_positive_int(request.args.get("per_page"), 50, 100),
+    )
+    return render_template(
+        "catalog.html",
+        catalog=catalog,
+        query=(request.args.get("q") or "").strip(),
+        activity=activity,
+        category_id=(request.args.get("category") or "").strip(),
+    )
+
+
+@app.route("/catalog/<int:product_id>")
+def catalog_product_page(product_id):
+    product = CatalogReader().get_product(product_id)
+    if product is None:
+        abort(404)
+    return render_template("catalog_detail.html", product=product)
+
+
+@app.route("/catalog/import-preview")
+def catalog_import_preview_page():
+    target_mode = (request.args.get("mode") or "full_sync").strip()
+    if target_mode not in {"create_only", "fill_empty", "update_content", "full_sync"}:
+        target_mode = "full_sync"
+    limit = _positive_int(request.args.get("limit"), 20, 100)
+    include_inactive = request.args.get("include_inactive") == "1"
+    preview = None
+    preview_error = ""
+    try:
+        client = BitrixCatalogReadOnlyClient(
+            os.getenv("BITRIX_CATALOG_URL", ""),
+            os.getenv("BITRIX_CATALOG_TOKEN"),
+        )
+        payload = client.get_products_page(
+            page=1,
+            limit=limit,
+            include_inactive=include_inactive,
+        )
+        preview = BitrixCatalogImporter(CatalogDatabase()).preview(
+            payload["products"], target_mode
+        )
+        preview["source_total"] = payload["total"]
+    except (BitrixCatalogReadOnlyError, ValueError, OSError):
+        preview_error = "Не удалось получить безопасный предварительный просмотр каталога Bitrix."
+    return render_template(
+        "catalog_import_preview.html",
+        preview=preview,
+        preview_error=preview_error,
+        target_mode=target_mode,
+        limit=limit,
+        include_inactive=include_inactive,
     )
 
 
