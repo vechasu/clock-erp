@@ -42,6 +42,16 @@ def is_empty(value):
     return value in (None, "", [], {})
 
 
+def nonempty_properties(product):
+    return [
+        prop for prop in product.get("properties") or []
+        if not (
+            is_empty(prop.get("value"))
+            and is_empty(prop.get("display_value"))
+        )
+    ]
+
+
 def product_values(product):
     return {
         "name": str(product.get("name") or "").strip(),
@@ -289,7 +299,7 @@ class BitrixCatalogImporter:
         changes = {}
         relation_specs = {
             "categories": ("catalog_product_categories", len(product.get("categories") or [])),
-            "properties": ("catalog_product_property_values", len(product.get("properties") or [])),
+            "properties": ("catalog_product_property_values", len(nonempty_properties(product))),
             "images": ("catalog_images", len(product.get("images") or [])),
             "offers": ("catalog_offers", len(product.get("offers") or [])),
             "prices": ("catalog_prices", len([p for p in product.get("prices") or [] if not p.get("is_purchase")])),
@@ -366,7 +376,7 @@ class BitrixCatalogImporter:
 
     def _replace_relations(self, connection, product_id, product, include_prices):
         self._replace_categories(connection, product_id, product.get("categories") or [])
-        self._replace_properties(connection, product_id, product.get("properties") or [])
+        self._replace_properties(connection, product_id, nonempty_properties(product))
         connection.execute("DELETE FROM catalog_images WHERE product_id = ?", (product_id,))
         self._insert_images(connection, product_id, None, product.get("images") or [])
         connection.execute("DELETE FROM catalog_offers WHERE product_id = ?", (product_id,))
@@ -378,7 +388,7 @@ class BitrixCatalogImporter:
     def _fill_empty_relations(self, connection, product_id, product):
         specs = (
             ("catalog_product_categories", self._replace_categories, product.get("categories") or []),
-            ("catalog_product_property_values", self._replace_properties, product.get("properties") or []),
+            ("catalog_product_property_values", self._replace_properties, nonempty_properties(product)),
         )
         for table, method, values in specs:
             count = connection.execute(f"SELECT COUNT(*) FROM {table} WHERE product_id = ?", (product_id,)).fetchone()[0]
