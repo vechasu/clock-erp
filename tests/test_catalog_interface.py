@@ -55,7 +55,9 @@ class CatalogInterfaceTest(unittest.TestCase):
             client = web.app.test_client()
             response = client.get("/catalog")
             self.assertEqual(response.status_code, 200)
-            self.assertIn("Watch", response.get_data(as_text=True))
+            rendered = response.get_data(as_text=True)
+            self.assertIn("Watch", rendered)
+            self.assertIn('href="/catalog"', rendered)
             self.assertEqual(client.get("/catalog/9999").status_code, 404)
 
     def test_preview_route_performs_no_database_writes(self):

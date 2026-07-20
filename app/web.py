@@ -7059,6 +7059,16 @@ NAVIGATION_DEFINITIONS = [
         "active_prefixes": ["/sales"],
     },
     {
+        "key": "catalog",
+        "label": "Каталог Vechasu",
+        "description": "Карточки, контент и синхронизация каталога Bitrix.",
+        "icon": "🗂",
+        "href": "/catalog",
+        "position": 3,
+        "active_exact": [],
+        "active_prefixes": ["/catalog"],
+    },
+    {
         "key": "receipts",
         "label": "Приход",
         "description": "Оформление и проведение поступлений товара.",
