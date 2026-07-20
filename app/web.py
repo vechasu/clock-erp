@@ -4849,14 +4849,37 @@ def receipts_report():
 
 
 # === RECEIPTS EXCEL IMPORT PREVIEW V1 ===
+def receipt_import_json_errors(handler):
+    from functools import wraps
+
+    @wraps(handler)
+    def wrapped(*args, **kwargs):
+        try:
+            return handler(*args, **kwargs)
+        except Exception:
+            app.logger.exception(
+                "Внутренняя ошибка проверки Excel-файла прихода"
+            )
+
+            return jsonify({
+                "ok": False,
+                "message": (
+                    "Не удалось проверить Excel-файл из-за "
+                    "внутренней ошибки сервера"
+                ),
+            }), 500
+
+    return wrapped
+
+
 @app.route(
     "/receipts/import/preview",
     methods=["POST"],
 )
+@receipt_import_json_errors
 def receipts_import_preview():
     from flask import jsonify, request
     from io import BytesIO
-    from openpyxl import load_workbook
     import re
 
     max_file_size = 15 * 1024 * 1024
@@ -4897,6 +4920,22 @@ def receipts_import_preview():
                 "Максимальный размер — 15 МБ"
             ),
         }), 400
+
+    try:
+        from openpyxl import load_workbook
+    except ModuleNotFoundError:
+        app.logger.exception(
+            "Для импорта Excel не установлена зависимость openpyxl"
+        )
+
+        return jsonify({
+            "ok": False,
+            "message": (
+                "Импорт Excel временно недоступен: "
+                "на сервере не установлена необходимая "
+                "библиотека"
+            ),
+        }), 503
 
     def stringify_excel_value(value):
         if value is None:
@@ -5006,12 +5045,17 @@ def receipts_import_preview():
             read_only=True,
             data_only=True,
         )
-    except Exception as error:
+    except Exception:
+        app.logger.warning(
+            "Не удалось прочитать загруженный Excel-файл",
+            exc_info=True,
+        )
+
         return jsonify({
             "ok": False,
             "message": (
-                "Не удалось прочитать Excel-файл: "
-                + str(error)
+                "Не удалось прочитать Excel-файл. "
+                "Проверьте, что файл не повреждён"
             ),
         }), 400
 

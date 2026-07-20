@@ -1241,6 +1241,50 @@
             padding: 8px 10px;
         }
 
+        .receipt-import-drop-zone {
+            padding: 12px;
+            border: 2px dashed #bfdbfe;
+            border-radius: 12px;
+            background: #f8fbff;
+            transition:
+                border-color 0.16s ease,
+                background-color 0.16s ease,
+                box-shadow 0.16s ease;
+        }
+
+        .receipt-import-drop-zone.is-dragover {
+            border-color: #2563eb;
+            background: #eff6ff;
+            box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
+        }
+
+        .receipt-import-drop-hint {
+            display: block;
+            margin-top: 6px;
+            color: #64748b;
+            font-size: 11px;
+            line-height: 1.35;
+        }
+
+        .receipt-import-drop-zone.is-dragover
+        .receipt-import-drop-hint {
+            color: #1d4ed8;
+            font-weight: 800;
+        }
+
+        .receipt-import-file-name {
+            display: none;
+            margin-top: 7px;
+            color: #1e3a8a;
+            font-size: 12px;
+            font-weight: 800;
+            overflow-wrap: anywhere;
+        }
+
+        .receipt-import-file-name.is-visible {
+            display: block;
+        }
+
         .receipt-import-message {
             display: none;
             margin-bottom: 14px;
@@ -2219,7 +2263,10 @@
 
         <div class="modal-body">
             <div class="receipt-import-upload">
-                <div class="field">
+                <div
+                    class="field receipt-import-drop-zone"
+                    id="receiptImportDropZone"
+                >
                     <label for="receiptImportFile">
                         Excel-файл *
                     </label>
@@ -2230,6 +2277,15 @@
                         type="file"
                         accept=".xlsx,.xlsm"
                     >
+
+                    <span class="receipt-import-drop-hint">
+                        Выберите файл или перетащите его сюда
+                    </span>
+
+                    <span
+                        class="receipt-import-file-name"
+                        id="receiptImportFileName"
+                    ></span>
                 </div>
 
                 <div class="field">
@@ -2438,6 +2494,16 @@
             "receiptImportFile"
         );
 
+    const receiptImportDropZone =
+        document.getElementById(
+            "receiptImportDropZone"
+        );
+
+    const receiptImportFileName =
+        document.getElementById(
+            "receiptImportFileName"
+        );
+
     const receiptImportSheet =
         document.getElementById(
             "receiptImportSheet"
@@ -2500,6 +2566,92 @@
 
     let receiptImportRows = [];
     let receiptImportSummary = null;
+    let receiptImportSelectedFile = null;
+    let receiptImportDragDepth = 0;
+
+    function setReceiptImportFileName(file) {
+        if (!receiptImportFileName) {
+            return;
+        }
+
+        receiptImportFileName.textContent = file
+            ? "Выбран файл: " + file.name
+            : "";
+
+        receiptImportFileName.classList.toggle(
+            "is-visible",
+            Boolean(file)
+        );
+    }
+
+    function validateReceiptImportFile(file) {
+        if (!file) {
+            return "Выберите Excel-файл";
+        }
+
+        const filename = String(
+            file.name || ""
+        ).toLowerCase();
+
+        if (
+            !filename.endsWith(".xlsx")
+            && !filename.endsWith(".xlsm")
+        ) {
+            return (
+                "Поддерживаются только файлы "
+                + ".xlsx и .xlsm"
+            );
+        }
+
+        if (file.size > 15 * 1024 * 1024) {
+            return (
+                "Файл слишком большой. "
+                + "Максимальный размер — 15 МБ"
+            );
+        }
+
+        return "";
+    }
+
+    function selectReceiptImportFile(file) {
+        const validationError =
+            validateReceiptImportFile(file);
+
+        receiptImportApplyButton.disabled = true;
+
+        if (validationError) {
+            receiptImportSelectedFile = null;
+            setReceiptImportFileName(null);
+
+            showReceiptImportMessage(
+                validationError,
+                "error"
+            );
+            return false;
+        }
+
+        receiptImportSelectedFile = file;
+        setReceiptImportFileName(file);
+        showReceiptImportMessage("", "");
+
+        receiptImportSheet.innerHTML = (
+            '<option value="">Первый лист</option>'
+        );
+
+        receiptImportRows = [];
+        receiptImportSummary = null;
+        receiptImportStats.classList.remove(
+            "is-visible"
+        );
+        receiptImportPreview.classList.remove(
+            "is-visible"
+        );
+        receiptImportTableBody.innerHTML = "";
+        receiptImportFooterInfo.textContent =
+            "Файл выбран, нажмите «Проверить файл»";
+
+        return true;
+    }
 
     function escapeReceiptImportHtml(value) {
         return String(value == null ? "" : value)
@@ -2601,6 +2753,7 @@
         receiptImportPayload.value = "";
         receiptImportRows = [];
         receiptImportSummary = null;
+        receiptImportSelectedFile = null;
 
         setReceiptManualFieldsEnabled(true);
 
@@ -2619,6 +2772,8 @@
         if (receiptImportFile) {
             receiptImportFile.value = "";
         }
+
+        setReceiptImportFileName(null);
 
         receiptImportStats.classList.remove(
             "is-visible"
@@ -2890,11 +3045,15 @@
 
     async function analyzeReceiptImport() {
         const file =
-            receiptImportFile.files[0];
+            receiptImportSelectedFile
+            || receiptImportFile.files[0];
 
-        if (!file) {
+        const validationError =
+            validateReceiptImportFile(file);
+
+        if (validationError) {
             showReceiptImportMessage(
-                "Выберите Excel-файл",
+                validationError,
                 "error"
             );
             return;
@@ -2930,7 +3089,61 @@
                 }
             );
 
-            const data = await response.json();
+            const contentType = (
+                response.headers.get("Content-Type")
+                || ""
+            ).toLowerCase();
+
+            const isJson = contentType.includes(
+                "application/json"
+            );
+
+            if (!isJson) {
+                await response.text();
+
+                if (response.redirected) {
+                    throw new Error(
+                        "Сервер перенаправил запрос. "
+                        + "Обновите страницу и повторите вход"
+                    );
+                }
+
+                throw new Error(
+                    response.ok
+                        ? (
+                            "Сервер вернул неожиданный "
+                            + "формат ответа"
+                        )
+                        : (
+                            "Сервер не смог проверить файл "
+                            + "(ошибка "
+                            + response.status
+                            + ")"
+                        )
+                );
+            }
+
+            let data;
+
+            try {
+                data = await response.json();
+            } catch (parseError) {
+                throw new Error(
+                    "Сервер вернул повреждённый ответ. "
+                    + "Повторите попытку"
+                );
+            }
+
+            if (
+                !data
+                || typeof data !== "object"
+                || Array.isArray(data)
+            ) {
+                throw new Error(
+                    "Сервер вернул неверный формат данных. "
+                    + "Повторите попытку"
+                );
+            }
 
             if (!response.ok || !data.ok) {
                 throw new Error(
@@ -3039,6 +3252,78 @@
         );
 
         closeReceiptImportModal();
+    }
+
+    if (receiptImportFile) {
+        receiptImportFile.addEventListener(
+            "change",
+            function() {
+                const file = receiptImportFile.files[0];
+                selectReceiptImportFile(file);
+            }
+        );
+    }
+
+    if (receiptImportDropZone) {
+        receiptImportDropZone.addEventListener(
+            "dragenter",
+            function(event) {
+                event.preventDefault();
+                receiptImportDragDepth += 1;
+                receiptImportDropZone.classList.add(
+                    "is-dragover"
+                );
+            }
+        );
+
+        receiptImportDropZone.addEventListener(
+            "dragover",
+            function(event) {
+                event.preventDefault();
+                event.dataTransfer.dropEffect = "copy";
+            }
+        );
+
+        receiptImportDropZone.addEventListener(
+            "dragleave",
+            function() {
+                receiptImportDragDepth = Math.max(
+                    0,
+                    receiptImportDragDepth - 1
+                );
+
+                if (receiptImportDragDepth === 0) {
+                    receiptImportDropZone.classList.remove(
+                        "is-dragover"
+                    );
+                }
+            }
+        );
+
+        receiptImportDropZone.addEventListener(
+            "drop",
+            function(event) {
+                event.preventDefault();
+                receiptImportDragDepth = 0;
+                receiptImportDropZone.classList.remove(
+                    "is-dragover"
+                );
+
+                const files = event.dataTransfer.files;
+
+                if (files.length !== 1) {
+                    showReceiptImportMessage(
+                        "Перетащите один Excel-файл",
+                        "error"
+                    );
+                    return;
+                }
+
+                if (selectReceiptImportFile(files[0])) {
+                    analyzeReceiptImport();
+                }
+            }
+        );
     }
     // RECEIPTS EXCEL IMPORT SCRIPT V1 END
 
