@@ -3,6 +3,7 @@ import json
 from html.parser import HTMLParser
 
 from app.catalog_db import CatalogDatabase
+from app.services.catalog_data_quality import is_empty_property_row
 
 
 ALLOWED_DESCRIPTION_TAGS = {
@@ -66,11 +67,15 @@ class CatalogReader:
     def __init__(self, database=None):
         self.database = database or CatalogDatabase()
 
-    def list_products(self, query="", activity="all", category_id="", page=1, per_page=50):
+    def list_products(self, query="", activity="active", category_id="", brand="",
+                      price_from=None, price_to=None, has_description="all",
+                      has_image="all", has_properties="all", has_mapping="all",
+                      synced_from="", page=1, per_page=50):
         if not self.database.exists():
             return {
-                "items": [], "categories": [], "total": 0, "page": 1,
-                "per_page": per_page, "pages": 0,
+                "items": [], "categories": [], "brands": [], "total": 0,
+                "activity_counts": {"active": 0, "inactive": 0, "all": 0},
+                "page": 1, "per_page": per_page, "pages": 0,
             }
         page = max(1, int(page))
         per_page = max(1, min(int(per_page), 100))
@@ -78,8 +83,13 @@ class CatalogReader:
         parameters = []
         if query:
             pattern = "%{}%".format(query.strip())
-            where.append("(p.name LIKE ? OR p.article LIKE ? OR p.brand LIKE ? OR p.external_product_id LIKE ?)")
-            parameters.extend([pattern, pattern, pattern, pattern])
+            where.append(
+                "(p.name LIKE ? OR p.external_xml_id LIKE ? OR p.external_product_id LIKE ? "
+                "OR p.brand LIKE ? OR EXISTS (SELECT 1 FROM catalog_product_property_values search_pv "
+                "WHERE search_pv.product_id = p.id AND "
+                "(search_pv.value_json LIKE ? OR search_pv.display_value_json LIKE ?)))"
+            )
+            parameters.extend([pattern] * 6)
         if activity == "active":
             where.append("p.active = 1")
         elif activity == "inactive":
@@ -91,6 +101,50 @@ class CatalogReader:
                 "WHERE pc.product_id = p.id AND c.external_category_id = ?)"
             )
             parameters.append(str(category_id))
+        if brand:
+            where.append("p.brand = ?")
+            parameters.append(brand)
+        if price_from is not None:
+            where.append(
+                "EXISTS (SELECT 1 FROM catalog_prices price_from_row "
+                "WHERE price_from_row.product_id = p.id AND CAST(price_from_row.amount AS REAL) >= ?)"
+            )
+            parameters.append(float(price_from))
+        if price_to is not None:
+            where.append(
+                "EXISTS (SELECT 1 FROM catalog_prices price_to_row "
+                "WHERE price_to_row.product_id = p.id AND CAST(price_to_row.amount AS REAL) <= ?)"
+            )
+            parameters.append(float(price_to))
+        if has_description == "yes":
+            where.append("(trim(coalesce(p.preview_text, '')) <> '' OR trim(coalesce(p.detail_text, '')) <> '')")
+        elif has_description == "no":
+            where.append("trim(coalesce(p.preview_text, '')) = '' AND trim(coalesce(p.detail_text, '')) = ''")
+        relation_filters = (
+            (has_image, "catalog_images", "image_row"),
+            (has_properties, "catalog_product_property_values", "property_row"),
+        )
+        for selected, table, alias in relation_filters:
+            if selected in {"yes", "no"}:
+                operator = "EXISTS" if selected == "yes" else "NOT EXISTS"
+                where.append(
+                    "{} (SELECT 1 FROM {} {} WHERE {}.product_id = p.id)".format(
+                        operator, table, alias, alias
+                    )
+                )
+        if has_mapping == "yes":
+            where.append(
+                "EXISTS (SELECT 1 FROM catalog_moysklad_mappings mapping_row "
+                "WHERE mapping_row.product_id = p.id AND mapping_row.confirmed = 1)"
+            )
+        elif has_mapping == "no":
+            where.append(
+                "NOT EXISTS (SELECT 1 FROM catalog_moysklad_mappings mapping_row "
+                "WHERE mapping_row.product_id = p.id AND mapping_row.confirmed = 1)"
+            )
+        if synced_from:
+            where.append("p.last_synced_at >= ?")
+            parameters.append(synced_from)
         where_sql = " WHERE " + " AND ".join(where) if where else ""
         select_sql = """
             SELECT p.*,
@@ -104,7 +158,8 @@ class CatalogReader:
                 (SELECT COUNT(*) FROM catalog_product_property_values pv WHERE pv.product_id = p.id) AS property_count,
                 (SELECT COUNT(*) FROM catalog_images i WHERE i.product_id = p.id) AS image_count,
                 (SELECT COUNT(*) FROM catalog_offers o WHERE o.product_id = p.id) AS offer_count,
-                (SELECT match_status FROM catalog_moysklad_mappings m WHERE m.product_id = p.id) AS mapping_status
+                (SELECT match_status FROM catalog_moysklad_mappings m WHERE m.product_id = p.id) AS mapping_status,
+                (SELECT confirmed FROM catalog_moysklad_mappings m WHERE m.product_id = p.id) AS mapping_confirmed
             FROM catalog_products p
         """
         with self.database.connect() as connection:
@@ -119,9 +174,24 @@ class CatalogReader:
             categories = connection.execute(
                 "SELECT external_category_id, name FROM catalog_categories ORDER BY path_json, sort, name"
             ).fetchall()
+            brands = connection.execute(
+                "SELECT DISTINCT brand FROM catalog_products "
+                "WHERE brand IS NOT NULL AND trim(brand) <> '' ORDER BY brand"
+            ).fetchall()
+            activity_counts = {
+                "active": connection.execute(
+                    "SELECT COUNT(*) FROM catalog_products WHERE active = 1"
+                ).fetchone()[0],
+                "inactive": connection.execute(
+                    "SELECT COUNT(*) FROM catalog_products WHERE active = 0"
+                ).fetchone()[0],
+                "all": connection.execute("SELECT COUNT(*) FROM catalog_products").fetchone()[0],
+            }
         return {
             "items": [dict(row) for row in rows],
             "categories": [dict(row) for row in categories],
+            "brands": [row[0] for row in brands],
+            "activity_counts": activity_counts,
             "total": total,
             "page": page,
             "per_page": per_page,
@@ -152,6 +222,10 @@ class CatalogReader:
                 (product_id,),
             ).fetchall():
                 item = dict(row)
+                raw_value = item["value_json"]
+                raw_display = item["display_value_json"]
+                if is_empty_property_row(raw_value, raw_display):
+                    continue
                 item["value"] = _json_value(item.pop("value_json"), "")
                 item["display_value"] = _json_value(item.pop("display_value_json"), item["value"])
                 item["enum_id"] = _json_value(item.pop("enum_id_json"), None)
@@ -176,6 +250,7 @@ class CatalogReader:
             )
         result["preview_html"] = sanitize_catalog_html(result.get("preview_text"))
         result["detail_html"] = sanitize_catalog_html(result.get("detail_text"))
+        result["iblock_id"] = "5"
         return result
 
     @staticmethod

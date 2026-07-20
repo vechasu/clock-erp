@@ -6,21 +6,40 @@
     {% include "_catalog_styles.html" %}
 </head>
 <body><div class="app">{% include "_sidebar.html" %}<main class="main">
-    <div class="page-head"><div><h1 class="page-title">Каталог Vechasu</h1><p class="page-note">Собственные карточки на основе контента Bitrix. Остатки здесь не изменяются.</p></div><a class="button" href="/catalog/import-preview">Предварительный просмотр</a></div>
-    <form class="panel filters" method="get" action="/catalog">
-        <input name="q" value="{{ query }}" placeholder="Название, артикул, бренд или ID">
-        <select name="activity"><option value="all" {% if activity == 'all' %}selected{% endif %}>Все статусы</option><option value="active" {% if activity == 'active' %}selected{% endif %}>Активные</option><option value="inactive" {% if activity == 'inactive' %}selected{% endif %}>Неактивные</option></select>
-        <select name="category"><option value="">Все категории</option>{% for category in catalog.categories %}<option value="{{ category.external_category_id }}" {% if category_id == category.external_category_id %}selected{% endif %}>{{ category.name }}</option>{% endfor %}</select>
-        <button class="button button-primary" type="submit">Найти</button>
+    <div class="page-head">
+        <div><h1 class="page-title">Каталог Vechasu</h1><p class="page-note">Карточки Bitrix без изменения остатков и данных МойСклад.</p></div>
+        <div class="filter-actions"><a class="button" href="/catalog/mapping">Сопоставление</a><a class="button" href="/catalog/import-preview">Preview импорта</a></div>
+    </div>
+
+    <nav class="activity-tabs" aria-label="Статус карточек">
+        <a class="activity-tab{% if activity == 'active' %} active{% endif %}" href="{{ activity_urls.active }}">Активные <span>{{ catalog.activity_counts.active }}</span></a>
+        <a class="activity-tab{% if activity == 'inactive' %} active{% endif %}" href="{{ activity_urls.inactive }}">Архив <span>{{ catalog.activity_counts.inactive }}</span></a>
+        <a class="activity-tab{% if activity == 'all' %} active{% endif %}" href="{{ activity_urls.all }}">Все <span>{{ catalog.activity_counts.all }}</span></a>
+    </nav>
+
+    <form class="panel filters filters-extended" method="get" action="/catalog">
+        <input type="hidden" name="activity" value="{{ activity }}">
+        <input name="q" value="{{ filters.query }}" placeholder="Название, XML_ID, Bitrix ID, бренд, характеристика">
+        <select name="brand"><option value="">Все бренды</option>{% for brand in catalog.brands %}<option value="{{ brand }}" {% if filters.brand == brand %}selected{% endif %}>{{ brand }}</option>{% endfor %}</select>
+        <select name="category"><option value="">Все категории</option>{% for category in catalog.categories %}<option value="{{ category.external_category_id }}" {% if filters.category_id == category.external_category_id %}selected{% endif %}>{{ category.name }}</option>{% endfor %}</select>
+        <div class="filter-actions"><input type="number" step="0.01" min="0" name="price_from" value="{{ filters.price_from }}" placeholder="Цена от"><input type="number" step="0.01" min="0" name="price_to" value="{{ filters.price_to }}" placeholder="Цена до"></div>
+        <select name="has_description"><option value="all">Любое описание</option><option value="yes" {% if filters.has_description == 'yes' %}selected{% endif %}>Есть описание</option><option value="no" {% if filters.has_description == 'no' %}selected{% endif %}>Без описания</option></select>
+        <select name="has_image"><option value="all">Любое изображение</option><option value="yes" {% if filters.has_image == 'yes' %}selected{% endif %}>Есть изображение</option><option value="no" {% if filters.has_image == 'no' %}selected{% endif %}>Без изображения</option></select>
+        <select name="has_properties"><option value="all">Любые характеристики</option><option value="yes" {% if filters.has_properties == 'yes' %}selected{% endif %}>Есть характеристики</option><option value="no" {% if filters.has_properties == 'no' %}selected{% endif %}>Без характеристик</option></select>
+        <select name="has_mapping"><option value="all">Любая связь с МойСклад</option><option value="yes" {% if filters.has_mapping == 'yes' %}selected{% endif %}>Связь подтверждена</option><option value="no" {% if filters.has_mapping == 'no' %}selected{% endif %}>Без подтверждённой связи</option></select>
+        <input type="date" name="synced_from" value="{{ filters.synced_from }}" aria-label="Синхронизировано после даты">
+        <div class="filter-actions"><button class="button button-primary" type="submit">Применить</button><a class="button" href="/catalog?activity={{ activity }}">Сбросить</a></div>
     </form>
+
     <section class="panel table-wrap">
-        {% if catalog['items'] %}<table><thead><tr><th>Товар</th><th>Бренд</th><th>Категория</th><th>Цена</th><th>Активность</th><th>Состав</th><th>SKU</th><th>МойСклад</th><th>Источник</th><th>Синхронизация</th></tr></thead><tbody>
+        <div class="muted" style="margin-bottom:12px">Найдено карточек: {{ catalog.total }}</div>
+        {% if catalog['items'] %}<table><thead><tr><th>Товар</th><th>Бренд</th><th>Категория</th><th>Цена</th><th>Характеристики</th><th>Фото</th><th>Активность</th><th>МойСклад</th><th>Синхронизация</th></tr></thead><tbody>
         {% for item in catalog['items'] %}<tr>
-            <td><div class="product-cell">{% if item.image_url %}<img class="thumb" src="{{ item.image_url }}" alt="" loading="lazy">{% else %}<span class="thumb thumb-empty">—</span>{% endif %}<div><a class="product-name" href="/catalog/{{ item.id }}">{{ item.name }}</a><div class="muted">{{ item.article or 'Без артикула' }}</div></div></div></td>
+            <td><div class="product-cell">{% if item.image_url %}<img class="thumb" src="{{ item.image_url }}" alt="" loading="lazy">{% else %}<span class="thumb thumb-empty">—</span>{% endif %}<div><a class="product-name" href="/catalog/{{ item.id }}">{{ item.name }}</a><div class="muted">Bitrix {{ item.external_product_id }} · {{ item.external_xml_id or 'без XML_ID' }}</div></div></div></td>
             <td>{{ item.brand or '—' }}</td><td>{{ item.category_name or '—' }}</td><td>{% if item.price_amount %}{{ item.price_amount }} {{ item.price_currency }}{% else %}—{% endif %}</td>
-            <td><span class="badge {{ 'badge-green' if item.active else 'badge-gray' }}">{{ 'Активен' if item.active else 'Неактивен' }}</span></td>
-            <td>{{ item.property_count }} св. · {{ item.image_count }} фото</td><td>{{ item.offer_count }}</td><td>{{ item.mapping_status or 'Нет связи' }}</td><td>Bitrix · {{ item.external_product_id }}</td><td>{{ item.last_synced_at }}</td>
-        </tr>{% endfor %}</tbody></table>{% else %}<div class="empty">Карточки не найдены или каталог ещё не импортирован.</div>{% endif %}
-        {% if catalog.pages > 1 %}<div class="pagination">Страница {{ catalog.page }} из {{ catalog.pages }}{% if catalog.page > 1 %}<a class="button" href="{{ url_for('catalog_page', q=query, activity=activity, category=category_id, page=catalog.page-1) }}">Назад</a>{% endif %}{% if catalog.page < catalog.pages %}<a class="button" href="{{ url_for('catalog_page', q=query, activity=activity, category=category_id, page=catalog.page+1) }}">Далее</a>{% endif %}</div>{% endif %}
+            <td>{{ item.property_count }}</td><td>{{ item.image_count }}</td><td><span class="badge {{ 'badge-green' if item.active else 'badge-gray' }}">{{ 'Активен' if item.active else 'Архив' }}</span></td>
+            <td>{% if item.mapping_confirmed %}<span class="badge badge-green">Подтверждено</span>{% else %}<span class="muted">Нет связи</span>{% endif %}</td><td>{{ item.last_synced_at }}</td>
+        </tr>{% endfor %}</tbody></table>{% else %}<div class="empty">Карточки по выбранным условиям не найдены.</div>{% endif %}
+        {% if catalog.pages > 1 %}<div class="pagination">Страница {{ catalog.page }} из {{ catalog.pages }}{% if previous_url %}<a class="button" href="{{ previous_url }}">Назад</a>{% endif %}{% if next_url %}<a class="button" href="{{ next_url }}">Далее</a>{% endif %}</div>{% endif %}
     </section>
 </main></div></body></html>

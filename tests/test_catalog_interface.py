@@ -41,6 +41,19 @@ class CatalogInterfaceTest(unittest.TestCase):
         self.assertEqual((len(card["properties"]), len(card["images"]), len(card["prices"])), (1, 1, 1))
         self.assertEqual(card["sync_history"][0]["item_status"], "created")
 
+    def test_reader_filters_and_searches_property_values(self):
+        reader = CatalogReader(self.database)
+        result = reader.list_products(
+            query="Black", brand="Brand", price_from=90, price_to=110,
+            has_description="yes", has_image="yes", has_properties="yes",
+            has_mapping="no", synced_from="2026-01-01",
+        )
+        self.assertEqual(result["total"], 1)
+        self.assertEqual(result["items"][0]["property_count"], 1)
+
+        self.assertEqual(reader.list_products(price_from=101)["total"], 0)
+        self.assertEqual(reader.list_products(has_properties="no")["total"], 0)
+
     def test_description_sanitizer_removes_scripts_events_and_unsafe_links(self):
         cleaned = sanitize_catalog_html('<p onclick="x">ok<script>alert(1)</script><a href="javascript:x">bad</a></p>')
         self.assertNotIn("script", cleaned)
@@ -58,6 +71,8 @@ class CatalogInterfaceTest(unittest.TestCase):
             rendered = response.get_data(as_text=True)
             self.assertIn("Watch", rendered)
             self.assertIn('href="/catalog"', rendered)
+            self.assertIn("Активные", rendered)
+            self.assertIn("Архив", rendered)
             self.assertEqual(client.get("/catalog/9999").status_code, 404)
 
     def test_preview_route_performs_no_database_writes(self):

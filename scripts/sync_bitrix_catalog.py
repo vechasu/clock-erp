@@ -45,13 +45,13 @@ def last_successful_cursor(database):
         return row[0] if row and row[0] else None
 
 
-def _create_run(database, cursor_from, started_at):
+def _create_run(database, cursor_from, started_at, mode="incremental_sync"):
     database.initialize()
     with database.transaction() as connection:
         return connection.execute(
             "INSERT INTO catalog_sync_runs (mode, status, started_at, cursor_from) "
             "VALUES (?, ?, ?, ?)",
-            ("incremental_sync", "running", started_at, cursor_from),
+            (mode, "running", started_at, cursor_from),
         ).lastrowid
 
 
@@ -68,11 +68,11 @@ def _save_progress(database, run_id, pages, received, totals):
         )
 
 
-def _finish_run(database, run_id, cursor_to, pages, received, totals):
+def _finish_run(database, run_id, cursor_to, pages, received, totals, cursor_advanced=True):
     details = {
         "inventory_operations": 0,
         "moysklad_writes": 0,
-        "cursor_advanced": True,
+        "cursor_advanced": cursor_advanced,
     }
     with database.transaction() as connection:
         connection.execute(
@@ -103,13 +103,15 @@ def _fail_run(database, run_id, error, pages, received, totals):
         )
 
 
-def sync_catalog(client, database, page_size=200, cursor_from=None, progress_callback=None):
+def sync_catalog(client, database, page_size=200, cursor_from=None, progress_callback=None,
+                 verify_all=False):
     page_size = max(1, min(int(page_size), 200))
     cursor_from = cursor_from or last_successful_cursor(database)
     if not cursor_from:
         raise RuntimeError("Initial catalog import is required before incremental sync")
     started_at = utc_now()
-    run_id = _create_run(database, cursor_from, started_at)
+    run_mode = "verification_sync" if verify_all else "incremental_sync"
+    run_id = _create_run(database, cursor_from, started_at, run_mode)
     totals = {"created": 0, "updated": 0, "unchanged": 0, "conflicts": 0}
     pages = received = 0
     cursor_to = started_at
@@ -120,7 +122,7 @@ def sync_catalog(client, database, page_size=200, cursor_from=None, progress_cal
             payload = client.get_products_page(
                 page=page,
                 limit=page_size,
-                updated_from=cursor_from,
+                updated_from=None if verify_all else cursor_from,
                 include_inactive=True,
             )
             pages += 1
@@ -138,7 +140,12 @@ def sync_catalog(client, database, page_size=200, cursor_from=None, progress_cal
             if not payload["has_more"] or not products:
                 break
             page += 1
-        _finish_run(database, run_id, cursor_to, pages, received, totals)
+        if verify_all:
+            cursor_to = cursor_from
+        _finish_run(
+            database, run_id, cursor_to, pages, received, totals,
+            cursor_advanced=not verify_all,
+        )
     except Exception as error:
         _fail_run(database, run_id, error, pages, received, totals)
         raise
@@ -147,7 +154,8 @@ def sync_catalog(client, database, page_size=200, cursor_from=None, progress_cal
         "sync_run_id": run_id,
         "cursor_from": cursor_from,
         "cursor_to": cursor_to,
-        "cursor_advanced": True,
+        "cursor_advanced": not verify_all,
+        "verification_full_scan": verify_all,
         "pages_processed": pages,
         "products_received": received,
         "created": totals["created"],
@@ -165,6 +173,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--page-size", type=int, default=200)
     parser.add_argument("--from-cursor", default=None)
+    parser.add_argument("--verify-all", action="store_true")
     args = parser.parse_args()
     load_dotenv(PROJECT_ROOT / ".env")
     try:
@@ -177,6 +186,7 @@ def main():
             database=CatalogDatabase(),
             page_size=args.page_size,
             cursor_from=args.from_cursor,
+            verify_all=args.verify_all,
             progress_callback=lambda state: print(
                 json.dumps({"progress": state}, ensure_ascii=False), file=sys.stderr
             ),

@@ -11,11 +11,16 @@ import os
 import fcntl
 import uuid
 import requests
+from urllib.parse import urlencode
 from app.clients.moysklad import MoySkladClient
 from app.catalog_db import CatalogDatabase
 from app.clients.bitrix_catalog import BitrixCatalogReadOnlyClient, BitrixCatalogReadOnlyError
 from app.services.bitrix_catalog_importer import BitrixCatalogImporter
 from app.services.catalog_reader import CatalogReader
+from app.services.moysklad_catalog_mapping import (
+    MoySkladCatalogMatcher,
+    load_moysklad_products,
+)
 from flask import Flask, render_template, request, redirect, url_for, jsonify, abort
 
 app = Flask(__name__)
@@ -6958,22 +6963,72 @@ def _positive_int(value, default, maximum):
 @app.route("/catalog")
 def catalog_page():
     reader = CatalogReader()
-    activity = (request.args.get("activity") or "all").strip()
+    activity = (request.args.get("activity") or "active").strip()
     if activity not in {"all", "active", "inactive"}:
         activity = "all"
+    filters = {
+        "query": (request.args.get("q") or "").strip(),
+        "brand": (request.args.get("brand") or "").strip(),
+        "category_id": (request.args.get("category") or "").strip(),
+        "price_from": (request.args.get("price_from") or "").strip(),
+        "price_to": (request.args.get("price_to") or "").strip(),
+        "has_description": (request.args.get("has_description") or "all").strip(),
+        "has_image": (request.args.get("has_image") or "all").strip(),
+        "has_properties": (request.args.get("has_properties") or "all").strip(),
+        "has_mapping": (request.args.get("has_mapping") or "all").strip(),
+        "synced_from": (request.args.get("synced_from") or "").strip(),
+    }
+    for key in ("has_description", "has_image", "has_properties", "has_mapping"):
+        if filters[key] not in {"all", "yes", "no"}:
+            filters[key] = "all"
+    try:
+        numeric_price_from = float(filters["price_from"]) if filters["price_from"] else None
+    except ValueError:
+        numeric_price_from = None
+        filters["price_from"] = ""
+    try:
+        numeric_price_to = float(filters["price_to"]) if filters["price_to"] else None
+    except ValueError:
+        numeric_price_to = None
+        filters["price_to"] = ""
     catalog = reader.list_products(
-        query=(request.args.get("q") or "").strip(),
+        query=filters["query"],
         activity=activity,
-        category_id=(request.args.get("category") or "").strip(),
+        category_id=filters["category_id"],
+        brand=filters["brand"],
+        price_from=numeric_price_from,
+        price_to=numeric_price_to,
+        has_description=filters["has_description"],
+        has_image=filters["has_image"],
+        has_properties=filters["has_properties"],
+        has_mapping=filters["has_mapping"],
+        synced_from=filters["synced_from"],
         page=_positive_int(request.args.get("page"), 1, 1000000),
         per_page=_positive_int(request.args.get("per_page"), 50, 100),
     )
+    base_arguments = request.args.to_dict(flat=True)
+    base_arguments.pop("page", None)
+    activity_urls = {}
+    for activity_key in ("active", "inactive", "all"):
+        activity_arguments = dict(base_arguments, activity=activity_key)
+        activity_urls[activity_key] = url_for("catalog_page") + "?" + urlencode(activity_arguments)
+    previous_url = next_url = None
+    if catalog["page"] > 1:
+        previous_url = url_for("catalog_page") + "?" + urlencode(
+            dict(base_arguments, activity=activity, page=catalog["page"] - 1)
+        )
+    if catalog["page"] < catalog["pages"]:
+        next_url = url_for("catalog_page") + "?" + urlencode(
+            dict(base_arguments, activity=activity, page=catalog["page"] + 1)
+        )
     return render_template(
         "catalog.html",
         catalog=catalog,
-        query=(request.args.get("q") or "").strip(),
+        filters=filters,
         activity=activity,
-        category_id=(request.args.get("category") or "").strip(),
+        activity_urls=activity_urls,
+        previous_url=previous_url,
+        next_url=next_url,
     )
 
 
@@ -7018,6 +7073,54 @@ def catalog_import_preview_page():
         limit=limit,
         include_inactive=include_inactive,
     )
+
+
+def _catalog_mapping_matcher():
+    client = MoySkladClient()
+    return MoySkladCatalogMatcher(
+        database=CatalogDatabase(),
+        moysklad_products=load_moysklad_products(client),
+        attribute_definitions=[],
+    )
+
+
+@app.route("/catalog/mapping")
+def catalog_mapping_page():
+    selected_status = (request.args.get("status") or "all").strip()
+    allowed_statuses = {
+        "all", "confirmed", "matched", "probable", "multiple_candidates", "not_found",
+    }
+    if selected_status not in allowed_statuses:
+        selected_status = "all"
+    mapping_error = ""
+    mapping = None
+    try:
+        mapping = _catalog_mapping_matcher().preview(
+            status=selected_status,
+            product_id=_positive_int(request.args.get("product_id"), 0, 100000000)
+            if request.args.get("product_id") else None,
+            page=_positive_int(request.args.get("page"), 1, 1000000),
+            per_page=25,
+        )
+    except (OSError, ValueError, TypeError):
+        mapping_error = "Не удалось выполнить read-only запрос к МойСклад."
+    return render_template(
+        "catalog_mapping.html", mapping=mapping, mapping_error=mapping_error,
+        selected_status=selected_status,
+    )
+
+
+@app.route("/catalog/mapping/confirm", methods=["POST"])
+def catalog_mapping_confirm():
+    product_id = _positive_int(request.form.get("product_id"), 0, 100000000)
+    candidate_id = (request.form.get("moysklad_product_id") or "").strip()
+    if not product_id or not candidate_id:
+        return redirect(url_for("catalog_mapping_page", product_id=product_id, error="invalid_mapping"))
+    try:
+        _catalog_mapping_matcher().confirm(product_id, candidate_id)
+    except (OSError, ValueError, TypeError):
+        return redirect(url_for("catalog_mapping_page", product_id=product_id, error="mapping_not_confirmed"))
+    return redirect(url_for("catalog_mapping_page", product_id=product_id, saved="1"))
 
 
 DEFAULT_APP_SETTINGS = {
