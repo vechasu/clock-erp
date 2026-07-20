@@ -126,6 +126,8 @@ class BitrixCatalogImporterTest(unittest.TestCase):
     def test_ambiguous_exact_name_requires_mapping(self):
         first = product_fixture("1", "Same", "xml-1")
         second = product_fixture("2", "Same", "xml-2")
+        first["external_source"] = "legacy"
+        second["external_source"] = "legacy"
         self.importer.import_products([first], "full_sync")
         with self.database.transaction() as connection:
             self.importer._insert_product(
@@ -135,6 +137,13 @@ class BitrixCatalogImporterTest(unittest.TestCase):
         result = self.importer.import_products([incoming], "full_sync")
         self.assertEqual(result["conflicts"], 1)
         self.assertEqual(result["items"][0]["status"], "requires_mapping")
+        self.assertEqual(self.row("SELECT COUNT(*) AS count FROM catalog_products")["count"], 2)
+
+    def test_distinct_bitrix_ids_with_same_fallback_keys_remain_distinct(self):
+        first = product_fixture("1", "Same", "shared-xml")
+        second = product_fixture("2", "Same", "shared-xml")
+        result = self.importer.import_products([first, second], "full_sync")
+        self.assertEqual((result["created"], result["conflicts"]), (2, 0))
         self.assertEqual(self.row("SELECT COUNT(*) AS count FROM catalog_products")["count"], 2)
 
     def test_create_only_never_updates_existing_product(self):

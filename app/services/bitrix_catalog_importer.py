@@ -233,7 +233,8 @@ class BitrixCatalogImporter:
             if not value:
                 continue
             rows = connection.execute(
-                f"SELECT * FROM catalog_products WHERE {field} = ?", (value,)
+                f"SELECT * FROM catalog_products WHERE {field} = ? AND external_source <> ?",
+                (value, values["external_source"]),
             ).fetchall()
             if len(rows) == 1:
                 return {"status": "matched", "method": method, "product": rows[0], "candidate_count": 1}
@@ -242,7 +243,10 @@ class BitrixCatalogImporter:
 
         target_name = normalize_key(values["name"])
         if target_name:
-            rows = connection.execute("SELECT * FROM catalog_products WHERE name IS NOT NULL").fetchall()
+            rows = connection.execute(
+                "SELECT * FROM catalog_products WHERE name IS NOT NULL AND external_source <> ?",
+                (values["external_source"],),
+            ).fetchall()
             candidates = [row for row in rows if normalize_key(row["name"]) == target_name]
             if len(candidates) == 1:
                 return {"status": "matched", "method": "exact_name", "product": candidates[0], "candidate_count": 1}
