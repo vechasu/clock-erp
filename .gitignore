@@ -6,12 +6,19 @@ __pycache__/
 *.pyc
 
 venv/
+.venv/
 testenv/
 
 .vscode/
 .idea/
 
 # Local repair cases data
+instance/
+*.db
+*.sqlite
+*.sqlite3
+
+# Historical explicit instance rules (kept for clarity)
 instance/repair_cases.json
 instance/stock_operations.json
 instance/product_mappings.json
