@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS catalog_products (
     updated_at TEXT NOT NULL,
     first_synced_at TEXT NOT NULL,
     last_synced_at TEXT NOT NULL,
+    last_sync_mode TEXT NOT NULL DEFAULT 'full_sync',
     UNIQUE (external_source, external_product_id)
 );
 
@@ -145,10 +146,10 @@ CREATE TABLE IF NOT EXISTS catalog_images (
     CHECK ((product_id IS NOT NULL) != (offer_id IS NOT NULL))
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_catalog_product_image_url
-    ON catalog_images(product_id, original_url) WHERE product_id IS NOT NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS uq_catalog_offer_image_url
-    ON catalog_images(offer_id, original_url) WHERE offer_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_catalog_product_images
+    ON catalog_images(product_id, original_url);
+CREATE INDEX IF NOT EXISTS idx_catalog_offer_images
+    ON catalog_images(offer_id, original_url);
 
 CREATE TABLE IF NOT EXISTS catalog_prices (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -168,10 +169,10 @@ CREATE TABLE IF NOT EXISTS catalog_prices (
     CHECK ((product_id IS NOT NULL) != (offer_id IS NOT NULL))
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_catalog_product_price_type
-    ON catalog_prices(product_id, price_type, currency) WHERE product_id IS NOT NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS uq_catalog_offer_price_type
-    ON catalog_prices(offer_id, price_type, currency) WHERE offer_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_catalog_product_prices
+    ON catalog_prices(product_id, price_type, currency);
+CREATE INDEX IF NOT EXISTS idx_catalog_offer_prices
+    ON catalog_prices(offer_id, price_type, currency);
 
 CREATE TABLE IF NOT EXISTS catalog_moysklad_mappings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -247,3 +248,6 @@ class CatalogDatabase:
                 "AND name LIKE 'catalog_%' ORDER BY name"
             ).fetchall()
         return [row["name"] for row in rows]
+
+    def exists(self):
+        return str(self.path) == ":memory:" or self.path.exists()

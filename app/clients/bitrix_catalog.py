@@ -58,9 +58,17 @@ def normalize_category(raw):
     if isinstance(path, str):
         path = [part.strip() for part in path.replace("\\", "/").split("/") if part.strip()]
     normalized_path = []
+    path_items = []
     for part in path if isinstance(path, list) else []:
         if isinstance(part, dict):
-            part = _first(part, "name", "NAME")
+            part_name = _text(_first(part, "name", "NAME"))
+            if part_name:
+                normalized_path.append(part_name)
+                path_items.append({
+                    "id": _text(_first(part, "id", "ID")),
+                    "name": part_name,
+                })
+            continue
         if _text(part):
             normalized_path.append(_text(part))
     name = _text(_first(raw, "name", "NAME"))
@@ -76,6 +84,7 @@ def normalize_category(raw):
         "sort": int(_number(_first(raw, "sort", "SORT")) or 500),
         "active": _boolean(_first(raw, "active", "ACTIVE"), True),
         "path": normalized_path,
+        "path_items": path_items,
     }
 
 
@@ -206,6 +215,8 @@ def normalize_product(raw, base_url=""):
             _first(raw, "category", "CATEGORY", "section", "SECTION") or {}
         ),
     )
+    if primary_category_id:
+        categories.sort(key=lambda item: 0 if item["id"] == primary_category_id else 1)
     brand = _text(_first(raw, "brand", "BRAND"))
     if not brand:
         for prop in properties:
