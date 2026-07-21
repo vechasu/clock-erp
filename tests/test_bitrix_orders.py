@@ -107,6 +107,7 @@ class BitrixOrdersReadOnlyClientTest(unittest.TestCase):
         self.assertNotIn("private-token", message)
         self.assertNotIn("secret", message)
         self.assertIn("Timeout", message)
+        self.assertIsNone(raised.exception.__cause__)
 
     def test_transient_status_is_retried_with_fake_session(self):
         session = FakeSession([
@@ -139,17 +140,40 @@ class BitrixOrdersReadOnlyClientTest(unittest.TestCase):
 
 
 class BitrixOrdersDryRunSafetyTest(unittest.TestCase):
-    def test_catalog_matching_uses_one_mocked_get_request(self):
-        response = FakeResponse(payload={"rows": [{"id": "product-1"}]})
+    def test_catalog_matching_loads_all_pages_with_mocked_get_requests(self):
+        first_page = [{"id": f"product-{index}"} for index in range(1000)]
+        responses = [
+            FakeResponse(payload={"rows": first_page, "meta": {"size": 1001}}),
+            FakeResponse(payload={
+                "rows": [{"id": "product-1000"}], "meta": {"size": 1001}
+            }),
+        ]
         with mock.patch.dict("os.environ", {"MOYSKLAD_TOKEN": "placeholder"}), mock.patch.object(
-            bitrix_orders_dry_run.requests, "get", return_value=response
+            bitrix_orders_dry_run.requests, "get", side_effect=responses
         ) as request_get:
             rows, warning = bitrix_orders_dry_run.get_catalog()
 
-        self.assertEqual(rows, [{"id": "product-1"}])
+        self.assertEqual(len(rows), 1001)
+        self.assertEqual(rows[-1], {"id": "product-1000"})
         self.assertIsNone(warning)
-        request_get.assert_called_once()
-        self.assertEqual(request_get.call_args.kwargs["params"], {"limit": 1000})
+        self.assertEqual(request_get.call_count, 2)
+        self.assertEqual(
+            [call.kwargs["params"] for call in request_get.call_args_list],
+            [{"limit": 1000, "offset": 0}, {"limit": 1000, "offset": 1000}],
+        )
+
+    def test_catalog_page_limit_reports_incomplete_and_discards_partial_rows(self):
+        response = FakeResponse(payload={
+            "rows": [{"id": "product-1"}], "meta": {"size": 2}
+        })
+        with mock.patch.dict("os.environ", {"MOYSKLAD_TOKEN": "placeholder"}), mock.patch.object(
+            bitrix_orders_dry_run.requests, "get", return_value=response
+        ):
+            rows, warning = bitrix_orders_dry_run.get_catalog(max_pages=1)
+
+        self.assertEqual(rows, [])
+        self.assertIn("incomplete", warning)
+        self.assertIn("safe limit", warning)
 
     def test_main_requires_explicit_network_permission(self):
         with mock.patch("sys.argv", ["bitrix_orders_dry_run.py"]), mock.patch.object(
@@ -159,6 +183,28 @@ class BitrixOrdersDryRunSafetyTest(unittest.TestCase):
                 bitrix_orders_dry_run.main()
 
         build_report.assert_not_called()
+
+    def test_main_reports_safe_bitrix_error_without_traceback_or_credentials(self):
+        secret_url = "https://user:password@example.test/orders?token=query-secret"
+        source_error = requests.Timeout(f"request failed for {secret_url}")
+        safe_error = BitrixReadOnlyError("Bitrix request failed (Timeout)")
+        safe_error.__cause__ = source_error
+        stderr = io.StringIO()
+        with mock.patch(
+            "sys.argv",
+            ["bitrix_orders_dry_run.py", "--allow-read-only-network"],
+        ), mock.patch.object(
+            bitrix_orders_dry_run, "build_report", side_effect=safe_error
+        ), redirect_stderr(stderr):
+            exit_code = bitrix_orders_dry_run.main()
+
+        output = stderr.getvalue()
+        self.assertEqual(exit_code, 1)
+        self.assertIn("Bitrix request failed (Timeout)", output)
+        self.assertNotIn("Traceback", output)
+        self.assertNotIn("example.test", output)
+        self.assertNotIn("query-secret", output)
+        self.assertNotIn("user:password", output)
 
     def test_build_report_does_not_create_or_change_files(self):
         class FakeClient:
@@ -217,6 +263,44 @@ class BitrixOrderNormalizationTest(unittest.TestCase):
             "products": [{"name": "Test", "quantity": 1, "price": 90}],
         })
         self.assertIsNone(order["items"][0]["purchase_unit_price"])
+
+    def test_existing_order_without_comparison_evidence_is_unknown(self):
+        order = {"external_id": "1", "updated_at": None, "items": []}
+
+        classification = bitrix_orders_dry_run.classify_order(order, {"id": "1"})
+
+        self.assertEqual(classification, "unknown_existing")
+
+    def test_existing_order_uses_confirmed_updated_at(self):
+        order = {"external_id": "1", "updated_at": "2026-07-21T10:00:00Z"}
+
+        self.assertEqual(
+            bitrix_orders_dry_run.classify_order(
+                order, {"external_updated_at": "2026-07-21T10:00:00Z"}
+            ),
+            "duplicate",
+        )
+        self.assertEqual(
+            bitrix_orders_dry_run.classify_order(
+                order, {"external_updated_at": "2026-07-20T10:00:00Z"}
+            ),
+            "update",
+        )
+
+    def test_existing_order_uses_confirmed_payload_hash(self):
+        order = {"external_id": "1", "updated_at": None, "items": []}
+
+        self.assertEqual(
+            bitrix_orders_dry_run.classify_order(
+                order,
+                {"payload_hash": bitrix_orders_dry_run.order_payload_hash(order)},
+            ),
+            "duplicate",
+        )
+        self.assertEqual(
+            bitrix_orders_dry_run.classify_order(order, {"payload_hash": "different"}),
+            "update",
+        )
 
 
 class BitrixProductMatchingTest(unittest.TestCase):

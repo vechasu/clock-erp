@@ -2,6 +2,7 @@
 """Read and validate up to 10 Bitrix orders without writing any data."""
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -15,12 +16,15 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from app.clients.bitrix_orders import (
     BitrixOrdersReadOnlyClient,
+    BitrixReadOnlyError,
     match_items,
     normalize_order,
 )
 
 
 MOYSKLAD_PRODUCTS_URL = "https://api.moysklad.ru/api/remap/1.2/entity/product"
+MOYSKLAD_PAGE_SIZE = 1000
+MOYSKLAD_MAX_PAGES = 100
 
 
 def load_json(path, expected_type, default):
@@ -33,37 +37,90 @@ def load_json(path, expected_type, default):
     return value if isinstance(value, expected_type) else default
 
 
-def get_catalog():
+def get_catalog(max_pages=MOYSKLAD_MAX_PAGES):
     token = os.getenv("MOYSKLAD_TOKEN")
     if not token:
         return [], "MOYSKLAD_TOKEN is not configured; product matching was skipped"
 
-    try:
-        response = requests.get(
-            MOYSKLAD_PRODUCTS_URL,
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Accept": "application/json;charset=utf-8",
-            },
-            params={"limit": 1000},
-            timeout=(3.05, 15),
-        )
-    except (requests.Timeout, requests.ConnectionError) as error:
-        return [], f"MoySklad read failed ({type(error).__name__})"
+    max_pages = max(1, min(int(max_pages), MOYSKLAD_MAX_PAGES))
+    products = []
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json;charset=utf-8",
+    }
 
-    if response.status_code >= 400:
-        return [], f"MoySklad read failed (HTTP {response.status_code})"
-    try:
-        payload = response.json()
-    except ValueError:
-        return [], "MoySklad product catalog returned non-JSON data"
-    if not isinstance(payload, dict) or not isinstance(payload.get("rows"), list):
-        return [], "MoySklad product catalog could not be read"
-    return payload["rows"], None
+    for page_number in range(max_pages):
+        try:
+            response = requests.get(
+                MOYSKLAD_PRODUCTS_URL,
+                headers=headers,
+                params={
+                    "limit": MOYSKLAD_PAGE_SIZE,
+                    "offset": page_number * MOYSKLAD_PAGE_SIZE,
+                },
+                timeout=(3.05, 15),
+            )
+        except requests.RequestException as error:
+            return [], f"MoySklad read failed ({type(error).__name__})"
+
+        if response.status_code >= 400:
+            return [], f"MoySklad read failed (HTTP {response.status_code})"
+        try:
+            payload = response.json()
+        except ValueError:
+            return [], "MoySklad product catalog returned non-JSON data"
+        if not isinstance(payload, dict) or not isinstance(payload.get("rows"), list):
+            return [], "MoySklad product catalog could not be read"
+
+        page_rows = payload["rows"]
+        products.extend(page_rows)
+        meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
+        total_size = meta.get("size")
+        if isinstance(total_size, int) and total_size >= 0:
+            if len(products) >= total_size:
+                return products, None
+            if not page_rows:
+                return [], (
+                    "MoySklad product catalog is incomplete; "
+                    f"loaded {len(products)} of {total_size} products"
+                )
+        elif len(page_rows) < MOYSKLAD_PAGE_SIZE:
+            return products, None
+
+    return [], (
+        "MoySklad product catalog is incomplete; "
+        f"safe limit of {max_pages} pages was reached"
+    )
 
 
 def presence(value):
     return value not in (None, "", [], {})
+
+
+def order_payload_hash(order):
+    canonical = json.dumps(
+        order, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def classify_order(order, stored):
+    if not isinstance(stored, dict):
+        return "new"
+
+    comparisons = []
+    remote_updated = str(order.get("updated_at") or "")
+    stored_updated = str(stored.get("external_updated_at") or "")
+    if remote_updated and stored_updated:
+        comparisons.append(remote_updated == stored_updated)
+
+    stored_hash = str(stored.get("payload_hash") or "")
+    if stored_hash:
+        comparisons.append(stored_hash == order_payload_hash(order))
+
+    if not comparisons:
+        return "unknown_existing"
+    return "duplicate" if all(comparisons) else "update"
 
 
 def build_report(limit, include_catalog=True):
@@ -100,7 +157,13 @@ def build_report(limit, include_catalog=True):
     field_counts = {}
     item_field_counts = {}
     item_count = 0
-    classifications = {"new": 0, "update": 0, "duplicate": 0, "error": 0}
+    classifications = {
+        "new": 0,
+        "update": 0,
+        "duplicate": 0,
+        "unknown_existing": 0,
+        "error": 0,
+    }
 
     for order in orders:
         matched_items = match_items(order["items"], catalog, mappings)
@@ -119,16 +182,7 @@ def build_report(limit, include_catalog=True):
 
         import_key = f"bitrix:{order['external_id']}"
         stored = imported_orders.get(import_key)
-        if isinstance(stored, dict):
-            remote_updated = str(order.get("updated_at") or "")
-            stored_updated = str(stored.get("external_updated_at") or "")
-            classification = (
-                "duplicate"
-                if remote_updated and remote_updated == stored_updated
-                else "update"
-            )
-        else:
-            classification = "new"
+        classification = classify_order(order, stored)
         classifications[classification] += 1
 
         preview.append({
@@ -217,11 +271,16 @@ def main():
     if not args.allow_read_only_network:
         parser.error("--allow-read-only-network is required before any HTTP request")
 
-    report = build_report(args.limit, include_catalog=not args.no_catalog)
+    try:
+        report = build_report(args.limit, include_catalog=not args.no_catalog)
+    except BitrixReadOnlyError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 1
     if not args.include_preview:
         report.pop("preview", None)
     print(json.dumps(report, ensure_ascii=False, indent=2))
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

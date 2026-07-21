@@ -50,11 +50,11 @@ class BitrixOrdersReadOnlyClient:
                     timeout=self.timeout,
                     headers=self.headers,
                 )
-            except (requests.Timeout, requests.ConnectionError) as error:
+            except requests.RequestException as error:
                 if attempt >= self.max_retries:
                     raise BitrixReadOnlyError(
                         f"Bitrix request failed ({type(error).__name__})"
-                    ) from error
+                    ) from None
                 time.sleep(min(0.5 * (2 ** attempt), 4))
                 continue
 
@@ -87,8 +87,8 @@ class BitrixOrdersReadOnlyClient:
 
             try:
                 payload = response.json()
-            except ValueError as error:
-                raise BitrixReadOnlyError("Bitrix returned non-JSON data") from error
+            except ValueError:
+                raise BitrixReadOnlyError("Bitrix returned non-JSON data") from None
 
             if not isinstance(payload, dict):
                 raise BitrixReadOnlyError("Bitrix returned an unexpected JSON structure")
