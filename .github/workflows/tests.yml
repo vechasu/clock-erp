@@ -1,0 +1,63 @@
+name: Tests
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - "agent/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: Python 3.10 safety checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CI: "true"
+      FLASK_ENV: testing
+      BITRIX_LOGIN: ""
+      BITRIX_PASSWORD: ""
+      BITRIX_EXCHANGE_URL: ""
+      BITRIX_CATALOG_URL: ""
+      BITRIX_CATALOG_TOKEN: ""
+      MOYSKLAD_TOKEN: ""
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+
+      - name: Verify isolated environment
+        run: |
+          test ! -f .env
+          test -z "$BITRIX_LOGIN"
+          test -z "$BITRIX_PASSWORD"
+          test -z "$BITRIX_EXCHANGE_URL"
+          test -z "$BITRIX_CATALOG_URL"
+          test -z "$BITRIX_CATALOG_TOKEN"
+          test -z "$MOYSKLAD_TOKEN"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip check
+
+      # Tests use temporary databases and fake/mock clients. No integration
+      # scripts, production secrets, SSH, deploy, Bitrix writes or MoySklad
+      # writes are invoked by this workflow.
+      - name: Run unit tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Compile Python sources
+        run: python -m compileall app scripts tests
