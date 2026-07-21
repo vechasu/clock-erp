@@ -2607,6 +2607,10 @@
                                     </div>
                                 </th>
 
+                                <th>Цена продажи</th>
+
+                                <th>Источник / сопоставление</th>
+
                                 <th class="created-column">
                                     <span
                                         class="warehouse-sort-label{% if sort_by == 'created_at' %} is-active{% endif %}"
@@ -2663,6 +2667,18 @@
 
                                     <td class="{% if item.stock <= 0 %}stock-zero{% else %}stock-good{% endif %}">
                                         {{ item.stock_display }}
+                                    </td>
+
+                                    <td>
+                                        <div>{{ item.sale_price_display }}</div>
+                                        <div class="secondary-text">{{ item.price_source }}</div>
+                                    </td>
+
+                                    <td>
+                                        <div>{{ item.mapping_status }}</div>
+                                        {% if item.bitrix_id %}
+                                            <div class="secondary-text">Bitrix ID: {{ item.bitrix_id }}</div>
+                                        {% endif %}
                                     </td>
 
                                     <td class="created-column">

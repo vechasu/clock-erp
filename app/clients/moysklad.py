@@ -653,3 +653,162 @@ class MoySkladClient:
         print("ID:", product.get("id"))
 
         return product
+
+
+    def get_sale_price_type(self):
+        cached = getattr(self, "_receipt_import_sale_price_type", None)
+
+        if cached:
+            return cached
+
+        response = self.get("/context/companysettings/pricetype")
+
+        if isinstance(response, dict):
+            rows = response.get("rows") or []
+        elif isinstance(response, list):
+            rows = response
+        else:
+            rows = []
+
+        accepted_names = {
+            "розничная цена",
+            "цена продажи",
+            "base",
+            "базовая цена",
+            "базовая",
+        }
+
+        price_type = None
+
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+
+            normalized_name = " ".join(
+                str(row.get("name") or "").strip().casefold().split()
+            )
+
+            if normalized_name in accepted_names:
+                price_type = row
+                break
+
+        if not price_type or not price_type.get("meta"):
+            raise ValueError(
+                "В МойСклад не найден явный тип цены продажи: "
+                "«Розничная цена», «Цена продажи» или BASE"
+            )
+
+        self._receipt_import_sale_price_type = price_type
+        return price_type
+
+
+    def get_rub_currency(self):
+        cached = getattr(self, "_receipt_import_rub_currency", None)
+
+        if cached:
+            return cached
+
+        response = self.get(
+            "/entity/currency",
+            params={"filter": "isoCode=RUB", "limit": 1},
+        ) or {}
+        rows = response.get("rows") or []
+        currency = rows[0] if rows else None
+
+        if not currency or not currency.get("meta"):
+            raise ValueError("В МойСклад не найдена валюта RUB")
+
+        self._receipt_import_rub_currency = currency
+        return currency
+
+
+    def build_bitrix_sale_prices(self, product):
+        amount = product.get("sale_price")
+
+        if amount is None:
+            raise ValueError("В Bitrix отсутствует цена продажи BASE")
+
+        price_type = self.get_sale_price_type()
+        currency = self.get_rub_currency()
+
+        return [{
+            "value": int(round(float(amount) * 100)),
+            "currency": {"meta": currency["meta"]},
+            "priceType": {"meta": price_type["meta"]},
+        }]
+
+
+    def create_product_for_bitrix_import(self, product, code, product_folder=None):
+        payload = {
+            "name": str(product.get("name") or "").strip(),
+            "code": str(code or "").strip(),
+            "salePrices": self.build_bitrix_sale_prices(product),
+        }
+
+        article = str(product.get("article") or "").strip()
+
+        if article:
+            payload["article"] = article
+
+        if product_folder and product_folder.get("meta"):
+            payload["productFolder"] = {"meta": product_folder["meta"]}
+
+        return self.post("/entity/product", payload)
+
+
+    def update_product_for_bitrix_import(self, product_id, product, product_folder=None):
+        payload = {
+            "name": str(product.get("name") or "").strip(),
+            "salePrices": self.build_bitrix_sale_prices(product),
+        }
+        article = str(product.get("article") or "").strip()
+
+        if article:
+            payload["article"] = article
+
+        if product_folder and product_folder.get("meta"):
+            payload["productFolder"] = {"meta": product_folder["meta"]}
+
+        return self.put("/entity/product/{}".format(product_id), payload)
+
+
+    def create_stock_enter_without_purchase_prices(self, positions, reason=None, moment=None):
+        organization = self.get_default_organization()
+        store = self.get_default_store()
+
+        if not organization:
+            raise ValueError("В МойСклад не найдена организация")
+
+        if not store:
+            raise ValueError("В МойСклад не найден склад")
+
+        prepared_positions = []
+
+        for position in positions:
+            product_id = str(position.get("product_id") or "").strip()
+            quantity = float(position.get("quantity") or 0)
+
+            if not product_id or quantity <= 0:
+                raise ValueError("Позиция прихода содержит неверный товар или количество")
+
+            prepared_positions.append({
+                "quantity": quantity,
+                "reason": position.get("reason") or reason or "Импорт Vechasu ERP",
+                "assortment": {"meta": self.get_product_meta(product_id)},
+            })
+
+        if not prepared_positions:
+            raise ValueError("В приходе нет позиций с положительным остатком")
+
+        payload = {
+            "applicable": True,
+            "description": reason or "Импорт Vechasu ERP",
+            "organization": {"meta": organization["meta"]},
+            "store": {"meta": store["meta"]},
+            "positions": prepared_positions,
+        }
+
+        if moment:
+            payload["moment"] = str(moment)
+
+        return self.post("/entity/enter", payload)

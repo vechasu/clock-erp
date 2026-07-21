@@ -12,19 +12,26 @@ def utc_now():
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
-def load_moysklad_products(client, limit=1000):
+def load_moysklad_products(client, limit=1000, max_pages=100):
     products = []
     offset = 0
-    while True:
+    for _page in range(max_pages):
         response = client.get(
             "/entity/product",
             params={"limit": limit, "offset": offset, "expand": "attributes"},
         ) or {}
+        if not isinstance(response, dict):
+            raise ValueError("МойСклад вернул неверный ответ каталога")
         rows = response.get("rows") or []
+        if not isinstance(rows, list):
+            raise ValueError("МойСклад вернул неверный список товаров")
         products.extend(row for row in rows if isinstance(row, dict))
-        if len(rows) < limit:
+        meta = response.get("meta") or {}
+        total = meta.get("size")
+        if len(rows) < limit or (isinstance(total, int) and len(products) >= total):
             return products
         offset += len(rows)
+    raise ValueError("Каталог МойСклад не загружен полностью: превышен предел страниц")
 
 
 def load_product_attribute_definitions(client):

@@ -1353,6 +1353,34 @@
             display: block;
         }
 
+        .receipt-import-filters {
+            position: sticky;
+            left: 0;
+            display: flex;
+            gap: 6px;
+            padding: 9px;
+            background: #ffffff;
+            border-bottom: 1px solid #d1d5db;
+        }
+
+        .receipt-import-filters button {
+            border: 1px solid #cbd5e1;
+            border-radius: 999px;
+            padding: 5px 9px;
+            color: #334155;
+            background: #f8fafc;
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: 800;
+            white-space: nowrap;
+        }
+
+        .receipt-import-filters button.is-active {
+            color: #ffffff;
+            border-color: #2563eb;
+            background: #2563eb;
+        }
+
         .receipt-import-table {
             width: 100%;
             min-width: 1120px;
@@ -1420,6 +1448,33 @@
         .receipt-import-status-error {
             color: #991b1b;
             background: #fee2e2;
+        }
+
+        .receipt-import-status-ready_existing,
+        .receipt-import-status-ready_new {
+            color: #166534;
+            background: #dcfce7;
+        }
+
+        .receipt-import-status-requires_mapping {
+            color: #92400e;
+            background: #fef3c7;
+        }
+
+        .receipt-import-status-not_found,
+        .receipt-import-status-invalid {
+            color: #991b1b;
+            background: #fee2e2;
+        }
+
+        .receipt-import-match-select {
+            width: 100%;
+            min-width: 210px;
+            border: 1px solid #f59e0b;
+            border-radius: 7px;
+            padding: 5px;
+            background: #fffbeb;
+            font-size: 11px;
         }
 
         .receipt-import-warning {
@@ -2025,13 +2080,6 @@
         <div class="modal-body">
             <form method="post" action="/receipts/create" id="receiptForm">
                 <!-- RECEIPTS EXCEL IMPORT TOOLBAR V1 -->
-                <input
-                    id="receiptImportPayload"
-                    name="import_payload"
-                    type="hidden"
-                    value=""
-                >
-
                 <div class="receipt-import-toolbar">
                     <div class="receipt-import-toolbar-text">
                         <div class="receipt-import-toolbar-title">
@@ -2297,8 +2345,8 @@
                         class="control"
                         id="receiptImportSheet"
                     >
-                        <option value="">
-                            Первый лист
+                        <option value="Импорт">
+                            Импорт
                         </option>
                     </select>
                 </div>
@@ -2327,26 +2375,27 @@
                 class="receipt-import-preview"
                 id="receiptImportPreview"
             >
+                <div class="receipt-import-filters">
+                    <button type="button" data-filter="all" onclick="filterReceiptImportRows('all')">Все</button>
+                    <button type="button" data-filter="ready" onclick="filterReceiptImportRows('ready')">Готовы</button>
+                    <button type="button" data-filter="requires_mapping" onclick="filterReceiptImportRows('requires_mapping')">Требуют сопоставления</button>
+                    <button type="button" data-filter="not_found" onclick="filterReceiptImportRows('not_found')">Не найдены</button>
+                    <button type="button" data-filter="zero" onclick="filterReceiptImportRows('zero')">Нулевой остаток</button>
+                    <button type="button" data-filter="positive" onclick="filterReceiptImportRows('positive')">Положительный остаток</button>
+                </div>
                 <table class="receipt-import-table">
                     <thead>
                         <tr>
-                            <th>
-                                <input
-                                    id="receiptImportSelectAll"
-                                    type="checkbox"
-                                    checked
-                                    onchange="toggleReceiptImportRows(this.checked)"
-                                >
-                            </th>
-                            <th>Статус</th>
                             <th>Строка</th>
-                            <th>Товар</th>
-                            <th>Артикул</th>
-                            <th>Бренд / категория</th>
-                            <th>Количество</th>
-                            <th>Цена</th>
-                            <th>Сумма</th>
-                            <th>Проверка</th>
+                            <th>Excel</th>
+                            <th>Бренд</th>
+                            <th>Товар Bitrix</th>
+                            <th>Сопоставление</th>
+                            <th>Категория Bitrix</th>
+                            <th>Цена продажи BASE</th>
+                            <th>Остаток</th>
+                            <th>Карточка МойСклад</th>
+                            <th>Действие / статус</th>
                         </tr>
                     </thead>
 
@@ -2378,7 +2427,7 @@
                         onclick="applyReceiptImport()"
                         disabled
                     >
-                        Добавить позиции в приход
+                        Создать товары и провести приход
                     </button>
                 </div>
             </div>
@@ -2509,11 +2558,6 @@
             "receiptImportSheet"
         );
 
-    const receiptImportPayload =
-        document.getElementById(
-            "receiptImportPayload"
-        );
-
     const receiptImportStats =
         document.getElementById(
             "receiptImportStats"
@@ -2568,6 +2612,9 @@
     let receiptImportSummary = null;
     let receiptImportSelectedFile = null;
     let receiptImportDragDepth = 0;
+    let receiptImportPreviewData = null;
+    let receiptImportManualMatches = {};
+    let receiptImportActiveFilter = "all";
 
     function setReceiptImportFileName(file) {
         if (!receiptImportFileName) {
@@ -2635,11 +2682,13 @@
         showReceiptImportMessage("", "");
 
         receiptImportSheet.innerHTML = (
-            '<option value="">Первый лист</option>'
+            '<option value="Импорт">Импорт</option>'
         );
 
         receiptImportRows = [];
         receiptImportSummary = null;
+        receiptImportPreviewData = null;
+        receiptImportManualMatches = {};
         receiptImportStats.classList.remove(
             "is-visible"
         );
@@ -2750,10 +2799,12 @@
     }
 
     function resetReceiptImport() {
-        receiptImportPayload.value = "";
         receiptImportRows = [];
         receiptImportSummary = null;
         receiptImportSelectedFile = null;
+        receiptImportPreviewData = null;
+        receiptImportManualMatches = {};
+        receiptImportActiveFilter = "all";
 
         setReceiptManualFieldsEnabled(true);
 
@@ -2823,224 +2874,12 @@
 
         if (!names.length) {
             receiptImportSheet.innerHTML =
-                '<option value="">Первый лист</option>';
+                '<option value="Импорт">Импорт</option>';
         }
     }
 
     function renderReceiptImportPreview(data) {
-        receiptImportRows = Array.isArray(
-            data.rows
-        )
-            ? data.rows
-            : [];
-
-        receiptImportSummary =
-            data.summary || {};
-
-        updateReceiptImportSheetOptions(
-            data.sheet_names,
-            data.sheet
-        );
-
-        const summaryItems = [
-            [
-                "Строк",
-                receiptImportSummary.input_rows,
-            ],
-            [
-                "Найдено",
-                receiptImportSummary.found,
-            ],
-            [
-                "Новых",
-                receiptImportSummary.new,
-            ],
-            [
-                "Дубликатов",
-                receiptImportSummary.duplicates,
-            ],
-            [
-                "Ошибок",
-                receiptImportSummary.errors,
-            ],
-            [
-                "Сумма",
-                formatReceiptImportNumber(
-                    receiptImportSummary.total_amount
-                ) + " ₽",
-            ],
-        ];
-
-        receiptImportStats.innerHTML =
-            summaryItems.map((item) => {
-                return (
-                    '<div class="receipt-import-stat">'
-                    + '<div class="receipt-import-stat-label">'
-                    + escapeReceiptImportHtml(
-                        item[0]
-                    )
-                    + "</div>"
-                    + '<div class="receipt-import-stat-value">'
-                    + escapeReceiptImportHtml(
-                        item[1]
-                    )
-                    + "</div>"
-                    + "</div>"
-                );
-            }).join("");
-
-        receiptImportStats.classList.add(
-            "is-visible"
-        );
-
-        receiptImportTableBody.innerHTML =
-            receiptImportRows.map(
-                (row, index) => {
-                    const canImport =
-                        Boolean(row.can_import);
-
-                    const checked = canImport
-                        ? " checked"
-                        : "";
-
-                    const disabled = canImport
-                        ? ""
-                        : " disabled";
-
-                    const rowClass = canImport
-                        ? ""
-                        : " receipt-import-row-error";
-
-                    const messages =
-                        Array.isArray(row.messages)
-                            ? row.messages.join("; ")
-                            : "";
-
-                    const productMeta = [
-                        row.code
-                            ? "Код: " + row.code
-                            : "",
-                        row.collection
-                            ? (
-                                "Коллекция: "
-                                + row.collection
-                            )
-                            : "",
-                    ].filter(Boolean).join(" · ");
-
-                    return (
-                        '<tr class="'
-                        + rowClass.trim()
-                        + '">'
-                        + "<td>"
-                        + '<input class="receipt-import-row-checkbox"'
-                        + ' type="checkbox"'
-                        + ' data-index="'
-                        + index
-                        + '"'
-                        + checked
-                        + disabled
-                        + ">"
-                        + "</td>"
-                        + "<td>"
-                        + '<span class="receipt-import-status '
-                        + "receipt-import-status-"
-                        + escapeReceiptImportHtml(
-                            row.status
-                        )
-                        + '">'
-                        + escapeReceiptImportHtml(
-                            row.status_label
-                        )
-                        + "</span>"
-                        + "</td>"
-                        + "<td>"
-                        + escapeReceiptImportHtml(
-                            Array.isArray(
-                                row.source_rows
-                            )
-                                ? row.source_rows.join(", ")
-                                : row.row_number
-                        )
-                        + "</td>"
-                        + "<td>"
-                        + '<div class="receipt-import-product-name">'
-                        + escapeReceiptImportHtml(
-                            row.name || "Без названия"
-                        )
-                        + "</div>"
-                        + (
-                            productMeta
-                                ? (
-                                    '<div class="receipt-import-product-meta">'
-                                    + escapeReceiptImportHtml(
-                                        productMeta
-                                    )
-                                    + "</div>"
-                                )
-                                : ""
-                        )
-                        + "</td>"
-                        + "<td>"
-                        + escapeReceiptImportHtml(
-                            row.article || "—"
-                        )
-                        + "</td>"
-                        + "<td>"
-                        + escapeReceiptImportHtml(
-                            row.brand || "—"
-                        )
-                        + '<div class="receipt-import-product-meta">'
-                        + escapeReceiptImportHtml(
-                            row.category || "—"
-                        )
-                        + "</div>"
-                        + "</td>"
-                        + "<td>"
-                        + formatReceiptImportNumber(
-                            row.quantity
-                        )
-                        + "</td>"
-                        + "<td>"
-                        + formatReceiptImportNumber(
-                            row.purchase_price
-                        )
-                        + " ₽</td>"
-                        + "<td>"
-                        + formatReceiptImportNumber(
-                            row.line_total
-                        )
-                        + " ₽</td>"
-                        + '<td><div class="receipt-import-warning">'
-                        + escapeReceiptImportHtml(
-                            messages || "Готово"
-                        )
-                        + "</div></td>"
-                        + "</tr>"
-                    );
-                }
-            ).join("");
-
-        receiptImportPreview.classList.add(
-            "is-visible"
-        );
-
-        const importableCount =
-            receiptImportRows.filter(
-                (row) => row.can_import
-            ).length;
-
-        receiptImportApplyButton.disabled =
-            importableCount === 0;
-
-        receiptImportFooterInfo.textContent =
-            "Лист «"
-            + data.sheet
-            + "»: готово к импорту "
-            + importableCount
-            + " позиций";
-
-        showReceiptImportMessage("", "");
+        return renderReceiptImportPreviewV2(data);
     }
 
     async function analyzeReceiptImport() {
@@ -3061,6 +2900,10 @@
 
         const formData = new FormData();
         formData.append("file", file);
+        formData.append(
+            "manual_matches",
+            JSON.stringify(receiptImportManualMatches)
+        );
 
         if (receiptImportSheet.value) {
             formData.append(
@@ -3165,93 +3008,232 @@
         }
     }
 
-    function toggleReceiptImportRows(checked) {
-        document
-            .querySelectorAll(
-                ".receipt-import-row-checkbox"
-            )
-            .forEach((checkbox) => {
-                if (!checkbox.disabled) {
-                    checkbox.checked = checked;
-                }
-            });
+    function applyReceiptImport() {
+        return applyReceiptImportV2();
     }
 
-    function applyReceiptImport() {
-        const selectedRows = [];
+    function receiptImportRowMatchesFilter(row) {
+        if (receiptImportActiveFilter === "all") {
+            return true;
+        }
 
-        document
-            .querySelectorAll(
-                ".receipt-import-row-checkbox:checked"
-            )
-            .forEach((checkbox) => {
-                const index = Number(
-                    checkbox.dataset.index
-                );
+        if (receiptImportActiveFilter === "ready") {
+            return row.status === "ready_existing"
+                || row.status === "ready_new";
+        }
 
-                const row =
-                    receiptImportRows[index];
+        if (receiptImportActiveFilter === "zero") {
+            return Number(row.quantity || 0) === 0;
+        }
 
-                if (row && row.can_import) {
-                    selectedRows.push(row);
-                }
-            });
+        if (receiptImportActiveFilter === "positive") {
+            return Number(row.quantity || 0) > 0;
+        }
 
-        if (!selectedRows.length) {
+        return row.status === receiptImportActiveFilter;
+    }
+
+    function filterReceiptImportRows(filterName) {
+        receiptImportActiveFilter = filterName || "all";
+        document.querySelectorAll(
+            ".receipt-import-filters button"
+        ).forEach((button) => {
+            button.classList.toggle(
+                "is-active",
+                button.dataset.filter === receiptImportActiveFilter
+            );
+        });
+
+        if (receiptImportPreviewData) {
+            renderReceiptImportRowsV2();
+        }
+    }
+
+    function receiptImportSuggestionSelect(row) {
+        const suggestions = Array.isArray(row.suggestions)
+            ? row.suggestions
+            : [];
+
+        if (!suggestions.length) {
+            return "—";
+        }
+
+        const options = suggestions.map((candidate) => {
+            const selected = String(
+                receiptImportManualMatches[row.row_number] || ""
+            ) === String(candidate.catalog_product_id)
+                ? " selected"
+                : "";
+
+            return '<option value="'
+                + escapeReceiptImportHtml(candidate.catalog_product_id)
+                + '"'
+                + selected
+                + ">"
+                + escapeReceiptImportHtml(
+                    candidate.name
+                    + (candidate.article ? " · " + candidate.article : "")
+                )
+                + "</option>";
+        }).join("");
+
+        return '<select class="receipt-import-match-select" '
+            + 'onchange="selectReceiptImportMatch('
+            + Number(row.row_number)
+            + ', this.value)">'
+            + '<option value="">Выберите товар Bitrix</option>'
+            + options
+            + "</select>";
+    }
+
+    async function selectReceiptImportMatch(rowNumber, productId) {
+        if (productId) {
+            receiptImportManualMatches[rowNumber] = Number(productId);
+        } else {
+            delete receiptImportManualMatches[rowNumber];
+        }
+
+        await analyzeReceiptImport();
+    }
+
+    function renderReceiptImportRowsV2() {
+        const visibleRows = receiptImportRows.filter(
+            receiptImportRowMatchesFilter
+        );
+
+        receiptImportTableBody.innerHTML = visibleRows.map((row) => {
+            const bitrix = row.bitrix_product || {};
+            const moysklad = row.moysklad_product || {};
+            const messages = Array.isArray(row.messages)
+                ? row.messages.join("; ")
+                : "";
+            const matchControl = row.status === "requires_mapping"
+                ? receiptImportSuggestionSelect(row)
+                : escapeReceiptImportHtml(row.match_method || "—");
+            const actionLabels = {
+                create_card: "Создать карточку",
+                create_card_and_receipt: "Создать карточку и добавить в приход",
+                update_card: "Обновить карточку",
+                update_card_and_receipt: "Обновить карточку и добавить в приход",
+                blocked: "Заблокировано",
+            };
+            const rowClass = row.can_apply ? "" : "receipt-import-row-error";
+
+            return '<tr class="' + rowClass + '">'
+                + "<td>" + escapeReceiptImportHtml(row.row_number) + "</td>"
+                + "<td><strong>" + escapeReceiptImportHtml(row.name || "—") + "</strong>"
+                + '<div class="receipt-import-product-meta">'
+                + escapeReceiptImportHtml(row.article || "Без артикула") + "</div></td>"
+                + "<td>" + escapeReceiptImportHtml(row.brand || "—") + "</td>"
+                + "<td><strong>" + escapeReceiptImportHtml(bitrix.name || "—") + "</strong>"
+                + '<div class="receipt-import-product-meta">Bitrix ID: '
+                + escapeReceiptImportHtml(bitrix.bitrix_id || "—") + "</div></td>"
+                + "<td>" + matchControl + "</td>"
+                + "<td>" + escapeReceiptImportHtml(bitrix.category_path || "—") + "</td>"
+                + "<td>" + (bitrix.sale_price == null
+                    ? "—"
+                    : formatReceiptImportNumber(bitrix.sale_price)
+                        + " " + escapeReceiptImportHtml(bitrix.sale_currency || "RUB"))
+                + "</td>"
+                + "<td>" + formatReceiptImportNumber(row.quantity) + "</td>"
+                + "<td>" + escapeReceiptImportHtml(
+                    moysklad.id ? "Существующая" : (row.moysklad_card === "new" ? "Новая" : "—")
+                ) + "</td>"
+                + '<td><span class="receipt-import-status receipt-import-status-'
+                + escapeReceiptImportHtml(row.status) + '">'
+                + escapeReceiptImportHtml(row.status_label) + "</span>"
+                + '<div class="receipt-import-product-meta">'
+                + escapeReceiptImportHtml(actionLabels[row.action] || row.action || "—")
+                + "</div>"
+                + '<div class="receipt-import-warning">'
+                + escapeReceiptImportHtml(messages) + "</div></td>"
+                + "</tr>";
+        }).join("");
+    }
+
+    function renderReceiptImportPreviewV2(data) {
+        receiptImportPreviewData = data;
+        receiptImportRows = Array.isArray(data.rows) ? data.rows : [];
+        receiptImportSummary = data.summary || {};
+        updateReceiptImportSheetOptions(data.sheet_names, data.sheet);
+
+        const summaryItems = [
+            ["Строк", receiptImportSummary.input_rows || 0],
+            ["Точно найдено", receiptImportSummary.matched || 0],
+            ["Существует в МойСклад", receiptImportSummary.moysklad_existing || 0],
+            ["Будет создано", receiptImportSummary.moysklad_new || 0],
+            ["Требуют сопоставления", receiptImportSummary.requires_mapping || 0],
+            ["Не найдено", receiptImportSummary.not_found || 0],
+            ["Положительный остаток", receiptImportSummary.positive_stock || 0],
+            ["Нулевой остаток", receiptImportSummary.zero_stock || 0],
+            ["Суммарный остаток", formatReceiptImportNumber(receiptImportSummary.total_quantity)],
+        ];
+
+        receiptImportStats.innerHTML = summaryItems.map((item) => {
+            return '<div class="receipt-import-stat">'
+                + '<div class="receipt-import-stat-label">'
+                + escapeReceiptImportHtml(item[0]) + "</div>"
+                + '<div class="receipt-import-stat-value">'
+                + escapeReceiptImportHtml(item[1]) + "</div></div>";
+        }).join("");
+        receiptImportStats.classList.add("is-visible");
+        receiptImportPreview.classList.add("is-visible");
+        renderReceiptImportRowsV2();
+        filterReceiptImportRows(receiptImportActiveFilter);
+
+        receiptImportApplyButton.disabled = !data.ready;
+        receiptImportFooterInfo.textContent = data.ready
+            ? "Все строки готовы. Применение создаст/обновит карточки и проведёт только положительный остаток."
+            : "Применение заблокировано: устраните неоднозначные, ненайденные и ошибочные строки.";
+        showReceiptImportMessage("", "");
+    }
+
+    async function applyReceiptImportV2() {
+        if (!receiptImportPreviewData || !receiptImportPreviewData.ready) {
             showReceiptImportMessage(
-                "Выберите хотя бы одну позицию",
+                "Сначала устраните все ошибки сопоставления",
                 "error"
             );
             return;
         }
 
-        const totalQuantity =
-            selectedRows.reduce(
-                (total, row) => {
-                    return (
-                        total
-                        + Number(row.quantity || 0)
-                    );
-                },
-                0
-            );
-
-        const totalAmount =
-            selectedRows.reduce(
-                (total, row) => {
-                    return (
-                        total
-                        + Number(row.line_total || 0)
-                    );
-                },
-                0
-            );
-
-        receiptImportPayload.value =
-            JSON.stringify(selectedRows);
-
-        setReceiptManualFieldsEnabled(false);
-
-        receiptImportSelectedTitle.textContent =
-            "Добавлено позиций: "
-            + selectedRows.length;
-
-        receiptImportSelectedMeta.textContent =
-            "Количество: "
-            + formatReceiptImportNumber(
-                totalQuantity
-            )
-            + " · Сумма: "
-            + formatReceiptImportNumber(
-                totalAmount
-            )
-            + " ₽";
-
-        receiptImportSelected.classList.add(
-            "is-visible"
+        const file = receiptImportSelectedFile || receiptImportFile.files[0];
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("sheet", receiptImportPreviewData.sheet || "Импорт");
+        formData.append("file_hash", receiptImportPreviewData.file_hash);
+        formData.append("rows_hash", receiptImportPreviewData.rows_hash);
+        formData.append("manual_matches", JSON.stringify(receiptImportManualMatches));
+        receiptImportApplyButton.disabled = true;
+        showReceiptImportMessage(
+            "Создаём карточки и проводим приход. Не закрывайте страницу…",
+            "loading"
         );
 
-        closeReceiptImportModal();
+        try {
+            const response = await fetch("/receipts/import/apply", {
+                method: "POST",
+                body: formData,
+            });
+            const data = await response.json();
+
+            if (!response.ok || !data.ok) {
+                throw new Error(data.message || "Не удалось применить импорт");
+            }
+
+            window.location.href = "/receipts?notice=success&message="
+                + encodeURIComponent(
+                    "Импорт " + data.import_batch_id + " завершён: карточек создано "
+                    + data.created_products + ", обновлено " + data.updated_products
+                    + ", позиций прихода " + data.receipt_positions
+                );
+        } catch (error) {
+            showReceiptImportMessage(
+                error.message || "Ошибка применения импорта",
+                "error"
+            );
+            receiptImportApplyButton.disabled = false;
+        }
     }
 
     if (receiptImportFile) {
@@ -3599,13 +3581,6 @@
         receiptProductSearch.addEventListener(
             "input",
             () => {
-                if (
-                    receiptImportPayload
-                    && receiptImportPayload.value.trim()
-                ) {
-                    return;
-                }
-
                 const value =
                     receiptProductSearch.value.trim();
 

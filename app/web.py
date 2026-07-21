@@ -17,6 +17,13 @@ from app.catalog_db import CatalogDatabase
 from app.clients.bitrix_catalog import BitrixCatalogReadOnlyClient, BitrixCatalogReadOnlyError
 from app.services.bitrix_catalog_importer import BitrixCatalogImporter
 from app.services.catalog_reader import CatalogReader
+from app.services.receipt_import import (
+    ReceiptCatalogRepository,
+    ReceiptImportError,
+    ReceiptImportExecutor,
+    ReceiptImportJournal,
+    ReceiptImportPreview,
+)
 from app.services.moysklad_catalog_mapping import (
     MoySkladCatalogMatcher,
     load_moysklad_products,
@@ -1806,11 +1813,52 @@ def get_warehouse_items(limit=1000, force=False):
         category_cells = load_warehouse_category_cells()
         created_at_map = load_warehouse_created_at()
 
-        product_response = client.get("/entity/product", params={"limit": limit, "expand": "attributes"})
-        product_rows = product_response.get("rows", []) if product_response else []
+        product_rows = load_moysklad_products(
+            client,
+            limit=min(max(int(limit), 1), 1000),
+            max_pages=100,
+        )
 
-        stock_response = client.get_stock(limit=limit)
-        stock_rows = stock_response if isinstance(stock_response, list) else (stock_response.get("rows", []) if stock_response else [])
+        stock_rows = []
+        stock_offset = 0
+        stock_limit = min(max(int(limit), 1), 1000)
+
+        for _stock_page in range(100):
+            stock_response = client.get(
+                "/report/stock/all",
+                params={"limit": stock_limit, "offset": stock_offset},
+            ) or {}
+            page_rows = stock_response.get("rows") or []
+
+            if not isinstance(page_rows, list):
+                raise ValueError("МойСклад вернул неверный отчёт остатков")
+
+            stock_rows.extend(page_rows)
+
+            if len(page_rows) < stock_limit:
+                break
+
+            stock_offset += len(page_rows)
+        else:
+            raise ValueError("Отчёт остатков МойСклад не загружен полностью")
+
+        mapping_by_moysklad_id = {}
+        catalog_database = CatalogDatabase()
+
+        if catalog_database.exists():
+            with catalog_database.connect() as connection:
+                mapping_rows = connection.execute(
+                    "SELECT m.moysklad_product_id, m.match_status, m.confirmed, "
+                    "p.external_product_id, p.external_xml_id "
+                    "FROM catalog_moysklad_mappings m "
+                    "JOIN catalog_products p ON p.id=m.product_id "
+                    "WHERE m.moysklad_product_id IS NOT NULL"
+                ).fetchall()
+
+            mapping_by_moysklad_id = {
+                str(row["moysklad_product_id"]): dict(row)
+                for row in mapping_rows
+            }
 
         stock_by_code = {}
         stock_by_article = {}
@@ -1838,6 +1886,14 @@ def get_warehouse_items(limit=1000, force=False):
             article = product.get("article") or ""
             code = product.get("code") or ""
             raw_category = product.get("pathName") or "Без категории"
+            mapping = mapping_by_moysklad_id.get(str(product_id), {})
+            sale_prices = product.get("salePrices") or []
+            sale_price = None
+
+            for price in sale_prices:
+                if price.get("value") is not None:
+                    sale_price = float(price.get("value") or 0) / 100
+                    break
             path_parts = split_category_path(raw_category)
 
             if len(path_parts) >= 2:
@@ -1935,6 +1991,20 @@ def get_warehouse_items(limit=1000, force=False):
                 "stock_display": format_stock_number(stock_value),
                 "reserve": reserve_value,
                 "quantity": quantity_value,
+                "sale_price": sale_price,
+                "sale_price_display": (
+                    ("{:g} ₽".format(sale_price))
+                    if sale_price is not None
+                    else "—"
+                ),
+                "price_source": "Bitrix" if mapping else "МойСклад",
+                "mapping_status": (
+                    "Подтверждено"
+                    if mapping.get("confirmed")
+                    else "Не сопоставлено"
+                ),
+                "bitrix_id": mapping.get("external_product_id") or "",
+                "bitrix_xml_id": mapping.get("external_xml_id") or "",
                 "created_at": created_at,
                 "created_at_display": created_at_display,
             })
@@ -4857,791 +4927,170 @@ def receipts_report():
 # === RECEIPTS REPORT PAGE V1 END ===
 
 
-# === RECEIPTS EXCEL IMPORT PREVIEW V1 ===
-def receipt_import_json_errors(handler):
-    from functools import wraps
-
-    @wraps(handler)
-    def wrapped(*args, **kwargs):
-        try:
-            return handler(*args, **kwargs)
-        except Exception:
-            app.logger.exception(
-                "Внутренняя ошибка проверки Excel-файла прихода"
-            )
-
-            return jsonify({
-                "ok": False,
-                "message": (
-                    "Не удалось проверить Excel-файл из-за "
-                    "внутренней ошибки сервера"
-                ),
-            }), 500
-
-    return wrapped
-
-
+# === BITRIX-ENRICHED RECEIPT IMPORT V2 ===
 @app.route(
     "/receipts/import/preview",
     methods=["POST"],
 )
-@receipt_import_json_errors
 def receipts_import_preview():
-    from flask import jsonify, request
-    from io import BytesIO
-    import re
+    return receipts_import_preview_v2()
+# === BITRIX-ENRICHED RECEIPT IMPORT V2 END ===
 
-    max_file_size = 15 * 1024 * 1024
 
+def _receipt_import_manual_matches():
+    raw_value = (request.form.get("manual_matches") or "{}").strip()
+
+    try:
+        value = json.loads(raw_value)
+    except (TypeError, ValueError):
+        raise ReceiptImportError(
+            "Ручные сопоставления имеют неверный формат",
+            "invalid_manual_matches",
+        )
+
+    if not isinstance(value, dict):
+        raise ReceiptImportError(
+            "Ручные сопоставления должны быть объектом",
+            "invalid_manual_matches",
+        )
+
+    return value
+
+
+def _receipt_import_file():
     uploaded_file = request.files.get("file")
 
     if not uploaded_file or not uploaded_file.filename:
-        return jsonify({
-            "ok": False,
-            "message": "Выберите Excel-файл",
-        }), 400
+        raise ReceiptImportError("Выберите Excel-файл", "missing_file")
 
-    filename = str(uploaded_file.filename).strip()
-    filename_lower = filename.lower()
+    return uploaded_file, uploaded_file.read()
 
-    if not filename_lower.endswith((".xlsx", ".xlsm")):
-        return jsonify({
-            "ok": False,
-            "message": (
-                "Поддерживаются только файлы "
-                ".xlsx и .xlsm"
-            ),
-        }), 400
 
-    file_data = uploaded_file.read()
-
-    if not file_data:
-        return jsonify({
-            "ok": False,
-            "message": "Загруженный файл пуст",
-        }), 400
-
-    if len(file_data) > max_file_size:
-        return jsonify({
-            "ok": False,
-            "message": (
-                "Файл слишком большой. "
-                "Максимальный размер — 15 МБ"
-            ),
-        }), 400
-
+def receipts_import_preview_v2():
     try:
-        from openpyxl import load_workbook
-    except ModuleNotFoundError:
-        app.logger.exception(
-            "Для импорта Excel не установлена зависимость openpyxl"
+        uploaded_file, file_data = _receipt_import_file()
+        manual_matches = _receipt_import_manual_matches()
+        repository = ReceiptCatalogRepository(CatalogDatabase())
+        repository.list_products()
+        moysklad_products = load_moysklad_products(
+            MoySkladClient(),
+            limit=1000,
         )
-
+        preview = ReceiptImportPreview(
+            repository,
+            moysklad_products=moysklad_products,
+        ).build(
+            file_data=file_data,
+            filename=uploaded_file.filename,
+            sheet_name=(request.form.get("sheet") or "Импорт"),
+            manual_matches=manual_matches,
+        )
+        preview["ok"] = True
+        return jsonify(preview)
+    except ReceiptImportError as error:
         return jsonify({
             "ok": False,
-            "message": (
-                "Импорт Excel временно недоступен: "
-                "на сервере не установлена необходимая "
-                "библиотека"
-            ),
-        }), 503
-
-    def stringify_excel_value(value):
-        if value is None:
-            return ""
-
-        if isinstance(value, float) and value.is_integer():
-            return str(int(value))
-
-        return str(value).strip()
-
-    def normalize_excel_text(value):
-        normalized = stringify_excel_value(value)
-        normalized = normalized.lower().replace("ё", "е")
-        normalized = re.sub(
-            r"[^a-zа-я0-9]+",
-            " ",
-            normalized,
+            "code": error.code,
+            "message": str(error),
+        }), 400
+    except Exception as error:
+        app.logger.error(
+            "Ошибка preview импорта прихода: %s",
+            error.__class__.__name__,
         )
-        return " ".join(normalized.split())
+        return jsonify({
+            "ok": False,
+            "code": "preview_failed",
+            "message": "Не удалось построить предпросмотр импорта",
+        }), 502
 
-    header_aliases = {
-        "name": {
-            "наименование",
-            "название",
-            "название товара",
-            "товар",
-            "модель",
-            "product",
-            "product name",
-            "name",
-        },
-        "article": {
-            "артикул",
-            "арт",
-            "артикул товара",
-            "sku",
-            "vendor code",
-        },
-        "code": {
-            "код",
-            "код товара",
-            "внутренний код",
-            "code",
-        },
-        "brand": {
-            "бренд",
-            "марка",
-            "производитель",
-            "brand",
-            "manufacturer",
-        },
-        "category": {
-            "категория",
-            "тип товара",
-            "группа",
-            "category",
-            "product category",
-        },
-        "collection": {
-            "коллекция",
-            "серия",
-            "линейка",
-            "collection",
-            "series",
-        },
-        "quantity": {
-            "количество",
-            "кол во",
-            "колво",
-            "количество шт",
-            "шт",
-            "остаток",
-            "qty",
-            "quantity",
-            "stock",
-        },
-        "purchase_price": {
-            "закупочная цена",
-            "цена закупки",
-            "закупка",
-            "закупочная стоимость",
-            "себестоимость",
-            "purchase price",
-            "cost",
-            "price",
-        },
-        "cell": {
-            "ячейка",
-            "ячейка склада",
-            "место хранения",
-            "cell",
-            "location",
-        },
-    }
 
-    normalized_aliases = {
-        field: {
-            normalize_excel_text(alias)
-            for alias in aliases
-        }
-        for field, aliases in header_aliases.items()
-    }
-
+@app.route("/receipts/import/apply", methods=["POST"])
+def receipts_import_apply():
     try:
-        workbook = load_workbook(
-            filename=BytesIO(file_data),
-            read_only=True,
-            data_only=True,
-        )
-    except Exception:
-        app.logger.warning(
-            "Не удалось прочитать загруженный Excel-файл",
-            exc_info=True,
+        uploaded_file, file_data = _receipt_import_file()
+        manual_matches = _receipt_import_manual_matches()
+        expected_file_hash = (request.form.get("file_hash") or "").strip()
+        expected_rows_hash = (request.form.get("rows_hash") or "").strip()
+
+        if not expected_file_hash or not expected_rows_hash:
+            raise ReceiptImportError(
+                "Сначала выполните проверку и сопоставление",
+                "preview_required",
+            )
+
+        client = MoySkladClient()
+        repository = ReceiptCatalogRepository(CatalogDatabase())
+        repository.list_products()
+        preview = ReceiptImportPreview(
+            repository,
+            moysklad_products=load_moysklad_products(client, limit=1000),
+        ).build(
+            file_data=file_data,
+            filename=uploaded_file.filename,
+            sheet_name=(request.form.get("sheet") or "Импорт"),
+            manual_matches=manual_matches,
         )
 
+        if preview["file_hash"] != expected_file_hash:
+            raise ReceiptImportError("Excel-файл изменился после проверки", "file_changed")
+
+        if preview["rows_hash"] != expected_rows_hash:
+            raise ReceiptImportError(
+                "Строки или сопоставления изменились после проверки",
+                "rows_changed",
+            )
+
+        if not preview.get("ready"):
+            raise ReceiptImportError(
+                "Перед применением устраните все неоднозначные и ненайденные строки",
+                "unresolved_rows",
+            )
+
+        journal = ReceiptImportJournal(
+            PROJECT_ROOT / "instance" / "receipt_import_batches.json"
+        )
+        result = ReceiptImportExecutor(
+            client=client,
+            catalog_repository=repository,
+            journal=journal,
+            cell_writer=set_warehouse_cell,
+        ).apply(preview)
+        WAREHOUSE_CACHE["items"] = []
+        WAREHOUSE_CACHE["loaded_at"] = 0
+        return jsonify({
+            "ok": True,
+            "import_batch_id": result["import_batch_id"],
+            "status": result["status"],
+            "created_products": result.get("created_products", 0),
+            "updated_products": result.get("updated_products", 0),
+            "receipt_positions": result.get("receipt_positions", 0),
+            "total_quantity": result.get("total_quantity", 0),
+            "documents": result.get("documents", []),
+        })
+    except ReceiptImportError as error:
+        status_code = 409 if error.code in {
+            "duplicate_import", "unresolved_rows", "file_changed", "rows_changed",
+        } else 400
+        return jsonify({"ok": False, "code": error.code, "message": str(error)}), status_code
+    except Exception as error:
+        app.logger.error(
+            "Ошибка применения импорта прихода: %s",
+            error.__class__.__name__,
+        )
         return jsonify({
             "ok": False,
+            "code": "apply_failed",
             "message": (
-                "Не удалось прочитать Excel-файл. "
-                "Проверьте, что файл не повреждён"
+                "Импорт остановлен. Проверьте журнал пакета перед повторным запуском"
             ),
-        }), 400
-
-    requested_sheet = (
-        request.form.get("sheet") or ""
-    ).strip()
-
-    if requested_sheet:
-        if requested_sheet not in workbook.sheetnames:
-            return jsonify({
-                "ok": False,
-                "message": "Указанный лист не найден",
-                "sheet_names": workbook.sheetnames,
-            }), 400
-
-        worksheet = workbook[requested_sheet]
-    else:
-        worksheet = workbook[
-            workbook.sheetnames[0]
-        ]
-
-    if (
-        worksheet.max_row is None
-        or worksheet.max_column is None
-    ):
-        worksheet.calculate_dimension(force=True)
-
-    header_row_number = None
-    column_indexes = {}
-    header_values = []
-    best_score = 0
-
-    for row_number, row in enumerate(
-        worksheet.iter_rows(
-            min_row=1,
-            max_row=min(
-                25,
-                worksheet.max_row or 0,
-            ),
-            values_only=True,
-        ),
-        start=1,
-    ):
-        row_indexes = {}
-        row_headers = [
-            stringify_excel_value(value)
-            for value in row
-        ]
-
-        for column_index, value in enumerate(row):
-            normalized_value = normalize_excel_text(
-                value
-            )
-
-            if not normalized_value:
-                continue
-
-            for field, aliases in normalized_aliases.items():
-                if (
-                    field not in row_indexes
-                    and normalized_value in aliases
-                ):
-                    row_indexes[field] = column_index
-
-        score = len(row_indexes)
-
-        if (
-            score > best_score
-            and "quantity" in row_indexes
-            and any(
-                field in row_indexes
-                for field in (
-                    "name",
-                    "article",
-                    "code",
-                )
-            )
-        ):
-            best_score = score
-            header_row_number = row_number
-            column_indexes = row_indexes
-            header_values = row_headers
-
-    if not header_row_number:
-        return jsonify({
-            "ok": False,
-            "message": (
-                "Не удалось определить заголовки. "
-                "В таблице должны быть количество "
-                "и название, артикул или код товара"
-            ),
-            "sheet_names": workbook.sheetnames,
-        }), 400
-
-    catalog = get_warehouse_items(force=True)
-
-    catalog_by_id = {}
-    article_index = {}
-    code_index = {}
-    name_index = {}
-
-    def add_catalog_index(index, value, product):
-        key = normalize_excel_text(value)
-
-        if not key:
-            return
-
-        index.setdefault(key, []).append(product)
-
-    for product in catalog:
-        product_id = str(
-            product.get("id") or ""
-        ).strip()
-
-        if not product_id:
-            continue
-
-        catalog_by_id[product_id] = product
-
-        add_catalog_index(
-            article_index,
-            product.get("article"),
-            product,
-        )
-        add_catalog_index(
-            code_index,
-            product.get("code"),
-            product,
-        )
-        add_catalog_index(
-            name_index,
-            product.get("name"),
-            product,
-        )
-
-    def read_row_value(row, field):
-        column_index = column_indexes.get(field)
-
-        if column_index is None:
-            return ""
-
-        if column_index >= len(row):
-            return ""
-
-        return stringify_excel_value(
-            row[column_index]
-        )
-
-    preview_rows = []
-    aggregated_rows = {}
-    duplicate_count = 0
-    input_rows_count = 0
-    truncated = False
-
-    max_data_rows = 5000
-
-    for row_offset, row in enumerate(
-        worksheet.iter_rows(
-            min_row=header_row_number + 1,
-            values_only=True,
-        ),
-        start=1,
-    ):
-        if row_offset > max_data_rows:
-            truncated = True
-            break
-
-        excel_row_number = (
-            header_row_number + row_offset
-        )
-
-        name = read_row_value(row, "name")
-        article = read_row_value(row, "article")
-        code = read_row_value(row, "code")
-        brand = read_row_value(row, "brand")
-        category = read_row_value(row, "category")
-        collection = read_row_value(
-            row,
-            "collection",
-        )
-        cell = read_row_value(row, "cell")
-
-        raw_quantity = read_row_value(
-            row,
-            "quantity",
-        )
-        raw_purchase_price = read_row_value(
-            row,
-            "purchase_price",
-        )
-
-        identifying_values = [
-            name,
-            article,
-
-            brand,
-            category,
-            collection,
-            raw_quantity,
-            raw_purchase_price,
-        ]
-
-        if not any(
-            stringify_excel_value(value)
-            for value in identifying_values
-        ):
-            continue
-
-        input_rows_count += 1
-
-        quantity = parse_receipt_number(
-            raw_quantity,
-            default=0,
-        )
-        purchase_price = parse_receipt_number(
-            raw_purchase_price,
-            default=0,
-        )
-
-        messages = []
-        matched_products = {}
-
-        lookup_values = (
-            (article_index, article, "артикулу"),
-            (code_index, code, "коду"),
-            (name_index, name, "названию"),
-        )
-
-        for index, lookup_value, lookup_label in lookup_values:
-            lookup_key = normalize_excel_text(
-                lookup_value
-            )
-
-            if not lookup_key:
-                continue
-
-            products = index.get(lookup_key, [])
-
-            if len(products) > 1:
-                messages.append(
-                    "В каталоге найдено несколько "
-                    f"товаров по {lookup_label}"
-                )
-
-            for product in products:
-                product_id = str(
-                    product.get("id") or ""
-                ).strip()
-
-                if product_id:
-                    matched_products[
-                        product_id
-                    ] = product
-
-        status = "new"
-        status_label = "Новый"
-        matched_product = None
-
-        if len(matched_products) > 1:
-            status = "error"
-            status_label = "Ошибка"
-            messages.append(
-                "Артикул, код и название указывают "
-                "на разные товары"
-            )
-        elif len(matched_products) == 1:
-            matched_product = next(
-                iter(matched_products.values())
-            )
-            status = "found"
-            status_label = "Найден"
-
-        if matched_product:
-            product_id = str(
-                matched_product.get("id") or ""
-            ).strip()
-
-            name = (
-                matched_product.get("name")
-                or name
-            )
-            article = (
-                matched_product.get("article")
-                or article
-            )
-            code = (
-                matched_product.get("code")
-                or code
-            )
-            brand = (
-                brand
-                or matched_product.get("brand")
-                or matched_product.get(
-                    "manufacturer"
-                )
-                or ""
-            )
-            category = (
-                category
-                or matched_product.get("category")
-                or collection
-                or ""
-            )
-            cell = (
-                matched_product.get("cell")
-                or cell
-            )
-            current_stock = parse_receipt_number(
-                matched_product.get("stock"),
-                default=0,
-            )
-        else:
-            product_id = ""
-            current_stock = 0
-            category = category or collection
-
-        if not name and status != "found":
-            status = "error"
-
-            messages.append(
-                "Не указано название нового товара"
-            )
-
-        if quantity <= 0:
-            status = "error"
-            status_label = "Ошибка"
-            messages.append(
-                "Количество должно быть больше нуля"
-            )
-
-        if purchase_price < 0:
-            status = "error"
-            status_label = "Ошибка"
-            messages.append(
-                "Закупочная цена не может быть "
-                "отрицательной"
-            )
-
-        if status == "new" and not brand:
-            status = "error"
-            status_label = "Ошибка"
-            messages.append(
-                "Для нового товара не указан бренд"
-            )
-
-        if status == "new" and not category:
-            status = "error"
-            status_label = "Ошибка"
-            messages.append(
-                "Для нового товара не указана "
-                "категория или коллекция"
-            )
-
-        if (
-            "purchase_price"
-            not in column_indexes
-            or raw_purchase_price == ""
-        ):
-            messages.append(
-                "Закупочная цена не указана — "
-                "используется 0 ₽"
-            )
-
-        if status == "error":
-            status_label = "Ошибка"
-        elif status == "found":
-            status_label = "Найден"
-        else:
-            status_label = "Новый"
-
-        row_data = {
-            "row_number": excel_row_number,
-            "source_rows": [excel_row_number],
-            "status": status,
-            "status_label": status_label,
-            "can_import": status != "error",
-            "product_id": product_id,
-            "name": stringify_excel_value(name),
-            "article": stringify_excel_value(
-                article
-            ),
-            "code": stringify_excel_value(code),
-            "brand": stringify_excel_value(
-                brand
-            ),
-            "category": stringify_excel_value(
-                category
-            ),
-            "collection": stringify_excel_value(
-                collection
-            ),
-            "cell": stringify_excel_value(cell),
-            "quantity": quantity,
-            "purchase_price": purchase_price,
-            "line_total": round(
-                quantity * purchase_price,
-                2,
-            ),
-            "current_stock": current_stock,
-            "stock_after": (
-                current_stock + quantity
-            ),
-            "duplicate_count": 0,
-            "messages": messages,
-        }
-
-        if status == "error":
-            preview_rows.append(row_data)
-            continue
-
-        identity_key = (
-            product_id
-            or normalize_excel_text(article)
-            or normalize_excel_text(code)
-            or normalize_excel_text(name)
-        )
-
-        aggregation_key = (
-            status,
-            identity_key,
-        )
-
-        existing_row = aggregated_rows.get(
-            aggregation_key
-        )
-
-        if existing_row:
-            duplicate_count += 1
-
-            previous_quantity = parse_receipt_number(
-                existing_row.get("quantity"),
-                default=0,
-            )
-            previous_amount = parse_receipt_number(
-                existing_row.get("line_total"),
-                default=0,
-            )
-
-            combined_quantity = (
-                previous_quantity + quantity
-            )
-            combined_amount = (
-                previous_amount
-                + quantity * purchase_price
-            )
-
-            existing_row["quantity"] = (
-                combined_quantity
-            )
-            existing_row["line_total"] = round(
-                combined_amount,
-                2,
-            )
-            existing_row["purchase_price"] = (
-                round(
-                    combined_amount
-                    / combined_quantity,
-                    2,
-                )
-                if combined_quantity
-                else 0
-            )
-            existing_row["stock_after"] = (
-                existing_row["current_stock"]
-                + combined_quantity
-            )
-            existing_row["duplicate_count"] += 1
-            existing_row["source_rows"].append(
-                excel_row_number
-            )
-
-            duplicate_message = (
-                "Объединено строк Excel: "
-                + ", ".join(
-                    str(number)
-                    for number
-                    in existing_row["source_rows"]
-                )
-            )
-
-            existing_row["messages"] = [
-                message
-                for message
-                in existing_row["messages"]
-                if not message.startswith(
-                    "Объединено строк Excel:"
-                )
-            ]
-            existing_row["messages"].append(
-                duplicate_message
-            )
-        else:
-            aggregated_rows[
-                aggregation_key
-            ] = row_data
-            preview_rows.append(row_data)
-
-    importable_rows = [
-        row
-        for row in preview_rows
-        if row.get("can_import")
-    ]
-
-    found_rows = [
-        row
-        for row in importable_rows
-        if row.get("status") == "found"
-    ]
-
-    new_rows = [
-        row
-        for row in importable_rows
-        if row.get("status") == "new"
-    ]
-
-    error_rows = [
-        row
-        for row in preview_rows
-        if row.get("status") == "error"
-    ]
-
-    total_quantity = sum(
-        parse_receipt_number(
-            row.get("quantity"),
-            default=0,
-        )
-        for row in importable_rows
-    )
-
-    total_amount = round(
-        sum(
-            parse_receipt_number(
-                row.get("line_total"),
-                default=0,
-            )
-            for row in importable_rows
-        ),
-        2,
-    )
-
-    columns = {
-        field: (
-            header_values[index]
-            if index < len(header_values)
-            else ""
-        )
-        for field, index in column_indexes.items()
-    }
-
-    return jsonify({
-        "ok": True,
-        "filename": filename,
-        "sheet": worksheet.title,
-        "sheet_names": workbook.sheetnames,
-        "header_row": header_row_number,
-        "columns": columns,
-        "truncated": truncated,
-        "summary": {
-            "input_rows": input_rows_count,
-            "result_rows": len(preview_rows),
-            "found": len(found_rows),
-            "new": len(new_rows),
-            "duplicates": duplicate_count,
-            "errors": len(error_rows),
-            "total_quantity": total_quantity,
-            "total_amount": total_amount,
-        },
-        "rows": preview_rows,
-    })
-# === RECEIPTS EXCEL IMPORT PREVIEW V1 END ===
+        }), 502
 
 
 @app.route("/receipts/create", methods=["POST"])
 def receipt_create():
     from datetime import datetime
     from flask import request, redirect, url_for
-    import json as receipt_json
     import uuid
 
     # === SIMPLE RECEIPT FORM V1 ===
@@ -5675,52 +5124,13 @@ def receipt_create():
     ).strip()
     note = (request.form.get("note") or "").strip()
 
-    raw_import_payload = (
-        request.form.get("import_payload") or ""
-    ).strip()
-
-    import_rows = []
-
-    if raw_import_payload:
-        try:
-            parsed_import_payload = receipt_json.loads(
-                raw_import_payload
-            )
-        except (TypeError, ValueError):
-            return redirect(url_for(
-                "receipts_page",
-                notice="error",
-                message=(
-                    "Не удалось прочитать данные "
-                    "импорта из Excel"
-                ),
-                open_receipt_modal="1",
-            ))
-
-        if not isinstance(parsed_import_payload, list):
-            return redirect(url_for(
-                "receipts_page",
-                notice="error",
-                message="Неверный формат импорта",
-                open_receipt_modal="1",
-            ))
-
-        import_rows = [
-            row
-            for row in parsed_import_payload
-            if isinstance(row, dict)
-        ]
-
-        if not import_rows:
-            return redirect(url_for(
-                "receipts_page",
-                notice="error",
-                message=(
-                    "В импорте нет доступных "
-                    "для проведения строк"
-                ),
-                open_receipt_modal="1",
-            ))
+    if (request.form.get("import_payload") or "").strip():
+        return redirect(url_for(
+            "receipts_page",
+            notice="error",
+            message="Используйте новый двухэтапный импорт Excel",
+            open_receipt_modal="1",
+        ))
 
     product_ids = request.form.getlist("product_id")
     quantities = request.form.getlist("quantity")
@@ -5733,251 +5143,7 @@ def receipt_create():
 
     created_new_product = False
 
-    # === RECEIPTS IMPORT CREATE MANY V1 ===
     imported_position_metadata = {}
-
-    if import_rows:
-        product_ids = []
-        quantities = []
-        purchase_prices = []
-
-        # Общие поля ручной формы не должны
-        # переопределять бренд и категорию импорта.
-        submitted_brand = ""
-        submitted_category = ""
-
-        import_product_client = None
-
-        for import_index, import_row in enumerate(
-            import_rows,
-            start=1,
-        ):
-            import_name = str(
-                import_row.get("name") or ""
-            ).strip()
-
-            import_article = str(
-                import_row.get("article") or ""
-            ).strip()
-
-            import_code = str(
-                import_row.get("code") or ""
-            ).strip()
-
-            import_brand = str(
-                import_row.get("brand") or ""
-            ).strip()
-
-            import_category = str(
-                import_row.get("category")
-                or import_row.get("collection")
-                or ""
-            ).strip()
-
-            import_product_id = str(
-                import_row.get("product_id") or ""
-            ).strip()
-
-            import_quantity = parse_receipt_number(
-                import_row.get("quantity"),
-                default=0,
-            )
-
-            import_purchase_price = (
-                parse_receipt_number(
-                    import_row.get("purchase_price"),
-                    default=0,
-                )
-            )
-
-            if import_quantity <= 0:
-                return redirect(url_for(
-                    "receipts_page",
-                    notice="error",
-                    message=(
-                        "Строка импорта "
-                        f"{import_index}: количество "
-                        "должно быть больше нуля"
-                    ),
-                    open_receipt_modal="1",
-                ))
-
-            if import_purchase_price < 0:
-                return redirect(url_for(
-                    "receipts_page",
-                    notice="error",
-                    message=(
-                        "Строка импорта "
-                        f"{import_index}: закупочная "
-                        "цена не может быть отрицательной"
-                    ),
-                    open_receipt_modal="1",
-                ))
-
-            if import_product_id:
-                if import_product_id not in catalog:
-                    return redirect(url_for(
-                        "receipts_page",
-                        notice="error",
-                        message=(
-                            "Один из импортируемых "
-                            "товаров больше не найден "
-                            "в каталоге"
-                        ),
-                        open_receipt_modal="1",
-                    ))
-            else:
-                if not import_name:
-                    return redirect(url_for(
-                        "receipts_page",
-                        notice="error",
-                        message=(
-                            "Для нового товара "
-                            "не указано название"
-                        ),
-                        open_receipt_modal="1",
-                    ))
-
-                if not import_brand:
-                    return redirect(url_for(
-                        "receipts_page",
-                        notice="error",
-                        message=(
-                            f"Для товара «{import_name}» "
-                            "не указан бренд"
-                        ),
-                        open_receipt_modal="1",
-                    ))
-
-                if not import_category:
-                    return redirect(url_for(
-                        "receipts_page",
-                        notice="error",
-                        message=(
-                            f"Для товара «{import_name}» "
-                            "не указана категория "
-                            "или коллекция"
-                        ),
-                        open_receipt_modal="1",
-                    ))
-
-                try:
-                    if import_product_client is None:
-                        import_product_client = (
-                            MoySkladClient()
-                        )
-
-                    import_product_folder = (
-                        import_product_client
-                        .get_or_create_product_folder(
-                            "/".join([
-                                import_brand,
-                                import_category,
-                            ])
-                        )
-                    )
-
-                    generated_code = (
-                        import_code
-                        or (
-                            "VECHASU-"
-                            + uuid.uuid4()
-                            .hex[:12]
-                            .upper()
-                        )
-                    )
-
-                    created_product = (
-                        import_product_client
-                        .create_product(
-                            name=import_name,
-                            code=generated_code,
-                            article=(
-                                import_article or None
-                            ),
-                            product_folder=(
-                                import_product_folder
-                            ),
-                        )
-                    )
-
-                    if not created_product:
-                        raise ValueError(
-                            "МойСклад не создал товар"
-                        )
-
-                    import_product_id = str(
-                        created_product.get("id") or ""
-                    ).strip()
-
-                    if not import_product_id:
-                        raise ValueError(
-                            "МойСклад не вернул "
-                            "ID нового товара"
-                        )
-
-                    record_warehouse_created_at(
-                        import_product_id
-                    )
-
-                    catalog[import_product_id] = {
-                        "id": import_product_id,
-                        "name": (
-                            created_product.get("name")
-                            or import_name
-                        ),
-                        "article": (
-                            created_product.get("article")
-                            or import_article
-                        ),
-                        "code": (
-                            created_product.get("code")
-                            or generated_code
-                        ),
-                        "brand": import_brand,
-                        "category": import_category,
-                        "cell": str(
-                            import_row.get("cell") or ""
-                        ).strip(),
-                        "stock": 0,
-                    }
-
-                    created_new_product = True
-
-                except Exception as error:
-                    print(
-                        "Ошибка создания товара "
-                        "из Excel: "
-                        + str(error)
-                    )
-
-                    WAREHOUSE_CACHE["items"] = []
-                    WAREHOUSE_CACHE["loaded_at"] = 0
-
-                    return redirect(url_for(
-                        "receipts_page",
-                        notice="error",
-                        message=(
-                            "Не удалось создать товар "
-                            f"«{import_name}»: "
-                            + str(error)
-                        ),
-                        open_receipt_modal="1",
-                    ))
-
-            product_ids.append(import_product_id)
-            quantities.append(import_quantity)
-            purchase_prices.append(
-                import_purchase_price
-            )
-
-            imported_position_metadata[
-                import_product_id
-            ] = {
-                "brand": import_brand,
-                "category": import_category,
-            }
-    # === RECEIPTS IMPORT CREATE MANY V1 END ===
 
     # === NEW PRODUCT IN RECEIPT BACKEND V1 ===
     if product_ids and product_ids[0] == "__new__":
