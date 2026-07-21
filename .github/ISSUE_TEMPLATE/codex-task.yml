@@ -1,0 +1,98 @@
+name: Задача для Codex
+description: Подготовить безопасную продуктовую задачу для агентного pipeline
+title: "[Codex]: "
+labels:
+  - codex-ready
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Создание задачи не разрешает автоматический deploy, изменение production-данных или перезапуск сервиса.
+        Метка `codex-ready` будет применена автоматически, если она создана в репозитории.
+
+  - type: textarea
+    id: task
+    attributes:
+      label: Что требуется сделать
+      description: Опишите изменение одним законченным результатом.
+      placeholder: Добавить, изменить или исправить…
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Какую проблему это решает
+      description: Укажите пользовательскую или операционную проблему.
+    validations:
+      required: true
+
+  - type: input
+    id: process
+    attributes:
+      label: Страница или бизнес-процесс
+      placeholder: Например, складские ячейки или импорт заказов
+    validations:
+      required: true
+
+  - type: textarea
+    id: current
+    attributes:
+      label: Текущее поведение
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Ожидаемое поведение
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Критерии готовности
+      description: Перечислите проверяемые условия завершения задачи.
+      placeholder: |
+        - [ ] Условие 1
+        - [ ] Условие 2
+    validations:
+      required: true
+
+  - type: textarea
+    id: forbidden
+    attributes:
+      label: Что запрещено изменять
+      description: Укажите страницы, данные, интеграции и поведение вне области задачи.
+    validations:
+      required: true
+
+  - type: textarea
+    id: references
+    attributes:
+      label: Примеры, ссылки и скриншоты
+      description: Добавьте контекст или напишите «Нет».
+
+  - type: dropdown
+    id: migration
+    attributes:
+      label: Нужна ли миграция данных
+      options:
+        - Нет
+        - Да
+        - Требуется исследование
+    validations:
+      required: true
+
+  - type: dropdown
+    id: deploy
+    attributes:
+      label: Требуется ли будущий deploy
+      description: Ответ не является разрешением на deploy.
+      options:
+        - Да
+        - Нет
+        - Требуется решение Максима
+    validations:
+      required: true
