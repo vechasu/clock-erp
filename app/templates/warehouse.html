@@ -435,14 +435,16 @@
             table-layout: fixed;
         }
 
-        .warehouse-products-table .warehouse-col-name { width: 24%; }
-        .warehouse-products-table .warehouse-col-article { width: 12%; }
-        .warehouse-products-table .warehouse-col-brand { width: 11%; }
-        .warehouse-products-table .warehouse-col-category { width: 13%; }
-        .warehouse-products-table .warehouse-col-stock { width: 9%; }
-        .warehouse-products-table .warehouse-col-created { width: 11%; }
-        .warehouse-products-table .warehouse-col-cell { width: 8%; }
-        .warehouse-products-table .warehouse-col-actions { width: 12%; }
+        .warehouse-products-table .warehouse-col-photo { width: 72px; }
+        .warehouse-products-table .warehouse-col-name { width: 20%; }
+        .warehouse-products-table .warehouse-col-price { width: 9%; }
+        .warehouse-products-table .warehouse-col-article { width: 11%; }
+        .warehouse-products-table .warehouse-col-brand { width: 10%; }
+        .warehouse-products-table .warehouse-col-category { width: 12%; }
+        .warehouse-products-table .warehouse-col-stock { width: 8%; }
+        .warehouse-products-table .warehouse-col-created { width: 10%; }
+        .warehouse-products-table .warehouse-col-cell { width: 6%; }
+        .warehouse-products-table .warehouse-col-actions { width: 205px; }
 
         th {
             text-align: left;
@@ -1762,16 +1764,22 @@
 
 
         /* Центрирование данных таблицы */
-        .table-card th:nth-child(2),
+        .table-card th:nth-child(1),
         .table-card th:nth-child(3),
         .table-card th:nth-child(4),
         .table-card th:nth-child(5),
         .table-card th:nth-child(6),
-        .table-card td:nth-child(2),
+        .table-card th:nth-child(7),
+        .table-card th:nth-child(8),
+        .table-card th:nth-child(9),
+        .table-card td:nth-child(1),
         .table-card td:nth-child(3),
         .table-card td:nth-child(4),
         .table-card td:nth-child(5),
-        .table-card td:nth-child(6) {
+        .table-card td:nth-child(6),
+        .table-card td:nth-child(7),
+        .table-card td:nth-child(8),
+        .table-card td:nth-child(9) {
             text-align: center;
         }
 
@@ -2409,27 +2417,31 @@
             color: #2563eb;
         }
 
-        .table-card th:nth-child(2),
+        .table-card th:nth-child(1),
         .table-card th:nth-child(3),
         .table-card th:nth-child(4),
         .table-card th:nth-child(5),
         .table-card th:nth-child(6),
         .table-card th:nth-child(7),
-        .table-card td:nth-child(2),
+        .table-card th:nth-child(8),
+        .table-card th:nth-child(9),
+        .table-card td:nth-child(1),
         .table-card td:nth-child(3),
         .table-card td:nth-child(4),
         .table-card td:nth-child(5),
         .table-card td:nth-child(6),
-        .table-card td:nth-child(7) {
+        .table-card td:nth-child(7),
+        .table-card td:nth-child(8),
+        .table-card td:nth-child(9) {
             text-align: center;
         }
 
-        .table-card th:nth-child(2) .warehouse-sort-label,
-        .table-card th:nth-child(3) .warehouse-sort-label,
         .table-card th:nth-child(4) .warehouse-sort-label,
         .table-card th:nth-child(5) .warehouse-sort-label,
         .table-card th:nth-child(6) .warehouse-sort-label,
-        .table-card th:nth-child(7) .warehouse-sort-label {
+        .table-card th:nth-child(7) .warehouse-sort-label,
+        .table-card th:nth-child(8) .warehouse-sort-label,
+        .table-card th:nth-child(9) .warehouse-sort-label {
             justify-content: center;
         }
 
@@ -2713,7 +2725,9 @@
                 {% if items %}
                     <table class="warehouse-products-table">
                         <colgroup>
+                            <col class="warehouse-col-photo">
                             <col class="warehouse-col-name">
+                            <col class="warehouse-col-price">
                             <col class="warehouse-col-article">
                             <col class="warehouse-col-brand">
                             <col class="warehouse-col-category">
@@ -2724,6 +2738,7 @@
                         </colgroup>
                         <thead>
                             <tr>
+                                <th>Фото</th>
                                 <th>
                                     <input
                                         id="warehouseSelectAll"
@@ -2745,6 +2760,8 @@
                                         </span>
                                     </span>
                                 </th>
+
+                                <th>Цена</th>
 
                                 <th>
                                     <span
@@ -2897,6 +2914,21 @@
                                     {% if hide_zero and item.stock <= 0 %}hidden{% endif %}
                                 >
                                     <td>
+                                        {% if item.thumbnail_url %}
+                                            <img
+                                                class="warehouse-product-thumb"
+                                                src="{{ item.thumbnail_url }}"
+                                                alt=""
+                                                loading="lazy"
+                                                onerror="this.hidden=true; this.nextElementSibling.hidden=false"
+                                            >
+                                            <span class="warehouse-product-thumb warehouse-product-thumb-placeholder" hidden aria-hidden="true">⌚</span>
+                                        {% else %}
+                                            <span class="warehouse-product-thumb warehouse-product-thumb-placeholder" aria-hidden="true">⌚</span>
+                                        {% endif %}
+                                    </td>
+
+                                    <td>
                                         <div class="warehouse-product-name-cell">
                                             <input
                                                 class="warehouse-row-select js-warehouse-product-select"
@@ -2906,26 +2938,11 @@
                                                 form="warehouseBulkForm"
                                                 aria-label="Выбрать {{ item.name }}"
                                             >
-                                            {% if item.thumbnail_url %}
-                                                <img
-                                                    class="warehouse-product-thumb"
-                                                    src="{{ item.thumbnail_url }}"
-                                                    alt=""
-                                                    loading="lazy"
-                                                    onerror="this.hidden=true; this.nextElementSibling.hidden=false"
-                                                >
-                                                <span class="warehouse-product-thumb warehouse-product-thumb-placeholder" hidden aria-hidden="true">⌚</span>
-                                            {% else %}
-                                                <span class="warehouse-product-thumb warehouse-product-thumb-placeholder" aria-hidden="true">⌚</span>
-                                            {% endif %}
-                                            <div>
-                                                <div class="name">{{ item.name }}</div>
-                                                {% if item.price_display %}
-                                                    <div class="muted">{{ item.price_display }}</div>
-                                                {% endif %}
-                                            </div>
+                                            <div class="name">{{ item.name }}</div>
                                         </div>
                                     </td>
+
+                                    <td>{{ item.price_display or "—" }}</td>
 
                                     <td>{{ item.article or "—" }}</td>
 
@@ -4216,13 +4233,13 @@
                     : "asc";
 
             const columnIndexes = {
-                name: 0,
-                article: 1,
-                brand: 2,
-                category: 3,
-                stock: 4,
-                created_at: 5,
-                cell: 6
+                name: 1,
+                article: 3,
+                brand: 4,
+                category: 5,
+                stock: 6,
+                created_at: 7,
+                cell: 8
             };
 
             const getCellText = (row, index) => {
