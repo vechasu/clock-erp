@@ -31,13 +31,14 @@ from app.services.excel_product_catalog import (
 from app.services.product_reconciliation import (
     AUTOMATIC_STATUSES,
     ProductReconciler,
+    article_quality,
     normalize_text,
     text,
 )
 
 
 MAX_EXCEL_FILE_SIZE = 15 * 1024 * 1024
-PARSER_VERSION = 2
+PARSER_VERSION = 3
 LEGACY_SERIAL_TIME_BRANDS = {"28th of may"}
 HEADER_ALIASES = {
     "name": {
@@ -101,14 +102,17 @@ def _load_json(value, fallback):
 
 def _load_bitrix_products(connection):
     rows = connection.execute(
-        "SELECT id, external_product_id, external_xml_id, name, article, brand, "
+        "SELECT id, external_product_id, external_xml_id, name, article, slug, brand, "
         "normalized_payload_json FROM catalog_products ORDER BY id"
     ).fetchall()
     products = []
     for row in rows:
         product = dict(row)
         payload = _load_json(product.pop("normalized_payload_json", "{}"), {})
-        product["article"] = product.get("article") or payload.get("external_sku") or ""
+        product["article"] = (
+            product.get("article") or payload.get("external_sku")
+            or product.get("slug") or ""
+        )
         products.append(product)
     return products
 
@@ -286,8 +290,18 @@ class ExcelReceiptImportService:
                 [row["data"] for row in parsed["rows"] if row["row_status"] == "valid"]
             )
         matches_by_row = {result["excel_row"]: result for result in matches}
-        matched_rows = sum(result["match_status"] in AUTOMATIC_STATUSES for result in matches)
-        new_rows = len(matches) - matched_rows
+        for row in parsed["rows"]:
+            match = matches_by_row.get(row["excel_row"])
+            if row["row_status"] == "valid" and (
+                match is None or match.get("match_status") != "exact"
+            ):
+                row["row_status"] = "error"
+                row["error_code"] = "bitrix_exact_match_required"
+                row["error_message"] = (
+                    "Точный товар Bitrix не найден; строка не будет загружена."
+                )
+        matched_rows = sum(result["match_status"] == "exact" for result in matches)
+        new_rows = 0
         error_rows = sum(row["row_status"] == "error" for row in parsed["rows"])
         excluded_rows = sum(row["row_status"] == "excluded" for row in parsed["rows"])
         positive_rows = sum(
@@ -330,7 +344,7 @@ class ExcelReceiptImportService:
                         "total_quantity = ?, updated_at = ?, details_json = ? WHERE id = ?",
                         (
                             parsed["sheet_name"], parsed["header_row"], PARSER_VERSION,
-                            status, len(parsed["rows"]), len(matches), error_rows,
+                            status, len(parsed["rows"]), matched_rows, error_rows,
                             excluded_rows, positive_rows, zero_rows, new_rows,
                             matched_rows, total_quantity, now, _json({
                                 "column_map": parsed["column_map"],
@@ -358,7 +372,7 @@ class ExcelReceiptImportService:
                     (
                         draft_id, file_sha256, filename, file_data, parsed["sheet_name"],
                         parsed["header_row"], PARSER_VERSION, status, len(parsed["rows"]),
-                        len(matches), error_rows, excluded_rows, positive_rows, zero_rows,
+                        matched_rows, error_rows, excluded_rows, positive_rows, zero_rows,
                         new_rows, matched_rows, total_quantity, now, now, _json({
                             "column_map": parsed["column_map"],
                             "sheet_names": parsed["sheet_names"],
@@ -434,8 +448,10 @@ class ExcelReceiptImportService:
             matches = ProductReconciler(_load_bitrix_products(connection)).reconcile(
                 [row["data"] for row in valid_rows]
             )
-            if any(result["match_status"] == "invalid" for result in matches):
-                raise ExcelDraftBlockedError("Повторная проверка нашла ошибочные строки.")
+            if any(result["match_status"] != "exact" for result in matches):
+                raise ExcelDraftBlockedError(
+                    "Каждая строка прихода должна иметь точное соответствие Bitrix."
+                )
 
             prior_batch = connection.execute(
                 "SELECT id FROM catalog_excel_batches WHERE file_sha256 = ? "
@@ -510,6 +526,20 @@ class ExcelReceiptImportService:
                 state = batch_service._state_for_result(
                     connection, result, batch_id, draft["file_sha256"], now, existing,
                 )
+                bitrix_identity = connection.execute(
+                    "SELECT name, article, slug, brand FROM catalog_products WHERE id = ?",
+                    (int(result["product_id"]),),
+                ).fetchone()
+                if bitrix_identity is None:
+                    raise ExcelDraftBlockedError("Точный товар Bitrix больше не существует.")
+                state["excel_name_raw"] = state["bitrix_name"] or bitrix_identity["name"]
+                state["normalized_name"] = normalize_text(state["excel_name_raw"])
+                state["excel_article"] = (
+                    bitrix_identity["article"] or bitrix_identity["slug"] or None
+                )
+                state["article_quality"] = article_quality(state["excel_article"])
+                state["excel_brand"] = state["bitrix_brand"] or bitrix_identity["brand"] or ""
+                state["excel_category"] = state["bitrix_category"] or None
                 quantity = float(result["stock"])
                 stock_before = float(existing["stock"]) if existing is not None else 0.0
                 state["stock"] = stock_before + quantity

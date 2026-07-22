@@ -258,7 +258,8 @@ class ProductReconciler:
         product = candidates[0]
         self._attach_candidate(base, _candidate_view(product, confidence, method))
         base["alternatives"] = candidate_views
-        if (
+        strong_identity = method in {"bitrix_id", "xml_id", "article"}
+        if not strong_identity and (
             normalize_text(row["excel_brand"]) != normalize_text(product.get("brand"))
         ):
             base.update({
@@ -267,14 +268,18 @@ class ProductReconciler:
                 "reason": "Бренд Excel отличается от бренда карточки Bitrix.",
             })
             return base
-        if canonical_name(row["excel_name"], row["excel_brand"]) in COMMON_NAMES:
+        if not strong_identity and canonical_name(
+            row["excel_name"], row["excel_brand"]
+        ) in COMMON_NAMES:
             base.update({
                 "match_status": "ambiguous", "match_method": method,
                 "confidence": 0,
                 "reason": "Название слишком общее для автоматического объединения.",
             })
             return base
-        if variant_markers(row["excel_name"]) != variant_markers(product.get("name")):
+        if not strong_identity and (
+            variant_markers(row["excel_name"]) != variant_markers(product.get("name"))
+        ):
             base.update({
                 "match_status": "ambiguous", "match_method": method,
                 "confidence": 0,
@@ -286,6 +291,8 @@ class ProductReconciler:
             "match_method": method,
             "confidence": confidence,
             "reason": (
+                "Уникальное точное совпадение по идентификатору товара Bitrix."
+                if strong_identity else
                 "Уникальное название внутри того же бренда после удаления ведущего бренда."
                 if high_confidence else
                 "Уникальное точное совпадение внутри того же бренда."
