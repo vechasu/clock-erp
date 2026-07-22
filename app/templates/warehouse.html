@@ -3619,12 +3619,6 @@
                 <input id="editArticle" class="product-detail-input" type="text" name="article">
             </div>
 
-            <div class="product-detail-card">
-                <div class="product-detail-label">Остаток</div>
-                <div id="detailStock" class="product-detail-value">—</div>
-                <input id="editStock" class="product-detail-input" type="number" min="0" step="1" name="stock" required>
-            </div>
-
             <div class="product-detail-card category-cell-form">
                 <div class="product-detail-label">Бренд</div>
                 <div id="detailBrand" class="product-detail-value">—</div>
@@ -3639,6 +3633,12 @@
                 <div class="product-detail-input product-brand-editor">
                     {{ render_catalog_combobox("editCategoryCombobox", "category", category_groups, item_label="категорию") }}
                 </div>
+            </div>
+
+            <div class="product-detail-card">
+                <div class="product-detail-label">Остаток</div>
+                <div id="detailStock" class="product-detail-value">—</div>
+                <input id="editStock" class="product-detail-input" type="number" min="0" step="1" name="stock" required>
             </div>
 
             <div class="product-detail-card">
