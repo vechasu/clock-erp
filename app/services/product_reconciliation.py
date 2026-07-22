@@ -443,26 +443,6 @@ def summarize_reconciliation(results, products, file_metrics=None):
         and result.get("stock_valid")
         and float(result.get("stock") or 0) > 0
     ]
-    products_by_id = {product.get("id"): product for product in products}
-    enriched_products = [
-        products_by_id.get(result.get("product_id"), {})
-        for result in results if result["match_status"] in AUTOMATIC_STATUSES
-    ]
-    photo_cards = sum(
-        bool(product.get("thumbnail_url") or product.get("primary_image_url"))
-        for product in enriched_products
-    )
-    price_cards = sum(
-        product.get("price_amount") not in (None, "") for product in enriched_products
-    )
-    category_cards = sum(bool(text(product.get("category"))) for product in enriched_products)
-    description_cards = sum(
-        bool(text(product.get("preview_text")) or text(product.get("detail_text")))
-        for product in enriched_products
-    )
-    property_cards = sum(
-        int(product.get("property_count") or 0) > 0 for product in enriched_products
-    )
     summary = {
         "rows_total": len(results),
         "valid_rows": len(results) - statuses["invalid"],
@@ -475,19 +455,6 @@ def summarize_reconciliation(results, products, file_metrics=None):
         "duplicate_excel_groups": len(duplicate_group_keys),
         "automatic_total": statuses["exact"] + statuses["high_confidence"],
         "automatic_catalog_cards": len(automatic_product_rows),
-        "excel_cards_planned": len(results),
-        "bitrix_enriched_cards": statuses["exact"] + statuses["high_confidence"],
-        "bitrix_unlinked_cards": statuses["ambiguous"] + statuses["not_found"],
-        "photo_cards": photo_cards,
-        "cards_without_photo": len(results) - photo_cards,
-        "price_cards": price_cards,
-        "bitrix_category_cards": category_cards,
-        "description_cards": description_cards,
-        "property_cards": property_cards,
-        "ambiguous_without_automatic_link": statuses["ambiguous"],
-        "not_found_without_link": statuses["not_found"],
-        "duplicates_blocking": statuses["duplicate_excel"],
-        "batch_blocked": bool(statuses["duplicate_excel"] or statuses["invalid"]),
         "empty_names": sum(not text(result.get("excel_name")) for result in results),
         "empty_brands": sum(not text(result.get("excel_brand")) for result in results),
         "empty_categories": sum(not text(result.get("category")) for result in results),
@@ -504,12 +471,8 @@ def summarize_reconciliation(results, products, file_metrics=None):
         "stock_disputed": sum(float(result.get("stock") or 0) for result in results if result["match_status"] not in AUTOMATIC_STATUSES and result.get("stock_valid")),
         "automatic_positive_rows": len(automatic_positive),
         "automatic_stock_total": sum(float(result.get("stock") or 0) for result in automatic_positive),
-        "internal_batches_if_unblocked": 1 if results else 0,
-        "planned_stock_operation_rows": len(results),
-        "receipt_documents_if_applied": 0,
-        "stock_operation_rows_if_applied": (
-            0 if statuses["duplicate_excel"] or statuses["invalid"] else len(results)
-        ),
+        "receipt_documents_if_applied": 1 if automatic_positive else 0,
+        "stock_operation_rows_if_applied": len(automatic_positive),
         "cards_with_multiple_excel_rows": sum(
             1 for count in potential_product_rows.values() if count > 1
         ),

@@ -18,11 +18,6 @@ EXPECTED_TABLES = {
     "catalog_prices",
     "catalog_moysklad_mappings",
     "catalog_sync_runs",
-    "catalog_excel_batches",
-    "catalog_excel_products",
-    "catalog_excel_batch_rows",
-    "catalog_excel_stock_operations",
-    "catalog_excel_match_audit",
 }
 
 
