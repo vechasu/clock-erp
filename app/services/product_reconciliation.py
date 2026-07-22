@@ -14,13 +14,55 @@ COMMON_NAMES = {
     "black", "blue", "bronze", "eclipse", "gold", "green", "moon",
     "red", "silver", "white",
 }
+MODEL_PROPERTY_CODES = {
+    "ARTICLE", "EXTERNAL_CODE", "MANUFACTURER_CODE", "MODEL", "MODEL_CODE",
+    "SKU", "VENDOR_CODE", "XML_ID",
+}
+MODEL_PROPERTY_NAMES = {
+    "артикул", "внешний код", "код модели", "код производителя", "модель",
+    "manufacturer code", "model", "model code", "sku", "vendor code",
+}
+NON_MODEL_PROPERTY_CODES = {"BRAND_MODEL", "RETARGETING"}
 DISPLAY_MARKERS = {
     "display", "sample", "витрина", "витринный", "образец",
 }
 SET_MARKERS = {"gift set", "set", "kit", "комплект", "набор"}
 ARTICLE_NOTE_MARKERS = {
-    "витрин", "замен", "комплект", "образец", "уцен", "брак", "ремонт",
+    "брак", "витрин", "замен", "комментар", "образец", "переучет",
+    "провер", "ремонт", "служеб", "уцен",
 }
+COLOR_EQUIVALENTS = {
+    "rose gold": "rosegold",
+    "rose-gold": "rosegold",
+    "gun metal": "gunmetal",
+    "gun-metal": "gunmetal",
+    "белая": "белый", "белые": "белый",
+    "бирюзовая": "бирюзовый", "бирюзовые": "бирюзовый",
+    "бронзовая": "бронзовый", "бронзовые": "бронзовый",
+    "голубая": "голубой", "голубые": "голубой",
+    "желтая": "желтый", "желтые": "желтый",
+    "зеленая": "зеленый", "зеленые": "зеленый",
+    "золотая": "золотой", "золотые": "золотой",
+    "коричневая": "коричневый", "коричневые": "коричневый",
+    "красная": "красный", "красные": "красный",
+    "оранжевая": "оранжевый", "оранжевые": "оранжевый",
+    "розовая": "розовый", "розовые": "розовый",
+    "серебряная": "серебряный", "серебряные": "серебряный",
+    "серая": "серый", "серые": "серый",
+    "синяя": "синий", "синие": "синий",
+    "фиолетовая": "фиолетовый", "фиолетовые": "фиолетовый",
+    "черная": "черный", "черные": "черный",
+}
+COLOR_MARKERS = {
+    "beige", "black", "blue", "bronze", "brown", "copper", "cream",
+    "chrome", "gold", "gray", "green", "grey", "gunmetal", "navy", "orange",
+    "pink", "purple", "red", "rosegold", "silver", "steel", "tan",
+    "turquoise", "white", "yellow",
+    "бежевый", "белый", "бирюзовый", "бордовый", "бронзовый", "голубой",
+    "желтый", "зеленый", "золотой", "коричневый", "красный", "оранжевый",
+    "розовый", "серебряный", "серый", "синий", "фиолетовый", "черный",
+}
+GENERIC_MODEL_LIKE_TOKENS = {"2d", "3d", "24h"}
 
 
 def text(value):
@@ -36,6 +78,13 @@ def normalize_text(value):
     return " ".join(value.split())
 
 
+def normalize_safe_equivalents(value):
+    normalized = normalize_text(value)
+    for source, replacement in COLOR_EQUIVALENTS.items():
+        normalized = normalized.replace(source, replacement)
+    return " ".join(normalized.split())
+
+
 def canonical_name(name, brand):
     name_tokens = normalize_text(name).split()
     brand_tokens = normalize_text(brand).split()
@@ -44,42 +93,157 @@ def canonical_name(name, brand):
     return " ".join(name_tokens)
 
 
-def reliable_article(value):
-    raw = text(value)
-    normalized = normalize_text(raw)
-    if not raw:
-        return False
-    if any(marker in normalized for marker in ARTICLE_NOTE_MARKERS):
-        return False
-    if len(raw) > 64 or re.search(r"\s", raw):
-        return False
-    if not re.fullmatch(r"[A-Za-z0-9._/-]+", raw):
-        return False
-    return bool(re.search(r"[A-Za-z]", raw) and re.search(r"\d", raw))
+def normalize_model_code(value, allow_structured=False):
+    raw = unicodedata.normalize("NFKC", text(value))
+    raw = re.sub(r"[‐‑‒–—―−]+", "-", raw)
+    normalized = re.sub(r"[^A-Za-z0-9]", "", raw).casefold()
+    if not (3 <= len(normalized) <= 40):
+        return ""
+    has_alpha_and_digit = bool(
+        re.search(r"[a-z]", normalized) and re.search(r"\d", normalized)
+    )
+    structured_alpha = bool(
+        allow_structured
+        and re.fullmatch(r"[A-Z]{2,}(?:[./-][A-Z]{2,})+", raw)
+    )
+    structured_numeric = bool(re.fullmatch(r"\d{4,}(?:[./-]\d{4,})+", raw))
+    long_article_dimension_shape = bool(
+        allow_structured and re.fullmatch(r"\d{5,}MM", raw.upper())
+    )
+    if not (
+        has_alpha_and_digit or structured_alpha or structured_numeric
+        or long_article_dimension_shape
+    ):
+        return ""
+    if normalized in GENERIC_MODEL_LIKE_TOKENS:
+        return ""
+    if (
+        re.fullmatch(r"\d+(?:mm|cm|atm|m)", normalized)
+        and not long_article_dimension_shape
+    ):
+        return ""
+    simple_number = re.fullmatch(r"(pg)0+([1-9]\d*)", normalized)
+    if simple_number:
+        normalized = "{}{}".format(simple_number.group(1), simple_number.group(2))
+    return normalized
 
 
-def article_quality(value):
-    if not text(value):
-        return "empty"
-    return "code_like" if reliable_article(value) else "needs_review"
+def extract_model_codes(value, source="text"):
+    """Return conservative model-code candidates with original and canonical forms."""
+    raw = unicodedata.normalize("NFKC", text(value))
+    if not raw or re.search(r"(?i)https?://|www\.", raw):
+        return []
+    raw = re.sub(r"[‐‑‒–—―−]+", "-", raw)
+    allow_structured = "article" in source or source.startswith("property:")
+    found = []
+
+    def add(original, normalized=None):
+        normalized = normalized or normalize_model_code(
+            original, allow_structured=allow_structured,
+        )
+        if not normalized:
+            return
+        item = {"original": text(original), "normalized": normalized, "source": source}
+        if not any(existing["normalized"] == normalized for existing in found):
+            found.append(item)
+
+    token_pattern = re.compile(
+        r"(?<![A-Za-z0-9])([A-Za-z0-9]+(?:[._/-][A-Za-z0-9]+)*)(?![A-Za-z0-9])"
+    )
+    for match in token_pattern.finditer(raw):
+        token = match.group(1)
+        normalized = normalize_model_code(token, allow_structured=allow_structured)
+        if not normalized:
+            continue
+        parts = re.split(r"[._/-]+", token)
+        if len(parts) > 1 and parts[0].isalpha() and len(parts[0]) > 4:
+            component_codes = [
+                part for part in parts[1:]
+                if normalize_model_code(part, allow_structured=allow_structured)
+            ]
+            if component_codes:
+                for component in component_codes:
+                    add(component)
+                continue
+        add(token, normalized)
+
+    spaced_pattern = re.compile(
+        r"(?<![A-Za-z0-9])([A-Z]{1,4})\s+"
+        r"([A-Z0-9]+(?:[._/-][A-Z0-9]+)*)(?![A-Za-z0-9])"
+    )
+    for match in spaced_pattern.finditer(raw):
+        suffix = normalize_model_code(match.group(2))
+        if suffix:
+            add(match.group(0), normalize_model_code(match.group(1) + match.group(2)))
+    return found
 
 
 def model_tokens(value):
-    candidates = re.findall(
-        r"(?iu)(?<!\w)(?=[a-zа-я0-9._/-]{3,}(?!\w))"
-        r"(?=[a-zа-я0-9._/-]*[a-zа-я])(?=[a-zа-я0-9._/-]*\d)"
-        r"[a-zа-я0-9._/-]+",
-        text(value),
-    )
-    return {
-        re.sub(r"[^a-zа-я0-9]", "", item.casefold().replace("ё", "е"))
-        for item in candidates
-        if re.sub(r"[^a-zа-я0-9]", "", item.casefold().replace("ё", "е"))
-    }
+    return {item["normalized"] for item in extract_model_codes(value)}
+
+
+def classify_article(value):
+    raw = text(value)
+    if not raw:
+        return "empty"
+    normalized = normalize_text(raw)
+    if any(marker in normalized for marker in ARTICLE_NOTE_MARKERS):
+        return "comment"
+    codes = extract_model_codes(raw, "article")
+    if codes and len(raw) <= 64 and len(raw.split()) <= 8:
+        return "model_code"
+    if re.search(r"\d", raw):
+        return "ambiguous"
+    return "text"
+
+
+def reliable_article(value):
+    return classify_article(value) == "model_code"
+
+
+def article_quality(value):
+    return classify_article(value)
+
+
+def property_is_model_identifier(prop):
+    code = text(prop.get("code")).upper()
+    name = normalize_text(prop.get("name"))
+    if code in NON_MODEL_PROPERTY_CODES:
+        return False
+    return code in MODEL_PROPERTY_CODES or name in MODEL_PROPERTY_NAMES
+
+
+def _flatten_property_scalars(value):
+    if value in (None, "", False):
+        return []
+    if isinstance(value, (str, int, float)):
+        return [text(value)]
+    if isinstance(value, list):
+        return [scalar for item in value for scalar in _flatten_property_scalars(item)]
+    return []
+
+
+def extract_property_model_codes(properties):
+    found = []
+    for prop in properties or []:
+        if not property_is_model_identifier(prop):
+            continue
+        value = prop.get("display_value")
+        if value in (None, "", [], False):
+            value = prop.get("value")
+        for scalar in _flatten_property_scalars(value):
+            if classify_article(scalar) == "comment":
+                continue
+            for item in extract_model_codes(
+                scalar, "property:{}".format(text(prop.get("code") or prop.get("id")))
+            ):
+                if not any(existing["normalized"] == item["normalized"] for existing in found):
+                    found.append(item)
+    return found
 
 
 def variant_markers(value):
-    normalized = normalize_text(value)
+    normalized = normalize_safe_equivalents(value)
     tokens = set(normalized.split())
     found = {marker for marker in DISPLAY_MARKERS if marker in tokens}
     found.update(
@@ -87,6 +251,41 @@ def variant_markers(value):
         if (" " in marker and marker in normalized) or marker in tokens
     )
     return found
+
+
+def color_markers(value):
+    tokens = set(normalize_safe_equivalents(value).split())
+    return tokens & COLOR_MARKERS
+
+
+def size_markers(value):
+    normalized = normalize_safe_equivalents(value)
+    return {
+        "{}mm".format(match.replace(",", "."))
+        for match in re.findall(r"(?<!\d)(\d+(?:[.,]\d+)?)\s*(?:mm|мм)\b", normalized)
+    }
+
+
+def significant_name_tokens(name, brand):
+    canonical = normalize_safe_equivalents(canonical_name(name, brand))
+    return tuple(sorted(canonical.split()))
+
+
+def variant_conflicts(excel_name, bitrix_name):
+    conflicts = []
+    excel_context = variant_markers(excel_name)
+    bitrix_context = variant_markers(bitrix_name)
+    if excel_context != bitrix_context:
+        conflicts.append("display_or_set")
+    excel_colors = color_markers(excel_name)
+    bitrix_colors = color_markers(bitrix_name)
+    if excel_colors and bitrix_colors and excel_colors.isdisjoint(bitrix_colors):
+        conflicts.append("color")
+    excel_sizes = size_markers(excel_name)
+    bitrix_sizes = size_markers(bitrix_name)
+    if excel_sizes and bitrix_sizes and excel_sizes.isdisjoint(bitrix_sizes):
+        conflicts.append("size")
+    return conflicts
 
 
 def file_sha256(path):
@@ -110,7 +309,9 @@ def ensure_batch_is_new(batch_id, applied_batch_ids):
     return True
 
 
-def _candidate_view(product, score=0, evidence=""):
+def _candidate_view(product, score=0, evidence="", matched_model=None):
+    product_model_codes = product.get("_model_codes") or []
+    matched_model = matched_model or {}
     return {
         "product_id": product.get("id"),
         "bitrix_product_id": text(product.get("external_product_id")),
@@ -119,6 +320,10 @@ def _candidate_view(product, score=0, evidence=""):
         "brand": text(product.get("brand")),
         "score": round(float(score), 4),
         "evidence": evidence,
+        "model_code": matched_model.get("normalized") or "",
+        "model_source": matched_model.get("source") or "",
+        "model_original": matched_model.get("original") or "",
+        "product_model_codes": [item["normalized"] for item in product_model_codes],
     }
 
 
@@ -129,29 +334,51 @@ class ProductReconciler:
         self.products = [dict(product) for product in products]
         self.by_bitrix_id = defaultdict(list)
         self.by_xml_id = defaultdict(list)
-        self.by_article = defaultdict(list)
         self.by_brand_name = defaultdict(list)
         self.by_brand_canonical = defaultdict(list)
+        self.by_brand_tokens = defaultdict(list)
         self.by_name = defaultdict(list)
         self.by_brand = defaultdict(list)
+        self.by_property_model = defaultdict(list)
+        self.by_name_model = defaultdict(list)
         for product in self.products:
             brand = normalize_text(product.get("brand"))
             name = normalize_text(product.get("name"))
             canonical = canonical_name(product.get("name"), product.get("brand"))
+            property_codes = extract_property_model_codes(product.get("properties"))
+            name_codes = extract_model_codes(product.get("name"), "bitrix_name")
+            article_codes = (
+                extract_model_codes(product.get("article"), "bitrix_article")
+                if reliable_article(product.get("article")) else []
+            )
+            product["_property_model_codes"] = property_codes
+            product["_name_model_codes"] = name_codes
+            model_codes = []
+            for item in property_codes + name_codes + article_codes:
+                if item["normalized"] not in {
+                    existing["normalized"] for existing in model_codes
+                }:
+                    model_codes.append(item)
+            product["_model_codes"] = model_codes
             if text(product.get("external_product_id")):
                 self.by_bitrix_id[text(product.get("external_product_id"))].append(product)
             if text(product.get("external_xml_id")):
                 self.by_xml_id[normalize_text(product.get("external_xml_id"))].append(product)
-            if reliable_article(product.get("article")):
-                self.by_article[normalize_text(product.get("article"))].append(product)
             if brand and name:
                 self.by_brand_name[(brand, name)].append(product)
             if brand and canonical:
                 self.by_brand_canonical[(brand, canonical)].append(product)
+            tokens = significant_name_tokens(product.get("name"), product.get("brand"))
+            if brand and len(tokens) >= 2:
+                self.by_brand_tokens[(brand, tokens)].append(product)
             if name:
                 self.by_name[name].append(product)
             if brand:
                 self.by_brand[brand].append(product)
+            for item in property_codes:
+                self.by_property_model[item["normalized"]].append(product)
+            for item in name_codes + article_codes:
+                self.by_name_model[item["normalized"]].append(product)
 
     def reconcile(self, rows):
         normalized_rows = [self._prepare_row(row) for row in rows]
@@ -171,6 +398,16 @@ class ProductReconciler:
         prepared["bitrix_id"] = text(row.get("bitrix_id"))
         prepared["xml_id"] = text(row.get("xml_id"))
         prepared["article_quality"] = article_quality(prepared["excel_article"])
+        prepared["article_model_codes"] = (
+            extract_model_codes(prepared["excel_article"], "excel_article")
+            if prepared["article_quality"] == "model_code" else []
+        )
+        prepared["name_model_codes"] = extract_model_codes(
+            prepared["excel_name"], "excel_name"
+        )
+        prepared["preferred_model_codes"] = (
+            prepared["article_model_codes"] or prepared["name_model_codes"]
+        )
         try:
             prepared["stock"] = float(row.get("stock") or 0)
             prepared["stock_valid"] = (
@@ -192,19 +429,23 @@ class ProductReconciler:
             return base
 
         reliable_keys = (
-            ("bitrix_id", row.get("bitrix_id"), self.by_bitrix_id, 1.0),
             ("xml_id", normalize_text(row.get("xml_id")), self.by_xml_id, 1.0),
-            (
-                "article", normalize_text(row.get("excel_article")),
-                self.by_article, 0.99,
-            ),
+            ("bitrix_id", row.get("bitrix_id"), self.by_bitrix_id, 1.0),
         )
         for method, value, index, confidence in reliable_keys:
-            if not value or (method == "article" and not reliable_article(row["excel_article"])):
+            if not value:
                 continue
             candidates = index.get(value, [])
             if candidates:
                 return self._resolve_exact(row, candidates, method, confidence)
+
+        for method, index, confidence in (
+            ("model_property", self.by_property_model, 0.995),
+            ("model_name", self.by_name_model, 0.99),
+        ):
+            model_match = self._resolve_model_index(row, index, method, confidence)
+            if model_match is not None:
+                return model_match
 
         brand = normalize_text(row["excel_brand"])
         normalized_name = normalize_text(row["excel_name"])
@@ -217,6 +458,14 @@ class ProductReconciler:
         if candidates:
             return self._resolve_exact(
                 row, candidates, "brand_prefix_normalized", 0.95,
+                high_confidence=True,
+            )
+
+        tokens = significant_name_tokens(row["excel_name"], row["excel_brand"])
+        candidates = self.by_brand_tokens.get((brand, tokens), [])
+        if candidates:
+            return self._resolve_exact(
+                row, candidates, "brand_significant_tokens", 0.93,
                 high_confidence=True,
             )
 
@@ -236,6 +485,91 @@ class ProductReconciler:
                 "confidence": 0,
                 "reason": "Безопасный кандидат в каталоге Bitrix не найден.",
             })
+        return base
+
+    def _resolve_model_index(self, row, index, method, confidence):
+        codes = row.get("preferred_model_codes") or []
+        if not codes:
+            return None
+        candidates_by_id = {}
+        matched_codes = defaultdict(list)
+        for item in codes:
+            for product in index.get(item["normalized"], []):
+                candidates_by_id[product.get("id")] = product
+                matched_codes[product.get("id")].append(item)
+        if not candidates_by_id:
+            return None
+
+        excel_brand = normalize_text(row.get("excel_brand"))
+        compatible = {
+            product_id: product for product_id, product in candidates_by_id.items()
+            if not normalize_text(product.get("brand"))
+            or normalize_text(product.get("brand")) == excel_brand
+        }
+        if not compatible:
+            return None
+        narrowed_by_brand = len(compatible) == 1 and len(candidates_by_id) > 1
+        if len(compatible) != 1:
+            return None
+
+        product_id, product = next(iter(compatible.items()))
+        matched = sorted(
+            matched_codes[product_id],
+            key=lambda item: (-len(item["normalized"]), item["normalized"]),
+        )[0]
+        method_name = "brand_{}".format(method) if narrowed_by_brand else method
+        return self._resolve_model(
+            row, product, method_name, confidence, matched,
+        )
+
+    def _resolve_model(self, row, product, method, confidence, matched_model):
+        base = self._result_base(row)
+        product_model = next(
+            (
+                item for item in product.get("_model_codes") or []
+                if item["normalized"] == matched_model["normalized"]
+            ),
+            {"normalized": matched_model["normalized"], "source": method, "original": ""},
+        )
+        candidate = _candidate_view(
+            product, confidence, method, matched_model=product_model,
+        )
+        self._attach_candidate(base, candidate)
+        base["alternatives"] = [candidate]
+        if (
+            normalize_text(row["excel_brand"])
+            and normalize_text(product.get("brand"))
+            and normalize_text(row["excel_brand"]) != normalize_text(product.get("brand"))
+        ):
+            base.update({
+                "match_status": "ambiguous", "match_method": method,
+                "confidence": 0,
+                "reason": "Код модели совпал, но бренды Excel и Bitrix различаются.",
+            })
+            return base
+        conflicts = variant_conflicts(row["excel_name"], product.get("name"))
+        if conflicts:
+            base.update({
+                "match_status": "ambiguous", "match_method": method,
+                "confidence": 0,
+                "reason": "Код модели совпал, но найден конфликт варианта: {}.".format(
+                    ", ".join(conflicts)
+                ),
+            })
+            return base
+        base.update({
+            "match_status": "high_confidence",
+            "match_method": method,
+            "confidence": confidence,
+            "reason": (
+                "Уникальный точный код модели {} совпал; бренд и признаки варианта "
+                "не противоречат."
+            ).format(matched_model["normalized"]),
+            "excel_model_code": matched_model["normalized"],
+            "excel_model_source": matched_model["source"],
+            "bitrix_model_code": matched_model["normalized"],
+            "bitrix_model_source": product_model.get("source") or method,
+        })
         return base
 
     def _resolve_exact(self, row, candidates, method, confidence, high_confidence=False):
@@ -267,11 +601,28 @@ class ProductReconciler:
                 "reason": "Название слишком общее для автоматического объединения.",
             })
             return base
-        if variant_markers(row["excel_name"]) != variant_markers(product.get("name")):
+        excel_codes = {
+            item["normalized"] for item in row.get("article_model_codes") or []
+        }
+        product_codes = {
+            item["normalized"]
+            for item in product.get("_property_model_codes") or []
+        }
+        if excel_codes and product_codes and excel_codes.isdisjoint(product_codes):
             base.update({
                 "match_status": "ambiguous", "match_method": method,
                 "confidence": 0,
-                "reason": "Признаки образца/комплекта различаются; нужна ручная проверка.",
+                "reason": "Точное название найдено, но безопасные коды модели конфликтуют.",
+            })
+            return base
+        conflicts = variant_conflicts(row["excel_name"], product.get("name"))
+        if conflicts:
+            base.update({
+                "match_status": "ambiguous", "match_method": method,
+                "confidence": 0,
+                "reason": "Признаки варианта различаются ({}); нужна ручная проверка.".format(
+                    ", ".join(conflicts)
+                ),
             })
             return base
         base.update({
@@ -290,7 +641,13 @@ class ProductReconciler:
         brand = normalize_text(row["excel_brand"])
         name = canonical_name(row["excel_name"], row["excel_brand"])
         name_tokens = set(name.split())
-        excel_models = model_tokens(row["excel_name"]) | model_tokens(row["excel_article"])
+        excel_models = {
+            item["normalized"]
+            for item in (
+                (row.get("name_model_codes") or [])
+                + (row.get("article_model_codes") or [])
+            )
+        }
         scored = []
         for product in self.by_brand.get(brand, []):
             product_name = canonical_name(product.get("name"), product.get("brand"))
@@ -298,7 +655,9 @@ class ProductReconciler:
             union = name_tokens | product_tokens
             jaccard = len(name_tokens & product_tokens) / float(len(union) or 1)
             sequence = SequenceMatcher(None, name, product_name).ratio()
-            product_models = model_tokens(product.get("name")) | model_tokens(product.get("article"))
+            product_models = {
+                item["normalized"] for item in product.get("_model_codes") or []
+            }
             model_overlap = bool(excel_models & product_models)
             score = max(jaccard, sequence * 0.92, 0.86 if model_overlap else 0)
             if score >= 0.67:
@@ -326,6 +685,11 @@ class ProductReconciler:
             "excel_brand": row["excel_brand"],
             "excel_article": row["excel_article"],
             "article_quality": row["article_quality"],
+            "excel_model_codes": [
+                dict(item) for item in row.get("preferred_model_codes") or []
+            ],
+            "excel_model_code": "",
+            "excel_model_source": "",
             "stock": row["stock"],
             "stock_valid": row["stock_valid"],
             "cell": row["cell"],
@@ -335,6 +699,9 @@ class ProductReconciler:
             "bitrix_xml_id": "",
             "bitrix_name": "",
             "bitrix_brand": "",
+            "bitrix_model_codes": [],
+            "bitrix_model_code": "",
+            "bitrix_model_source": "",
             "match_status": "not_found",
             "match_method": "none",
             "confidence": 0,
@@ -342,6 +709,11 @@ class ProductReconciler:
             "shared_bitrix_row_count": 0,
             "alternatives": [],
             "reason": "",
+            "previous_match_status": "",
+            "previous_match_method": "",
+            "previous_product_id": None,
+            "candidate_changed": False,
+            "comparison_status": "not_compared",
         }
 
     @staticmethod
@@ -352,6 +724,9 @@ class ProductReconciler:
             "bitrix_xml_id": candidate.get("bitrix_xml_id") or "",
             "bitrix_name": candidate.get("name") or "",
             "bitrix_brand": candidate.get("brand") or "",
+            "bitrix_model_codes": candidate.get("product_model_codes") or [],
+            "bitrix_model_code": candidate.get("model_code") or "",
+            "bitrix_model_source": candidate.get("model_source") or "",
         })
 
     @staticmethod
@@ -369,6 +744,24 @@ class ProductReconciler:
                 claims_by_product[product_id].append(result)
 
         for rows in linked_by_product.values():
+            explicit_colors = {
+                tuple(sorted(color_markers(result.get("excel_name"))))
+                for result in rows if color_markers(result.get("excel_name"))
+            }
+            if len(explicit_colors) > 1:
+                for result in rows:
+                    result.update({
+                        "match_status": "ambiguous",
+                        "match_method": "many_to_one_variant_conflict",
+                        "confidence": 0,
+                        "bitrix_link_cardinality": "many_to_one_candidate",
+                        "shared_bitrix_row_count": len(rows),
+                        "reason": (
+                            "Несколько Excel-карточек разных цветов претендуют на одну "
+                            "карточку Bitrix; автоматическая связь снята."
+                        ),
+                    })
+                continue
             cardinality = "many_to_one" if len(rows) > 1 else "one_to_one"
             for result in rows:
                 result["bitrix_link_cardinality"] = cardinality
@@ -519,8 +912,24 @@ def summarize_reconciliation(results, products, file_metrics=None):
         "empty_cells": sum(not text(result.get("cell")) for result in results),
         "invalid_stocks": sum(not result.get("stock_valid") for result in results),
         "filled_articles": sum(bool(text(result.get("excel_article"))) for result in results),
-        "code_like_articles": sum(result.get("article_quality") == "code_like" for result in results),
-        "articles_needing_review": sum(result.get("article_quality") == "needs_review" for result in results),
+        "safe_model_code_articles": sum(
+            result.get("article_quality") == "model_code" for result in results
+        ),
+        "code_like_articles": sum(
+            result.get("article_quality") == "model_code" for result in results
+        ),
+        "article_text_values": sum(
+            result.get("article_quality") == "text" for result in results
+        ),
+        "article_comment_values": sum(
+            result.get("article_quality") == "comment" for result in results
+        ),
+        "article_ambiguous_values": sum(
+            result.get("article_quality") == "ambiguous" for result in results
+        ),
+        "articles_needing_review": sum(
+            result.get("article_quality") in {"comment", "ambiguous"} for result in results
+        ),
         "positive_stock_rows": len(positive),
         "zero_stock_rows": len(zero),
         "stock_total": sum(float(result.get("stock") or 0) for result in results if result.get("stock_valid")),
@@ -558,6 +967,64 @@ def summarize_reconciliation(results, products, file_metrics=None):
     if file_metrics:
         summary.update(file_metrics)
     return summary
+
+
+def compare_with_baseline(results, baseline_rows):
+    baseline_by_row = {
+        int(item.get("excel_row") or 0): item for item in baseline_rows or []
+    }
+    metrics = Counter()
+    for result in results:
+        previous = baseline_by_row.get(result["excel_row"])
+        if previous is None:
+            result["comparison_status"] = "missing_baseline"
+            metrics["missing_baseline"] += 1
+            continue
+        previous_status = text(previous.get("match_status"))
+        previous_method = text(previous.get("match_method"))
+        previous_product_id = previous.get("product_id")
+        result.update({
+            "previous_match_status": previous_status,
+            "previous_match_method": previous_method,
+            "previous_product_id": previous_product_id,
+            "candidate_changed": previous_product_id != result.get("product_id"),
+        })
+        if result["candidate_changed"]:
+            metrics["candidate_changed_total"] += 1
+        previous_automatic = previous_status in AUTOMATIC_STATUSES
+        current_automatic = result["match_status"] in AUTOMATIC_STATUSES
+        if current_automatic and not previous_automatic:
+            status = "new_automatic"
+            metrics["new_automatic"] += 1
+            if "model" in result.get("match_method", ""):
+                metrics["new_automatic_by_model"] += 1
+        elif previous_automatic and not current_automatic:
+            status = "downgraded_conflict"
+            metrics["downgraded_conflict"] += 1
+        elif result["candidate_changed"]:
+            status = "candidate_changed"
+            metrics["candidate_changed_nonautomatic"] += 1
+        elif previous_status != result["match_status"]:
+            status = "status_changed"
+            metrics["status_changed"] += 1
+        else:
+            status = "unchanged"
+            metrics["unchanged"] += 1
+        result["comparison_status"] = status
+        if previous_automatic and (
+            not current_automatic or previous_product_id != result.get("product_id")
+        ):
+            metrics["old_automatic_matches_changed"] += 1
+    return {
+        "baseline_rows_compared": len(results) - metrics["missing_baseline"],
+        "new_automatic_matches": metrics["new_automatic"],
+        "new_matches_by_model": metrics["new_automatic_by_model"],
+        "candidate_changed_rows": metrics["candidate_changed_total"],
+        "status_changed_rows": metrics["status_changed"],
+        "old_automatic_matches_changed": metrics["old_automatic_matches_changed"],
+        "matches_downgraded_for_conflict": metrics["downgraded_conflict"],
+        "missing_baseline_rows": metrics["missing_baseline"],
+    }
 
 
 def alternatives_json(result):

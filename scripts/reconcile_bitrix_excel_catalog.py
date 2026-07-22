@@ -17,6 +17,7 @@ from app.services.product_reconciliation import (  # noqa: E402
     ProductReconciler,
     alternatives_json,
     batch_id_for,
+    compare_with_baseline,
     file_sha256,
     summarize_reconciliation,
     text,
@@ -26,6 +27,8 @@ from app.services.product_reconciliation import (  # noqa: E402
 EXPECTED_HEADERS = ["Название", "Артикул", "Бренд", "Категория", "Остаток", "Ячейка"]
 REPORT_COLUMNS = [
     "excel_row", "excel_name", "excel_brand", "excel_article", "article_quality",
+    "excel_model_code", "excel_model_source", "bitrix_model_code",
+    "bitrix_model_source",
     "stock", "cell", "category", "product_id", "bitrix_product_id",
     "bitrix_xml_id", "bitrix_name", "bitrix_brand", "match_status",
     "match_method", "confidence", "bitrix_link_cardinality",
@@ -34,6 +37,8 @@ REPORT_COLUMNS = [
     "enrichment_price_amount", "enrichment_price_currency",
     "enrichment_category", "enrichment_description_available",
     "enrichment_property_count", "enrichment_active",
+    "previous_match_status", "previous_match_method", "previous_product_id",
+    "candidate_changed", "comparison_status",
 ]
 
 
@@ -109,6 +114,7 @@ def load_catalog_read_only(path):
             except (TypeError, ValueError):
                 payload = {}
             product["article"] = product.get("article") or payload.get("external_sku") or ""
+            product["properties"] = payload.get("properties") or []
             products.append(product)
         return products
     finally:
@@ -157,18 +163,33 @@ def write_outputs(output_dir, payload):
             }
         ],
     )
+    write_csv(
+        output_dir / "new_matches.csv",
+        [row for row in payload["rows"] if row.get("comparison_status") == "new_automatic"],
+    )
+    write_csv(
+        output_dir / "suspicious_changes.csv",
+        [
+            row for row in payload["rows"]
+            if row.get("candidate_changed")
+            or row.get("comparison_status") == "downgraded_conflict"
+        ],
+    )
     (output_dir / "batch_manifest.json").write_text(
         json.dumps(payload["batch"], ensure_ascii=False, indent=2, sort_keys=True),
         encoding="utf-8",
     )
 
 
-def build_payload(excel_path, catalog_path, sheet_name="Импорт"):
+def build_payload(excel_path, catalog_path, sheet_name="Импорт", baseline_payload=None):
     rows, sheets = read_excel_rows(excel_path, sheet_name)
     products = load_catalog_read_only(catalog_path)
     excel_sha = file_sha256(excel_path)
     catalog_sha = file_sha256(catalog_path)
     reconciled = ProductReconciler(products).reconcile(rows)
+    comparison = compare_with_baseline(
+        reconciled, (baseline_payload or {}).get("rows") or [],
+    ) if baseline_payload else {}
     products_by_id = {product.get("id"): product for product in products}
     for result in reconciled:
         product = products_by_id.get(result.get("product_id"), {})
@@ -195,6 +216,7 @@ def build_payload(excel_path, catalog_path, sheet_name="Импорт"):
         "catalog_products": len(products),
     }
     summary = summarize_reconciliation(reconciled, products, file_metrics)
+    summary.update(comparison)
     return {
         "batch": {
             "batch_id": batch_id_for(excel_sha),
@@ -220,7 +242,6 @@ def validate_controls(summary):
         "positive_stock_rows": 836,
         "zero_stock_rows": 2477,
         "excel_cards_after_duplicate_resolution": 3313,
-        "excel_rows_unblocked_by_row_identity": 4,
         "duplicates_blocking": 0,
         "batch_blocked": False,
     }
@@ -231,6 +252,8 @@ def validate_controls(summary):
     }
     if mismatches:
         raise ValueError("Excel control values differ: {}".format(mismatches))
+    if summary.get("excel_rows_unblocked_by_row_identity", 0) < 4:
+        raise ValueError("known separate Excel rows are no longer unblocked")
 
 
 def parse_args():
@@ -239,13 +262,19 @@ def parse_args():
     parser.add_argument("--catalog-db", required=True, type=Path)
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--sheet", default="Импорт")
+    parser.add_argument("--baseline-json", type=Path)
     parser.add_argument("--skip-control-check", action="store_true")
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
-    payload = build_payload(args.excel, args.catalog_db, args.sheet)
+    baseline_payload = None
+    if args.baseline_json:
+        baseline_payload = json.loads(args.baseline_json.read_text(encoding="utf-8"))
+    payload = build_payload(
+        args.excel, args.catalog_db, args.sheet, baseline_payload=baseline_payload,
+    )
     if not args.skip_control_check:
         validate_controls(payload["summary"])
     write_outputs(args.output_dir, payload)
