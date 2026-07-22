@@ -994,6 +994,7 @@ def get_excel_warehouse_items():
                 or product.get("bitrix_primary_image_url")
                 or ""
             ),
+            "gallery": product.get("gallery") or [],
             "price_display": price_display,
             "moysklad_url": product.get("bitrix_source_url") or "",
         })

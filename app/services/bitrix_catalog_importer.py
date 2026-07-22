@@ -56,7 +56,7 @@ def product_values(product):
     return {
         "name": str(product.get("name") or "").strip(),
         "slug": str(product.get("code") or "").strip(),
-        "article": str(product.get("external_sku") or "").strip(),
+        "article": str(product.get("external_sku") or product.get("code") or "").strip(),
         "barcode": str(product.get("barcode") or "").strip(),
         "brand": str(product.get("brand") or "").strip(),
         "preview_text": product.get("preview_text") or "",

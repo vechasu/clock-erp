@@ -1565,6 +1565,29 @@
             letter-spacing: -0.015em;
         }
 
+        #editDrawer .product-gallery {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+            gap: 8px;
+        }
+
+        #editDrawer .product-gallery a {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            aspect-ratio: 1;
+            overflow: hidden;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            background: #ffffff;
+        }
+
+        #editDrawer .product-gallery img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
         #editDrawer .drawer-form {
             gap: 12px;
             padding: 14px;
@@ -3052,6 +3075,7 @@
                                                     data-cell-source="{{ item.cell_source|e }}"
                                                     data-cell-source-label="{{ item.cell_source_label|e }}"
                                                     data-url="{{ item.moysklad_url|e }}"
+                                                    data-gallery="{{ item.gallery|tojson|forceescape }}"
                                                     onclick="openEditDrawer(this)"
                                                 >
                                                     Карточка
@@ -3292,6 +3316,11 @@
             Открыть в Bitrix
         </a>
 
+        <div id="detailGallerySection" hidden>
+            <div class="drawer-section-title">Фотографии</div>
+            <div id="detailGallery" class="product-gallery"></div>
+        </div>
+
         <div class="drawer-section-title">Редактирование</div>
 
         <form class="drawer-form" method="post" action="/warehouse/edit">
@@ -3459,6 +3488,36 @@
             const productCell = button.dataset.cell || "";
             const productCellSourceLabel = button.dataset.cellSourceLabel || "";
             const productUrl = button.dataset.url || "#";
+            const gallerySection = document.getElementById("detailGallerySection");
+            const galleryElement = document.getElementById("detailGallery");
+            let gallery = [];
+
+            try {
+                gallery = JSON.parse(button.dataset.gallery || "[]");
+            } catch (error) {
+                gallery = [];
+            }
+
+            galleryElement.replaceChildren();
+            gallery.forEach(function(image) {
+                const imageUrl = image.original_url || image.url || "";
+
+                if (!imageUrl) {
+                    return;
+                }
+
+                const link = document.createElement("a");
+                const preview = document.createElement("img");
+                link.href = imageUrl;
+                link.target = "_blank";
+                link.rel = "noopener noreferrer";
+                preview.src = imageUrl;
+                preview.alt = productName;
+                preview.loading = "lazy";
+                link.appendChild(preview);
+                galleryElement.appendChild(link);
+            });
+            gallerySection.hidden = !galleryElement.childElementCount;
 
             document.getElementById("detailName").textContent = productName;
             document.getElementById("detailStock").textContent = productStock;
