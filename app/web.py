@@ -21,7 +21,16 @@ from app.services.moysklad_catalog_mapping import (
     MoySkladCatalogMatcher,
     load_moysklad_products,
 )
-from flask import Flask, render_template, request, redirect, url_for, jsonify, abort
+from flask import (
+    Flask,
+    Response,
+    abort,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    url_for,
+)
 
 app = Flask(__name__)
 
@@ -721,6 +730,32 @@ def get_product_cell_from_moysklad(product):
 
     return ""
 
+
+def product_has_image_metadata(product):
+    if not isinstance(product, dict):
+        return False
+
+    images = product.get("images")
+
+    if isinstance(images, list):
+        return bool(images)
+
+    if isinstance(images, dict):
+        rows = images.get("rows")
+
+        if isinstance(rows, list) and rows:
+            return True
+
+        meta = images.get("meta") or {}
+
+        try:
+            if int(meta.get("size") or 0) > 0:
+                return True
+        except (TypeError, ValueError):
+            pass
+
+    return bool(product.get("image"))
+
 def get_warehouse_items(limit=1000, force=False):
     now = time.time()
 
@@ -967,15 +1002,6 @@ def warehouse_page():
                 if (item.get("cell") or "").strip() == selected_cell
             ]
 
-    if query:
-        query_lower = query.lower()
-
-        items = [
-            item for item in items
-            if query_lower in (item.get("name") or "").lower()
-            or query_lower in (item.get("article") or "").lower()
-        ]
-
     if sort_by == "created_at":
         items_with_time = [
             item
@@ -1023,15 +1049,31 @@ def warehouse_page():
             reverse=sort_dir == "desc",
         )
 
+    stats_items = items
+
+    if query:
+        query_lower = query.lower()
+        stats_items = [
+            item for item in items
+            if query_lower in (item.get("name") or "").lower()
+            or query_lower in (item.get("article") or "").lower()
+        ]
+
     visible_positions = sum(
         1
-        for item in items
+        for item in stats_items
         if not hide_zero or float(item.get("stock") or 0) > 0
     )
 
-    total_stock = sum(float(item.get("stock") or 0) for item in items)
-    total_reserve = sum(float(item.get("reserve") or 0) for item in items)
-    total_available = sum(float(item.get("quantity") or 0) for item in items)
+    total_stock = sum(
+        float(item.get("stock") or 0) for item in stats_items
+    )
+    total_reserve = sum(
+        float(item.get("reserve") or 0) for item in stats_items
+    )
+    total_available = sum(
+        float(item.get("quantity") or 0) for item in stats_items
+    )
 
     print("CATEGORY TREE:", category_tree)
 
@@ -1056,6 +1098,39 @@ def warehouse_page():
         total_available=total_available,
         stock_operations=load_stock_operations(),
     )
+
+
+@app.route("/warehouse/product/<product_id>/thumbnail")
+def warehouse_product_thumbnail(product_id):
+    import re
+
+    if not re.fullmatch(
+        r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+        r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
+        str(product_id or ""),
+    ):
+        abort(404)
+
+    try:
+        thumbnail = MoySkladClient().download_product_thumbnail(
+            product_id
+        )
+    except Exception as error:
+        app.logger.warning(
+            "Не удалось загрузить миниатюру товара %s: %s",
+            product_id,
+            error,
+        )
+        abort(404)
+
+    if not thumbnail:
+        abort(404)
+
+    content, content_type = thumbnail
+    response = Response(content, mimetype=content_type)
+    response.headers["Cache-Control"] = "private, max-age=300"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
 
 
 
@@ -1329,6 +1404,202 @@ def warehouse_edit_product():
             notice="error",
             message="Ошибка редактирования позиции"
         ))
+
+
+def build_product_folder_path(brand, category):
+    brand = str(brand or "").strip()
+    category = str(category or "").strip()
+
+    if brand == "Без бренда":
+        brand = ""
+
+    if category == "Без категории":
+        category = ""
+
+    if brand:
+        return "/".join([brand, category or "Без категории"])
+
+    return category
+
+
+@app.route("/warehouse/bulk-edit", methods=["POST"])
+def warehouse_bulk_edit():
+    product_ids = list(dict.fromkeys(
+        str(value or "").strip()
+        for value in request.form.getlist("product_ids")
+        if str(value or "").strip()
+    ))
+
+    if not product_ids:
+        return redirect(url_for(
+            "warehouse_page",
+            notice="error",
+            message="Выберите хотя бы один товар",
+        ))
+
+    if len(product_ids) > 100:
+        return redirect(url_for(
+            "warehouse_page",
+            notice="error",
+            message="За один раз можно изменить не больше 100 товаров",
+        ))
+
+    apply_brand = request.form.get("apply_brand") == "1"
+    apply_category = request.form.get("apply_category") == "1"
+    apply_cell = request.form.get("apply_cell") == "1"
+    brand = (request.form.get("brand") or "").strip()
+    category = (request.form.get("category") or "").strip()
+    cell = (request.form.get("cell") or "").strip()
+    activity = (request.form.get("activity") or "keep").strip()
+
+    if activity not in {"keep", "archive", "restore"}:
+        activity = "keep"
+
+    if apply_brand and not brand:
+        return redirect(url_for(
+            "warehouse_page",
+            notice="error",
+            message="Для массовой замены укажите бренд",
+        ))
+
+    if apply_category and not category:
+        return redirect(url_for(
+            "warehouse_page",
+            notice="error",
+            message="Для массовой замены укажите категорию",
+        ))
+
+    if apply_cell and not cell:
+        return redirect(url_for(
+            "warehouse_page",
+            notice="error",
+            message=(
+                "Пустая ячейка не применяется массово. "
+                "Укажите значение, чтобы не стереть данные случайно"
+            ),
+        ))
+
+    if not any((apply_brand, apply_category, apply_cell)) and activity == "keep":
+        return redirect(url_for(
+            "warehouse_page",
+            notice="error",
+            message="Выберите хотя бы одно массовое изменение",
+        ))
+
+    products_by_id = {
+        str(item.get("id") or ""): item
+        for item in get_warehouse_items(force=True)
+    }
+    missing_ids = [
+        product_id
+        for product_id in product_ids
+        if product_id not in products_by_id
+    ]
+
+    if missing_ids:
+        return redirect(url_for(
+            "warehouse_page",
+            notice="error",
+            message=(
+                "Часть выбранных товаров больше не найдена. "
+                "Обновите страницу и повторите выбор"
+            ),
+        ))
+
+    client = MoySkladClient()
+    warehouse_cells = load_warehouse_cells()
+    updated_count = 0
+    errors = []
+
+    for product_id in product_ids:
+        item = products_by_id[product_id]
+
+        try:
+            target_brand = brand if apply_brand else item.get("brand")
+            target_category = (
+                category if apply_category else item.get("category")
+            )
+            folder = None
+
+            if apply_brand or apply_category:
+                folder_path = build_product_folder_path(
+                    target_brand,
+                    target_category,
+                )
+
+                if not folder_path:
+                    raise ValueError(
+                        "не удалось определить папку бренда и категории"
+                    )
+
+                folder = client.get_or_create_product_folder(folder_path)
+
+                if not folder:
+                    raise ValueError("МойСклад не создал папку товара")
+
+            archived = None
+
+            if activity == "archive":
+                archived = True
+            elif activity == "restore":
+                archived = False
+
+            if folder is not None or archived is not None:
+                result = client.update_product(
+                    product_id=product_id,
+                    product_folder=folder,
+                    archived=archived,
+                )
+
+                if not result:
+                    raise ValueError("МойСклад не обновил товар")
+
+            if apply_cell:
+                result = client.update_product_cell_attribute(
+                    product_id,
+                    cell,
+                )
+
+                if not result:
+                    raise ValueError("МойСклад не обновил ячейку")
+
+                warehouse_cells[product_id] = cell
+
+            updated_count += 1
+
+        except Exception as error:
+            app.logger.exception(
+                "Ошибка массового обновления товара %s",
+                product_id,
+            )
+            errors.append(
+                f"{item.get('name') or product_id}: {error}"
+            )
+
+    if apply_cell:
+        save_warehouse_cells(warehouse_cells)
+
+    WAREHOUSE_CACHE["items"] = []
+    WAREHOUSE_CACHE["loaded_at"] = 0
+
+    if errors:
+        short_errors = "; ".join(errors[:3])
+        return redirect(url_for(
+            "warehouse_page",
+            refresh="1",
+            notice="error",
+            message=(
+                f"Обновлено: {updated_count}. Ошибок: {len(errors)}. "
+                f"{short_errors}"
+            ),
+        ))
+
+    return redirect(url_for(
+        "warehouse_page",
+        refresh="1",
+        notice="success",
+        message=f"Массово обновлено товаров: {updated_count}",
+    ))
 
 
 
@@ -1937,6 +2208,12 @@ def get_warehouse_items(limit=1000, force=False):
                 "quantity": quantity_value,
                 "created_at": created_at,
                 "created_at_display": created_at_display,
+                "has_images": product_has_image_metadata(product),
+                "thumbnail_url": (
+                    f"/warehouse/product/{product_id}/thumbnail"
+                    if product_has_image_metadata(product)
+                    else ""
+                ),
             })
 
         save_warehouse_cells(product_cells)
@@ -2087,7 +2364,12 @@ def save_repair_cases(cases):
     import json
 
     path = get_repair_cases_path()
-    path.write_text(json.dumps(cases, ensure_ascii=False, indent=2), encoding="utf-8")
+    temporary_path = path.with_suffix(".json.tmp")
+    temporary_path.write_text(
+        json.dumps(cases, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    temporary_path.replace(path)
 
 
 
@@ -2146,6 +2428,7 @@ REPAIR_STATUS_LABELS = {
     "in_progress": "В работе",
     "ready": "Готов",
     "issued": "Выдан",
+    "completed": "Завершено",
 }
 
 REPAIR_TYPE_LABELS = {
@@ -2161,6 +2444,10 @@ def repair_page():
 
     q = (request.args.get("q") or "").strip()
     status_filter = (request.args.get("status") or "").strip()
+    repair_view = (request.args.get("view") or "active").strip()
+
+    if repair_view not in {"active", "archive", "all"}:
+        repair_view = "active"
     notice = request.args.get("notice") or ""
     message = request.args.get("message") or ""
 
@@ -2170,7 +2457,7 @@ def repair_page():
         case = dict(original_case)
 
         if case.get("status") == "done":
-            case["status"] = "ready"
+            case["status"] = "completed"
 
         case.setdefault("repair_number", "")
         case.setdefault("accepted_at", "")
@@ -2191,11 +2478,21 @@ def repair_page():
         case.setdefault("communication", "")
         case.setdefault("internal_comment", "")
         case.setdefault("updated_at", case.get("created_at") or "")
+        case.setdefault("archived_at", "")
+        case["is_archived"] = bool(case.get("archived_at")) or (
+            case.get("status") == "completed"
+        )
 
         all_cases.append(case)
 
     stats = {
         "total": len(all_cases),
+        "active_total": sum(
+            1 for case in all_cases if not case.get("is_archived")
+        ),
+        "archive_total": sum(
+            1 for case in all_cases if case.get("is_archived")
+        ),
         "new": sum(
             1 for case in all_cases
             if case.get("status") == "new"
@@ -2215,6 +2512,15 @@ def repair_page():
     }
 
     cases = all_cases
+
+    if repair_view == "active":
+        cases = [
+            case for case in cases if not case.get("is_archived")
+        ]
+    elif repair_view == "archive":
+        cases = [
+            case for case in cases if case.get("is_archived")
+        ]
 
     if status_filter in REPAIR_STATUS_LABELS:
         cases = [
@@ -2257,6 +2563,7 @@ def repair_page():
         cases=cases,
         q=q,
         status_filter=status_filter,
+        repair_view=repair_view,
         notice=notice,
         message=message,
         stats=stats,
@@ -2362,6 +2669,11 @@ def repair_add():
             request.form.get("final_cost") or ""
         ).strip(),
         "status": status,
+        "archived_at": (
+            now.strftime("%Y-%m-%d %H:%M")
+            if status == "completed"
+            else ""
+        ),
         "communication": (
             request.form.get("communication") or ""
         ).strip(),
@@ -2444,6 +2756,11 @@ def repair_update():
                 request.form.get("final_cost") or ""
             ).strip(),
             "status": status,
+            "archived_at": (
+                datetime.now().strftime("%Y-%m-%d %H:%M")
+                if status == "completed"
+                else ""
+            ),
             "communication": (
                 request.form.get("communication") or ""
             ).strip(),
@@ -2492,6 +2809,11 @@ def repair_status():
             case["updated_at"] = datetime.now().strftime(
                 "%Y-%m-%d %H:%M"
             )
+            case["archived_at"] = (
+                case["updated_at"]
+                if status == "completed"
+                else ""
+            )
             updated = True
             break
 
@@ -2509,25 +2831,34 @@ def repair_status():
 
 @app.route("/repair/delete", methods=["POST"])
 def repair_delete():
+    from datetime import datetime
     from flask import redirect, request
 
     case_id = (request.form.get("case_id") or "").strip()
     cases = load_repair_cases()
 
-    filtered_cases = [
-        case for case in cases
-        if case.get("id") != case_id
-    ]
+    archived = False
 
-    if len(filtered_cases) == len(cases):
+    for case in cases:
+        if case.get("id") != case_id:
+            continue
+
+        archived_at = datetime.now().strftime("%Y-%m-%d %H:%M")
+        case["status"] = "completed"
+        case["archived_at"] = archived_at
+        case["updated_at"] = archived_at
+        archived = True
+        break
+
+    if not archived:
         return redirect(
             "/repair?notice=error&message=Ремонт не найден"
         )
 
-    save_repair_cases(filtered_cases)
+    save_repair_cases(cases)
 
     return redirect(
-        "/repair?notice=success&message=Ремонт удалён"
+        "/repair?view=archive&notice=success&message=Ремонт перенесён в архив"
     )
 
 
@@ -2558,10 +2889,12 @@ def save_manual_sales(sales):
     import json
 
     path = get_manual_sales_path()
-    path.write_text(
+    temporary_path = path.with_suffix(".json.tmp")
+    temporary_path.write_text(
         json.dumps(sales, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+    temporary_path.replace(path)
 
 
 def get_automatic_sales_overrides_path():
@@ -2603,6 +2936,58 @@ def save_automatic_sales_overrides(overrides):
     )
 
     temporary_path.replace(path)
+
+
+DEFAULT_SALES_SOURCES = [
+    "Tictactoy",
+    "Wildberries",
+    "Amazon",
+    "Ziiiro сайт",
+]
+
+SALE_STATUS_LABELS = {
+    "processing": "В обработке",
+    "shipped": "Отправлен",
+    "completed": "Завершён",
+    "cancelled": "Отменён",
+}
+
+
+def normalize_sale_status(value):
+    status = str(value or "completed").strip().lower()
+    return status if status in SALE_STATUS_LABELS else "completed"
+
+
+def sale_is_cancelled(sale):
+    return normalize_sale_status(
+        sale.get("order_status") if isinstance(sale, dict) else ""
+    ) == "cancelled"
+
+
+def get_reusable_sales_sources():
+    values = list(DEFAULT_SALES_SOURCES)
+
+    for sale in load_manual_sales():
+        values.append(sale.get("source"))
+
+    for override in load_automatic_sales_overrides().values():
+        if isinstance(override, dict):
+            values.append(override.get("source"))
+
+    result = []
+    seen = set()
+
+    for value in values:
+        source = normalize_manual_sale_source(value)
+        key = source.casefold()
+
+        if not source or source == "Свой вариант" or key in seen:
+            continue
+
+        seen.add(key)
+        result.append(source)
+
+    return result
 
 
 RUSSIAN_REGIONS = [
@@ -2917,6 +3302,33 @@ def parse_sale_price(value):
     return float(price.quantize(Decimal("0.01")))
 
 
+def parse_sale_commission(value):
+    from decimal import Decimal, InvalidOperation
+
+    raw_value = str(value or "").strip()
+
+    if not raw_value:
+        return 0.0
+
+    normalized = (
+        raw_value
+        .replace("\xa0", "")
+        .replace(" ", "")
+        .replace("₽", "")
+        .replace(",", ".")
+    )
+
+    try:
+        commission = Decimal(normalized)
+    except (InvalidOperation, ValueError):
+        return None
+
+    if commission < 0:
+        return None
+
+    return float(commission.quantize(Decimal("0.01")))
+
+
 def calculate_sale_amount(unit_price, quantity):
     from decimal import Decimal, InvalidOperation
 
@@ -2999,6 +3411,85 @@ def normalize_manual_delivery_method(
 # === CUSTOM DELIVERY BACKEND V1 END ===
 
 
+def resolve_sale_product_metadata(
+    product_id,
+    product_name,
+    fallback_brand="",
+    fallback_category="",
+):
+    try:
+        lookup = build_sales_product_metadata_lookup(
+            get_warehouse_items()
+        )
+    except Exception:
+        return {
+            "product_name": str(product_name or "").strip(),
+            "brand": str(fallback_brand or "").strip(),
+            "category": str(fallback_category or "").strip(),
+        }
+
+    product_id = str(product_id or "").strip()
+    product_name_key = str(product_name or "").strip().casefold()
+    metadata = (
+        lookup["by_id"].get(product_id)
+        or lookup["by_name"].get(product_name_key)
+    )
+
+    if metadata:
+        return metadata
+
+    return {
+        "product_name": str(product_name or "").strip(),
+        "brand": str(fallback_brand or "").strip(),
+        "category": str(fallback_category or "").strip(),
+    }
+
+
+def build_sale_optional_fields(form, existing=None):
+    from datetime import datetime
+
+    existing = existing if isinstance(existing, dict) else {}
+    commission_amount = parse_sale_commission(
+        form.get("commission_amount")
+    )
+
+    if commission_amount is None:
+        raise ValueError(
+            "Комиссия должна быть неотрицательной суммой в рублях"
+        )
+
+    order_status = normalize_sale_status(
+        form.get("order_status")
+    )
+    was_cancelled = sale_is_cancelled(existing)
+
+    if order_status == "cancelled":
+        cancelled_at = (
+            existing.get("cancelled_at")
+            if was_cancelled
+            else datetime.now().strftime("%Y-%m-%d %H:%M")
+        )
+    else:
+        cancelled_at = ""
+
+    return {
+        "recipient": str(form.get("recipient") or "").strip(),
+        "recipient_name": str(
+            form.get("recipient_name") or ""
+        ).strip(),
+        "payment_method": str(
+            form.get("payment_method") or ""
+        ).strip(),
+        "commission_amount": commission_amount,
+        "commission_type": "fixed_rub",
+        "order_status": order_status,
+        "cancelled_at": cancelled_at,
+        "sticker_number": str(
+            form.get("sticker_number") or ""
+        ).strip(),
+    }
+
+
 @app.route("/sales/manual/add", methods=["POST"])
 def manual_sale_add():
     from datetime import date
@@ -3047,6 +3538,26 @@ def manual_sale_add():
         )
     # === MANUAL SALE PRICE VALIDATION V1 END ===
 
+    try:
+        optional_fields = build_sale_optional_fields(request.form)
+    except ValueError as error:
+        return redirect(url_for(
+            "sales_page",
+            notice="error",
+            message=str(error),
+        ))
+
+    product_id = (
+        request.form.get("product_id") or ""
+    ).strip()
+    product_metadata = resolve_sale_product_metadata(
+        product_id,
+        product_name,
+    )
+    product_name = (
+        product_metadata.get("product_name") or product_name
+    )
+
     sales = load_manual_sales()
 
     sales.append({
@@ -3059,14 +3570,10 @@ def manual_sale_add():
             request.form.get("source"),
             request.form.get("custom_source"),
         ),
-        "product_id": (
-            request.form.get("product_id") or ""
-        ).strip(),
+        "product_id": product_id,
         "product_name": product_name,
-        "brand": (request.form.get("brand") or "").strip(),
-        "category": (
-            request.form.get("category") or ""
-        ).strip(),
+        "brand": product_metadata.get("brand") or "",
+        "category": product_metadata.get("category") or "",
         "quantity": quantity,
         "unit_price": unit_price,
         "total_amount": total_amount,
@@ -3091,6 +3598,7 @@ def manual_sale_add():
         "note": (
             request.form.get("note") or ""
         ).strip(),
+        **optional_fields,
     })
 
     save_manual_sales(sales)
@@ -3166,6 +3674,33 @@ def manual_sale_update():
         if str(sale.get("id") or "") != sale_id:
             continue
 
+        product_id = (
+            request.form.get("product_id")
+            or sale.get("product_id")
+            or ""
+        ).strip()
+        product_metadata = resolve_sale_product_metadata(
+            product_id,
+            product_name,
+            fallback_brand=sale.get("brand"),
+            fallback_category=sale.get("category"),
+        )
+        product_name = (
+            product_metadata.get("product_name") or product_name
+        )
+
+        try:
+            optional_fields = build_sale_optional_fields(
+                request.form,
+                existing=sale,
+            )
+        except ValueError as error:
+            return redirect(url_for(
+                "sales_page",
+                notice="error",
+                message=str(error),
+            ))
+
         sale["created_at"] = (
             request.form.get("created_at") or ""
         ).strip()
@@ -3173,18 +3708,10 @@ def manual_sale_update():
             request.form.get("source"),
             request.form.get("custom_source"),
         )
-        sale["product_id"] = (
-            request.form.get("product_id")
-            or sale.get("product_id")
-            or ""
-        ).strip()
+        sale["product_id"] = product_id
         sale["product_name"] = product_name
-        sale["brand"] = (
-            request.form.get("brand") or ""
-        ).strip()
-        sale["category"] = (
-            request.form.get("category") or ""
-        ).strip()
+        sale["brand"] = product_metadata.get("brand") or ""
+        sale["category"] = product_metadata.get("category") or ""
         sale["quantity"] = quantity
         sale["unit_price"] = unit_price
         sale["total_amount"] = total_amount
@@ -3213,6 +3740,7 @@ def manual_sale_update():
         sale["note"] = (
             request.form.get("note") or ""
         ).strip()
+        sale.update(optional_fields)
 
         sale_found = True
         break
@@ -3239,15 +3767,30 @@ def manual_sale_update():
 
 @app.route("/sales/manual/delete", methods=["POST"])
 def manual_sale_delete():
+    from datetime import datetime
     from flask import request, redirect, url_for
 
     sale_id = (request.form.get("sale_id") or "").strip()
+    sales = load_manual_sales()
+    sale = next(
+        (
+            item for item in sales
+            if str(item.get("id") or "") == sale_id
+        ),
+        None,
+    )
 
-    sales = [
-        sale
-        for sale in load_manual_sales()
-        if str(sale.get("id") or "") != sale_id
-    ]
+    if not sale:
+        return redirect(url_for(
+            "sales_page",
+            notice="error",
+            message="Ручная продажа не найдена",
+        ))
+
+    sale["order_status"] = "cancelled"
+    sale["cancelled_at"] = datetime.now().strftime(
+        "%Y-%m-%d %H:%M"
+    )
 
     save_manual_sales(sales)
 
@@ -3255,9 +3798,99 @@ def manual_sale_delete():
         url_for(
             "sales_page",
             notice="success",
-            message="Ручная продажа удалена",
+            message=(
+                "Продажа отменена без удаления. "
+                "Её можно вернуть в работу"
+            ),
         )
     )
+
+
+@app.route("/sales/status", methods=["POST"])
+def sale_status_update():
+    from datetime import datetime
+    from flask import redirect, request, url_for
+
+    sale_id = (request.form.get("sale_id") or "").strip()
+    sale_type = (request.form.get("sale_type") or "manual").strip()
+    order_status = normalize_sale_status(
+        request.form.get("order_status")
+    )
+
+    if not sale_id:
+        return redirect(url_for(
+            "sales_page",
+            notice="error",
+            message="Продажа не найдена",
+        ))
+
+    cancelled_at = (
+        datetime.now().strftime("%Y-%m-%d %H:%M")
+        if order_status == "cancelled"
+        else ""
+    )
+
+    if sale_type == "manual":
+        sales = load_manual_sales()
+        sale = next(
+            (
+                item for item in sales
+                if str(item.get("id") or "") == sale_id
+            ),
+            None,
+        )
+
+        if not sale:
+            return redirect(url_for(
+                "sales_page",
+                notice="error",
+                message="Ручная продажа не найдена",
+            ))
+
+        sale["order_status"] = order_status
+        sale["cancelled_at"] = cancelled_at
+        save_manual_sales(sales)
+
+    elif sale_type == "automatic":
+        operation_exists = any(
+            str(operation.get("id") or "") == sale_id
+            and str(operation.get("source") or "") == "Заказ Битрикс"
+            for operation in load_stock_operations()
+        )
+
+        if not operation_exists:
+            return redirect(url_for(
+                "sales_page",
+                notice="error",
+                message="Автоматическая продажа не найдена",
+            ))
+
+        overrides = load_automatic_sales_overrides()
+        override = overrides.get(sale_id)
+
+        if not isinstance(override, dict):
+            override = {}
+
+        override["order_status"] = order_status
+        override["cancelled_at"] = cancelled_at
+        overrides[sale_id] = override
+        save_automatic_sales_overrides(overrides)
+    else:
+        return redirect(url_for(
+            "sales_page",
+            notice="error",
+            message="Неизвестный тип продажи",
+        ))
+
+    return redirect(url_for(
+        "sales_page",
+        notice="success",
+        message=(
+            "Продажа отменена"
+            if order_status == "cancelled"
+            else "Продажа возвращена в работу"
+        ),
+    ))
 
 
 @app.route("/sales/automatic/update", methods=["POST"])
@@ -3294,14 +3927,18 @@ def automatic_sale_update():
             )
         )
 
-    operation_exists = any(
-        str(operation.get("id") or "").strip() == operation_id
-        and str(operation.get("source") or "") == "Заказ Битрикс"
-        and str(operation.get("type") or "") in {"writeoff", "loss"}
-        for operation in load_stock_operations()
+    operation = next(
+        (
+            item
+            for item in load_stock_operations()
+            if str(item.get("id") or "").strip() == operation_id
+            and str(item.get("source") or "") == "Заказ Битрикс"
+            and str(item.get("type") or "") in {"writeoff", "loss"}
+        ),
+        None,
     )
 
-    if not operation_exists:
+    if not operation:
         return redirect(
             url_for(
                 "sales_page",
@@ -3338,6 +3975,35 @@ def automatic_sale_update():
         )
 
     overrides = load_automatic_sales_overrides()
+    existing_override = overrides.get(operation_id) or {}
+    product_id = str(operation.get("product_id") or "").strip()
+    product_metadata = resolve_sale_product_metadata(
+        product_id,
+        product_name,
+        fallback_brand=(
+            existing_override.get("brand")
+            or operation.get("brand")
+        ),
+        fallback_category=(
+            existing_override.get("category")
+            or operation.get("category")
+        ),
+    )
+    product_name = (
+        product_metadata.get("product_name") or product_name
+    )
+
+    try:
+        optional_fields = build_sale_optional_fields(
+            request.form,
+            existing=existing_override,
+        )
+    except ValueError as error:
+        return redirect(url_for(
+            "sales_page",
+            notice="error",
+            message=str(error),
+        ))
 
     overrides[operation_id] = {
         "created_at": (
@@ -3347,10 +4013,8 @@ def automatic_sale_update():
             request.form.get("source") or "Tictactoy"
         ).strip(),
         "product_name": product_name,
-        "brand": (request.form.get("brand") or "").strip(),
-        "category": (
-            request.form.get("category") or ""
-        ).strip(),
+        "brand": product_metadata.get("brand") or "",
+        "category": product_metadata.get("category") or "",
         "quantity": quantity,
         "unit_price": unit_price,
         "total_amount": total_amount,
@@ -3375,6 +4039,7 @@ def automatic_sale_update():
         "note": (
             request.form.get("note") or ""
         ).strip(),
+        **optional_fields,
     }
 
     save_automatic_sales_overrides(overrides)
@@ -3402,6 +4067,7 @@ def build_sales_product_metadata_lookup(items):
         product_id = str(item.get("id") or "").strip()
         product_name = str(item.get("name") or "").strip()
         metadata = {
+            "product_name": product_name,
             "brand": str(item.get("brand") or "").strip(),
             "category": str(item.get("category") or "").strip(),
         }
@@ -3422,7 +4088,11 @@ def get_sales_product_metadata(lookup, product_id, product_name):
     return (
         lookup["by_id"].get(product_id)
         or lookup["by_name"].get(product_name)
-        or {"brand": "", "category": ""}
+        or {
+            "product_name": "",
+            "brand": "",
+            "category": "",
+        }
     )
 
 
@@ -3603,6 +4273,51 @@ def build_sales_report_records():
                 )
                 or ""
             ),
+            "recipient": str(
+                override.get("recipient")
+                or operation.get("recipient")
+                or ""
+            ),
+            "recipient_name": str(
+                override.get("recipient_name")
+                or operation.get("recipient_name")
+                or operation.get("customer")
+                or ""
+            ),
+            "payment_method": str(
+                override.get("payment_method")
+                or operation.get("payment_method")
+                or ""
+            ),
+            "commission_amount": (
+                parse_sale_commission(
+                    override.get("commission_amount")
+                )
+                or 0
+            ),
+            "commission_display": format_sale_money(
+                parse_sale_commission(
+                    override.get("commission_amount")
+                )
+                or 0
+            ),
+            "commission_type": "fixed_rub",
+            "order_status": normalize_sale_status(
+                override.get("order_status")
+            ),
+            "order_status_label": SALE_STATUS_LABELS[
+                normalize_sale_status(override.get("order_status"))
+            ],
+            "is_cancelled": (
+                normalize_sale_status(override.get("order_status"))
+                == "cancelled"
+            ),
+            "cancelled_at": str(
+                override.get("cancelled_at") or ""
+            ),
+            "sticker_number": str(
+                override.get("sticker_number") or ""
+            ),
         })
 
     for stored_sale in reversed(stored_manual_sales):
@@ -3685,6 +4400,41 @@ def build_sales_report_records():
             "note": str(
                 stored_sale.get("note") or ""
             ),
+            "recipient": str(
+                stored_sale.get("recipient") or ""
+            ),
+            "recipient_name": str(
+                stored_sale.get("recipient_name") or ""
+            ),
+            "payment_method": str(
+                stored_sale.get("payment_method") or ""
+            ),
+            "commission_amount": (
+                parse_sale_commission(
+                    stored_sale.get("commission_amount")
+                )
+                or 0
+            ),
+            "commission_display": format_sale_money(
+                parse_sale_commission(
+                    stored_sale.get("commission_amount")
+                )
+                or 0
+            ),
+            "commission_type": "fixed_rub",
+            "order_status": normalize_sale_status(
+                stored_sale.get("order_status")
+            ),
+            "order_status_label": SALE_STATUS_LABELS[
+                normalize_sale_status(stored_sale.get("order_status"))
+            ],
+            "is_cancelled": sale_is_cancelled(stored_sale),
+            "cancelled_at": str(
+                stored_sale.get("cancelled_at") or ""
+            ),
+            "sticker_number": str(
+                stored_sale.get("sticker_number") or ""
+            ),
         })
 
     sales = manual_sales + automatic_sales
@@ -3699,7 +4449,7 @@ def build_sales_report_records():
 
 
 def get_sales_report_filters():
-    return {
+    filters = {
         "date_from": (
             request.args.get("date_from") or ""
         ).strip(),
@@ -3715,6 +4465,12 @@ def get_sales_report_filters():
         "product": (
             request.args.get("product") or ""
         ).strip(),
+        "order_number": (
+            request.args.get("order_number") or ""
+        ).strip(),
+        "order_status": (
+            request.args.get("order_status") or ""
+        ).strip(),
         "delivery_method": (
             request.args.get("delivery_method") or ""
         ).strip(),
@@ -3726,6 +4482,21 @@ def get_sales_report_filters():
         ).strip(),
     }
 
+    if (
+        filters["date_from"]
+        and filters["date_to"]
+        and filters["date_from"] > filters["date_to"]
+    ):
+        filters["date_from"], filters["date_to"] = (
+            filters["date_to"],
+            filters["date_from"],
+        )
+
+    if filters["order_status"] not in SALE_STATUS_LABELS:
+        filters["order_status"] = ""
+
+    return filters
+
 
 def filter_sales_report_records(sales, filters):
     result = []
@@ -3733,6 +4504,14 @@ def filter_sales_report_records(sales, filters):
     product_query = str(
         filters.get("product") or ""
     ).casefold()
+    order_query = str(
+        filters.get("order_number") or ""
+    ).casefold()
+    effective_date_to = filters.get("date_to") or (
+        datetime.now().strftime("%Y-%m-%d")
+        if filters.get("date_from")
+        else ""
+    )
 
     for sale in sales:
         sale_date = str(
@@ -3746,8 +4525,8 @@ def filter_sales_report_records(sales, filters):
             continue
 
         if (
-            filters.get("date_to")
-            and sale_date > filters["date_to"]
+            effective_date_to
+            and sale_date > effective_date_to
         ):
             continue
 
@@ -3773,6 +4552,22 @@ def filter_sales_report_records(sales, filters):
 
             if product_query not in product_text:
                 continue
+
+        if order_query:
+            order_text = " ".join([
+                str(sale.get("order_number") or ""),
+                str(sale.get("sticker_number") or ""),
+            ]).casefold()
+
+            if order_query not in order_text:
+                continue
+
+        if (
+            filters.get("order_status")
+            and sale.get("order_status")
+            != filters["order_status"]
+        ):
+            continue
 
         if (
             filters.get("delivery_method")
@@ -3808,21 +4603,25 @@ def build_sales_report_context():
         filters,
     )
 
+    active_sales = [
+        sale for sale in sales if not sale.get("is_cancelled")
+    ]
+
     unique_orders = {
         str(sale.get("order_number") or "").strip()
-        for sale in sales
+        for sale in active_sales
         if str(sale.get("order_number") or "").strip()
     }
 
     total_quantity = sum(
         float(sale.get("quantity_value") or 0)
-        for sale in sales
+        for sale in active_sales
     )
 
     # === SALES REPORT PRICE V1 ===
     total_revenue = sum(
         float(sale.get("total_amount") or 0)
-        for sale in sales
+        for sale in active_sales
         if sale.get("total_amount") is not None
     )
     # === SALES REPORT PRICE V1 END ===
@@ -3840,7 +4639,9 @@ def build_sales_report_context():
     return {
         "sales": sales,
         "filters": filters,
-        "total_sales": len(sales),
+        "total_sales": len(active_sales),
+        "total_records": len(sales),
+        "total_cancelled": len(sales) - len(active_sales),
         "total_orders": len(unique_orders),
         "total_quantity": format_stock_number(
             total_quantity
@@ -3856,6 +4657,7 @@ def build_sales_report_context():
         ),
         "regions": unique_values("region"),
         "cities": unique_values("city"),
+        "sale_status_labels": SALE_STATUS_LABELS,
         "generated_at": datetime.now().strftime(
             "%d.%m.%Y %H:%M"
         ),
@@ -3909,8 +4711,10 @@ def sales_report_excel():
     sheet["B2"] = context["generated_at"]
     sheet["D2"] = "Продаж"
     sheet["E2"] = context["total_sales"]
-    sheet["G2"] = "Заказов"
-    sheet["H2"] = context["total_orders"]
+    sheet["F2"] = "Отменено"
+    sheet["G2"] = context["total_cancelled"]
+    sheet["H2"] = "Заказов"
+    sheet["I2"] = context["total_orders"]
     sheet["J2"] = "Единиц"
     sheet["K2"] = context["total_quantity"]
 
@@ -3923,6 +4727,7 @@ def sales_report_excel():
     headers = [
         "Дата",
         "Тип",
+        "Статус",
         "Источник",
         "Товар",
         "Бренд",
@@ -3930,8 +4735,13 @@ def sales_report_excel():
         "Количество",
         "Цена за единицу, ₽",
         "Сумма, ₽",
+        "Комиссия, ₽",
         "Номер заказа",
+        "Номер стикера",
         "Трек-номер",
+        "Получатель",
+        "ФИО получателя",
+        "Способ оплаты",
         "Способ доставки",
         "Регион",
         "Город",
@@ -3970,6 +4780,7 @@ def sales_report_excel():
         values = [
             sale.get("created_at") or "",
             sale.get("sale_type_label") or "",
+            sale.get("order_status_label") or "",
             sale.get("source") or "",
             sale.get("product_name") or "",
             sale.get("brand") or "",
@@ -3977,8 +4788,13 @@ def sales_report_excel():
             sale.get("quantity_value") or 0,
             sale.get("unit_price"),
             sale.get("total_amount"),
+            sale.get("commission_amount") or 0,
             sale.get("order_number") or "",
+            sale.get("sticker_number") or "",
             sale.get("track_number") or "",
+            sale.get("recipient") or "",
+            sale.get("recipient_name") or "",
+            sale.get("payment_method") or "",
             sale.get("delivery_method") or "",
             sale.get("region") or "",
             sale.get("city") or "",
@@ -4000,7 +4816,7 @@ def sales_report_excel():
             )
 
             if (
-                column in {8, 9}
+                column in {9, 10, 11}
                 and value is not None
             ):
                 cell.number_format = '#,##0.00 "₽"'
@@ -4027,6 +4843,7 @@ def sales_report_excel():
     widths = [
         14,
         16,
+        16,
         18,
         34,
         20,
@@ -4035,7 +4852,12 @@ def sales_report_excel():
         18,
         18,
         18,
+        18,
+        18,
         24,
+        22,
+        24,
+        20,
         24,
         24,
         20,
@@ -4052,8 +4874,9 @@ def sales_report_excel():
 
     sheet.freeze_panes = "A5"
     sheet.auto_filter.ref = (
-        "A{}:O{}".format(
+        "A{}:{}{}".format(
             header_row,
+            chr(64 + len(headers)),
             max(header_row, sheet.max_row),
         )
     )
@@ -4082,6 +4905,7 @@ def sales_report_pdf():
     # === SALES PDF PRICE V1 ===
     from io import BytesIO
     from html import escape
+    from pathlib import Path
     from flask import Response
     from reportlab.lib import colors
     from reportlab.lib.enums import TA_CENTER
@@ -4104,13 +4928,28 @@ def sales_report_pdf():
     context = build_sales_report_context()
     sales = context["sales"]
 
-    regular_font = (
-        "/usr/share/fonts/dejavu/DejaVuSans.ttf"
-    )
-    bold_font = (
-        "/usr/share/fonts/dejavu/"
-        "DejaVuSans-Bold.ttf"
-    )
+    def first_existing_font(candidates):
+        for candidate in candidates:
+            if Path(candidate).is_file():
+                return candidate
+
+        raise RuntimeError(
+            "Не найден шрифт с поддержкой кириллицы для PDF"
+        )
+
+    regular_font = first_existing_font([
+        "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/System/Library/Fonts/Supplemental/Arial.ttf",
+        "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+        "/Library/Fonts/Arial Unicode.ttf",
+    ])
+    bold_font = first_existing_font([
+        "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+        regular_font,
+    ])
 
     registered = pdfmetrics.getRegisteredFontNames()
 
@@ -4194,12 +5033,14 @@ def sales_report_pdf():
             (
                 "Сформирован: {} &nbsp;&nbsp; "
                 "Продаж: {} &nbsp;&nbsp; "
+                "Отменено: {} &nbsp;&nbsp; "
                 "Заказов: {} &nbsp;&nbsp; "
                 "Продано единиц: {} &nbsp;&nbsp; "
                 "Выручка: {}"
             ).format(
                 escape(context["generated_at"]),
                 context["total_sales"],
+                context["total_cancelled"],
                 context["total_orders"],
                 escape(str(context["total_quantity"])),
                 escape(
@@ -4214,6 +5055,7 @@ def sales_report_pdf():
     headers = [
         "Дата",
         "Тип",
+        "Статус",
         "Источник",
         "Товар",
         "Бренд",
@@ -4221,8 +5063,11 @@ def sales_report_pdf():
         "Кол-во",
         "Цена, ₽",
         "Сумма",
+        "Комиссия",
         "Заказ",
         "Трек-номер",
+        "Получатель",
+        "Оплата",
         "Доставка",
         "Регион",
         "Город",
@@ -4241,6 +5086,7 @@ def sales_report_pdf():
         values = [
             sale.get("created_at") or "",
             sale.get("sale_type_label") or "",
+            sale.get("order_status_label") or "",
             sale.get("source") or "",
             sale.get("product_name") or "",
             sale.get("brand") or "",
@@ -4250,8 +5096,31 @@ def sales_report_pdf():
             ),
             sale.get("unit_price_display") or "—",
             sale.get("total_amount_display") or "—",
-            sale.get("order_number") or "",
+            sale.get("commission_display")
+            if sale.get("commission_amount")
+            else "—",
+            " · ".join(
+                value
+                for value in (
+                    sale.get("order_number") or "",
+                    (
+                        "стикер " + sale.get("sticker_number")
+                        if sale.get("sticker_number")
+                        else ""
+                    ),
+                )
+                if value
+            ),
             sale.get("track_number") or "",
+            " · ".join(
+                value
+                for value in (
+                    sale.get("recipient_name") or "",
+                    sale.get("recipient") or "",
+                )
+                if value
+            ),
+            sale.get("payment_method") or "",
             sale.get("delivery_method") or "",
             sale.get("region") or "",
             sale.get("city") or "",
@@ -4263,7 +5132,7 @@ def sales_report_pdf():
         for index, value in enumerate(values):
             style = (
                 centered_cell_style
-                if index in {0, 1, 6, 7, 8}
+                if index in {0, 1, 2, 7, 8, 9, 10}
                 else cell_style
             )
 
@@ -4281,20 +5150,24 @@ def sales_report_pdf():
         repeatRows=1,
         colWidths=[
             18 * mm,  # Дата
-            15 * mm,  # Тип
+            14 * mm,  # Тип
+            16 * mm,  # Статус
             18 * mm,  # Источник
-            28 * mm,  # Товар
-            18 * mm,  # Бренд
-            22 * mm,  # Категория
+            25 * mm,  # Товар
+            16 * mm,  # Бренд
+            19 * mm,  # Категория
             11 * mm,  # Количество
-            18 * mm,  # Цена
-            20 * mm,  # Сумма
-            18 * mm,  # Заказ
-            25 * mm,  # Трек
-            28 * mm,  # Доставка
-            27 * mm,  # Регион
-            20 * mm,  # Город
-            29 * mm,  # Примечание
+            16 * mm,  # Цена
+            18 * mm,  # Сумма
+            16 * mm,  # Комиссия
+            19 * mm,  # Заказ
+            21 * mm,  # Трек
+            24 * mm,  # Получатель
+            18 * mm,  # Оплата
+            24 * mm,  # Доставка
+            23 * mm,  # Регион
+            18 * mm,  # Город
+            25 * mm,  # Примечание
         ],
     )
 
@@ -4550,6 +5423,50 @@ def sales_page():
                 )
                 or ""
             ),
+            "recipient": str(
+                override.get("recipient")
+                or operation.get("recipient")
+                or ""
+            ),
+            "recipient_name": str(
+                override.get("recipient_name")
+                or operation.get("recipient_name")
+                or operation.get("customer")
+                or ""
+            ),
+            "payment_method": str(
+                override.get("payment_method")
+                or operation.get("payment_method")
+                or ""
+            ),
+            "commission_amount": (
+                parse_sale_commission(
+                    override.get("commission_amount")
+                )
+                or 0
+            ),
+            "commission_display": format_sale_money(
+                parse_sale_commission(
+                    override.get("commission_amount")
+                )
+                or 0
+            ),
+            "order_status": normalize_sale_status(
+                override.get("order_status")
+            ),
+            "order_status_label": SALE_STATUS_LABELS[
+                normalize_sale_status(override.get("order_status"))
+            ],
+            "is_cancelled": (
+                normalize_sale_status(override.get("order_status"))
+                == "cancelled"
+            ),
+            "cancelled_at": str(
+                override.get("cancelled_at") or ""
+            ),
+            "sticker_number": str(
+                override.get("sticker_number") or ""
+            ),
             "document_name": (
                 operation.get("moysklad_document_name") or ""
             ),
@@ -4617,6 +5534,30 @@ def sales_page():
             "region": stored_sale.get("region") or "",
             "city": stored_sale.get("city") or "",
             "note": stored_sale.get("note") or "",
+            "recipient": stored_sale.get("recipient") or "",
+            "recipient_name": stored_sale.get("recipient_name") or "",
+            "payment_method": stored_sale.get("payment_method") or "",
+            "commission_amount": (
+                parse_sale_commission(
+                    stored_sale.get("commission_amount")
+                )
+                or 0
+            ),
+            "commission_display": format_sale_money(
+                parse_sale_commission(
+                    stored_sale.get("commission_amount")
+                )
+                or 0
+            ),
+            "order_status": normalize_sale_status(
+                stored_sale.get("order_status")
+            ),
+            "order_status_label": SALE_STATUS_LABELS[
+                normalize_sale_status(stored_sale.get("order_status"))
+            ],
+            "is_cancelled": sale_is_cancelled(stored_sale),
+            "cancelled_at": stored_sale.get("cancelled_at") or "",
+            "sticker_number": stored_sale.get("sticker_number") or "",
             "document_name": "",
             "document_url": "",
             "status": "",
@@ -4624,9 +5565,17 @@ def sales_page():
 
     sales = manual_sales + automatic_sales
 
+    active_sales = [
+        sale for sale in sales if not sale.get("is_cancelled")
+    ]
+    total_quantity = sum(
+        float(sale.get("quantity_value") or 0)
+        for sale in active_sales
+    )
+
     unique_orders = set()
 
-    for sale in sales:
+    for sale in active_sales:
         order_number = str(
             sale.get("order_number") or ""
         ).strip()
@@ -4660,11 +5609,14 @@ def sales_page():
             key=str.casefold,
         ),
         russian_region_cities=russian_region_cities,
-        total_sales=len(sales),
+        total_sales=len(active_sales),
+        total_cancelled=len(sales) - len(active_sales),
         total_orders=len(unique_orders),
         total_quantity=format_stock_number(total_quantity),
         notice=(request.args.get("notice") or "").strip(),
         message=(request.args.get("message") or "").strip(),
+        sales_sources=get_reusable_sales_sources(),
+        sale_status_labels=SALE_STATUS_LABELS,
     )
 
 
@@ -4731,6 +5683,8 @@ def receipts_page():
 
     receipts = load_receipts()
 
+    all_warehouse_items = get_warehouse_items()
+
     warehouse_items = [
         {
             "id": item.get("id") or "",
@@ -4748,9 +5702,30 @@ def receipts_page():
             "cell": item.get("cell") or "",
             "stock": item.get("stock") or 0,
             "stock_display": item.get("stock_display") or "0",
+            "has_images": bool(item.get("has_images")),
+            "thumbnail_url": item.get("thumbnail_url") or "",
         }
-        for item in get_warehouse_items()
+        for item in all_warehouse_items
     ]
+
+    receipt_brands = sorted(
+        {
+            str(item.get("brand") or "").strip()
+            for item in warehouse_items
+            if str(item.get("brand") or "").strip()
+            not in {"", "Без бренда"}
+        },
+        key=str.casefold,
+    )
+    receipt_categories = sorted(
+        {
+            str(item.get("category") or "").strip()
+            for item in warehouse_items
+            if str(item.get("category") or "").strip()
+            not in {"", "Без категории"}
+        },
+        key=str.casefold,
+    )
 
     total_quantity = sum(
         parse_receipt_number(receipt.get("total_quantity"))
@@ -4765,6 +5740,8 @@ def receipts_page():
         "receipts.html",
         receipts=receipts,
         warehouse_items=warehouse_items,
+        receipt_brands=receipt_brands,
+        receipt_categories=receipt_categories,
         today=datetime.now().strftime("%Y-%m-%d"),
         total_receipts=len(receipts),
         total_quantity=format_stock_number(total_quantity),
@@ -5637,12 +6614,73 @@ def receipts_import_preview():
 # === RECEIPTS EXCEL IMPORT PREVIEW V1 END ===
 
 
+PRODUCT_IMAGE_MAX_BYTES = 3 * 1024 * 1024
+
+
+def read_product_image_upload(uploaded_file):
+    from werkzeug.utils import secure_filename
+
+    if not uploaded_file or not uploaded_file.filename:
+        return None
+
+    content = uploaded_file.stream.read(
+        PRODUCT_IMAGE_MAX_BYTES + 1
+    )
+
+    if not content:
+        raise ValueError("Выбранный файл изображения пуст")
+
+    if len(content) > PRODUCT_IMAGE_MAX_BYTES:
+        raise ValueError(
+            "Изображение слишком большое. Максимальный размер — 3 МБ"
+        )
+
+    if content.startswith(b"\xff\xd8\xff"):
+        extension = ".jpg"
+        allowed_mimetypes = {"image/jpeg", "image/jpg"}
+    elif content.startswith(b"\x89PNG\r\n\x1a\n"):
+        extension = ".png"
+        allowed_mimetypes = {"image/png"}
+    else:
+        raise ValueError(
+            "Поддерживаются только изображения JPEG и PNG"
+        )
+
+    mimetype = str(uploaded_file.mimetype or "").lower()
+
+    if mimetype and mimetype not in allowed_mimetypes:
+        raise ValueError(
+            "Тип файла не соответствует содержимому изображения"
+        )
+
+    safe_name = secure_filename(uploaded_file.filename)
+    name_without_extension = safe_name.rsplit(".", 1)[0]
+    filename = (name_without_extension or "product") + extension
+
+    return {
+        "filename": filename[:255],
+        "content": content,
+    }
+
+
 @app.route("/receipts/create", methods=["POST"])
 def receipt_create():
     from datetime import datetime
     from flask import request, redirect, url_for
     import json as receipt_json
     import uuid
+
+    try:
+        product_image = read_product_image_upload(
+            request.files.get("product_image")
+        )
+    except ValueError as error:
+        return redirect(url_for(
+            "receipts_page",
+            notice="error",
+            message=str(error),
+            open_receipt_modal="1",
+        ))
 
     # === SIMPLE RECEIPT FORM V1 ===
     submitted_brand = (
@@ -5682,6 +6720,17 @@ def receipt_create():
     import_rows = []
 
     if raw_import_payload:
+        if product_image:
+            return redirect(url_for(
+                "receipts_page",
+                notice="error",
+                message=(
+                    "Изображение можно добавить только в ручном приходе "
+                    "с одним товаром"
+                ),
+                open_receipt_modal="1",
+            ))
+
         try:
             parsed_import_payload = receipt_json.loads(
                 raw_import_payload
@@ -6026,6 +7075,7 @@ def receipt_create():
                     code=product_code,
                     article=None,
                     product_folder=product_folder,
+                    image=product_image,
                 )
             )
 
@@ -6065,6 +7115,7 @@ def receipt_create():
                 "category": submitted_category,
                 "cell": "",
                 "stock": 0,
+                "has_images": bool(product_image),
             }
 
             product_ids = [new_product_id]
@@ -6086,8 +7137,26 @@ def receipt_create():
                     "Ошибка создания нового товара: "
                     + str(error)
                 ),
+                open_receipt_modal="1",
             ))
     # === NEW PRODUCT IN RECEIPT BACKEND V1 END ===
+
+    image_result_message = ""
+
+    if product_image and created_new_product:
+        image_result_message = "Фото товара добавлено"
+
+    if (
+        product_image
+        and not created_new_product
+        and len(product_ids) != 1
+    ):
+        return redirect(url_for(
+            "receipts_page",
+            notice="error",
+            message="Изображение можно прикрепить только к одному товару",
+            open_receipt_modal="1",
+        ))
 
     positions = []
 
@@ -6286,6 +7355,49 @@ def receipt_create():
                 "moysklad_document_url": receipt["moysklad_document_url"],
             })
 
+        if product_image and not created_new_product:
+            image_product_id = str(product_ids[0] or "").strip()
+            image_product = catalog.get(image_product_id) or {}
+
+            try:
+                image_client = MoySkladClient()
+                already_has_images = bool(
+                    image_product.get("has_images")
+                )
+
+                if not already_has_images:
+                    already_has_images = image_client.product_has_images(
+                        image_product_id
+                    )
+
+                if already_has_images:
+                    image_result_message = (
+                        "У товара уже есть фото — дубликат не создавался"
+                    )
+                else:
+                    image_result = image_client.upload_product_image(
+                        image_product_id,
+                        product_image["filename"],
+                        product_image["content"],
+                    )
+
+                    if not image_result:
+                        raise ValueError(
+                            "МойСклад не сохранил изображение"
+                        )
+
+                    image_result_message = "Фото товара добавлено"
+
+            except Exception as image_error:
+                app.logger.exception(
+                    "Ошибка добавления изображения товара %s",
+                    image_product_id,
+                )
+                image_result_message = (
+                    "Приход проведён, но фото не добавлено: "
+                    + str(image_error)
+                )
+
         WAREHOUSE_CACHE["items"] = []
         WAREHOUSE_CACHE["loaded_at"] = 0
 
@@ -6298,6 +7410,9 @@ def receipt_create():
             success_message = (
                 f"Приход {receipt_number} проведён"
             )
+
+        if image_result_message:
+            success_message += ". " + image_result_message
 
         if submit_mode == "create_next":
             return redirect(url_for(

@@ -98,6 +98,35 @@
             font: inherit;
         }
 
+        .date-control-wrap {
+            position: relative;
+        }
+
+        .date-control-wrap .control {
+            padding-right: 38px;
+        }
+
+        .date-clear {
+            position: absolute;
+            top: 50%;
+            right: 7px;
+            width: 27px;
+            height: 27px;
+            padding: 0;
+            transform: translateY(-50%);
+            border: 0;
+            border-radius: 50%;
+            background: #e2e8f0;
+            color: #475569;
+            cursor: pointer;
+            font-size: 18px;
+            line-height: 1;
+        }
+
+        .date-clear:disabled {
+            display: none;
+        }
+
         .report-actions {
             display: flex;
             flex-wrap: wrap;
@@ -139,7 +168,7 @@
         .stats {
             display: grid;
             grid-template-columns:
-                repeat(3, minmax(160px, 1fr));
+                repeat(5, minmax(140px, 1fr));
             gap: 14px;
             margin-bottom: 18px;
         }
@@ -212,7 +241,7 @@
         /* Цена и выручка в отчёте */
         .stats {
             grid-template-columns:
-                repeat(4, minmax(0, 1fr));
+                repeat(5, minmax(0, 1fr));
         }
 
         .report-table-card {
@@ -221,6 +250,17 @@
 
         .report-table-card table {
             min-width: 1540px;
+        }
+
+        .muted {
+            color: #64748b;
+            font-size: 11px;
+        }
+
+        tr.is-cancelled td {
+            color: #7f1d1d;
+            background: #fff1f2;
+            text-decoration-color: #fca5a5;
         }
 
         .money-cell {
@@ -269,24 +309,30 @@
             <div class="filter-grid">
                 <div class="field">
                     <label for="date_from">Дата с</label>
-                    <input
-                        id="date_from"
-                        class="control"
-                        type="date"
-                        name="date_from"
-                        value="{{ filters.date_from }}"
-                    >
+                    <div class="date-control-wrap">
+                        <input
+                            id="date_from"
+                            class="control"
+                            type="date"
+                            name="date_from"
+                            value="{{ filters.date_from }}"
+                        >
+                        <button class="date-clear" type="button" data-clear-date="date_from" aria-label="Очистить начальную дату">×</button>
+                    </div>
                 </div>
 
                 <div class="field">
                     <label for="date_to">Дата по</label>
-                    <input
-                        id="date_to"
-                        class="control"
-                        type="date"
-                        name="date_to"
-                        value="{{ filters.date_to }}"
-                    >
+                    <div class="date-control-wrap">
+                        <input
+                            id="date_to"
+                            class="control"
+                            type="date"
+                            name="date_to"
+                            value="{{ filters.date_to }}"
+                        >
+                        <button class="date-clear" type="button" data-clear-date="date_to" aria-label="Очистить конечную дату">×</button>
+                    </div>
                 </div>
 
                 <div class="field">
@@ -349,6 +395,28 @@
                             <option value="{{ value }}"></option>
                         {% endfor %}
                     </datalist>
+                </div>
+
+                <div class="field">
+                    <label for="order_number">Номер заказа</label>
+                    <input
+                        id="order_number"
+                        class="control"
+                        type="search"
+                        name="order_number"
+                        value="{{ filters.order_number }}"
+                        placeholder="Заказ или стикер"
+                    >
+                </div>
+
+                <div class="field">
+                    <label for="order_status">Статус заказа</label>
+                    <select id="order_status" class="control" name="order_status">
+                        <option value="">Все статусы</option>
+                        {% for value, label in sale_status_labels.items() %}
+                            <option value="{{ value }}" {% if filters.order_status == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
                 </div>
 
                 <div class="field">
@@ -456,10 +524,15 @@
 
         <section class="stats">
             <article class="stat-card">
-                <div class="stat-label">Продаж</div>
+                <div class="stat-label">Не отменено</div>
                 <div class="stat-value">
                     {{ total_sales }}
                 </div>
+            </article>
+
+            <article class="stat-card">
+                <div class="stat-label">Отменено</div>
+                <div class="stat-value">{{ total_cancelled }}</div>
             </article>
 
             <article class="stat-card">
@@ -496,6 +569,7 @@
                         <tr>
                             <th>Дата</th>
                             <th>Тип</th>
+                            <th>Статус</th>
                             <th>Источник</th>
                             <th>Товар</th>
                             <th>Бренд</th>
@@ -503,8 +577,11 @@
                             <th>Количество</th>
                             <th>Цена, ₽</th>
                             <th>Сумма</th>
+                            <th>Комиссия</th>
                             <th>Заказ</th>
                             <th>Трек-номер</th>
+                            <th>Получатель</th>
+                            <th>Оплата</th>
                             <th>Доставка</th>
                             <th>Регион</th>
                             <th>Город</th>
@@ -514,11 +591,12 @@
 
                     <tbody>
                         {% for sale in sales %}
-                            <tr>
+                            <tr{% if sale.is_cancelled %} class="is-cancelled"{% endif %}>
                                 <td>{{ sale.created_at or "—" }}</td>
                                 <td>
                                     {{ sale.sale_type_label }}
                                 </td>
+                                <td>{{ sale.order_status_label }}</td>
                                 <td>{{ sale.source or "—" }}</td>
                                 <td>
                                     {{ sale.product_name or "—" }}
@@ -534,12 +612,21 @@
                                 <td class="money-cell money-total">
                                     {{ sale.total_amount_display or "—" }}
                                 </td>
+                                <td class="money-cell">
+                                    {{ sale.commission_display if sale.commission_amount else "—" }}
+                                </td>
                                 <td>
                                     {{ sale.order_number or "—" }}
+                                    {% if sale.sticker_number %}<br><span class="muted">Стикер: {{ sale.sticker_number }}</span>{% endif %}
                                 </td>
                                 <td>
                                     {{ sale.track_number or "—" }}
                                 </td>
+                                <td>
+                                    {{ sale.recipient_name or sale.recipient or "—" }}
+                                    {% if sale.recipient_name and sale.recipient %}<br>{{ sale.recipient }}{% endif %}
+                                </td>
+                                <td>{{ sale.payment_method or "—" }}</td>
                                 <td>
                                     {{ sale.delivery_method or "—" }}
                                 </td>
@@ -559,5 +646,23 @@
             {% endif %}
         </section>
     </main>
+    <script>
+        document.querySelectorAll("[data-clear-date]").forEach((button) => {
+            const input = document.getElementById(button.dataset.clearDate);
+
+            const sync = () => {
+                button.disabled = !input?.value;
+            };
+
+            button.addEventListener("click", () => {
+                input.value = "";
+                input.focus();
+                sync();
+            });
+
+            input?.addEventListener("change", sync);
+            sync();
+        });
+    </script>
 </body>
 </html>

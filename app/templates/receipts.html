@@ -547,7 +547,51 @@
             margin-top: 18px;
         }
 
+        .receipt-image-picker {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 10px;
+            align-items: center;
+            padding: 11px;
+            border: 1px dashed #cbd5e1;
+            border-radius: 12px;
+            background: #f8fafc;
+        }
+
+        .receipt-image-preview {
+            display: none;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .receipt-image-preview.is-visible {
+            display: flex;
+        }
+
+        .receipt-image-preview img {
+            width: 58px;
+            height: 58px;
+            object-fit: contain;
+            border: 1px solid #dbe3ec;
+            border-radius: 10px;
+            background: #ffffff;
+        }
+
+        .receipt-image-help {
+            margin-top: 5px;
+            color: #64748b;
+            font-size: 12px;
+        }
+
         @media (max-width: 900px) {
+            .receipt-image-picker {
+                grid-template-columns: 1fr;
+            }
+
+            .receipt-image-picker input[type="file"] {
+                max-width: 100%;
+            }
+
             .app {
                 grid-template-columns: 1fr;
             }
@@ -2023,7 +2067,12 @@
         </div>
 
         <div class="modal-body">
-            <form method="post" action="/receipts/create" id="receiptForm">
+            <form
+                method="post"
+                action="/receipts/create"
+                id="receiptForm"
+                enctype="multipart/form-data"
+            >
                 <!-- RECEIPTS EXCEL IMPORT TOOLBAR V1 -->
                 <input
                     id="receiptImportPayload"
@@ -2099,10 +2148,17 @@
                             id="receipt_brand"
                             name="brand"
                             type="text"
+                            list="receiptBrandOptions"
                             placeholder="Бренд товара"
                             autocomplete="off"
                             required
                         >
+
+                        <datalist id="receiptBrandOptions">
+                            {% for brand in receipt_brands %}
+                                <option value="{{ brand }}"></option>
+                            {% endfor %}
+                        </datalist>
                     </div>
 
                     <div class="field">
@@ -2115,10 +2171,17 @@
                             id="receipt_category"
                             name="category"
                             type="text"
+                            list="receiptCategoryOptions"
                             placeholder="Категория товара"
                             autocomplete="off"
                             required
                         >
+
+                        <datalist id="receiptCategoryOptions">
+                            {% for category in receipt_categories %}
+                                <option value="{{ category }}"></option>
+                            {% endfor %}
+                        </datalist>
                     </div>
 
                     <!-- RECEIPT PRODUCT COMBOBOX V1 -->
@@ -2190,6 +2253,47 @@
                             placeholder="Например, 5000"
                             required
                         >
+                    </div>
+
+                    <div
+                        id="receiptImageField"
+                        class="field field-wide"
+                    >
+                        <label for="receipt_product_image">
+                            Фото товара
+                        </label>
+
+                        <div class="receipt-image-picker">
+                            <div>
+                                <input
+                                    class="control"
+                                    id="receipt_product_image"
+                                    name="product_image"
+                                    type="file"
+                                    accept="image/jpeg,image/png,.jpg,.jpeg,.png"
+                                >
+                                <div
+                                    id="receiptImageHelp"
+                                    class="receipt-image-help"
+                                >
+                                    JPEG или PNG, не больше 3 МБ
+                                </div>
+                            </div>
+
+                            <div
+                                id="receiptImagePreview"
+                                class="receipt-image-preview"
+                            >
+                                <img id="receiptImagePreviewPicture" alt="Предпросмотр фото товара">
+                                <button
+                                    class="button button-secondary"
+                                    type="button"
+                                    id="removeReceiptImage"
+                                >
+                                    Удалить
+                                </button>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="field field-wide">
@@ -2475,6 +2579,25 @@
             "receipt_category"
         );
 
+    const receiptProductImage =
+        document.getElementById(
+            "receipt_product_image"
+        );
+
+    const receiptImageHelp =
+        document.getElementById("receiptImageHelp");
+
+    const receiptImagePreview =
+        document.getElementById("receiptImagePreview");
+
+    const receiptImagePreviewPicture =
+        document.getElementById(
+            "receiptImagePreviewPicture"
+        );
+
+    const removeReceiptImage =
+        document.getElementById("removeReceiptImage");
+
     const receiptForm =
         document.getElementById(
             "receiptForm"
@@ -2482,6 +2605,110 @@
 
     let receiptSelectedProduct = null;
     let receiptActiveSuggestionIndex = -1;
+    let receiptImageObjectUrl = "";
+
+    function clearReceiptImage() {
+        if (receiptImageObjectUrl) {
+            URL.revokeObjectURL(receiptImageObjectUrl);
+            receiptImageObjectUrl = "";
+        }
+
+        if (receiptProductImage) {
+            receiptProductImage.value = "";
+            receiptProductImage.setCustomValidity("");
+        }
+
+        if (receiptImagePreviewPicture) {
+            receiptImagePreviewPicture.removeAttribute("src");
+        }
+
+        receiptImagePreview?.classList.remove("is-visible");
+    }
+
+    function updateReceiptImageAvailability(product) {
+        if (!receiptProductImage || !receiptImageHelp) {
+            return;
+        }
+
+        const alreadyHasImage = Boolean(
+            product && product.has_images
+        );
+
+        receiptProductImage.disabled = alreadyHasImage;
+
+        if (alreadyHasImage) {
+            clearReceiptImage();
+            receiptImageHelp.textContent = (
+                "У выбранного товара уже есть фото. "
+                + "Новый файл не будет добавлен"
+            );
+        } else {
+            receiptImageHelp.textContent = (
+                "JPEG или PNG, не больше 3 МБ"
+            );
+        }
+    }
+
+    function validateAndPreviewReceiptImage() {
+        if (!receiptProductImage) {
+            return;
+        }
+
+        const file = receiptProductImage.files[0];
+
+        if (!file) {
+            clearReceiptImage();
+            return;
+        }
+
+        const allowedTypes = new Set([
+            "image/jpeg",
+            "image/png",
+        ]);
+        let error = "";
+
+        if (!allowedTypes.has(file.type)) {
+            error = "Выберите изображение JPEG или PNG";
+        } else if (file.size > 3 * 1024 * 1024) {
+            error = "Изображение не должно быть больше 3 МБ";
+        }
+
+        receiptProductImage.setCustomValidity(error);
+
+        if (error) {
+            receiptImageHelp.textContent = error;
+            receiptProductImage.reportValidity();
+            receiptImagePreview?.classList.remove("is-visible");
+            return;
+        }
+
+        if (receiptImageObjectUrl) {
+            URL.revokeObjectURL(receiptImageObjectUrl);
+        }
+
+        receiptImageObjectUrl = URL.createObjectURL(file);
+        receiptImagePreviewPicture.src = receiptImageObjectUrl;
+        receiptImagePreview.classList.add("is-visible");
+        receiptImageHelp.textContent = (
+            file.name + " · "
+            + Math.ceil(file.size / 1024) + " КБ"
+        );
+    }
+
+    receiptProductImage?.addEventListener(
+        "change",
+        validateAndPreviewReceiptImage
+    );
+
+    removeReceiptImage?.addEventListener(
+        "click",
+        () => {
+            clearReceiptImage();
+            updateReceiptImageAvailability(
+                receiptSelectedProduct
+            );
+        }
+    );
 
     // RECEIPTS EXCEL IMPORT SCRIPT V1
     const receiptImportModal =
@@ -2728,6 +2955,9 @@
             ),
             document.getElementById(
                 "receipt_purchase_price"
+            ),
+            document.getElementById(
+                "receipt_product_image"
             ),
         ].filter(Boolean);
     }
@@ -3389,6 +3619,8 @@
             receiptBrand.value = "";
             receiptCategory.value = "";
         }
+
+        updateReceiptImageAvailability(null);
     }
 
     function selectReceiptExistingProduct(product) {
@@ -3407,6 +3639,8 @@
 
         receiptCategory.value =
             product.category || "";
+
+        updateReceiptImageAvailability(product);
 
         closeReceiptProductSuggestions();
     }
