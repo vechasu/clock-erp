@@ -1566,26 +1566,101 @@
         }
 
         #editDrawer .product-gallery {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
-            gap: 8px;
+            display: block;
         }
 
-        #editDrawer .product-gallery a {
+        #editDrawer .product-gallery-main {
+            display: flex;
+            width: 100%;
+            align-items: center;
+            justify-content: center;
+            min-height: 360px;
+            padding: 18px;
+            overflow: hidden;
+            border: 1px solid #e2e8f0;
+            border-radius: 16px;
+            background: #ffffff;
+            cursor: zoom-in;
+        }
+
+        #editDrawer .product-gallery-main img {
+            width: 100%;
+            height: 430px;
+            object-fit: contain;
+        }
+
+        #editDrawer .product-gallery-thumbnails {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        #editDrawer .product-gallery-thumbnail {
             display: flex;
             align-items: center;
             justify-content: center;
             aspect-ratio: 1;
+            padding: 6px;
             overflow: hidden;
             border: 1px solid #e2e8f0;
-            border-radius: 12px;
+            border-radius: 10px;
             background: #ffffff;
+            cursor: pointer;
         }
 
-        #editDrawer .product-gallery img {
+        #editDrawer .product-gallery-thumbnail img {
             width: 100%;
             height: 100%;
             object-fit: contain;
+        }
+
+        .product-gallery-lightbox {
+            position: fixed;
+            z-index: 1200;
+            inset: 0;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 28px;
+            background: rgba(15, 23, 42, 0.86);
+        }
+
+        .product-gallery-lightbox.open { display: flex; }
+
+        .product-gallery-lightbox img {
+            width: min(1200px, 100%);
+            height: min(88vh, 900px);
+            padding: 20px;
+            border-radius: 18px;
+            background: #ffffff;
+            object-fit: contain;
+        }
+
+        .product-gallery-lightbox-close {
+            position: absolute;
+            top: 16px;
+            right: 18px;
+            width: 44px;
+            height: 44px;
+            border: 0;
+            border-radius: 50%;
+            background: #ffffff;
+            color: #0f172a;
+            font-size: 28px;
+            cursor: pointer;
+        }
+
+        @media (max-width: 640px) {
+            #editDrawer .product-gallery-main {
+                min-height: 260px;
+                padding: 12px;
+            }
+
+            #editDrawer .product-gallery-main img { height: 300px; }
+            #editDrawer .product-gallery-thumbnails { grid-template-columns: repeat(4, 1fr); }
+            .product-gallery-lightbox { padding: 12px; }
+            .product-gallery-lightbox img { height: 84vh; padding: 10px; }
         }
 
         #editDrawer .drawer-form {
@@ -3107,6 +3182,11 @@
 
     <div id="drawerBackdrop" class="drawer-backdrop" onclick="closeAllDrawers()"></div>
 
+    <div id="productGalleryLightbox" class="product-gallery-lightbox" onclick="closeProductGalleryLightbox(event)">
+        <button class="product-gallery-lightbox-close" type="button" aria-label="Закрыть" onclick="closeProductGalleryLightbox()">×</button>
+        <img id="productGalleryLightboxImage" src="" alt="">
+    </div>
+
     <aside id="filterDrawer" class="drawer">
         <div class="drawer-header">
             <div>
@@ -3444,6 +3524,25 @@
             document.getElementById("warehouseMapDrawer").classList.add("open");
         }
 
+        function openProductGalleryLightbox(imageUrl, productName) {
+            const lightbox = document.getElementById("productGalleryLightbox");
+            const image = document.getElementById("productGalleryLightboxImage");
+            image.src = imageUrl;
+            image.alt = productName || "Фото товара";
+            lightbox.classList.add("open");
+        }
+
+        function closeProductGalleryLightbox(event) {
+            const lightbox = document.getElementById("productGalleryLightbox");
+
+            if (event && event.target !== lightbox) {
+                return;
+            }
+
+            lightbox.classList.remove("open");
+            document.getElementById("productGalleryLightboxImage").src = "";
+        }
+
         function openEditDrawer(button) {
             closeAllDrawers();
 
@@ -3498,25 +3597,58 @@
                 gallery = [];
             }
 
-            galleryElement.replaceChildren();
-            gallery.forEach(function(image) {
-                const imageUrl = image.original_url || image.url || "";
+            const galleryUrls = gallery
+                .map(function(image) { return image.original_url || image.url || ""; })
+                .filter(Boolean);
+            let selectedGalleryIndex = 0;
 
-                if (!imageUrl) {
+            function renderProductGallery() {
+                galleryElement.replaceChildren();
+
+                if (!galleryUrls.length) {
                     return;
                 }
 
-                const link = document.createElement("a");
-                const preview = document.createElement("img");
-                link.href = imageUrl;
-                link.target = "_blank";
-                link.rel = "noopener noreferrer";
-                preview.src = imageUrl;
-                preview.alt = productName;
-                preview.loading = "lazy";
-                link.appendChild(preview);
-                galleryElement.appendChild(link);
-            });
+                const mainButton = document.createElement("button");
+                const mainImage = document.createElement("img");
+                mainButton.type = "button";
+                mainButton.className = "product-gallery-main";
+                mainButton.setAttribute("aria-label", "Открыть фотографию на весь экран");
+                mainImage.src = galleryUrls[selectedGalleryIndex];
+                mainImage.alt = productName;
+                mainButton.appendChild(mainImage);
+                mainButton.addEventListener("click", function() {
+                    openProductGalleryLightbox(mainImage.src, productName);
+                });
+                galleryElement.appendChild(mainButton);
+
+                if (galleryUrls.length > 1) {
+                    const thumbnails = document.createElement("div");
+                    thumbnails.className = "product-gallery-thumbnails";
+                    galleryUrls.forEach(function(imageUrl, index) {
+                        if (index === selectedGalleryIndex) {
+                            return;
+                        }
+                        const button = document.createElement("button");
+                        const image = document.createElement("img");
+                        button.type = "button";
+                        button.className = "product-gallery-thumbnail";
+                        button.setAttribute("aria-label", "Показать фотографию " + (index + 1));
+                        image.src = imageUrl;
+                        image.alt = productName;
+                        image.loading = "lazy";
+                        button.appendChild(image);
+                        button.addEventListener("click", function() {
+                            selectedGalleryIndex = index;
+                            renderProductGallery();
+                        });
+                        thumbnails.appendChild(button);
+                    });
+                    galleryElement.appendChild(thumbnails);
+                }
+            }
+
+            renderProductGallery();
             gallerySection.hidden = !galleryElement.childElementCount;
 
             document.getElementById("detailName").textContent = productName;
@@ -4369,6 +4501,7 @@
 
         document.addEventListener("keydown", function(event) {
             if (event.key === "Escape") {
+                closeProductGalleryLightbox();
                 setBrandDropdownOpen(false);
             }
         });
