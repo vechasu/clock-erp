@@ -984,6 +984,7 @@ def warehouse_page():
     all_items = get_warehouse_items(force=request.args.get("refresh") == "1")
     category_tree = build_category_tree(all_items)
     brand_groups = build_brand_groups(all_items)
+    bulk_brand_options = CatalogReader().list_active_brands()
     cell_groups = build_cell_groups(all_items)
 
     items = all_items
@@ -1102,6 +1103,7 @@ def warehouse_page():
         visible_positions=visible_positions,
         category_tree=category_tree,
         brand_groups=brand_groups,
+        bulk_brand_options=bulk_brand_options,
         cell_groups=cell_groups,
         total_stock=total_stock,
         total_stock_display=format_stock_number(total_stock),
@@ -1472,6 +1474,15 @@ def warehouse_bulk_edit():
             notice="error",
             message="Для массовой замены укажите бренд",
         ))
+
+    if apply_brand:
+        brand = CatalogReader().canonical_active_brand(brand)
+        if not brand:
+            return redirect(url_for(
+                "warehouse_page",
+                notice="error",
+                message="Выберите бренд из списка действующих брендов",
+            ))
 
     if apply_category and not category:
         return redirect(url_for(
