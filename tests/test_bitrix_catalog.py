@@ -57,6 +57,10 @@ class CatalogNormalizationTest(unittest.TestCase):
         self.assertEqual(product["external_xml_id"], "")
         self.assertEqual(product["images"], [])
 
+    def test_code_is_used_as_article_when_article_is_missing(self):
+        product = normalize_product({"ID": 1, "CODE": "Z031-TITI-W15BK"})
+        self.assertEqual(product["external_sku"], "Z031-TITI-W15BK")
+
     def test_multiple_images_are_ordered_and_deduplicated(self):
         product = normalize_product({
             "ID": 1,

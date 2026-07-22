@@ -228,7 +228,7 @@ def normalize_product(raw, base_url=""):
         "external_product_id": _text(_first(raw, "id", "ID", "product_id", "PRODUCT_ID")),
         "external_offer_id": _text(_first(raw, "offer_id", "OFFER_ID")),
         "external_xml_id": _text(_first(raw, "xml_id", "XML_ID", "external_code")),
-        "external_sku": _text(_first(raw, "sku", "SKU", "article", "ARTICLE")),
+        "external_sku": _text(_first(raw, "sku", "SKU", "article", "ARTICLE", "code", "CODE")),
         "code": _text(_first(raw, "code", "CODE", "symbolic_code")),
         "url": urljoin(base_url, _text(_first(raw, "url", "source_url", "URL", "detail_page_url", "DETAIL_PAGE_URL"))),
         "name": _text(_first(raw, "name", "NAME")),
