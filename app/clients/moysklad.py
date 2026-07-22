@@ -1,3 +1,5 @@
+import base64
+
 import requests
 from app.config import MOYSKLAD_TOKEN
 
@@ -81,7 +83,15 @@ class MoySkladClient:
             {"archived": True}
         )
 
-    def update_product(self, product_id, name=None, code=None, article=None):
+    def update_product(
+        self,
+        product_id,
+        name=None,
+        code=None,
+        article=None,
+        product_folder=None,
+        archived=None,
+    ):
         payload = {}
 
         if name is not None:
@@ -93,9 +103,107 @@ class MoySkladClient:
         if article is not None:
             payload["article"] = article
 
+        if product_folder and product_folder.get("meta"):
+            payload["productFolder"] = {
+                "meta": product_folder["meta"],
+            }
+
+        if archived is not None:
+            payload["archived"] = bool(archived)
+
         return self.put(
             f"/entity/product/{product_id}",
             payload
+        )
+
+    def get_product_images(self, product_id, limit=1):
+        product_id = str(product_id or "").strip()
+
+        if not product_id:
+            raise ValueError("Не указан ID товара")
+
+        response = self.get(
+            f"/entity/product/{product_id}/images",
+            params={"limit": limit},
+        )
+
+        if response is None:
+            raise ValueError(
+                "Не удалось проверить фотографии товара в МойСклад"
+            )
+
+        if isinstance(response, dict):
+            rows = response.get("rows", [])
+            return rows if isinstance(rows, list) else []
+
+        return response if isinstance(response, list) else []
+
+    def product_has_images(self, product_id):
+        return bool(self.get_product_images(product_id, limit=1))
+
+    def download_product_thumbnail(self, product_id):
+        images = self.get_product_images(product_id, limit=1)
+
+        if not images:
+            return None
+
+        image = images[0] if isinstance(images[0], dict) else {}
+        miniature = image.get("miniature") or image.get("tiny") or {}
+
+        if not isinstance(miniature, dict):
+            return None
+
+        meta = miniature.get("meta") or {}
+        url = (
+            miniature.get("downloadHref")
+            or miniature.get("href")
+            or meta.get("downloadHref")
+            or meta.get("href")
+        )
+
+        if not url:
+            return None
+
+        response = requests.get(
+            url,
+            headers=self.headers,
+            timeout=8,
+            allow_redirects=True,
+        )
+        response.raise_for_status()
+
+        content = response.content
+        content_type = str(
+            response.headers.get("Content-Type") or ""
+        ).split(";", 1)[0].strip().lower()
+
+        if not content or not content_type.startswith("image/"):
+            return None
+
+        if len(content) > 2 * 1024 * 1024:
+            raise ValueError("Миниатюра товара слишком большая")
+
+        return content, content_type
+
+    def upload_product_image(self, product_id, filename, content):
+        product_id = str(product_id or "").strip()
+
+        if not product_id:
+            raise ValueError("Не указан ID товара")
+
+        if not isinstance(content, (bytes, bytearray)) or not content:
+            raise ValueError("Файл изображения пуст")
+
+        return self.put(
+            f"/entity/product/{product_id}",
+            {
+                "images": [
+                    {
+                        "filename": str(filename or "product.jpg"),
+                        "content": base64.b64encode(content).decode("ascii"),
+                    }
+                ]
+            },
         )
 
     def get_products(self, limit=10):
@@ -617,6 +725,7 @@ class MoySkladClient:
         code,
         article=None,
         product_folder=None,
+        image=None,
     ):
         payload = {
             "name": name,
@@ -630,6 +739,23 @@ class MoySkladClient:
             payload["productFolder"] = {
                 "meta": product_folder["meta"],
             }
+
+        if image:
+            image_content = image.get("content")
+
+            if not isinstance(image_content, (bytes, bytearray)):
+                raise ValueError("Некорректный файл изображения")
+
+            payload["images"] = [
+                {
+                    "filename": str(
+                        image.get("filename") or "product.jpg"
+                    ),
+                    "content": base64.b64encode(image_content).decode(
+                        "ascii"
+                    ),
+                }
+            ]
 
         response = requests.post(
             f"{self.BASE_URL}/entity/product",

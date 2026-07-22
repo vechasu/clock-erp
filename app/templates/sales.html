@@ -81,7 +81,7 @@
         .stats {
             display: grid;
             grid-template-columns:
-                repeat(3, minmax(0, 1fr))
+                repeat(4, minmax(0, 1fr))
                 minmax(190px, 0.9fr)
                 minmax(190px, 0.9fr);
             gap: 8px;
@@ -581,6 +581,65 @@
             font-weight: 800;
         }
 
+        .sale-status-badge {
+            display: inline-flex;
+            padding: 4px 8px;
+            border-radius: 999px;
+            background: #e2e8f0;
+            color: #334155;
+            font-size: 11px;
+            font-weight: 850;
+            white-space: nowrap;
+        }
+
+        .sale-status-cancelled {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .sale-row.is-cancelled td {
+            background: #fff1f2;
+            color: #7f1d1d;
+        }
+
+        .sales-search-wrap {
+            position: relative;
+            flex: 1 1 auto;
+            min-width: 260px;
+        }
+
+        .sales-search-wrap .search {
+            width: 100%;
+            padding-right: 38px;
+        }
+
+        .sales-search-clear {
+            position: absolute;
+            top: 50%;
+            right: 7px;
+            width: 27px;
+            height: 27px;
+            padding: 0;
+            transform: translateY(-50%);
+            border: 0;
+            border-radius: 50%;
+            background: #e2e8f0;
+            color: #475569;
+            font-size: 18px;
+            line-height: 1;
+        }
+
+        .sales-search-clear.is-hidden {
+            display: none;
+        }
+
+        .sale-secondary-value {
+            display: block;
+            margin-top: 4px;
+            color: #64748b;
+            font-size: 11px;
+        }
+
         .manual-badge {
             display: inline-flex;
             margin-top: 5px;
@@ -827,7 +886,10 @@
                 display: none;
             }
 
-            .stats,
+            .stats {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
             .manual-form-grid {
                 grid-template-columns: 1fr;
             }
@@ -838,6 +900,12 @@
 
             .main {
                 padding: 16px;
+            }
+        }
+
+        @media (max-width: 560px) {
+            .stats {
+                grid-template-columns: 1fr;
             }
         }
 
@@ -1446,6 +1514,7 @@
             align-items: center;
             gap: 6px;
             margin: 0;
+            position: relative;
         }
 
         .sales-date-field span {
@@ -1565,7 +1634,7 @@
         .sales-date-input {
             width: 132px;
             height: 40px;
-            padding: 0 10px;
+            padding: 0 28px 0 10px;
             border: 1px solid #d7dde5;
             border-radius: 10px;
             background: #ffffff;
@@ -1574,6 +1643,31 @@
             font-weight: 700;
             outline: none;
             box-shadow: none;
+        }
+
+        .sales-date-one-clear {
+            position: absolute;
+            top: 50%;
+            right: 7px;
+            width: 18px;
+            height: 18px;
+            padding: 0;
+            transform: translateY(-50%);
+            border: 0;
+            border-radius: 50%;
+            background: transparent;
+            color: #94a3b8;
+            font-size: 18px;
+            line-height: 16px;
+        }
+
+        .sales-date-one-clear:hover:not(:disabled) {
+            background: #e2e8f0;
+            color: #475569;
+        }
+
+        .sales-date-one-clear:disabled {
+            visibility: hidden;
         }
 
         .sales-date-input:focus {
@@ -1733,6 +1827,28 @@
             min-width: 130px;
             white-space: nowrap;
         }
+
+        @media (max-width: 900px) {
+            .main {
+                height: auto;
+                min-height: 100vh;
+                overflow: visible;
+            }
+
+            .stats {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .sales-data-card {
+                min-height: 65vh;
+            }
+        }
+
+        @media (max-width: 560px) {
+            .stats {
+                grid-template-columns: 1fr;
+            }
+        }
 </style>
 </head>
 
@@ -1750,7 +1866,7 @@
 
         <div class="stats">
             <div class="stat-card">
-                <div class="stat-label">Строк продаж</div>
+                <div class="stat-label">Не отменено</div>
                 <div class="stat-value">{{ total_sales }}</div>
             </div>
 
@@ -1762,6 +1878,11 @@
             <div class="stat-card">
                 <div class="stat-label">Продано единиц</div>
                 <div class="stat-value">{{ total_quantity }}</div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-label">Отменено</div>
+                <div class="stat-value">{{ total_cancelled }}</div>
             </div>
 
             <a
@@ -1783,12 +1904,21 @@
         <section class="sales-data-card">
 
             <div class="toolbar sales-data-toolbar">
-                <input
-                    id="salesSearch"
-                    class="search"
-                    type="text"
-                    placeholder="Поиск по источнику, товару, заказу, треку, региону, городу или примечанию"
-                >
+                <div class="sales-search-wrap">
+                    <input
+                        id="salesSearch"
+                        class="search"
+                        type="text"
+                        placeholder="Источник, товар, заказ, трек или получатель"
+                    >
+                    <button
+                        id="clearSalesSearch"
+                        class="sales-search-clear is-hidden"
+                        type="button"
+                        aria-label="Очистить поиск"
+                        title="Очистить поиск"
+                    >×</button>
+                </div>
 
                 <div
                     class="sales-date-filter"
@@ -1801,6 +1931,14 @@
                             type="date"
                             aria-label="Дата с"
                         >
+                        <button
+                            id="clearSalesDateFrom"
+                            class="sales-date-one-clear"
+                            type="button"
+                            aria-label="Очистить дату с"
+                            title="Очистить дату с"
+                            disabled
+                        >×</button>
                     </label>
 
                     <span
@@ -1817,6 +1955,14 @@
                             type="date"
                             aria-label="Дата по"
                         >
+                        <button
+                            id="clearSalesDateTo"
+                            class="sales-date-one-clear"
+                            type="button"
+                            aria-label="Очистить дату по"
+                            title="Очистить дату по"
+                            disabled
+                        >×</button>
                     </label>
 
                     <button
@@ -1849,6 +1995,7 @@
                                         <span class="sales-sort-arrow">↕</span>
                                     </span>
                                 </th>
+                                <th class="col-status">Статус</th>
                                 <th class="col-product">
                                     <span class="sales-sort-label" data-sort-field="product" onclick="sortSalesTable('product')">
                                         Товар
@@ -1891,12 +2038,14 @@
                                         <span class="sales-sort-arrow">↕</span>
                                     </span>
                                 </th>
+                                <th class="col-recipient">Получатель</th>
                                 <th class="col-delivery">
                                     <span class="sales-sort-label" data-sort-field="delivery" onclick="sortSalesTable('delivery')">
                                         Способ доставки
                                         <span class="sales-sort-arrow">↕</span>
                                     </span>
                                 </th>
+                                <th class="col-payment">Оплата / комиссия</th>
                                 <th class="col-region">
                                     <span class="sales-sort-label" data-sort-field="region" onclick="sortSalesTable('region')">
                                         Регион
@@ -1922,8 +2071,8 @@
                         <tbody>
                             {% for sale in sales %}
                                 <tr
-                                    class="sale-row{% if sale.is_manual %} manual-row{% else %} automatic-row{% endif %}"
-                                    data-search="{{ sale.created_at }} {{ sale.source }} {{ sale.product_name }} {{ sale.bitrix_product_name }} {{ sale.brand }} {{ sale.category }} {{ sale.order_number }} {{ sale.track_number }} {{ sale.delivery_method }} {{ sale.region }} {{ sale.city }} {{ sale.note }}"
+                                    class="sale-row{% if sale.is_manual %} manual-row{% else %} automatic-row{% endif %}{% if sale.is_cancelled %} is-cancelled{% endif %}"
+                                    data-search="{{ sale.created_at }} {{ sale.source }} {{ sale.product_name }} {{ sale.bitrix_product_name }} {{ sale.brand }} {{ sale.category }} {{ sale.order_number }} {{ sale.sticker_number }} {{ sale.track_number }} {{ sale.recipient }} {{ sale.recipient_name }} {{ sale.payment_method }} {{ sale.delivery_method }} {{ sale.region }} {{ sale.city }} {{ sale.note }} {{ sale.order_status_label }}"
                                     data-sort-date="{{ sale.created_at }}"
                                     data-sort-source="{{ sale.source }}"
                                     data-sort-product="{{ sale.product_name or sale.bitrix_product_name }}"
@@ -1973,6 +2122,21 @@
                                             >
                                         </td>
 
+                                        <td class="col-status">
+                                            <span class="manual-view-value sale-status-badge{% if sale.is_cancelled %} sale-status-cancelled{% endif %}">
+                                                {{ sale.order_status_label }}
+                                            </span>
+                                            <select
+                                                class="table-control manual-edit-control sale-edit-control"
+                                                name="order_status"
+                                                form="{{ edit_form_id }}"
+                                            >
+                                                {% for status_value, status_label in sale_status_labels.items() %}
+                                                    <option value="{{ status_value }}" {% if sale.order_status == status_value %}selected{% endif %}>{{ status_label }}</option>
+                                                {% endfor %}
+                                            </select>
+                                        </td>
+
                                         <td class="col-product">
                                             <div class="product-name manual-view-value">
                                                 {{ sale.product_name or "—" }}
@@ -2003,6 +2167,7 @@
                                                 name="brand"
                                                 value="{{ sale.brand }}"
                                                 form="{{ edit_form_id }}"
+                                                readonly
                                             >
                                         </td>
 
@@ -2016,6 +2181,7 @@
                                                 name="category"
                                                 value="{{ sale.category }}"
                                                 form="{{ edit_form_id }}"
+                                                readonly
                                             >
                                         </td>
 
@@ -2084,6 +2250,9 @@
                                         <td class="col-order">
                                             <span class="manual-view-value">
                                                 {{ sale.order_number or "—" }}
+                                                {% if sale.sticker_number %}
+                                                    <span class="sale-secondary-value">Стикер: {{ sale.sticker_number }}</span>
+                                                {% endif %}
                                             </span>
 
                                             <input
@@ -2093,6 +2262,17 @@
                                                 value="{{ sale.order_number }}"
                                                 form="{{ edit_form_id }}"
                                             >
+
+                                            {% if sale.source == "Wildberries" or sale.sticker_number %}
+                                                <input
+                                                    class="table-control manual-edit-control sale-edit-control"
+                                                    type="text"
+                                                    name="sticker_number"
+                                                    value="{{ sale.sticker_number }}"
+                                                    placeholder="Номер стикера"
+                                                    form="{{ edit_form_id }}"
+                                                >
+                                            {% endif %}
                                         </td>
 
                                         <td class="col-track">
@@ -2105,6 +2285,31 @@
                                                 type="text"
                                                 name="track_number"
                                                 value="{{ sale.track_number }}"
+                                                form="{{ edit_form_id }}"
+                                            >
+                                        </td>
+
+                                        <td class="col-recipient">
+                                            <span class="manual-view-value">
+                                                {{ sale.recipient_name or sale.recipient or "—" }}
+                                                {% if sale.recipient_name and sale.recipient %}
+                                                    <span class="sale-secondary-value">{{ sale.recipient }}</span>
+                                                {% endif %}
+                                            </span>
+                                            <input
+                                                class="table-control manual-edit-control sale-edit-control"
+                                                type="text"
+                                                name="recipient_name"
+                                                value="{{ sale.recipient_name }}"
+                                                placeholder="ФИО"
+                                                form="{{ edit_form_id }}"
+                                            >
+                                            <input
+                                                class="table-control manual-edit-control sale-edit-control"
+                                                type="text"
+                                                name="recipient"
+                                                value="{{ sale.recipient }}"
+                                                placeholder="Получатель"
                                                 form="{{ edit_form_id }}"
                                             >
                                         </td>
@@ -2162,6 +2367,33 @@
                                                 form="{{ edit_form_id }}"
                                             >
                                             <!-- EDIT CUSTOM DELIVERY V1 END -->
+                                        </td>
+
+                                        <td class="col-payment">
+                                            <span class="manual-view-value">
+                                                {{ sale.payment_method or "—" }}
+                                                {% if sale.commission_amount %}
+                                                    <span class="sale-secondary-value">Комиссия: {{ sale.commission_display }}</span>
+                                                {% endif %}
+                                            </span>
+                                            <input
+                                                class="table-control manual-edit-control sale-edit-control"
+                                                type="text"
+                                                name="payment_method"
+                                                value="{{ sale.payment_method }}"
+                                                placeholder="Способ оплаты"
+                                                form="{{ edit_form_id }}"
+                                            >
+                                            <input
+                                                class="table-control manual-edit-control sale-edit-control"
+                                                type="number"
+                                                name="commission_amount"
+                                                value="{{ sale.commission_amount }}"
+                                                min="0"
+                                                step="0.01"
+                                                placeholder="Комиссия, ₽"
+                                                form="{{ edit_form_id }}"
+                                            >
                                         </td>
 
                                         <td class="col-region">
@@ -2249,20 +2481,22 @@
 
                                                 <form
                                                     method="post"
-                                                    action="/sales/manual/delete"
-                                                    onsubmit="return confirm('Удалить ручную продажу?');"
+                                                    action="/sales/status"
+                                                    onsubmit="return confirm('{{ 'Вернуть продажу в работу?' if sale.is_cancelled else 'Отменить продажу без удаления?' }}');"
                                                 >
                                                     <input
                                                         type="hidden"
                                                         name="sale_id"
                                                         value="{{ sale.id }}"
                                                     >
+                                                    <input type="hidden" name="sale_type" value="manual">
+                                                    <input type="hidden" name="order_status" value="{{ 'completed' if sale.is_cancelled else 'cancelled' }}">
 
                                                     <button
                                                         class="button button-delete button-icon-only"
                                                         type="submit"
-                                                        title="Удалить продажу"
-                                                        aria-label="Удалить продажу"
+                                                        title="{{ 'Вернуть продажу' if sale.is_cancelled else 'Отменить продажу' }}"
+                                                        aria-label="{{ 'Вернуть продажу' if sale.is_cancelled else 'Отменить продажу' }}"
                                                     >
                                                         <svg viewBox="0 0 24 24"
                                                              fill="none"
@@ -2271,11 +2505,13 @@
                                                              stroke-linecap="round"
                                                              stroke-linejoin="round"
                                                              aria-hidden="true">
-                                                            <path d="M3 6h18"/>
-                                                            <path d="M8 6V4h8v2"/>
-                                                            <path d="M19 6l-1 14H6L5 6"/>
-                                                            <path d="M10 11v6"/>
-                                                            <path d="M14 11v6"/>
+                                                            {% if sale.is_cancelled %}
+                                                                <path d="M3 12a9 9 0 1 0 3-6.7"/>
+                                                                <path d="M3 4v6h6"/>
+                                                            {% else %}
+                                                                <path d="M6 6l12 12"/>
+                                                                <path d="M18 6L6 18"/>
+                                                            {% endif %}
                                                         </svg>
                                                     </button>
                                                 </form>
@@ -2331,6 +2567,21 @@
                                             >
                                         </td>
 
+                                        <td class="col-status">
+                                            <span class="automatic-view-value sale-status-badge{% if sale.is_cancelled %} sale-status-cancelled{% endif %}">
+                                                {{ sale.order_status_label }}
+                                            </span>
+                                            <select
+                                                class="table-control automatic-edit-control sale-edit-control"
+                                                name="order_status"
+                                                form="{{ edit_form_id }}"
+                                            >
+                                                {% for status_value, status_label in sale_status_labels.items() %}
+                                                    <option value="{{ status_value }}" {% if sale.order_status == status_value %}selected{% endif %}>{{ status_label }}</option>
+                                                {% endfor %}
+                                            </select>
+                                        </td>
+
                                         <td class="col-product">
                                             <div class="product-name automatic-view-value">
                                                 {{ sale.product_name or "—" }}
@@ -2343,6 +2594,7 @@
                                                 value="{{ sale.product_name }}"
                                                 form="{{ edit_form_id }}"
                                                 required
+                                                readonly
                                             >
                                         </td>
 
@@ -2356,6 +2608,7 @@
                                                 name="brand"
                                                 value="{{ sale.brand }}"
                                                 form="{{ edit_form_id }}"
+                                                readonly
                                             >
                                         </td>
 
@@ -2369,6 +2622,7 @@
                                                 name="category"
                                                 value="{{ sale.category }}"
                                                 form="{{ edit_form_id }}"
+                                                readonly
                                             >
                                         </td>
 
@@ -2444,6 +2698,9 @@
                                                 {% else %}
                                                     {{ sale.order_number or "—" }}
                                                 {% endif %}
+                                                {% if sale.sticker_number %}
+                                                    <span class="sale-secondary-value">Стикер: {{ sale.sticker_number }}</span>
+                                                {% endif %}
                                             </span>
 
                                             <input
@@ -2453,6 +2710,17 @@
                                                 value="{{ sale.order_number }}"
                                                 form="{{ edit_form_id }}"
                                             >
+
+                                            {% if sale.source == "Wildberries" or sale.sticker_number %}
+                                                <input
+                                                    class="table-control automatic-edit-control sale-edit-control"
+                                                    type="text"
+                                                    name="sticker_number"
+                                                    value="{{ sale.sticker_number }}"
+                                                    placeholder="Номер стикера"
+                                                    form="{{ edit_form_id }}"
+                                                >
+                                            {% endif %}
                                         </td>
 
                                         <td class="col-track">
@@ -2465,6 +2733,31 @@
                                                 type="text"
                                                 name="track_number"
                                                 value="{{ sale.track_number }}"
+                                                form="{{ edit_form_id }}"
+                                            >
+                                        </td>
+
+                                        <td class="col-recipient">
+                                            <span class="automatic-view-value">
+                                                {{ sale.recipient_name or sale.recipient or "—" }}
+                                                {% if sale.recipient_name and sale.recipient %}
+                                                    <span class="sale-secondary-value">{{ sale.recipient }}</span>
+                                                {% endif %}
+                                            </span>
+                                            <input
+                                                class="table-control automatic-edit-control sale-edit-control"
+                                                type="text"
+                                                name="recipient_name"
+                                                value="{{ sale.recipient_name }}"
+                                                placeholder="ФИО"
+                                                form="{{ edit_form_id }}"
+                                            >
+                                            <input
+                                                class="table-control automatic-edit-control sale-edit-control"
+                                                type="text"
+                                                name="recipient"
+                                                value="{{ sale.recipient }}"
+                                                placeholder="Получатель"
                                                 form="{{ edit_form_id }}"
                                             >
                                         </td>
@@ -2522,6 +2815,33 @@
                                                 form="{{ edit_form_id }}"
                                             >
                                             <!-- EDIT CUSTOM DELIVERY V1 END -->
+                                        </td>
+
+                                        <td class="col-payment">
+                                            <span class="automatic-view-value">
+                                                {{ sale.payment_method or "—" }}
+                                                {% if sale.commission_amount %}
+                                                    <span class="sale-secondary-value">Комиссия: {{ sale.commission_display }}</span>
+                                                {% endif %}
+                                            </span>
+                                            <input
+                                                class="table-control automatic-edit-control sale-edit-control"
+                                                type="text"
+                                                name="payment_method"
+                                                value="{{ sale.payment_method }}"
+                                                placeholder="Способ оплаты"
+                                                form="{{ edit_form_id }}"
+                                            >
+                                            <input
+                                                class="table-control automatic-edit-control sale-edit-control"
+                                                type="number"
+                                                name="commission_amount"
+                                                value="{{ sale.commission_amount }}"
+                                                min="0"
+                                                step="0.01"
+                                                placeholder="Комиссия, ₽"
+                                                form="{{ edit_form_id }}"
+                                            >
                                         </td>
 
                                         <td class="col-region">
@@ -2600,6 +2920,32 @@
                                                         <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
                                                     </svg>
                                                 </button>
+
+                                                <form
+                                                    method="post"
+                                                    action="/sales/status"
+                                                    onsubmit="return confirm('{{ 'Вернуть продажу в работу?' if sale.is_cancelled else 'Отменить продажу без удаления?' }}');"
+                                                >
+                                                    <input type="hidden" name="sale_id" value="{{ sale.id }}">
+                                                    <input type="hidden" name="sale_type" value="automatic">
+                                                    <input type="hidden" name="order_status" value="{{ 'completed' if sale.is_cancelled else 'cancelled' }}">
+                                                    <button
+                                                        class="button button-delete button-icon-only"
+                                                        type="submit"
+                                                        title="{{ 'Вернуть продажу' if sale.is_cancelled else 'Отменить продажу' }}"
+                                                        aria-label="{{ 'Вернуть продажу' if sale.is_cancelled else 'Отменить продажу' }}"
+                                                    >
+                                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                                            {% if sale.is_cancelled %}
+                                                                <path d="M3 12a9 9 0 1 0 3-6.7"/>
+                                                                <path d="M3 4v6h6"/>
+                                                            {% else %}
+                                                                <path d="M6 6l12 12"/>
+                                                                <path d="M18 6L6 18"/>
+                                                            {% endif %}
+                                                        </svg>
+                                                    </button>
+                                                </form>
                                             </div>
 
                                             <div class="action-buttons automatic-edit-actions">
@@ -2688,10 +3034,9 @@
                                 name="source"
                                 required
                             >
-                                <option value="Tictactoy">Tictactoy</option>
-                                <option value="Wildberries">Wildberries</option>
-                                <option value="Amazon">Amazon</option>
-                                <option value="Ziiiro сайт">Ziiiro сайт</option>
+                                {% for source_option in sales_sources %}
+                                    <option value="{{ source_option }}">{{ source_option }}</option>
+                                {% endfor %}
                                 <option value="__custom__">Свой вариант</option>
                             </select>
                         </div>
@@ -2745,6 +3090,7 @@
                                 type="text"
                                 name="brand"
                                 placeholder="Заполнится после выбора товара"
+                                readonly
                             >
                         </div>
 
@@ -2756,6 +3102,7 @@
                                 type="text"
                                 name="category"
                                 placeholder="Заполнится после выбора товара"
+                                readonly
                             >
                         </div>
 
@@ -2806,6 +3153,29 @@
                         <!-- MANUAL SALE PRICE FIELD V1 END -->
 
                         <div class="field">
+                            <label for="commission_amount">Комиссия, ₽</label>
+                            <input
+                                id="commission_amount"
+                                class="control"
+                                type="number"
+                                name="commission_amount"
+                                min="0"
+                                step="0.01"
+                                value="0"
+                                placeholder="Фиксированная сумма"
+                            >
+                        </div>
+
+                        <div class="field">
+                            <label for="order_status">Статус заказа</label>
+                            <select id="order_status" class="control" name="order_status">
+                                {% for status_value, status_label in sale_status_labels.items() %}
+                                    <option value="{{ status_value }}" {% if status_value == "completed" %}selected{% endif %}>{{ status_label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <div class="field">
                             <label for="order_number">Номер заказа</label>
                             <input
                                 id="order_number"
@@ -2816,7 +3186,18 @@
                             >
                         </div>
 
-                        <div class="field">
+                        <div id="wildberriesStickerField" class="field is-hidden">
+                            <label for="sticker_number">Номер стикера Wildberries</label>
+                            <input
+                                id="sticker_number"
+                                class="control"
+                                type="text"
+                                name="sticker_number"
+                                placeholder="Номер стикера"
+                            >
+                        </div>
+
+                        <div class="field js-non-wb-field">
                             <label for="track_number">
                                 Номер отправления
                             </label>
@@ -2829,7 +3210,29 @@
                             >
                         </div>
 
-                        <div class="field">
+                        <div class="field js-non-wb-field">
+                            <label for="recipient">Получатель</label>
+                            <input
+                                id="recipient"
+                                class="control"
+                                type="text"
+                                name="recipient"
+                                placeholder="Компания, ПВЗ или другое название"
+                            >
+                        </div>
+
+                        <div class="field js-non-wb-field">
+                            <label for="recipient_name">ФИО получателя</label>
+                            <input
+                                id="recipient_name"
+                                class="control"
+                                type="text"
+                                name="recipient_name"
+                                placeholder="Фамилия, имя, отчество"
+                            >
+                        </div>
+
+                        <div class="field js-non-wb-field">
                             <label for="delivery_method">
                                 Способ доставки
                             </label>
@@ -2867,7 +3270,7 @@
                         <!-- CUSTOM DELIVERY MODAL V1 -->
                         <div
                             id="customDeliveryMethodField"
-                            class="field is-hidden"
+                            class="field is-hidden js-non-wb-field"
                         >
                             <label for="custom_delivery_method">
                                 Свой способ доставки
@@ -2883,7 +3286,7 @@
                             >
                         </div>
                         <!-- CUSTOM DELIVERY MODAL V1 END -->
-                        <div class="field">
+                        <div class="field js-non-wb-field">
                             <label for="region">Регион</label>
                             <input
                                 id="region"
@@ -2902,7 +3305,7 @@
                             </datalist>
                         </div>
 
-                        <div class="field">
+                        <div class="field js-non-wb-field">
                             <label for="city">Город</label>
                             <input
                                 id="city"
@@ -2912,6 +3315,24 @@
                                 placeholder="Сначала выберите регион"
                                 autocomplete="off"
                             >
+                        </div>
+
+                        <div class="field js-non-wb-field">
+                            <label for="payment_method">Способ оплаты</label>
+                            <input
+                                id="payment_method"
+                                class="control"
+                                type="text"
+                                name="payment_method"
+                                list="paymentMethodOptions"
+                                placeholder="Выберите или введите свой"
+                                autocomplete="off"
+                            >
+                            <datalist id="paymentMethodOptions">
+                                <option value="Robokassa"></option>
+                                <option value="Наличные"></option>
+                                <option value="Банковская карта"></option>
+                            </datalist>
                         </div>
 
                         <div class="field field-wide">
@@ -3106,6 +3527,80 @@
     const customSourceInput = document.getElementById(
         "custom_source"
     );
+    const wildberriesStickerField = document.getElementById(
+        "wildberriesStickerField"
+    );
+    const nonWildberriesFields = Array.from(
+        document.querySelectorAll(".js-non-wb-field")
+    );
+
+    function setFieldDisabled(field, disabled) {
+        field.querySelectorAll("input, select, textarea")
+            .forEach((control) => {
+                control.disabled = disabled;
+            });
+    }
+
+    function updateSourceSpecificFields() {
+        if (!sourceSelect) {
+            return;
+        }
+
+        const isWildberries = (
+            sourceSelect.value === "Wildberries"
+        );
+
+        if (wildberriesStickerField) {
+            wildberriesStickerField.classList.toggle(
+                "is-hidden",
+                !isWildberries
+            );
+            setFieldDisabled(
+                wildberriesStickerField,
+                !isWildberries
+            );
+        }
+
+        nonWildberriesFields.forEach((field) => {
+            field.classList.toggle("is-hidden", isWildberries);
+            setFieldDisabled(field, isWildberries);
+        });
+
+        const delivery = document.getElementById(
+            "delivery_method"
+        );
+
+        if (delivery) {
+            delivery.required = !isWildberries;
+        }
+
+        const customDeliveryField = document.getElementById(
+            "customDeliveryMethodField"
+        );
+        const customDeliveryInput = document.getElementById(
+            "custom_delivery_method"
+        );
+        const showCustomDelivery = Boolean(
+            !isWildberries
+            && delivery
+            && delivery.value === "__custom__"
+        );
+
+        if (customDeliveryField) {
+            customDeliveryField.classList.toggle(
+                "is-hidden",
+                !showCustomDelivery
+            );
+            setFieldDisabled(
+                customDeliveryField,
+                !showCustomDelivery
+            );
+        }
+
+        if (customDeliveryInput) {
+            customDeliveryInput.required = showCustomDelivery;
+        }
+    }
 
     function updateCustomSourceField() {
         if (
@@ -3132,10 +3627,14 @@
     if (sourceSelect) {
         sourceSelect.addEventListener(
             "change",
-            updateCustomSourceField
+            () => {
+                updateCustomSourceField();
+                updateSourceSpecificFields();
+            }
         );
 
         updateCustomSourceField();
+        updateSourceSpecificFields();
     }
 
     // CUSTOM DELIVERY MODAL SCRIPT V1
@@ -3164,13 +3663,19 @@
 
         const isCustom =
             deliveryMethodSelect.value === "__custom__";
+        const isWildberries = Boolean(
+            sourceSelect
+            && sourceSelect.value === "Wildberries"
+        );
+        const shouldShow = isCustom && !isWildberries;
 
         customDeliveryMethodField.classList.toggle(
             "is-hidden",
-            !isCustom
+            !shouldShow
         );
 
-        customDeliveryMethodInput.required = isCustom;
+        customDeliveryMethodInput.disabled = !shouldShow;
+        customDeliveryMethodInput.required = shouldShow;
 
         if (!isCustom) {
             customDeliveryMethodInput.value = "";
@@ -3970,7 +4475,7 @@
             return;
         }
 
-        const storageKey = "vechasu-sales-column-widths-v5-layout-v2";
+        const storageKey = "vechasu-sales-column-widths-v6-layout";
 
         const measuredWidths = headers.map((header) => {
             return header.getBoundingClientRect().width;
@@ -4098,10 +4603,16 @@
                         const minimumPixels = [
                             118,
                             90,
+                            90,
                             155,
+                            90,
+                            120,
                             55,
                             85,
+                            110,
                             115,
+                            120,
+                            110,
                             110,
                             95,
                             85,
@@ -4110,12 +4621,12 @@
                         ];
 
                         const minimumLeft =
-                            minimumPixels[index] /
+                            (minimumPixels[index] || 82) /
                             tableWidth *
                             100;
 
                         const minimumRight =
-                            minimumPixels[index + 1] /
+                            (minimumPixels[index + 1] || 82) /
                             tableWidth *
                             100;
 
@@ -4210,6 +4721,9 @@
     const salesSearch =
         document.getElementById("salesSearch");
 
+    const clearSalesSearch =
+        document.getElementById("clearSalesSearch");
+
     const salesDateFrom =
         document.getElementById("salesDateFrom");
 
@@ -4218,6 +4732,12 @@
 
     const clearSalesDateFilter =
         document.getElementById("clearSalesDateFilter");
+
+    const clearSalesDateFrom =
+        document.getElementById("clearSalesDateFrom");
+
+    const clearSalesDateTo =
+        document.getElementById("clearSalesDateTo");
 
     const saleRows = Array.from(
         document.querySelectorAll(".sale-row")
@@ -4240,7 +4760,9 @@
         const emptyCell =
             document.createElement("td");
 
-        emptyCell.colSpan = 11;
+        emptyCell.colSpan = document.querySelectorAll(
+            ".sales-table thead th"
+        ).length || 1;
         emptyCell.className =
             "sales-filter-empty-cell";
 
@@ -4325,6 +4847,32 @@
                 !selectedFrom && !selectedTo;
         }
 
+        if (clearSalesDateFrom) {
+            clearSalesDateFrom.disabled = !selectedFrom;
+        }
+
+        if (clearSalesDateTo) {
+            clearSalesDateTo.disabled = !selectedTo;
+        }
+
+        clearSalesSearch?.classList.toggle(
+            "is-hidden",
+            !query
+        );
+
+        try {
+            localStorage.setItem(
+                "vechasu-sales-filters-v1",
+                JSON.stringify({
+                    search: salesSearch?.value || "",
+                    dateFrom: selectedFrom,
+                    dateTo: selectedTo,
+                })
+            );
+        } catch (error) {
+            // Фильтрация продолжает работать без сохранения.
+        }
+
         if (salesFilterEmptyRow) {
             salesFilterEmptyRow.style.display =
                 visibleCount === 0
@@ -4339,6 +4887,12 @@
             applySalesFilters
         );
     }
+
+    clearSalesSearch?.addEventListener("click", () => {
+        salesSearch.value = "";
+        salesSearch.focus();
+        applySalesFilters();
+    });
 
     if (salesDateFrom) {
         salesDateFrom.addEventListener(
@@ -4369,6 +4923,32 @@
                 applySalesFilters();
             }
         );
+    }
+
+    clearSalesDateFrom?.addEventListener("click", () => {
+        salesDateFrom.value = "";
+        salesDateFrom.focus();
+        applySalesFilters();
+    });
+
+    clearSalesDateTo?.addEventListener("click", () => {
+        salesDateTo.value = "";
+        salesDateTo.focus();
+        applySalesFilters();
+    });
+
+    try {
+        const savedFilters = JSON.parse(
+            localStorage.getItem("vechasu-sales-filters-v1")
+        );
+
+        if (savedFilters && typeof savedFilters === "object") {
+            salesSearch.value = savedFilters.search || "";
+            salesDateFrom.value = savedFilters.dateFrom || "";
+            salesDateTo.value = savedFilters.dateTo || "";
+        }
+    } catch (error) {
+        // Используем пустые фильтры.
     }
 
     applySalesFilters();
@@ -4425,7 +5005,42 @@
                 row.classList.remove("is-editing");
             });
         }
+
+        form.addEventListener("submit", () => {
+            sessionStorage.setItem(
+                "vechasu-sales-scroll-y",
+                String(window.scrollY)
+            );
+        });
     });
+
+    document.querySelectorAll(".sale-row form").forEach((form) => {
+        if (form.classList.contains("editable-sale-form")) {
+            return;
+        }
+
+        form.addEventListener("submit", () => {
+            sessionStorage.setItem(
+                "vechasu-sales-scroll-y",
+                String(window.scrollY)
+            );
+        });
+    });
+
+    const savedSalesScrollValue = sessionStorage.getItem(
+        "vechasu-sales-scroll-y"
+    );
+    const savedSalesScroll = Number(savedSalesScrollValue);
+
+    if (
+        savedSalesScrollValue !== null
+        && Number.isFinite(savedSalesScroll)
+    ) {
+        sessionStorage.removeItem("vechasu-sales-scroll-y");
+        requestAnimationFrame(() => {
+            window.scrollTo(0, savedSalesScroll);
+        });
+    }
 
     const dateInput = document.getElementById("created_at");
 

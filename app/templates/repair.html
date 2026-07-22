@@ -97,7 +97,7 @@
 
         .stats {
             display: grid;
-            grid-template-columns: repeat(5, minmax(105px, 1fr)) minmax(190px, 1.2fr);
+            grid-template-columns: repeat(7, minmax(92px, 1fr)) minmax(190px, 1.2fr);
             gap: 8px;
             margin-bottom: 12px;
         }
@@ -357,6 +357,11 @@
             background: #e5e7eb;
         }
 
+        .status-completed {
+            color: #166534;
+            background: #dcfce7;
+        }
+
         .type-paid {
             color: #1d4ed8;
             background: #eff6ff;
@@ -595,10 +600,26 @@
 
         <section class="stats">
             <a
-                class="stat-card{% if not status_filter %} active{% endif %}"
+                class="stat-card{% if repair_view == 'active' and not status_filter %} active{% endif %}"
                 href="/repair"
             >
-                <span class="stat-label">Всего</span>
+                <span class="stat-label">Активные</span>
+                <span class="stat-value">{{ stats.active_total }}</span>
+            </a>
+
+            <a
+                class="stat-card{% if repair_view == 'archive' %} active{% endif %}"
+                href="/repair?view=archive"
+            >
+                <span class="stat-label">Архив</span>
+                <span class="stat-value">{{ stats.archive_total }}</span>
+            </a>
+
+            <a
+                class="stat-card{% if repair_view == 'all' %} active{% endif %}"
+                href="/repair?view=all"
+            >
+                <span class="stat-label">Вся история</span>
                 <span class="stat-value">{{ stats.total }}</span>
             </a>
 
@@ -637,6 +658,7 @@
         </section>
 
         <form class="toolbar" method="get" action="/repair">
+            <input type="hidden" name="view" value="{{ repair_view }}">
             <input
                 class="control"
                 type="search"
@@ -831,17 +853,27 @@
                                                 Открыть
                                             </button>
 
-                                            <form
-                                                method="post"
-                                                action="/repair/delete"
-                                                onsubmit="return confirm('Удалить ремонт {{ case.repair_number }}?');"
-                                            >
-                                                <input type="hidden" name="case_id" value="{{ case.id }}">
+                                            {% if case.is_archived %}
+                                                <form method="post" action="/repair/status">
+                                                    <input type="hidden" name="case_id" value="{{ case.id }}">
+                                                    <input type="hidden" name="status" value="in_progress">
+                                                    <button class="button button-secondary" type="submit">
+                                                        Вернуть
+                                                    </button>
+                                                </form>
+                                            {% else %}
+                                                <form
+                                                    method="post"
+                                                    action="/repair/delete"
+                                                    onsubmit="return confirm('Перенести ремонт {{ case.repair_number }} в архив?');"
+                                                >
+                                                    <input type="hidden" name="case_id" value="{{ case.id }}">
 
-                                                <button class="button button-delete" type="submit">
-                                                    Удалить
-                                                </button>
-                                            </form>
+                                                    <button class="button button-delete" type="submit">
+                                                        В архив
+                                                    </button>
+                                                </form>
+                                            {% endif %}
                                         </div>
 
                                         <script
@@ -1173,7 +1205,7 @@
 
     function closeModal() {
         modal.classList.remove("open");
-        modal.setAttribute(
+        modal.setAttribute("aria-hidden", "true");
         document.body.classList.remove("modal-open");
     }
 
