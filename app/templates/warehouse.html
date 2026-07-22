@@ -206,6 +206,7 @@
                 minmax(260px, 1fr)
                 auto
                 auto
+                auto
                 110px;
             gap: 8px;
         }
@@ -287,15 +288,58 @@
         }
 
         .warehouse-bulk-form {
+            position: relative;
             display: grid;
             grid-template-columns: auto repeat(4, minmax(150px, 1fr)) auto;
             gap: 8px;
             align-items: end;
-            margin-bottom: 10px;
-            padding: 11px;
+            min-height: 0;
+            margin: 0;
+            padding: 11px 46px 11px 11px;
+            overflow: hidden;
             border: 1px solid #dbe3ec;
             border-radius: 14px;
             background: #ffffff;
+        }
+
+        .warehouse-bulk-panel {
+            max-height: 0;
+            margin-bottom: 0;
+            overflow: hidden;
+            opacity: 0;
+            visibility: hidden;
+            transition:
+                max-height 0.22s ease,
+                margin-bottom 0.22s ease,
+                opacity 0.18s ease,
+                visibility 0s linear 0.22s;
+        }
+
+        .warehouse-bulk-panel.is-open {
+            max-height: 900px;
+            margin-bottom: 10px;
+            opacity: 1;
+            visibility: visible;
+            transition-delay: 0s;
+        }
+
+        .warehouse-bulk-close {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            width: 30px;
+            height: 30px;
+            padding: 0;
+            border-radius: 9px;
+            background: #f1f5f9;
+            color: #64748b;
+            font-size: 20px;
+            line-height: 1;
+        }
+
+        .warehouse-bulk-close:hover {
+            background: #e2e8f0;
+            color: #0f172a;
         }
 
         .warehouse-bulk-count {
@@ -1232,6 +1276,7 @@
             display: grid;
             grid-template-columns:
                 minmax(280px, 1fr)
+                auto
                 auto
                 auto
                 auto;
@@ -2554,6 +2599,17 @@
                     </button>
 
                     <button
+                        id="warehouseBulkToggle"
+                        class="search-tool-button"
+                        type="button"
+                        aria-controls="warehouseBulkPanel"
+                        aria-expanded="false"
+                        onclick="toggleWarehouseBulkPanel()"
+                    >
+                        Массовое редактирование
+                    </button>
+
+                    <button
                         class="search-tool-button"
                         type="button"
                         onclick="openWarehouseMapDrawer()"
@@ -2629,13 +2685,20 @@
                 </form>
             </div>
 
-            <form
-                id="warehouseBulkForm"
-                class="warehouse-bulk-form"
-                method="post"
-                action="/warehouse/bulk-edit"
-                onsubmit="return confirmWarehouseBulkEdit()"
-            >
+            <div id="warehouseBulkPanel" class="warehouse-bulk-panel">
+                <form
+                    id="warehouseBulkForm"
+                    class="warehouse-bulk-form"
+                    method="post"
+                    action="/warehouse/bulk-edit"
+                    onsubmit="return confirmWarehouseBulkEdit()"
+                >
+                    <button
+                        class="warehouse-bulk-close"
+                        type="button"
+                        aria-label="Закрыть массовое редактирование"
+                        onclick="toggleWarehouseBulkPanel(false)"
+                    >×</button>
                 <div id="warehouseBulkCount" class="warehouse-bulk-count">
                     Выбрано: 0
                 </div>
@@ -2719,7 +2782,8 @@
                 <button id="warehouseBulkSubmit" type="submit" disabled>
                     Применить
                 </button>
-            </form>
+                </form>
+            </div>
 
             <div class="table-card">
                 {% if items %}
@@ -3981,6 +4045,22 @@
     </script>
 
 <script>
+    function toggleWarehouseBulkPanel(forceOpen) {
+        const panel = document.getElementById("warehouseBulkPanel");
+        const button = document.getElementById("warehouseBulkToggle");
+
+        if (!panel || !button) {
+            return;
+        }
+
+        const shouldOpen = typeof forceOpen === "boolean"
+            ? forceOpen
+            : !panel.classList.contains("is-open");
+
+        panel.classList.toggle("is-open", shouldOpen);
+        button.setAttribute("aria-expanded", shouldOpen ? "true" : "false");
+    }
+
     function toggleWarehouseAddCard() {
         const card = document.getElementById("warehouseAddCard");
 
