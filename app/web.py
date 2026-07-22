@@ -955,6 +955,51 @@ def item_in_category(item, selected_category):
     )
 
 
+def get_excel_warehouse_items():
+    catalog = ExcelProductCatalog().list_products(per_page=5000)
+    items = []
+    for product in catalog["items"]:
+        created_text = str(product.get("created_at") or "")
+        try:
+            created_at = time.mktime(time.strptime(created_text[:19], "%Y-%m-%dT%H:%M:%S"))
+            created_at_display = time.strftime("%d.%m.%Y %H:%M", time.localtime(created_at))
+        except (TypeError, ValueError):
+            created_at = 0
+            created_at_display = "—"
+        price = product.get("bitrix_price_amount")
+        currency = product.get("bitrix_price_currency") or "RUB"
+        price_display = ""
+        if price not in (None, ""):
+            price_display = "{} {}".format(
+                format_stock_number(price), "₽" if currency == "RUB" else currency
+            )
+        stock = float(product.get("stock") or 0)
+        items.append({
+            "id": product["id"],
+            "name": product.get("display_name") or "",
+            "article": product.get("excel_article") or "",
+            "brand": product.get("display_brand") or "",
+            "category": product.get("display_category") or "",
+            "cell": product.get("cell") or "",
+            "cell_source": "excel" if product.get("cell") else "",
+            "cell_source_label": "Excel" if product.get("cell") else "",
+            "stock": stock,
+            "stock_display": format_stock_number(stock),
+            "reserve": 0,
+            "quantity": stock,
+            "created_at": created_at,
+            "created_at_display": created_at_display,
+            "thumbnail_url": (
+                product.get("bitrix_thumbnail_url")
+                or product.get("bitrix_primary_image_url")
+                or ""
+            ),
+            "price_display": price_display,
+            "moysklad_url": product.get("bitrix_source_url") or "",
+        })
+    return items
+
+
 @app.route("/warehouse")
 def warehouse_page():
     query = request.args.get("q", "").strip()
@@ -981,10 +1026,12 @@ def warehouse_page():
     if sort_dir not in {"asc", "desc"}:
         sort_dir = "asc"
 
-    all_items = get_warehouse_items(force=request.args.get("refresh") == "1")
+    all_items = get_excel_warehouse_items()
     category_tree = build_category_tree(all_items)
     brand_groups = build_brand_groups(all_items)
-    bulk_brand_options = CatalogReader().list_active_brands()
+    bulk_brand_options = sorted({
+        item.get("brand") for item in all_items if item.get("brand")
+    }, key=str.casefold)
     cell_groups = build_cell_groups(all_items)
 
     items = all_items
@@ -1086,8 +1133,6 @@ def warehouse_page():
         float(item.get("quantity") or 0) for item in stats_items
     )
 
-    print("CATEGORY TREE:", category_tree)
-
     return render_template(
         "warehouse.html",
         items=items,
@@ -1109,7 +1154,7 @@ def warehouse_page():
         total_stock_display=format_stock_number(total_stock),
         total_reserve=total_reserve,
         total_available=total_available,
-        stock_operations=load_stock_operations(),
+        stock_operations=[],
     )
 
 
@@ -1196,6 +1241,16 @@ def warehouse_update_cell():
         ))
 
     try:
+        ExcelProductCatalog().update_product(product_id, cell=cell)
+        return redirect(url_for(
+            "warehouse_page", notice="success", message="Ячейка сохранена"
+        ))
+    except (TypeError, ValueError) as error:
+        return redirect(url_for(
+            "warehouse_page", notice="error", message=str(error)
+        ))
+
+    try:
         # 1. Сохраняем ячейку внутри Vechasu ERP
         set_warehouse_cell(product_id, cell)
 
@@ -1264,11 +1319,30 @@ def warehouse_add_product():
             message="Начальный остаток не может быть отрицательным"
         ))
 
+    if stock != 0:
+        return redirect(url_for(
+            "warehouse_page",
+            notice="error",
+            message="Новый товар создаётся с нулевым остатком; остаток задаётся приходом",
+        ))
+
     if not claim_warehouse_add_request(request_id):
         return redirect(url_for(
             "warehouse_page",
             notice="error",
             message="Повторное добавление остановлено: этот запрос уже обработан"
+        ))
+
+    try:
+        ExcelProductCatalog().create_product(
+            name=name, article=article, brand=brand, category=category, cell=cell,
+        )
+        return redirect(url_for(
+            "warehouse_page", notice="success", message="Товар добавлен"
+        ))
+    except (TypeError, ValueError) as error:
+        return redirect(url_for(
+            "warehouse_page", notice="error", message=str(error)
         ))
 
     try:
@@ -1387,6 +1461,16 @@ def warehouse_edit_product():
         ))
 
     try:
+        ExcelProductCatalog().update_product(product_id, name=name, article=article)
+        return redirect(url_for(
+            "warehouse_page", notice="success", message="Карточка обновлена"
+        ))
+    except (TypeError, ValueError) as error:
+        return redirect(url_for(
+            "warehouse_page", notice="error", message=str(error)
+        ))
+
+    try:
         client = MoySkladClient()
         result = client.update_product(
             product_id=product_id,
@@ -1476,7 +1560,11 @@ def warehouse_bulk_edit():
         ))
 
     if apply_brand:
-        brand = CatalogReader().canonical_active_brand(brand)
+        known_brands = {
+            item.get("brand", "").casefold(): item.get("brand", "")
+            for item in get_excel_warehouse_items() if item.get("brand")
+        }
+        brand = known_brands.get(brand.casefold())
         if not brand:
             return redirect(url_for(
                 "warehouse_page",
@@ -1507,6 +1595,29 @@ def warehouse_bulk_edit():
             notice="error",
             message="Выберите хотя бы одно массовое изменение",
         ))
+
+    catalog = ExcelProductCatalog()
+    updated_count = 0
+    try:
+        for product_id in product_ids:
+            catalog.update_product(
+                product_id,
+                brand=brand if apply_brand else None,
+                category=category if apply_category else None,
+                cell=cell if apply_cell else None,
+            )
+            if activity == "archive":
+                catalog.archive_product(product_id)
+            updated_count += 1
+    except (ProductDeleteBlockedError, TypeError, ValueError) as error:
+        return redirect(url_for(
+            "warehouse_page", notice="error",
+            message="Обновлено: {}. Ошибка: {}".format(updated_count, error),
+        ))
+    return redirect(url_for(
+        "warehouse_page", notice="success",
+        message="Массово обновлено товаров: {}".format(updated_count),
+    ))
 
     products_by_id = {
         str(item.get("id") or ""): item
@@ -1735,6 +1846,11 @@ def is_recent_duplicate_stock_operation(product_id, operation_type, quantity, st
 
 @app.route("/warehouse/stock", methods=["POST"])
 def warehouse_update_stock():
+    return redirect(url_for(
+        "warehouse_page", notice="error",
+        message="Остатки нового каталога изменяются только через приход Excel",
+    ))
+
     product_id = (request.form.get("product_id") or "").strip()
     current_stock_raw = (request.form.get("current_stock") or "0").strip()
     new_stock_raw = (request.form.get("new_stock") or "0").strip()
@@ -1874,6 +1990,20 @@ def warehouse_archive_product():
             "warehouse_page",
             notice="error",
             message="Не найден ID товара"
+        ))
+
+    try:
+        ExcelProductCatalog().archive_product(product_id)
+        if is_ajax:
+            return jsonify(ok=True, message="Товар удалён")
+        return redirect(url_for(
+            "warehouse_page", notice="success", message="Товар удалён"
+        ))
+    except (ProductDeleteBlockedError, TypeError, ValueError) as error:
+        if is_ajax:
+            return jsonify(ok=False, message=str(error)), 409
+        return redirect(url_for(
+            "warehouse_page", notice="error", message=str(error)
         ))
 
     try:
@@ -8150,9 +8280,11 @@ def build_excel_category_tree(category_groups):
 
 def _safe_products_return_to(value):
     value = (value or "").strip()
+    if value.startswith("/warehouse") and not value.startswith("//"):
+        return value
     if value.startswith("/products") and not value.startswith("//"):
         return value
-    return url_for("excel_products_page")
+    return url_for("warehouse_page")
 
 
 def _products_redirect_with_notice(return_to, notice, message):
@@ -8195,6 +8327,11 @@ def _excel_product_external_references(product_id):
 
 @app.route("/products")
 def excel_products_page():
+    target = url_for("warehouse_page")
+    if request.query_string:
+        target += "?" + request.query_string.decode("utf-8")
+    return redirect(target)
+
     match_status = (request.args.get("match_status") or "all").strip()
     allowed_statuses = {
         "all", "requires_mapping", "exact", "high_confidence", "ambiguous",

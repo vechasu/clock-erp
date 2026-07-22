@@ -2579,6 +2579,14 @@
                     </button>
 
                     <button
+                        class="search-tool-button"
+                        type="button"
+                        onclick="window.location.href='{{ url_for('excel_receipt_new') }}'"
+                    >
+                        Оформить приход
+                    </button>
+
+                    <button
                         class="add-position-card"
                         type="button"
                         onclick="toggleWarehouseAddCard()"
@@ -2589,7 +2597,7 @@
             </div>
 
             <div class="add-card{% if not open_add %} is-hidden{% endif %}" id="warehouseAddCard">
-                <div class="add-title">Добавить товар в МойСклад</div>
+                <div class="add-title">Добавить товар</div>
 
                 <form
                     class="add-form"
@@ -2730,7 +2738,6 @@
                     <select id="bulkActivity" name="activity">
                         <option value="keep">Не менять</option>
                         <option value="archive">Перенести в архив</option>
-                        <option value="restore">Вернуть из архива</option>
                     </select>
                 </div>
 
@@ -2938,7 +2945,12 @@
                                             {% else %}
                                                 <span class="warehouse-product-thumb warehouse-product-thumb-placeholder" aria-hidden="true">⌚</span>
                                             {% endif %}
-                                            <div class="name">{{ item.name }}</div>
+                                            <div>
+                                                <div class="name">{{ item.name }}</div>
+                                                {% if item.price_display %}
+                                                    <div class="muted">{{ item.price_display }}</div>
+                                                {% endif %}
+                                            </div>
                                         </div>
                                     </td>
 
@@ -2987,7 +2999,7 @@
                                                     onsubmit="return archiveWarehouseProduct(event, this)"
                                                 >
                                                     <input type="hidden" name="product_id" value="{{ item.id }}">
-                                                    <button class="delete-button" type="submit">Убрать</button>
+                                                    <button class="delete-button" type="submit">Удалить</button>
                                                 </form>
                                             </div>
                                         {% else %}
@@ -2999,7 +3011,7 @@
                         </tbody>
                     </table>
                 {% else %}
-                    <div class="empty">Товары не найдены или МойСклад не ответил</div>
+                    <div class="empty">Товары не найдены</div>
                 {% endif %}
             </div>
         </main>
@@ -3213,7 +3225,7 @@
         </div>
 
         <a id="detailMoySkladLink" class="moysklad-link" href="#" target="_blank">
-            Открыть в МойСклад
+            Открыть в Bitrix
         </a>
 
         <div class="drawer-section-title">Редактирование</div>
@@ -3274,11 +3286,10 @@
             </div>
 
             <div class="future-card">
-                Если новый остаток меньше текущего — ERP создаст списание в МойСклад.
-                Если больше — создаст оприходование.
+                Остатки нового каталога изменяются только через приход Excel.
             </div>
 
-            <button id="stockSubmitButton" type="submit">Обновить остаток в ERP и МойСклад</button>
+            <button id="stockSubmitButton" type="submit">Обновить остаток</button>
         </form>
 
         <div class="drawer-section-title">История</div>
@@ -4475,7 +4486,7 @@
     <script>
         function confirmAndRememberWarehouseScroll() {
             const confirmed = confirm(
-                "Убрать позицию в архив МойСклад?"
+                "Удалить товар из каталога?"
             );
 
             if (!confirmed) {
@@ -4531,7 +4542,7 @@
             }
 
             const confirmed = confirm(
-                "Убрать позицию в архив МойСклад?"
+                "Удалить товар из каталога?"
             );
 
             if (!confirmed) {
@@ -4546,11 +4557,11 @@
 
             const originalText = button
                 ? button.textContent
-                : "Убрать";
+                : "Удалить";
 
             if (button) {
                 button.disabled = true;
-                button.textContent = "Убираем...";
+                button.textContent = "Удаляем...";
             }
 
             const row = form.closest("tr");
@@ -4569,7 +4580,7 @@
                 if (!response.ok || !data.ok) {
                     throw new Error(
                         data.message ||
-                        "Не удалось убрать товар"
+                        "Не удалось удалить товар"
                     );
                 }
 
