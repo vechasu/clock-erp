@@ -976,10 +976,10 @@ def get_excel_warehouse_items():
         stock = float(product.get("stock") or 0)
         items.append({
             "id": product["id"],
-            "name": product.get("excel_name_raw") or "",
+            "name": product.get("display_name") or "",
             "article": product.get("excel_article") or "",
-            "brand": product.get("excel_brand") or "",
-            "category": product.get("excel_category") or "",
+            "brand": product.get("display_brand") or "",
+            "category": product.get("display_category") or "",
             "cell": product.get("cell") or "",
             "cell_source": "excel" if product.get("cell") else "",
             "cell_source_label": "Excel" if product.get("cell") else "",
