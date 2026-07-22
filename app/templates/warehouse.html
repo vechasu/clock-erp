@@ -3198,6 +3198,31 @@
         <img id="productGalleryLightboxImage" src="" alt="">
     </div>
 
+    {% macro render_brand_combobox(component_id, input_name, selected_value="", include_all=false) %}
+        <div id="{{ component_id }}" class="brand-combobox" data-brand-combobox data-all-label="{{ 'Все бренды' if include_all else 'Выберите бренд' }}">
+            <input class="brand-combobox-hidden" type="hidden" name="{{ input_name }}" value="{{ selected_value }}">
+            <button class="brand-combobox-trigger" type="button" aria-expanded="false" onclick="toggleBrandDropdown(event, this.closest('[data-brand-combobox]'))">
+                <span class="brand-combobox-value">{{ selected_value or ("Все бренды" if include_all else "Выберите бренд") }}</span>
+                <span class="brand-combobox-arrow">▾</span>
+            </button>
+            <div class="brand-combobox-dropdown">
+                <input class="brand-combobox-search" type="search" placeholder="Поиск бренда" autocomplete="off" oninput="filterBrandList(this.value, this.closest('[data-brand-combobox]'))">
+                <div class="brand-combobox-options">
+                    {% if include_all %}
+                        <button class="brand-combobox-option {% if not selected_value %}active{% endif %}" type="button" data-brand="" data-brand-search="все бренды" onclick="selectBrandOption(this)">
+                            <span>Все бренды</span><span>{{ brand_groups | sum(attribute='count') }}</span>
+                        </button>
+                    {% endif %}
+                    {% for brand in brand_groups %}
+                        <button class="brand-combobox-option {% if selected_value == brand.name %}active{% endif %}" type="button" data-brand="{{ brand.name|e }}" data-brand-search="{{ brand.name|lower|e }}" onclick="selectBrandOption(this)">
+                            <span>{{ brand.name }}</span><span>{{ brand.count }}</span>
+                        </button>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    {% endmacro %}
+
     <aside id="filterDrawer" class="drawer">
         <div class="drawer-header">
             <div>
@@ -3238,64 +3263,7 @@
 
             <div class="category-cell-form-title">Бренд</div>
 
-            <div id="brandCombobox" class="brand-combobox">
-                <input
-                    id="brandHiddenInput"
-                    type="hidden"
-                    name="brand"
-                    value="{{ selected_brand }}"
-                >
-
-                <button
-                    class="brand-combobox-trigger"
-                    type="button"
-                    aria-expanded="false"
-                    onclick="toggleBrandDropdown(event)"
-                >
-                    <span id="brandComboboxValue">
-                        {{ selected_brand or "Все бренды" }}
-                    </span>
-
-                    <span class="brand-combobox-arrow">▾</span>
-                </button>
-
-                <div id="brandDropdown" class="brand-combobox-dropdown">
-                    <input
-                        id="brandSearchInput"
-                        class="brand-combobox-search"
-                        type="search"
-                        placeholder="Поиск бренда"
-                        autocomplete="off"
-                        oninput="filterBrandList(this.value)"
-                    >
-
-                    <div class="brand-combobox-options">
-                        <button
-                            class="brand-combobox-option {% if not selected_brand %}active{% endif %}"
-                            type="button"
-                            data-brand=""
-                            data-brand-search="все бренды"
-                            onclick="selectBrandOption(this)"
-                        >
-                            <span>Все бренды</span>
-                            <span>{{ brand_groups | sum(attribute='count') }}</span>
-                        </button>
-
-                        {% for brand in brand_groups %}
-                            <button
-                                class="brand-combobox-option {% if selected_brand == brand.name %}active{% endif %}"
-                                type="button"
-                                data-brand="{{ brand.name|e }}"
-                                data-brand-search="{{ brand.name|lower|e }}"
-                                onclick="selectBrandOption(this)"
-                            >
-                                <span>{{ brand.name }}</span>
-                                <span>{{ brand.count }}</span>
-                            </button>
-                        {% endfor %}
-                    </div>
-                </div>
-            </div>
+            {{ render_brand_combobox("filterBrandCombobox", "brand", selected_brand, true) }}
 
             <div class="category-cell-form-title" style="margin-top: 14px;">
                 Категория
@@ -3398,16 +3366,18 @@
                 <input id="editStock" class="product-detail-input" type="number" min="0" step="1" name="stock" required>
             </div>
 
-            <div class="product-detail-card">
+            <div class="product-detail-card category-cell-form">
                 <div class="product-detail-label">Бренд</div>
                 <div id="detailBrand" class="product-detail-value">—</div>
-                <input id="editBrand" class="product-detail-input" type="text" name="brand" list="inlineBrandOptions">
+                <div class="product-detail-input product-brand-editor">
+                    {{ render_brand_combobox("editBrandCombobox", "brand", "", false) }}
+                </div>
             </div>
 
             <div class="product-detail-card">
                 <div class="product-detail-label">Категория</div>
                 <div id="detailCategory" class="product-detail-value">—</div>
-                <input id="editCategory" class="product-detail-input" type="text" name="category" list="warehouseCategoryOptions">
+                <input id="editCategory" class="product-detail-input" type="text" name="category" value="Наручные часы" readonly>
             </div>
 
             <div class="product-detail-card">
@@ -3416,10 +3386,6 @@
                 <input id="editCell" class="product-detail-input" type="text" name="cell">
             </div>
             </div>
-
-            <datalist id="inlineBrandOptions">
-                {% for brand in bulk_brand_options %}<option value="{{ brand }}"></option>{% endfor %}
-            </datalist>
 
             <div class="product-inline-actions">
                 <button type="button" data-edit-start onclick="startInlineProductEdit()">Редактировать</button>
@@ -3524,6 +3490,9 @@
             form.querySelectorAll("[data-original-value]").forEach(function(input) {
                 input.value = input.dataset.originalValue || "";
             });
+            const brandCombobox = document.getElementById("editBrandCombobox");
+            const brandInput = brandCombobox.querySelector(".brand-combobox-hidden");
+            setBrandComboboxValue(brandCombobox, brandInput.dataset.originalValue || "");
             form.classList.remove("is-editing");
         }
 
@@ -3618,8 +3587,7 @@
             const editableValues = {
                 editName: button.dataset.name || "",
                 editArticle: button.dataset.article || "",
-                editBrand: button.dataset.brand || "",
-                editCategory: button.dataset.category || "",
+                editCategory: "Наручные часы",
                 editStock: productStock,
                 editCell: productCell,
             };
@@ -3628,6 +3596,10 @@
                 input.value = entry[1];
                 input.dataset.originalValue = entry[1];
             });
+            const editBrandCombobox = document.getElementById("editBrandCombobox");
+            const editBrandInput = editBrandCombobox.querySelector(".brand-combobox-hidden");
+            editBrandInput.dataset.originalValue = button.dataset.brand || "";
+            setBrandComboboxValue(editBrandCombobox, button.dataset.brand || "");
             document.getElementById("inlineProductForm").classList.remove("is-editing");
 
             document.getElementById("drawerBackdrop").classList.add("open");
@@ -4348,8 +4320,7 @@
         });
 
 
-        function setBrandDropdownOpen(isOpen) {
-            const combobox = document.getElementById("brandCombobox");
+        function setBrandDropdownOpen(combobox, isOpen) {
             const trigger = combobox
                 ? combobox.querySelector(".brand-combobox-trigger")
                 : null;
@@ -4368,7 +4339,7 @@
             }
 
             if (isOpen) {
-                const search = document.getElementById("brandSearchInput");
+                const search = combobox.querySelector(".brand-combobox-search");
 
                 window.setTimeout(function() {
                     if (search) {
@@ -4379,27 +4350,26 @@
         }
 
 
-        function toggleBrandDropdown(event) {
+        function toggleBrandDropdown(event, combobox) {
             if (event) {
                 event.stopPropagation();
             }
-
-            const combobox = document.getElementById("brandCombobox");
 
             if (!combobox) {
                 return;
             }
 
             setBrandDropdownOpen(
+                combobox,
                 !combobox.classList.contains("open")
             );
         }
 
 
-        function filterBrandList(value) {
+        function filterBrandList(value, combobox) {
             const query = (value || "").trim().toLowerCase();
 
-            document
+            combobox
                 .querySelectorAll(".brand-combobox-option")
                 .forEach(function(option) {
                     const brandName = (
@@ -4416,57 +4386,58 @@
 
         function selectBrandOption(button) {
             const brand = button.dataset.brand || "";
-            const hiddenInput = document.getElementById(
-                "brandHiddenInput"
-            );
-            const valueElement = document.getElementById(
-                "brandComboboxValue"
-            );
-            const searchInput = document.getElementById(
-                "brandSearchInput"
-            );
+            const combobox = button.closest("[data-brand-combobox]");
+            setBrandComboboxValue(combobox, brand);
+            const searchInput = combobox.querySelector(".brand-combobox-search");
+
+            if (searchInput) {
+                searchInput.value = "";
+            }
+
+            filterBrandList("", combobox);
+            setBrandDropdownOpen(combobox, false);
+        }
+
+
+        function setBrandComboboxValue(combobox, brand) {
+            const hiddenInput = combobox.querySelector(".brand-combobox-hidden");
+            const valueElement = combobox.querySelector(".brand-combobox-value");
+            const emptyLabel = combobox.dataset.allLabel || "Выберите бренд";
 
             if (hiddenInput) {
                 hiddenInput.value = brand;
             }
 
             if (valueElement) {
-                valueElement.textContent = brand || "Все бренды";
+                valueElement.textContent = brand || emptyLabel;
             }
 
-            document
+            combobox
                 .querySelectorAll(".brand-combobox-option")
                 .forEach(function(option) {
-                    option.classList.remove("active");
+                    option.classList.toggle(
+                        "active",
+                        (option.dataset.brand || "") === brand
+                    );
                 });
-
-            button.classList.add("active");
-
-            if (searchInput) {
-                searchInput.value = "";
-            }
-
-            filterBrandList("");
-            setBrandDropdownOpen(false);
         }
 
 
         document.addEventListener("click", function(event) {
-            const combobox = document.getElementById("brandCombobox");
-
-            if (
-                combobox
-                && !combobox.contains(event.target)
-            ) {
-                setBrandDropdownOpen(false);
-            }
+            document.querySelectorAll("[data-brand-combobox]").forEach(function(combobox) {
+                if (!combobox.contains(event.target)) {
+                    setBrandDropdownOpen(combobox, false);
+                }
+            });
         });
 
 
         document.addEventListener("keydown", function(event) {
             if (event.key === "Escape") {
                 closeProductGalleryLightbox();
-                setBrandDropdownOpen(false);
+                document.querySelectorAll("[data-brand-combobox]").forEach(function(combobox) {
+                    setBrandDropdownOpen(combobox, false);
+                });
             }
         });
 
