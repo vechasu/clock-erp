@@ -938,6 +938,10 @@ def build_brand_groups(items):
         group = groups.setdefault(key, {"name": brand, "count": 0.0})
         group["count"] += float(item.get("stock") or 0)
 
+    for group in groups.values():
+        if group["count"].is_integer():
+            group["count"] = int(group["count"])
+
     return [
         groups[key]
         for key in sorted(groups)
