@@ -999,9 +999,9 @@ class ExcelProductCatalog:
 
     @staticmethod
     def _prepare_product(item):
-        item["display_name"] = item.get("excel_name_raw")
-        item["display_brand"] = item.get("excel_brand")
-        item["display_category"] = item.get("excel_category")
+        item["display_name"] = item.get("bitrix_name") or item.get("excel_name_raw")
+        item["display_brand"] = item.get("bitrix_brand") or item.get("excel_brand")
+        item["display_category"] = item.get("bitrix_category") or item.get("excel_category")
         item["candidates"] = _load_json(item.get("candidates_json"), [])
         item["gallery"] = _load_json(item.get("bitrix_gallery_json"), [])
         item["properties"] = _load_json(item.get("bitrix_properties_json"), [])

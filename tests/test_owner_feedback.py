@@ -531,34 +531,14 @@ class OwnerFeedbackTest(unittest.TestCase):
         self.assertEqual(cases_after_restore[0]["archived_at"], "")
 
     def test_warehouse_bulk_edit_validates_then_updates_selected_items(self):
-        fake_client = mock.Mock()
-        fake_client.get_or_create_product_folder.return_value = {
-            "meta": {"href": "https://example.test/folder"}
-        }
-        fake_client.update_product.return_value = {"id": PRODUCT_ID}
-        fake_client.update_product_cell_attribute.return_value = {
-            "id": PRODUCT_ID
-        }
-        saved_cells = []
+        catalog = mock.Mock()
 
         with mock.patch.object(
             web,
-            "get_warehouse_items",
-            return_value=[warehouse_item()],
+            "get_excel_warehouse_items",
+            return_value=[{"id": PRODUCT_ID, "brand": "Новый бренд"}],
         ), mock.patch.object(
-            web, "MoySkladClient", return_value=fake_client
-        ), mock.patch.object(
-            web,
-            "load_warehouse_cells",
-            return_value={PRODUCT_ID: "A-01"},
-        ), mock.patch.object(
-            web,
-            "save_warehouse_cells",
-            side_effect=lambda cells: saved_cells.append(dict(cells)),
-        ), mock.patch.object(
-            web.CatalogReader,
-            "list_active_brands",
-            return_value=["Новый бренд"],
+            web, "ExcelProductCatalog", return_value=catalog
         ):
             response = self.client.post(
                 "/warehouse/bulk-edit",
@@ -575,24 +555,19 @@ class OwnerFeedbackTest(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 302)
-        fake_client.get_or_create_product_folder.assert_called_once_with(
-            "Новый бренд/Новая категория"
-        )
-        self.assertTrue(
-            fake_client.update_product.call_args.kwargs["archived"]
-        )
-        fake_client.update_product_cell_attribute.assert_called_once_with(
+        catalog.update_product.assert_called_once_with(
             PRODUCT_ID,
-            "B-02",
+            brand="Новый бренд",
+            category="Новая категория",
+            cell="B-02",
         )
-        self.assertEqual(saved_cells[0][PRODUCT_ID], "B-02")
+        catalog.archive_product.assert_called_once_with(PRODUCT_ID)
 
     def test_warehouse_bulk_edit_rejects_brand_outside_catalog(self):
         with mock.patch.object(
-            web.CatalogReader,
-            "list_active_brands",
-            return_value=["Casio"],
-        ), mock.patch.object(web, "MoySkladClient") as client_class:
+            web, "get_excel_warehouse_items",
+            return_value=[{"id": PRODUCT_ID, "brand": "Casio"}],
+        ), mock.patch.object(web, "ExcelProductCatalog") as catalog_class:
             response = self.client.post(
                 "/warehouse/bulk-edit",
                 data={
@@ -603,7 +578,7 @@ class OwnerFeedbackTest(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 302)
-        client_class.assert_not_called()
+        catalog_class.assert_not_called()
         self.assertIn(
             "%D0%B8%D0%B7+%D1%81%D0%BF%D0%B8%D1%81%D0%BA%D0%B0",
             response.headers["Location"],
@@ -644,13 +619,7 @@ class OwnerFeedbackTest(unittest.TestCase):
         self.assertEqual(thumbnail.headers["X-Content-Type-Options"], "nosniff")
 
         with mock.patch.object(
-            web, "get_warehouse_items", return_value=[item]
-        ), mock.patch.object(
-            web, "load_stock_operations", return_value=[]
-        ), mock.patch.object(
-            web.CatalogReader,
-            "list_active_brands",
-            return_value=["A & Co.", "Бренд.ру"],
+            web, "get_excel_warehouse_items", return_value=[item]
         ):
             page = self.client.get("/warehouse?q=Часы")
 

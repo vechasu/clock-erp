@@ -976,10 +976,10 @@ def get_excel_warehouse_items():
         stock = float(product.get("stock") or 0)
         items.append({
             "id": product["id"],
-            "name": product.get("display_name") or "",
+            "name": product.get("excel_name_raw") or "",
             "article": product.get("excel_article") or "",
-            "brand": product.get("display_brand") or "",
-            "category": product.get("display_category") or "",
+            "brand": product.get("excel_brand") or "",
+            "category": product.get("excel_category") or "",
             "cell": product.get("cell") or "",
             "cell_source": "excel" if product.get("cell") else "",
             "cell_source_label": "Excel" if product.get("cell") else "",
@@ -1544,7 +1544,7 @@ def warehouse_bulk_edit():
     apply_brand = request.form.get("apply_brand") == "1"
     apply_category = request.form.get("apply_category") == "1"
     apply_cell = request.form.get("apply_cell") == "1"
-    brand = (request.form.get("brand") or "").strip()
+    brand = " ".join((request.form.get("brand") or "").split())
     category = (request.form.get("category") or "").strip()
     cell = (request.form.get("cell") or "").strip()
     activity = (request.form.get("activity") or "keep").strip()

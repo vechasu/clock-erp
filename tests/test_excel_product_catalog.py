@@ -315,13 +315,8 @@ class ExcelProductCatalogTest(unittest.TestCase):
         web.app.config["TESTING"] = True
         with mock.patch.dict("os.environ", {"CATALOG_DATABASE_PATH": str(self.path)}):
             response = web.app.test_client().get("/products?per_page=100")
-        rendered = response.get_data(as_text=True)
-        self.assertEqual(response.status_code, 200)
-        self.assertIn("https://example.test/preview.jpg", rendered)
-        self.assertIn('loading="lazy"', rendered)
-        self.assertIn("handleProductImageError", rendered)
-        self.assertIn("Фото отсутствует", rendered)
-        self.assertNotIn("Bitrix Only", rendered)
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response.headers["Location"].endswith("/warehouse?per_page=100"))
 
     def test_search_covers_excel_bitrix_brand_article_cell_and_xml_id(self):
         self.service.apply(
@@ -373,21 +368,8 @@ class ExcelProductCatalogTest(unittest.TestCase):
             response = web.app.test_client().get(
                 "/products?q=Watch&brand=Brand&category=Watches&cell=A-2&hide_zero=1"
             )
-        rendered = response.get_data(as_text=True)
-        self.assertEqual(response.status_code, 200)
-        for marker in (
-            'id="productsSearchInput"', 'id="productsSearchClear"',
-            "searchDebounceMs = 350", "history.pushState", "popstate",
-            "vechasuProductsScrollPositionV2", "vechasuProductsColumnWidthsV2",
-            'name="brand"', 'name="category"', 'name="cell"', "data-sort-field",
-            "Скрыть нулевые", "Оформить приход", "Добавить товар", "Фото", "Цена",
-        ):
-            self.assertIn(marker, rendered)
-        for removed in (
-            "Batch registry", "Источник остатков", "Массовое редактирование",
-            "Карта склада", "Сопоставление", "XML_ID", "Excel строка",
-        ):
-            self.assertNotIn(removed, rendered)
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/warehouse?", response.headers["Location"])
         moysklad.assert_not_called()
         bitrix.assert_not_called()
 
@@ -398,20 +380,8 @@ class ExcelProductCatalogTest(unittest.TestCase):
         web.app.config["TESTING"] = True
         with mock.patch.dict("os.environ", {"CATALOG_DATABASE_PATH": str(self.path)}):
             response = web.app.test_client().get("/products?per_page=100")
-        rendered = response.get_data(as_text=True)
-        self.assertEqual(response.status_code, 200)
-        self.assertIn(
-            '<a class="products-action-button" data-product-detail-link '
-            'href="/products/{}?return_to='.format(product_id),
-            rendered,
-        )
-        self.assertIn(
-            'action="/products/{}/delete"'.format(product_id), rendered
-        )
-        self.assertIn(">Редактировать</a>", rendered)
-        self.assertIn(">Удалить</button>", rendered)
-        self.assertIn("return confirm('Удалить этот товар?", rendered)
-        self.assertNotIn(">Открыть</a>", rendered)
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response.headers["Location"].endswith("/warehouse?per_page=100"))
 
     def test_product_delete_requires_confirmation_and_blocks_audit_links(self):
         self.apply_initial()
@@ -504,15 +474,8 @@ class ExcelProductCatalogTest(unittest.TestCase):
             response = web.app.test_client().get(
                 "/products?_partial=1&q=Watch&brand=Brand&sort_by=stock&sort_dir=desc"
             )
-        rendered = response.get_data(as_text=True)
-        self.assertEqual(response.status_code, 200)
-        self.assertNotIn("<!doctype html>", rendered.lower())
-        self.assertIn('data-products-table', rendered)
-        self.assertIn("https://example.test/preview.jpg", rendered)
-        self.assertIn("Watch X1", rendered)
-        self.assertNotIn("Excel строка", rendered)
-        self.assertNotIn("xml-10", rendered)
-        self.assertNotIn("Сопоставление", rendered)
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/warehouse?", response.headers["Location"])
 
     def test_product_detail_preserves_safe_return_url(self):
         self.apply_initial()
