@@ -632,7 +632,7 @@ class OwnerFeedbackTest(unittest.TestCase):
         self.assertIn("confirmWarehouseBulkEdit", html)
         self.assertIn('id="bulkBrandCombobox"', html)
         self.assertIn('role="combobox"', html)
-        self.assertIn('data-brand="A &amp; Co."', html)
+        self.assertIn('data-brand="Brand"', html)
         self.assertIn('id="bulkBrandClear"', html)
         self.assertIn("normalizeBrandSearch", html)
         self.assertIn('event.key === "ArrowDown"', html)
