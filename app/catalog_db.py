@@ -448,6 +448,19 @@ CREATE TABLE IF NOT EXISTS catalog_excel_receipt_operations (
 
 CREATE INDEX IF NOT EXISTS idx_catalog_excel_receipt_operations_receipt
     ON catalog_excel_receipt_operations(receipt_id, created_at);
+
+CREATE TABLE IF NOT EXISTS catalog_excel_manual_stock_operations (
+    id TEXT PRIMARY KEY,
+    product_id INTEGER NOT NULL REFERENCES catalog_excel_products(id),
+    stock_before REAL NOT NULL,
+    stock_after REAL NOT NULL,
+    stock_difference REAL NOT NULL,
+    reason TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_catalog_excel_manual_stock_product
+    ON catalog_excel_manual_stock_operations(product_id, created_at);
 """
 
 

@@ -5,6 +5,7 @@ Bitrix or MoySklad clients and therefore cannot change either external system.
 """
 
 import json
+import math
 import sqlite3
 import uuid
 from datetime import datetime, timezone
@@ -777,7 +778,7 @@ class ExcelProductCatalog:
         return self.get_product(product_id)
 
     def update_product(self, product_id, name=None, article=None, brand=None,
-                       category=None, cell=None):
+                       category=None, cell=None, stock=None, stock_reason=""):
         self.database.initialize()
         with self.database.transaction() as connection:
             product = connection.execute(
@@ -801,6 +802,16 @@ class ExcelProductCatalog:
                 values["excel_category"] = text(category) or None
             if cell is not None:
                 values["cell"] = text(cell) or None
+            stock_before = float(values["stock"] or 0)
+            if stock is not None:
+                try:
+                    stock_after = float(str(stock).replace(",", "."))
+                except (TypeError, ValueError):
+                    raise ValueError("Остаток должен быть числом.")
+                if not math.isfinite(stock_after) or stock_after < 0:
+                    raise ValueError("Остаток должен быть неотрицательным числом.")
+                values["stock"] = stock_after
+                values["stock_source"] = "manual"
             raw_excel = _load_json(values.get("raw_excel_json"), {})
             raw_excel.update({
                 "excel_name": values["excel_name_raw"],
@@ -812,7 +823,38 @@ class ExcelProductCatalog:
             values["raw_excel_json"] = _json(raw_excel)
             values["updated_at"] = utc_now()
             _restore_columns(connection, product_id, values, PRODUCT_MUTABLE_COLUMNS)
+            if stock is not None and stock_after != stock_before:
+                connection.execute(
+                    "INSERT INTO catalog_excel_manual_stock_operations ("
+                    "id, product_id, stock_before, stock_after, stock_difference, "
+                    "reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        str(uuid.uuid4()), int(product_id), stock_before, stock_after,
+                        stock_after - stock_before, text(stock_reason) or None, utc_now(),
+                    ),
+                )
         return self.get_product(product_id)
+
+    def list_manual_stock_operations(self, limit=5000):
+        self.database.initialize()
+        with self.database.connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM catalog_excel_manual_stock_operations "
+                "ORDER BY created_at DESC LIMIT ?", (max(1, int(limit)),),
+            ).fetchall()
+        operations = []
+        for row in rows:
+            item = dict(row)
+            difference = float(item["stock_difference"])
+            item.update({
+                "type": "manual",
+                "label": "Корректировка остатка",
+                "quantity": abs(difference),
+                "diff": difference,
+                "source": "Vechasu ERP",
+            })
+            operations.append(item)
+        return operations
 
     def archive_product(self, product_id):
         self.database.initialize()
