@@ -23,6 +23,7 @@ from app.catalog_db import CatalogDatabase
 from app.services.excel_product_catalog import (
     PRODUCT_MUTABLE_COLUMNS,
     ExcelProductBatchService,
+    category_for_product_name,
     _json,
     _refresh_link_cardinality,
     _restore_columns,
@@ -539,7 +540,9 @@ class ExcelReceiptImportService:
                 )
                 state["article_quality"] = article_quality(state["excel_article"])
                 state["excel_brand"] = state["bitrix_brand"] or bitrix_identity["brand"] or ""
-                state["excel_category"] = state["bitrix_category"] or None
+                state["excel_category"] = category_for_product_name(
+                    state["excel_name_raw"], state["bitrix_category"]
+                ) or None
                 quantity = float(result["stock"])
                 stock_before = float(existing["stock"]) if existing is not None else 0.0
                 state["stock"] = stock_before + quantity
