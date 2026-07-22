@@ -2730,6 +2730,53 @@
             line-height: 1;
         }
 
+        #editDrawer .product-inline-form.is-editing .product-detail-card {
+            cursor: text;
+            transition:
+                border-color 0.18s ease,
+                background 0.18s ease,
+                box-shadow 0.18s ease;
+        }
+
+        #editDrawer .product-inline-form.is-editing .product-detail-card:hover {
+            border-color: #cfd9e7;
+            background: #ffffff;
+        }
+
+        #editDrawer .product-inline-form.is-editing .product-detail-card:focus-within,
+        #editDrawer .product-inline-form.is-editing .product-detail-card:has(.brand-combobox.open) {
+            border-color: #8eb0ff;
+            box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.09);
+        }
+
+        #editDrawer .product-inline-form.is-editing .product-detail-card > input.product-detail-input,
+        #editDrawer .product-inline-form.is-editing .product-detail-card .brand-combobox-trigger {
+            padding: 0;
+            border: 0;
+            border-radius: 0;
+            background: transparent;
+            box-shadow: none;
+        }
+
+        #editDrawer .product-inline-form.is-editing .product-detail-card > input.product-detail-input:hover,
+        #editDrawer .product-inline-form.is-editing .product-detail-card > input.product-detail-input:focus,
+        #editDrawer .product-inline-form.is-editing .product-detail-card .brand-combobox-trigger:hover,
+        #editDrawer .product-inline-form.is-editing .product-detail-card .brand-combobox-trigger:focus {
+            border: 0;
+            background: transparent;
+            box-shadow: none;
+            outline: 0;
+        }
+
+        #editDrawer .product-inline-form.is-editing .product-brand-editor,
+        #editDrawer .product-inline-form.is-editing .product-brand-editor .brand-combobox {
+            width: 100%;
+        }
+
+        #editDrawer .product-inline-form.is-editing .brand-combobox-trigger {
+            justify-content: space-between;
+        }
+
         #editDrawer #detailStock {
             display: flex;
             align-items: center;
@@ -3847,6 +3894,29 @@
         function startInlineProductEdit() {
             document.getElementById("inlineProductForm").classList.add("is-editing");
         }
+
+        document.getElementById("inlineProductForm").addEventListener("click", function(event) {
+            const form = event.currentTarget;
+            const card = event.target.closest(".product-detail-card");
+
+            if (!form.classList.contains("is-editing") || !card) {
+                return;
+            }
+            if (event.target.closest("input, button, a")) {
+                return;
+            }
+
+            const input = card.querySelector("input.product-detail-input");
+            if (input) {
+                input.focus();
+                return;
+            }
+
+            const trigger = card.querySelector(".brand-combobox-trigger");
+            if (trigger) {
+                trigger.click();
+            }
+        });
 
         function cancelInlineProductEdit() {
             const form = document.getElementById("inlineProductForm");
