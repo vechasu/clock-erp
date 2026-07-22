@@ -586,12 +586,12 @@ class ExcelProductCatalog:
                       sort_dir="asc", page=1, per_page=50):
         self.database.initialize()
         page = max(1, int(page))
-        per_page = max(1, min(int(per_page), 100))
+        per_page = max(1, min(int(per_page), 5000))
         allowed_sort_fields = {
-            "name": "COALESCE(NULLIF(p.excel_name_raw, ''), p.bitrix_name)",
+            "name": "p.excel_name_raw",
             "article": "COALESCE(p.excel_article, '')",
-            "brand": "COALESCE(NULLIF(p.bitrix_brand, ''), p.excel_brand)",
-            "category": "COALESCE(NULLIF(p.bitrix_category, ''), p.excel_category)",
+            "brand": "COALESCE(p.excel_brand, '')",
+            "category": "COALESCE(p.excel_category, '')",
             "stock": "p.stock",
             "cell": "COALESCE(p.cell, '')",
             "created_at": "p.created_at",
@@ -613,12 +613,12 @@ class ExcelProductCatalog:
             )
             parameters.extend([pattern] * 7)
         if brand:
-            where.append("COALESCE(NULLIF(p.bitrix_brand, ''), p.excel_brand) = ?")
+            where.append("COALESCE(p.excel_brand, '') = ?")
             parameters.append(brand)
         if category:
             where.append(
-                "(COALESCE(NULLIF(p.bitrix_category, ''), p.excel_category) = ? OR "
-                "substr(COALESCE(NULLIF(p.bitrix_category, ''), p.excel_category), "
+                "(COALESCE(p.excel_category, '') = ? OR "
+                "substr(COALESCE(p.excel_category, ''), "
                 "1, length(?) + 1) = ? || '/')"
             )
             parameters.extend([category, category, category])
@@ -668,25 +668,25 @@ class ExcelProductCatalog:
                 parameters + [per_page, (page - 1) * per_page],
             ).fetchall()
             brands = [row[0] for row in connection.execute(
-                "SELECT DISTINCT COALESCE(NULLIF(p.bitrix_brand, ''), p.excel_brand) AS value "
+                "SELECT DISTINCT COALESCE(p.excel_brand, '') AS value "
                 "FROM catalog_excel_products p JOIN catalog_excel_batches b "
                 "ON b.id = p.current_batch_id WHERE p.active = 1 AND b.status = 'active' "
-                "AND trim(COALESCE(NULLIF(p.bitrix_brand, ''), p.excel_brand)) <> '' "
+                "AND trim(COALESCE(p.excel_brand, '')) <> '' "
                 "ORDER BY value"
             ).fetchall()]
             categories = [row[0] for row in connection.execute(
-                "SELECT DISTINCT COALESCE(NULLIF(p.bitrix_category, ''), p.excel_category) AS value "
+                "SELECT DISTINCT COALESCE(p.excel_category, '') AS value "
                 "FROM catalog_excel_products p JOIN catalog_excel_batches b "
                 "ON b.id = p.current_batch_id WHERE p.active = 1 AND b.status = 'active' "
-                "AND trim(COALESCE(NULLIF(p.bitrix_category, ''), p.excel_category)) <> '' "
+                "AND trim(COALESCE(p.excel_category, '')) <> '' "
                 "ORDER BY value"
             ).fetchall()]
             category_groups = [dict(row) for row in connection.execute(
-                "SELECT COALESCE(NULLIF(p.bitrix_category, ''), p.excel_category) AS name, "
+                "SELECT COALESCE(p.excel_category, '') AS name, "
                 "COUNT(*) AS count FROM catalog_excel_products p "
                 "JOIN catalog_excel_batches b ON b.id = p.current_batch_id "
                 "WHERE p.active = 1 AND b.status = 'active' "
-                "AND trim(COALESCE(NULLIF(p.bitrix_category, ''), p.excel_category)) <> '' "
+                "AND trim(COALESCE(p.excel_category, '')) <> '' "
                 "GROUP BY name ORDER BY name"
             ).fetchall()]
             cell_groups = [dict(row) for row in connection.execute(
@@ -727,6 +727,110 @@ class ExcelProductCatalog:
                 (int(product_id),),
             ).fetchone()
         return self._prepare_product(dict(row)) if row else None
+
+    def create_product(self, name, article="", brand="", category="", cell=""):
+        name = text(name)
+        if not name:
+            raise ValueError("Название товара обязательно.")
+        article = text(article)
+        brand = text(brand)
+        category = text(category)
+        cell = text(cell)
+        self.database.initialize()
+        with self.database.transaction() as connection:
+            batch = connection.execute(
+                "SELECT * FROM catalog_excel_batches WHERE status = 'active' "
+                "ORDER BY applied_at DESC LIMIT 1"
+            ).fetchone()
+            if batch is None:
+                raise ValueError("Сначала оформите приход из Excel.")
+            now = utc_now()
+            excel_row = connection.execute(
+                "SELECT COALESCE(MAX(excel_row), 1) + 1 FROM catalog_excel_products"
+            ).fetchone()[0]
+            source_key = "manual:{}".format(uuid.uuid4())
+            enrichment = _empty_enrichment()
+            columns = (
+                "source_key", "created_batch_id", "current_batch_id", "active",
+                "raw_excel_json", "excel_row", "excel_name_raw", "normalized_name",
+                "excel_article", "article_quality", "excel_brand", "excel_category",
+                "stock", "cell", "stock_source", "file_sha256", "match_status",
+                "match_method", "match_confidence", "match_decision", "candidates_json",
+                "bitrix_link_cardinality", "shared_bitrix_row_count",
+            ) + tuple(enrichment) + ("moysklad_sync_status", "created_at", "updated_at")
+            values = (
+                source_key, batch["id"], batch["id"], 1,
+                _json({"source": "manual", "name": name, "article": article,
+                       "brand": brand, "category": category, "cell": cell}),
+                excel_row, name, normalize_text(name), article or None,
+                article_quality(article), brand, category or None, 0.0, cell or None,
+                "manual", batch["file_sha256"], "not_found", "manual_create", 0.0,
+                "unmatched", "[]", "unlinked", 0,
+            ) + tuple(enrichment.values()) + ("not_linked", now, now)
+            connection.execute(
+                "INSERT INTO catalog_excel_products ({}) VALUES ({})".format(
+                    ", ".join(columns), ", ".join("?" for _ in columns)
+                ),
+                values,
+            )
+            product_id = connection.execute("SELECT last_insert_rowid()").fetchone()[0]
+        return self.get_product(product_id)
+
+    def update_product(self, product_id, name=None, article=None, brand=None,
+                       category=None, cell=None):
+        self.database.initialize()
+        with self.database.transaction() as connection:
+            product = connection.execute(
+                "SELECT * FROM catalog_excel_products WHERE id = ? AND active = 1",
+                (int(product_id),),
+            ).fetchone()
+            if product is None:
+                raise ValueError("Товар не найден.")
+            values = dict(product)
+            if name is not None:
+                values["excel_name_raw"] = text(name)
+                if not values["excel_name_raw"]:
+                    raise ValueError("Название товара обязательно.")
+                values["normalized_name"] = normalize_text(values["excel_name_raw"])
+            if article is not None:
+                values["excel_article"] = text(article) or None
+                values["article_quality"] = article_quality(values["excel_article"])
+            if brand is not None:
+                values["excel_brand"] = text(brand)
+            if category is not None:
+                values["excel_category"] = text(category) or None
+            if cell is not None:
+                values["cell"] = text(cell) or None
+            raw_excel = _load_json(values.get("raw_excel_json"), {})
+            raw_excel.update({
+                "excel_name": values["excel_name_raw"],
+                "excel_article": values["excel_article"],
+                "excel_brand": values["excel_brand"],
+                "category": values["excel_category"],
+                "cell": values["cell"],
+            })
+            values["raw_excel_json"] = _json(raw_excel)
+            values["updated_at"] = utc_now()
+            _restore_columns(connection, product_id, values, PRODUCT_MUTABLE_COLUMNS)
+        return self.get_product(product_id)
+
+    def archive_product(self, product_id):
+        self.database.initialize()
+        with self.database.transaction() as connection:
+            product = connection.execute(
+                "SELECT * FROM catalog_excel_products WHERE id = ? AND active = 1",
+                (int(product_id),),
+            ).fetchone()
+            if product is None:
+                raise ValueError("Товар не найден.")
+            if float(product["stock"] or 0) != 0:
+                raise ProductDeleteBlockedError(
+                    "Товар с ненулевым остатком нельзя удалить."
+                )
+            connection.execute(
+                "UPDATE catalog_excel_products SET active = 0, updated_at = ? WHERE id = ?",
+                (utc_now(), int(product_id)),
+            )
 
     def delete_product(self, product_id, external_references=None):
         """Delete only an unreferenced zero-stock card.
