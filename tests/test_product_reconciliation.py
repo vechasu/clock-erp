@@ -69,6 +69,13 @@ class ProductReconciliationTest(unittest.TestCase):
         self.assertEqual(result["match_status"], "ambiguous")
         self.assertEqual(result["alternatives"][0]["evidence"], "exact_name_brand_mismatch")
 
+    def test_unique_exact_article_uses_bitrix_identity_despite_excel_metadata(self):
+        result = self.match(
+            [product(1, "Bitrix name", "Bitrix brand", article="CODE-101")],
+            [row(2, "Wrong Excel name", "Wrong Excel brand", article="CODE-101")],
+        )[0]
+        self.assertEqual((result["match_status"], result["product_id"]), ("exact", 1))
+
     def test_common_names_are_never_automatic(self):
         for name in ("Black", "Gold", "Moon", "Eclipse"):
             result = self.match([product(1, name, "Brand")], [row(2, name, "Brand")])[0]
