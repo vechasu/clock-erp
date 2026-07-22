@@ -669,11 +669,11 @@ class ExcelProductCatalog:
                 parameters + [per_page, (page - 1) * per_page],
             ).fetchall()
             brands = [row[0] for row in connection.execute(
-                "SELECT DISTINCT COALESCE(p.excel_brand, '') AS value "
+                "SELECT COALESCE(p.excel_brand, '') AS value "
                 "FROM catalog_excel_products p JOIN catalog_excel_batches b "
                 "ON b.id = p.current_batch_id WHERE p.active = 1 AND b.status = 'active' "
                 "AND trim(COALESCE(p.excel_brand, '')) <> '' "
-                "ORDER BY value"
+                "GROUP BY value HAVING COALESCE(SUM(p.stock), 0) >= 1 ORDER BY value"
             ).fetchall()]
             categories = [row[0] for row in connection.execute(
                 "SELECT DISTINCT COALESCE(p.excel_category, '') AS value "
