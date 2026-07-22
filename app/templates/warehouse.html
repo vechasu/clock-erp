@@ -1155,6 +1155,31 @@
             outline: none;
         }
 
+        .brand-combobox-search-wrap { position: relative; }
+        .brand-combobox-search-wrap .brand-combobox-search { padding-right: 40px; }
+        .brand-combobox-search-clear {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            width: 26px;
+            height: 26px;
+            padding: 0;
+            border: 0;
+            border-radius: 8px;
+            background: transparent;
+            color: #64748b;
+            font-size: 19px;
+            line-height: 1;
+            cursor: pointer;
+        }
+        .brand-combobox-search-clear:hover { background: #f1f5f9; color: #0f172a; }
+        .brand-combobox-empty {
+            padding: 12px 10px;
+            color: #64748b;
+            font-size: 13px;
+            text-align: center;
+        }
+
         .brand-combobox-search:focus {
             border-color: #2563eb;
             box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.10);
@@ -3206,7 +3231,10 @@
                 <span class="brand-combobox-arrow">▾</span>
             </button>
             <div class="brand-combobox-dropdown">
-                <input class="brand-combobox-search" type="search" placeholder="Поиск бренда" autocomplete="off" oninput="filterBrandList(this.value, this.closest('[data-brand-combobox]'))">
+                <div class="brand-combobox-search-wrap">
+                    <input class="brand-combobox-search" data-brand-search-input type="search" placeholder="Поиск бренда" autocomplete="off">
+                    <button class="brand-combobox-search-clear" data-brand-search-clear type="button" aria-label="Очистить поиск" hidden>×</button>
+                </div>
                 <div class="brand-combobox-options">
                     {% if include_all %}
                         <button class="brand-combobox-option {% if not selected_value %}active{% endif %}" type="button" data-brand="" data-brand-search="все бренды" onclick="selectBrandOption(this)">
@@ -3218,6 +3246,7 @@
                             <span>{{ brand.name }}</span><span>{{ brand.count }}</span>
                         </button>
                     {% endfor %}
+                    <div class="brand-combobox-empty" data-brand-empty hidden>Бренды не найдены</div>
                 </div>
             </div>
         </div>
@@ -4368,6 +4397,7 @@
 
         function filterBrandList(value, combobox) {
             const query = (value || "").trim().toLowerCase();
+            let visibleCount = 0;
 
             combobox
                 .querySelectorAll(".brand-combobox-option")
@@ -4376,12 +4406,51 @@
                         option.dataset.brandSearch || ""
                     ).toLowerCase();
 
-                    option.hidden = (
+                    const hidden = (
                         Boolean(query)
                         && !brandName.includes(query)
                     );
+                    option.hidden = hidden;
+                    if (!hidden) {
+                        visibleCount += 1;
+                    }
                 });
+
+            const clearButton = combobox.querySelector("[data-brand-search-clear]");
+            const emptyMessage = combobox.querySelector("[data-brand-empty]");
+            if (clearButton) {
+                clearButton.hidden = !query;
+            }
+            if (emptyMessage) {
+                emptyMessage.hidden = visibleCount !== 0;
+            }
         }
+
+
+        function initializeBrandComboboxes() {
+            document.querySelectorAll("[data-brand-combobox]").forEach(function(combobox) {
+                const searchInput = combobox.querySelector("[data-brand-search-input]");
+                const clearButton = combobox.querySelector("[data-brand-search-clear]");
+                if (!searchInput || searchInput.dataset.searchBound === "1") {
+                    return;
+                }
+                searchInput.dataset.searchBound = "1";
+                ["input", "search"].forEach(function(eventName) {
+                    searchInput.addEventListener(eventName, function() {
+                        filterBrandList(searchInput.value, combobox);
+                    });
+                });
+                clearButton.addEventListener("click", function() {
+                    searchInput.value = "";
+                    filterBrandList("", combobox);
+                    searchInput.focus();
+                });
+                filterBrandList(searchInput.value, combobox);
+            });
+        }
+
+
+        document.addEventListener("DOMContentLoaded", initializeBrandComboboxes);
 
 
         function selectBrandOption(button) {
