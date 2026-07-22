@@ -210,7 +210,7 @@ CREATE TABLE IF NOT EXISTS catalog_sync_runs (
 
 CREATE TABLE IF NOT EXISTS catalog_excel_batches (
     id TEXT PRIMARY KEY,
-    file_sha256 TEXT NOT NULL UNIQUE,
+    file_sha256 TEXT NOT NULL,
     source_filename TEXT NOT NULL,
     sheet_name TEXT NOT NULL DEFAULT 'Импорт',
     source_type TEXT NOT NULL DEFAULT 'excel',
@@ -230,6 +230,8 @@ CREATE TABLE IF NOT EXISTS catalog_excel_batches (
 
 CREATE INDEX IF NOT EXISTS idx_catalog_excel_batches_status
     ON catalog_excel_batches(status, applied_at);
+CREATE INDEX IF NOT EXISTS idx_catalog_excel_batches_file_sha256
+    ON catalog_excel_batches(file_sha256);
 
 CREATE TABLE IF NOT EXISTS catalog_excel_products (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -349,11 +351,14 @@ CREATE TABLE IF NOT EXISTS catalog_excel_import_drafts (
     source_file BLOB NOT NULL,
     sheet_name TEXT NOT NULL,
     header_row INTEGER NOT NULL,
+    parser_version INTEGER NOT NULL DEFAULT 2,
     status TEXT NOT NULL CHECK (status IN ('ready', 'blocked', 'posted')),
     row_count INTEGER NOT NULL,
     valid_rows INTEGER NOT NULL,
     error_rows INTEGER NOT NULL,
     excluded_rows INTEGER NOT NULL,
+    positive_rows INTEGER NOT NULL DEFAULT 0,
+    zero_rows INTEGER NOT NULL DEFAULT 0,
     new_rows INTEGER NOT NULL,
     matched_rows INTEGER NOT NULL,
     total_quantity REAL NOT NULL,
@@ -416,7 +421,7 @@ CREATE TABLE IF NOT EXISTS catalog_excel_receipt_rows (
     excel_brand TEXT NOT NULL,
     excel_category TEXT,
     cell TEXT,
-    quantity REAL NOT NULL CHECK (quantity > 0),
+    quantity REAL NOT NULL CHECK (quantity >= 0),
     stock_before REAL NOT NULL,
     stock_after REAL NOT NULL,
     created_product INTEGER NOT NULL CHECK (created_product IN (0, 1)),
@@ -463,7 +468,126 @@ class CatalogDatabase:
     def initialize(self):
         with self.connect() as connection:
             connection.executescript(SCHEMA)
+            self._ensure_excel_receipt_constraints(connection)
             self._ensure_excel_cardinality_columns(connection)
+
+    @staticmethod
+    def _ensure_excel_receipt_constraints(connection):
+        batch_sql_row = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' "
+            "AND name = 'catalog_excel_batches'"
+        ).fetchone()
+        receipt_row_sql_row = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' "
+            "AND name = 'catalog_excel_receipt_rows'"
+        ).fetchone()
+        batch_sql = " ".join((batch_sql_row[0] or "").lower().split())
+        receipt_row_sql = " ".join((receipt_row_sql_row[0] or "").lower().split())
+        migrate_batches = "file_sha256 text not null unique" in batch_sql
+        migrate_receipt_rows = "check (quantity > 0)" in receipt_row_sql
+        if not migrate_batches and not migrate_receipt_rows:
+            return
+
+        connection.commit()
+        connection.execute("PRAGMA foreign_keys = OFF")
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            if migrate_batches:
+                connection.execute("""
+                    CREATE TABLE catalog_excel_batches_migrating (
+                        id TEXT PRIMARY KEY,
+                        file_sha256 TEXT NOT NULL,
+                        source_filename TEXT NOT NULL,
+                        sheet_name TEXT NOT NULL DEFAULT 'Импорт',
+                        source_type TEXT NOT NULL DEFAULT 'excel',
+                        operation_type TEXT NOT NULL DEFAULT 'initial_excel_balances',
+                        row_count INTEGER NOT NULL,
+                        total_stock REAL NOT NULL,
+                        positive_rows INTEGER NOT NULL,
+                        zero_rows INTEGER NOT NULL,
+                        status TEXT NOT NULL CHECK (
+                            status IN ('active', 'superseded', 'rolled_back')
+                        ),
+                        previous_batch_id TEXT REFERENCES catalog_excel_batches(id)
+                            ON DELETE SET NULL,
+                        moysklad_sync_status TEXT NOT NULL DEFAULT 'not_linked',
+                        created_at TEXT NOT NULL,
+                        applied_at TEXT NOT NULL,
+                        rolled_back_at TEXT,
+                        details_json TEXT NOT NULL DEFAULT '{}'
+                    )
+                """)
+                connection.execute(
+                    "INSERT INTO catalog_excel_batches_migrating "
+                    "SELECT * FROM catalog_excel_batches"
+                )
+                connection.execute("DROP TABLE catalog_excel_batches")
+                connection.execute(
+                    "ALTER TABLE catalog_excel_batches_migrating "
+                    "RENAME TO catalog_excel_batches"
+                )
+                connection.execute(
+                    "CREATE INDEX idx_catalog_excel_batches_status "
+                    "ON catalog_excel_batches(status, applied_at)"
+                )
+                connection.execute(
+                    "CREATE INDEX idx_catalog_excel_batches_file_sha256 "
+                    "ON catalog_excel_batches(file_sha256)"
+                )
+
+            if migrate_receipt_rows:
+                connection.execute("""
+                    CREATE TABLE catalog_excel_receipt_rows_migrating (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        receipt_id INTEGER NOT NULL REFERENCES catalog_excel_receipts(id)
+                            ON DELETE CASCADE,
+                        draft_row_id INTEGER NOT NULL
+                            REFERENCES catalog_excel_import_draft_rows(id),
+                        product_id INTEGER NOT NULL REFERENCES catalog_excel_products(id),
+                        excel_row INTEGER NOT NULL,
+                        excel_name TEXT NOT NULL,
+                        excel_article TEXT,
+                        excel_brand TEXT NOT NULL,
+                        excel_category TEXT,
+                        cell TEXT,
+                        quantity REAL NOT NULL CHECK (quantity >= 0),
+                        stock_before REAL NOT NULL,
+                        stock_after REAL NOT NULL,
+                        created_product INTEGER NOT NULL CHECK (
+                            created_product IN (0, 1)
+                        ),
+                        match_status TEXT NOT NULL,
+                        bitrix_catalog_product_id INTEGER
+                            REFERENCES catalog_products(id) ON DELETE SET NULL,
+                        created_at TEXT NOT NULL,
+                        UNIQUE (receipt_id, draft_row_id)
+                    )
+                """)
+                connection.execute(
+                    "INSERT INTO catalog_excel_receipt_rows_migrating "
+                    "SELECT * FROM catalog_excel_receipt_rows"
+                )
+                connection.execute("DROP TABLE catalog_excel_receipt_rows")
+                connection.execute(
+                    "ALTER TABLE catalog_excel_receipt_rows_migrating "
+                    "RENAME TO catalog_excel_receipt_rows"
+                )
+                connection.execute(
+                    "CREATE INDEX idx_catalog_excel_receipt_rows_product "
+                    "ON catalog_excel_receipt_rows(product_id, receipt_id)"
+                )
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.execute("PRAGMA foreign_keys = ON")
+
+        violations = connection.execute("PRAGMA foreign_key_check").fetchall()
+        if violations:
+            raise sqlite3.IntegrityError(
+                "Excel receipt schema migration created foreign key violations"
+            )
 
     @staticmethod
     def _ensure_excel_cardinality_columns(connection):
@@ -475,6 +599,11 @@ class CatalogDatabase:
             "catalog_excel_batch_rows": (
                 ("bitrix_link_cardinality", "TEXT NOT NULL DEFAULT 'unlinked'"),
                 ("shared_bitrix_row_count", "INTEGER NOT NULL DEFAULT 0"),
+            ),
+            "catalog_excel_import_drafts": (
+                ("parser_version", "INTEGER NOT NULL DEFAULT 1"),
+                ("positive_rows", "INTEGER NOT NULL DEFAULT 0"),
+                ("zero_rows", "INTEGER NOT NULL DEFAULT 0"),
             ),
         }
         migrated = False

@@ -183,11 +183,18 @@ class ProductReconciler:
 
     def _match(self, row):
         base = self._result_base(row)
-        if not row["excel_name"] or not row["excel_brand"] or not row["stock_valid"]:
+        if (
+            not row["excel_name"]
+            or (not row["excel_brand"] and not reliable_article(row["excel_article"]))
+            or not row["stock_valid"]
+        ):
             base.update({
                 "match_status": "invalid", "match_method": "validation",
                 "confidence": 0,
-                "reason": "Не заполнено название/бренд или остаток некорректен.",
+                "reason": (
+                    "Не заполнено название, отсутствуют бренд/надёжный артикул "
+                    "или остаток некорректен."
+                ),
             })
             return base
 
@@ -323,6 +330,9 @@ class ProductReconciler:
         return {
             "excel_row": row["excel_row"],
             "excel_name": row["excel_name"],
+            "excel_name_raw": row.get("excel_name_raw"),
+            "excel_name_number_format": row.get("excel_name_number_format") or "General",
+            "excel_name_normalization": row.get("excel_name_normalization") or "text",
             "excel_brand": row["excel_brand"],
             "excel_article": row["excel_article"],
             "article_quality": row["article_quality"],
