@@ -1110,11 +1110,11 @@ def warehouse_page():
     stats_items = items
 
     if query:
-        query_lower = query.lower()
+        query_lower = query.casefold()
         stats_items = [
             item for item in items
-            if query_lower in (item.get("name") or "").lower()
-            or query_lower in (item.get("article") or "").lower()
+            if (item.get("name") or "").casefold().startswith(query_lower)
+            or (item.get("article") or "").casefold().startswith(query_lower)
         ]
 
     visible_positions = sum(

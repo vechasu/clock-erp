@@ -3476,8 +3476,8 @@
 
                 const matchesSearch = (
                     !query
-                    || name.includes(query)
-                    || article.includes(query)
+                    || name.startsWith(query)
+                    || article.startsWith(query)
                 );
 
                 const matchesStock = !hideZero || stock > 0;
