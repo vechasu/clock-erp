@@ -3436,6 +3436,8 @@
         const warehouseSearchInput = document.getElementById("warehouseSearchInput");
         const warehouseSearchClear = document.getElementById("warehouseSearchClear");
         let warehouseSearchTimer = null;
+        let warehouseSearchController = null;
+        let warehouseSearchRequestId = 0;
 
         function syncWarehouseSearchClear() {
             if (!warehouseSearchInput || !warehouseSearchClear) {
@@ -3626,6 +3628,59 @@
                 "",
                 url.pathname + url.search + url.hash
             );
+
+            loadWarehouseSearchResults("");
+        }
+
+        async function loadWarehouseSearchResults(query) {
+            if (warehouseSearchController) {
+                warehouseSearchController.abort();
+            }
+
+            const requestId = ++warehouseSearchRequestId;
+            const controller = new AbortController();
+            warehouseSearchController = controller;
+            const url = new URL(window.location.href);
+
+            if (query) {
+                url.searchParams.set("q", query);
+            } else {
+                url.searchParams.delete("q");
+            }
+
+            try {
+                const response = await fetch(url, {
+                    signal: controller.signal,
+                    headers: { "X-Requested-With": "XMLHttpRequest" }
+                });
+
+                if (!response.ok) {
+                    throw new Error("Не удалось обновить поиск");
+                }
+
+                const html = await response.text();
+
+                if (requestId !== warehouseSearchRequestId) {
+                    return;
+                }
+
+                const documentCopy = new DOMParser().parseFromString(
+                    html,
+                    "text/html"
+                );
+                const nextTable = documentCopy.querySelector(".table-card");
+                const currentTable = document.querySelector(".table-card");
+
+                if (nextTable && currentTable) {
+                    currentTable.innerHTML = nextTable.innerHTML;
+                    bindWarehouseSelectionHandlers();
+                    filterWarehouseRows();
+                }
+            } catch (error) {
+                if (error.name !== "AbortError") {
+                    console.error(error);
+                }
+            }
         }
 
         if (warehouseSearchInput) {
@@ -3634,6 +3689,10 @@
                 filterWarehouseRows();
 
                 window.clearTimeout(warehouseSearchTimer);
+
+                if (warehouseSearchController) {
+                    warehouseSearchController.abort();
+                }
 
                 warehouseSearchTimer = window.setTimeout(function() {
                     const query = warehouseSearchInput.value.trim();
@@ -3655,7 +3714,9 @@
                         "",
                         url.pathname + url.search + url.hash
                     );
-                }, 350);
+
+                    loadWarehouseSearchResults(query);
+                }, 100);
             });
 
             syncWarehouseSearchClear();
@@ -3670,27 +3731,31 @@
             }
         }
 
-        const warehouseSelectAll = document.getElementById(
-            "warehouseSelectAll"
-        );
+        function bindWarehouseSelectionHandlers() {
+            const warehouseSelectAll = document.getElementById(
+                "warehouseSelectAll"
+            );
 
-        if (warehouseSelectAll) {
-            warehouseSelectAll.addEventListener("change", function() {
-                getWarehouseVisibleProductCheckboxes().forEach(function(checkbox) {
-                    checkbox.checked = warehouseSelectAll.checked;
+            if (warehouseSelectAll) {
+                warehouseSelectAll.addEventListener("change", function() {
+                    getWarehouseVisibleProductCheckboxes().forEach(function(checkbox) {
+                        checkbox.checked = warehouseSelectAll.checked;
+                    });
+                    syncWarehouseBulkSelection();
                 });
-                syncWarehouseBulkSelection();
+            }
+
+            document.querySelectorAll(
+                ".js-warehouse-product-select"
+            ).forEach(function(checkbox) {
+                checkbox.addEventListener(
+                    "change",
+                    syncWarehouseBulkSelection
+                );
             });
         }
 
-        document.querySelectorAll(
-            ".js-warehouse-product-select"
-        ).forEach(function(checkbox) {
-            checkbox.addEventListener(
-                "change",
-                syncWarehouseBulkSelection
-            );
-        });
+        bindWarehouseSelectionHandlers();
 
         document.querySelectorAll(
             '#warehouseBulkForm input[data-bulk-toggle]'
