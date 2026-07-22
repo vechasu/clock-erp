@@ -2640,6 +2640,261 @@
             white-space: nowrap;
         }
 
+        /* Compact product card layout */
+        #editDrawer .drawer-header,
+        #editDrawer .product-card-layout,
+        #editDrawer .product-history-section {
+            width: 100%;
+            max-width: 1120px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        #editDrawer .product-card-layout {
+            display: grid;
+            grid-template-columns: minmax(320px, 0.92fr) minmax(440px, 1.08fr);
+            gap: 22px;
+            align-items: start;
+        }
+
+        #editDrawer .product-card-media,
+        #editDrawer .product-card-info {
+            min-width: 0;
+        }
+
+        #editDrawer .product-card-media {
+            padding: 12px;
+            border: 1px solid #e5eaf2;
+            border-radius: 18px;
+            background: #ffffff;
+            box-shadow: 0 6px 20px rgba(15, 23, 42, 0.04);
+        }
+
+        #editDrawer .product-detail-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+            margin: 0;
+        }
+
+        #editDrawer .product-detail-card,
+        #editDrawer .product-detail-card:last-child {
+            grid-column: auto;
+            min-height: 84px;
+            padding: 12px 14px;
+        }
+
+        #editDrawer .product-detail-card:hover {
+            transform: none;
+        }
+
+        #editDrawer .product-detail-label {
+            margin-bottom: 5px;
+        }
+
+        #editDrawer .product-detail-value {
+            overflow-wrap: anywhere;
+            font-size: 14px;
+            line-height: 1.35;
+        }
+
+        #editDrawer .product-gallery-main {
+            min-height: 0;
+            height: clamp(310px, 48vh, 470px);
+            padding: 16px;
+            border: 0;
+            border-radius: 12px;
+            box-shadow: inset 0 0 0 1px #edf1f6;
+            transition: box-shadow 0.18s ease, background 0.18s ease;
+        }
+
+        #editDrawer .product-gallery-main:hover {
+            background: #fbfcfe;
+            box-shadow: inset 0 0 0 1px #d9e2ee;
+        }
+
+        #editDrawer .product-gallery-main:focus-visible,
+        #editDrawer .product-gallery-thumbnail:focus-visible,
+        #editDrawer .product-inline-actions button:focus-visible,
+        #editDrawer .moysklad-link:focus-visible {
+            outline: 3px solid rgba(37, 99, 235, 0.24);
+            outline-offset: 2px;
+        }
+
+        #editDrawer .product-gallery-main img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        #editDrawer .product-gallery-thumbnails {
+            display: flex;
+            gap: 8px;
+            margin-top: 10px;
+            padding: 1px;
+            overflow-x: auto;
+            scrollbar-width: thin;
+        }
+
+        #editDrawer .product-gallery-thumbnail {
+            width: 66px;
+            height: 66px;
+            flex: 0 0 66px;
+            aspect-ratio: auto;
+            transition: border-color 0.18s ease, background 0.18s ease;
+        }
+
+        #editDrawer .product-gallery-thumbnail:hover {
+            border-color: #b9c8dc;
+            background: #f8faff;
+        }
+
+        #editDrawer .product-inline-actions {
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 14px;
+        }
+
+        #editDrawer .product-inline-actions button,
+        #editDrawer .product-inline-actions .moysklad-link {
+            width: auto;
+            min-width: 0;
+            min-height: 40px;
+            margin: 0;
+            padding: 0 15px;
+            border-radius: 11px;
+            font-size: 13px;
+            font-weight: 800;
+            line-height: 1;
+        }
+
+        #editDrawer .product-inline-actions [data-edit-start],
+        #editDrawer .product-inline-actions button[type="submit"] {
+            border: 1px solid #172033;
+            background: #172033;
+            color: #ffffff;
+            box-shadow: 0 5px 12px rgba(15, 23, 42, 0.14);
+            transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+        }
+
+        #editDrawer .product-inline-actions [data-edit-start]:hover,
+        #editDrawer .product-inline-actions button[type="submit"]:hover {
+            border-color: #26344b;
+            background: #26344b;
+            transform: translateY(-1px);
+        }
+
+        #editDrawer .product-inline-actions .moysklad-link {
+            display: inline-flex;
+            flex: 0 0 auto;
+            background: #ffffff;
+            color: #334155;
+            border-color: #dce3ed;
+            box-shadow: none;
+        }
+
+        #editDrawer .product-inline-actions .moysklad-link:hover {
+            background: #f7f9fc;
+            color: #172033;
+            border-color: #c8d2df;
+            box-shadow: none;
+        }
+
+        #editDrawer .product-history-section {
+            margin-top: 18px;
+            padding: 14px;
+            border: 1px solid #e5eaf2;
+            border-radius: 16px;
+            background: #ffffff;
+            box-shadow: 0 5px 16px rgba(15, 23, 42, 0.03);
+        }
+
+        #editDrawer .product-history-section .drawer-section-title {
+            max-width: none;
+            margin: 0 0 8px;
+            padding: 0;
+            border: 0;
+            font-size: 14px;
+        }
+
+        #editDrawer .product-history-section #stockHistoryList {
+            max-width: none;
+            margin: 0;
+            padding: 10px 12px;
+            box-shadow: none;
+        }
+
+        @media (max-width: 900px) {
+            #editDrawer .product-card-layout {
+                grid-template-columns: minmax(280px, 0.9fr) minmax(360px, 1.1fr);
+                gap: 16px;
+            }
+        }
+
+        @media (max-width: 700px) {
+            #editDrawer {
+                padding: 16px;
+            }
+
+            #editDrawer .drawer-header {
+                margin-bottom: 14px;
+                padding-bottom: 12px;
+            }
+
+            #editDrawer .product-card-layout {
+                grid-template-columns: minmax(0, 1fr);
+                gap: 14px;
+            }
+
+            #editDrawer .product-gallery-main {
+                height: min(390px, 48vh);
+                min-height: 260px;
+                padding: 12px;
+            }
+
+            #editDrawer .product-detail-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+
+        @media (max-width: 430px) {
+            #editDrawer {
+                padding: 12px;
+            }
+
+            #editDrawer .drawer-title {
+                font-size: 21px;
+            }
+
+            #editDrawer .product-card-media {
+                padding: 9px;
+                border-radius: 15px;
+            }
+
+            #editDrawer .product-gallery-main {
+                height: 330px;
+                min-height: 230px;
+            }
+
+            #editDrawer .product-detail-grid {
+                grid-template-columns: minmax(0, 1fr);
+            }
+
+            #editDrawer .product-detail-card,
+            #editDrawer .product-detail-card:last-child {
+                min-height: 0;
+            }
+
+            #editDrawer .product-inline-actions {
+                align-items: stretch;
+            }
+
+            #editDrawer .product-inline-actions button,
+            #editDrawer .product-inline-actions .moysklad-link {
+                justify-content: center;
+            }
+        }
+
     </style>
 </head>
 <body>
@@ -3342,6 +3597,12 @@
             <button class="close-button" type="button" onclick="closeAllDrawers()">×</button>
         </div>
 
+        <div class="product-card-layout">
+        <div id="detailGallerySection" class="product-card-media" hidden>
+            <div id="detailGallery" class="product-gallery"></div>
+        </div>
+
+        <div class="product-card-info">
         <form id="inlineProductForm" class="product-inline-form" method="post" action="/warehouse/edit">
             <input id="editProductId" type="hidden" name="product_id">
             <input type="hidden" name="stock_reason" value="Редактирование карточки товара">
@@ -3391,22 +3652,19 @@
                 <button type="button" data-edit-start onclick="startInlineProductEdit()">Редактировать</button>
                 <button type="submit" data-edit-actions>Сохранить</button>
                 <button class="cancel-button" type="button" data-edit-actions onclick="cancelInlineProductEdit()">Отмена</button>
+                <a id="detailMoySkladLink" class="moysklad-link" href="#" target="_blank">
+                    Открыть в Bitrix
+                </a>
             </div>
         </form>
-
-        <a id="detailMoySkladLink" class="moysklad-link" href="#" target="_blank">
-            Открыть в Bitrix
-        </a>
-
-        <div id="detailGallerySection" hidden>
-            <div class="drawer-section-title">Фотографии</div>
-            <div id="detailGallery" class="product-gallery"></div>
+        </div>
         </div>
 
-        <div class="drawer-section-title">История</div>
-
-        <div id="stockHistoryList" class="future-card">
-            Откройте товар, чтобы увидеть историю изменений.
+        <div class="product-history-section">
+            <div class="drawer-section-title">История</div>
+            <div id="stockHistoryList" class="future-card">
+                Откройте товар, чтобы увидеть историю изменений.
+            </div>
         </div>
     </aside>
 
