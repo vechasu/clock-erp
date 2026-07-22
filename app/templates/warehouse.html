@@ -3075,7 +3075,7 @@
                                                     data-cell-source="{{ item.cell_source|e }}"
                                                     data-cell-source-label="{{ item.cell_source_label|e }}"
                                                     data-url="{{ item.moysklad_url|e }}"
-                                                    data-gallery="{{ item.gallery|tojson|forceescape }}"
+                                                    data-gallery="{{ item.gallery|default([], true)|tojson|forceescape }}"
                                                     onclick="openEditDrawer(this)"
                                                 >
                                                     Карточка
