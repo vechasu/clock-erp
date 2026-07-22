@@ -3180,6 +3180,56 @@
             );
         }
 
+        function filterWarehouseRows(hideZeroOverride) {
+            const query = warehouseSearchInput
+                ? warehouseSearchInput.value.trim().toLowerCase()
+                : "";
+
+            const toggle = document.querySelector(
+                '.stock-mini-toggle input[name="hide_zero"]'
+            );
+
+            const hideZero = typeof hideZeroOverride === "boolean"
+                ? hideZeroOverride
+                : Boolean(toggle && toggle.checked);
+
+            const rows = Array.from(document.querySelectorAll(
+                "tbody tr[data-name][data-article][data-stock]"
+            ));
+
+            rows.forEach(function(row) {
+                const name = row.dataset.name || "";
+                const article = row.dataset.article || "";
+                const stock = Number.parseFloat(
+                    row.dataset.stock || "0"
+                );
+
+                const matchesSearch = (
+                    !query
+                    || name.includes(query)
+                    || article.includes(query)
+                );
+
+                const matchesStock = !hideZero || stock > 0;
+
+                row.hidden = !matchesSearch || !matchesStock;
+            });
+
+            const visibleCount = rows.filter(function(row) {
+                return !row.hidden;
+            }).length;
+
+            const counter = document.getElementById(
+                "visiblePositionsCount"
+            );
+
+            if (counter) {
+                counter.textContent = String(visibleCount);
+            }
+
+            return visibleCount;
+        }
+
         function clearWarehouseSearch() {
             if (!warehouseSearchInput) {
                 return;
@@ -3188,30 +3238,7 @@
             warehouseSearchInput.value = "";
             syncWarehouseSearchClear();
             warehouseSearchInput.focus();
-
-            const rows = document.querySelectorAll(
-                "tbody tr[data-name][data-article]"
-            );
-
-            rows.forEach(function(row) {
-                row.hidden = false;
-            });
-
-            const toggle = document.querySelector(
-                '.stock-mini-toggle input[name="hide_zero"]'
-            );
-
-            if (toggle && toggle.checked) {
-                toggleZeroStockRows(true, false);
-            } else {
-                const counter = document.getElementById(
-                    "visiblePositionsCount"
-                );
-
-                if (counter) {
-                    counter.textContent = String(rows.length);
-                }
-            }
+            filterWarehouseRows();
 
             const url = new URL(window.location.href);
             url.searchParams.delete("q");
@@ -3224,7 +3251,11 @@
         }
 
         if (warehouseSearchInput) {
-            warehouseSearchInput.addEventListener("input", syncWarehouseSearchClear);
+            warehouseSearchInput.addEventListener("input", function() {
+                syncWarehouseSearchClear();
+                filterWarehouseRows();
+            });
+
             syncWarehouseSearchClear();
         }
 
@@ -3327,29 +3358,7 @@
 
 
         function toggleZeroStockRows(hideZero, updateAddress = true) {
-            const rows = Array.from(
-                document.querySelectorAll("tbody tr[data-stock]")
-            );
-
-            rows.forEach(function(row) {
-                const stock = Number.parseFloat(
-                    row.dataset.stock || "0"
-                );
-
-                row.hidden = hideZero && stock <= 0;
-            });
-
-            const visibleCount = rows.filter(function(row) {
-                return !row.hidden;
-            }).length;
-
-            const counter = document.getElementById(
-                "visiblePositionsCount"
-            );
-
-            if (counter) {
-                counter.textContent = String(visibleCount);
-            }
+            filterWarehouseRows(hideZero);
 
             syncHideZeroControls(hideZero);
 
@@ -3507,36 +3516,7 @@
 </script>
 
 
-<!-- warehouse-auto-submit-search -->
-<script>
-    document.addEventListener("DOMContentLoaded", function () {
-        const searchInput = document.getElementById("warehouseSearchInput");
-
-        if (!searchInput) {
-            return;
-        }
-
-        const searchForm = searchInput.closest("form");
-
-        if (!searchForm) {
-            return;
-        }
-
-        let searchTimer = null;
-
-        if (sessionStorage.getItem("warehouseSearchKeepFocus") === "1") {
-            sessionStorage.removeItem("warehouseSearchKeepFocus");
-
-            searchInput.focus();
-
-            const valueLength = searchInput.value.length;
-            searchInput.setSelectionRange(valueLength, valueLength);
-        }
-
-        searchInput.addEventListener("input", function () {
-            clearTimeout(searchTimer);
-
-        <script id="warehouse-resizable-columns-script">
+<script id="warehouse-resizable-columns-script">
     (function () {
         const table = document.querySelector(".table-card table");
 
@@ -3687,16 +3667,6 @@
                 handle.addEventListener(
                     "pointerup",
                     finishResize
-                );
-
-                handle.addEventListener(
-                    "pointercancel",
-                    finishResize
-                );
-            });
-        });
-    })();
-            finishResize
                 );
 
                 handle.addEventListener(
