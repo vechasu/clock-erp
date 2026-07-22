@@ -390,6 +390,23 @@ class ExcelProductCatalogTest(unittest.TestCase):
         moysklad.assert_not_called()
         bitrix.assert_not_called()
 
+    def test_warehouse_edit_options_use_unique_full_bitrix_brands_and_one_category(self):
+        self.apply_initial()
+        from app import web
+        web.app.config["TESTING"] = True
+        with mock.patch.dict("os.environ", {"CATALOG_DATABASE_PATH": str(self.path)}):
+            html = web.app.test_client().get("/warehouse").get_data(as_text=True)
+        brand_options = html.split('<datalist id="inlineBrandOptions">', 1)[1].split(
+            "</datalist>", 1
+        )[0]
+        category_options = html.split('<datalist id="warehouseCategoryOptions">', 1)[1].split(
+            "</datalist>", 1
+        )[0]
+        self.assertEqual(brand_options.count('<option value="Brand"'), 1)
+        self.assertEqual(brand_options.count('<option value="Other"'), 1)
+        self.assertEqual(category_options.count("<option"), 1)
+        self.assertIn('value="Наручные часы"', category_options)
+
     def test_product_actions_use_edit_form_and_confirmed_delete_urls(self):
         self.apply_initial()
         product_id = self.catalog.list_products(query="Watch X1")["items"][0]["id"]
