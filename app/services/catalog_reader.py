@@ -67,6 +67,40 @@ class CatalogReader:
     def __init__(self, database=None):
         self.database = database or CatalogDatabase()
 
+    def list_active_brands(self):
+        if not self.database.exists():
+            return []
+
+        with self.database.connect() as connection:
+            rows = connection.execute(
+                "SELECT pv.display_value_json, pv.value_json "
+                "FROM catalog_products p "
+                "JOIN catalog_product_property_values pv ON pv.product_id = p.id "
+                "JOIN catalog_properties property ON property.id = pv.property_id "
+                "WHERE p.active = 1 AND upper(trim(property.code)) = 'BRAND_MODEL' "
+                "ORDER BY p.id"
+            ).fetchall()
+
+        brands = {}
+        for row in rows:
+            value = _json_value(row[0], None)
+            if value in (None, "", []):
+                value = _json_value(row[1], "")
+            values = value if isinstance(value, list) else [value]
+            for item in values:
+                brand = " ".join(str(item or "").split())
+                if brand:
+                    brands.setdefault(brand.casefold(), brand)
+        return sorted(brands.values(), key=str.casefold)
+
+    def canonical_active_brand(self, value):
+        key = " ".join(str(value or "").split()).casefold()
+        return next(
+            (brand for brand in self.list_active_brands()
+             if brand.casefold() == key),
+            None,
+        )
+
     def list_products(self, query="", activity="active", category_id="", brand="",
                       price_from=None, price_to=None, has_description="all",
                       has_image="all", has_properties="all", has_mapping="all",

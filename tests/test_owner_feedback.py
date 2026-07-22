@@ -555,13 +555,17 @@ class OwnerFeedbackTest(unittest.TestCase):
             web,
             "save_warehouse_cells",
             side_effect=lambda cells: saved_cells.append(dict(cells)),
+        ), mock.patch.object(
+            web.CatalogReader,
+            "list_active_brands",
+            return_value=["Новый бренд"],
         ):
             response = self.client.post(
                 "/warehouse/bulk-edit",
                 data={
                     "product_ids": [PRODUCT_ID],
                     "apply_brand": "1",
-                    "brand": "Новый бренд",
+                    "brand": " новый   БРЕНД ",
                     "apply_category": "1",
                     "category": "Новая категория",
                     "apply_cell": "1",
@@ -582,6 +586,28 @@ class OwnerFeedbackTest(unittest.TestCase):
             "B-02",
         )
         self.assertEqual(saved_cells[0][PRODUCT_ID], "B-02")
+
+    def test_warehouse_bulk_edit_rejects_brand_outside_catalog(self):
+        with mock.patch.object(
+            web.CatalogReader,
+            "list_active_brands",
+            return_value=["Casio"],
+        ), mock.patch.object(web, "MoySkladClient") as client_class:
+            response = self.client.post(
+                "/warehouse/bulk-edit",
+                data={
+                    "product_ids": [PRODUCT_ID],
+                    "apply_brand": "1",
+                    "brand": "Casi0",
+                },
+            )
+
+        self.assertEqual(response.status_code, 302)
+        client_class.assert_not_called()
+        self.assertIn(
+            "%D0%B8%D0%B7+%D1%81%D0%BF%D0%B8%D1%81%D0%BA%D0%B0",
+            response.headers["Location"],
+        )
 
     def test_warehouse_bulk_edit_does_not_apply_empty_field(self):
         with mock.patch.object(web, "MoySkladClient") as client_class:
@@ -621,6 +647,10 @@ class OwnerFeedbackTest(unittest.TestCase):
             web, "get_warehouse_items", return_value=[item]
         ), mock.patch.object(
             web, "load_stock_operations", return_value=[]
+        ), mock.patch.object(
+            web.CatalogReader,
+            "list_active_brands",
+            return_value=["A & Co.", "Бренд.ру"],
         ):
             page = self.client.get("/warehouse?q=Часы")
 
@@ -631,6 +661,13 @@ class OwnerFeedbackTest(unittest.TestCase):
         self.assertIn(item["thumbnail_url"], html)
         self.assertIn("warehouseBulkForm", html)
         self.assertIn("confirmWarehouseBulkEdit", html)
+        self.assertIn('id="bulkBrandCombobox"', html)
+        self.assertIn('role="combobox"', html)
+        self.assertIn('data-brand="A &amp; Co."', html)
+        self.assertIn('id="bulkBrandClear"', html)
+        self.assertIn("normalizeBrandSearch", html)
+        self.assertIn('event.key === "ArrowDown"', html)
+        self.assertNotIn('id="warehouseBrandOptions"', html)
 
     def test_sales_template_has_search_state_resize_fallback_and_mobile_css(self):
         with mock.patch.object(

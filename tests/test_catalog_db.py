@@ -1,9 +1,11 @@
+import json
 import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
 
 from app.catalog_db import CatalogDatabase
+from app.services.catalog_reader import CatalogReader
 
 
 EXPECTED_TABLES = {
@@ -84,6 +86,44 @@ class CatalogDatabaseTest(unittest.TestCase):
                     "(image_type, original_url, created_at, updated_at) VALUES (?, ?, ?, ?)",
                     ("detail", "https://example.test/a.jpg", "now", "now"),
                 )
+
+    def test_active_brand_model_values_are_unique_sorted_and_canonical(self):
+        with self.database.transaction() as connection:
+            property_id = connection.execute(
+                "INSERT INTO catalog_properties "
+                "(external_property_id, code, name, property_type, created_at, updated_at) "
+                "VALUES ('86', 'BRAND_MODEL', 'Марка часов', 'list', 'now', 'now')"
+            ).lastrowid
+            for index, (brand, active) in enumerate((
+                ("  Zeta  ", 1),
+                ("zeta", 1),
+                ("A & Co.", 1),
+                ("Archived", 0),
+                ("   ", 1),
+                ("Бренд.ру", 1),
+            ), 1):
+                product_id = connection.execute(
+                    "INSERT INTO catalog_products "
+                    "(name, brand, active, external_source, external_product_id, "
+                    "payload_hash, normalized_payload_json, created_at, updated_at, "
+                    "first_synced_at, last_synced_at) "
+                    "VALUES (?, ?, ?, 'bitrix', ?, ?, '{}', 'now', 'now', 'now', 'now')",
+                    ("Watch {}".format(index), brand, active, str(index), "hash-{}".format(index)),
+                ).lastrowid
+                connection.execute(
+                    "INSERT INTO catalog_product_property_values "
+                    "(product_id, property_id, value_json, display_value_json) "
+                    "VALUES (?, ?, ?, ?)",
+                    (product_id, property_id, json.dumps(brand), json.dumps(brand)),
+                )
+
+        reader = CatalogReader(self.database)
+        self.assertEqual(
+            reader.list_active_brands(),
+            ["A & Co.", "Zeta", "Бренд.ру"],
+        )
+        self.assertEqual(reader.canonical_active_brand(" a  & CO. "), "A & Co.")
+        self.assertIsNone(reader.canonical_active_brand("Casi0"))
 
 
 if __name__ == "__main__":
