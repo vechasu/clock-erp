@@ -29,6 +29,10 @@ REPORT_COLUMNS = [
     "stock", "cell", "category", "product_id", "bitrix_product_id",
     "bitrix_xml_id", "bitrix_name", "bitrix_brand", "match_status",
     "match_method", "confidence", "alternatives", "reason",
+    "enrichment_thumbnail_url", "enrichment_primary_image_url",
+    "enrichment_price_amount", "enrichment_price_currency",
+    "enrichment_category", "enrichment_description_available",
+    "enrichment_property_count", "enrichment_active",
 ]
 
 
@@ -72,7 +76,25 @@ def load_catalog_read_only(path):
             """
             SELECT p.id, p.external_product_id, p.external_xml_id, p.name,
                    p.article, p.brand, p.normalized_payload_json,
-                   c.name AS category
+                   c.name AS category,
+                   p.preview_text, p.detail_text, p.active, p.source_url,
+                   (SELECT i.original_url FROM catalog_images i
+                    WHERE i.product_id = p.id
+                    ORDER BY CASE WHEN i.image_type = 'preview' THEN 0 ELSE 1 END,
+                             CASE WHEN i.file_size IS NULL OR i.file_size <= 0 THEN 1 ELSE 0 END,
+                             i.file_size, i.is_primary DESC, i.sort, i.id LIMIT 1
+                   ) AS thumbnail_url,
+                   (SELECT i.original_url FROM catalog_images i
+                    WHERE i.product_id = p.id
+                    ORDER BY i.is_primary DESC, i.sort, i.id LIMIT 1
+                   ) AS primary_image_url,
+                   (SELECT COUNT(*) FROM catalog_images i WHERE i.product_id = p.id) AS image_count,
+                   (SELECT pr.amount FROM catalog_prices pr WHERE pr.product_id = p.id
+                    ORDER BY pr.is_base DESC, pr.id LIMIT 1) AS price_amount,
+                   (SELECT pr.currency FROM catalog_prices pr WHERE pr.product_id = p.id
+                    ORDER BY pr.is_base DESC, pr.id LIMIT 1) AS price_currency,
+                   (SELECT COUNT(*) FROM catalog_product_property_values pv
+                    WHERE pv.product_id = p.id) AS property_count
             FROM catalog_products p
             LEFT JOIN catalog_categories c ON c.id = p.primary_category_id
             ORDER BY p.id
@@ -138,6 +160,23 @@ def build_payload(excel_path, catalog_path, sheet_name="Импорт"):
     excel_sha = file_sha256(excel_path)
     catalog_sha = file_sha256(catalog_path)
     reconciled = ProductReconciler(products).reconcile(rows)
+    products_by_id = {product.get("id"): product for product in products}
+    for result in reconciled:
+        product = products_by_id.get(result.get("product_id"), {})
+        if result["match_status"] not in {"exact", "high_confidence"}:
+            product = {}
+        result.update({
+            "enrichment_thumbnail_url": product.get("thumbnail_url") or "",
+            "enrichment_primary_image_url": product.get("primary_image_url") or "",
+            "enrichment_price_amount": product.get("price_amount") or "",
+            "enrichment_price_currency": product.get("price_currency") or "",
+            "enrichment_category": product.get("category") or "",
+            "enrichment_description_available": bool(
+                text(product.get("preview_text")) or text(product.get("detail_text"))
+            ),
+            "enrichment_property_count": int(product.get("property_count") or 0),
+            "enrichment_active": bool(product.get("active")) if product else "",
+        })
     file_metrics = {
         "file_sha256": excel_sha,
         "file_size": Path(excel_path).stat().st_size,
