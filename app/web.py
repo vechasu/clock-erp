@@ -1029,7 +1029,10 @@ def warehouse_page():
 
     all_items = get_excel_warehouse_items()
     category_tree = build_category_tree(all_items)
-    brand_groups = build_brand_groups(all_items)
+    warehouse_brand_counts = {
+        group["name"].casefold(): group["count"]
+        for group in build_brand_groups(all_items)
+    }
     with CatalogDatabase().connect() as connection:
         bitrix_brand_rows = connection.execute(
             "SELECT brand FROM catalog_products "
@@ -1039,7 +1042,11 @@ def warehouse_page():
     for row in bitrix_brand_rows:
         brand = str(row[0] or "").strip()
         unique_bitrix_brands.setdefault(brand.casefold(), brand)
-    bulk_brand_options = sorted(unique_bitrix_brands.values(), key=str.casefold)
+    brand_groups = [
+        {"name": brand, "count": warehouse_brand_counts.get(key, 0)}
+        for key, brand in sorted(unique_bitrix_brands.items())
+    ]
+    bulk_brand_options = [group["name"] for group in brand_groups]
     cell_groups = build_cell_groups(all_items)
 
     items = all_items
