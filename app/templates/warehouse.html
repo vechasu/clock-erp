@@ -427,6 +427,19 @@
             border-collapse: collapse;
         }
 
+        .warehouse-products-table {
+            table-layout: fixed;
+        }
+
+        .warehouse-products-table .warehouse-col-name { width: 24%; }
+        .warehouse-products-table .warehouse-col-article { width: 12%; }
+        .warehouse-products-table .warehouse-col-brand { width: 11%; }
+        .warehouse-products-table .warehouse-col-category { width: 13%; }
+        .warehouse-products-table .warehouse-col-stock { width: 9%; }
+        .warehouse-products-table .warehouse-col-created { width: 11%; }
+        .warehouse-products-table .warehouse-col-cell { width: 8%; }
+        .warehouse-products-table .warehouse-col-actions { width: 12%; }
+
         th {
             text-align: left;
             background: #f9fafb;
@@ -2533,14 +2546,6 @@
                     </button>
 
                     <button
-                        class="search-tool-button"
-                        type="button"
-                        onclick="window.location.href='{{ url_for('excel_receipt_new') }}'"
-                    >
-                        Оформить приход
-                    </button>
-
-                    <button
                         class="add-position-card"
                         type="button"
                         onclick="toggleWarehouseAddCard()"
@@ -2703,6 +2708,16 @@
             <div class="table-card">
                 {% if items %}
                     <table class="warehouse-products-table">
+                        <colgroup>
+                            <col class="warehouse-col-name">
+                            <col class="warehouse-col-article">
+                            <col class="warehouse-col-brand">
+                            <col class="warehouse-col-category">
+                            <col class="warehouse-col-stock">
+                            <col class="warehouse-col-created">
+                            <col class="warehouse-col-cell">
+                            <col class="warehouse-col-actions">
+                        </colgroup>
                         <thead>
                             <tr>
                                 <th>
