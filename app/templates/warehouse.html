@@ -2683,7 +2683,7 @@
             flex-direction: column;
             height: 78px;
             min-height: 78px;
-            justify-content: center;
+            justify-content: flex-start;
             padding: 10px 13px;
         }
 
@@ -2712,6 +2712,37 @@
         #editDrawer .product-detail-card .brand-combobox-trigger {
             height: 38px;
             min-height: 38px;
+        }
+
+        #editDrawer .stock-edit-field {
+            gap: 3px;
+        }
+
+        #editDrawer .stock-edit-field label {
+            color: #7b879b;
+            font-size: 10px;
+            font-weight: 750;
+            line-height: 1.2;
+        }
+
+        #editDrawer .stock-edit-field input {
+            height: 34px;
+            min-height: 34px;
+        }
+
+        #editDrawer .product-inline-form.is-editing #detailStock {
+            display: flex;
+        }
+
+        #editDrawer .product-inline-form.is-editing .stock-edit-field {
+            display: flex;
+            flex-direction: column;
+        }
+
+        #editDrawer .product-inline-form.is-editing .stock-detail-card,
+        #editDrawer .product-inline-form.is-editing .stock-detail-card + .product-detail-card {
+            height: 112px;
+            min-height: 112px;
         }
 
         #editDrawer #detailStock {
@@ -2818,6 +2849,9 @@
 
         #editDrawer .product-inline-actions button,
         #editDrawer .product-inline-actions .moysklad-link {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
             width: auto;
             min-width: 0;
             height: 40px;
@@ -3699,10 +3733,13 @@
                 </div>
             </div>
 
-            <div class="product-detail-card">
+            <div class="product-detail-card stock-detail-card">
                 <div class="product-detail-label">Остаток</div>
                 <div id="detailStock" class="product-detail-value">—</div>
-                <input id="editStock" class="product-detail-input" type="number" min="0" step="1" name="stock" required>
+                <div class="product-detail-input stock-edit-field">
+                    <label for="editStock">Новый остаток</label>
+                    <input id="editStock" type="number" min="0" step="1" name="stock" required>
+                </div>
             </div>
 
             <div class="product-detail-card">
