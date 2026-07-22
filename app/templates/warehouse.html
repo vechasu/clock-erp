@@ -3223,8 +3223,8 @@
         <img id="productGalleryLightboxImage" src="" alt="">
     </div>
 
-    {% macro render_brand_combobox(component_id, input_name, selected_value="", include_all=false) %}
-        <div id="{{ component_id }}" class="brand-combobox" data-brand-combobox data-all-label="{{ 'Все бренды' if include_all else 'Выберите бренд' }}">
+    {% macro render_brand_combobox(component_id, input_name, selected_value="", include_all=false, prefix_search=false) %}
+        <div id="{{ component_id }}" class="brand-combobox" data-brand-combobox data-prefix-search="{{ 'true' if prefix_search else 'false' }}" data-all-label="{{ 'Все бренды' if include_all else 'Выберите бренд' }}">
             <input class="brand-combobox-hidden" type="hidden" name="{{ input_name }}" value="{{ selected_value }}">
             <button class="brand-combobox-trigger" type="button" aria-expanded="false" onclick="toggleBrandDropdown(event, this.closest('[data-brand-combobox]'))">
                 <span class="brand-combobox-value">{{ selected_value or ("Все бренды" if include_all else "Выберите бренд") }}</span>
@@ -3232,7 +3232,7 @@
             </button>
             <div class="brand-combobox-dropdown">
                 <div class="brand-combobox-search-wrap">
-                    <input class="brand-combobox-search" data-brand-search-input type="search" placeholder="Поиск бренда" autocomplete="off">
+                    <input class="brand-combobox-search" data-brand-search-input type="text" placeholder="Поиск бренда" autocomplete="off">
                     <button class="brand-combobox-search-clear" data-brand-search-clear type="button" aria-label="Очистить поиск" hidden>×</button>
                 </div>
                 <div class="brand-combobox-options">
@@ -3399,7 +3399,7 @@
                 <div class="product-detail-label">Бренд</div>
                 <div id="detailBrand" class="product-detail-value">—</div>
                 <div class="product-detail-input product-brand-editor">
-                    {{ render_brand_combobox("editBrandCombobox", "brand", "", false) }}
+                    {{ render_brand_combobox("editBrandCombobox", "brand", "", false, true) }}
                 </div>
             </div>
 
@@ -4406,10 +4406,10 @@
                         option.dataset.brandSearch || ""
                     ).toLowerCase();
 
-                    const hidden = (
-                        Boolean(query)
-                        && !brandName.includes(query)
-                    );
+                    const matches = combobox.dataset.prefixSearch === "true"
+                        ? brandName.startsWith(query)
+                        : brandName.includes(query);
+                    const hidden = Boolean(query) && !matches;
                     option.hidden = hidden;
                     if (!hidden) {
                         visibleCount += 1;
