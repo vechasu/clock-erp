@@ -1030,9 +1030,16 @@ def warehouse_page():
     all_items = get_excel_warehouse_items()
     category_tree = build_category_tree(all_items)
     brand_groups = build_brand_groups(all_items)
-    bulk_brand_options = sorted({
-        item.get("brand") for item in all_items if item.get("brand")
-    }, key=str.casefold)
+    with CatalogDatabase().connect() as connection:
+        bitrix_brand_rows = connection.execute(
+            "SELECT brand FROM catalog_products "
+            "WHERE trim(COALESCE(brand, '')) <> '' ORDER BY brand"
+        ).fetchall()
+    unique_bitrix_brands = {}
+    for row in bitrix_brand_rows:
+        brand = str(row[0] or "").strip()
+        unique_bitrix_brands.setdefault(brand.casefold(), brand)
+    bulk_brand_options = sorted(unique_bitrix_brands.values(), key=str.casefold)
     cell_groups = build_cell_groups(all_items)
 
     items = all_items

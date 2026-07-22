@@ -2878,9 +2878,7 @@
                     </label>
                     <input id="bulkCategory" type="text" name="category" list="warehouseCategoryOptions" placeholder="Категория" disabled>
                     <datalist id="warehouseCategoryOptions">
-                        {% for item in items %}
-                            {% if item.category %}<option value="{{ item.category }}"></option>{% endif %}
-                        {% endfor %}
+                        <option value="Наручные часы"></option>
                     </datalist>
                 </div>
 
