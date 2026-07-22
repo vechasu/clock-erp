@@ -207,6 +207,140 @@ CREATE TABLE IF NOT EXISTS catalog_sync_runs (
     error_summary TEXT,
     details_json TEXT NOT NULL DEFAULT '{}'
 );
+
+CREATE TABLE IF NOT EXISTS catalog_excel_batches (
+    id TEXT PRIMARY KEY,
+    file_sha256 TEXT NOT NULL UNIQUE,
+    source_filename TEXT NOT NULL,
+    sheet_name TEXT NOT NULL DEFAULT 'Импорт',
+    source_type TEXT NOT NULL DEFAULT 'excel',
+    operation_type TEXT NOT NULL DEFAULT 'initial_excel_balances',
+    row_count INTEGER NOT NULL,
+    total_stock REAL NOT NULL,
+    positive_rows INTEGER NOT NULL,
+    zero_rows INTEGER NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('active', 'superseded', 'rolled_back')),
+    previous_batch_id TEXT REFERENCES catalog_excel_batches(id) ON DELETE SET NULL,
+    moysklad_sync_status TEXT NOT NULL DEFAULT 'not_linked',
+    created_at TEXT NOT NULL,
+    applied_at TEXT NOT NULL,
+    rolled_back_at TEXT,
+    details_json TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE INDEX IF NOT EXISTS idx_catalog_excel_batches_status
+    ON catalog_excel_batches(status, applied_at);
+
+CREATE TABLE IF NOT EXISTS catalog_excel_products (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_key TEXT NOT NULL UNIQUE,
+    created_batch_id TEXT NOT NULL REFERENCES catalog_excel_batches(id),
+    current_batch_id TEXT NOT NULL REFERENCES catalog_excel_batches(id),
+    active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+    raw_excel_json TEXT NOT NULL,
+    excel_row INTEGER NOT NULL,
+    excel_name_raw TEXT NOT NULL,
+    normalized_name TEXT NOT NULL,
+    excel_article TEXT,
+    article_quality TEXT NOT NULL,
+    excel_brand TEXT NOT NULL,
+    excel_category TEXT,
+    stock REAL NOT NULL,
+    cell TEXT,
+    stock_source TEXT NOT NULL DEFAULT 'excel',
+    file_sha256 TEXT NOT NULL,
+    match_status TEXT NOT NULL,
+    match_method TEXT NOT NULL,
+    match_confidence REAL NOT NULL DEFAULT 0,
+    match_decision TEXT NOT NULL,
+    candidates_json TEXT NOT NULL DEFAULT '[]',
+    bitrix_link_cardinality TEXT NOT NULL DEFAULT 'unlinked',
+    shared_bitrix_row_count INTEGER NOT NULL DEFAULT 0,
+    bitrix_catalog_product_id INTEGER REFERENCES catalog_products(id) ON DELETE SET NULL,
+    bitrix_external_product_id TEXT,
+    bitrix_xml_id TEXT,
+    bitrix_name TEXT,
+    bitrix_brand TEXT,
+    bitrix_category TEXT,
+    bitrix_source_url TEXT,
+    bitrix_primary_image_url TEXT,
+    bitrix_thumbnail_url TEXT,
+    bitrix_gallery_json TEXT NOT NULL DEFAULT '[]',
+    bitrix_price_amount TEXT,
+    bitrix_price_currency TEXT,
+    bitrix_description TEXT,
+    bitrix_properties_json TEXT NOT NULL DEFAULT '[]',
+    bitrix_active INTEGER CHECK (bitrix_active IN (0, 1)),
+    moysklad_sync_status TEXT NOT NULL DEFAULT 'not_linked',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_catalog_excel_products_active
+    ON catalog_excel_products(active, current_batch_id);
+CREATE INDEX IF NOT EXISTS idx_catalog_excel_products_match_status
+    ON catalog_excel_products(match_status);
+CREATE INDEX IF NOT EXISTS idx_catalog_excel_products_bitrix
+    ON catalog_excel_products(bitrix_catalog_product_id);
+
+CREATE TABLE IF NOT EXISTS catalog_excel_batch_rows (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    batch_id TEXT NOT NULL REFERENCES catalog_excel_batches(id) ON DELETE CASCADE,
+    product_id INTEGER REFERENCES catalog_excel_products(id) ON DELETE SET NULL,
+    source_key TEXT NOT NULL,
+    excel_row INTEGER,
+    row_kind TEXT NOT NULL CHECK (row_kind IN ('excel_row', 'deactivated')),
+    created_product INTEGER NOT NULL DEFAULT 0 CHECK (created_product IN (0, 1)),
+    previous_state_json TEXT,
+    applied_state_json TEXT NOT NULL,
+    stock_before REAL NOT NULL,
+    stock_after REAL NOT NULL,
+    stock_difference REAL NOT NULL,
+    match_status TEXT NOT NULL,
+    bitrix_link_cardinality TEXT NOT NULL DEFAULT 'unlinked',
+    shared_bitrix_row_count INTEGER NOT NULL DEFAULT 0,
+    bitrix_xml_id TEXT,
+    operation_result TEXT NOT NULL CHECK (
+        operation_result IN ('adjusted', 'already_at_target')
+    ),
+    created_at TEXT NOT NULL,
+    UNIQUE (batch_id, source_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_catalog_excel_batch_rows_product
+    ON catalog_excel_batch_rows(product_id, batch_id);
+
+CREATE TABLE IF NOT EXISTS catalog_excel_stock_operations (
+    id TEXT PRIMARY KEY,
+    batch_id TEXT NOT NULL REFERENCES catalog_excel_batches(id) ON DELETE CASCADE,
+    product_id INTEGER REFERENCES catalog_excel_products(id) ON DELETE SET NULL,
+    operation_type TEXT NOT NULL CHECK (
+        operation_type IN ('initial_excel_adjustment', 'excel_batch_rollback')
+    ),
+    stock_before REAL NOT NULL,
+    stock_after REAL NOT NULL,
+    stock_difference REAL NOT NULL,
+    reversal_of TEXT REFERENCES catalog_excel_stock_operations(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL,
+    details_json TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE INDEX IF NOT EXISTS idx_catalog_excel_stock_operations_batch
+    ON catalog_excel_stock_operations(batch_id, created_at);
+
+CREATE TABLE IF NOT EXISTS catalog_excel_match_audit (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id INTEGER NOT NULL REFERENCES catalog_excel_products(id) ON DELETE CASCADE,
+    batch_id TEXT NOT NULL REFERENCES catalog_excel_batches(id) ON DELETE CASCADE,
+    action TEXT NOT NULL CHECK (action IN ('confirm_bitrix', 'not_in_bitrix', 'unlink', 'undo')),
+    previous_state_json TEXT NOT NULL,
+    new_state_json TEXT NOT NULL,
+    reverses_audit_id INTEGER REFERENCES catalog_excel_match_audit(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_catalog_excel_match_audit_product
+    ON catalog_excel_match_audit(product_id, created_at);
 """
 
 
@@ -227,6 +361,49 @@ class CatalogDatabase:
     def initialize(self):
         with self.connect() as connection:
             connection.executescript(SCHEMA)
+            self._ensure_excel_cardinality_columns(connection)
+
+    @staticmethod
+    def _ensure_excel_cardinality_columns(connection):
+        migrations = {
+            "catalog_excel_products": (
+                ("bitrix_link_cardinality", "TEXT NOT NULL DEFAULT 'unlinked'"),
+                ("shared_bitrix_row_count", "INTEGER NOT NULL DEFAULT 0"),
+            ),
+            "catalog_excel_batch_rows": (
+                ("bitrix_link_cardinality", "TEXT NOT NULL DEFAULT 'unlinked'"),
+                ("shared_bitrix_row_count", "INTEGER NOT NULL DEFAULT 0"),
+            ),
+        }
+        migrated = False
+        for table, columns in migrations.items():
+            existing = {
+                row[1] for row in connection.execute("PRAGMA table_info({})".format(table))
+            }
+            for column, definition in columns:
+                if column not in existing:
+                    connection.execute(
+                        "ALTER TABLE {} ADD COLUMN {} {}".format(table, column, definition)
+                    )
+                    migrated = True
+        if migrated:
+            linked = connection.execute(
+                "SELECT bitrix_catalog_product_id, COUNT(*) AS row_count "
+                "FROM catalog_excel_products WHERE active = 1 "
+                "AND bitrix_catalog_product_id IS NOT NULL "
+                "GROUP BY bitrix_catalog_product_id"
+            ).fetchall()
+            for row in linked:
+                connection.execute(
+                    "UPDATE catalog_excel_products SET bitrix_link_cardinality = ?, "
+                    "shared_bitrix_row_count = ? WHERE active = 1 "
+                    "AND bitrix_catalog_product_id = ?",
+                    (
+                        "many_to_one" if row["row_count"] > 1 else "one_to_one",
+                        row["row_count"],
+                        row["bitrix_catalog_product_id"],
+                    ),
+                )
 
     @contextmanager
     def transaction(self):

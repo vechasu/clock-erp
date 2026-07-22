@@ -181,8 +181,12 @@ class BitrixCatalogImporterTest(unittest.TestCase):
         self.importer.import_products([product_fixture()], "full_sync")
         payload = json.loads(self.row("SELECT normalized_payload_json FROM catalog_products")[0])
         self.assertEqual(payload["available_quantity"], 99)
-        table_names = set(self.database.table_names())
-        self.assertFalse(any("stock" in name or "operation" in name for name in table_names))
+        self.assertEqual(
+            self.row("SELECT COUNT(*) FROM catalog_excel_batches")[0], 0
+        )
+        self.assertEqual(
+            self.row("SELECT COUNT(*) FROM catalog_excel_stock_operations")[0], 0
+        )
 
     def test_offer_properties_images_and_prices_are_saved(self):
         product = product_fixture()

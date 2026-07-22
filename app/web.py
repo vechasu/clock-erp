@@ -17,6 +17,7 @@ from app.catalog_db import CatalogDatabase
 from app.clients.bitrix_catalog import BitrixCatalogReadOnlyClient, BitrixCatalogReadOnlyError
 from app.services.bitrix_catalog_importer import BitrixCatalogImporter
 from app.services.catalog_reader import CatalogReader
+from app.services.excel_product_catalog import ExcelProductCatalog
 from app.services.moysklad_catalog_mapping import (
     MoySkladCatalogMatcher,
     load_moysklad_products,
@@ -8075,6 +8076,92 @@ def _positive_int(value, default, maximum):
         return default
 
 
+EXCEL_MATCH_LABELS = {
+    "exact": "Точное",
+    "high_confidence": "Надёжное",
+    "ambiguous": "Требует сопоставления",
+    "not_found": "Нет карточки Bitrix",
+    "manual_match": "Сопоставлено вручную",
+    "not_in_bitrix": "В Bitrix нет",
+}
+
+
+@app.route("/products")
+def excel_products_page():
+    match_status = (request.args.get("match_status") or "all").strip()
+    allowed_statuses = {
+        "all", "requires_mapping", "exact", "high_confidence", "ambiguous",
+        "not_found", "manual_match", "not_in_bitrix",
+    }
+    if match_status not in allowed_statuses:
+        match_status = "all"
+    filters = {
+        "query": (request.args.get("q") or "").strip(),
+        "brand": (request.args.get("brand") or "").strip(),
+        "category": (request.args.get("category") or "").strip(),
+        "match_status": match_status,
+    }
+    catalog = ExcelProductCatalog().list_products(
+        query=filters["query"],
+        brand=filters["brand"],
+        category=filters["category"],
+        match_status=filters["match_status"],
+        page=_positive_int(request.args.get("page"), 1, 1000000),
+        per_page=_positive_int(request.args.get("per_page"), 50, 100),
+    )
+    base_arguments = request.args.to_dict(flat=True)
+    base_arguments.pop("page", None)
+    previous_url = next_url = None
+    if catalog["page"] > 1:
+        previous_url = url_for("excel_products_page") + "?" + urlencode(
+            dict(base_arguments, page=catalog["page"] - 1)
+        )
+    if catalog["page"] < catalog["pages"]:
+        next_url = url_for("excel_products_page") + "?" + urlencode(
+            dict(base_arguments, page=catalog["page"] + 1)
+        )
+    return render_template(
+        "excel_products.html", catalog=catalog, filters=filters,
+        match_labels=EXCEL_MATCH_LABELS, previous_url=previous_url,
+        next_url=next_url,
+    )
+
+
+@app.route("/products/<int:product_id>")
+def excel_product_page(product_id):
+    product = ExcelProductCatalog().get_product(product_id)
+    if product is None:
+        abort(404)
+    return render_template(
+        "excel_product_detail.html", product=product, match_labels=EXCEL_MATCH_LABELS,
+    )
+
+
+@app.route("/products/<int:product_id>/match", methods=["POST"])
+def excel_product_match(product_id):
+    action = (request.form.get("action") or "").strip()
+    catalog = ExcelProductCatalog()
+    try:
+        if action == "confirm":
+            candidate_id = _positive_int(
+                request.form.get("catalog_product_id"), 0, 1000000000
+            )
+            if not candidate_id:
+                raise ValueError("Bitrix candidate is required")
+            catalog.confirm_match(product_id, candidate_id)
+        elif action == "not_in_bitrix":
+            catalog.mark_not_in_bitrix(product_id)
+        elif action == "unlink":
+            catalog.unlink(product_id)
+        elif action == "undo":
+            catalog.undo_last_match_change(product_id)
+        else:
+            raise ValueError("Unsupported match action")
+    except (TypeError, ValueError):
+        return redirect(url_for("excel_product_page", product_id=product_id, error="match_not_saved"))
+    return redirect(url_for("excel_product_page", product_id=product_id, saved="1"))
+
+
 @app.route("/catalog")
 def catalog_page():
     reader = CatalogReader()
@@ -8261,10 +8348,10 @@ NAVIGATION_DEFINITIONS = [
         "label": "Товары",
         "description": "Каталог, остатки, ячейки и управление товарами.",
         "icon": "🏷",
-        "href": "/warehouse",
+        "href": "/products",
         "position": 2,
         "active_exact": [],
-        "active_prefixes": ["/warehouse"],
+        "active_prefixes": ["/products"],
     },
     {
         "key": "sales",
@@ -8278,7 +8365,7 @@ NAVIGATION_DEFINITIONS = [
     },
     {
         "key": "catalog",
-        "label": "Каталог Vechasu",
+        "label": "Весь каталог Bitrix",
         "description": "Карточки, контент и синхронизация каталога Bitrix.",
         "icon": "🗂",
         "href": "/catalog",
