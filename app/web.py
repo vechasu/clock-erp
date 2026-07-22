@@ -1155,7 +1155,7 @@ def warehouse_page():
         total_stock_display=format_stock_number(total_stock),
         total_reserve=total_reserve,
         total_available=total_available,
-        stock_operations=[],
+        stock_operations=ExcelProductCatalog().list_manual_stock_operations(),
     )
 
 
@@ -1446,6 +1446,11 @@ def warehouse_edit_product():
     product_id = request.form.get("product_id", "").strip()
     name = request.form.get("name", "").strip()
     article = request.form.get("article", "").strip()
+    brand = request.form.get("brand", "").strip()
+    category = request.form.get("category", "").strip()
+    cell = request.form.get("cell", "").strip()
+    stock = request.form.get("stock", "").strip()
+    stock_reason = request.form.get("stock_reason", "").strip()
 
     if not product_id:
         return redirect(url_for(
@@ -1462,7 +1467,10 @@ def warehouse_edit_product():
         ))
 
     try:
-        ExcelProductCatalog().update_product(product_id, name=name, article=article)
+        ExcelProductCatalog().update_product(
+            product_id, name=name, article=article, brand=brand,
+            category=category, cell=cell, stock=stock, stock_reason=stock_reason,
+        )
         return redirect(url_for(
             "warehouse_page", notice="success", message="Карточка обновлена"
         ))

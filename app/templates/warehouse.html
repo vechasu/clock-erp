@@ -1565,6 +1565,19 @@
             letter-spacing: -0.015em;
         }
 
+        #editDrawer .product-inline-form { margin: 0; }
+        #editDrawer .product-detail-input { display: none; width: 100%; }
+        #editDrawer .product-inline-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 12px;
+        }
+        #editDrawer .product-inline-actions [data-edit-actions] { display: none; }
+        #editDrawer .product-inline-form.is-editing .product-detail-value { display: none; }
+        #editDrawer .product-inline-form.is-editing .product-detail-input { display: block; }
+        #editDrawer .product-inline-form.is-editing [data-edit-start] { display: none; }
+        #editDrawer .product-inline-form.is-editing [data-edit-actions] { display: inline-flex; }
+
         #editDrawer .product-gallery {
             display: block;
         }
@@ -3365,32 +3378,57 @@
             <button class="close-button" type="button" onclick="closeAllDrawers()">×</button>
         </div>
 
-        <div class="product-detail-grid">
+        <form id="inlineProductForm" class="product-inline-form" method="post" action="/warehouse/edit">
+            <input id="editProductId" type="hidden" name="product_id">
+            <input type="hidden" name="stock_reason" value="Редактирование карточки товара">
+            <div class="product-detail-grid">
             <div class="product-detail-card">
                 <div class="product-detail-label">Название</div>
                 <div id="detailName" class="product-detail-value">—</div>
+                <input id="editName" class="product-detail-input" type="text" name="name" required>
+            </div>
+
+            <div class="product-detail-card">
+                <div class="product-detail-label">Артикул</div>
+                <div id="detailArticle" class="product-detail-value">—</div>
+                <input id="editArticle" class="product-detail-input" type="text" name="article">
             </div>
 
             <div class="product-detail-card">
                 <div class="product-detail-label">Остаток</div>
                 <div id="detailStock" class="product-detail-value">—</div>
+                <input id="editStock" class="product-detail-input" type="number" min="0" step="1" name="stock" required>
             </div>
 
             <div class="product-detail-card">
                 <div class="product-detail-label">Бренд</div>
                 <div id="detailBrand" class="product-detail-value">—</div>
+                <input id="editBrand" class="product-detail-input" type="text" name="brand" list="inlineBrandOptions">
             </div>
 
             <div class="product-detail-card">
                 <div class="product-detail-label">Категория</div>
                 <div id="detailCategory" class="product-detail-value">—</div>
+                <input id="editCategory" class="product-detail-input" type="text" name="category" list="warehouseCategoryOptions">
             </div>
 
             <div class="product-detail-card">
                 <div class="product-detail-label">Ячейка</div>
                 <div id="detailCell" class="product-detail-value">—</div>
+                <input id="editCell" class="product-detail-input" type="text" name="cell">
             </div>
-        </div>
+            </div>
+
+            <datalist id="inlineBrandOptions">
+                {% for brand in bulk_brand_options %}<option value="{{ brand }}"></option>{% endfor %}
+            </datalist>
+
+            <div class="product-inline-actions">
+                <button type="button" data-edit-start onclick="startInlineProductEdit()">Редактировать</button>
+                <button type="submit" data-edit-actions>Сохранить</button>
+                <button class="cancel-button" type="button" data-edit-actions onclick="cancelInlineProductEdit()">Отмена</button>
+            </div>
+        </form>
 
         <a id="detailMoySkladLink" class="moysklad-link" href="#" target="_blank">
             Открыть в Bitrix
@@ -3400,70 +3438,6 @@
             <div class="drawer-section-title">Фотографии</div>
             <div id="detailGallery" class="product-gallery"></div>
         </div>
-
-        <div class="drawer-section-title">Редактирование</div>
-
-        <form class="drawer-form" method="post" action="/warehouse/edit">
-            <input id="editProductId" type="hidden" name="product_id">
-
-            <div class="field">
-                <label>Название</label>
-                <input id="editName" type="text" name="name" required>
-            </div>
-
-            <div class="field">
-                <label>Артикул</label>
-                <input id="editArticle" type="text" name="article">
-            </div>
-
-            <div class="drawer-actions">
-                <button type="submit">Сохранить</button>
-                <button class="cancel-button" type="button" onclick="closeAllDrawers()">Отмена</button>
-            </div>
-        </form>
-
-        <div class="drawer-section-title">Ячейка склада</div>
-
-        <form class="drawer-form" method="post" action="/warehouse/cell">
-            <input id="cellProductId" type="hidden" name="product_id">
-
-            <div class="field">
-                <label>Ячейка</label>
-                <input id="editCell" type="text" name="cell" placeholder="Например A-01-03">
-            </div>
-
-            <button type="submit">Сохранить ячейку</button>
-        </form>
-
-        <div class="drawer-section-title">Изменение остатка</div>
-
-        <form id="stockForm" class="drawer-form" method="post" action="/warehouse/stock">
-            <input id="stockProductId" type="hidden" name="product_id">
-            <input id="stockProductName" type="hidden" name="product_name">
-            <input id="currentStockInput" type="hidden" name="current_stock">
-
-            <div class="field">
-                <label>Текущий остаток</label>
-                <div id="currentStockText" class="future-card">—</div>
-            </div>
-
-            <div class="field">
-                <label>Новый остаток</label>
-                <input id="newStockInput" type="number" step="1" min="0" name="new_stock" placeholder="Например 5">
-            </div>
-
-
-            <div class="field">
-                <label>Причина изменения</label>
-                <textarea id="stockReasonInput" name="stock_reason" rows="3" placeholder="Например: пересчёт склада, брак, нашли товар, ошибка остатка"></textarea>
-            </div>
-
-            <div class="future-card">
-                Остатки нового каталога изменяются только через приход Excel.
-            </div>
-
-            <button id="stockSubmitButton" type="submit">Обновить остаток</button>
-        </form>
 
         <div class="drawer-section-title">История</div>
 
@@ -3543,6 +3517,18 @@
             document.getElementById("productGalleryLightboxImage").src = "";
         }
 
+        function startInlineProductEdit() {
+            document.getElementById("inlineProductForm").classList.add("is-editing");
+        }
+
+        function cancelInlineProductEdit() {
+            const form = document.getElementById("inlineProductForm");
+            form.querySelectorAll("[data-original-value]").forEach(function(input) {
+                input.value = input.dataset.originalValue || "";
+            });
+            form.classList.remove("is-editing");
+        }
+
         function openEditDrawer(button) {
             closeAllDrawers();
 
@@ -3551,37 +3537,6 @@
             const productBrand = button.dataset.brand || "Без бренда";
             const productCategory = button.dataset.category || "Без категории";
             const productStock = button.dataset.stock || "0";
-
-            const stockProductIdInput = document.getElementById("stockProductId");
-            const stockProductNameInput = document.getElementById("stockProductName");
-            const currentStockInput = document.getElementById("currentStockInput");
-            const currentStockText = document.getElementById("currentStockText");
-            const newStockInput = document.getElementById("newStockInput");
-            const stockReasonInput = document.getElementById("stockReasonInput");
-
-            if (stockProductIdInput) {
-                stockProductIdInput.value = button.dataset.id || button.dataset.productId || "";
-            }
-
-            if (stockProductNameInput) {
-                stockProductNameInput.value = productName;
-            }
-
-            if (currentStockInput) {
-                currentStockInput.value = productStock;
-            }
-
-            if (currentStockText) {
-                currentStockText.textContent = productStock;
-            }
-
-            if (newStockInput) {
-                newStockInput.value = productStock;
-            }
-
-            if (stockReasonInput) {
-                stockReasonInput.value = "";
-            }
 
             renderStockHistory(button.dataset.id || button.dataset.productId || "");
             const productCell = button.dataset.cell || "";
@@ -3652,6 +3607,7 @@
             gallerySection.hidden = !galleryElement.childElementCount;
 
             document.getElementById("detailName").textContent = productName;
+            document.getElementById("detailArticle").textContent = productArticle;
             document.getElementById("detailStock").textContent = productStock;
             document.getElementById("detailBrand").textContent = productBrand;
             document.getElementById("detailCategory").textContent = productCategory;
@@ -3661,10 +3617,20 @@
             document.getElementById("detailMoySkladLink").href = productUrl;
 
             document.getElementById("editProductId").value = button.dataset.id || "";
-            document.getElementById("cellProductId").value = button.dataset.id || "";
-            document.getElementById("editCell").value = productCell;
-            document.getElementById("editName").value = button.dataset.name || "";
-            document.getElementById("editArticle").value = button.dataset.article || "";
+            const editableValues = {
+                editName: button.dataset.name || "",
+                editArticle: button.dataset.article || "",
+                editBrand: button.dataset.brand || "",
+                editCategory: button.dataset.category || "",
+                editStock: productStock,
+                editCell: productCell,
+            };
+            Object.entries(editableValues).forEach(function(entry) {
+                const input = document.getElementById(entry[0]);
+                input.value = entry[1];
+                input.dataset.originalValue = entry[1];
+            });
+            document.getElementById("inlineProductForm").classList.remove("is-editing");
 
             document.getElementById("drawerBackdrop").classList.add("open");
             document.getElementById("editDrawer").classList.add("open");

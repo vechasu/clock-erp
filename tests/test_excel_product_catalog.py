@@ -121,6 +121,23 @@ class ExcelProductCatalogTest(unittest.TestCase):
         self.assertTrue(all(item["stock_source"] == "excel" for item in listing["items"]))
         self.assertTrue(all(item["moysklad_sync_status"] == "not_linked" for item in listing["items"]))
 
+    def test_inline_edit_updates_all_fields_and_records_stock_history(self):
+        self.apply_initial()
+        product = self.catalog.list_products(query="Watch X1")["items"][0]
+        updated = self.catalog.update_product(
+            product["id"], name="Edited", article="EDIT-1", brand="Brand",
+            category="Watches", cell="A-10", stock="8", stock_reason="Counted",
+        )
+        self.assertEqual(
+            (updated["excel_name_raw"], updated["excel_article"], updated["cell"], updated["stock"]),
+            ("Edited", "EDIT-1", "A-10", 8),
+        )
+        history = self.catalog.list_manual_stock_operations()
+        self.assertEqual(
+            (len(history), history[0]["product_id"], history[0]["stock_before"],
+             history[0]["stock_after"], history[0]["reason"]),
+            (1, product["id"], 5, 8, "Counted"),
+        )
     def test_exact_is_enriched_with_preview_photo_price_and_properties(self):
         self.apply_initial()
         item = self.catalog.list_products(query="Watch X1")["items"][0]
