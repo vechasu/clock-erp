@@ -118,6 +118,21 @@ class ExcelReceiptImportTest(unittest.TestCase):
                 0,
             )
 
+    def test_receipt_assigns_strap_category_from_product_name(self):
+        data = workbook_bytes(
+            ["Название", "Артикул", "Бренд", "Остаток", "Категория"],
+            [["РЕМЕНЬ Клокерс", "STRAP-1", "Klockers", 1, "Наручные часы"]],
+        )
+
+        draft = self.service.preview(data, "straps.xlsx")
+        self.service.post(draft["id"])
+
+        with self.database.connect() as connection:
+            product = connection.execute(
+                "SELECT excel_category, stock FROM catalog_excel_products"
+            ).fetchone()
+        self.assertEqual((product["excel_category"], product["stock"]), ("Ремень", 1))
+
     def test_numeric_names_require_identity_and_formula_names_stay_blocked(self):
         data = workbook_bytes(
             ["Название", "Артикул", "Бренд", "Остаток"],

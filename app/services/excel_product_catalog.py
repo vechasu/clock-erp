@@ -6,6 +6,7 @@ Bitrix or MoySklad clients and therefore cannot change either external system.
 
 import json
 import math
+import re
 import sqlite3
 import uuid
 from datetime import datetime, timezone
@@ -72,6 +73,12 @@ def source_key_for(row):
 
 def _json(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+
+def category_for_product_name(name, category):
+    if re.search(r"(?<!\w)ремень(?!\w)", text(name), re.IGNORECASE):
+        return "Ремень"
+    return category
 
 
 def _load_json(value, fallback):
@@ -478,7 +485,9 @@ class ExcelProductBatchService:
             "excel_article": text(result.get("excel_article")) or None,
             "article_quality": result.get("article_quality") or article_quality(result.get("excel_article")),
             "excel_brand": text(result.get("excel_brand")),
-            "excel_category": text(result.get("category")) or None,
+            "excel_category": text(category_for_product_name(
+                result.get("excel_name"), result.get("category")
+            )) or None,
             "stock": float(result.get("stock") or 0),
             "cell": text(result.get("cell")) or None,
             "stock_source": "excel",
