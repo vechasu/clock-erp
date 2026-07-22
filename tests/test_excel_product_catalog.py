@@ -241,16 +241,57 @@ class ExcelProductCatalogTest(unittest.TestCase):
         no_bitrix = self.catalog.mark_not_in_bitrix(ambiguous["id"])
         self.assertEqual((no_bitrix["match_status"], no_bitrix["bitrix_catalog_product_id"]), ("not_in_bitrix", None))
 
-    def test_duplicate_excel_blocks_the_whole_batch(self):
+    def test_same_excel_name_with_different_articles_creates_separate_cards(self):
         rows = [
-            result(2, "Same", 1),
-            result(3, "Same", 2, status="duplicate_excel"),
+            result(2380, "X7000 GLADIATOR YELLOW", 3, "exact", self.bitrix_id, article="X7000GA-Y"),
+            result(2383, "X7000 GLADIATOR YELLOW", 0, "exact", self.bitrix_id, article="X7000GA-Y2"),
         ]
-        rows[0]["match_status"] = "duplicate_excel"
+        batch = self.service.apply(rows, "c" * 64, "separate-rows.xlsx")
+        items = self.catalog.list_products(per_page=100)["items"]
+        self.assertEqual((batch["active_cards"], batch["active_stock"]), (2, 3))
+        self.assertEqual([item["excel_row"] for item in items], [2380, 2383])
+        self.assertEqual([item["excel_article"] for item in items], ["X7000GA-Y", "X7000GA-Y2"])
+        self.assertEqual([item["stock"] for item in items], [3, 0])
+        self.assertEqual(len({item["id"] for item in items}), 2)
+        self.assertEqual(
+            {item["bitrix_link_cardinality"] for item in items}, {"many_to_one"}
+        )
+        self.assertEqual({item["shared_bitrix_row_count"] for item in items}, {2})
+        with self.database.connect() as connection:
+            source_keys = [row[0] for row in connection.execute(
+                "SELECT source_key FROM catalog_excel_products ORDER BY excel_row"
+            ).fetchall()]
+        self.assertEqual(source_keys, ["excel-row:00002380", "excel-row:00002383"])
+
+    def test_invalid_excel_row_blocks_the_whole_batch(self):
+        rows = [result(2, "Valid", 1), result(3, "Invalid", 2, status="invalid")]
         with self.assertRaises(BatchBlockedError):
-            self.service.apply(rows, "c" * 64, "duplicate.xlsx")
+            self.service.apply(rows, "9" * 64, "invalid.xlsx")
         with self.database.connect() as connection:
             self.assertEqual(connection.execute("SELECT COUNT(*) FROM catalog_excel_batches").fetchone()[0], 0)
+
+    def test_manual_links_recalculate_many_to_one_without_combining_stock(self):
+        self.service.apply(
+            [result(2, "First", 4), result(3, "Second", 7)],
+            "8" * 64,
+            "manual-many-to-one.xlsx",
+        )
+        items = self.catalog.list_products(per_page=100)["items"]
+        first = self.catalog.confirm_match(items[0]["id"], self.bitrix_id)
+        self.assertEqual(first["bitrix_link_cardinality"], "one_to_one")
+        second = self.catalog.confirm_match(items[1]["id"], self.bitrix_id)
+        first = self.catalog.get_product(items[0]["id"])
+        self.assertEqual(
+            (first["bitrix_link_cardinality"], second["bitrix_link_cardinality"]),
+            ("many_to_one", "many_to_one"),
+        )
+        self.assertEqual((first["stock"], second["stock"]), (4, 7))
+        self.catalog.unlink(second["id"])
+        first = self.catalog.get_product(first["id"])
+        self.assertEqual(
+            (first["bitrix_link_cardinality"], first["shared_bitrix_row_count"]),
+            ("one_to_one", 1),
+        )
 
     def test_all_3313_excel_rows_are_preserved_without_loss(self):
         rows = [

@@ -254,6 +254,8 @@ CREATE TABLE IF NOT EXISTS catalog_excel_products (
     match_confidence REAL NOT NULL DEFAULT 0,
     match_decision TEXT NOT NULL,
     candidates_json TEXT NOT NULL DEFAULT '[]',
+    bitrix_link_cardinality TEXT NOT NULL DEFAULT 'unlinked',
+    shared_bitrix_row_count INTEGER NOT NULL DEFAULT 0,
     bitrix_catalog_product_id INTEGER REFERENCES catalog_products(id) ON DELETE SET NULL,
     bitrix_external_product_id TEXT,
     bitrix_xml_id TEXT,
@@ -295,6 +297,8 @@ CREATE TABLE IF NOT EXISTS catalog_excel_batch_rows (
     stock_after REAL NOT NULL,
     stock_difference REAL NOT NULL,
     match_status TEXT NOT NULL,
+    bitrix_link_cardinality TEXT NOT NULL DEFAULT 'unlinked',
+    shared_bitrix_row_count INTEGER NOT NULL DEFAULT 0,
     bitrix_xml_id TEXT,
     operation_result TEXT NOT NULL CHECK (
         operation_result IN ('adjusted', 'already_at_target')
@@ -357,6 +361,49 @@ class CatalogDatabase:
     def initialize(self):
         with self.connect() as connection:
             connection.executescript(SCHEMA)
+            self._ensure_excel_cardinality_columns(connection)
+
+    @staticmethod
+    def _ensure_excel_cardinality_columns(connection):
+        migrations = {
+            "catalog_excel_products": (
+                ("bitrix_link_cardinality", "TEXT NOT NULL DEFAULT 'unlinked'"),
+                ("shared_bitrix_row_count", "INTEGER NOT NULL DEFAULT 0"),
+            ),
+            "catalog_excel_batch_rows": (
+                ("bitrix_link_cardinality", "TEXT NOT NULL DEFAULT 'unlinked'"),
+                ("shared_bitrix_row_count", "INTEGER NOT NULL DEFAULT 0"),
+            ),
+        }
+        migrated = False
+        for table, columns in migrations.items():
+            existing = {
+                row[1] for row in connection.execute("PRAGMA table_info({})".format(table))
+            }
+            for column, definition in columns:
+                if column not in existing:
+                    connection.execute(
+                        "ALTER TABLE {} ADD COLUMN {} {}".format(table, column, definition)
+                    )
+                    migrated = True
+        if migrated:
+            linked = connection.execute(
+                "SELECT bitrix_catalog_product_id, COUNT(*) AS row_count "
+                "FROM catalog_excel_products WHERE active = 1 "
+                "AND bitrix_catalog_product_id IS NOT NULL "
+                "GROUP BY bitrix_catalog_product_id"
+            ).fetchall()
+            for row in linked:
+                connection.execute(
+                    "UPDATE catalog_excel_products SET bitrix_link_cardinality = ?, "
+                    "shared_bitrix_row_count = ? WHERE active = 1 "
+                    "AND bitrix_catalog_product_id = ?",
+                    (
+                        "many_to_one" if row["row_count"] > 1 else "one_to_one",
+                        row["row_count"],
+                        row["bitrix_catalog_product_id"],
+                    ),
+                )
 
     @contextmanager
     def transaction(self):

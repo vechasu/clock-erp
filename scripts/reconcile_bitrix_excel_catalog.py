@@ -28,7 +28,8 @@ REPORT_COLUMNS = [
     "excel_row", "excel_name", "excel_brand", "excel_article", "article_quality",
     "stock", "cell", "category", "product_id", "bitrix_product_id",
     "bitrix_xml_id", "bitrix_name", "bitrix_brand", "match_status",
-    "match_method", "confidence", "alternatives", "reason",
+    "match_method", "confidence", "bitrix_link_cardinality",
+    "shared_bitrix_row_count", "alternatives", "reason",
     "enrichment_thumbnail_url", "enrichment_primary_image_url",
     "enrichment_price_amount", "enrichment_price_currency",
     "enrichment_category", "enrichment_description_available",
@@ -141,13 +142,21 @@ def write_outputs(output_dir, payload):
         "needs_review.csv": {"ambiguous", "invalid"},
         "not_found.csv": {"not_found"},
         "conflicts.csv": {"ambiguous"},
-        "duplicate_excel.csv": {"duplicate_excel"},
     }
     for filename, statuses in groups.items():
         write_csv(
             output_dir / filename,
             [row for row in payload["rows"] if row["match_status"] in statuses],
         )
+    write_csv(
+        output_dir / "many_to_one.csv",
+        [
+            row for row in payload["rows"]
+            if row.get("bitrix_link_cardinality") in {
+                "many_to_one", "many_to_one_candidate",
+            }
+        ],
+    )
     (output_dir / "batch_manifest.json").write_text(
         json.dumps(payload["batch"], ensure_ascii=False, indent=2, sort_keys=True),
         encoding="utf-8",
@@ -192,6 +201,10 @@ def build_payload(excel_path, catalog_path, sheet_name="Импорт"):
             "file_sha256": excel_sha,
             "catalog_sha256": catalog_sha,
             "status": "dry_run",
+            "validation_status": "blocked" if summary["batch_blocked"] else "ready",
+            "cards_ready": summary["excel_cards_after_duplicate_resolution"],
+            "blocking_rows": summary["invalid"],
+            "product_identity": "excel_row",
             "writes_performed": 0,
             "row_count": len(reconciled),
         },
@@ -206,6 +219,10 @@ def validate_controls(summary):
         "stock_total": 1912,
         "positive_stock_rows": 836,
         "zero_stock_rows": 2477,
+        "excel_cards_after_duplicate_resolution": 3313,
+        "excel_rows_unblocked_by_row_identity": 4,
+        "duplicates_blocking": 0,
+        "batch_blocked": False,
     }
     mismatches = {
         key: {"expected": expected_value, "actual": summary.get(key)}

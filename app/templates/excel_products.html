@@ -57,7 +57,7 @@
             <td>{{ item.display_brand or '—' }}</td><td>{{ item.display_category or '—' }}</td><td>{{ item.excel_article or '—' }}</td>
             <td><strong>{{ '%g'|format(item.stock) }}</strong><div class="muted">excel</div></td><td>{{ item.cell or '—' }}</td>
             <td>{% if item.bitrix_price_amount %}{{ item.bitrix_price_amount }} {{ item.bitrix_price_currency }}{% else %}—{% endif %}</td>
-            <td><a class="badge {{ 'badge-green' if item.match_status in ['exact', 'high_confidence', 'manual_match'] else 'badge-gray' }}" href="/products/{{ item.id }}">{{ match_labels.get(item.match_status, item.match_status) }}</a></td>
+            <td><a class="badge {{ 'badge-green' if item.match_status in ['exact', 'high_confidence', 'manual_match'] else 'badge-gray' }}" href="/products/{{ item.id }}">{{ match_labels.get(item.match_status, item.match_status) }}</a>{% if item.bitrix_link_cardinality == 'many_to_one' %}<div class="candidate-note">many-to-one · {{ item.shared_bitrix_row_count }} Excel-карточки</div>{% elif item.bitrix_link_cardinality == 'many_to_one_candidate' %}<div class="candidate-note">кандидат many-to-one · {{ item.shared_bitrix_row_count }} строки</div>{% endif %}</td>
         </tr>{% endfor %}</tbody></table>
         {% elif not catalog.active_batch %}<div class="empty">Активная Excel-партия ещё не применена. Bitrix-карточки сюда автоматически не подмешиваются.</div>
         {% else %}<div class="empty">Товары по выбранным условиям не найдены.</div>{% endif %}

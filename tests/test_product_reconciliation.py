@@ -80,12 +80,36 @@ class ProductReconciliationTest(unittest.TestCase):
         self.assertEqual(result["match_status"], "ambiguous")
         self.assertEqual(len(result["alternatives"]), 2)
 
-    def test_multiple_excel_rows_for_one_card_are_duplicates(self):
+    def test_multiple_excel_rows_for_one_card_remain_separate_many_to_one_links(self):
         results = self.match(
             [product(1, "Model", "Brand")],
             [row(2, "Model", "Brand"), row(3, "Brand Model", "Brand")],
         )
-        self.assertEqual({result["match_status"] for result in results}, {"duplicate_excel"})
+        self.assertEqual(
+            {result["match_status"] for result in results},
+            {"exact", "high_confidence"},
+        )
+        self.assertEqual({result["product_id"] for result in results}, {1})
+        self.assertEqual(
+            {result["bitrix_link_cardinality"] for result in results}, {"many_to_one"}
+        )
+        self.assertEqual([result["shared_bitrix_row_count"] for result in results], [2, 2])
+
+    def test_identical_excel_names_are_never_merged(self):
+        results = self.match(
+            [product(1, "Adventure Silver", "Bitrix Brand")],
+            [
+                row(212, "Adventure Silver", "Excel Brand", stock=1),
+                row(219, "Adventure Silver", "Excel Brand", stock=2),
+            ],
+        )
+        self.assertEqual([result["excel_row"] for result in results], [212, 219])
+        self.assertEqual([result["stock"] for result in results], [1.0, 2.0])
+        self.assertEqual([result["match_status"] for result in results], ["ambiguous", "ambiguous"])
+        self.assertEqual(
+            [result["bitrix_link_cardinality"] for result in results],
+            ["many_to_one_candidate", "many_to_one_candidate"],
+        )
 
     def test_display_sample_does_not_match_general_card(self):
         result = self.match(

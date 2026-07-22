@@ -13,15 +13,14 @@ from app.services.product_reconciliation import (
     AUTOMATIC_STATUSES,
     article_quality,
     batch_id_for,
-    canonical_name,
     normalize_text,
-    reliable_article,
     text,
 )
 
 
 MATCH_COLUMNS = (
     "match_status", "match_method", "match_confidence", "match_decision",
+    "bitrix_link_cardinality", "shared_bitrix_row_count",
     "bitrix_catalog_product_id", "bitrix_external_product_id", "bitrix_xml_id",
     "bitrix_name", "bitrix_brand", "bitrix_category", "bitrix_source_url",
     "bitrix_primary_image_url", "bitrix_thumbnail_url", "bitrix_gallery_json",
@@ -34,7 +33,8 @@ PRODUCT_MUTABLE_COLUMNS = (
     "excel_name_raw", "normalized_name", "excel_article", "article_quality",
     "excel_brand", "excel_category", "stock", "cell", "stock_source",
     "file_sha256", "match_status", "match_method", "match_confidence",
-    "match_decision", "candidates_json", "bitrix_catalog_product_id",
+    "match_decision", "candidates_json", "bitrix_link_cardinality",
+    "shared_bitrix_row_count", "bitrix_catalog_product_id",
     "bitrix_external_product_id", "bitrix_xml_id", "bitrix_name",
     "bitrix_brand", "bitrix_category", "bitrix_source_url",
     "bitrix_primary_image_url", "bitrix_thumbnail_url", "bitrix_gallery_json",
@@ -55,17 +55,13 @@ def utc_now():
 
 
 def source_key_for(row):
-    article = text(row.get("excel_article"))
-    if reliable_article(article):
-        return "article:{}".format(normalize_text(article))
-    brand = normalize_text(row.get("excel_brand"))
-    name = canonical_name(row.get("excel_name"), row.get("excel_brand"))
-    if not brand or not name:
+    excel_row = int(row.get("excel_row") or 0)
+    if excel_row < 2:
         raise BatchBlockedError(
-            "Excel row has no safe product identity",
-            [int(row.get("excel_row") or 0)],
+            "Excel row number is required for stable product identity",
+            [excel_row],
         )
-    return "brand-name:{}|{}".format(brand, name)
+    return "excel-row:{:08d}".format(excel_row)
 
 
 def _json(value):
@@ -195,6 +191,27 @@ def _restore_columns(connection, product_id, state, columns):
     )
 
 
+def _refresh_link_cardinality(connection, catalog_product_ids=None):
+    if catalog_product_ids is None:
+        rows = connection.execute(
+            "SELECT DISTINCT bitrix_catalog_product_id FROM catalog_excel_products "
+            "WHERE active = 1 AND bitrix_catalog_product_id IS NOT NULL"
+        ).fetchall()
+        catalog_product_ids = [row[0] for row in rows]
+    for catalog_product_id in set(filter(None, catalog_product_ids)):
+        count = connection.execute(
+            "SELECT COUNT(*) FROM catalog_excel_products WHERE active = 1 "
+            "AND bitrix_catalog_product_id = ?",
+            (int(catalog_product_id),),
+        ).fetchone()[0]
+        connection.execute(
+            "UPDATE catalog_excel_products SET bitrix_link_cardinality = ?, "
+            "shared_bitrix_row_count = ? WHERE active = 1 "
+            "AND bitrix_catalog_product_id = ?",
+            ("many_to_one" if count > 1 else "one_to_one", count, int(catalog_product_id)),
+        )
+
+
 class ExcelProductBatchService:
     """Apply and exactly roll back local initial-balance batches."""
 
@@ -203,18 +220,33 @@ class ExcelProductBatchService:
 
     def apply(self, results, file_sha256, source_filename, sheet_name="Импорт"):
         results = [dict(result) for result in results]
+        linked_rows = {}
+        for result in results:
+            if result.get("match_status") not in AUTOMATIC_STATUSES:
+                continue
+            product_id = result.get("product_id")
+            if product_id is not None:
+                linked_rows[product_id] = linked_rows.get(product_id, 0) + 1
+        for result in results:
+            product_id = result.get("product_id")
+            if result.get("match_status") in AUTOMATIC_STATUSES and product_id is not None:
+                count = linked_rows[product_id]
+                result["bitrix_link_cardinality"] = (
+                    "many_to_one" if count > 1 else "one_to_one"
+                )
+                result["shared_bitrix_row_count"] = count
         blocked = [
             result for result in results
-            if result.get("match_status") in {"duplicate_excel", "invalid"}
+            if result.get("match_status") == "invalid"
         ]
         if blocked:
             raise BatchBlockedError(
-                "Excel batch is blocked by duplicate or invalid rows",
+                "Excel batch is blocked by invalid rows",
                 [result.get("excel_row") for result in blocked],
             )
         source_keys = [source_key_for(result) for result in results]
         if len(source_keys) != len(set(source_keys)):
-            raise BatchBlockedError("Excel batch contains duplicate safe identities")
+            raise BatchBlockedError("Excel batch contains repeated Excel row numbers")
         for result in results:
             try:
                 stock = float(result.get("stock") or 0)
@@ -249,7 +281,13 @@ class ExcelProductBatchService:
                     batch_id, file_sha256, source_filename, sheet_name, len(results),
                     total_stock, positive_rows, len(results) - positive_rows,
                     previous_batch["id"] if previous_batch else None, now, now,
-                    _json({"writes": "internal_catalog_only", "external_writes": 0}),
+                    _json({
+                        "writes": "internal_catalog_only",
+                        "external_writes": 0,
+                        "product_identity": "excel_row",
+                        "duplicate_names": "separate_cards",
+                        "stocks": "kept_separate",
+                    }),
                 ),
             )
             if previous_batch:
@@ -310,6 +348,8 @@ class ExcelProductBatchService:
                     "excel_row", created_product, before, state, stock_before,
                     float(result.get("stock") or 0), state["match_status"], now,
                 )
+
+            _refresh_link_cardinality(connection)
 
             batch = connection.execute(
                 "SELECT * FROM catalog_excel_batches WHERE id = ?", (batch_id,)
@@ -394,6 +434,10 @@ class ExcelProductBatchService:
         decision = "automatic" if automatic else (
             "pending" if result.get("match_status") == "ambiguous" else "unmatched"
         )
+        cardinality = result.get("bitrix_link_cardinality") or (
+            "one_to_one" if automatic else "unlinked"
+        )
+        shared_row_count = int(result.get("shared_bitrix_row_count") or (1 if automatic else 0))
         if (
             not automatic and product is not None
             and product["match_decision"] in {"manual", "manual_not_in_bitrix"}
@@ -404,6 +448,8 @@ class ExcelProductBatchService:
             result["match_method"] = product["match_method"]
             result["confidence"] = product["match_confidence"]
             decision = product["match_decision"]
+            cardinality = product["bitrix_link_cardinality"]
+            shared_row_count = product["shared_bitrix_row_count"]
         raw_excel = {
             "excel_row": result.get("excel_row"),
             "excel_name": result.get("excel_name"),
@@ -433,6 +479,8 @@ class ExcelProductBatchService:
             "match_confidence": float(result.get("confidence") or 0),
             "match_decision": decision,
             "candidates_json": _json(result.get("alternatives") or []),
+            "bitrix_link_cardinality": cardinality,
+            "shared_bitrix_row_count": shared_row_count,
             "moysklad_sync_status": "not_linked",
             "updated_at": now,
         }
@@ -447,13 +495,15 @@ class ExcelProductBatchService:
             "INSERT INTO catalog_excel_batch_rows ("
             "batch_id, product_id, source_key, excel_row, row_kind, created_product, "
             "previous_state_json, applied_state_json, stock_before, stock_after, "
-            "stock_difference, match_status, bitrix_xml_id, operation_result, created_at"
-            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "stock_difference, match_status, bitrix_link_cardinality, "
+            "shared_bitrix_row_count, bitrix_xml_id, operation_result, created_at"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 batch_id, product_id, source_key, excel_row, row_kind,
                 int(bool(created_product)), _json(before) if before is not None else None,
                 _json(after), float(stock_before), float(stock_after), difference,
-                match_status, after.get("bitrix_xml_id"),
+                match_status, after.get("bitrix_link_cardinality"),
+                int(after.get("shared_bitrix_row_count") or 0), after.get("bitrix_xml_id"),
                 "adjusted" if difference else "already_at_target", now,
             ),
         )
@@ -641,10 +691,17 @@ class ExcelProductCatalog:
             if restored is None:
                 raise ValueError("Manual match audit is incomplete")
             _restore_columns(connection, product_id, restored, MATCH_COLUMNS)
+            _refresh_link_cardinality(connection, [
+                product["bitrix_catalog_product_id"],
+                restored.get("bitrix_catalog_product_id"),
+            ])
             connection.execute(
                 "UPDATE catalog_excel_products SET updated_at = ? WHERE id = ?",
                 (utc_now(), int(product_id)),
             )
+            restored = _matching_snapshot(connection.execute(
+                "SELECT * FROM catalog_excel_products WHERE id = ?", (int(product_id),)
+            ).fetchone())
             connection.execute(
                 "INSERT INTO catalog_excel_match_audit ("
                 "product_id, batch_id, action, previous_state_json, new_state_json, "
@@ -666,17 +723,22 @@ class ExcelProductCatalog:
             if product is None:
                 raise ValueError("Excel product does not exist")
             previous = _matching_snapshot(product)
+            previous_catalog_product_id = product["bitrix_catalog_product_id"]
             state = _empty_enrichment()
             if action == "confirm_bitrix":
                 state.update(load_bitrix_enrichment(connection, catalog_product_id))
                 state.update({
                     "match_status": "manual_match", "match_method": "manual_confirmation",
                     "match_confidence": 1.0, "match_decision": "manual",
+                    "bitrix_link_cardinality": "one_to_one",
+                    "shared_bitrix_row_count": 1,
                 })
             elif action == "not_in_bitrix":
                 state.update({
                     "match_status": "not_in_bitrix", "match_method": "manual_confirmation",
                     "match_confidence": 1.0, "match_decision": "manual_not_in_bitrix",
+                    "bitrix_link_cardinality": "unlinked",
+                    "shared_bitrix_row_count": 0,
                 })
             elif action == "unlink":
                 candidates = _load_json(product["candidates_json"], [])
@@ -684,14 +746,23 @@ class ExcelProductCatalog:
                     "match_status": "ambiguous" if candidates else "not_found",
                     "match_method": "manual_unlink", "match_confidence": 0.0,
                     "match_decision": "pending" if candidates else "unmatched",
+                    "bitrix_link_cardinality": "unlinked",
+                    "shared_bitrix_row_count": 0,
                 })
             else:
                 raise ValueError("Unsupported manual match action")
             _restore_columns(connection, product_id, state, MATCH_COLUMNS)
+            _refresh_link_cardinality(connection, [
+                previous_catalog_product_id,
+                state.get("bitrix_catalog_product_id"),
+            ])
             connection.execute(
                 "UPDATE catalog_excel_products SET updated_at = ? WHERE id = ?",
                 (utc_now(), int(product_id)),
             )
+            state = _matching_snapshot(connection.execute(
+                "SELECT * FROM catalog_excel_products WHERE id = ?", (int(product_id),)
+            ).fetchone())
             connection.execute(
                 "INSERT INTO catalog_excel_match_audit ("
                 "product_id, batch_id, action, previous_state_json, new_state_json, created_at"

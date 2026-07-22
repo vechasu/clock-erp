@@ -155,21 +155,8 @@ class ProductReconciler:
 
     def reconcile(self, rows):
         normalized_rows = [self._prepare_row(row) for row in rows]
-        duplicate_keys = self._duplicate_keys(normalized_rows)
-        results = []
-        for row in normalized_rows:
-            result = self._match(row)
-            duplicate_key = self._duplicate_key(row)
-            if duplicate_key and duplicate_keys[duplicate_key] > 1:
-                result["match_status"] = "duplicate_excel"
-                result["match_method"] = "duplicate_excel_key"
-                result["confidence"] = 0
-                result["reason"] = (
-                    "В Excel несколько строк с одинаковым безопасным ключом; "
-                    "суммирование не подтверждено."
-                )
-            results.append(result)
-        self._downgrade_product_conflicts(results)
+        results = [self._match(row) for row in normalized_rows]
+        self._annotate_bitrix_cardinality(results)
         return results
 
     @staticmethod
@@ -193,16 +180,6 @@ class ProductReconciler:
             prepared["stock"] = row.get("stock")
             prepared["stock_valid"] = False
         return prepared
-
-    def _duplicate_key(self, row):
-        if reliable_article(row.get("excel_article")):
-            return ("article", normalize_text(row.get("excel_article")))
-        brand = normalize_text(row.get("excel_brand"))
-        name = canonical_name(row.get("excel_name"), row.get("excel_brand"))
-        return ("brand_name", brand, name) if brand and name else None
-
-    def _duplicate_keys(self, rows):
-        return Counter(filter(None, (self._duplicate_key(row) for row in rows)))
 
     def _match(self, row):
         base = self._result_base(row)
@@ -361,6 +338,8 @@ class ProductReconciler:
             "match_status": "not_found",
             "match_method": "none",
             "confidence": 0,
+            "bitrix_link_cardinality": "unlinked",
+            "shared_bitrix_row_count": 0,
             "alternatives": [],
             "reason": "",
         }
@@ -376,27 +355,38 @@ class ProductReconciler:
         })
 
     @staticmethod
-    def _downgrade_product_conflicts(results):
-        by_product = defaultdict(list)
+    def _annotate_bitrix_cardinality(results):
+        linked_by_product = defaultdict(list)
+        claims_by_product = defaultdict(list)
         for result in results:
-            if (
-                result["match_status"] in AUTOMATIC_STATUSES | {"duplicate_excel"}
-                and result.get("product_id") is not None
-            ):
-                by_product[result["product_id"]].append(result)
-        for rows in by_product.values():
+            product_id = result.get("product_id")
+            if product_id is None:
+                continue
+            if result["match_status"] in AUTOMATIC_STATUSES:
+                linked_by_product[product_id].append(result)
+                claims_by_product[product_id].append(result)
+            elif result["match_status"] == "ambiguous":
+                claims_by_product[product_id].append(result)
+
+        for rows in linked_by_product.values():
+            cardinality = "many_to_one" if len(rows) > 1 else "one_to_one"
+            for result in rows:
+                result["bitrix_link_cardinality"] = cardinality
+                result["shared_bitrix_row_count"] = len(rows)
+                if cardinality == "many_to_one":
+                    result["reason"] += (
+                        " Контент одной карточки Bitrix безопасно используется несколькими "
+                        "отдельными Excel-карточками; их остатки не объединяются."
+                    )
+
+        for rows in claims_by_product.values():
             if len(rows) < 2:
                 continue
             for result in rows:
-                result.update({
-                    "match_status": "duplicate_excel",
-                    "match_method": "multiple_excel_rows_one_product",
-                    "confidence": 0,
-                    "reason": (
-                        "Одна карточка Bitrix сопоставлена нескольким строкам Excel; "
-                        "автоматическое суммирование запрещено."
-                    ),
-                })
+                if result["match_status"] != "ambiguous":
+                    continue
+                result["bitrix_link_cardinality"] = "many_to_one_candidate"
+                result["shared_bitrix_row_count"] = len(rows)
 
 
 def summarize_reconciliation(results, products, file_metrics=None):
@@ -415,20 +405,39 @@ def summarize_reconciliation(results, products, file_metrics=None):
         if result["match_status"] in AUTOMATIC_STATUSES
         and result.get("product_id") is not None
     )
-    duplicate_group_keys = set()
+    repeated_excel_keys = Counter()
+    excel_identity_keys = {}
     for result in results:
-        if result["match_status"] != "duplicate_excel":
+        article = result.get("excel_article")
+        if reliable_article(article):
+            identity_key = ("article", normalize_text(article))
+            repeated_excel_keys[identity_key] += 1
+            excel_identity_keys[result["excel_row"]] = identity_key
             continue
-        if result["match_method"] == "multiple_excel_rows_one_product":
-            duplicate_group_keys.add(("product", result.get("product_id")))
-        elif reliable_article(result.get("excel_article")):
-            duplicate_group_keys.add(("article", normalize_text(result["excel_article"])))
-        else:
-            duplicate_group_keys.add((
-                "brand_name",
-                normalize_text(result.get("excel_brand")),
-                canonical_name(result.get("excel_name"), result.get("excel_brand")),
-            ))
+        brand = normalize_text(result.get("excel_brand"))
+        name = canonical_name(result.get("excel_name"), result.get("excel_brand"))
+        if brand and name:
+            identity_key = ("brand_name", brand, name)
+            repeated_excel_keys[identity_key] += 1
+            excel_identity_keys[result["excel_row"]] = identity_key
+    repeated_excel_groups = [count for count in repeated_excel_keys.values() if count > 1]
+    unblocked_excel_rows = {
+        result["excel_row"] for result in results
+        if (
+            repeated_excel_keys[excel_identity_keys.get(result["excel_row"])] > 1
+            or result.get("bitrix_link_cardinality") == "many_to_one"
+        )
+    }
+    many_to_one_links = Counter(
+        result["product_id"] for result in results
+        if result.get("bitrix_link_cardinality") == "many_to_one"
+        and result.get("product_id") is not None
+    )
+    many_to_one_candidates = Counter(
+        result["product_id"] for result in results
+        if result.get("bitrix_link_cardinality") == "many_to_one_candidate"
+        and result.get("product_id") is not None
+    )
     positive = [
         result for result in results
         if result.get("stock_valid") and float(result.get("stock") or 0) > 0
@@ -439,7 +448,7 @@ def summarize_reconciliation(results, products, file_metrics=None):
     ]
     ready_rows = [
         result for result in results
-        if result["match_status"] not in {"duplicate_excel", "invalid"}
+        if result["match_status"] != "invalid"
     ]
     automatic_positive = [
         result for result in results
@@ -475,8 +484,14 @@ def summarize_reconciliation(results, products, file_metrics=None):
         "ambiguous": statuses["ambiguous"],
         "not_found": statuses["not_found"],
         "invalid": statuses["invalid"],
-        "duplicate_excel": statuses["duplicate_excel"],
-        "duplicate_excel_groups": len(duplicate_group_keys),
+        "duplicate_excel": 0,
+        "duplicate_excel_groups": 0,
+        "excel_rows_unblocked_by_row_identity": len(unblocked_excel_rows),
+        "repeated_excel_identity_groups": len(repeated_excel_groups),
+        "many_to_one_link_groups": len(many_to_one_links),
+        "many_to_one_link_rows": sum(many_to_one_links.values()),
+        "many_to_one_candidate_groups": len(many_to_one_candidates),
+        "many_to_one_candidate_rows": sum(many_to_one_candidates.values()),
         "automatic_total": statuses["exact"] + statuses["high_confidence"],
         "automatic_catalog_cards": len(automatic_product_rows),
         "excel_cards_planned": len(results),
@@ -496,8 +511,8 @@ def summarize_reconciliation(results, products, file_metrics=None):
         "property_cards": property_cards,
         "ambiguous_without_automatic_link": statuses["ambiguous"],
         "not_found_without_link": statuses["not_found"],
-        "duplicates_blocking": statuses["duplicate_excel"],
-        "batch_blocked": bool(statuses["duplicate_excel"] or statuses["invalid"]),
+        "duplicates_blocking": 0,
+        "batch_blocked": bool(statuses["invalid"]),
         "empty_names": sum(not text(result.get("excel_name")) for result in results),
         "empty_brands": sum(not text(result.get("excel_brand")) for result in results),
         "empty_categories": sum(not text(result.get("category")) for result in results),
@@ -516,12 +531,10 @@ def summarize_reconciliation(results, products, file_metrics=None):
         "automatic_stock_total": sum(float(result.get("stock") or 0) for result in automatic_positive),
         "internal_batches_if_unblocked": 1 if results else 0,
         "planned_stock_operation_rows": len(positive),
-        "stock_operation_rows_blocked_now": (
-            0 if statuses["duplicate_excel"] or statuses["invalid"] else len(positive)
-        ),
+        "stock_operation_rows_blocked_now": 0,
         "receipt_documents_if_applied": 0,
         "stock_operation_rows_if_applied": (
-            0 if statuses["duplicate_excel"] or statuses["invalid"] else len(positive)
+            0 if statuses["invalid"] else len(positive)
         ),
         "cards_with_multiple_excel_rows": sum(
             1 for count in potential_product_rows.values() if count > 1
