@@ -6,13 +6,16 @@ from pathlib import Path
 from app.services.product_reconciliation import (
     ProductReconciler,
     batch_id_for,
+    classify_article,
+    compare_with_baseline,
     ensure_batch_is_new,
+    extract_model_codes,
     normalize_text,
     reliable_article,
 )
 
 
-def product(identity, name, brand, article="", xml_id=""):
+def product(identity, name, brand, article="", xml_id="", properties=None):
     return {
         "id": identity,
         "external_product_id": str(identity),
@@ -20,6 +23,7 @@ def product(identity, name, brand, article="", xml_id=""):
         "name": name,
         "brand": brand,
         "article": article,
+        "properties": properties or [],
     }
 
 
@@ -149,6 +153,97 @@ class ProductReconciliationTest(unittest.TestCase):
     def test_article_notes_are_not_treated_as_reliable_ids(self):
         self.assertTrue(reliable_article("PJT-7203BL-40"))
         self.assertFalse(reliable_article("витринный образец"))
+        self.assertEqual(classify_article("переучёт, проверить"), "comment")
+
+    def test_model_extraction_normalizes_supported_formats(self):
+        normalized = lambda value: {  # noqa: E731
+            item["normalized"] for item in extract_model_codes(value, "excel_article")
+        }
+        self.assertIn("raac0m04y", normalized("RA-AC0M04Y"))
+        self.assertIn("raac0m04y", normalized("RA AC0M04Y"))
+        self.assertIn("raac0m04y", normalized("RAAC0M04Y"))
+        self.assertEqual(normalized("PG-3"), {"pg3"})
+        self.assertEqual(normalized("PG03"), {"pg3"})
+        self.assertIn("x7000gay", normalized("X7000GA-Y"))
+        self.assertEqual(normalized("BLACK GOLD MOON ECLIPSE"), set())
+
+    def test_exact_model_code_in_property_is_high_confidence(self):
+        properties = [{
+            "id": "501", "code": "MODEL_CODE", "name": "Код модели",
+            "value": "RA AC0M04Y", "display_value": "RA AC0M04Y",
+        }]
+        result = self.match(
+            [product(1, "Different title", "Brand", properties=properties)],
+            [row(2, "Warehouse title", "Brand", article="RA-AC0M04Y")],
+        )[0]
+        self.assertEqual(result["match_status"], "high_confidence")
+        self.assertEqual(result["match_method"], "model_property")
+        self.assertEqual(result["excel_model_code"], "raac0m04y")
+
+    def test_exact_model_code_only_in_names_is_high_confidence(self):
+        result = self.match(
+            [product(1, "Automatic PG03 Black", "Brand")],
+            [row(2, "Watch PG-3 Black", "Brand")],
+        )[0]
+        self.assertEqual((result["match_status"], result["product_id"]), ("high_confidence", 1))
+        self.assertEqual(result["excel_model_code"], "pg3")
+
+    def test_article_comment_code_is_not_automatic(self):
+        result = self.match(
+            [product(1, "Model PG03", "Brand")],
+            [row(2, "Other", "Brand", article="PG03 витрина проверить")],
+        )[0]
+        self.assertNotIn(result["match_status"], {"exact", "high_confidence"})
+
+    def test_same_model_different_brands_is_not_automatic(self):
+        result = self.match(
+            [product(1, "Model PG03", "Brand A")],
+            [row(2, "Model PG-3", "Brand B")],
+        )[0]
+        self.assertNotIn(result["match_status"], {"exact", "high_confidence"})
+
+    def test_same_model_different_colors_is_not_automatic(self):
+        result = self.match(
+            [product(1, "Model PG03 Blue", "Brand")],
+            [row(2, "Model PG-3 Black", "Brand")],
+        )[0]
+        self.assertEqual(result["match_status"], "ambiguous")
+        self.assertIn("color", result["reason"])
+
+    def test_conflicting_property_code_blocks_exact_name(self):
+        properties = [{
+            "id": "501", "code": "SKU", "name": "SKU",
+            "value": "RA-OTHER2", "display_value": "RA-OTHER2",
+        }]
+        result = self.match(
+            [product(1, "Same title", "Brand", properties=properties)],
+            [row(2, "Same title", "Brand", article="RA-MODEL1")],
+        )[0]
+        self.assertEqual(result["match_status"], "ambiguous")
+        self.assertIn("коды модели конфликтуют", result["reason"])
+
+    def test_multiple_model_candidates_are_not_automatic(self):
+        result = self.match(
+            [
+                product(1, "Model PG03 Black", "Brand"),
+                product(2, "Model PG03 Blue", "Brand"),
+            ],
+            [row(2, "PG-3", "Brand")],
+        )[0]
+        self.assertNotIn(result["match_status"], {"exact", "high_confidence"})
+
+    def test_baseline_comparison_detects_candidate_change(self):
+        results = self.match(
+            [product(1, "Model PG03", "Brand")],
+            [row(2, "Model PG-3", "Brand")],
+        )
+        metrics = compare_with_baseline(results, [{
+            "excel_row": 2, "match_status": "ambiguous",
+            "match_method": "manual_candidates", "product_id": 99,
+        }])
+        self.assertTrue(results[0]["candidate_changed"])
+        self.assertEqual(results[0]["comparison_status"], "new_automatic")
+        self.assertEqual(metrics["new_matches_by_model"], 1)
 
     def test_batch_identity_blocks_repeated_application(self):
         digest = hashlib.sha256(b"same file").hexdigest()
