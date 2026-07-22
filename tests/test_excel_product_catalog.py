@@ -404,11 +404,16 @@ class ExcelProductCatalogTest(unittest.TestCase):
         self.assertNotIn("<span>7.0</span>", brand_editor)
         self.assertNotIn("Все бренды", brand_editor)
         self.assertNotIn("inlineBrandOptions", html)
-        self.assertIn(
-            'id="editCategory" class="product-detail-input" type="text" '
-            'name="category" value="Наручные часы" readonly',
-            html,
-        )
+        for component_id in (
+            "addCategoryCombobox", "bulkCategory", "filterCategoryCombobox",
+            "mapCategoryCombobox", "editCategoryCombobox",
+        ):
+            category_editor = html.split('id="{}"'.format(component_id), 1)[1]
+            category_editor = category_editor.split('</div>\n        </div>', 1)[0]
+            self.assertIn('data-brand="Excel category"', category_editor)
+            self.assertNotIn('data-brand="Watches"', category_editor)
+        self.assertNotIn('list="warehouseCategoryOptions"', html)
+        self.assertNotIn('<select name="category"', html)
 
     def test_brand_stock_counts_drop_only_redundant_decimal_zero(self):
         from app.web import build_brand_groups
@@ -421,6 +426,15 @@ class ExcelProductCatalogTest(unittest.TestCase):
             {"name": "Fractional", "count": 3.75},
             {"name": "Whole", "count": 15},
         ])
+
+    def test_category_options_are_unique_positive_stock_totals(self):
+        from app.web import build_category_groups
+        groups = build_category_groups([
+            {"category": "Ремень", "stock": 1},
+            {"category": "ремень", "stock": 2},
+            {"category": "Наручные часы", "stock": 0},
+        ])
+        self.assertEqual(groups, [{"name": "Ремень", "count": 3}])
 
     def test_product_actions_use_edit_form_and_confirmed_delete_urls(self):
         self.apply_initial()

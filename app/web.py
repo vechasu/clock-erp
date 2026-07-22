@@ -949,6 +949,28 @@ def build_brand_groups(items):
     ]
 
 
+def build_category_groups(items):
+    groups = {}
+
+    for item in items:
+        category = str(item.get("category") or "").strip()
+        if not category or category == "Без категории":
+            continue
+        key = category.casefold()
+        group = groups.setdefault(key, {"name": category, "count": 0.0})
+        group["count"] += float(item.get("stock") or 0)
+
+    for group in groups.values():
+        if group["count"].is_integer():
+            group["count"] = int(group["count"])
+
+    return [
+        groups[key]
+        for key in sorted(groups)
+        if groups[key]["count"] >= 1
+    ]
+
+
 def item_in_category(item, selected_category):
     if not selected_category:
         return True
@@ -1034,8 +1056,8 @@ def warehouse_page():
         sort_dir = "asc"
 
     all_items = get_excel_warehouse_items()
-    category_tree = build_category_tree(all_items)
     brand_groups = build_brand_groups(all_items)
+    category_groups = build_category_groups(all_items)
     bulk_brand_options = [group["name"] for group in brand_groups]
     cell_groups = build_cell_groups(all_items)
 
@@ -1151,8 +1173,8 @@ def warehouse_page():
         sort_dir=sort_dir,
         add_request_id=uuid.uuid4().hex,
         visible_positions=visible_positions,
-        category_tree=category_tree,
         brand_groups=brand_groups,
+        category_groups=category_groups,
         bulk_brand_options=bulk_brand_options,
         cell_groups=cell_groups,
         total_stock=total_stock,
