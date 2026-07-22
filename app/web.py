@@ -17,7 +17,10 @@ from app.catalog_db import CatalogDatabase
 from app.clients.bitrix_catalog import BitrixCatalogReadOnlyClient, BitrixCatalogReadOnlyError
 from app.services.bitrix_catalog_importer import BitrixCatalogImporter
 from app.services.catalog_reader import CatalogReader
-from app.services.excel_product_catalog import ExcelProductCatalog
+from app.services.excel_product_catalog import (
+    ExcelProductCatalog,
+    ProductDeleteBlockedError,
+)
 from app.services.excel_receipt_import import (
     MAX_EXCEL_FILE_SIZE,
     ExcelDraftBlockedError,
@@ -8141,6 +8144,44 @@ def _safe_products_return_to(value):
     return url_for("excel_products_page")
 
 
+def _products_redirect_with_notice(return_to, notice, message):
+    separator = "&" if "?" in return_to else "?"
+    return redirect(
+        return_to + separator + urlencode({"notice": notice, "message": message})
+    )
+
+
+def _excel_product_external_references(product_id):
+    product_id = str(int(product_id))
+    references = []
+    if any(
+        str(item.get("product_id") or "") == product_id
+        for item in load_manual_sales()
+        if isinstance(item, dict)
+    ):
+        references.append("продажа")
+    if any(
+        str(item.get("product_id") or "") == product_id
+        for item in load_stock_operations()
+        if isinstance(item, dict)
+    ):
+        references.append("складская операция")
+    for receipt in load_receipts():
+        if not isinstance(receipt, dict):
+            continue
+        if str(receipt.get("product_id") or "") == product_id:
+            references.append("приход")
+            break
+        if any(
+            str(position.get("product_id") or "") == product_id
+            for position in receipt.get("positions") or []
+            if isinstance(position, dict)
+        ):
+            references.append("приход")
+            break
+    return references
+
+
 @app.route("/products")
 def excel_products_page():
     match_status = (request.args.get("match_status") or "all").strip()
@@ -8269,6 +8310,25 @@ def excel_product_page(product_id):
         "excel_product_detail.html", product=product, match_labels=EXCEL_MATCH_LABELS,
         return_to=_safe_products_return_to(request.args.get("return_to")),
     )
+
+
+@app.route("/products/<int:product_id>/delete", methods=["POST"])
+def excel_product_delete(product_id):
+    return_to = _safe_products_return_to(request.form.get("return_to"))
+    if request.form.get("confirm_delete") != "1":
+        return _products_redirect_with_notice(
+            return_to, "error", "Удаление отменено: требуется явное подтверждение."
+        )
+    try:
+        ExcelProductCatalog().delete_product(
+            product_id,
+            external_references=_excel_product_external_references(product_id),
+        )
+    except ProductDeleteBlockedError as error:
+        return _products_redirect_with_notice(return_to, "error", str(error))
+    except (TypeError, ValueError):
+        return _products_redirect_with_notice(return_to, "error", "Товар не найден.")
+    return _products_redirect_with_notice(return_to, "success", "Товар удалён.")
 
 
 @app.route("/products/<int:product_id>/match", methods=["POST"])

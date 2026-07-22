@@ -41,7 +41,10 @@
         .products-mobile-meta { display: none; margin-top: 3px; color: #64748b; font-size: 10px; }
         .products-stock-cell strong { font-size: 14px; }
         .products-stock-cell.is-zero strong { color: #94a3b8; }
-        .products-action-button { display: inline-flex; padding: 6px 9px; border-radius: 8px; background: #eff6ff; color: #1d4ed8; font-size: 11px; font-weight: 800; }
+        .products-actions { display: flex; align-items: center; gap: 4px; }
+        .products-action-form { margin: 0; }
+        .products-action-button { display: inline-flex; min-height: 26px; align-items: center; padding: 4px 6px; border: 0; border-radius: 7px; background: #eff6ff; color: #1d4ed8; font: inherit; font-size: 10px; font-weight: 800; line-height: 1; text-decoration: none; cursor: pointer; }
+        .products-action-delete { background: #fef2f2; color: #b91c1c; }
         .products-pagination { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; }
         @media (max-width: 1080px) {
             .products-filter-form { grid-template-columns: minmax(240px, 1fr) repeat(2, minmax(120px, 1fr)); }
@@ -74,6 +77,10 @@
                 <a class="button" href="/warehouse?open_add=1#warehouseAddCard">Добавить товар</a>
             </div>
         </div>
+
+        {% if request.args.get('message') %}
+        <div class="archive-alert{% if request.args.get('notice') == 'success' %} success-alert{% endif %}" role="alert">{{ request.args.get('message') }}</div>
+        {% endif %}
 
         <section class="panel products-toolbar">
             <form id="productsFilterForm" class="products-filter-form" method="get" action="{{ url_for('excel_products_page') }}">
@@ -184,7 +191,11 @@
         const columns = Array.from(table.querySelectorAll("col[data-column]"));
         const headers = Array.from(table.querySelectorAll("thead th[data-column-key]"));
         const saved = storedWidths();
-        columns.forEach(function (column) { if (saved[column.dataset.column]) column.style.width = saved[column.dataset.column] + "px"; });
+        columns.forEach(function (column) {
+            if (column.dataset.column !== "actions" && saved[column.dataset.column]) {
+                column.style.width = saved[column.dataset.column] + "px";
+            }
+        });
         headers.slice(0, -1).forEach(function (header, index) {
             const handle = document.createElement("span");
             handle.className = "products-column-resize";

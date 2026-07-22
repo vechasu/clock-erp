@@ -8,21 +8,21 @@
     <table class="products-table" data-products-table>
         <colgroup>
             <col data-column="photo" style="width:62px">
-            <col data-column="name" style="width:270px">
-            <col data-column="brand" style="width:125px">
-            <col data-column="category" style="width:165px">
-            <col data-column="article" style="width:125px">
-            <col data-column="stock" style="width:82px">
-            <col data-column="cell" style="width:95px">
-            <col data-column="price" style="width:105px">
-            <col data-column="actions" style="width:95px">
+            <col data-column="name" style="width:245px">
+            <col data-column="brand" style="width:115px">
+            <col data-column="category" style="width:145px">
+            <col data-column="article" style="width:110px">
+            <col data-column="stock" style="width:78px">
+            <col data-column="cell" style="width:88px">
+            <col data-column="price" style="width:100px">
+            <col data-column="actions" style="width:165px">
         </colgroup>
         <thead><tr>
             <th data-column-key="photo">Фото</th>
             {% for field, label in [('name', 'Название'), ('brand', 'Бренд'), ('category', 'Категория'), ('article', 'Артикул'), ('stock', 'Остаток'), ('cell', 'Ячейка'), ('price', 'Цена')] %}
             <th data-column-key="{{ field }}"><button class="products-sort-button{% if catalog.sort_by == field %} is-active{% endif %}" type="button" data-sort-field="{{ field }}">{{ label }} <span aria-hidden="true">{% if catalog.sort_by == field %}{{ '↑' if catalog.sort_dir == 'asc' else '↓' }}{% else %}↕{% endif %}</span></button></th>
             {% endfor %}
-            <th data-column-key="actions">Действие</th>
+            <th data-column-key="actions">Действия</th>
         </tr></thead>
         <tbody>
         {% for item in catalog['items'] %}
@@ -38,7 +38,16 @@
             <td class="products-stock-cell{% if item.stock <= 0 %} is-zero{% endif %}"><strong>{{ '%g'|format(item.stock) }}</strong></td>
             <td>{{ item.cell or '—' }}</td>
             <td>{% if item.bitrix_price_amount %}{{ item.bitrix_price_amount }} {{ item.bitrix_price_currency }}{% else %}—{% endif %}</td>
-            <td><a class="products-action-button" data-product-detail-link href="{{ url_for('excel_product_page', product_id=item.id, return_to=current_products_url) }}">Открыть</a></td>
+            <td>
+                <div class="products-actions">
+                    <a class="products-action-button" data-product-detail-link href="{{ url_for('excel_product_page', product_id=item.id, return_to=current_products_url) }}">Редактировать</a>
+                    <form class="products-action-form" method="post" action="{{ url_for('excel_product_delete', product_id=item.id) }}" onsubmit="return confirm('Удалить этот товар? Действие нельзя отменить.');">
+                        <input type="hidden" name="return_to" value="{{ current_products_url }}">
+                        <input type="hidden" name="confirm_delete" value="1">
+                        <button class="products-action-button products-action-delete" type="submit">Удалить</button>
+                    </form>
+                </div>
+            </td>
         </tr>
         {% endfor %}
         </tbody>
