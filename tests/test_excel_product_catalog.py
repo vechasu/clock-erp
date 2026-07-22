@@ -400,7 +400,8 @@ class ExcelProductCatalogTest(unittest.TestCase):
         brand_editor = html.split('id="editBrandCombobox"', 1)[1].split("</form>", 1)[0]
         self.assertEqual(brand_editor.count('data-brand="Brand"'), 1)
         self.assertNotIn('data-brand="Other"', brand_editor)
-        self.assertIn("<span>7.0</span>", brand_editor)
+        self.assertIn("<span>7</span>", brand_editor)
+        self.assertNotIn("<span>7.0</span>", brand_editor)
         self.assertNotIn("Все бренды", brand_editor)
         self.assertNotIn("inlineBrandOptions", html)
         self.assertIn(
@@ -408,6 +409,18 @@ class ExcelProductCatalogTest(unittest.TestCase):
             'name="category" value="Наручные часы" readonly',
             html,
         )
+
+    def test_brand_stock_counts_drop_only_redundant_decimal_zero(self):
+        from app.web import build_brand_groups
+        groups = build_brand_groups([
+            {"brand": "Whole", "stock": 15},
+            {"brand": "Fractional", "stock": 1.25},
+            {"brand": "Fractional", "stock": 2.5},
+        ])
+        self.assertEqual(groups, [
+            {"name": "Fractional", "count": 3.75},
+            {"name": "Whole", "count": 15},
+        ])
 
     def test_product_actions_use_edit_form_and_confirmed_delete_urls(self):
         self.apply_initial()
