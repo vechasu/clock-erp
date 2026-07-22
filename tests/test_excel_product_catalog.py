@@ -127,6 +127,28 @@ class ExcelProductCatalogTest(unittest.TestCase):
         self.assertEqual(item["bitrix_primary_image_url"], "https://example.test/large.jpg")
         self.assertEqual((item["bitrix_price_amount"], item["display_category"]), ("100", "Watches"))
         self.assertEqual(item["properties"][0]["value"], "Black")
+        with self.database.connect() as connection:
+            registry_row = connection.execute(
+                "SELECT bitrix_xml_id, operation_result FROM catalog_excel_batch_rows "
+                "WHERE product_id = ?",
+                (item["id"],),
+            ).fetchone()
+        self.assertEqual(
+            (registry_row["bitrix_xml_id"], registry_row["operation_result"]),
+            ("xml-10", "adjusted"),
+        )
+
+    def test_safe_high_confidence_result_is_enriched_but_keeps_excel_stock(self):
+        self.service.apply(
+            [result(2, "Brand Watch X1", 7, "high_confidence", self.bitrix_id)],
+            "f" * 64,
+            "high-confidence.xlsx",
+        )
+        item = self.catalog.list_products(per_page=10)["items"][0]
+        self.assertEqual(
+            (item["match_status"], item["bitrix_catalog_product_id"], item["stock"]),
+            ("high_confidence", self.bitrix_id, 7),
+        )
 
     def test_ambiguous_and_not_found_cards_exist_without_bitrix_content(self):
         self.apply_initial()
@@ -160,7 +182,7 @@ class ExcelProductCatalogTest(unittest.TestCase):
         self.assertEqual(difference, -3)
         repeated = self.service.apply(second_rows, "b" * 64, "second.xlsx")
         self.assertTrue(repeated["already_applied"])
-        self.assertEqual(repeated["operation_rows"], 3)
+        self.assertEqual(repeated["operation_rows"], 2)
         self.service.rollback(second["id"])
         restored = {
             item["excel_name_raw"]: item["stock"]
@@ -174,6 +196,38 @@ class ExcelProductCatalogTest(unittest.TestCase):
                 ).fetchone()[0],
                 "active",
             )
+
+    def test_zero_adjustment_is_logged_as_row_without_useless_movement(self):
+        batch = self.service.apply(
+            [result(2, "Zero Stock", 0)], "e" * 64, "zero.xlsx"
+        )
+        self.assertEqual(batch["operation_rows"], 0)
+        with self.database.connect() as connection:
+            row = connection.execute(
+                "SELECT stock_before, stock_after, stock_difference, operation_result "
+                "FROM catalog_excel_batch_rows WHERE batch_id = ?",
+                (batch["id"],),
+            ).fetchone()
+        self.assertEqual(
+            (row["stock_before"], row["stock_after"], row["stock_difference"], row["operation_result"]),
+            (0, 0, 0, "already_at_target"),
+        )
+
+    def test_rollback_retains_a_new_card_that_has_manual_audit_history(self):
+        batch = self.apply_initial()
+        ambiguous = self.catalog.list_products(match_status="requires_mapping")["items"][0]
+        self.catalog.confirm_match(ambiguous["id"], self.bitrix_id)
+        self.service.rollback(batch["id"])
+        with self.database.connect() as connection:
+            retained = connection.execute(
+                "SELECT active, stock, match_status FROM catalog_excel_products WHERE id = ?",
+                (ambiguous["id"],),
+            ).fetchone()
+            active_count = connection.execute(
+                "SELECT COUNT(*) FROM catalog_excel_products WHERE active = 1"
+            ).fetchone()[0]
+        self.assertEqual((retained["active"], retained["stock"], retained["match_status"]), (0, 0, "manual_match"))
+        self.assertEqual(active_count, 0)
 
     def test_manual_match_not_in_bitrix_unlink_and_undo(self):
         self.apply_initial()

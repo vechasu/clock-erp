@@ -295,6 +295,10 @@ CREATE TABLE IF NOT EXISTS catalog_excel_batch_rows (
     stock_after REAL NOT NULL,
     stock_difference REAL NOT NULL,
     match_status TEXT NOT NULL,
+    bitrix_xml_id TEXT,
+    operation_result TEXT NOT NULL CHECK (
+        operation_result IN ('adjusted', 'already_at_target')
+    ),
     created_at TEXT NOT NULL,
     UNIQUE (batch_id, source_key)
 );

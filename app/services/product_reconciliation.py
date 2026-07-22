@@ -437,6 +437,10 @@ def summarize_reconciliation(results, products, file_metrics=None):
         result for result in results
         if result.get("stock_valid") and float(result.get("stock") or 0) == 0
     ]
+    ready_rows = [
+        result for result in results
+        if result["match_status"] not in {"duplicate_excel", "invalid"}
+    ]
     automatic_positive = [
         result for result in results
         if result["match_status"] in AUTOMATIC_STATUSES
@@ -476,6 +480,12 @@ def summarize_reconciliation(results, products, file_metrics=None):
         "automatic_total": statuses["exact"] + statuses["high_confidence"],
         "automatic_catalog_cards": len(automatic_product_rows),
         "excel_cards_planned": len(results),
+        "excel_cards_ready_before_duplicate_resolution": len(ready_rows),
+        "excel_cards_after_duplicate_resolution": len(results) - statuses["invalid"],
+        "ready_stock_total": sum(
+            float(result.get("stock") or 0)
+            for result in ready_rows if result.get("stock_valid")
+        ),
         "bitrix_enriched_cards": statuses["exact"] + statuses["high_confidence"],
         "bitrix_unlinked_cards": statuses["ambiguous"] + statuses["not_found"],
         "photo_cards": photo_cards,
@@ -505,10 +515,13 @@ def summarize_reconciliation(results, products, file_metrics=None):
         "automatic_positive_rows": len(automatic_positive),
         "automatic_stock_total": sum(float(result.get("stock") or 0) for result in automatic_positive),
         "internal_batches_if_unblocked": 1 if results else 0,
-        "planned_stock_operation_rows": len(results),
+        "planned_stock_operation_rows": len(positive),
+        "stock_operation_rows_blocked_now": (
+            0 if statuses["duplicate_excel"] or statuses["invalid"] else len(positive)
+        ),
         "receipt_documents_if_applied": 0,
         "stock_operation_rows_if_applied": (
-            0 if statuses["duplicate_excel"] or statuses["invalid"] else len(results)
+            0 if statuses["duplicate_excel"] or statuses["invalid"] else len(positive)
         ),
         "cards_with_multiple_excel_rows": sum(
             1 for count in potential_product_rows.values() if count > 1

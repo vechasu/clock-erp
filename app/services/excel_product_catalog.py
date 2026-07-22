@@ -275,7 +275,7 @@ class ExcelProductBatchService:
                 self._record_change(
                     connection, batch_id, product["id"], product["source_key"], None,
                     "deactivated", False, before, after, product["stock"], 0.0,
-                    product["match_status"], now,
+                    after["match_status"], now,
                 )
 
             for result, source_key in zip(results, source_keys):
@@ -308,7 +308,7 @@ class ExcelProductBatchService:
                 self._record_change(
                     connection, batch_id, product_id, source_key, result["excel_row"],
                     "excel_row", created_product, before, state, stock_before,
-                    float(result.get("stock") or 0), result["match_status"], now,
+                    float(result.get("stock") or 0), state["match_status"], now,
                 )
 
             batch = connection.execute(
@@ -349,15 +349,24 @@ class ExcelProductBatchService:
                     (batch_id, product["id"]),
                 ).fetchone()
                 stock_after = float(previous.get("stock") or 0) if previous else 0.0
-                self._record_operation(
-                    connection, batch_id, product["id"], "excel_batch_rollback",
-                    stock_before, stock_after, now,
-                    original_operation["id"] if original_operation else None,
-                    {"source_key": change["source_key"]},
-                )
-                if change["created_product"]:
+                if stock_before != stock_after:
+                    self._record_operation(
+                        connection, batch_id, product["id"], "excel_batch_rollback",
+                        stock_before, stock_after, now,
+                        original_operation["id"] if original_operation else None,
+                        {"source_key": change["source_key"]},
+                    )
+                if change["created_product"] and self._can_delete_created_product(
+                    connection, product["id"], batch_id
+                ):
                     connection.execute(
                         "DELETE FROM catalog_excel_products WHERE id = ?", (product["id"],)
+                    )
+                elif change["created_product"]:
+                    retained = _snapshot(product)
+                    retained.update({"active": 0, "stock": 0.0, "updated_at": now})
+                    _restore_columns(
+                        connection, product["id"], retained, PRODUCT_MUTABLE_COLUMNS
                     )
                 elif previous is not None:
                     _restore_columns(
@@ -411,7 +420,7 @@ class ExcelProductBatchService:
             "excel_row": int(result.get("excel_row") or 0),
             "excel_name_raw": text(result.get("excel_name")),
             "normalized_name": normalize_text(result.get("excel_name")),
-            "excel_article": text(result.get("excel_article")) if reliable_article(result.get("excel_article")) else None,
+            "excel_article": text(result.get("excel_article")) or None,
             "article_quality": result.get("article_quality") or article_quality(result.get("excel_article")),
             "excel_brand": text(result.get("excel_brand")),
             "excel_category": text(result.get("category")) or None,
@@ -438,20 +447,43 @@ class ExcelProductBatchService:
             "INSERT INTO catalog_excel_batch_rows ("
             "batch_id, product_id, source_key, excel_row, row_kind, created_product, "
             "previous_state_json, applied_state_json, stock_before, stock_after, "
-            "stock_difference, match_status, created_at"
-            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "stock_difference, match_status, bitrix_xml_id, operation_result, created_at"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 batch_id, product_id, source_key, excel_row, row_kind,
                 int(bool(created_product)), _json(before) if before is not None else None,
                 _json(after), float(stock_before), float(stock_after), difference,
-                match_status, now,
+                match_status, after.get("bitrix_xml_id"),
+                "adjusted" if difference else "already_at_target", now,
             ),
         )
-        self._record_operation(
-            connection, batch_id, product_id, "initial_excel_adjustment",
-            stock_before, stock_after, now, None,
-            {"source_key": source_key, "excel_row": excel_row, "row_kind": row_kind},
-        )
+        if difference:
+            self._record_operation(
+                connection, batch_id, product_id, "initial_excel_adjustment",
+                stock_before, stock_after, now, None,
+                {
+                    "source_key": source_key, "excel_row": excel_row,
+                    "row_kind": row_kind, "bitrix_xml_id": after.get("bitrix_xml_id"),
+                },
+            )
+
+    @staticmethod
+    def _can_delete_created_product(connection, product_id, batch_id):
+        manual_uses = connection.execute(
+            "SELECT COUNT(*) FROM catalog_excel_match_audit WHERE product_id = ?",
+            (int(product_id),),
+        ).fetchone()[0]
+        other_batch_rows = connection.execute(
+            "SELECT COUNT(*) FROM catalog_excel_batch_rows "
+            "WHERE product_id = ? AND batch_id <> ?",
+            (int(product_id), batch_id),
+        ).fetchone()[0]
+        other_operations = connection.execute(
+            "SELECT COUNT(*) FROM catalog_excel_stock_operations "
+            "WHERE product_id = ? AND batch_id <> ?",
+            (int(product_id), batch_id),
+        ).fetchone()[0]
+        return not (manual_uses or other_batch_rows or other_operations)
 
     @staticmethod
     def _record_operation(connection, batch_id, product_id, operation_type,
