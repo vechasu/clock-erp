@@ -374,6 +374,7 @@ class ExcelProductCatalogTest(unittest.TestCase):
         self.assertEqual([item["excel_name_raw"] for item in no_cell["items"]], ["Beta"])
         default_order = self.catalog.list_products(per_page=100)["items"]
         self.assertEqual([item["excel_name_raw"] for item in default_order], ["Alpha", "Beta", "Zulu"])
+        self.assertEqual(self.catalog.list_products(per_page=100)["brands"], ["Alpha", "Beta"])
 
     def test_products_page_is_simple_daily_workflow_without_external_reads(self):
         self.apply_initial()
@@ -390,7 +391,7 @@ class ExcelProductCatalogTest(unittest.TestCase):
         moysklad.assert_not_called()
         bitrix.assert_not_called()
 
-    def test_warehouse_edit_options_use_unique_full_bitrix_brands_and_one_category(self):
+    def test_warehouse_edit_options_only_include_positive_stock_brands(self):
         self.apply_initial()
         from app import web
         web.app.config["TESTING"] = True
@@ -398,7 +399,8 @@ class ExcelProductCatalogTest(unittest.TestCase):
             html = web.app.test_client().get("/warehouse").get_data(as_text=True)
         brand_editor = html.split('id="editBrandCombobox"', 1)[1].split("</form>", 1)[0]
         self.assertEqual(brand_editor.count('data-brand="Brand"'), 1)
-        self.assertEqual(brand_editor.count('data-brand="Other"'), 1)
+        self.assertNotIn('data-brand="Other"', brand_editor)
+        self.assertIn("<span>7.0</span>", brand_editor)
         self.assertNotIn("Все бренды", brand_editor)
         self.assertNotIn("inlineBrandOptions", html)
         self.assertIn(

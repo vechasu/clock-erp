@@ -928,18 +928,20 @@ def build_category_tree(items):
 
 
 def build_brand_groups(items):
-    counts = {}
+    groups = {}
 
     for item in items:
-        brand = item.get("brand") or "Без бренда"
-        counts[brand] = counts.get(brand, 0) + 1
+        brand = str(item.get("brand") or "").strip()
+        if not brand or brand == "Без бренда":
+            continue
+        key = brand.casefold()
+        group = groups.setdefault(key, {"name": brand, "count": 0.0})
+        group["count"] += float(item.get("stock") or 0)
 
     return [
-        {
-            "name": brand,
-            "count": counts[brand],
-        }
-        for brand in sorted(counts, key=str.lower)
+        groups[key]
+        for key in sorted(groups)
+        if groups[key]["count"] >= 1
     ]
 
 
@@ -1029,23 +1031,7 @@ def warehouse_page():
 
     all_items = get_excel_warehouse_items()
     category_tree = build_category_tree(all_items)
-    warehouse_brand_counts = {
-        group["name"].casefold(): group["count"]
-        for group in build_brand_groups(all_items)
-    }
-    with CatalogDatabase().connect() as connection:
-        bitrix_brand_rows = connection.execute(
-            "SELECT brand FROM catalog_products "
-            "WHERE trim(COALESCE(brand, '')) <> '' ORDER BY brand"
-        ).fetchall()
-    unique_bitrix_brands = {}
-    for row in bitrix_brand_rows:
-        brand = str(row[0] or "").strip()
-        unique_bitrix_brands.setdefault(brand.casefold(), brand)
-    brand_groups = [
-        {"name": brand, "count": warehouse_brand_counts.get(key, 0)}
-        for key, brand in sorted(unique_bitrix_brands.items())
-    ]
+    brand_groups = build_brand_groups(all_items)
     bulk_brand_options = [group["name"] for group in brand_groups]
     cell_groups = build_cell_groups(all_items)
 
@@ -5883,15 +5869,9 @@ def receipts_page():
         for item in all_warehouse_items
     ]
 
-    receipt_brands = sorted(
-        {
-            str(item.get("brand") or "").strip()
-            for item in warehouse_items
-            if str(item.get("brand") or "").strip()
-            not in {"", "Без бренда"}
-        },
-        key=str.casefold,
-    )
+    receipt_brands = [
+        group["name"] for group in build_brand_groups(get_excel_warehouse_items())
+    ]
     receipt_categories = sorted(
         {
             str(item.get("category") or "").strip()
@@ -8580,6 +8560,9 @@ def catalog_page():
         page=_positive_int(request.args.get("page"), 1, 1000000),
         per_page=_positive_int(request.args.get("per_page"), 50, 100),
     )
+    catalog["brands"] = [
+        group["name"] for group in build_brand_groups(get_excel_warehouse_items())
+    ]
     base_arguments = request.args.to_dict(flat=True)
     base_arguments.pop("page", None)
     activity_urls = {}
