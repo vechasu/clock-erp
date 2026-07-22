@@ -456,6 +456,16 @@
             width: 16px;
             height: 16px;
             flex: 0 0 16px;
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+            transition: opacity 0.16s ease;
+        }
+
+        body.warehouse-bulk-edit-open .warehouse-row-select {
+            opacity: 1;
+            visibility: visible;
+            pointer-events: auto;
         }
 
         @media (max-width: 1050px) {
@@ -4058,7 +4068,19 @@
             : !panel.classList.contains("is-open");
 
         panel.classList.toggle("is-open", shouldOpen);
+        document.body.classList.toggle(
+            "warehouse-bulk-edit-open",
+            shouldOpen
+        );
         button.setAttribute("aria-expanded", shouldOpen ? "true" : "false");
+
+        if (!shouldOpen) {
+            document.querySelectorAll(".warehouse-row-select").forEach(function(checkbox) {
+                checkbox.checked = false;
+                checkbox.indeterminate = false;
+            });
+            syncWarehouseBulkSelection();
+        }
     }
 
     function toggleWarehouseAddCard() {
