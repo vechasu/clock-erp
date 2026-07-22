@@ -2697,6 +2697,41 @@
             line-height: 1.35;
         }
 
+        #editDrawer #detailStock {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 0;
+            min-height: 20px;
+            padding: 0;
+            border-radius: 0;
+            background: transparent;
+            color: #172033;
+            font-size: 16px;
+            font-weight: 800;
+            line-height: 1.35;
+        }
+
+        #editDrawer #detailStock::before {
+            content: "";
+            width: 7px;
+            height: 7px;
+            flex: 0 0 7px;
+            border-radius: 50%;
+            background: #94a3b8;
+            box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.12);
+        }
+
+        #editDrawer #detailStock.stock-positive::before {
+            background: #22c55e;
+            box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.12);
+        }
+
+        #editDrawer #detailStock.stock-negative::before {
+            background: #ef4444;
+            box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.12);
+        }
+
         #editDrawer .product-gallery-main {
             min-height: 0;
             height: clamp(310px, 48vh, 470px);
@@ -3728,6 +3763,24 @@
             lightbox.classList.add("open");
         }
 
+        function renderProductStock(value) {
+            const element = document.getElementById("detailStock");
+            const stock = Number.parseFloat(String(value).replace(",", "."));
+
+            element.classList.remove("stock-positive", "stock-negative");
+            if (!Number.isFinite(stock)) {
+                element.textContent = "—";
+                return;
+            }
+            if (stock === 0) {
+                element.textContent = "Нет в наличии";
+                return;
+            }
+
+            element.textContent = String(stock) + " шт.";
+            element.classList.add(stock > 0 ? "stock-positive" : "stock-negative");
+        }
+
         function closeProductGalleryLightbox(event) {
             const lightbox = document.getElementById("productGalleryLightbox");
 
@@ -3836,7 +3889,7 @@
 
             document.getElementById("detailName").textContent = productName;
             document.getElementById("detailArticle").textContent = productArticle;
-            document.getElementById("detailStock").textContent = productStock;
+            renderProductStock(productStock);
             document.getElementById("detailBrand").textContent = productBrand;
             document.getElementById("detailCategory").textContent = productCategory;
             document.getElementById("detailCell").textContent = productCell
