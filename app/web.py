@@ -1086,6 +1086,7 @@ def warehouse_page():
         selected_brand=selected_brand,
         selected_cell=selected_cell,
         hide_zero=hide_zero,
+        open_add=request.args.get("open_add") == "1",
         sort_by=sort_by,
         sort_dir=sort_dir,
         add_request_id=uuid.uuid4().hex,
@@ -8086,6 +8087,43 @@ EXCEL_MATCH_LABELS = {
 }
 
 
+def build_excel_category_tree(category_groups):
+    counts = {}
+    tree = {}
+    for group in category_groups:
+        category = (group.get("name") or "Без категории").strip() or "Без категории"
+        count = int(group.get("count") or 0)
+        parts = split_category_path(category)
+        node = tree
+        path_parts = []
+        for part in parts:
+            path_parts.append(part)
+            path = "/".join(path_parts)
+            counts[path] = counts.get(path, 0) + count
+            node = node.setdefault(part, {"children": {}})["children"]
+
+    def convert(node, prefix=None):
+        result = []
+        for name in sorted(node, key=str.casefold):
+            path = "/".join(filter(None, [prefix, name]))
+            result.append({
+                "name": name,
+                "path": path,
+                "count": counts.get(path, 0),
+                "children": convert(node[name]["children"], path),
+            })
+        return result
+
+    return convert(tree)
+
+
+def _safe_products_return_to(value):
+    value = (value or "").strip()
+    if value.startswith("/products") and not value.startswith("//"):
+        return value
+    return url_for("excel_products_page")
+
+
 @app.route("/products")
 def excel_products_page():
     match_status = (request.args.get("match_status") or "all").strip()
@@ -8099,18 +8137,31 @@ def excel_products_page():
         "query": (request.args.get("q") or "").strip(),
         "brand": (request.args.get("brand") or "").strip(),
         "category": (request.args.get("category") or "").strip(),
+        "cell": (request.args.get("cell") or "").strip(),
         "match_status": match_status,
+        "hide_zero": (request.args.get("hide_zero") or "").strip() == "1",
+        "sort_by": (request.args.get("sort_by") or "name").strip(),
+        "sort_dir": (request.args.get("sort_dir") or "asc").strip(),
     }
     catalog = ExcelProductCatalog().list_products(
         query=filters["query"],
         brand=filters["brand"],
         category=filters["category"],
+        cell=filters["cell"],
         match_status=filters["match_status"],
+        hide_zero=filters["hide_zero"],
+        sort_by=filters["sort_by"],
+        sort_dir=filters["sort_dir"],
         page=_positive_int(request.args.get("page"), 1, 1000000),
         per_page=_positive_int(request.args.get("per_page"), 50, 100),
     )
     base_arguments = request.args.to_dict(flat=True)
+    base_arguments.pop("_partial", None)
+    current_arguments = dict(base_arguments)
     base_arguments.pop("page", None)
+    current_products_url = url_for("excel_products_page")
+    if current_arguments:
+        current_products_url += "?" + urlencode(current_arguments)
     previous_url = next_url = None
     if catalog["page"] > 1:
         previous_url = url_for("excel_products_page") + "?" + urlencode(
@@ -8120,10 +8171,17 @@ def excel_products_page():
         next_url = url_for("excel_products_page") + "?" + urlencode(
             dict(base_arguments, page=catalog["page"] + 1)
         )
+    template_name = (
+        "_excel_products_results.html"
+        if request.args.get("_partial") == "1"
+        else "excel_products.html"
+    )
     return render_template(
-        "excel_products.html", catalog=catalog, filters=filters,
+        template_name, catalog=catalog, filters=filters,
         match_labels=EXCEL_MATCH_LABELS, previous_url=previous_url,
         next_url=next_url,
+        category_tree=build_excel_category_tree(catalog["category_groups"]),
+        current_products_url=current_products_url,
     )
 
 
@@ -8134,12 +8192,14 @@ def excel_product_page(product_id):
         abort(404)
     return render_template(
         "excel_product_detail.html", product=product, match_labels=EXCEL_MATCH_LABELS,
+        return_to=_safe_products_return_to(request.args.get("return_to")),
     )
 
 
 @app.route("/products/<int:product_id>/match", methods=["POST"])
 def excel_product_match(product_id):
     action = (request.form.get("action") or "").strip()
+    return_to = _safe_products_return_to(request.form.get("return_to"))
     catalog = ExcelProductCatalog()
     try:
         if action == "confirm":
@@ -8158,8 +8218,14 @@ def excel_product_match(product_id):
         else:
             raise ValueError("Unsupported match action")
     except (TypeError, ValueError):
-        return redirect(url_for("excel_product_page", product_id=product_id, error="match_not_saved"))
-    return redirect(url_for("excel_product_page", product_id=product_id, saved="1"))
+        return redirect(url_for(
+            "excel_product_page", product_id=product_id,
+            error="match_not_saved", return_to=return_to,
+        ))
+    return redirect(url_for(
+        "excel_product_page", product_id=product_id,
+        saved="1", return_to=return_to,
+    ))
 
 
 @app.route("/catalog")

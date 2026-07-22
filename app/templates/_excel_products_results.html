@@ -1,0 +1,112 @@
+<div class="products-stats" data-products-stats>
+    <div class="products-stat">
+        <span>Найдено карточек</span>
+        <strong data-stat="positions">{{ catalog.stats.positions or 0 }}</strong>
+    </div>
+    <div class="products-stat">
+        <span>Суммарный остаток</span>
+        <strong data-stat="stock">{{ '%g'|format(catalog.stats.total_stock or 0) }}</strong>
+    </div>
+    <div class="products-stat">
+        <span>В наличии</span>
+        <strong>{{ catalog.stats.positive_positions or 0 }}</strong>
+    </div>
+    <div class="products-stat products-stat-muted">
+        <span>Нулевой остаток</span>
+        <strong>{{ catalog.stats.zero_positions or 0 }}</strong>
+    </div>
+    <div class="products-stat products-stat-accent">
+        <span>Связано с Bitrix</span>
+        <strong>{{ catalog.stats.matched_positions or 0 }}</strong>
+    </div>
+</div>
+
+<div class="products-result-head">
+    <span>Показано {{ catalog['items']|length }} из {{ catalog.total }}</span>
+    <span>Сортировка: {{ {'name': 'название', 'article': 'артикул', 'brand': 'бренд', 'category': 'категория', 'stock': 'остаток', 'cell': 'ячейка', 'created_at': 'дата добавления', 'price': 'цена', 'match_status': 'статус'}.get(catalog.sort_by, 'название') }} · {{ 'по возрастанию' if catalog.sort_dir == 'asc' else 'по убыванию' }}</span>
+</div>
+
+<div class="products-table-scroll" data-products-table-scroll>
+    {% if catalog['items'] %}
+    <table class="products-table" data-products-table>
+        <colgroup>
+            <col data-column="photo" style="width:68px">
+            <col data-column="name" style="width:300px">
+            <col data-column="brand" style="width:130px">
+            <col data-column="category" style="width:180px">
+            <col data-column="article" style="width:130px">
+            <col data-column="stock" style="width:88px">
+            <col data-column="cell" style="width:105px">
+            <col data-column="price" style="width:110px">
+            <col data-column="match_status" style="width:165px">
+            <col data-column="created_at" style="width:120px">
+            <col data-column="actions" style="width:112px">
+        </colgroup>
+        <thead><tr>
+            <th data-column-key="photo">Фото</th>
+            {% for field, label in [('name', 'Название'), ('brand', 'Бренд'), ('category', 'Категория'), ('article', 'Артикул'), ('stock', 'Остаток'), ('cell', 'Ячейка'), ('price', 'Цена'), ('match_status', 'Сопоставление'), ('created_at', 'Добавлен')] %}
+            <th data-column-key="{{ field }}">
+                <button class="products-sort-button{% if catalog.sort_by == field %} is-active{% endif %}" type="button" data-sort-field="{{ field }}">
+                    {{ label }} <span aria-hidden="true">{% if catalog.sort_by == field %}{{ '↑' if catalog.sort_dir == 'asc' else '↓' }}{% else %}↕{% endif %}</span>
+                </button>
+            </th>
+            {% endfor %}
+            <th data-column-key="actions">Действия</th>
+        </tr></thead>
+        <tbody>
+        {% for item in catalog['items'] %}
+        <tr class="{% if item.stock <= 0 %}is-zero-stock{% endif %}" data-product-row data-stock="{{ item.stock }}">
+            <td class="products-photo-cell">
+                <span class="products-thumb-shell">
+                    {% if item.bitrix_thumbnail_url %}
+                    <a href="{{ item.bitrix_primary_image_url or item.bitrix_thumbnail_url }}" target="_blank" rel="noopener noreferrer" aria-label="Открыть фото {{ item.excel_name_raw }}">
+                        <img class="products-thumb" src="{{ item.bitrix_thumbnail_url }}" alt="" loading="lazy" onerror="handleProductImageError(this)">
+                    </a>
+                    <span class="products-thumb products-thumb-empty" hidden aria-label="Фото недоступно">Нет фото</span>
+                    {% else %}
+                    <span class="products-thumb products-thumb-empty" aria-label="Фото отсутствует">Нет фото</span>
+                    {% endif %}
+                </span>
+            </td>
+            <td class="products-name-cell">
+                <a class="product-name" data-product-detail-link href="/products/{{ item.id }}?return_to={{ current_products_url|urlencode }}">{{ item.excel_name_raw }}</a>
+                {% if item.bitrix_name and item.bitrix_name != item.excel_name_raw %}<div class="products-official-name">Bitrix: {{ item.bitrix_name }}</div>{% endif %}
+                <div class="products-row-meta">Excel строка {{ item.excel_row }}{% if item.bitrix_xml_id %} · XML_ID {{ item.bitrix_xml_id }}{% endif %}</div>
+                <div class="products-mobile-meta">{{ item.display_brand or 'Без бренда' }} · {{ item.display_category or 'Без категории' }} · остаток {{ '%g'|format(item.stock) }}{% if item.cell %} · {{ item.cell }}{% endif %}</div>
+                {% if item.match_status == 'ambiguous' and item.candidates %}<div class="candidate-note">Кандидаты: {% for candidate in item.candidates[:2] %}{{ candidate.name }}{% if not loop.last %}; {% endif %}{% endfor %}</div>{% endif %}
+            </td>
+            <td>{{ item.display_brand or '—' }}</td>
+            <td>{{ item.display_category or '—' }}</td>
+            <td>{{ item.excel_article or '—' }}</td>
+            <td class="products-stock-cell{% if item.stock <= 0 %} is-zero{% endif %}"><strong>{{ '%g'|format(item.stock) }}</strong><span>excel</span></td>
+            <td>{{ item.cell or '—' }}</td>
+            <td>{% if item.bitrix_price_amount %}{{ item.bitrix_price_amount }} {{ item.bitrix_price_currency }}{% else %}—{% endif %}</td>
+            <td>
+                <a class="badge {{ 'badge-green' if item.match_status in ['exact', 'high_confidence', 'manual_match'] else 'badge-gray' }}" data-product-detail-link href="/products/{{ item.id }}?return_to={{ current_products_url|urlencode }}">{{ match_labels.get(item.match_status, item.match_status) }}</a>
+                {% if item.bitrix_link_cardinality == 'many_to_one' %}<div class="candidate-note">many-to-one · {{ item.shared_bitrix_row_count }}</div>{% elif item.bitrix_link_cardinality == 'many_to_one_candidate' %}<div class="candidate-note">кандидат many-to-one · {{ item.shared_bitrix_row_count }}</div>{% endif %}
+            </td>
+            <td><time datetime="{{ item.created_at or '' }}">{{ item.created_at[:10] if item.created_at else '—' }}</time></td>
+            <td class="products-actions-cell">
+                <a class="products-action-button" data-product-detail-link href="/products/{{ item.id }}?return_to={{ current_products_url|urlencode }}">Открыть</a>
+                {% if item.bitrix_source_url %}<a class="products-action-link" href="{{ item.bitrix_source_url }}" target="_blank" rel="noopener noreferrer">Bitrix</a>{% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% elif not catalog.active_batch %}
+    <div class="empty">Активная Excel-партия ещё не применена. Bitrix-карточки сюда автоматически не подмешиваются.</div>
+    {% else %}
+    <div class="empty">Товары по выбранным условиям не найдены.</div>
+    {% endif %}
+</div>
+
+{% if catalog.pages > 1 %}
+<nav class="products-pagination" aria-label="Страницы товаров">
+    <span>Страница {{ catalog.page }} из {{ catalog.pages }}</span>
+    <div>
+        {% if previous_url %}<a class="button" data-products-page-link href="{{ previous_url }}">← Назад</a>{% endif %}
+        {% if next_url %}<a class="button" data-products-page-link href="{{ next_url }}">Далее →</a>{% endif %}
+    </div>
+</nav>
+{% endif %}

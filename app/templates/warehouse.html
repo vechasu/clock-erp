@@ -2505,7 +2505,7 @@
                 </form>
             </div>
 
-            <div class="add-card is-hidden" id="warehouseAddCard">
+            <div class="add-card{% if not open_add %} is-hidden{% endif %}" id="warehouseAddCard">
                 <div class="add-title">Добавить товар в МойСклад</div>
 
                 <form
