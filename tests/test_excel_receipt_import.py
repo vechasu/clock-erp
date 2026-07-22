@@ -36,9 +36,45 @@ class ExcelReceiptImportTest(unittest.TestCase):
         self.database = CatalogDatabase(self.path)
         self.database.initialize()
         self.service = ExcelReceiptImportService(self.database)
+        preview = self.service.preview
+
+        def preview_with_catalog(data, filename, sheet_name=None):
+            self.seed_bitrix_rows(data, sheet_name)
+            return preview(data, filename, sheet_name)
+
+        self.service.preview = preview_with_catalog
 
     def tearDown(self):
         self.temp.cleanup()
+
+    def seed_bitrix_rows(self, data, sheet_name=None):
+        parsed = self.service._parse(data, sheet_name)
+        with self.database.transaction() as connection:
+            for row in parsed["rows"]:
+                if row["row_status"] != "valid":
+                    continue
+                item = row["data"]
+                article = item.get("excel_article") or ""
+                exists = connection.execute(
+                    "SELECT 1 FROM catalog_products WHERE "
+                    "(article = ? AND article != '') OR (name = ? AND brand = ?) LIMIT 1",
+                    (article, item["excel_name"], item["excel_brand"]),
+                ).fetchone()
+                if exists is not None:
+                    continue
+                identity = "test-{}-{}".format(item["excel_row"], len(article))
+                connection.execute(
+                    "INSERT INTO catalog_products ("
+                    "name, slug, article, brand, active, external_source, "
+                    "external_product_id, payload_hash, normalized_payload_json, "
+                    "created_at, updated_at, first_synced_at, last_synced_at, last_sync_mode"
+                    ") VALUES (?, ?, ?, ?, 1, 'bitrix', ?, ?, '{}', "
+                    "'now', 'now', 'now', 'now', 'full')",
+                    (
+                        item["excel_name"], article, article, item["excel_brand"],
+                        identity, identity,
+                    ),
+                )
 
     def valid_file(self):
         return workbook_bytes(
@@ -288,7 +324,7 @@ class ExcelReceiptImportTest(unittest.TestCase):
                 refreshed["valid_rows"], refreshed["zero_rows"],
                 refreshed["error_rows"],
             ),
-            (2, "ready", 1, 1, 0),
+            (3, "ready", 1, 1, 0),
         )
         self.assertEqual(refreshed["rows"][0]["data"]["excel_name"], "1925")
         self.assertEqual(self.catalog_totals(), (0, 0, 0, 0))
@@ -397,11 +433,13 @@ class ExcelReceiptImportTest(unittest.TestCase):
 
         web.app.config["TESTING"] = True
         before = self.catalog_totals()
+        data = self.valid_file()
+        self.seed_bitrix_rows(data)
         with mock.patch.dict("os.environ", {"CATALOG_DATABASE_PATH": str(self.path)}):
             client = web.app.test_client()
             response = client.post(
                 "/products/receipts/preview",
-                data={"file": (BytesIO(self.valid_file()), "receipt.xlsx")},
+                data={"file": (BytesIO(data), "receipt.xlsx")},
                 content_type="multipart/form-data",
                 follow_redirects=True,
             )
