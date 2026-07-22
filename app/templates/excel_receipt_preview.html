@@ -52,11 +52,11 @@
         {% endif %}
 
         <section class="receipt-summary" aria-label="Сводка предпросмотра">
-            <div><span>Валидные позиции</span><strong>{{ draft.valid_rows }}</strong></div>
-            <div><span>Количество</span><strong>{{ '%g'|format(draft.total_quantity) }}</strong></div>
-            <div><span>Сопоставлено</span><strong>{{ draft.matched_rows }}</strong></div>
-            <div><span>Новые</span><strong>{{ draft.new_rows }}</strong></div>
-            <div><span>Ошибки / исключено</span><strong>{{ draft.error_rows }} / {{ draft.excluded_rows }}</strong></div>
+            <div><span>Карточки</span><strong>{{ draft.valid_rows }}</strong></div>
+            <div><span>Нулевой остаток</span><strong>{{ draft.zero_rows }}</strong></div>
+            <div><span>Положительный остаток</span><strong>{{ draft.positive_rows }}</strong></div>
+            <div><span>Количество прихода</span><strong>{{ '%g'|format(draft.total_quantity) }}</strong></div>
+            <div><span>Ошибки</span><strong>{{ draft.error_rows }}</strong></div>
         </section>
 
         <div class="receipt-table-wrap">

@@ -11,10 +11,13 @@ import math
 import re
 import uuid
 from datetime import date, datetime, time
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from io import BytesIO
 from pathlib import Path
 
 from openpyxl import load_workbook
+from openpyxl.styles.numbers import is_date_format
+from openpyxl.utils.datetime import from_excel
 
 from app.catalog_db import CatalogDatabase
 from app.services.excel_product_catalog import (
@@ -34,6 +37,8 @@ from app.services.product_reconciliation import (
 
 
 MAX_EXCEL_FILE_SIZE = 15 * 1024 * 1024
+PARSER_VERSION = 2
+LEGACY_SERIAL_TIME_BRANDS = {"28th of may"}
 HEADER_ALIASES = {
     "name": {
         "наименование", "название", "название товара", "товар", "модель",
@@ -123,41 +128,124 @@ def _number(value):
     return result
 
 
-def _invalid_name_reason(cell):
+def _is_time_number_format(number_format):
+    number_format = str(number_format or "General").split(";", 1)[0]
+    if not is_date_format(number_format):
+        return False
+    cleaned = re.sub(r'"[^"]*"', "", number_format)
+    cleaned = re.sub(r"\\.", "", cleaned)
+    cleaned = re.sub(r"\[(?!h+\])[^]]+\]", "", cleaned, flags=re.IGNORECASE)
+    has_time = bool(re.search(r"(?i)(?:\[h+\]|h+|s+|am/pm|a/p)", cleaned))
+    has_date = bool(re.search(r"(?i)(?:y+|d+)", cleaned))
+    return has_time and not has_date
+
+
+def _format_time_parts(value):
+    total_microseconds = (
+        (value.hour * 3600 + value.minute * 60 + value.second) * 1_000_000
+        + value.microsecond
+    )
+    total_minutes = (total_microseconds + 30_000_000) // 60_000_000
+    total_minutes %= 24 * 60
+    return "{:02d}:{:02d}".format(total_minutes // 60, total_minutes % 60)
+
+
+def _format_numeric_excel_time(value, epoch):
+    converted = from_excel(value, epoch)
+    if isinstance(converted, datetime):
+        converted = converted.time()
+    if not isinstance(converted, time):
+        raise ValueError("not an Excel time")
+    return _format_time_parts(converted)
+
+
+def _format_text_excel_time(value):
+    serial = Decimal(str(value).strip())
+    if serial < 0 or serial >= 1:
+        raise ValueError("not an Excel time fraction")
+    total_minutes = int(
+        (serial * Decimal(24 * 60)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    ) % (24 * 60)
+    return "{:02d}:{:02d}".format(total_minutes // 60, total_minutes % 60)
+
+
+def _decimal_name(value):
+    decimal_value = Decimal(str(value).strip())
+    if not decimal_value.is_finite():
+        raise InvalidOperation
+    if decimal_value == decimal_value.to_integral_value():
+        return str(int(decimal_value))
+    return format(decimal_value.normalize(), "f")
+
+
+def _normalize_name_cell(cell, brand, article, epoch):
     if cell is None:
-        return "name_missing", "Не заполнено название товара."
+        return "", "name_missing", "Не заполнено название товара.", "missing"
     value = cell.value
     if getattr(cell, "data_type", None) == "f":
-        return "name_formula", "Формула не может быть названием товара."
-    if isinstance(value, (datetime, date, time)):
-        return "name_date_or_time", "Дата или время не может быть названием товара."
+        return "", "name_formula", "Формула не может быть названием товара.", "formula"
+    has_identity_context = bool(text(brand) or text(article))
+    if isinstance(value, time):
+        if has_identity_context:
+            return _format_time_parts(value), None, None, "excel_time"
+        return "", "name_numeric", (
+            "Числовое название требует бренд или артикул товара."
+        ), "time_without_identity"
+    if isinstance(value, datetime):
+        if has_identity_context and _is_time_number_format(cell.number_format):
+            return _format_time_parts(value.time()), None, None, "excel_time"
+        return "", "name_date_or_time", (
+            "Дата не может быть названием товара."
+        ), "date"
+    if isinstance(value, date):
+        return "", "name_date_or_time", (
+            "Дата не может быть названием товара."
+        ), "date"
     if isinstance(value, bool) or isinstance(value, (int, float)):
-        return "name_numeric", "Число или Excel serial не может быть названием товара."
+        if not has_identity_context:
+            return "", "name_numeric", (
+                "Числовое название требует бренд или артикул товара."
+            ), "numeric_without_identity"
+        if isinstance(value, float) and not math.isfinite(value):
+            return "", "name_numeric", "Некорректное числовое название товара.", "numeric"
+        if _is_time_number_format(cell.number_format):
+            try:
+                return (
+                    _format_numeric_excel_time(value, epoch), None, None,
+                    "excel_time_number_format",
+                )
+            except (TypeError, ValueError, OverflowError):
+                return "", "name_numeric", (
+                    "Некорректное Excel-время в названии товара."
+                ), "excel_time_number_format"
+        try:
+            return _decimal_name(value), None, None, "numeric_name"
+        except (InvalidOperation, ValueError):
+            return "", "name_numeric", "Некорректное числовое название товара.", "numeric"
     name = str(value or "").strip()
     if not name:
-        return "name_missing", "Не заполнено название товара."
+        return "", "name_missing", "Не заполнено название товара.", "missing"
     if name.startswith("="):
-        return "name_formula", "Формула не может быть названием товара."
+        return "", "name_formula", "Формула не может быть названием товара.", "formula"
     if re.fullmatch(r"[0-9\s.,:+/\\-]+", name):
-        return "name_numeric", "Числовое значение не может быть названием товара."
-    return None, None
-
-
-def _invalid_brand_reason(cell):
-    if cell is None or cell.value in (None, ""):
-        return "brand_missing", "Не заполнен бренд товара."
-    value = cell.value
-    if isinstance(value, (datetime, date, time)):
-        return "brand_date_or_time", "Дата или время не может быть брендом товара."
-    brand = str(value).strip()
-    if re.fullmatch(
-        r"(?i)\d{1,2}(?:st|nd|rd|th)\s+of\s+"
-        r"(?:january|february|march|april|may|june|july|august|"
-        r"september|october|november|december)",
-        brand,
-    ):
-        return "brand_date_or_time", "Дата не может быть брендом товара."
-    return None, None
+        if not has_identity_context:
+            return "", "name_numeric", (
+                "Числовое название требует бренд или артикул товара."
+            ), "numeric_text_without_identity"
+        try:
+            decimal_value = Decimal(name.replace(" ", "").replace(",", "."))
+            if (
+                normalize_text(brand) in LEGACY_SERIAL_TIME_BRANDS
+                and decimal_value >= 0 and decimal_value < 1
+            ):
+                return (
+                    _format_text_excel_time(name.replace(",", ".")), None, None,
+                    "legacy_serial_time_text",
+                )
+            return _decimal_name(name.replace(",", ".")), None, None, "numeric_text"
+        except (InvalidOperation, ValueError):
+            return "", "name_numeric", "Некорректное числовое название товара.", "numeric_text"
+    return name, None, None, "text"
 
 
 class ExcelReceiptImportService:
@@ -182,11 +270,15 @@ class ExcelReceiptImportService:
         self.database.initialize()
         with self.database.connect() as connection:
             existing = connection.execute(
-                "SELECT id FROM catalog_excel_import_drafts WHERE file_sha256 = ?",
+                "SELECT id, status, parser_version FROM catalog_excel_import_drafts "
+                "WHERE file_sha256 = ?",
                 (file_sha256,),
             ).fetchone()
-        if existing is not None:
-            return self.get_draft(existing["id"])
+        if existing is not None and (
+            existing["status"] == "posted"
+            or int(existing["parser_version"] or 0) >= PARSER_VERSION
+        ):
+            return self.get_draft(existing["id"], refresh=False)
 
         parsed = self._parse(file_data, sheet_name)
         with self.database.connect() as connection:
@@ -198,6 +290,14 @@ class ExcelReceiptImportService:
         new_rows = len(matches) - matched_rows
         error_rows = sum(row["row_status"] == "error" for row in parsed["rows"])
         excluded_rows = sum(row["row_status"] == "excluded" for row in parsed["rows"])
+        positive_rows = sum(
+            row["row_status"] == "valid" and float(row["data"]["stock"]) > 0
+            for row in parsed["rows"]
+        )
+        zero_rows = sum(
+            row["row_status"] == "valid" and float(row["data"]["stock"]) == 0
+            for row in parsed["rows"]
+        )
         total_quantity = sum(
             float(row["data"]["stock"])
             for row in parsed["rows"] if row["row_status"] == "valid"
@@ -207,32 +307,71 @@ class ExcelReceiptImportService:
 
         with self.database.transaction() as connection:
             existing = connection.execute(
-                "SELECT id FROM catalog_excel_import_drafts WHERE file_sha256 = ?",
+                "SELECT id, status, parser_version FROM catalog_excel_import_drafts "
+                "WHERE file_sha256 = ?",
                 (file_sha256,),
             ).fetchone()
+            write_rows = False
             if existing is not None:
                 draft_id = existing["id"]
+                if (
+                    existing["status"] != "posted"
+                    and int(existing["parser_version"] or 0) < PARSER_VERSION
+                ):
+                    connection.execute(
+                        "DELETE FROM catalog_excel_import_draft_rows WHERE draft_id = ?",
+                        (draft_id,),
+                    )
+                    connection.execute(
+                        "UPDATE catalog_excel_import_drafts SET "
+                        "sheet_name = ?, header_row = ?, parser_version = ?, status = ?, "
+                        "row_count = ?, valid_rows = ?, error_rows = ?, excluded_rows = ?, "
+                        "positive_rows = ?, zero_rows = ?, new_rows = ?, matched_rows = ?, "
+                        "total_quantity = ?, updated_at = ?, details_json = ? WHERE id = ?",
+                        (
+                            parsed["sheet_name"], parsed["header_row"], PARSER_VERSION,
+                            status, len(parsed["rows"]), len(matches), error_rows,
+                            excluded_rows, positive_rows, zero_rows, new_rows,
+                            matched_rows, total_quantity, now, _json({
+                                "column_map": parsed["column_map"],
+                                "sheet_names": parsed["sheet_names"],
+                                "writes": "draft_only",
+                                "catalog_writes": 0,
+                                "stock_writes": 0,
+                                "external_writes": 0,
+                                "parser_version": PARSER_VERSION,
+                                "reparsed_from_version": int(
+                                    existing["parser_version"] or 0
+                                ),
+                            }), draft_id,
+                        ),
+                    )
+                    write_rows = True
             else:
                 connection.execute(
                     "INSERT INTO catalog_excel_import_drafts ("
                     "id, file_sha256, source_filename, source_file, sheet_name, header_row, "
-                    "status, row_count, valid_rows, error_rows, excluded_rows, new_rows, "
-                    "matched_rows, total_quantity, created_at, updated_at, details_json"
-                    ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "parser_version, status, row_count, valid_rows, error_rows, excluded_rows, "
+                    "positive_rows, zero_rows, new_rows, matched_rows, total_quantity, "
+                    "created_at, updated_at, details_json"
+                    ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         draft_id, file_sha256, filename, file_data, parsed["sheet_name"],
-                        parsed["header_row"], status, len(parsed["rows"]), len(matches),
-                        error_rows, excluded_rows, new_rows, matched_rows, total_quantity,
-                        now, now, _json({
+                        parsed["header_row"], PARSER_VERSION, status, len(parsed["rows"]),
+                        len(matches), error_rows, excluded_rows, positive_rows, zero_rows,
+                        new_rows, matched_rows, total_quantity, now, now, _json({
                             "column_map": parsed["column_map"],
                             "sheet_names": parsed["sheet_names"],
                             "writes": "draft_only",
                             "catalog_writes": 0,
                             "stock_writes": 0,
                             "external_writes": 0,
+                            "parser_version": PARSER_VERSION,
                         }),
                     ),
                 )
+                write_rows = True
+            if write_rows:
                 for row in parsed["rows"]:
                     match = matches_by_row.get(row["excel_row"], {})
                     data = dict(row["data"])
@@ -253,10 +392,11 @@ class ExcelReceiptImportService:
                             _json(match.get("alternatives") or []),
                         ),
                     )
-        return self.get_draft(draft_id)
+        return self.get_draft(draft_id, refresh=False)
 
     def post(self, draft_id):
         self.database.initialize()
+        self.get_draft(draft_id)
         with self.database.transaction() as connection:
             draft = connection.execute(
                 "SELECT * FROM catalog_excel_import_drafts WHERE id = ?", (draft_id,)
@@ -273,13 +413,23 @@ class ExcelReceiptImportService:
                 raise ExcelDraftBlockedError(
                     "Приход нельзя оформить, пока в предпросмотре есть ошибки."
                 )
+            if int(draft["parser_version"] or 0) != PARSER_VERSION:
+                raise ExcelDraftBlockedError(
+                    "Черновик должен быть повторно проверен текущей версией парсера."
+                )
             if hashlib.sha256(draft["source_file"]).hexdigest() != draft["file_sha256"]:
                 raise ExcelDraftBlockedError("Контрольная сумма черновика изменилась.")
 
             parsed = self._parse(draft["source_file"], draft["sheet_name"])
             valid_rows = [row for row in parsed["rows"] if row["row_status"] == "valid"]
             errors = [row for row in parsed["rows"] if row["row_status"] == "error"]
-            if errors or len(valid_rows) != draft["valid_rows"]:
+            positive_rows = sum(float(row["data"]["stock"]) > 0 for row in valid_rows)
+            zero_rows = sum(float(row["data"]["stock"]) == 0 for row in valid_rows)
+            if (
+                errors or len(valid_rows) != draft["valid_rows"]
+                or positive_rows != draft["positive_rows"]
+                or zero_rows != draft["zero_rows"]
+            ):
                 raise ExcelDraftBlockedError("Повторная проверка Excel не совпала с предпросмотром.")
             matches = ProductReconciler(_load_bitrix_products(connection)).reconcile(
                 [row["data"] for row in valid_rows]
@@ -288,7 +438,8 @@ class ExcelReceiptImportService:
                 raise ExcelDraftBlockedError("Повторная проверка нашла ошибочные строки.")
 
             prior_batch = connection.execute(
-                "SELECT id FROM catalog_excel_batches WHERE file_sha256 = ?",
+                "SELECT id FROM catalog_excel_batches WHERE file_sha256 = ? "
+                "AND status != 'rolled_back' LIMIT 1",
                 (draft["file_sha256"],),
             ).fetchone()
             if prior_batch is not None:
@@ -303,11 +454,15 @@ class ExcelReceiptImportService:
                 "INSERT INTO catalog_excel_batches ("
                 "id, file_sha256, source_filename, sheet_name, operation_type, row_count, "
                 "total_stock, positive_rows, zero_rows, status, created_at, applied_at, "
-                "details_json) VALUES (?, ?, ?, ?, 'receipt', ?, ?, ?, 0, 'active', ?, ?, ?)",
+                "details_json) VALUES (?, ?, ?, ?, 'receipt', ?, ?, ?, ?, 'active', ?, ?, ?)",
                 (
                     batch_id, draft["file_sha256"], draft["source_filename"],
-                    draft["sheet_name"], len(matches), total_quantity, len(matches),
-                    now, now, _json({"draft_id": draft_id, "external_writes": 0}),
+                    draft["sheet_name"], len(matches), total_quantity, positive_rows,
+                    zero_rows, now, now, _json({
+                        "draft_id": draft_id,
+                        "parser_version": PARSER_VERSION,
+                        "external_writes": 0,
+                    }),
                 ),
             )
             matched_cards = sum(result["match_status"] in AUTOMATIC_STATUSES for result in matches)
@@ -322,6 +477,9 @@ class ExcelReceiptImportService:
                     draft["created_at"], now, _json({
                         "confirmation": "explicit_post",
                         "atomic_transaction": True,
+                        "card_rows": len(matches),
+                        "positive_rows": positive_rows,
+                        "zero_rows": zero_rows,
                         "external_writes": 0,
                     }),
                 ),
@@ -397,17 +555,18 @@ class ExcelReceiptImportService:
                     ),
                 )
                 receipt_row_id = connection.execute("SELECT last_insert_rowid()").fetchone()[0]
-                connection.execute(
-                    "INSERT INTO catalog_excel_receipt_operations ("
-                    "id, receipt_id, receipt_row_id, product_id, stock_before, stock_after, "
-                    "stock_difference, created_at, details_json"
-                    ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        str(uuid.uuid4()), receipt_id, receipt_row_id, product_id,
-                        stock_before, stock_before + quantity, quantity, now,
-                        _json({"excel_row": result["excel_row"], "draft_id": draft_id}),
-                    ),
-                )
+                if quantity > 0:
+                    connection.execute(
+                        "INSERT INTO catalog_excel_receipt_operations ("
+                        "id, receipt_id, receipt_row_id, product_id, stock_before, stock_after, "
+                        "stock_difference, created_at, details_json"
+                        ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (
+                            str(uuid.uuid4()), receipt_id, receipt_row_id, product_id,
+                            stock_before, stock_before + quantity, quantity, now,
+                            _json({"excel_row": result["excel_row"], "draft_id": draft_id}),
+                        ),
+                    )
                 if self.fault_hook is not None:
                     self.fault_hook(position, result)
 
@@ -425,8 +584,24 @@ class ExcelReceiptImportService:
             ).fetchone()
             return self._receipt_result(connection, receipt, False)
 
-    def get_draft(self, draft_id):
+    def get_draft(self, draft_id, refresh=True):
         self.database.initialize()
+        if refresh:
+            with self.database.connect() as connection:
+                stale = connection.execute(
+                    "SELECT id, source_file, source_filename, sheet_name, status, "
+                    "parser_version FROM catalog_excel_import_drafts WHERE id = ?",
+                    (draft_id,),
+                ).fetchone()
+            if stale is None:
+                raise ExcelDraftError("Черновик прихода не найден.")
+            if (
+                stale["status"] != "posted"
+                and int(stale["parser_version"] or 0) < PARSER_VERSION
+            ):
+                return self.preview(
+                    stale["source_file"], stale["source_filename"], stale["sheet_name"]
+                )
         with self.database.connect() as connection:
             draft = connection.execute(
                 "SELECT * FROM catalog_excel_import_drafts WHERE id = ?", (draft_id,)
@@ -492,7 +667,9 @@ class ExcelReceiptImportService:
                 ]
                 if not any(cell.value not in (None, "") for cell in used_cells):
                     continue
-                rows.append(self._parse_row(excel_row, cells, column_map))
+                rows.append(
+                    self._parse_row(excel_row, cells, column_map, workbook.epoch)
+                )
             if not rows:
                 raise ExcelDraftError("После строки заголовков нет товарных строк.")
             return {
@@ -532,7 +709,7 @@ class ExcelReceiptImportService:
         return best[1], best[2]
 
     @staticmethod
-    def _parse_row(excel_row, cells, column_map):
+    def _parse_row(excel_row, cells, column_map, workbook_epoch):
         def cell(field):
             index = column_map.get(field)
             return cells[index] if index is not None and index < len(cells) else None
@@ -543,24 +720,31 @@ class ExcelReceiptImportService:
 
         raw_values = [_safe_json_value(item.value) for item in cells]
         name_cell = cell("name")
-        error_code, error_message = _invalid_name_reason(name_cell)
-        name = text(value("name"))
-        brand_cell = cell("brand")
         brand = text(value("brand"))
+        article = text(value("article"))
+        name, error_code, error_message, name_normalization = _normalize_name_cell(
+            name_cell, brand, article, workbook_epoch
+        )
         if error_code is None and normalize_text(name) in {"итого", "всего", "total"}:
             return {
                 "excel_row": excel_row, "row_status": "excluded",
                 "error_code": "service_total", "error_message": "Итоговая строка исключена.",
                 "raw_values": raw_values,
-                "data": {"excel_row": excel_row, "excel_name": name},
+                "data": {
+                    "excel_row": excel_row,
+                    "excel_name": name,
+                    "excel_name_raw": _safe_json_value(value("name")),
+                    "excel_name_number_format": getattr(
+                        name_cell, "number_format", "General"
+                    ),
+                    "excel_name_normalization": name_normalization,
+                },
             }
-        brand_error_code, brand_error_message = _invalid_brand_reason(brand_cell)
-        if brand_error_code == "brand_date_or_time":
-            # Keep the original cell in raw_values for audit, but never expose a
-            # recognized date label as a normalized product brand.
-            brand = ""
-        if error_code is None and brand_error_code is not None:
-            error_code, error_message = brand_error_code, brand_error_message
+        if error_code is None and not brand and not article:
+            error_code, error_message = (
+                "brand_missing",
+                "Не заполнены бренд и артикул товара.",
+            )
         quantity = None
         if error_code is None:
             try:
@@ -574,7 +758,10 @@ class ExcelReceiptImportService:
         data = {
             "excel_row": excel_row,
             "excel_name": name,
-            "excel_article": text(value("article")),
+            "excel_name_raw": _safe_json_value(value("name")),
+            "excel_name_number_format": getattr(name_cell, "number_format", "General"),
+            "excel_name_normalization": name_normalization,
+            "excel_article": article,
             "excel_brand": brand,
             "category": text(value("category")),
             "stock": quantity if quantity is not None else value("quantity"),
@@ -584,10 +771,6 @@ class ExcelReceiptImportService:
         }
         if error_code is not None:
             status = "error"
-        elif quantity == 0:
-            status = "excluded"
-            error_code = "zero_quantity"
-            error_message = "Нулевое количество: строка явно исключена из прихода."
         else:
             status = "valid"
         return {

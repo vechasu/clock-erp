@@ -458,6 +458,9 @@ class ExcelProductBatchService:
         raw_excel = {
             "excel_row": result.get("excel_row"),
             "excel_name": result.get("excel_name"),
+            "excel_name_raw": result.get("excel_name_raw"),
+            "excel_name_number_format": result.get("excel_name_number_format"),
+            "excel_name_normalization": result.get("excel_name_normalization"),
             "excel_article": result.get("excel_article"),
             "excel_brand": result.get("excel_brand"),
             "category": result.get("category"),
