@@ -23,6 +23,11 @@ EXPECTED_TABLES = {
     "catalog_excel_batch_rows",
     "catalog_excel_stock_operations",
     "catalog_excel_match_audit",
+    "catalog_excel_import_drafts",
+    "catalog_excel_import_draft_rows",
+    "catalog_excel_receipts",
+    "catalog_excel_receipt_rows",
+    "catalog_excel_receipt_operations",
 }
 
 

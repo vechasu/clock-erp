@@ -5,6 +5,7 @@ Bitrix or MoySklad clients and therefore cannot change either external system.
 """
 
 import json
+import sqlite3
 import uuid
 from datetime import datetime, timezone
 
@@ -48,6 +49,10 @@ class BatchBlockedError(ValueError):
     def __init__(self, message, blocked_rows=None):
         ValueError.__init__(self, message)
         self.blocked_rows = list(blocked_rows or [])
+
+
+class ProductDeleteBlockedError(ValueError):
+    pass
 
 
 def utc_now():
@@ -719,6 +724,56 @@ class ExcelProductCatalog:
                 (int(product_id),),
             ).fetchone()
         return self._prepare_product(dict(row)) if row else None
+
+    def delete_product(self, product_id, external_references=None):
+        """Delete only an unreferenced zero-stock card.
+
+        Existing batch, receipt, stock and match records are audit data. They
+        must never be cascaded or detached just to remove a card from the UI.
+        """
+        external_references = list(external_references or [])
+        self.database.initialize()
+        try:
+            with self.database.transaction() as connection:
+                product = connection.execute(
+                    "SELECT * FROM catalog_excel_products WHERE id = ? AND active = 1",
+                    (int(product_id),),
+                ).fetchone()
+                if product is None:
+                    raise ValueError("Товар не найден.")
+
+                references = list(external_references)
+                reference_checks = (
+                    ("приход", "catalog_excel_receipt_rows"),
+                    ("операция прихода", "catalog_excel_receipt_operations"),
+                    ("строка batch-аудита", "catalog_excel_batch_rows"),
+                    ("складская операция", "catalog_excel_stock_operations"),
+                    ("история сопоставления", "catalog_excel_match_audit"),
+                )
+                for label, table in reference_checks:
+                    count = connection.execute(
+                        "SELECT COUNT(*) FROM {} WHERE product_id = ?".format(table),
+                        (int(product_id),),
+                    ).fetchone()[0]
+                    if count:
+                        references.append(label)
+
+                if float(product["stock"] or 0) != 0:
+                    references.append("ненулевой остаток")
+                if references:
+                    raise ProductDeleteBlockedError(
+                        "Товар нельзя удалить: сохранены связанные данные ({0}).".format(
+                            ", ".join(sorted(set(references)))
+                        )
+                    )
+
+                connection.execute(
+                    "DELETE FROM catalog_excel_products WHERE id = ?", (int(product_id),)
+                )
+        except sqlite3.IntegrityError:
+            raise ProductDeleteBlockedError(
+                "Товар нельзя удалить: он используется в связанных документах или аудите."
+            )
 
     def confirm_match(self, product_id, catalog_product_id):
         return self._change_match(product_id, "confirm_bitrix", catalog_product_id)

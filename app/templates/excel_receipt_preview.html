@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>TTT ERP — Предпросмотр прихода</title>
+    {% include "_catalog_styles.html" %}
+    <style>
+        .receipt-preview-head { align-items: flex-start; }
+        .receipt-preview-meta { color: #64748b; font-size: 12px; }
+        .receipt-summary { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
+        .receipt-summary div { padding: 12px; border: 1px solid #e2e8f0; border-radius: 11px; background: #fff; }
+        .receipt-summary span { display: block; color: #64748b; font-size: 11px; }
+        .receipt-summary strong { display: block; margin-top: 4px; font-size: 20px; }
+        .receipt-message { margin-bottom: 12px; padding: 12px 14px; border-radius: 11px; }
+        .receipt-message-error { background: #fef2f2; color: #b91c1c; }
+        .receipt-message-safe { background: #ecfdf5; color: #166534; }
+        .receipt-table-wrap { overflow: auto; border: 1px solid #e2e8f0; border-radius: 13px; background: #fff; }
+        .receipt-table { min-width: 980px; }
+        .receipt-table th { background: #f8fafc; }
+        .receipt-table th, .receipt-table td { padding: 8px 10px; }
+        .receipt-row-error { background: #fff1f2; }
+        .receipt-row-excluded { color: #64748b; background: #f8fafc; }
+        .receipt-status { display: inline-flex; padding: 3px 7px; border-radius: 999px; background: #e2e8f0; font-size: 10px; font-weight: 800; }
+        .receipt-status-valid { background: #dcfce7; color: #166534; }
+        .receipt-status-error { background: #fee2e2; color: #b91c1c; }
+        .receipt-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+        .receipt-confirm-note { margin-top: 7px; color: #64748b; font-size: 11px; }
+        @media (max-width: 760px) {
+            .receipt-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .receipt-table { min-width: 760px; }
+        }
+    </style>
+</head>
+<body>
+<div class="app">
+    {% include "_sidebar.html" %}
+    <main class="main">
+        <div class="page-head receipt-preview-head">
+            <div>
+                <h1 class="page-title">Предпросмотр прихода</h1>
+                <p class="page-note">{{ draft.source_filename }} · лист «{{ draft.sheet_name }}» · заголовки в строке {{ draft.header_row }}</p>
+                <div class="receipt-preview-meta">Файл: {{ draft.file_sha256[:12] }}… · строки Excel сохраняются для аудита</div>
+            </div>
+        </div>
+
+        {% if error %}<div class="receipt-message receipt-message-error" role="alert">{{ error }}</div>{% endif %}
+        {% if draft.error_rows %}
+        <div class="receipt-message receipt-message-error">Проведение заблокировано: исправьте {{ draft.error_rows }} ошибочных строк и загрузите файл снова.</div>
+        {% else %}
+        <div class="receipt-message receipt-message-safe">Предпросмотр готов. Каталог и остатки ещё не изменены.</div>
+        {% endif %}
+
+        <section class="receipt-summary" aria-label="Сводка предпросмотра">
+            <div><span>Валидные позиции</span><strong>{{ draft.valid_rows }}</strong></div>
+            <div><span>Количество</span><strong>{{ '%g'|format(draft.total_quantity) }}</strong></div>
+            <div><span>Сопоставлено</span><strong>{{ draft.matched_rows }}</strong></div>
+            <div><span>Новые</span><strong>{{ draft.new_rows }}</strong></div>
+            <div><span>Ошибки / исключено</span><strong>{{ draft.error_rows }} / {{ draft.excluded_rows }}</strong></div>
+        </section>
+
+        <div class="receipt-table-wrap">
+            <table class="receipt-table">
+                <thead><tr><th>Строка</th><th>Название</th><th>Бренд</th><th>Артикул</th><th>Количество</th><th>Ячейка</th><th>Сопоставление</th><th>Проверка</th></tr></thead>
+                <tbody>
+                {% for row in draft.rows %}
+                <tr class="{% if row.row_status == 'error' %}receipt-row-error{% elif row.row_status == 'excluded' %}receipt-row-excluded{% endif %}">
+                    <td>{{ row.excel_row }}</td>
+                    <td>{{ row.data.get('excel_name') or '—' }}</td>
+                    <td>{{ row.data.get('excel_brand') or '—' }}</td>
+                    <td>{{ row.data.get('excel_article') or '—' }}</td>
+                    <td>{{ row.data.get('stock') if row.data.get('stock') is not none else '—' }}</td>
+                    <td>{{ row.data.get('cell') or '—' }}</td>
+                    <td>{% if row.row_status == 'valid' %}{{ row.data.get('bitrix_name') or ('Новая карточка' if row.match_status not in ['exact', 'high_confidence'] else row.match_status) }}{% else %}—{% endif %}</td>
+                    <td>
+                        <span class="receipt-status receipt-status-{{ row.row_status }}">{{ {'valid':'Готово', 'error':'Ошибка', 'excluded':'Исключено'}.get(row.row_status) }}</span>
+                        {% if row.error_message %}<div>{{ row.error_message }}</div>{% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="receipt-actions">
+            {% if draft.receipt %}
+            <a class="button button-primary" href="{{ url_for('excel_receipt_page', receipt_id=draft.receipt.id) }}">Открыть проведённый приход</a>
+            {% elif draft.status == 'ready' %}
+            <form method="post" action="{{ url_for('excel_receipt_post', draft_id=draft.id) }}">
+                <button class="button button-primary" type="submit">Оформить приход</button>
+                <div class="receipt-confirm-note">Только это подтверждение создаст документ, карточки и операции остатков.</div>
+            </form>
+            {% endif %}
+            <a class="button" href="{{ url_for('excel_receipt_new') }}">Загрузить другой файл</a>
+            <a class="button" href="{{ url_for('excel_products_page') }}">К товарам</a>
+        </div>
+    </main>
+</div>
+</body>
+</html>

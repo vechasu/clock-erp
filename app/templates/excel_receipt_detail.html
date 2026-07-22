@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>TTT ERP — {{ receipt.number }}</title>
+    {% include "_catalog_styles.html" %}
+    <style>
+        .receipt-audit { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
+        .receipt-audit div { padding: 12px; border: 1px solid #e2e8f0; border-radius: 11px; background: #fff; }
+        .receipt-audit span { display: block; color: #64748b; font-size: 11px; }
+        .receipt-audit strong { display: block; margin-top: 4px; }
+        .receipt-lines { overflow: auto; border: 1px solid #e2e8f0; border-radius: 13px; background: #fff; }
+        .receipt-lines table { min-width: 800px; }
+        .receipt-lines th { background: #f8fafc; }
+        .receipt-lines th, .receipt-lines td { padding: 8px 10px; }
+        @media (max-width: 700px) { .receipt-audit { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    </style>
+</head>
+<body>
+<div class="app">
+    {% include "_sidebar.html" %}
+    <main class="main">
+        <div class="page-head">
+            <div><h1 class="page-title">Приход {{ receipt.number }}</h1><p class="page-note">Проведён {{ receipt.posted_at[:19]|replace('T', ' ') }}</p></div>
+            <a class="button button-primary" href="{{ url_for('excel_products_page') }}">К товарам</a>
+        </div>
+        <section class="receipt-audit">
+            <div><span>Источник</span><strong>{{ receipt.source_filename }}</strong></div>
+            <div><span>Позиций</span><strong>{{ receipt.row_count }}</strong></div>
+            <div><span>Количество</span><strong>{{ '%g'|format(receipt.total_quantity) }}</strong></div>
+            <div><span>Операций</span><strong>{{ receipt.operation_rows }}</strong></div>
+        </section>
+        <div class="receipt-lines">
+            <table>
+                <thead><tr><th>Строка Excel</th><th>Название</th><th>Бренд</th><th>Артикул</th><th>Количество</th><th>Было</th><th>Стало</th></tr></thead>
+                <tbody>{% for row in receipt.rows %}<tr><td>{{ row.excel_row }}</td><td>{{ row.excel_name }}</td><td>{{ row.excel_brand }}</td><td>{{ row.excel_article or '—' }}</td><td>{{ '%g'|format(row.quantity) }}</td><td>{{ '%g'|format(row.stock_before) }}</td><td>{{ '%g'|format(row.stock_after) }}</td></tr>{% endfor %}</tbody>
+            </table>
+        </div>
+    </main>
+</div>
+</body>
+</html>

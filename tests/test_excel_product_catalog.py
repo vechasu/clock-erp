@@ -363,7 +363,7 @@ class ExcelProductCatalogTest(unittest.TestCase):
         default_order = self.catalog.list_products(per_page=100)["items"]
         self.assertEqual([item["excel_name_raw"] for item in default_order], ["Alpha", "Beta", "Zulu"])
 
-    def test_products_page_restores_warehouse_ux_without_external_reads(self):
+    def test_products_page_is_simple_daily_workflow_without_external_reads(self):
         self.apply_initial()
         from app import web
         web.app.config["TESTING"] = True
@@ -378,16 +378,125 @@ class ExcelProductCatalogTest(unittest.TestCase):
         for marker in (
             'id="productsSearchInput"', 'id="productsSearchClear"',
             "searchDebounceMs = 350", "history.pushState", "popstate",
-            "vechasuProductsScrollPositionV1", "vechasuProductsColumnWidthsV1",
-            "data-filter-category", "data-filter-cell", "data-sort-field",
-            "Скрыть нулевые", "Массовое редактирование", "Карта склада",
-            "+ Добавить товар", "Фото", "Цена", "Сопоставление",
+            "vechasuProductsScrollPositionV2", "vechasuProductsColumnWidthsV2",
+            'name="brand"', 'name="category"', 'name="cell"', "data-sort-field",
+            "Скрыть нулевые", "Оформить приход", "Добавить товар", "Фото", "Цена",
         ):
             self.assertIn(marker, rendered)
+        for removed in (
+            "Batch registry", "Источник остатков", "Массовое редактирование",
+            "Карта склада", "Сопоставление", "XML_ID", "Excel строка",
+        ):
+            self.assertNotIn(removed, rendered)
         moysklad.assert_not_called()
         bitrix.assert_not_called()
 
-    def test_partial_products_response_keeps_filters_and_new_catalog_fields(self):
+    def test_product_actions_use_edit_form_and_confirmed_delete_urls(self):
+        self.apply_initial()
+        product_id = self.catalog.list_products(query="Watch X1")["items"][0]["id"]
+        from app import web
+        web.app.config["TESTING"] = True
+        with mock.patch.dict("os.environ", {"CATALOG_DATABASE_PATH": str(self.path)}):
+            response = web.app.test_client().get("/products?per_page=100")
+        rendered = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(
+            '<a class="products-action-button" data-product-detail-link '
+            'href="/products/{}?return_to='.format(product_id),
+            rendered,
+        )
+        self.assertIn(
+            'action="/products/{}/delete"'.format(product_id), rendered
+        )
+        self.assertIn(">Редактировать</a>", rendered)
+        self.assertIn(">Удалить</button>", rendered)
+        self.assertIn("return confirm('Удалить этот товар?", rendered)
+        self.assertNotIn(">Открыть</a>", rendered)
+
+    def test_product_delete_requires_confirmation_and_blocks_audit_links(self):
+        self.apply_initial()
+        product_id = self.catalog.list_products(query="Watch X1")["items"][0]["id"]
+        from app import web
+        web.app.config["TESTING"] = True
+        empty_references = (
+            mock.patch.object(web, "load_manual_sales", return_value=[]),
+            mock.patch.object(web, "load_stock_operations", return_value=[]),
+            mock.patch.object(web, "load_receipts", return_value=[]),
+        )
+        with mock.patch.dict("os.environ", {"CATALOG_DATABASE_PATH": str(self.path)}), \
+                empty_references[0], empty_references[1], empty_references[2]:
+            client = web.app.test_client()
+            missing_confirmation = client.post(
+                "/products/{}/delete".format(product_id),
+                data={"return_to": "/products"},
+                follow_redirects=True,
+            )
+            blocked = client.post(
+                "/products/{}/delete".format(product_id),
+                data={"return_to": "/products", "confirm_delete": "1"},
+                follow_redirects=True,
+            )
+        self.assertIn(
+            "требуется явное подтверждение",
+            missing_confirmation.get_data(as_text=True),
+        )
+        self.assertIn("Товар нельзя удалить", blocked.get_data(as_text=True))
+        self.assertIsNotNone(self.catalog.get_product(product_id))
+
+    def test_product_delete_removes_only_unreferenced_zero_stock_card(self):
+        self.service.apply(
+            [result(2, "Unused zero", 0)], "5" * 64, "unused-zero.xlsx"
+        )
+        product_id = self.catalog.list_products(query="Unused zero")["items"][0]["id"]
+        with self.database.connect() as connection:
+            connection.execute(
+                "DELETE FROM catalog_excel_batch_rows WHERE product_id = ?",
+                (product_id,),
+            )
+        from app import web
+        web.app.config["TESTING"] = True
+        related_payloads = (
+            ([{"product_id": str(product_id)}], [], []),
+            ([], [{"product_id": str(product_id)}], []),
+            ([], [], [{"positions": [{"product_id": str(product_id)}]}]),
+        )
+        for sales, operations, receipts in related_payloads:
+            with self.subTest(
+                sales=bool(sales), operations=bool(operations), receipts=bool(receipts)
+            ), mock.patch.dict(
+                "os.environ", {"CATALOG_DATABASE_PATH": str(self.path)}
+            ), mock.patch.object(
+                web, "load_manual_sales", return_value=sales
+            ), mock.patch.object(
+                web, "load_stock_operations", return_value=operations
+            ), mock.patch.object(
+                web, "load_receipts", return_value=receipts
+            ):
+                blocked = web.app.test_client().post(
+                    "/products/{}/delete".format(product_id),
+                    data={"return_to": "/products", "confirm_delete": "1"},
+                    follow_redirects=True,
+                )
+            self.assertIn("Товар нельзя удалить", blocked.get_data(as_text=True))
+            self.assertIsNotNone(self.catalog.get_product(product_id))
+        with mock.patch.dict("os.environ", {"CATALOG_DATABASE_PATH": str(self.path)}), \
+                mock.patch.object(web, "load_manual_sales", return_value=[]), \
+                mock.patch.object(web, "load_stock_operations", return_value=[]), \
+                mock.patch.object(web, "load_receipts", return_value=[]), \
+                mock.patch.object(web, "MoySkladClient") as moysklad, \
+                mock.patch.object(web, "BitrixCatalogReadOnlyClient") as bitrix:
+            response = web.app.test_client().post(
+                "/products/{}/delete".format(product_id),
+                data={"return_to": "/products", "confirm_delete": "1"},
+                follow_redirects=True,
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Товар удалён", response.get_data(as_text=True))
+        self.assertIsNone(self.catalog.get_product(product_id))
+        moysklad.assert_not_called()
+        bitrix.assert_not_called()
+
+    def test_partial_products_response_keeps_daily_catalog_fields_only(self):
         self.apply_initial()
         from app import web
         web.app.config["TESTING"] = True
@@ -399,9 +508,11 @@ class ExcelProductCatalogTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertNotIn("<!doctype html>", rendered.lower())
         self.assertIn('data-products-table', rendered)
-        self.assertIn("Excel строка 2", rendered)
-        self.assertIn("xml-10", rendered)
         self.assertIn("https://example.test/preview.jpg", rendered)
+        self.assertIn("Watch X1", rendered)
+        self.assertNotIn("Excel строка", rendered)
+        self.assertNotIn("xml-10", rendered)
+        self.assertNotIn("Сопоставление", rendered)
 
     def test_product_detail_preserves_safe_return_url(self):
         self.apply_initial()

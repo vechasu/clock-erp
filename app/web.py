@@ -17,7 +17,16 @@ from app.catalog_db import CatalogDatabase
 from app.clients.bitrix_catalog import BitrixCatalogReadOnlyClient, BitrixCatalogReadOnlyError
 from app.services.bitrix_catalog_importer import BitrixCatalogImporter
 from app.services.catalog_reader import CatalogReader
-from app.services.excel_product_catalog import ExcelProductCatalog
+from app.services.excel_product_catalog import (
+    ExcelProductCatalog,
+    ProductDeleteBlockedError,
+)
+from app.services.excel_receipt_import import (
+    MAX_EXCEL_FILE_SIZE,
+    ExcelDraftBlockedError,
+    ExcelDraftError,
+    ExcelReceiptImportService,
+)
 from app.services.moysklad_catalog_mapping import (
     MoySkladCatalogMatcher,
     load_moysklad_products,
@@ -6719,6 +6728,17 @@ def receipt_create():
         request.form.get("import_payload") or ""
     ).strip()
 
+    if raw_import_payload:
+        return redirect(url_for(
+            "receipts_page",
+            notice="error",
+            message=(
+                "Прямое проведение Excel отключено. "
+                "Используйте «Товары» → «Оформить приход»."
+            ),
+            open_receipt_modal="1",
+        ))
+
     import_rows = []
 
     if raw_import_payload:
@@ -8124,6 +8144,44 @@ def _safe_products_return_to(value):
     return url_for("excel_products_page")
 
 
+def _products_redirect_with_notice(return_to, notice, message):
+    separator = "&" if "?" in return_to else "?"
+    return redirect(
+        return_to + separator + urlencode({"notice": notice, "message": message})
+    )
+
+
+def _excel_product_external_references(product_id):
+    product_id = str(int(product_id))
+    references = []
+    if any(
+        str(item.get("product_id") or "") == product_id
+        for item in load_manual_sales()
+        if isinstance(item, dict)
+    ):
+        references.append("продажа")
+    if any(
+        str(item.get("product_id") or "") == product_id
+        for item in load_stock_operations()
+        if isinstance(item, dict)
+    ):
+        references.append("складская операция")
+    for receipt in load_receipts():
+        if not isinstance(receipt, dict):
+            continue
+        if str(receipt.get("product_id") or "") == product_id:
+            references.append("приход")
+            break
+        if any(
+            str(position.get("product_id") or "") == product_id
+            for position in receipt.get("positions") or []
+            if isinstance(position, dict)
+        ):
+            references.append("приход")
+            break
+    return references
+
+
 @app.route("/products")
 def excel_products_page():
     match_status = (request.args.get("match_status") or "all").strip()
@@ -8185,6 +8243,64 @@ def excel_products_page():
     )
 
 
+@app.route("/products/receipts/new")
+def excel_receipt_new():
+    return render_template("excel_receipt_upload.html", error=None)
+
+
+@app.route("/products/receipts/preview", methods=["POST"])
+def excel_receipt_preview():
+    uploaded = request.files.get("file")
+    if uploaded is None or not uploaded.filename:
+        return render_template(
+            "excel_receipt_upload.html", error="Выберите Excel-файл."
+        ), 400
+    file_data = uploaded.stream.read(MAX_EXCEL_FILE_SIZE + 1)
+    try:
+        draft = ExcelReceiptImportService().preview(
+            file_data, uploaded.filename, (request.form.get("sheet") or "").strip() or None,
+        )
+    except ExcelDraftError as error:
+        return render_template("excel_receipt_upload.html", error=str(error)), 400
+    return redirect(url_for("excel_receipt_draft_page", draft_id=draft["id"]))
+
+
+@app.route("/products/receipts/drafts/<draft_id>")
+def excel_receipt_draft_page(draft_id):
+    try:
+        draft = ExcelReceiptImportService().get_draft(draft_id)
+    except ExcelDraftError:
+        abort(404)
+    return render_template("excel_receipt_preview.html", draft=draft, error=None)
+
+
+@app.route("/products/receipts/drafts/<draft_id>/post", methods=["POST"])
+def excel_receipt_post(draft_id):
+    service = ExcelReceiptImportService()
+    try:
+        receipt = service.post(draft_id)
+    except ExcelDraftBlockedError as error:
+        try:
+            draft = service.get_draft(draft_id)
+        except ExcelDraftError:
+            abort(404)
+        return render_template(
+            "excel_receipt_preview.html", draft=draft, error=str(error)
+        ), 409
+    except ExcelDraftError:
+        abort(404)
+    return redirect(url_for("excel_receipt_page", receipt_id=receipt["id"]))
+
+
+@app.route("/products/receipts/<int:receipt_id>")
+def excel_receipt_page(receipt_id):
+    try:
+        receipt = ExcelReceiptImportService().get_receipt(receipt_id)
+    except ExcelDraftError:
+        abort(404)
+    return render_template("excel_receipt_detail.html", receipt=receipt)
+
+
 @app.route("/products/<int:product_id>")
 def excel_product_page(product_id):
     product = ExcelProductCatalog().get_product(product_id)
@@ -8194,6 +8310,25 @@ def excel_product_page(product_id):
         "excel_product_detail.html", product=product, match_labels=EXCEL_MATCH_LABELS,
         return_to=_safe_products_return_to(request.args.get("return_to")),
     )
+
+
+@app.route("/products/<int:product_id>/delete", methods=["POST"])
+def excel_product_delete(product_id):
+    return_to = _safe_products_return_to(request.form.get("return_to"))
+    if request.form.get("confirm_delete") != "1":
+        return _products_redirect_with_notice(
+            return_to, "error", "Удаление отменено: требуется явное подтверждение."
+        )
+    try:
+        ExcelProductCatalog().delete_product(
+            product_id,
+            external_references=_excel_product_external_references(product_id),
+        )
+    except ProductDeleteBlockedError as error:
+        return _products_redirect_with_notice(return_to, "error", str(error))
+    except (TypeError, ValueError):
+        return _products_redirect_with_notice(return_to, "error", "Товар не найден.")
+    return _products_redirect_with_notice(return_to, "success", "Товар удалён.")
 
 
 @app.route("/products/<int:product_id>/match", methods=["POST"])

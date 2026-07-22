@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Preview, safely apply, or roll back an Excel-authoritative product batch."""
+"""Create a receipt draft or roll back a legacy Excel-authoritative batch.
+
+Direct catalog apply is intentionally disabled. A draft must be posted through
+the explicit receipt confirmation workflow in the application.
+"""
 
 import argparse
 import json
@@ -12,10 +16,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.catalog_db import CatalogDatabase  # noqa: E402
 from app.services.excel_product_catalog import ExcelProductBatchService  # noqa: E402
-from scripts.reconcile_bitrix_excel_catalog import (  # noqa: E402
-    build_payload,
-    validate_controls,
-)
+from app.services.excel_receipt_import import ExcelReceiptImportService  # noqa: E402
 
 
 def parse_args():
@@ -40,31 +41,26 @@ def main():
         print(json.dumps({"action": "rollback", "batch": result}, ensure_ascii=False, indent=2))
         return
     if not args.excel:
-        raise SystemExit("--excel is required for preview or apply")
-    payload = build_payload(args.excel, args.catalog_db, args.sheet)
-    if not args.skip_control_check:
-        validate_controls(payload["summary"])
-    if not args.apply:
-        print(json.dumps({
-            "action": "preview_only",
-            "batch": payload["batch"],
-            "summary": payload["summary"],
-            "writes_performed": 0,
-        }, ensure_ascii=False, indent=2, sort_keys=True))
-        return
-    if args.skip_control_check:
-        raise SystemExit("refusing apply with --skip-control-check")
-    expected_sha = payload["batch"]["file_sha256"]
-    if args.confirm_file_sha != expected_sha:
+        raise SystemExit("--excel is required for a receipt draft")
+    if args.apply or args.confirm_file_sha:
         raise SystemExit(
-            "refusing apply: pass --confirm-file-sha {}".format(expected_sha)
+            "direct Excel apply is disabled; open /products and explicitly post "
+            "the validated receipt draft"
         )
-    result = service.apply(
-        payload["rows"], expected_sha, args.excel.name, args.sheet,
+    draft = ExcelReceiptImportService(CatalogDatabase(args.catalog_db)).preview(
+        args.excel.read_bytes(), args.excel.name, args.sheet or None,
     )
     print(json.dumps({
-        "action": "apply_internal_catalog_only",
-        "batch": result,
+        "action": "receipt_draft_only",
+        "draft": {
+            key: draft[key] for key in (
+                "id", "file_sha256", "source_filename", "status", "row_count",
+                "valid_rows", "error_rows", "excluded_rows", "new_rows",
+                "matched_rows", "total_quantity",
+            )
+        },
+        "catalog_writes": 0,
+        "stock_writes": 0,
         "bitrix_writes": 0,
         "moysklad_writes": 0,
     }, ensure_ascii=False, indent=2, sort_keys=True))

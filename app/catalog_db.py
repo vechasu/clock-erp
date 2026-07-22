@@ -341,6 +341,108 @@ CREATE TABLE IF NOT EXISTS catalog_excel_match_audit (
 
 CREATE INDEX IF NOT EXISTS idx_catalog_excel_match_audit_product
     ON catalog_excel_match_audit(product_id, created_at);
+
+CREATE TABLE IF NOT EXISTS catalog_excel_import_drafts (
+    id TEXT PRIMARY KEY,
+    file_sha256 TEXT NOT NULL UNIQUE,
+    source_filename TEXT NOT NULL,
+    source_file BLOB NOT NULL,
+    sheet_name TEXT NOT NULL,
+    header_row INTEGER NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('ready', 'blocked', 'posted')),
+    row_count INTEGER NOT NULL,
+    valid_rows INTEGER NOT NULL,
+    error_rows INTEGER NOT NULL,
+    excluded_rows INTEGER NOT NULL,
+    new_rows INTEGER NOT NULL,
+    matched_rows INTEGER NOT NULL,
+    total_quantity REAL NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    details_json TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE INDEX IF NOT EXISTS idx_catalog_excel_import_drafts_status
+    ON catalog_excel_import_drafts(status, created_at);
+
+CREATE TABLE IF NOT EXISTS catalog_excel_import_draft_rows (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    draft_id TEXT NOT NULL REFERENCES catalog_excel_import_drafts(id) ON DELETE CASCADE,
+    excel_row INTEGER NOT NULL,
+    row_status TEXT NOT NULL CHECK (row_status IN ('valid', 'error', 'excluded')),
+    raw_values_json TEXT NOT NULL,
+    data_json TEXT NOT NULL,
+    error_code TEXT,
+    error_message TEXT,
+    match_status TEXT,
+    match_method TEXT,
+    match_confidence REAL,
+    catalog_product_id INTEGER REFERENCES catalog_products(id) ON DELETE SET NULL,
+    candidates_json TEXT NOT NULL DEFAULT '[]',
+    UNIQUE (draft_id, excel_row)
+);
+
+CREATE INDEX IF NOT EXISTS idx_catalog_excel_import_draft_rows_status
+    ON catalog_excel_import_draft_rows(draft_id, row_status, excel_row);
+
+CREATE TABLE IF NOT EXISTS catalog_excel_receipts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    number TEXT UNIQUE,
+    draft_id TEXT NOT NULL UNIQUE REFERENCES catalog_excel_import_drafts(id),
+    source_filename TEXT NOT NULL,
+    file_sha256 TEXT NOT NULL UNIQUE,
+    sheet_name TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status = 'posted'),
+    row_count INTEGER NOT NULL,
+    total_quantity REAL NOT NULL,
+    new_cards INTEGER NOT NULL,
+    matched_cards INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    posted_at TEXT NOT NULL,
+    details_json TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE INDEX IF NOT EXISTS idx_catalog_excel_receipts_posted
+    ON catalog_excel_receipts(posted_at, id);
+
+CREATE TABLE IF NOT EXISTS catalog_excel_receipt_rows (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    receipt_id INTEGER NOT NULL REFERENCES catalog_excel_receipts(id) ON DELETE CASCADE,
+    draft_row_id INTEGER NOT NULL REFERENCES catalog_excel_import_draft_rows(id),
+    product_id INTEGER NOT NULL REFERENCES catalog_excel_products(id),
+    excel_row INTEGER NOT NULL,
+    excel_name TEXT NOT NULL,
+    excel_article TEXT,
+    excel_brand TEXT NOT NULL,
+    excel_category TEXT,
+    cell TEXT,
+    quantity REAL NOT NULL CHECK (quantity > 0),
+    stock_before REAL NOT NULL,
+    stock_after REAL NOT NULL,
+    created_product INTEGER NOT NULL CHECK (created_product IN (0, 1)),
+    match_status TEXT NOT NULL,
+    bitrix_catalog_product_id INTEGER REFERENCES catalog_products(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE (receipt_id, draft_row_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_catalog_excel_receipt_rows_product
+    ON catalog_excel_receipt_rows(product_id, receipt_id);
+
+CREATE TABLE IF NOT EXISTS catalog_excel_receipt_operations (
+    id TEXT PRIMARY KEY,
+    receipt_id INTEGER NOT NULL REFERENCES catalog_excel_receipts(id) ON DELETE CASCADE,
+    receipt_row_id INTEGER NOT NULL UNIQUE REFERENCES catalog_excel_receipt_rows(id) ON DELETE CASCADE,
+    product_id INTEGER NOT NULL REFERENCES catalog_excel_products(id),
+    stock_before REAL NOT NULL,
+    stock_after REAL NOT NULL,
+    stock_difference REAL NOT NULL CHECK (stock_difference > 0),
+    created_at TEXT NOT NULL,
+    details_json TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE INDEX IF NOT EXISTS idx_catalog_excel_receipt_operations_receipt
+    ON catalog_excel_receipt_operations(receipt_id, created_at);
 """
 
 

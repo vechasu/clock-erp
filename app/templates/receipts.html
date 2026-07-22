@@ -2091,13 +2091,12 @@
                         </p>
                     </div>
 
-                    <button
+                    <a
                         class="button receipt-import-button"
-                        type="button"
-                        onclick="openReceiptImportModal()"
+                        href="{{ url_for('excel_receipt_new') }}"
                     >
                         Импорт из Excel
-                    </button>
+                    </a>
                 </div>
 
                 <div
