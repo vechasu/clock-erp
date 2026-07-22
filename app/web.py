@@ -18,6 +18,12 @@ from app.clients.bitrix_catalog import BitrixCatalogReadOnlyClient, BitrixCatalo
 from app.services.bitrix_catalog_importer import BitrixCatalogImporter
 from app.services.catalog_reader import CatalogReader
 from app.services.excel_product_catalog import ExcelProductCatalog
+from app.services.excel_receipt_import import (
+    MAX_EXCEL_FILE_SIZE,
+    ExcelDraftBlockedError,
+    ExcelDraftError,
+    ExcelReceiptImportService,
+)
 from app.services.moysklad_catalog_mapping import (
     MoySkladCatalogMatcher,
     load_moysklad_products,
@@ -6719,6 +6725,17 @@ def receipt_create():
         request.form.get("import_payload") or ""
     ).strip()
 
+    if raw_import_payload:
+        return redirect(url_for(
+            "receipts_page",
+            notice="error",
+            message=(
+                "Прямое проведение Excel отключено. "
+                "Используйте «Товары» → «Оформить приход»."
+            ),
+            open_receipt_modal="1",
+        ))
+
     import_rows = []
 
     if raw_import_payload:
@@ -8183,6 +8200,64 @@ def excel_products_page():
         category_tree=build_excel_category_tree(catalog["category_groups"]),
         current_products_url=current_products_url,
     )
+
+
+@app.route("/products/receipts/new")
+def excel_receipt_new():
+    return render_template("excel_receipt_upload.html", error=None)
+
+
+@app.route("/products/receipts/preview", methods=["POST"])
+def excel_receipt_preview():
+    uploaded = request.files.get("file")
+    if uploaded is None or not uploaded.filename:
+        return render_template(
+            "excel_receipt_upload.html", error="Выберите Excel-файл."
+        ), 400
+    file_data = uploaded.stream.read(MAX_EXCEL_FILE_SIZE + 1)
+    try:
+        draft = ExcelReceiptImportService().preview(
+            file_data, uploaded.filename, (request.form.get("sheet") or "").strip() or None,
+        )
+    except ExcelDraftError as error:
+        return render_template("excel_receipt_upload.html", error=str(error)), 400
+    return redirect(url_for("excel_receipt_draft_page", draft_id=draft["id"]))
+
+
+@app.route("/products/receipts/drafts/<draft_id>")
+def excel_receipt_draft_page(draft_id):
+    try:
+        draft = ExcelReceiptImportService().get_draft(draft_id)
+    except ExcelDraftError:
+        abort(404)
+    return render_template("excel_receipt_preview.html", draft=draft, error=None)
+
+
+@app.route("/products/receipts/drafts/<draft_id>/post", methods=["POST"])
+def excel_receipt_post(draft_id):
+    service = ExcelReceiptImportService()
+    try:
+        receipt = service.post(draft_id)
+    except ExcelDraftBlockedError as error:
+        try:
+            draft = service.get_draft(draft_id)
+        except ExcelDraftError:
+            abort(404)
+        return render_template(
+            "excel_receipt_preview.html", draft=draft, error=str(error)
+        ), 409
+    except ExcelDraftError:
+        abort(404)
+    return redirect(url_for("excel_receipt_page", receipt_id=receipt["id"]))
+
+
+@app.route("/products/receipts/<int:receipt_id>")
+def excel_receipt_page(receipt_id):
+    try:
+        receipt = ExcelReceiptImportService().get_receipt(receipt_id)
+    except ExcelDraftError:
+        abort(404)
+    return render_template("excel_receipt_detail.html", receipt=receipt)
 
 
 @app.route("/products/<int:product_id>")

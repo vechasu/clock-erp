@@ -363,7 +363,7 @@ class ExcelProductCatalogTest(unittest.TestCase):
         default_order = self.catalog.list_products(per_page=100)["items"]
         self.assertEqual([item["excel_name_raw"] for item in default_order], ["Alpha", "Beta", "Zulu"])
 
-    def test_products_page_restores_warehouse_ux_without_external_reads(self):
+    def test_products_page_is_simple_daily_workflow_without_external_reads(self):
         self.apply_initial()
         from app import web
         web.app.config["TESTING"] = True
@@ -378,16 +378,20 @@ class ExcelProductCatalogTest(unittest.TestCase):
         for marker in (
             'id="productsSearchInput"', 'id="productsSearchClear"',
             "searchDebounceMs = 350", "history.pushState", "popstate",
-            "vechasuProductsScrollPositionV1", "vechasuProductsColumnWidthsV1",
-            "data-filter-category", "data-filter-cell", "data-sort-field",
-            "Скрыть нулевые", "Массовое редактирование", "Карта склада",
-            "+ Добавить товар", "Фото", "Цена", "Сопоставление",
+            "vechasuProductsScrollPositionV2", "vechasuProductsColumnWidthsV2",
+            'name="brand"', 'name="category"', 'name="cell"', "data-sort-field",
+            "Скрыть нулевые", "Оформить приход", "Добавить товар", "Фото", "Цена",
         ):
             self.assertIn(marker, rendered)
+        for removed in (
+            "Batch registry", "Источник остатков", "Массовое редактирование",
+            "Карта склада", "Сопоставление", "XML_ID", "Excel строка",
+        ):
+            self.assertNotIn(removed, rendered)
         moysklad.assert_not_called()
         bitrix.assert_not_called()
 
-    def test_partial_products_response_keeps_filters_and_new_catalog_fields(self):
+    def test_partial_products_response_keeps_daily_catalog_fields_only(self):
         self.apply_initial()
         from app import web
         web.app.config["TESTING"] = True
@@ -399,9 +403,11 @@ class ExcelProductCatalogTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertNotIn("<!doctype html>", rendered.lower())
         self.assertIn('data-products-table', rendered)
-        self.assertIn("Excel строка 2", rendered)
-        self.assertIn("xml-10", rendered)
         self.assertIn("https://example.test/preview.jpg", rendered)
+        self.assertIn("Watch X1", rendered)
+        self.assertNotIn("Excel строка", rendered)
+        self.assertNotIn("xml-10", rendered)
+        self.assertNotIn("Сопоставление", rendered)
 
     def test_product_detail_preserves_safe_return_url(self):
         self.apply_initial()

@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>TTT ERP — Новый приход</title>
+    {% include "_catalog_styles.html" %}
+    <style>
+        .receipt-upload { max-width: 760px; }
+        .receipt-upload-card { padding: 22px; }
+        .receipt-upload-card h2 { margin: 0 0 8px; }
+        .receipt-upload-card p { margin: 0 0 18px; color: #64748b; line-height: 1.55; }
+        .receipt-file-field { display: grid; gap: 8px; margin-bottom: 16px; }
+        .receipt-file-field label { font-size: 13px; font-weight: 800; }
+        .receipt-file-field input { padding: 13px; border: 1px dashed #94a3b8; border-radius: 12px; background: #f8fafc; }
+        .receipt-safe-note { margin-top: 18px; padding: 12px 14px; border-radius: 11px; background: #eff6ff; color: #1e40af; font-size: 12px; }
+        .receipt-error { margin-bottom: 15px; padding: 12px 14px; border-radius: 10px; background: #fef2f2; color: #b91c1c; }
+        .receipt-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    </style>
+</head>
+<body>
+<div class="app">
+    {% include "_sidebar.html" %}
+    <main class="main receipt-upload">
+        <div class="page-head">
+            <div>
+                <h1 class="page-title">Оформить приход</h1>
+                <p class="page-note">Сначала проверьте Excel. Товары и остатки появятся только после отдельного подтверждения.</p>
+            </div>
+        </div>
+        <section class="panel receipt-upload-card">
+            <h2>Проверить Excel</h2>
+            <p>Заголовки можно располагать в любом порядке. Нужны колонки «Название», «Бренд» и «Количество» или «Остаток».</p>
+            {% if error %}<div class="receipt-error" role="alert">{{ error }}</div>{% endif %}
+            <form method="post" action="{{ url_for('excel_receipt_preview') }}" enctype="multipart/form-data">
+                <div class="receipt-file-field">
+                    <label for="receiptExcelFile">Excel-файл</label>
+                    <input id="receiptExcelFile" name="file" type="file" accept=".xlsx,.xlsm" required>
+                </div>
+                <div class="receipt-actions">
+                    <button class="button button-primary" type="submit">Проверить Excel</button>
+                    <a class="button" href="{{ url_for('excel_products_page') }}">Отмена</a>
+                </div>
+            </form>
+            <div class="receipt-safe-note">На этом шаге создаётся только временный черновик. Карточки, остатки и складские операции не изменяются.</div>
+        </section>
+    </main>
+</div>
+</body>
+</html>
