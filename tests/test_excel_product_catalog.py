@@ -57,17 +57,18 @@ def bitrix_product(identity=10, name="Watch X1", brand="Brand"):
 
 
 def result(row, name, stock, status="not_found", product_id=None,
-           alternatives=None, article="", brand="Brand"):
+           alternatives=None, article="", brand="Brand",
+           category="Excel category", cell=None):
     return {
         "excel_row": row,
         "excel_name": name,
         "excel_brand": brand,
         "excel_article": article,
         "article_quality": "code_like" if article else "empty",
-        "category": "Excel category",
+        "category": category,
         "stock": float(stock),
         "stock_valid": True,
-        "cell": "A-{}".format(row),
+        "cell": "A-{}".format(row) if cell is None else cell,
         "product_id": product_id,
         "match_status": status,
         "match_method": "test",
@@ -321,6 +322,113 @@ class ExcelProductCatalogTest(unittest.TestCase):
         self.assertIn("handleProductImageError", rendered)
         self.assertIn("Фото отсутствует", rendered)
         self.assertNotIn("Bitrix Only", rendered)
+
+    def test_search_covers_excel_bitrix_brand_article_cell_and_xml_id(self):
+        self.service.apply(
+            [result(
+                2, "Excel Alias", 5, "exact", self.bitrix_id,
+                article="SKU-10", brand="Excel Brand", cell="CELL-77",
+            )],
+            "7" * 64,
+            "search-fields.xlsx",
+        )
+        for query in (
+            "Excel Alias", "Watch X1", "Excel Brand", "Brand",
+            "SKU-10", "CELL-77", "xml-10",
+        ):
+            with self.subTest(query=query):
+                listing = self.catalog.list_products(query=query)
+                self.assertEqual(listing["total"], 1)
+
+    def test_filters_hide_zero_category_tree_and_sorting_are_compatible(self):
+        self.service.apply(
+            [
+                result(2, "Zulu", 0, brand="Alpha", category="Watches/Sport", cell="A-1"),
+                result(3, "Alpha", 7, brand="Alpha", category="Watches/Classic", cell="A-2"),
+                result(4, "Beta", 2, brand="Beta", category="Accessories", cell=""),
+            ],
+            "6" * 64,
+            "filters.xlsx",
+        )
+        category = self.catalog.list_products(category="Watches", per_page=100)
+        self.assertEqual(category["total"], 2)
+        filtered = self.catalog.list_products(
+            brand="Alpha", category="Watches", hide_zero=True,
+            sort_by="stock", sort_dir="desc", per_page=100,
+        )
+        self.assertEqual([item["excel_name_raw"] for item in filtered["items"]], ["Alpha"])
+        self.assertEqual((filtered["stats"]["positions"], filtered["stats"]["total_stock"]), (1, 7))
+        no_cell = self.catalog.list_products(cell="Без ячейки", per_page=100)
+        self.assertEqual([item["excel_name_raw"] for item in no_cell["items"]], ["Beta"])
+        default_order = self.catalog.list_products(per_page=100)["items"]
+        self.assertEqual([item["excel_name_raw"] for item in default_order], ["Alpha", "Beta", "Zulu"])
+
+    def test_products_page_restores_warehouse_ux_without_external_reads(self):
+        self.apply_initial()
+        from app import web
+        web.app.config["TESTING"] = True
+        with mock.patch.dict("os.environ", {"CATALOG_DATABASE_PATH": str(self.path)}), \
+                mock.patch.object(web, "MoySkladClient") as moysklad, \
+                mock.patch.object(web, "BitrixCatalogReadOnlyClient") as bitrix:
+            response = web.app.test_client().get(
+                "/products?q=Watch&brand=Brand&category=Watches&cell=A-2&hide_zero=1"
+            )
+        rendered = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        for marker in (
+            'id="productsSearchInput"', 'id="productsSearchClear"',
+            "searchDebounceMs = 350", "history.pushState", "popstate",
+            "vechasuProductsScrollPositionV1", "vechasuProductsColumnWidthsV1",
+            "data-filter-category", "data-filter-cell", "data-sort-field",
+            "Скрыть нулевые", "Массовое редактирование", "Карта склада",
+            "+ Добавить товар", "Фото", "Цена", "Сопоставление",
+        ):
+            self.assertIn(marker, rendered)
+        moysklad.assert_not_called()
+        bitrix.assert_not_called()
+
+    def test_partial_products_response_keeps_filters_and_new_catalog_fields(self):
+        self.apply_initial()
+        from app import web
+        web.app.config["TESTING"] = True
+        with mock.patch.dict("os.environ", {"CATALOG_DATABASE_PATH": str(self.path)}):
+            response = web.app.test_client().get(
+                "/products?_partial=1&q=Watch&brand=Brand&sort_by=stock&sort_dir=desc"
+            )
+        rendered = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("<!doctype html>", rendered.lower())
+        self.assertIn('data-products-table', rendered)
+        self.assertIn("Excel строка 2", rendered)
+        self.assertIn("xml-10", rendered)
+        self.assertIn("https://example.test/preview.jpg", rendered)
+
+    def test_product_detail_preserves_safe_return_url(self):
+        self.apply_initial()
+        product_id = self.catalog.list_products(query="Watch X1")["items"][0]["id"]
+        from app import web
+        web.app.config["TESTING"] = True
+        with mock.patch.dict("os.environ", {"CATALOG_DATABASE_PATH": str(self.path)}):
+            client = web.app.test_client()
+            response = client.get(
+                "/products/{}?return_to=%2Fproducts%3Fbrand%3DBrand%26hide_zero%3D1".format(product_id)
+            )
+            unsafe = client.get(
+                "/products/{}?return_to=https%3A%2F%2Fevil.test".format(product_id)
+            )
+        self.assertIn('href="/products?brand=Brand&amp;hide_zero=1"', response.get_data(as_text=True))
+        self.assertIn('href="/products"', unsafe.get_data(as_text=True))
+
+    def test_operational_add_link_opens_preserved_warehouse_form(self):
+        from app import web
+        web.app.config["TESTING"] = True
+        with mock.patch.object(web, "get_warehouse_items", return_value=[]), \
+                mock.patch.object(web, "load_stock_operations", return_value=[]):
+            response = web.app.test_client().get("/warehouse?open_add=1")
+        rendered = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('class="add-card" id="warehouseAddCard"', rendered)
+        self.assertIn('id="warehouseBulkForm"', rendered)
 
 
 if __name__ == "__main__":
