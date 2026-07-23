@@ -253,8 +253,40 @@
             background: white;
             border: 1px solid #e5e7eb;
             border-radius: 16px;
-            overflow: hidden;
+            overflow-x: auto;
+            overflow-y: hidden;
             box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+        }
+
+        .warehouse-table-toolbar {
+            position: sticky;
+            left: 0;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 8px;
+            min-width: 100%;
+            padding: 9px 12px;
+            border-bottom: 1px solid #e5e7eb;
+            background: #ffffff;
+        }
+
+        .warehouse-table-density {
+            width: auto;
+            min-width: 126px;
+            padding: 8px 30px 8px 10px;
+            border-radius: 9px;
+            font-size: 13px;
+        }
+
+        .warehouse-table-reset {
+            padding: 9px 11px;
+            border: 1px solid #dbe3ec;
+            border-radius: 9px;
+            background: #ffffff;
+            color: #475569;
+            font-size: 13px;
+            font-weight: 700;
         }
 
         .warehouse-product-name-cell {
@@ -487,18 +519,113 @@
 
         .warehouse-products-table {
             table-layout: fixed;
+            width: max-content;
+            min-width: 100%;
+            --warehouse-row-height: 74px;
         }
 
         .warehouse-products-table .warehouse-col-photo { width: 72px; }
-        .warehouse-products-table .warehouse-col-name { width: 20%; }
-        .warehouse-products-table .warehouse-col-price { width: 9%; }
-        .warehouse-products-table .warehouse-col-article { width: 11%; }
-        .warehouse-products-table .warehouse-col-brand { width: 10%; }
-        .warehouse-products-table .warehouse-col-category { width: 12%; }
-        .warehouse-products-table .warehouse-col-stock { width: 8%; }
-        .warehouse-products-table .warehouse-col-created { width: 10%; }
-        .warehouse-products-table .warehouse-col-cell { width: 6%; }
-        .warehouse-products-table .warehouse-col-actions { width: 205px; }
+        .warehouse-products-table .warehouse-col-name { width: 230px; }
+        .warehouse-products-table .warehouse-col-price { width: 90px; }
+        .warehouse-products-table .warehouse-col-article { width: 110px; }
+        .warehouse-products-table .warehouse-col-brand { width: 105px; }
+        .warehouse-products-table .warehouse-col-category { width: 125px; }
+        .warehouse-products-table .warehouse-col-stock { width: 90px; }
+        .warehouse-products-table .warehouse-col-created { width: 120px; }
+        .warehouse-products-table .warehouse-col-cell { width: 85px; }
+        .warehouse-products-table .warehouse-col-actions { width: 175px; }
+
+        .warehouse-products-table th {
+            position: relative;
+            overflow: visible;
+            cursor: grab;
+            user-select: none;
+        }
+
+        .warehouse-products-table th:active {
+            cursor: grabbing;
+        }
+
+        .warehouse-products-table td {
+            height: var(--warehouse-row-height);
+            overflow: hidden;
+            vertical-align: middle;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .warehouse-products-table td[data-column-key="name"],
+        .warehouse-products-table td[data-column-key="category"] {
+            white-space: normal;
+            overflow-wrap: anywhere;
+        }
+
+        .warehouse-column-resize-handle {
+            position: absolute;
+            z-index: 4;
+            top: 0;
+            right: -4px;
+            width: 9px;
+            height: 100%;
+            cursor: col-resize;
+            touch-action: none;
+        }
+
+        .warehouse-column-resize-handle::after {
+            position: absolute;
+            top: 22%;
+            right: 4px;
+            width: 1px;
+            height: 56%;
+            background: transparent;
+            content: "";
+        }
+
+        .warehouse-products-table th:hover .warehouse-column-resize-handle::after,
+        body.warehouse-column-resizing .warehouse-column-resize-handle::after {
+            background: #94a3b8;
+        }
+
+        .warehouse-products-table th.warehouse-drop-before::before,
+        .warehouse-products-table th.warehouse-drop-after::after {
+            position: absolute;
+            z-index: 5;
+            top: 0;
+            bottom: 0;
+            width: 3px;
+            border-radius: 3px;
+            background: #2563eb;
+            content: "";
+        }
+
+        .warehouse-products-table th.warehouse-drop-before::before {
+            left: -2px;
+        }
+
+        .warehouse-products-table th.warehouse-drop-after::after {
+            right: -2px;
+        }
+
+        body.warehouse-table-interacting,
+        body.warehouse-table-interacting * {
+            user-select: none !important;
+        }
+
+        body.warehouse-column-resizing,
+        body.warehouse-column-resizing * {
+            cursor: col-resize !important;
+        }
+
+        .warehouse-products-table.warehouse-row-resize-ready tbody,
+        .warehouse-products-table.warehouse-row-resize-ready tbody * {
+            cursor: row-resize;
+        }
+
+        body.warehouse-row-resizing,
+        body.warehouse-row-resizing * {
+            cursor: row-resize !important;
+            user-select: none !important;
+        }
 
         th {
             text-align: left;
@@ -2640,6 +2767,43 @@
             white-space: nowrap;
         }
 
+        .warehouse-products-table th[data-column-key],
+        .warehouse-products-table td[data-column-key] {
+            width: auto;
+            min-width: 0;
+            max-width: none;
+        }
+
+        .warehouse-products-table th[data-column-key="photo"],
+        .warehouse-products-table th[data-column-key="price"],
+        .warehouse-products-table th[data-column-key="article"],
+        .warehouse-products-table th[data-column-key="brand"],
+        .warehouse-products-table th[data-column-key="category"],
+        .warehouse-products-table th[data-column-key="stock"],
+        .warehouse-products-table th[data-column-key="created"],
+        .warehouse-products-table th[data-column-key="cell"],
+        .warehouse-products-table td[data-column-key="photo"],
+        .warehouse-products-table td[data-column-key="price"],
+        .warehouse-products-table td[data-column-key="article"],
+        .warehouse-products-table td[data-column-key="brand"],
+        .warehouse-products-table td[data-column-key="category"],
+        .warehouse-products-table td[data-column-key="stock"],
+        .warehouse-products-table td[data-column-key="created"],
+        .warehouse-products-table td[data-column-key="cell"] {
+            text-align: center;
+        }
+
+        .warehouse-products-table th[data-column-key="actions"],
+        .warehouse-products-table td[data-column-key="actions"] {
+            width: auto;
+            padding-right: 14px;
+            text-align: center;
+        }
+
+        .warehouse-products-table td[data-column-key="actions"] .row-actions {
+            justify-content: center;
+        }
+
         /* Compact product card layout */
         #editDrawer .drawer-header,
         #editDrawer .product-card-layout,
@@ -3341,23 +3505,34 @@
 
             <div class="table-card">
                 {% if items %}
-                    <table class="warehouse-products-table">
+                    <div class="warehouse-table-toolbar">
+                        <label for="warehouseRowDensity">Высота строк</label>
+                        <select id="warehouseRowDensity" class="warehouse-table-density">
+                            <option value="compact">Компактно</option>
+                            <option value="normal" selected>Обычно</option>
+                            <option value="spacious">Просторно</option>
+                        </select>
+                        <button id="warehouseTableReset" class="warehouse-table-reset" type="button">
+                            Сбросить вид
+                        </button>
+                    </div>
+                    <table id="warehouseProductsTable" class="warehouse-products-table">
                         <colgroup>
-                            <col class="warehouse-col-photo">
-                            <col class="warehouse-col-name">
-                            <col class="warehouse-col-price">
-                            <col class="warehouse-col-article">
-                            <col class="warehouse-col-brand">
-                            <col class="warehouse-col-category">
-                            <col class="warehouse-col-stock">
-                            <col class="warehouse-col-created">
-                            <col class="warehouse-col-cell">
-                            <col class="warehouse-col-actions">
+                            <col class="warehouse-col-photo" data-column-key="photo">
+                            <col class="warehouse-col-name" data-column-key="name">
+                            <col class="warehouse-col-price" data-column-key="price">
+                            <col class="warehouse-col-article" data-column-key="article">
+                            <col class="warehouse-col-brand" data-column-key="brand">
+                            <col class="warehouse-col-category" data-column-key="category">
+                            <col class="warehouse-col-stock" data-column-key="stock">
+                            <col class="warehouse-col-created" data-column-key="created">
+                            <col class="warehouse-col-cell" data-column-key="cell">
+                            <col class="warehouse-col-actions" data-column-key="actions">
                         </colgroup>
                         <thead>
                             <tr>
-                                <th>Фото</th>
-                                <th>
+                                <th data-column-key="photo">Фото</th>
+                                <th data-column-key="name">
                                     <input
                                         id="warehouseSelectAll"
                                         class="warehouse-row-select"
@@ -3379,9 +3554,9 @@
                                     </span>
                                 </th>
 
-                                <th>Цена</th>
+                                <th data-column-key="price">Цена</th>
 
-                                <th>
+                                <th data-column-key="article">
                                     <span
                                         class="warehouse-sort-label{% if sort_by == 'article' %} is-active{% endif %}"
                                         data-sort-field="article"
@@ -3397,7 +3572,7 @@
                                     </span>
                                 </th>
 
-                                <th>
+                                <th data-column-key="brand">
                                     <span
                                         class="warehouse-sort-label{% if sort_by == 'brand' %} is-active{% endif %}"
                                         data-sort-field="brand"
@@ -3413,7 +3588,7 @@
                                     </span>
                                 </th>
 
-                                <th>
+                                <th data-column-key="category">
                                     <span
                                         class="warehouse-sort-label{% if sort_by == 'category' %} is-active{% endif %}"
                                         data-sort-field="category"
@@ -3429,7 +3604,7 @@
                                     </span>
                                 </th>
 
-                                <th>
+                                <th data-column-key="stock">
                                     <div class="stock-column-title">
                                         <span
                                             class="warehouse-sort-label{% if sort_by == 'stock' %} is-active{% endif %}"
@@ -3487,7 +3662,7 @@
                                     </div>
                                 </th>
 
-                                <th class="created-column">
+                                <th class="created-column" data-column-key="created">
                                     <span
                                         class="warehouse-sort-label{% if sort_by == 'created_at' %} is-active{% endif %}"
                                         data-sort-field="created_at"
@@ -3503,7 +3678,7 @@
                                     </span>
                                 </th>
 
-                                <th>
+                                <th data-column-key="cell">
                                     <span
                                         class="warehouse-sort-label{% if sort_by == 'cell' %} is-active{% endif %}"
                                         data-sort-field="cell"
@@ -3519,19 +3694,20 @@
                                     </span>
                                 </th>
 
-                                <th>Действие</th>
+                                <th data-column-key="actions">Действие</th>
                             </tr>
                         </thead>
 
                         <tbody>
                             {% for item in items %}
                                 <tr
+                                    data-product-id="{{ item.id }}"
                                     data-stock="{{ item.stock }}"
                                     data-name="{{ item.name|lower|e }}"
                                     data-article="{{ (item.article or '')|lower|e }}"
                                     {% if hide_zero and item.stock <= 0 %}hidden{% endif %}
                                 >
-                                    <td>
+                                    <td data-column-key="photo">
                                         {% if item.thumbnail_url %}
                                             <img
                                                 class="warehouse-product-thumb"
@@ -3546,7 +3722,7 @@
                                         {% endif %}
                                     </td>
 
-                                    <td>
+                                    <td data-column-key="name">
                                         <div class="warehouse-product-name-cell">
                                             <input
                                                 class="warehouse-row-select js-warehouse-product-select"
@@ -3560,27 +3736,27 @@
                                         </div>
                                     </td>
 
-                                    <td>{{ item.price_display or "—" }}</td>
+                                    <td data-column-key="price">{{ item.price_display or "—" }}</td>
 
-                                    <td>{{ item.article or "—" }}</td>
+                                    <td data-column-key="article">{{ item.article or "—" }}</td>
 
-                                    <td>{{ item.brand or "Без бренда" }}</td>
+                                    <td data-column-key="brand">{{ item.brand or "Без бренда" }}</td>
 
-                                    <td>{{ item.category or "Без категории" }}</td>
+                                    <td data-column-key="category">{{ item.category or "Без категории" }}</td>
 
-                                    <td class="{% if item.stock <= 0 %}stock-zero{% else %}stock-good{% endif %}">
+                                    <td data-column-key="stock" class="{% if item.stock <= 0 %}stock-zero{% else %}stock-good{% endif %}">
                                         {{ item.stock_display }}
                                     </td>
 
-                                    <td class="created-column">
+                                    <td class="created-column" data-column-key="created">
                                         {{ item.created_at_display }}
                                     </td>
 
-                                    <td>
+                                    <td data-column-key="cell">
                                         <div>{{ item.cell or "—" }}</div>
                                     </td>
 
-                                    <td>
+                                    <td data-column-key="actions">
                                         {% if item.id %}
                                             <div class="row-actions">
                                                 <button
@@ -4337,6 +4513,7 @@
                 if (nextTable && currentTable) {
                     currentTable.innerHTML = nextTable.innerHTML;
                     bindWarehouseSelectionHandlers();
+                    initializeWarehouseTableView();
                     filterWarehouseRows();
                 }
             } catch (error) {
@@ -4935,7 +5112,270 @@
 
 
     <script>
+        const warehouseTableStorageKey = "vechasu.warehouse.table-view.v1";
+        const warehouseTableDefaults = {
+            order: ["photo", "name", "price", "article", "brand", "category", "stock", "created", "cell", "actions"],
+            widths: { photo: 72, name: 230, price: 90, article: 110, brand: 105, category: 125, stock: 90, created: 120, cell: 85, actions: 175 },
+            density: "normal"
+        };
+        const warehouseTableMinimumWidths = {
+            photo: 68, name: 150, price: 90, article: 100, brand: 110,
+            category: 120, stock: 90, created: 120, cell: 85, actions: 145
+        };
+        const warehouseTableDensityHeights = {
+            compact: 58, normal: 74, spacious: 94
+        };
+        let warehouseTableSuppressSortUntil = 0;
+
+        function readWarehouseTableView() {
+            try {
+                const saved = JSON.parse(localStorage.getItem(warehouseTableStorageKey) || "{}");
+                return {
+                    order: Array.isArray(saved.order) ? saved.order : warehouseTableDefaults.order.slice(),
+                    widths: Object.assign({}, warehouseTableDefaults.widths, saved.widths || {}),
+                    density: warehouseTableDensityHeights[saved.density] ? saved.density : "normal",
+                    rowHeights: saved.rowHeights || {}
+                };
+            } catch (error) {
+                return {
+                    order: warehouseTableDefaults.order.slice(),
+                    widths: Object.assign({}, warehouseTableDefaults.widths),
+                    density: "normal",
+                    rowHeights: {}
+                };
+            }
+        }
+
+        function saveWarehouseTableView(view) {
+            localStorage.setItem(warehouseTableStorageKey, JSON.stringify(view));
+        }
+
+        function applyWarehouseColumnOrder(table, order) {
+            const safeOrder = order.filter((key) => warehouseTableDefaults.order.includes(key));
+            warehouseTableDefaults.order.forEach(function(key) {
+                if (!safeOrder.includes(key)) safeOrder.push(key);
+            });
+            table.querySelectorAll("tr").forEach(function(row) {
+                safeOrder.forEach(function(key) {
+                    const cell = row.querySelector('[data-column-key="' + key + '"]');
+                    if (cell) row.appendChild(cell);
+                });
+            });
+            const colgroup = table.querySelector("colgroup");
+            if (colgroup) {
+                safeOrder.forEach(function(key) {
+                    const column = colgroup.querySelector('[data-column-key="' + key + '"]');
+                    if (column) colgroup.appendChild(column);
+                });
+            }
+            return safeOrder;
+        }
+
+        function applyWarehouseTableWidths(table, widths) {
+            let totalWidth = 0;
+            warehouseTableDefaults.order.forEach(function(key) {
+                const width = Math.max(
+                    warehouseTableMinimumWidths[key],
+                    Number(widths[key]) || warehouseTableDefaults.widths[key]
+                );
+                const column = table.querySelector('col[data-column-key="' + key + '"]');
+                if (column) column.style.width = width + "px";
+                widths[key] = width;
+                totalWidth += width;
+            });
+            table.style.width = totalWidth + "px";
+        }
+
+        function initializeWarehouseTableView() {
+            const table = document.getElementById("warehouseProductsTable");
+            if (!table || table.dataset.viewReady === "1") return;
+
+            if (window.warehouseTableViewController) {
+                window.warehouseTableViewController.abort();
+            }
+            window.warehouseTableViewController = new AbortController();
+            const viewSignal = window.warehouseTableViewController.signal;
+            table.dataset.viewReady = "1";
+            const view = readWarehouseTableView();
+            view.order = applyWarehouseColumnOrder(table, view.order);
+            applyWarehouseTableWidths(table, view.widths);
+            table.style.setProperty("--warehouse-row-height", warehouseTableDensityHeights[view.density] + "px");
+            table.querySelectorAll("tbody tr").forEach(function(row) {
+                const savedHeight = Number(view.rowHeights[row.dataset.productId]);
+                if (savedHeight) {
+                    row.style.setProperty(
+                        "--warehouse-row-height",
+                        Math.max(44, savedHeight) + "px"
+                    );
+                }
+            });
+
+            const densitySelect = document.getElementById("warehouseRowDensity");
+            if (densitySelect) {
+                densitySelect.value = view.density;
+                densitySelect.addEventListener("change", function() {
+                    view.density = this.value;
+                    view.rowHeights = {};
+                    table.querySelectorAll("tbody tr").forEach((row) => {
+                        row.style.removeProperty("--warehouse-row-height");
+                    });
+                    table.style.setProperty("--warehouse-row-height", warehouseTableDensityHeights[view.density] + "px");
+                    saveWarehouseTableView(view);
+                });
+            }
+
+            const resetButton = document.getElementById("warehouseTableReset");
+            if (resetButton) {
+                resetButton.addEventListener("click", function() {
+                    localStorage.removeItem(warehouseTableStorageKey);
+                    view.order = warehouseTableDefaults.order.slice();
+                    view.widths = Object.assign({}, warehouseTableDefaults.widths);
+                    view.density = "normal";
+                    view.rowHeights = {};
+                    applyWarehouseColumnOrder(table, view.order);
+                    applyWarehouseTableWidths(table, view.widths);
+                    table.style.setProperty("--warehouse-row-height", "74px");
+                    table.querySelectorAll("tbody tr").forEach((row) => {
+                        row.style.removeProperty("--warehouse-row-height");
+                    });
+                    if (densitySelect) densitySelect.value = "normal";
+                });
+            }
+
+            table.querySelectorAll("thead th[data-column-key]").forEach(function(header) {
+                const handle = document.createElement("span");
+                handle.className = "warehouse-column-resize-handle";
+                handle.setAttribute("aria-hidden", "true");
+                header.appendChild(handle);
+                handle.addEventListener("pointerdown", function(event) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const key = header.dataset.columnKey;
+                    const startX = event.clientX;
+                    const startWidth = header.getBoundingClientRect().width;
+                    document.body.classList.add("warehouse-table-interacting", "warehouse-column-resizing");
+                    function resizeColumn(moveEvent) {
+                        view.widths[key] = Math.max(
+                            warehouseTableMinimumWidths[key],
+                            Math.round(startWidth + moveEvent.clientX - startX)
+                        );
+                        applyWarehouseTableWidths(table, view.widths);
+                    }
+                    function finishResize() {
+                        document.body.classList.remove("warehouse-table-interacting", "warehouse-column-resizing");
+                        saveWarehouseTableView(view);
+                        window.removeEventListener("pointermove", resizeColumn);
+                    }
+                    window.addEventListener("pointermove", resizeColumn, { signal: viewSignal });
+                    window.addEventListener("pointerup", finishResize, { once: true, signal: viewSignal });
+                });
+            });
+
+            let dragState = null;
+            table.querySelector("thead").addEventListener("pointerdown", function(event) {
+                if (event.button !== 0 || event.target.closest("input, button, form, label, .warehouse-column-resize-handle")) return;
+                const header = event.target.closest("th[data-column-key]");
+                if (header) {
+                    dragState = { header: header, startX: event.clientX, dragging: false, target: null, after: false };
+                }
+            });
+            window.addEventListener("pointermove", function(event) {
+                if (!dragState) return;
+                if (!dragState.dragging && Math.abs(event.clientX - dragState.startX) < 6) return;
+                dragState.dragging = true;
+                document.body.classList.add("warehouse-table-interacting");
+                table.querySelectorAll(".warehouse-drop-before, .warehouse-drop-after").forEach(function(header) {
+                    header.classList.remove("warehouse-drop-before", "warehouse-drop-after");
+                });
+                const element = document.elementFromPoint(event.clientX, event.clientY);
+                const target = element ? element.closest("th[data-column-key]") : null;
+                if (!target || target === dragState.header) {
+                    dragState.target = null;
+                    return;
+                }
+                const rect = target.getBoundingClientRect();
+                dragState.target = target;
+                dragState.after = event.clientX > rect.left + rect.width / 2;
+                target.classList.add(dragState.after ? "warehouse-drop-after" : "warehouse-drop-before");
+            }, { signal: viewSignal });
+            window.addEventListener("pointerup", function() {
+                if (!dragState) return;
+                if (dragState.dragging) {
+                    warehouseTableSuppressSortUntil = Date.now() + 350;
+                    const sourceKey = dragState.header.dataset.columnKey;
+                    const targetKey = dragState.target ? dragState.target.dataset.columnKey : null;
+                    if (targetKey) {
+                        const order = view.order.filter((key) => key !== sourceKey);
+                        let targetIndex = order.indexOf(targetKey);
+                        if (dragState.after) targetIndex += 1;
+                        order.splice(targetIndex, 0, sourceKey);
+                        view.order = applyWarehouseColumnOrder(table, order);
+                        saveWarehouseTableView(view);
+                    }
+                    table.querySelectorAll(".warehouse-drop-before, .warehouse-drop-after").forEach(function(header) {
+                        header.classList.remove("warehouse-drop-before", "warehouse-drop-after");
+                    });
+                    document.body.classList.remove("warehouse-table-interacting");
+                }
+                dragState = null;
+            }, { signal: viewSignal });
+            table.addEventListener("click", function(event) {
+                if (Date.now() < warehouseTableSuppressSortUntil) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                }
+            }, true);
+
+            let rowResizeState = null;
+            const tableBody = table.querySelector("tbody");
+            tableBody.addEventListener("pointermove", function(event) {
+                const row = event.target.closest("tr[data-product-id]");
+                const nearEdge = row
+                    && row.getBoundingClientRect().bottom - event.clientY <= 6
+                    && !event.target.closest("button, input, a, form");
+                table.classList.toggle(
+                    "warehouse-row-resize-ready",
+                    Boolean(nearEdge)
+                );
+            });
+            tableBody.addEventListener("pointerleave", function() {
+                if (!rowResizeState) {
+                    table.classList.remove("warehouse-row-resize-ready");
+                }
+            });
+            tableBody.addEventListener("pointerdown", function(event) {
+                const row = event.target.closest("tr[data-product-id]");
+                if (!row || event.target.closest("button, input, a, form") || row.getBoundingClientRect().bottom - event.clientY > 6) return;
+                event.preventDefault();
+                rowResizeState = {
+                    row: row,
+                    startY: event.clientY,
+                    startHeight: row.getBoundingClientRect().height
+                };
+                document.body.classList.add("warehouse-row-resizing");
+            });
+            window.addEventListener("pointermove", function(event) {
+                if (!rowResizeState) return;
+                const height = Math.max(44, Math.round(
+                    rowResizeState.startHeight + event.clientY - rowResizeState.startY
+                ));
+                rowResizeState.row.style.setProperty(
+                    "--warehouse-row-height",
+                    height + "px"
+                );
+                view.rowHeights[rowResizeState.row.dataset.productId] = height;
+            }, { signal: viewSignal });
+            window.addEventListener("pointerup", function() {
+                if (!rowResizeState) return;
+                saveWarehouseTableView(view);
+                rowResizeState = null;
+                table.classList.remove("warehouse-row-resize-ready");
+                document.body.classList.remove("warehouse-row-resizing");
+            }, { signal: viewSignal });
+        }
+
         function sortWarehouseTable(field) {
+            if (Date.now() < warehouseTableSuppressSortUntil) return;
             const tableBody = document.querySelector(".table-card tbody");
 
             if (!tableBody) {
@@ -4951,18 +5391,20 @@
                     ? "desc"
                     : "asc";
 
-            const columnIndexes = {
-                name: 1,
-                article: 3,
-                brand: 4,
-                category: 5,
-                stock: 6,
-                created_at: 7,
-                cell: 8
+            const columnKeys = {
+                name: "name",
+                article: "article",
+                brand: "brand",
+                category: "category",
+                stock: "stock",
+                created_at: "created",
+                cell: "cell"
             };
 
-            const getCellText = (row, index) => {
-                const cell = row.cells[index];
+            const getCellText = (row, key) => {
+                const cell = row.querySelector(
+                    '[data-column-key="' + key + '"]'
+                );
                 return cell ? cell.textContent.trim() : "";
             };
 
@@ -4974,7 +5416,7 @@
                 if (field === "created_at") {
                     const value = getCellText(
                         row,
-                        columnIndexes.created_at
+                        columnKeys.created_at
                     );
 
                     const match = value.match(
@@ -4994,7 +5436,7 @@
 
                 return getCellText(
                     row,
-                    columnIndexes[field]
+                    columnKeys[field]
                 ).toLocaleLowerCase("ru");
             };
 
@@ -5069,6 +5511,11 @@
                 "/warehouse?" + params.toString()
             );
         }
+
+        document.addEventListener(
+            "DOMContentLoaded",
+            initializeWarehouseTableView
+        );
     </script>
 
 
