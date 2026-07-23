@@ -258,37 +258,6 @@
             box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
         }
 
-        .warehouse-table-toolbar {
-            position: sticky;
-            left: 0;
-            display: flex;
-            align-items: center;
-            justify-content: flex-end;
-            gap: 8px;
-            min-width: 100%;
-            padding: 9px 12px;
-            border-bottom: 1px solid #e5e7eb;
-            background: #ffffff;
-        }
-
-        .warehouse-table-density {
-            width: auto;
-            min-width: 126px;
-            padding: 8px 30px 8px 10px;
-            border-radius: 9px;
-            font-size: 13px;
-        }
-
-        .warehouse-table-reset {
-            padding: 9px 11px;
-            border: 1px solid #dbe3ec;
-            border-radius: 9px;
-            background: #ffffff;
-            color: #475569;
-            font-size: 13px;
-            font-weight: 700;
-        }
-
         .warehouse-product-name-cell {
             display: flex;
             align-items: center;
@@ -552,16 +521,6 @@
             vertical-align: middle;
             text-overflow: ellipsis;
             white-space: nowrap;
-        }
-
-        .warehouse-products-table[data-row-density="compact"] td {
-            padding-top: 7px;
-            padding-bottom: 7px;
-        }
-
-        .warehouse-products-table[data-row-density="spacious"] td {
-            padding-top: 20px;
-            padding-bottom: 20px;
         }
 
         .warehouse-products-table td[data-column-key="name"],
@@ -3515,17 +3474,6 @@
 
             <div class="table-card">
                 {% if items %}
-                    <div class="warehouse-table-toolbar">
-                        <label for="warehouseRowDensity">Высота строк</label>
-                        <select id="warehouseRowDensity" class="warehouse-table-density">
-                            <option value="compact">Компактно</option>
-                            <option value="normal" selected>Обычно</option>
-                            <option value="spacious">Просторно</option>
-                        </select>
-                        <button id="warehouseTableReset" class="warehouse-table-reset" type="button">
-                            Сбросить вид
-                        </button>
-                    </div>
                     <table id="warehouseProductsTable" class="warehouse-products-table">
                         <colgroup>
                             <col class="warehouse-col-photo" data-column-key="photo">
@@ -5125,15 +5073,11 @@
         const warehouseTableStorageKey = "vechasu.warehouse.table-view.v1";
         const warehouseTableDefaults = {
             order: ["photo", "name", "price", "article", "brand", "category", "stock", "created", "cell", "actions"],
-            widths: { photo: 72, name: 230, price: 90, article: 110, brand: 105, category: 125, stock: 90, created: 120, cell: 85, actions: 175 },
-            density: "normal"
+            widths: { photo: 72, name: 230, price: 90, article: 110, brand: 105, category: 125, stock: 90, created: 120, cell: 85, actions: 175 }
         };
         const warehouseTableMinimumWidths = {
             photo: 68, name: 150, price: 90, article: 100, brand: 110,
             category: 120, stock: 90, created: 120, cell: 85, actions: 145
-        };
-        const warehouseTableDensityHeights = {
-            compact: 58, normal: 74, spacious: 94
         };
         let warehouseTableSuppressSortUntil = 0;
 
@@ -5143,14 +5087,12 @@
                 return {
                     order: Array.isArray(saved.order) ? saved.order : warehouseTableDefaults.order.slice(),
                     widths: Object.assign({}, warehouseTableDefaults.widths, saved.widths || {}),
-                    density: warehouseTableDensityHeights[saved.density] ? saved.density : "normal",
                     rowHeights: saved.rowHeights || {}
                 };
             } catch (error) {
                 return {
                     order: warehouseTableDefaults.order.slice(),
                     widths: Object.assign({}, warehouseTableDefaults.widths),
-                    density: "normal",
                     rowHeights: {}
                 };
             }
@@ -5209,8 +5151,6 @@
             const view = readWarehouseTableView();
             view.order = applyWarehouseColumnOrder(table, view.order);
             applyWarehouseTableWidths(table, view.widths);
-            table.dataset.rowDensity = view.density;
-            table.style.setProperty("--warehouse-row-height", warehouseTableDensityHeights[view.density] + "px");
             table.querySelectorAll("tbody tr").forEach(function(row) {
                 const savedHeight = Number(view.rowHeights[row.dataset.productId]);
                 if (savedHeight) {
@@ -5220,40 +5160,6 @@
                     );
                 }
             });
-
-            const densitySelect = document.getElementById("warehouseRowDensity");
-            if (densitySelect) {
-                densitySelect.value = view.density;
-                densitySelect.addEventListener("change", function() {
-                    view.density = this.value;
-                    view.rowHeights = {};
-                    table.dataset.rowDensity = view.density;
-                    table.querySelectorAll("tbody tr").forEach((row) => {
-                        row.style.removeProperty("--warehouse-row-height");
-                    });
-                    table.style.setProperty("--warehouse-row-height", warehouseTableDensityHeights[view.density] + "px");
-                    saveWarehouseTableView(view);
-                });
-            }
-
-            const resetButton = document.getElementById("warehouseTableReset");
-            if (resetButton) {
-                resetButton.addEventListener("click", function() {
-                    localStorage.removeItem(warehouseTableStorageKey);
-                    view.order = warehouseTableDefaults.order.slice();
-                    view.widths = Object.assign({}, warehouseTableDefaults.widths);
-                    view.density = "normal";
-                    view.rowHeights = {};
-                    table.dataset.rowDensity = "normal";
-                    applyWarehouseColumnOrder(table, view.order);
-                    applyWarehouseTableWidths(table, view.widths);
-                    table.style.setProperty("--warehouse-row-height", "74px");
-                    table.querySelectorAll("tbody tr").forEach((row) => {
-                        row.style.removeProperty("--warehouse-row-height");
-                    });
-                    if (densitySelect) densitySelect.value = "normal";
-                });
-            }
 
             table.querySelectorAll("thead th[data-column-key]").forEach(function(header) {
                 const handle = document.createElement("span");
