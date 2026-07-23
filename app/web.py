@@ -1035,6 +1035,8 @@ def warehouse_page():
     selected_category = request.args.get("category", "").strip()
     selected_brand = request.args.get("brand", "").strip()
     selected_cell = request.args.get("cell", "").strip()
+    created_date_from = request.args.get("date_from", "").strip()
+    created_date_to = request.args.get("date_to", "").strip()
     hide_zero = request.args.get("hide_zero", "").strip() == "1"
     sort_by = request.args.get("sort_by", "name").strip()
     sort_dir = request.args.get("sort_dir", "asc").strip()
@@ -1054,6 +1056,21 @@ def warehouse_page():
 
     if sort_dir not in {"asc", "desc"}:
         sort_dir = "asc"
+
+    for value_name, value in (
+        ("created_date_from", created_date_from),
+        ("created_date_to", created_date_to),
+    ):
+        try:
+            time.strptime(value, "%Y-%m-%d")
+        except (TypeError, ValueError):
+            if value_name == "created_date_from":
+                created_date_from = ""
+            else:
+                created_date_to = ""
+
+    if created_date_from and created_date_to and created_date_from > created_date_to:
+        created_date_from, created_date_to = created_date_to, created_date_from
 
     all_items = get_excel_warehouse_items()
     brand_groups = build_brand_groups(all_items)
@@ -1086,6 +1103,23 @@ def warehouse_page():
                 item for item in items
                 if (item.get("cell") or "").strip() == selected_cell
             ]
+
+    if created_date_from or created_date_to:
+        filtered_items = []
+        for item in items:
+            created_at = float(item.get("created_at") or 0)
+            if created_at <= 0:
+                continue
+            local_created_date = time.strftime(
+                "%Y-%m-%d",
+                time.localtime(created_at),
+            )
+            if created_date_from and local_created_date < created_date_from:
+                continue
+            if created_date_to and local_created_date > created_date_to:
+                continue
+            filtered_items.append(item)
+        items = filtered_items
 
     if sort_by == "created_at":
         items_with_time = [
@@ -1167,6 +1201,8 @@ def warehouse_page():
         selected_category=selected_category,
         selected_brand=selected_brand,
         selected_cell=selected_cell,
+        created_date_from=created_date_from,
+        created_date_to=created_date_to,
         hide_zero=hide_zero,
         open_add=request.args.get("open_add") == "1",
         sort_by=sort_by,
