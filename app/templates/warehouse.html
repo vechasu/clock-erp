@@ -554,6 +554,16 @@
             white-space: nowrap;
         }
 
+        .warehouse-products-table[data-row-density="compact"] td {
+            padding-top: 7px;
+            padding-bottom: 7px;
+        }
+
+        .warehouse-products-table[data-row-density="spacious"] td {
+            padding-top: 20px;
+            padding-bottom: 20px;
+        }
+
         .warehouse-products-table td[data-column-key="name"],
         .warehouse-products-table td[data-column-key="category"] {
             white-space: normal;
@@ -5199,6 +5209,7 @@
             const view = readWarehouseTableView();
             view.order = applyWarehouseColumnOrder(table, view.order);
             applyWarehouseTableWidths(table, view.widths);
+            table.dataset.rowDensity = view.density;
             table.style.setProperty("--warehouse-row-height", warehouseTableDensityHeights[view.density] + "px");
             table.querySelectorAll("tbody tr").forEach(function(row) {
                 const savedHeight = Number(view.rowHeights[row.dataset.productId]);
@@ -5216,6 +5227,7 @@
                 densitySelect.addEventListener("change", function() {
                     view.density = this.value;
                     view.rowHeights = {};
+                    table.dataset.rowDensity = view.density;
                     table.querySelectorAll("tbody tr").forEach((row) => {
                         row.style.removeProperty("--warehouse-row-height");
                     });
@@ -5232,6 +5244,7 @@
                     view.widths = Object.assign({}, warehouseTableDefaults.widths);
                     view.density = "normal";
                     view.rowHeights = {};
+                    table.dataset.rowDensity = "normal";
                     applyWarehouseColumnOrder(table, view.order);
                     applyWarehouseTableWidths(table, view.widths);
                     table.style.setProperty("--warehouse-row-height", "74px");
