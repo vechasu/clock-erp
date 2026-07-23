@@ -1,6 +1,7 @@
 import json
 import re
 import tempfile
+import time
 import unittest
 from datetime import datetime, timedelta
 from io import BytesIO
@@ -637,6 +638,40 @@ class OwnerFeedbackTest(unittest.TestCase):
         self.assertIn("normalizeBrandSearch", html)
         self.assertIn('event.key === "ArrowDown"', html)
         self.assertNotIn('id="warehouseBrandOptions"', html)
+
+    def test_warehouse_filters_created_date_range_in_local_time(self):
+        first = warehouse_item()
+        first.update(
+            id="11111111-1111-1111-1111-111111111111",
+            name="Часы 22 июля",
+            created_at=time.mktime(
+                time.strptime("2026-07-22 23:30", "%Y-%m-%d %H:%M")
+            ),
+        )
+        second = warehouse_item()
+        second.update(
+            id="22222222-2222-2222-2222-222222222222",
+            name="Часы 23 июля",
+            created_at=time.mktime(
+                time.strptime("2026-07-23 00:30", "%Y-%m-%d %H:%M")
+            ),
+        )
+
+        with mock.patch.object(
+            web, "get_excel_warehouse_items", return_value=[first, second]
+        ):
+            page = self.client.get(
+                "/warehouse?date_from=2026-07-22&date_to=2026-07-22"
+                "&brand=Brand"
+            )
+
+        html = page.get_data(as_text=True)
+        self.assertEqual(page.status_code, 200)
+        self.assertIn("Часы 22 июля", html)
+        self.assertNotIn("Часы 23 июля", html)
+        self.assertIn('name="date_from" value="2026-07-22"', html)
+        self.assertIn('name="date_to" value="2026-07-22"', html)
+        self.assertIn("warehouse-calendar-popup", html)
 
     def test_sales_template_has_search_state_resize_fallback_and_mobile_css(self):
         with mock.patch.object(

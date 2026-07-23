@@ -2264,6 +2264,217 @@
             border-color: #1d4ed8;
         }
 
+        .warehouse-date-filter {
+            position: relative;
+        }
+
+        .warehouse-date-trigger {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 100%;
+            height: 48px;
+            padding: 0 15px;
+            border: 1px solid #dce3ed;
+            border-radius: 14px;
+            background: #fbfcfe;
+            color: #172033;
+            font: inherit;
+            font-size: 15px;
+            text-align: left;
+            cursor: pointer;
+        }
+
+        .warehouse-date-trigger:hover {
+            border-color: #c8d2df;
+            background: #ffffff;
+        }
+
+        .warehouse-date-filter.is-open .warehouse-date-trigger {
+            border-color: #8eb0ff;
+            background: #ffffff;
+            box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.09);
+        }
+
+        .warehouse-date-trigger-arrow {
+            color: #64748b;
+            font-size: 11px;
+        }
+
+        .warehouse-calendar-popup {
+            position: absolute;
+            z-index: 80;
+            top: calc(100% + 7px);
+            left: 0;
+            width: min(292px, calc(100vw - 64px));
+            padding: 12px;
+            border: 1px solid #dce3ed;
+            border-radius: 14px;
+            background: #ffffff;
+            box-shadow: 0 16px 40px rgba(15, 23, 42, 0.14);
+        }
+
+        .warehouse-calendar-popup[hidden] {
+            display: none;
+        }
+
+        .warehouse-calendar-header {
+            display: grid;
+            grid-template-columns: 30px 1fr 30px;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 9px;
+        }
+
+        .warehouse-calendar-nav {
+            width: 30px;
+            height: 30px;
+            padding: 0;
+            border: 1px solid #e2e8f0;
+            border-radius: 9px;
+            background: #ffffff;
+            color: #475569;
+            font-size: 17px;
+            line-height: 1;
+            cursor: pointer;
+        }
+
+        .warehouse-calendar-nav:hover {
+            border-color: #cbd5e1;
+            background: #f8fafc;
+        }
+
+        .warehouse-calendar-month {
+            color: #172033;
+            font-size: 14px;
+            font-weight: 750;
+            text-align: center;
+            text-transform: capitalize;
+        }
+
+        .warehouse-calendar-weekdays,
+        .warehouse-calendar-days {
+            display: grid;
+            grid-template-columns: repeat(7, minmax(0, 1fr));
+        }
+
+        .warehouse-calendar-weekdays {
+            margin-bottom: 3px;
+            color: #94a3b8;
+            font-size: 10px;
+            font-weight: 700;
+            text-align: center;
+        }
+
+        .warehouse-calendar-weekdays span {
+            padding: 4px 0;
+        }
+
+        .warehouse-calendar-day {
+            position: relative;
+            height: 34px;
+            padding: 0;
+            border: 0;
+            background: transparent;
+            color: #334155;
+            font: inherit;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .warehouse-calendar-day span {
+            position: relative;
+            z-index: 1;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+        }
+
+        .warehouse-calendar-day.is-outside {
+            color: #cbd5e1;
+        }
+
+        .warehouse-calendar-day.is-in-range {
+            background: #dbeafe;
+        }
+
+        .warehouse-calendar-day.is-start.is-in-range {
+            background: linear-gradient(to right, transparent 50%, #dbeafe 50%);
+        }
+
+        .warehouse-calendar-day.is-end.is-in-range {
+            background: linear-gradient(to left, transparent 50%, #dbeafe 50%);
+        }
+
+        .warehouse-calendar-day.is-start span,
+        .warehouse-calendar-day.is-end span {
+            background: #2563eb;
+            color: #ffffff;
+        }
+
+        .warehouse-calendar-day.is-today:not(.is-start):not(.is-end) span {
+            border: 1px solid #2563eb;
+        }
+
+        .warehouse-calendar-day:hover span {
+            background: #eff6ff;
+            color: #1d4ed8;
+        }
+
+        .warehouse-calendar-day.is-start:hover span,
+        .warehouse-calendar-day.is-end:hover span {
+            background: #2563eb;
+            color: #ffffff;
+        }
+
+        .warehouse-calendar-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #eef2f7;
+        }
+
+        .warehouse-calendar-actions button {
+            min-height: 34px;
+            padding: 0 12px;
+            border-radius: 9px;
+            font: inherit;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .warehouse-calendar-reset {
+            border: 1px solid #e2e8f0;
+            background: #ffffff;
+            color: #64748b;
+        }
+
+        .warehouse-calendar-apply {
+            border: 1px solid #2563eb;
+            background: #2563eb;
+            color: #ffffff;
+        }
+
+        .warehouse-active-date {
+            display: inline-flex;
+            align-items: center;
+            min-height: 30px;
+            margin-left: 8px;
+            padding: 0 10px;
+            border-radius: 999px;
+            background: #eff6ff;
+            color: #1d4ed8;
+            font-size: 12px;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
         #filterDrawer > div[style="margin-top: 16px;"] {
             margin-top: 10px !important;
         }
@@ -3419,6 +3630,12 @@
                     {% if hide_zero %}
                         <input type="hidden" name="hide_zero" value="1">
                     {% endif %}
+                    {% if created_date_from %}
+                        <input type="hidden" name="date_from" value="{{ created_date_from }}">
+                    {% endif %}
+                    {% if created_date_to %}
+                        <input type="hidden" name="date_to" value="{{ created_date_to }}">
+                    {% endif %}
 
                     <div class="search-input-wrap">
                         <input
@@ -3447,6 +3664,13 @@
                     >
                         Фильтры
                     </button>
+                    {% if created_date_from or created_date_to %}
+                        <span class="warehouse-active-date">
+                            {{ created_date_from.split("-")|reverse|join(".") if created_date_from else "…" }}
+                            —
+                            {{ created_date_to.split("-")|reverse|join(".") if created_date_to else "…" }}
+                        </span>
+                    {% endif %}
 
                     <button
                         id="warehouseBulkToggle"
@@ -3761,6 +3985,12 @@
                                             {% if selected_cell %}
                                                 <input type="hidden" name="cell" value="{{ selected_cell }}">
                                             {% endif %}
+                                            {% if created_date_from %}
+                                                <input type="hidden" name="date_from" value="{{ created_date_from }}">
+                                            {% endif %}
+                                            {% if created_date_to %}
+                                                <input type="hidden" name="date_to" value="{{ created_date_to }}">
+                                            {% endif %}
 
                                             <input type="hidden" name="sort_by" value="{{ sort_by }}">
                                             <input type="hidden" name="sort_dir" value="{{ sort_dir }}">
@@ -3953,6 +4183,9 @@
                 <input type="hidden" name="hide_zero" value="1">
             {% endif %}
 
+            <input type="hidden" name="sort_by" value="{{ sort_by }}">
+            <input type="hidden" name="sort_dir" value="{{ sort_dir }}">
+
             <div class="category-cell-form-title">Бренд</div>
 
             {{ render_catalog_combobox("filterBrandCombobox", "brand", brand_groups, selected_brand, true, "бренд", "Все бренды", prefix_search=false, component_class="filter-combobox") }}
@@ -3962,6 +4195,52 @@
             </div>
 
             {{ render_catalog_combobox("filterCategoryCombobox", "category", category_groups, selected_category, true, "категорию", "Все категории", component_class="filter-combobox") }}
+
+            <div class="category-cell-form-title" style="margin-top: 14px;">
+                Дата добавления
+            </div>
+
+            <div
+                id="warehouseDateFilter"
+                class="warehouse-date-filter"
+                data-initial-from="{{ created_date_from }}"
+                data-initial-to="{{ created_date_to }}"
+            >
+                <input type="hidden" name="date_from" value="{{ created_date_from }}">
+                <input type="hidden" name="date_to" value="{{ created_date_to }}">
+                <button
+                    class="warehouse-date-trigger"
+                    type="button"
+                    aria-haspopup="dialog"
+                    aria-expanded="false"
+                >
+                    <span data-date-range-label>
+                        {% if created_date_from or created_date_to %}
+                            {{ created_date_from.split("-")|reverse|join(".") if created_date_from else "…" }}
+                            —
+                            {{ created_date_to.split("-")|reverse|join(".") if created_date_to else "…" }}
+                        {% else %}
+                            Выберите период
+                        {% endif %}
+                    </span>
+                    <span class="warehouse-date-trigger-arrow">▾</span>
+                </button>
+                <div class="warehouse-calendar-popup" role="dialog" aria-label="Выбор периода" hidden>
+                    <div class="warehouse-calendar-header">
+                        <button class="warehouse-calendar-nav" type="button" data-calendar-prev aria-label="Предыдущий месяц">‹</button>
+                        <div class="warehouse-calendar-month" data-calendar-month></div>
+                        <button class="warehouse-calendar-nav" type="button" data-calendar-next aria-label="Следующий месяц">›</button>
+                    </div>
+                    <div class="warehouse-calendar-weekdays">
+                        <span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span>
+                    </div>
+                    <div class="warehouse-calendar-days" data-calendar-days></div>
+                    <div class="warehouse-calendar-actions">
+                        <button class="warehouse-calendar-reset" type="button" data-calendar-reset>Сбросить</button>
+                        <button class="warehouse-calendar-apply" type="button" data-calendar-apply>Применить</button>
+                    </div>
+                </div>
+            </div>
 
             <button type="submit">Применить фильтры</button>
         </form>
@@ -3998,7 +4277,7 @@
             {% for group in cell_groups %}
                 <a
                     class="warehouse-map-cell {% if selected_cell == group.cell %}active{% endif %}"
-                    href="{{ url_for('warehouse_page', cell=group.cell, brand=selected_brand, category=selected_category, q=query, hide_zero='1' if hide_zero else None) }}"
+                    href="{{ url_for('warehouse_page', cell=group.cell, brand=selected_brand, category=selected_category, q=query, date_from=created_date_from, date_to=created_date_to, hide_zero='1' if hide_zero else None) }}"
                 >
                     <div class="warehouse-map-title">{{ group.cell }}</div>
 
@@ -4144,6 +4423,200 @@
             document.getElementById("drawerBackdrop").classList.add("open");
             document.getElementById("filterDrawer").classList.add("open");
         }
+
+        function initializeWarehouseDateFilter() {
+            const root = document.getElementById("warehouseDateFilter");
+            if (!root || root.dataset.initialized === "true") return;
+            root.dataset.initialized = "true";
+
+            const form = root.closest("form");
+            const trigger = root.querySelector(".warehouse-date-trigger");
+            const popup = root.querySelector(".warehouse-calendar-popup");
+            const monthLabel = root.querySelector("[data-calendar-month]");
+            const daysGrid = root.querySelector("[data-calendar-days]");
+            const fromInput = root.querySelector('input[name="date_from"]');
+            const toInput = root.querySelector('input[name="date_to"]');
+            const rangeLabel = root.querySelector("[data-date-range-label]");
+            const monthNames = [
+                "январь", "февраль", "март", "апрель", "май", "июнь",
+                "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь"
+            ];
+
+            const parseDate = (value) => {
+                const parts = String(value || "").split("-").map(Number);
+                if (parts.length !== 3 || parts.some(Number.isNaN)) return null;
+                const date = new Date(parts[0], parts[1] - 1, parts[2]);
+                return (
+                    date.getFullYear() === parts[0]
+                    && date.getMonth() === parts[1] - 1
+                    && date.getDate() === parts[2]
+                ) ? date : null;
+            };
+
+            const isoDate = (date) => [
+                date.getFullYear(),
+                String(date.getMonth() + 1).padStart(2, "0"),
+                String(date.getDate()).padStart(2, "0")
+            ].join("-");
+
+            const displayDate = (value) => {
+                const date = parseDate(value);
+                return date
+                    ? String(date.getDate()).padStart(2, "0") + "."
+                        + String(date.getMonth() + 1).padStart(2, "0") + "."
+                        + date.getFullYear()
+                    : "";
+            };
+
+            let draftFrom = fromInput.value;
+            let draftTo = toInput.value;
+            const initialMonth = parseDate(draftFrom) || new Date();
+            let visibleMonth = new Date(
+                initialMonth.getFullYear(),
+                initialMonth.getMonth(),
+                1
+            );
+
+            const closeCalendar = () => {
+                root.classList.remove("is-open");
+                popup.hidden = true;
+                trigger.setAttribute("aria-expanded", "false");
+            };
+
+            const renderCalendar = () => {
+                const year = visibleMonth.getFullYear();
+                const month = visibleMonth.getMonth();
+                monthLabel.textContent = monthNames[month] + " " + year;
+                daysGrid.innerHTML = "";
+
+                const firstDay = new Date(year, month, 1);
+                const mondayOffset = (firstDay.getDay() + 6) % 7;
+                const firstVisible = new Date(year, month, 1 - mondayOffset);
+                const today = isoDate(new Date());
+
+                for (let index = 0; index < 42; index += 1) {
+                    const date = new Date(
+                        firstVisible.getFullYear(),
+                        firstVisible.getMonth(),
+                        firstVisible.getDate() + index
+                    );
+                    const value = isoDate(date);
+                    const button = document.createElement("button");
+                    button.type = "button";
+                    button.className = "warehouse-calendar-day";
+                    button.dataset.date = value;
+                    button.setAttribute("aria-label", displayDate(value));
+                    button.innerHTML = "<span>" + date.getDate() + "</span>";
+
+                    if (date.getMonth() !== month) button.classList.add("is-outside");
+                    if (value === today) button.classList.add("is-today");
+                    if (value === draftFrom) button.classList.add("is-start");
+                    if (value === draftTo) button.classList.add("is-end");
+                    if (
+                        draftFrom && draftTo
+                        && value >= draftFrom && value <= draftTo
+                    ) {
+                        button.classList.add("is-in-range");
+                    }
+
+                    button.addEventListener("click", () => {
+                        if (!draftFrom || draftTo) {
+                            draftFrom = value;
+                            draftTo = "";
+                        } else if (value < draftFrom) {
+                            draftTo = draftFrom;
+                            draftFrom = value;
+                        } else {
+                            draftTo = value;
+                        }
+                        renderCalendar();
+                    });
+                    daysGrid.appendChild(button);
+                }
+            };
+
+            trigger.addEventListener("click", (event) => {
+                event.stopPropagation();
+                const opening = popup.hidden;
+                document.querySelectorAll("[data-brand-combobox].open").forEach(
+                    element => element.classList.remove("open")
+                );
+                if (!opening) {
+                    closeCalendar();
+                    return;
+                }
+                draftFrom = fromInput.value;
+                draftTo = toInput.value;
+                const selected = parseDate(draftFrom);
+                if (selected) {
+                    visibleMonth = new Date(
+                        selected.getFullYear(),
+                        selected.getMonth(),
+                        1
+                    );
+                }
+                root.classList.add("is-open");
+                popup.hidden = false;
+                trigger.setAttribute("aria-expanded", "true");
+                renderCalendar();
+            });
+
+            root.querySelector("[data-calendar-prev]").addEventListener(
+                "click",
+                () => {
+                    visibleMonth = new Date(
+                        visibleMonth.getFullYear(),
+                        visibleMonth.getMonth() - 1,
+                        1
+                    );
+                    renderCalendar();
+                }
+            );
+            root.querySelector("[data-calendar-next]").addEventListener(
+                "click",
+                () => {
+                    visibleMonth = new Date(
+                        visibleMonth.getFullYear(),
+                        visibleMonth.getMonth() + 1,
+                        1
+                    );
+                    renderCalendar();
+                }
+            );
+            root.querySelector("[data-calendar-reset]").addEventListener(
+                "click",
+                () => {
+                    fromInput.value = "";
+                    toInput.value = "";
+                    rangeLabel.textContent = "Выберите период";
+                    closeCalendar();
+                    form.requestSubmit();
+                }
+            );
+            root.querySelector("[data-calendar-apply]").addEventListener(
+                "click",
+                () => {
+                    if (draftFrom && !draftTo) draftTo = draftFrom;
+                    fromInput.value = draftFrom;
+                    toInput.value = draftTo;
+                    rangeLabel.textContent = draftFrom
+                        ? displayDate(draftFrom) + " — " + displayDate(draftTo)
+                        : "Выберите период";
+                    closeCalendar();
+                    form.requestSubmit();
+                }
+            );
+
+            popup.addEventListener("click", event => event.stopPropagation());
+            document.addEventListener("click", event => {
+                if (!root.contains(event.target)) closeCalendar();
+            });
+            document.addEventListener("keydown", event => {
+                if (event.key === "Escape") closeCalendar();
+            });
+        }
+
+        document.addEventListener("DOMContentLoaded", initializeWarehouseDateFilter);
 
         function openWarehouseMapDrawer() {
             closeAllDrawers();
