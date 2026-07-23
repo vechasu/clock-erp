@@ -310,10 +310,10 @@
             opacity: 0;
             visibility: hidden;
             transition:
-                max-height 0.22s ease,
-                margin-bottom 0.22s ease,
+                max-height 0.18s ease,
+                margin-bottom 0.18s ease,
                 opacity 0.18s ease,
-                visibility 0s linear 0.22s;
+                visibility 0s linear 0.18s;
         }
 
         .warehouse-bulk-panel.is-open {
@@ -491,6 +491,10 @@
             width: max-content;
             min-width: 100%;
             --warehouse-row-height: 74px;
+        }
+
+        html:not(.warehouse-table-ready) .warehouse-products-table {
+            visibility: hidden;
         }
 
         .warehouse-products-table .warehouse-col-photo { width: 72px; }
@@ -688,7 +692,7 @@
             z-index: 60;
             padding: 26px;
             box-shadow: -20px 0 50px rgba(15, 23, 42, 0.22);
-            transition: right 0.22s ease;
+            transition: right 0.18s ease;
             overflow-y: auto;
         }
 
@@ -1089,7 +1093,7 @@
             inset: 0;
             border-radius: 999px;
             background: #d1d5db;
-            transition: 0.2s ease;
+            transition: background 0.16s ease;
         }
 
         .toggle-slider::after {
@@ -1102,7 +1106,7 @@
             border-radius: 50%;
             background: #ffffff;
             box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22);
-            transition: 0.2s ease;
+            transition: transform 0.16s ease;
         }
 
         .toggle-switch input:checked + .toggle-slider {
@@ -1977,7 +1981,7 @@
             width: calc(100vw - 260px);
             max-width: none;
             transform: translateX(100%);
-            transition: transform 0.24s ease;
+            transition: transform 0.18s ease;
         }
 
         #editDrawer.open {
@@ -3159,6 +3163,16 @@
             #editDrawer .product-inline-actions button,
             #editDrawer .product-inline-actions .moysklad-link {
                 justify-content: center;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            *,
+            *::before,
+            *::after {
+                scroll-behavior: auto !important;
+                animation: none !important;
+                transition: none !important;
             }
         }
 
@@ -5140,7 +5154,14 @@
 
         function initializeWarehouseTableView() {
             const table = document.getElementById("warehouseProductsTable");
-            if (!table || table.dataset.viewReady === "1") return;
+            if (!table) {
+                document.documentElement.classList.add(
+                    "warehouse-table-ready"
+                );
+                return;
+            }
+
+            if (table.dataset.viewReady === "1") return;
 
             if (window.warehouseTableViewController) {
                 window.warehouseTableViewController.abort();
@@ -5160,6 +5181,9 @@
                     );
                 }
             });
+            document.documentElement.classList.add(
+                "warehouse-table-ready"
+            );
 
             table.querySelectorAll("thead th[data-column-key]").forEach(function(header) {
                 const handle = document.createElement("span");
@@ -5431,10 +5455,7 @@
             );
         }
 
-        document.addEventListener(
-            "DOMContentLoaded",
-            initializeWarehouseTableView
-        );
+        initializeWarehouseTableView();
     </script>
 
 
@@ -5641,28 +5662,21 @@
             }
 
             window.setTimeout(function () {
-                notice.style.transition =
-                    "opacity 0.25s ease, transform 0.25s ease";
-                notice.style.opacity = "0";
-                notice.style.transform = "translateY(-6px)";
+                notice.remove();
 
-                window.setTimeout(function () {
-                    notice.remove();
+                const url = new URL(window.location.href);
+                url.searchParams.delete("notice");
+                url.searchParams.delete("message");
 
-                    const url = new URL(window.location.href);
-                    url.searchParams.delete("notice");
-                    url.searchParams.delete("message");
-
-                    window.history.replaceState(
-                        {},
-                        "",
-                        url.pathname +
-                        (url.searchParams.toString()
-                            ? "?" + url.searchParams.toString()
-                            : "") +
-                        url.hash
-                    );
-                }, 250);
+                window.history.replaceState(
+                    {},
+                    "",
+                    url.pathname +
+                    (url.searchParams.toString()
+                        ? "?" + url.searchParams.toString()
+                        : "") +
+                    url.hash
+                );
             }, 5000);
         }
 
