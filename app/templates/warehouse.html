@@ -1340,8 +1340,7 @@
         }
 
         .add-card .add-form > input,
-        .add-card .add-form > button[type="submit"],
-        .add-card .add-form > .brand-combobox {
+        .add-card .add-form > button[type="submit"] {
             width: 100%;
             height: 46px;
             min-height: 46px;
@@ -2390,6 +2389,131 @@
             transform: rotate(225deg);
         }
 
+        /* Shared filter-style catalog combobox */
+        .filter-combobox .brand-combobox-trigger {
+            position: relative;
+            display: block;
+            width: 100%;
+            height: 48px;
+            min-height: 48px;
+            margin: 0;
+            padding: 0 48px 0 15px;
+            border: 1px solid #dce3ed;
+            border-radius: 14px;
+            background: #fbfcfe;
+            color: #172033;
+            font-family: inherit;
+            font-size: 15px;
+            font-weight: 500;
+            line-height: 46px;
+            text-align: left;
+            outline: none;
+            box-shadow: none;
+            cursor: pointer;
+            appearance: none;
+            -webkit-appearance: none;
+        }
+
+        .filter-combobox .brand-combobox-trigger:hover {
+            border-color: #c8d2df;
+            background: #ffffff;
+        }
+
+        .filter-combobox .brand-combobox-trigger:focus,
+        .filter-combobox .brand-combobox-trigger:focus-visible,
+        .filter-combobox.open .brand-combobox-trigger {
+            border-color: #8eb0ff;
+            background: #ffffff;
+            outline: none;
+            box-shadow: none;
+        }
+
+        .filter-combobox .brand-combobox-arrow {
+            display: none !important;
+        }
+
+        .filter-combobox .brand-combobox-trigger::after {
+            content: "";
+            position: absolute;
+            top: 50%;
+            right: 18px;
+            width: 10px;
+            height: 10px;
+            margin-top: -7px;
+            border-right: 2px solid #64748b;
+            border-bottom: 2px solid #64748b;
+            transform: rotate(45deg);
+            pointer-events: none;
+        }
+
+        .filter-combobox.open .brand-combobox-trigger::after {
+            margin-top: -3px;
+            transform: rotate(225deg);
+        }
+
+        .filter-combobox .brand-combobox-dropdown {
+            min-width: 220px;
+            border: 1px solid #dce3ed;
+            border-radius: 14px;
+            background: #ffffff;
+            box-shadow: 0 16px 40px rgba(15, 23, 42, 0.14);
+        }
+
+        .filter-combobox .brand-combobox-search {
+            border-color: #dce3ed;
+            background: #fbfcfe;
+        }
+
+        .filter-combobox .brand-combobox-options {
+            display: block;
+            max-height: 270px;
+            overflow-x: hidden;
+            overflow-y: auto;
+        }
+
+        .filter-combobox .brand-combobox-option {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 18px;
+            width: 100%;
+            min-height: 40px;
+            margin: 0;
+            padding: 9px 11px;
+            border: 0;
+            border-radius: 10px;
+            background: #ffffff;
+            color: #374151;
+            font-size: 14px;
+            font-weight: 650;
+            line-height: 1.35;
+            text-align: left;
+            white-space: nowrap;
+            box-shadow: none;
+        }
+
+        .filter-combobox .brand-combobox-option span:first-child {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .filter-combobox .brand-combobox-option span:last-child {
+            flex: 0 0 auto;
+            margin-left: auto;
+            color: inherit;
+        }
+
+        .filter-combobox .brand-combobox-option:hover,
+        .filter-combobox .brand-combobox-option.is-keyboard-active {
+            background: #f3f4f6;
+        }
+
+        .filter-combobox .brand-combobox-option.active {
+            background: #dbeafe;
+            color: #1d4ed8;
+        }
+
 
         /* warehouse-map-products-ui */
 
@@ -2656,48 +2780,8 @@
         #addBrandCombobox,
         #addCategoryCombobox {
             min-width: 0;
-        }
-
-        #addBrandCombobox .brand-combobox-trigger,
-        #addCategoryCombobox .brand-combobox-trigger {
-            width: 100%;
-            height: 46px;
-            min-height: 46px;
-            margin: 0;
-            padding: 0 15px;
-            border: 1px solid #d1d5db;
-            border-radius: 14px;
-            background: #ffffff;
-            color: #111827;
-            font-size: 15px;
-            font-weight: 500;
-            box-shadow: none;
-            transition: border-color 0.16s ease, box-shadow 0.16s ease;
-        }
-
-        #addBrandCombobox .brand-combobox-trigger:hover,
-        #addCategoryCombobox .brand-combobox-trigger:hover {
-            border-color: #aeb8c5;
-            background: #ffffff;
-        }
-
-        #addBrandCombobox.open .brand-combobox-trigger,
-        #addCategoryCombobox.open .brand-combobox-trigger,
-        #addBrandCombobox .brand-combobox-trigger:focus-visible,
-        #addCategoryCombobox .brand-combobox-trigger:focus-visible {
-            border-color: #3b82f6;
-            outline: none;
-            box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.10);
-        }
-
-        #addBrandCombobox .brand-combobox-arrow,
-        #addCategoryCombobox .brand-combobox-arrow {
-            color: #64748b;
-        }
-
-        #addBrandCombobox .brand-combobox-dropdown,
-        #addCategoryCombobox .brand-combobox-dropdown {
-            min-width: 220px;
+            height: 48px;
+            min-height: 48px;
         }
 
         @media (max-width: 1450px) {
@@ -3232,8 +3316,8 @@
     </style>
 </head>
 <body>
-    {% macro render_catalog_combobox(component_id, input_name, options, selected_value="", include_all=false, item_label="значение", all_label="Все", disabled=false, prefix_search=true, empty_label="Ничего не найдено") %}
-        <div id="{{ component_id }}" class="brand-combobox" data-brand-combobox data-prefix-search="{{ 'true' if prefix_search else 'false' }}" data-all-label="{{ all_label if include_all else 'Выберите ' ~ item_label }}">
+    {% macro render_catalog_combobox(component_id, input_name, options, selected_value="", include_all=false, item_label="значение", all_label="Все", disabled=false, prefix_search=true, empty_label="Ничего не найдено", component_class="") %}
+        <div id="{{ component_id }}" class="brand-combobox{% if component_class %} {{ component_class }}{% endif %}" data-brand-combobox data-prefix-search="{{ 'true' if prefix_search else 'false' }}" data-all-label="{{ all_label if include_all else 'Выберите ' ~ item_label }}">
             <input class="brand-combobox-hidden" type="hidden" name="{{ input_name }}" value="{{ selected_value }}"{% if disabled %} disabled{% endif %}>
             <button class="brand-combobox-trigger" type="button" role="combobox" aria-haspopup="listbox" aria-expanded="false" onclick="toggleBrandDropdown(event, this.closest('[data-brand-combobox]'))"{% if disabled %} disabled{% endif %}>
                 <span class="brand-combobox-value">{{ selected_value or (all_label if include_all else "Выберите " ~ item_label) }}</span>
@@ -3422,10 +3506,17 @@
                         "brand",
                         brand_groups,
                         item_label="бренд",
-                        empty_label="Бренды не найдены"
+                        empty_label="Бренды не найдены",
+                        component_class="filter-combobox"
                     ) }}
 
-                    {{ render_catalog_combobox("addCategoryCombobox", "category", category_groups, item_label="категорию") }}
+                    {{ render_catalog_combobox(
+                        "addCategoryCombobox",
+                        "category",
+                        category_groups,
+                        item_label="категорию",
+                        component_class="filter-combobox"
+                    ) }}
 
                     <input
                         type="number"
@@ -3861,13 +3952,13 @@
 
             <div class="category-cell-form-title">Бренд</div>
 
-            {{ render_catalog_combobox("filterBrandCombobox", "brand", brand_groups, selected_brand, true, "бренд", "Все бренды", prefix_search=false) }}
+            {{ render_catalog_combobox("filterBrandCombobox", "brand", brand_groups, selected_brand, true, "бренд", "Все бренды", prefix_search=false, component_class="filter-combobox") }}
 
             <div class="category-cell-form-title" style="margin-top: 14px;">
                 Категория
             </div>
 
-            {{ render_catalog_combobox("filterCategoryCombobox", "category", category_groups, selected_category, true, "категорию", "Все категории") }}
+            {{ render_catalog_combobox("filterCategoryCombobox", "category", category_groups, selected_category, true, "категорию", "Все категории", component_class="filter-combobox") }}
 
             <button type="submit">Применить фильтры</button>
         </form>
@@ -4981,6 +5072,26 @@
 
             if (!combobox) {
                 return;
+            }
+
+            if (isOpen) {
+                document
+                    .querySelectorAll("[data-brand-combobox].open")
+                    .forEach(function(openCombobox) {
+                        if (openCombobox !== combobox) {
+                            openCombobox.classList.remove("open");
+                            const openTrigger = openCombobox.querySelector(
+                                ".brand-combobox-trigger"
+                            );
+
+                            if (openTrigger) {
+                                openTrigger.setAttribute(
+                                    "aria-expanded",
+                                    "false"
+                                );
+                            }
+                        }
+                    });
             }
 
             combobox.classList.toggle("open", isOpen);
