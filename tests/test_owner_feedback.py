@@ -667,8 +667,14 @@ class OwnerFeedbackTest(unittest.TestCase):
 
         html = page.get_data(as_text=True)
         self.assertEqual(page.status_code, 200)
-        self.assertIn("Часы 22 июля", html)
-        self.assertNotIn("Часы 23 июля", html)
+        self.assertIn(
+            'data-product-id="11111111-1111-1111-1111-111111111111"',
+            html,
+        )
+        self.assertNotIn(
+            'data-product-id="22222222-2222-2222-2222-222222222222"',
+            html,
+        )
         self.assertIn('name="date_from" value="2026-07-22"', html)
         self.assertIn('name="date_to" value="2026-07-22"', html)
         self.assertIn("warehouse-calendar-popup", html)
