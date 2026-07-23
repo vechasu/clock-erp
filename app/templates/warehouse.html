@@ -1317,6 +1317,11 @@
             color: #1d4ed8;
         }
 
+        .brand-combobox-option.is-keyboard-active {
+            background: #f1f5f9;
+            color: #172033;
+        }
+
         .brand-combobox-option[hidden] {
             display: none;
         }
@@ -1334,8 +1339,9 @@
             align-items: center;
         }
 
-        .add-card .add-form input,
-        .add-card .add-form button {
+        .add-card .add-form > input,
+        .add-card .add-form > button[type="submit"],
+        .add-card .add-form > .brand-combobox {
             width: 100%;
             height: 46px;
             min-height: 46px;
@@ -1346,19 +1352,19 @@
             box-sizing: border-box;
         }
 
-        .add-card .add-form input {
+        .add-card .add-form > input {
             border: 1px solid #d1d5db;
             background: #ffffff;
             color: #111827;
             outline: none;
         }
 
-        .add-card .add-form input:focus {
+        .add-card .add-form > input:focus {
             border-color: #22c55e;
             box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.12);
         }
 
-        .add-card .add-form button {
+        .add-card .add-form > button[type="submit"] {
             border: 1px solid #16a34a;
             background: #22c55e;
             color: #ffffff;
@@ -1367,7 +1373,7 @@
             box-shadow: 0 5px 14px rgba(34, 197, 94, 0.20);
         }
 
-        .add-card .add-form button:hover {
+        .add-card .add-form > button[type="submit"]:hover {
             background: #16a34a;
             border-color: #15803d;
         }
@@ -2647,6 +2653,53 @@
                 minmax(165px, 0.9fr);
         }
 
+        #addBrandCombobox,
+        #addCategoryCombobox {
+            min-width: 0;
+        }
+
+        #addBrandCombobox .brand-combobox-trigger,
+        #addCategoryCombobox .brand-combobox-trigger {
+            width: 100%;
+            height: 46px;
+            min-height: 46px;
+            margin: 0;
+            padding: 0 15px;
+            border: 1px solid #d1d5db;
+            border-radius: 14px;
+            background: #ffffff;
+            color: #111827;
+            font-size: 15px;
+            font-weight: 500;
+            box-shadow: none;
+            transition: border-color 0.16s ease, box-shadow 0.16s ease;
+        }
+
+        #addBrandCombobox .brand-combobox-trigger:hover,
+        #addCategoryCombobox .brand-combobox-trigger:hover {
+            border-color: #aeb8c5;
+            background: #ffffff;
+        }
+
+        #addBrandCombobox.open .brand-combobox-trigger,
+        #addCategoryCombobox.open .brand-combobox-trigger,
+        #addBrandCombobox .brand-combobox-trigger:focus-visible,
+        #addCategoryCombobox .brand-combobox-trigger:focus-visible {
+            border-color: #3b82f6;
+            outline: none;
+            box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.10);
+        }
+
+        #addBrandCombobox .brand-combobox-arrow,
+        #addCategoryCombobox .brand-combobox-arrow {
+            color: #64748b;
+        }
+
+        #addBrandCombobox .brand-combobox-dropdown,
+        #addCategoryCombobox .brand-combobox-dropdown {
+            min-width: 220px;
+        }
+
         @media (max-width: 1450px) {
             .add-card .add-form {
                 grid-template-columns:
@@ -3179,10 +3232,10 @@
     </style>
 </head>
 <body>
-    {% macro render_catalog_combobox(component_id, input_name, options, selected_value="", include_all=false, item_label="значение", all_label="Все", disabled=false, prefix_search=true) %}
+    {% macro render_catalog_combobox(component_id, input_name, options, selected_value="", include_all=false, item_label="значение", all_label="Все", disabled=false, prefix_search=true, empty_label="Ничего не найдено") %}
         <div id="{{ component_id }}" class="brand-combobox" data-brand-combobox data-prefix-search="{{ 'true' if prefix_search else 'false' }}" data-all-label="{{ all_label if include_all else 'Выберите ' ~ item_label }}">
             <input class="brand-combobox-hidden" type="hidden" name="{{ input_name }}" value="{{ selected_value }}"{% if disabled %} disabled{% endif %}>
-            <button class="brand-combobox-trigger" type="button" aria-expanded="false" onclick="toggleBrandDropdown(event, this.closest('[data-brand-combobox]'))"{% if disabled %} disabled{% endif %}>
+            <button class="brand-combobox-trigger" type="button" role="combobox" aria-haspopup="listbox" aria-expanded="false" onclick="toggleBrandDropdown(event, this.closest('[data-brand-combobox]'))"{% if disabled %} disabled{% endif %}>
                 <span class="brand-combobox-value">{{ selected_value or (all_label if include_all else "Выберите " ~ item_label) }}</span>
                 <span class="brand-combobox-arrow">▾</span>
             </button>
@@ -3191,18 +3244,18 @@
                     <input class="brand-combobox-search" data-brand-search-input type="text" placeholder="Поиск: {{ item_label }}" autocomplete="off">
                     <button class="brand-combobox-search-clear" data-brand-search-clear type="button" aria-label="Очистить поиск" hidden>×</button>
                 </div>
-                <div class="brand-combobox-options">
+                <div class="brand-combobox-options" role="listbox">
                     {% if include_all %}
-                        <button class="brand-combobox-option {% if not selected_value %}active{% endif %}" type="button" data-brand="" data-brand-search="{{ all_label|lower|e }}" onclick="selectBrandOption(this)">
+                        <button class="brand-combobox-option {% if not selected_value %}active{% endif %}" type="button" role="option" data-brand="" data-brand-search="{{ all_label|lower|e }}" onclick="selectBrandOption(this)">
                             <span>{{ all_label }}</span><span>{{ options | sum(attribute='count') }}</span>
                         </button>
                     {% endif %}
                     {% for option in options %}
-                        <button class="brand-combobox-option {% if selected_value == option.name %}active{% endif %}" type="button" data-brand="{{ option.name|e }}" data-brand-search="{{ option.name|lower|e }}" onclick="selectBrandOption(this)">
+                        <button class="brand-combobox-option {% if selected_value == option.name %}active{% endif %}" type="button" role="option" data-brand="{{ option.name|e }}" data-brand-search="{{ option.name|lower|e }}" onclick="selectBrandOption(this)">
                             <span>{{ option.name }}</span><span>{{ option.count }}</span>
                         </button>
                     {% endfor %}
-                    <div class="brand-combobox-empty" data-brand-empty hidden>Ничего не найдено</div>
+                    <div class="brand-combobox-empty" data-brand-empty hidden>{{ empty_label }}</div>
                 </div>
             </div>
         </div>
@@ -3364,11 +3417,13 @@
                         placeholder="Артикул"
                     >
 
-                    <input
-                        type="text"
-                        name="brand"
-                        placeholder="Бренд"
-                    >
+                    {{ render_catalog_combobox(
+                        "addBrandCombobox",
+                        "brand",
+                        brand_groups,
+                        item_label="бренд",
+                        empty_label="Бренды не найдены"
+                    ) }}
 
                     {{ render_catalog_combobox("addCategoryCombobox", "category", category_groups, item_label="категорию") }}
 
@@ -5008,12 +5063,80 @@
                 ["input", "search"].forEach(function(eventName) {
                     searchInput.addEventListener(eventName, function() {
                         filterBrandList(searchInput.value, combobox);
+                        combobox
+                            .querySelectorAll(".brand-combobox-option")
+                            .forEach(function(option) {
+                                option.classList.remove(
+                                    "is-keyboard-active"
+                                );
+                            });
                     });
                 });
                 clearButton.addEventListener("click", function() {
                     searchInput.value = "";
                     filterBrandList("", combobox);
                     searchInput.focus();
+                });
+                searchInput.addEventListener("keydown", function(event) {
+                    const visibleOptions = Array.from(
+                        combobox.querySelectorAll(
+                            ".brand-combobox-option:not([hidden])"
+                        )
+                    );
+                    const currentIndex = visibleOptions.findIndex(function(option) {
+                        return option.classList.contains(
+                            "is-keyboard-active"
+                        );
+                    });
+
+                    if (
+                        event.key === "ArrowDown"
+                        || event.key === "ArrowUp"
+                    ) {
+                        event.preventDefault();
+                        const direction = event.key === "ArrowDown" ? 1 : -1;
+                        let nextIndex = currentIndex + direction;
+
+                        if (currentIndex < 0) {
+                            nextIndex = direction > 0
+                                ? 0
+                                : visibleOptions.length - 1;
+                        }
+
+                        if (visibleOptions.length) {
+                            nextIndex = (
+                                nextIndex + visibleOptions.length
+                            ) % visibleOptions.length;
+                            visibleOptions.forEach(function(option) {
+                                option.classList.remove(
+                                    "is-keyboard-active"
+                                );
+                            });
+                            visibleOptions[nextIndex].classList.add(
+                                "is-keyboard-active"
+                            );
+                            visibleOptions[nextIndex].scrollIntoView({
+                                block: "nearest"
+                            });
+                        }
+                    } else if (event.key === "Enter") {
+                        const activeOption = visibleOptions[currentIndex];
+
+                        if (activeOption) {
+                            event.preventDefault();
+                            selectBrandOption(activeOption);
+                        }
+                    } else if (event.key === "Escape") {
+                        event.preventDefault();
+                        setBrandDropdownOpen(combobox, false);
+                        const trigger = combobox.querySelector(
+                            ".brand-combobox-trigger"
+                        );
+
+                        if (trigger) {
+                            trigger.focus();
+                        }
+                    }
                 });
                 filterBrandList(searchInput.value, combobox);
             });
