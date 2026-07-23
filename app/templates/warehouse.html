@@ -1364,17 +1364,17 @@
         }
 
         .add-card .add-form > button[type="submit"] {
-            border: 1px solid #16a34a;
-            background: #22c55e;
+            border: 1px solid #1d4ed8;
+            background: #2563eb;
             color: #ffffff;
             font-weight: 800;
             cursor: pointer;
-            box-shadow: 0 5px 14px rgba(34, 197, 94, 0.20);
+            box-shadow: 0 6px 18px rgba(37, 99, 235, 0.18);
         }
 
         .add-card .add-form > button[type="submit"]:hover {
-            background: #16a34a;
-            border-color: #15803d;
+            background: #1d4ed8;
+            border-color: #1d4ed8;
         }
 
         @media (max-width: 1180px) {
@@ -2400,7 +2400,7 @@
             padding: 0 48px 0 15px;
             border: 1px solid #dce3ed;
             border-radius: 14px;
-            background: #fbfcfe;
+            background: #ffffff;
             color: #172033;
             font-family: inherit;
             font-size: 15px;
@@ -2412,6 +2412,7 @@
             cursor: pointer;
             appearance: none;
             -webkit-appearance: none;
+            transition: none;
         }
 
         .filter-combobox .brand-combobox-trigger:hover {
@@ -2457,6 +2458,7 @@
             border-radius: 14px;
             background: #ffffff;
             box-shadow: 0 16px 40px rgba(15, 23, 42, 0.14);
+            transition: none;
         }
 
         .filter-combobox .brand-combobox-search {
@@ -2490,6 +2492,7 @@
             text-align: left;
             white-space: nowrap;
             box-shadow: none;
+            transition: none;
         }
 
         .filter-combobox .brand-combobox-option span:first-child {
@@ -3325,7 +3328,7 @@
             </button>
             <div class="brand-combobox-dropdown">
                 <div class="brand-combobox-search-wrap">
-                    <input class="brand-combobox-search" data-brand-search-input type="text" placeholder="Поиск: {{ item_label }}" autocomplete="off">
+                    <input class="brand-combobox-search" data-brand-search-input type="text" placeholder="Поиск: {{ item_label }}" autocomplete="off" oninput="filterBrandList(this.value, this.closest('[data-brand-combobox]'))">
                     <button class="brand-combobox-search-clear" data-brand-search-clear type="button" aria-label="Очистить поиск" hidden>×</button>
                 </div>
                 <div class="brand-combobox-options" role="listbox">
@@ -5138,6 +5141,7 @@
             combobox
                 .querySelectorAll(".brand-combobox-option")
                 .forEach(function(option) {
+                    option.classList.remove("is-keyboard-active");
                     const brandName = (
                         option.dataset.brandSearch || ""
                     ).toLowerCase();
@@ -5171,18 +5175,6 @@
                     return;
                 }
                 searchInput.dataset.searchBound = "1";
-                ["input", "search"].forEach(function(eventName) {
-                    searchInput.addEventListener(eventName, function() {
-                        filterBrandList(searchInput.value, combobox);
-                        combobox
-                            .querySelectorAll(".brand-combobox-option")
-                            .forEach(function(option) {
-                                option.classList.remove(
-                                    "is-keyboard-active"
-                                );
-                            });
-                    });
-                });
                 clearButton.addEventListener("click", function() {
                     searchInput.value = "";
                     filterBrandList("", combobox);
