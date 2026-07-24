@@ -331,18 +331,6 @@
             box-shadow: 0 8px 22px rgba(15, 23, 42, 0.05);
         }
 
-        .warehouse-bulk-build-marker,
-        .warehouse-bulk-fields-marker {
-            color: #94a3b8;
-            font-size: 9px;
-            font-weight: 700;
-            letter-spacing: 0.02em;
-        }
-
-        .warehouse-bulk-fields-marker {
-            grid-column: 1 / -1;
-        }
-
         .warehouse-bulk-actions {
             display: flex;
             align-items: center;
@@ -3972,13 +3960,8 @@
 
             <div id="warehouseBulkPanel" class="warehouse-bulk-panel">
                 <div class="warehouse-bulk-toolbar">
-                    <div>
-                        <div id="warehouseBulkCount" class="warehouse-bulk-count">
-                            Выбрано: 0 товаров
-                        </div>
-                        <div class="warehouse-bulk-build-marker">
-                            BULK_EDIT_UI_BUILD_ab8af8f
-                        </div>
+                    <div id="warehouseBulkCount" class="warehouse-bulk-count">
+                        Выбрано: 0 товаров
                     </div>
                     <div class="warehouse-bulk-actions">
                         <button
@@ -4016,9 +3999,6 @@
                     action="/warehouse/bulk-edit"
                     onsubmit="return confirmWarehouseBulkEdit()"
                 >
-                <div class="warehouse-bulk-fields-marker">
-                    BULK_FIELDS_RENDERED
-                </div>
                 <input
                     id="warehouseBulkReturnQuery"
                     type="hidden"

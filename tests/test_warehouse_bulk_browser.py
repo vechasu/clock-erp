@@ -107,8 +107,6 @@ class WarehouseBulkBrowserTest(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr[-2000:])
         self.assertIn('data-bulk-ui-e2e="pass"', result.stdout)
-        self.assertIn("BULK_EDIT_UI_BUILD_ab8af8f", result.stdout)
-        self.assertIn("BULK_FIELDS_RENDERED", result.stdout)
         self.assertIn(">Бренд<", result.stdout)
         self.assertIn(">Категория<", result.stdout)
         self.assertIn(">Применить<", result.stdout)
