@@ -2048,6 +2048,7 @@
             }
         }
 </style>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/erp-components.css') }}">
 </head>
 
 <body>
@@ -2062,29 +2063,29 @@
             </div>
         {% endif %}
 
-        <div class="stats">
-            <div class="stat-card">
-                <div class="stat-label">Не отменено</div>
-                <div class="stat-value">{{ total_sales }}</div>
+        <div class="stats erp-stats">
+            <div class="stat-card erp-stat-card">
+                <div class="stat-label erp-stat-label">Не отменено</div>
+                <div class="stat-value erp-stat-value">{{ total_sales }}</div>
             </div>
 
-            <div class="stat-card">
-                <div class="stat-label">Заказов</div>
-                <div class="stat-value">{{ total_orders }}</div>
+            <div class="stat-card erp-stat-card">
+                <div class="stat-label erp-stat-label">Заказов</div>
+                <div class="stat-value erp-stat-value">{{ total_orders }}</div>
             </div>
 
-            <div class="stat-card">
-                <div class="stat-label">Продано единиц</div>
-                <div class="stat-value">{{ total_quantity }}</div>
+            <div class="stat-card erp-stat-card">
+                <div class="stat-label erp-stat-label">Продано единиц</div>
+                <div class="stat-value erp-stat-value">{{ total_quantity }}</div>
             </div>
 
-            <div class="stat-card">
-                <div class="stat-label">Отменено</div>
-                <div class="stat-value">{{ total_cancelled }}</div>
+            <div class="stat-card erp-stat-card">
+                <div class="stat-label erp-stat-label">Отменено</div>
+                <div class="stat-value erp-stat-value">{{ total_cancelled }}</div>
             </div>
 
             <a
-                class="button stats-action-button stats-report-button"
+                class="button stats-action-button stats-report-button erp-secondary-action"
                 href="/sales/report"
             >
                 Сформировать отчёт
@@ -2092,7 +2093,7 @@
 
             <button
                 id="openManualSaleModal"
-                class="button stats-action-button"
+                class="button stats-action-button erp-primary-action"
                 type="button"
             >
                 + Добавить продажу
@@ -2101,17 +2102,17 @@
 
         <section class="sales-data-card">
 
-            <div class="toolbar sales-data-toolbar">
-                <div class="sales-search-wrap search-input-wrap">
+            <div class="toolbar sales-data-toolbar erp-toolbar-card erp-toolbar">
+                <div class="sales-search-wrap search-input-wrap erp-search-wrap">
                     <input
                         id="salesSearch"
-                        class="search"
+                        class="search erp-search-input"
                         type="text"
                         placeholder="Источник, товар, заказ, трек или получатель"
                     >
                     <button
                         id="clearSalesSearch"
-                        class="search-clear-button is-hidden"
+                        class="search-clear-button erp-search-clear is-hidden"
                         type="button"
                         aria-label="Очистить поиск"
                         title="Очистить поиск"
@@ -2127,7 +2128,7 @@
                         <input id="salesDateTo" type="hidden">
                         <div class="sales-period-control">
                             <button
-                                class="warehouse-date-trigger"
+                                class="warehouse-date-trigger erp-period-trigger erp-secondary-action"
                                 type="button"
                                 aria-haspopup="dialog"
                                 aria-expanded="false"
@@ -2162,7 +2163,7 @@
 
                     <button
                         id="clearSalesDateFilter"
-                        class="sales-date-clear"
+                        class="sales-date-clear erp-reset-action"
                         type="button"
                         hidden
                     >
@@ -2172,91 +2173,91 @@
             </div>
 
 
-            <section class="table-card">
+            <section class="table-card erp-table-card">
             {% if sales %}
                 <div class="table-wrap">
-                    <table class="sales-table">
+                    <table class="sales-table erp-data-table">
                         <thead>
                             <tr>
                                 <th class="col-date">
-                                    <span class="sales-sort-label" data-sort-field="date" onclick="sortSalesTable('date')">
+                                    <span class="sales-sort-label erp-sort-label" data-sort-field="date" onclick="sortSalesTable('date')">
                                         Дата
-                                        <span class="sales-sort-arrow">↕</span>
+                                        <span class="sales-sort-arrow erp-sort-arrow">↕</span>
                                     </span>
                                 </th>
                                 <th class="col-source">
-                                    <span class="sales-sort-label" data-sort-field="source" onclick="sortSalesTable('source')">
+                                    <span class="sales-sort-label erp-sort-label" data-sort-field="source" onclick="sortSalesTable('source')">
                                         Источник
-                                        <span class="sales-sort-arrow">↕</span>
+                                        <span class="sales-sort-arrow erp-sort-arrow">↕</span>
                                     </span>
                                 </th>
                                 <th class="col-status">Статус</th>
                                 <th class="col-product">
-                                    <span class="sales-sort-label" data-sort-field="product" onclick="sortSalesTable('product')">
+                                    <span class="sales-sort-label erp-sort-label" data-sort-field="product" onclick="sortSalesTable('product')">
                                         Товар
-                                        <span class="sales-sort-arrow">↕</span>
+                                        <span class="sales-sort-arrow erp-sort-arrow">↕</span>
                                     </span>
                                 </th>
                                 <th class="col-brand">
-                                    <span class="sales-sort-label" data-sort-field="brand" onclick="sortSalesTable('brand')">
+                                    <span class="sales-sort-label erp-sort-label" data-sort-field="brand" onclick="sortSalesTable('brand')">
                                         Бренд
-                                        <span class="sales-sort-arrow">↕</span>
+                                        <span class="sales-sort-arrow erp-sort-arrow">↕</span>
                                     </span>
                                 </th>
                                 <th class="col-category">
-                                    <span class="sales-sort-label" data-sort-field="category" onclick="sortSalesTable('category')">
+                                    <span class="sales-sort-label erp-sort-label" data-sort-field="category" onclick="sortSalesTable('category')">
                                         Категория
-                                        <span class="sales-sort-arrow">↕</span>
+                                        <span class="sales-sort-arrow erp-sort-arrow">↕</span>
                                     </span>
                                 </th>
                                 <th class="col-qty">
-                                    <span class="sales-sort-label" data-sort-field="quantity" onclick="sortSalesTable('quantity')">
+                                    <span class="sales-sort-label erp-sort-label" data-sort-field="quantity" onclick="sortSalesTable('quantity')">
                                         К-во
-                                        <span class="sales-sort-arrow">↕</span>
+                                        <span class="sales-sort-arrow erp-sort-arrow">↕</span>
                                     </span>
                                 </th>
                                 <th class="col-price">
-                                    <span class="sales-sort-label" data-sort-field="price" onclick="sortSalesTable('price')">
+                                    <span class="sales-sort-label erp-sort-label" data-sort-field="price" onclick="sortSalesTable('price')">
                                         Цена, ₽
-                                        <span class="sales-sort-arrow">↕</span>
+                                        <span class="sales-sort-arrow erp-sort-arrow">↕</span>
                                     </span>
                                 </th>
                                 <th class="col-order">
-                                    <span class="sales-sort-label" data-sort-field="order" onclick="sortSalesTable('order')">
+                                    <span class="sales-sort-label erp-sort-label" data-sort-field="order" onclick="sortSalesTable('order')">
                                         № заказа
-                                        <span class="sales-sort-arrow">↕</span>
+                                        <span class="sales-sort-arrow erp-sort-arrow">↕</span>
                                     </span>
                                 </th>
                                 <th class="col-track">
-                                    <span class="sales-sort-label" data-sort-field="track" onclick="sortSalesTable('track')">
+                                    <span class="sales-sort-label erp-sort-label" data-sort-field="track" onclick="sortSalesTable('track')">
                                         Номер отправления
-                                        <span class="sales-sort-arrow">↕</span>
+                                        <span class="sales-sort-arrow erp-sort-arrow">↕</span>
                                     </span>
                                 </th>
                                 <th class="col-recipient">Получатель</th>
                                 <th class="col-delivery">
-                                    <span class="sales-sort-label" data-sort-field="delivery" onclick="sortSalesTable('delivery')">
+                                    <span class="sales-sort-label erp-sort-label" data-sort-field="delivery" onclick="sortSalesTable('delivery')">
                                         Способ доставки
-                                        <span class="sales-sort-arrow">↕</span>
+                                        <span class="sales-sort-arrow erp-sort-arrow">↕</span>
                                     </span>
                                 </th>
                                 <th class="col-payment">Оплата / комиссия</th>
                                 <th class="col-region">
-                                    <span class="sales-sort-label" data-sort-field="region" onclick="sortSalesTable('region')">
+                                    <span class="sales-sort-label erp-sort-label" data-sort-field="region" onclick="sortSalesTable('region')">
                                         Регион
-                                        <span class="sales-sort-arrow">↕</span>
+                                        <span class="sales-sort-arrow erp-sort-arrow">↕</span>
                                     </span>
                                 </th>
                                 <th class="col-city">
-                                    <span class="sales-sort-label" data-sort-field="city" onclick="sortSalesTable('city')">
+                                    <span class="sales-sort-label erp-sort-label" data-sort-field="city" onclick="sortSalesTable('city')">
                                         Город
-                                        <span class="sales-sort-arrow">↕</span>
+                                        <span class="sales-sort-arrow erp-sort-arrow">↕</span>
                                     </span>
                                 </th>
                                 <th class="col-note">
-                                    <span class="sales-sort-label" data-sort-field="note" onclick="sortSalesTable('note')">
+                                    <span class="sales-sort-label erp-sort-label" data-sort-field="note" onclick="sortSalesTable('note')">
                                         Примечание
-                                        <span class="sales-sort-arrow">↕</span>
+                                        <span class="sales-sort-arrow erp-sort-arrow">↕</span>
                                     </span>
                                 </th>
                                 <th class="col-actions">Действия</th>
@@ -2333,7 +2334,7 @@
                                         </td>
 
                                         <td class="col-product">
-                                            <div class="product-name manual-view-value">
+                                            <div class="product-name manual-view-value erp-product-primary">
                                                 {{ sale.product_name or "—" }}
                                             </div>
 
@@ -2353,7 +2354,7 @@
                                         </td>
 
                                         <td class="col-brand">
-                                            <span class="manual-view-value">
+                                            <span class="manual-view-value{% if not sale.brand %} erp-muted-value{% endif %}">
                                                 {{ sale.brand or "—" }}
                                             </span>
                                             <input
@@ -2367,7 +2368,7 @@
                                         </td>
 
                                         <td class="col-category">
-                                            <span class="manual-view-value">
+                                            <span class="manual-view-value{% if not sale.category %} erp-muted-value{% endif %}">
                                                 {{ sale.category or "—" }}
                                             </span>
                                             <input
@@ -2778,7 +2779,7 @@
                                         </td>
 
                                         <td class="col-product">
-                                            <div class="product-name automatic-view-value">
+                                            <div class="product-name automatic-view-value erp-product-primary">
                                                 {{ sale.product_name or "—" }}
                                             </div>
 
@@ -2794,7 +2795,7 @@
                                         </td>
 
                                         <td class="col-brand">
-                                            <span class="automatic-view-value">
+                                            <span class="automatic-view-value{% if not sale.brand %} erp-muted-value{% endif %}">
                                                 {{ sale.brand or "—" }}
                                             </span>
                                             <input
@@ -2808,7 +2809,7 @@
                                         </td>
 
                                         <td class="col-category">
-                                            <span class="automatic-view-value">
+                                            <span class="automatic-view-value{% if not sale.category %} erp-muted-value{% endif %}">
                                                 {{ sale.category or "—" }}
                                             </span>
                                             <input

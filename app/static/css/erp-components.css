@@ -1,0 +1,393 @@
+/*
+ * Shared visual components for warehouse and sales.
+ * Page-specific templates keep layout and business behavior; common controls
+ * receive their final appearance from this file.
+ */
+
+:root {
+    --erp-surface: #ffffff;
+    --erp-surface-muted: #f8fafc;
+    --erp-border: #e5eaf2;
+    --erp-border-strong: #dfe5ed;
+    --erp-text: #172033;
+    --erp-muted: #64748b;
+    --erp-primary: #2563eb;
+    --erp-primary-hover: #1d4ed8;
+    --erp-radius: 14px;
+    --erp-control-radius: 12px;
+    --erp-shadow:
+        0 8px 24px rgba(15, 23, 42, 0.045),
+        0 1px 2px rgba(15, 23, 42, 0.03);
+}
+
+.erp-stats {
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.erp-stat-card {
+    min-height: 56px;
+    padding: 7px 14px;
+    border: 1px solid var(--erp-border);
+    border-radius: var(--erp-radius);
+    background: var(--erp-surface);
+    box-shadow: 0 5px 16px rgba(15, 23, 42, 0.035);
+}
+
+.erp-stats .erp-primary-action,
+.erp-stats .erp-secondary-action {
+    height: 56px;
+    min-height: 56px;
+    border-radius: var(--erp-radius);
+}
+
+.erp-stat-label {
+    color: #6b7280;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.25;
+}
+
+.erp-stat-value {
+    color: var(--erp-text);
+    font-size: 22px;
+    font-weight: 850;
+    line-height: 1;
+    letter-spacing: -0.04em;
+}
+
+.erp-primary-action,
+.erp-secondary-action,
+.erp-reset-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    height: 44px;
+    padding: 0 16px;
+    border-radius: var(--erp-control-radius);
+    font-size: 14px;
+    font-weight: 800;
+    line-height: 1;
+    text-decoration: none;
+    white-space: nowrap;
+    cursor: pointer;
+    transition:
+        background 0.18s ease,
+        border-color 0.18s ease,
+        color 0.18s ease,
+        box-shadow 0.18s ease,
+        transform 0.18s ease;
+}
+
+.erp-primary-action {
+    border: 1px solid var(--erp-primary);
+    background: var(--erp-primary);
+    color: #ffffff;
+    box-shadow: 0 7px 17px rgba(37, 99, 235, 0.18);
+}
+
+.erp-primary-action:hover {
+    border-color: var(--erp-primary-hover);
+    background: var(--erp-primary-hover);
+    color: #ffffff;
+    box-shadow: 0 9px 21px rgba(37, 99, 235, 0.23);
+    transform: translateY(-1px);
+}
+
+.erp-secondary-action {
+    border: 1px solid #e1e8f5;
+    background: #f4f7ff;
+    color: #41516f;
+    box-shadow: none;
+}
+
+.erp-secondary-action:hover {
+    border-color: #d4e0ff;
+    background: #edf3ff;
+    color: #1d4ed8;
+    transform: translateY(-1px);
+}
+
+.erp-reset-action {
+    border: 1px solid var(--erp-border-strong);
+    background: #ffffff;
+    color: var(--erp-muted);
+    box-shadow: none;
+}
+
+.erp-reset-action:hover {
+    border-color: #cbd5e1;
+    background: var(--erp-surface-muted);
+    color: #334155;
+}
+
+.erp-primary-action:active,
+.erp-secondary-action:active,
+.erp-reset-action:active {
+    transform: translateY(0);
+}
+
+.erp-toolbar-card {
+    margin-bottom: 8px;
+    padding: 8px;
+    border: 1px solid var(--erp-border);
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.98);
+    box-shadow: var(--erp-shadow);
+}
+
+.erp-toolbar {
+    display: grid;
+    grid-template-columns: minmax(280px, 1fr) auto auto;
+    align-items: center;
+    gap: 8px;
+}
+
+.search-form.erp-toolbar {
+    grid-template-columns:
+        minmax(280px, 1fr)
+        auto
+        auto
+        auto
+        auto;
+}
+
+.sales-data-toolbar.erp-toolbar {
+    grid-template-columns: minmax(280px, 1fr) auto;
+}
+
+.erp-search-wrap {
+    position: relative;
+    min-width: 0;
+}
+
+.erp-search-input {
+    width: 100%;
+    max-width: none;
+    height: 44px;
+    min-height: 44px;
+    padding: 0 42px 0 14px;
+    border: 1px solid #e2e8f0;
+    border-radius: var(--erp-control-radius);
+    background: var(--erp-surface-muted);
+    color: var(--erp-text);
+    font-size: 15px;
+    outline: none;
+    transition:
+        background 0.18s ease,
+        border-color 0.18s ease,
+        box-shadow 0.18s ease;
+}
+
+.erp-search-input:hover {
+    border-color: #cbd5e1;
+    background: #ffffff;
+}
+
+.erp-search-input:focus {
+    border-color: #93b4ff;
+    background: #ffffff;
+    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.09);
+}
+
+.erp-search-clear {
+    position: absolute;
+    top: 50%;
+    right: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 44px;
+    padding: 0;
+    transform: translateY(-50%);
+    border: 0;
+    background: transparent;
+    color: #94a3b8;
+    font-size: 22px;
+    font-weight: 400;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0.72;
+    transition: color 0.15s ease, opacity 0.15s ease;
+}
+
+.erp-search-clear:hover,
+.erp-search-clear:focus-visible {
+    background: transparent;
+    color: #475569;
+    opacity: 1;
+}
+
+.erp-search-clear.is-hidden {
+    display: none;
+}
+
+.erp-period-trigger {
+    min-width: 184px;
+    height: 44px;
+    min-height: 44px;
+    border-radius: var(--erp-control-radius);
+    background: #ffffff;
+}
+
+.erp-table-card {
+    overflow: hidden;
+    border: 1px solid var(--erp-border);
+    border-radius: 16px;
+    background: #ffffff;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+}
+
+.sales-data-card {
+    gap: 8px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+}
+
+.sales-data-card .erp-table-card {
+    border: 1px solid var(--erp-border);
+    border-radius: 16px;
+    background: #ffffff;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+}
+
+.erp-data-table {
+    border-collapse: collapse;
+    color: var(--erp-text);
+}
+
+.erp-data-table th {
+    height: 48px;
+    padding: 12px 14px;
+    border-right: 0;
+    border-bottom: 1px solid #e5e7eb;
+    background: #f9fafb;
+    color: #374151;
+    font-size: 13px;
+    font-weight: 800;
+    line-height: 1.2;
+    vertical-align: middle;
+}
+
+.erp-data-table td {
+    height: 74px;
+    padding: 12px 14px;
+    border-right: 0;
+    border-bottom: 1px solid #f3f4f6;
+    background: #ffffff;
+    font-size: 13px;
+    line-height: 1.35;
+    vertical-align: middle;
+}
+
+.erp-data-table tbody tr:hover td {
+    background: #f8fafc;
+}
+
+.erp-data-table tbody tr:last-child td {
+    border-bottom: 0;
+}
+
+.sales-table.erp-data-table th {
+    height: 48px;
+    padding: 12px 14px;
+    border-right: 0;
+    border-bottom: 1px solid #e5e7eb;
+    background: #f9fafb;
+    color: #374151;
+    font-size: 13px;
+    font-weight: 800;
+    line-height: 1.2;
+}
+
+.sales-table.erp-data-table td {
+    height: 74px;
+    padding: 12px 14px;
+    border-right: 0;
+    border-bottom: 1px solid #f3f4f6;
+    background: #ffffff;
+    font-size: 13px;
+    line-height: 1.35;
+}
+
+.sales-table.erp-data-table tbody tr:hover td {
+    background: #f8fafc;
+}
+
+.erp-sort-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: inherit;
+    font: inherit;
+    font-weight: inherit;
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+}
+
+.erp-sort-label:hover,
+.erp-sort-label.is-active {
+    color: var(--erp-primary);
+}
+
+.erp-sort-arrow {
+    color: #9ca3af;
+    font-size: 11px;
+    font-weight: 900;
+}
+
+.erp-sort-label.is-active .erp-sort-arrow {
+    color: var(--erp-primary);
+}
+
+.erp-product-primary {
+    color: var(--erp-text);
+    font-size: 14px;
+    font-weight: 800;
+    line-height: 1.35;
+}
+
+.erp-muted-value {
+    color: #94a3b8;
+}
+
+@media (max-width: 900px) {
+    .erp-toolbar {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .erp-search-wrap {
+        grid-column: 1 / -1;
+    }
+
+    .search-form.erp-toolbar,
+    .sales-data-toolbar.erp-toolbar {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+@media (max-width: 560px) {
+    .erp-toolbar {
+        grid-template-columns: 1fr;
+    }
+
+    .erp-period-trigger,
+    .erp-reset-action {
+        width: 100%;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .erp-primary-action,
+    .erp-secondary-action,
+    .erp-reset-action,
+    .erp-search-input,
+    .erp-search-clear {
+        transition: none;
+    }
+}

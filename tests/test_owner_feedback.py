@@ -1222,11 +1222,11 @@ class OwnerFeedbackTest(unittest.TestCase):
         html = page.get_data(as_text=True)
         self.assertEqual(page.status_code, 200)
         self.assertIn(
-            'class="sales-search-wrap search-input-wrap"',
+            'class="sales-search-wrap search-input-wrap erp-search-wrap"',
             html,
         )
         self.assertIn(
-            'class="search-clear-button is-hidden"',
+            'class="search-clear-button erp-search-clear is-hidden"',
             html,
         )
         self.assertIn("right: 14px", html)
@@ -1239,6 +1239,77 @@ class OwnerFeedbackTest(unittest.TestCase):
             'clearSalesSearch?.addEventListener("click"',
             html,
         )
+
+    def test_sales_and_warehouse_use_shared_design_components(self):
+        manual_sale = {
+            "id": "manual-shared-design",
+            "created_at": "2026-07-22",
+            "source": "Tictactoy",
+            "product_id": PRODUCT_ID,
+            "product_name": "Будильник Braun BC05B",
+            "brand": "",
+            "category": "",
+            "quantity": 1,
+            "unit_price": 1000,
+            "order_status": "completed",
+        }
+
+        with mock.patch.object(
+            web, "get_warehouse_items", return_value=[warehouse_item()]
+        ), mock.patch.object(
+            web, "load_stock_operations", return_value=[]
+        ), mock.patch.object(
+            web, "load_manual_sales", return_value=[manual_sale]
+        ), mock.patch.object(
+            web, "load_automatic_sales_overrides", return_value={}
+        ), mock.patch.object(
+            web,
+            "get_russian_region_cities",
+            return_value={"Москва": ["Москва"]},
+        ):
+            sales_page = self.client.get("/sales")
+            warehouse_page = self.client.get("/warehouse")
+
+        sales_html = sales_page.get_data(as_text=True)
+        warehouse_html = warehouse_page.get_data(as_text=True)
+        template_folder = (
+            Path(web.app.root_path) / web.app.template_folder
+        )
+        sales_template = (
+            template_folder / "sales.html"
+        ).read_text(encoding="utf-8")
+        warehouse_template = (
+            template_folder / "warehouse.html"
+        ).read_text(encoding="utf-8")
+        shared_css = (
+            Path(web.app.static_folder)
+            / "css"
+            / "erp-components.css"
+        ).read_text(encoding="utf-8")
+
+        self.assertEqual(sales_page.status_code, 200)
+        self.assertEqual(warehouse_page.status_code, 200)
+        self.assertIn("css/erp-components.css", sales_html)
+        self.assertIn("css/erp-components.css", warehouse_html)
+        for component_class in (
+            "erp-stats",
+            "erp-stat-card",
+            "erp-toolbar-card",
+            "erp-toolbar",
+            "erp-search-input",
+            "erp-search-clear",
+            "erp-table-card",
+            "erp-data-table",
+            "erp-sort-label",
+            "erp-sort-arrow",
+        ):
+            self.assertIn(component_class, sales_template)
+            self.assertIn(component_class, warehouse_template)
+            self.assertIn(f".{component_class}", shared_css)
+        self.assertIn("erp-product-primary", sales_template)
+        self.assertIn("erp-muted-value", sales_template)
+        self.assertIn("overflow: hidden", sales_html)
+        self.assertIn("text-overflow: ellipsis", sales_html)
 
     def test_sales_product_and_category_text_stays_inside_cells(self):
         manual_sale = {
