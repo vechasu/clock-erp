@@ -1167,8 +1167,41 @@ class OwnerFeedbackTest(unittest.TestCase):
         self.assertIn("vechasu-sales-filters-v1", html)
         self.assertIn("vechasu-sales-scroll-y", html)
         self.assertIn("minimumPixels[index] || 82", html)
-        self.assertIn("clearSalesDateFrom", html)
+        self.assertIn('id="salesDateFilter"', html)
+        self.assertIn('id="clearSalesPeriod"', html)
         self.assertIn("@media (max-width:", html)
+
+    def test_sales_uses_warehouse_period_picker_and_combined_reset(self):
+        with mock.patch.object(
+            web, "get_warehouse_items", return_value=[warehouse_item()]
+        ), mock.patch.object(
+            web, "load_stock_operations", return_value=[]
+        ), mock.patch.object(
+            web, "load_manual_sales", return_value=[]
+        ), mock.patch.object(
+            web, "load_automatic_sales_overrides", return_value={}
+        ), mock.patch.object(
+            web,
+            "get_russian_region_cities",
+            return_value={"Москва": ["Москва"]},
+        ):
+            page = self.client.get("/sales")
+
+        html = page.get_data(as_text=True)
+        self.assertEqual(page.status_code, 200)
+        self.assertNotIn('id="clearSalesDateFrom"', html)
+        self.assertNotIn('id="clearSalesDateTo"', html)
+        self.assertNotIn('class="sales-date-input"', html)
+        self.assertIn("📅 Период", html)
+        self.assertIn("warehouse-calendar-popup", html)
+        self.assertIn("warehouse-calendar-day", html)
+        self.assertIn("data-calendar-apply", html)
+        self.assertIn("displaySalesDate(salesDateFrom.value)", html)
+        self.assertIn('url.searchParams.set(name, value)', html)
+        self.assertIn('url.searchParams.delete(name)', html)
+        self.assertIn('salesSearch.value = "";', html)
+        self.assertIn('salesDateFrom.value = "";', html)
+        self.assertIn('salesDateTo.value = "";', html)
 
     def test_sales_product_and_category_text_stays_inside_cells(self):
         manual_sale = {
