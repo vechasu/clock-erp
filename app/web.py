@@ -11,7 +11,7 @@ import os
 import fcntl
 import uuid
 import requests
-from urllib.parse import urlencode
+from urllib.parse import parse_qsl, urlencode
 from app.clients.moysklad import MoySkladClient
 from app.catalog_db import CatalogDatabase
 from app.clients.bitrix_catalog import BitrixCatalogReadOnlyClient, BitrixCatalogReadOnlyError
@@ -1683,10 +1683,23 @@ def warehouse_bulk_edit():
             "warehouse_page", notice="error",
             message="Обновлено: {}. Ошибка: {}".format(updated_count, error),
         ))
-    return redirect(url_for(
-        "warehouse_page", notice="success",
+    return_params = {
+        key: value
+        for key, value in parse_qsl(
+            request.form.get("return_query", "").lstrip("?"),
+            keep_blank_values=False,
+        )
+        if key in {
+            "q", "brand", "category", "cell",
+            "date_from", "date_to", "hide_zero",
+            "sort_by", "sort_dir",
+        }
+    }
+    return_params.update(
+        notice="success",
         message="Массово обновлено товаров: {}".format(updated_count),
-    ))
+    )
+    return redirect(url_for("warehouse_page", **return_params))
 
     products_by_id = {
         str(item.get("id") or ""): item

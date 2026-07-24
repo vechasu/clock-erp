@@ -585,6 +585,64 @@ class OwnerFeedbackTest(unittest.TestCase):
             response.headers["Location"],
         )
 
+    def test_warehouse_bulk_edit_can_update_only_brand(self):
+        catalog = mock.Mock()
+
+        with mock.patch.object(
+            web,
+            "get_excel_warehouse_items",
+            return_value=[{"id": PRODUCT_ID, "brand": "AARK"}],
+        ), mock.patch.object(
+            web, "ExcelProductCatalog", return_value=catalog
+        ):
+            response = self.client.post(
+                "/warehouse/bulk-edit",
+                data={
+                    "product_ids": [PRODUCT_ID],
+                    "apply_brand": "1",
+                    "brand": "AARK",
+                },
+            )
+
+        self.assertEqual(response.status_code, 302)
+        catalog.update_product.assert_called_once_with(
+            PRODUCT_ID,
+            brand="AARK",
+            category=None,
+            cell=None,
+        )
+
+    def test_warehouse_bulk_edit_can_update_only_category(self):
+        catalog = mock.Mock()
+
+        with mock.patch.object(
+            web, "ExcelProductCatalog", return_value=catalog
+        ):
+            response = self.client.post(
+                "/warehouse/bulk-edit",
+                data={
+                    "product_ids": [PRODUCT_ID],
+                    "apply_category": "1",
+                    "category": "Наручные часы",
+                    "return_query": (
+                        "?q=AARK&brand=AARK"
+                        "&sort_by=brand&sort_dir=desc"
+                    ),
+                },
+            )
+
+        self.assertEqual(response.status_code, 302)
+        catalog.update_product.assert_called_once_with(
+            PRODUCT_ID,
+            brand=None,
+            category="Наручные часы",
+            cell=None,
+        )
+        self.assertIn("q=AARK", response.headers["Location"])
+        self.assertIn("brand=AARK", response.headers["Location"])
+        self.assertIn("sort_by=brand", response.headers["Location"])
+        self.assertIn("sort_dir=desc", response.headers["Location"])
+
     def test_warehouse_bulk_edit_does_not_apply_empty_field(self):
         with mock.patch.object(web, "MoySkladClient") as client_class:
             response = self.client.post(
@@ -692,10 +750,30 @@ class OwnerFeedbackTest(unittest.TestCase):
             html,
         )
         self.assertIn(
-            ".warehouse-bulk-form > button[type=\"submit\"]",
+            ".warehouse-bulk-form-actions button[type=\"submit\"]",
             html,
         )
         self.assertIn("background: #2563eb", html)
+        self.assertIn('data-bulk-auto-apply="true"', html)
+        self.assertIn(
+            '<div class="warehouse-bulk-field-title">Бренд</div>',
+            html,
+        )
+        self.assertIn(
+            '<div class="warehouse-bulk-field-title">Категория</div>',
+            html,
+        )
+        self.assertIn("cancelWarehouseBulkEditor()", html)
+        self.assertIn(">Отмена<", "".join(html.split()))
+        self.assertIn(
+            "Изменения будут применены к ",
+            html,
+        )
+        self.assertIn('name="return_query"', html)
+        self.assertIn(
+            "autoApplyToggle.checked = Boolean(brand)",
+            html,
+        )
 
     def test_warehouse_filters_created_date_range_in_local_time(self):
         first = warehouse_item()
@@ -854,7 +932,7 @@ class OwnerFeedbackTest(unittest.TestCase):
             )
             self.assertIn('data-brand-search-input', component)
             self.assertIn('data-brand-search-clear', component)
-            self.assertIn('disabled', component)
+            self.assertNotIn(' disabled', component)
         self.assertNotIn("bulk-brand-combobox", html)
         self.assertNotIn("bulk-brand-dropdown", html)
 
