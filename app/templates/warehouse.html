@@ -3722,15 +3722,6 @@
                         >
                             Фильтры
                         </button>
-                        <button
-                            id="warehouseFilterReset"
-                            class="search-tool-button warehouse-reset-button"
-                            type="button"
-                            onclick="resetWarehouseTableFilters()"
-                            {% if not (query or selected_brand or selected_category or selected_cell or created_date_from or created_date_to or hide_zero or sort_by != "name" or sort_dir != "asc") %}hidden{% endif %}
-                        >
-                            × Сбросить
-                        </button>
                         {% if created_date_from or created_date_to %}
                             <span class="warehouse-active-date">
                                 {{ created_date_from.split("-")|reverse|join(".") if created_date_from else "…" }}
@@ -3764,6 +3755,16 @@
                         onclick="openWarehouseMapDrawer()"
                     >
                         Карта склада
+                    </button>
+
+                    <button
+                        id="warehouseFilterReset"
+                        class="search-tool-button warehouse-reset-button"
+                        type="button"
+                        onclick="resetWarehouseTableFilters()"
+                        {% if not (query or selected_brand or selected_category or selected_cell or created_date_from or created_date_to or hide_zero or sort_by != "name" or sort_dir != "asc") %}hidden{% endif %}
+                    >
+                        × Сбросить
                     </button>
 
                     <button
