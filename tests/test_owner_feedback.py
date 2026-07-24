@@ -789,7 +789,7 @@ class OwnerFeedbackTest(unittest.TestCase):
             bulk_brand_component,
         )
         self.assertIn(
-            'data-prefix-search="false"',
+            'data-prefix-search="true"',
             bulk_category_component,
         )
         for component in (bulk_brand_component, bulk_category_component):
@@ -874,6 +874,82 @@ class OwnerFeedbackTest(unittest.TestCase):
                 if brand.strip().lower().startswith("A".lower())
             ],
         )
+
+    def test_bulk_category_search_matches_visible_name_prefix(self):
+        items = []
+        values = (
+            ("AARK", "Наручные часы"),
+            ("Casio", "Ремень"),
+            ("Alpha", "Аксессуары"),
+        )
+        for index, (brand, category) in enumerate(values, start=1):
+            item = warehouse_item()
+            item.update(
+                id=f"{index:08d}-3333-3333-3333-333333333333",
+                brand=brand,
+                category=category,
+            )
+            items.append(item)
+
+        with mock.patch.object(
+            web, "get_excel_warehouse_items", return_value=items
+        ):
+            page = self.client.get("/warehouse")
+
+        html = page.get_data(as_text=True)
+        bulk_brand_component = html.split(
+            'id="bulkBrandCombobox"',
+            1,
+        )[1].split('id="bulkCategory"', 1)[0]
+        bulk_category_component = html.split(
+            'id="bulkCategory"',
+            1,
+        )[1].split('data-bulk-toggle="bulkCell"', 1)[0]
+
+        self.assertEqual(html.count('id="bulkBrandCombobox"'), 1)
+        self.assertEqual(html.count('id="bulkCategory"'), 1)
+        self.assertIn('data-prefix-search="true"', bulk_brand_component)
+        self.assertIn('data-prefix-search="true"', bulk_category_component)
+        self.assertIn(
+            '<span class="brand-combobox-option-label">'
+            'Наручные часы</span>',
+            bulk_category_component,
+        )
+        self.assertIn(
+            '<span class="brand-combobox-option-label">Ремень</span>',
+            bulk_category_component,
+        )
+        categories = ("Наручные часы", "Ремень", "Аксессуары")
+        self.assertEqual(
+            [
+                category
+                for category in categories
+                if category.strip().lower().startswith("н")
+            ],
+            ["Наручные часы"],
+        )
+        self.assertEqual(
+            [
+                category
+                for category in categories
+                if category.strip().lower().startswith("нар")
+            ],
+            ["Наручные часы"],
+        )
+        self.assertEqual(
+            [
+                category
+                for category in categories
+                if category.strip().lower().startswith("Н".lower())
+            ],
+            ["Наручные часы"],
+        )
+        self.assertIn(
+            'data-clear-selection-on-search-clear="true"',
+            bulk_category_component,
+        )
+        self.assertIn('searchInput.addEventListener("input"', html)
+        self.assertIn('filterBrandList("", combobox)', html)
 
     def test_sales_template_has_search_state_resize_fallback_and_mobile_css(self):
         with mock.patch.object(
