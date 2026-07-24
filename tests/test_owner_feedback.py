@@ -686,6 +686,24 @@ class OwnerFeedbackTest(unittest.TestCase):
         self.assertIn('aria-label="Сбросить диапазон дат"', html)
         self.assertIn("resetWarehouseTableFilters", html)
         self.assertIn("clearWarehouseDateRange", html)
+        self.assertIn('id="warehouseMoreMenu"', html)
+        self.assertIn('id="warehouseMoreDropdown"', html)
+        self.assertIn("toggleWarehouseMoreMenu", html)
+        self.assertIn("runWarehouseMoreAction('bulk')", html)
+        self.assertIn("runWarehouseMoreAction('map')", html)
+        self.assertIn('role="menuitem"', html)
+        self.assertLess(
+            html.index("Фильтры"),
+            html.index('id="warehouseMoreMenu"'),
+        )
+        self.assertLess(
+            html.index('id="warehouseMoreMenu"'),
+            html.index('id="warehouseFilterReset"'),
+        )
+        self.assertLess(
+            html.index('id="warehouseFilterReset"'),
+            html.index("+ Добавить товар"),
+        )
 
         with mock.patch.object(
             web, "get_excel_warehouse_items", return_value=[first, second]
