@@ -1218,6 +1218,10 @@ def warehouse_page():
             total_reserve=total_reserve,
             total_available=total_available,
             stock_operations=ExcelProductCatalog().list_manual_stock_operations(),
+            bulk_ui_e2e=(
+                app.testing
+                and request.args.get("bulk_ui_e2e") == "1"
+            ),
         )
     )
     response.headers["Cache-Control"] = (

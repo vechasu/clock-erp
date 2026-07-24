@@ -306,9 +306,13 @@
 
         .warehouse-bulk-form.is-open {
             display: grid;
+            visibility: visible;
+            opacity: 1;
         }
 
         .warehouse-bulk-toolbar {
+            position: relative;
+            z-index: 12;
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -318,6 +322,18 @@
             border-radius: 14px;
             background: #ffffff;
             box-shadow: 0 8px 22px rgba(15, 23, 42, 0.05);
+        }
+
+        .warehouse-bulk-build-marker,
+        .warehouse-bulk-fields-marker {
+            color: #94a3b8;
+            font-size: 9px;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+        }
+
+        .warehouse-bulk-fields-marker {
+            grid-column: 1 / -1;
         }
 
         .warehouse-bulk-actions {
@@ -3946,8 +3962,13 @@
 
             <div id="warehouseBulkPanel" class="warehouse-bulk-panel">
                 <div class="warehouse-bulk-toolbar">
-                    <div id="warehouseBulkCount" class="warehouse-bulk-count">
-                        Выбрано: 0 товаров
+                    <div>
+                        <div id="warehouseBulkCount" class="warehouse-bulk-count">
+                            Выбрано: 0 товаров
+                        </div>
+                        <div class="warehouse-bulk-build-marker">
+                            BULK_EDIT_UI_BUILD_PENDING
+                        </div>
                     </div>
                     <div class="warehouse-bulk-actions">
                         <button
@@ -3985,6 +4006,9 @@
                     action="/warehouse/bulk-edit"
                     onsubmit="return confirmWarehouseBulkEdit()"
                 >
+                <div class="warehouse-bulk-fields-marker">
+                    BULK_FIELDS_RENDERED
+                </div>
                 <input
                     id="warehouseBulkReturnQuery"
                     type="hidden"
@@ -5654,6 +5678,8 @@
             ? forceOpen
             : !form.classList.contains("is-open");
 
+        form.hidden = false;
+        form.removeAttribute("hidden");
         form.classList.toggle("is-open", shouldOpen);
 
         if (editButton) {
@@ -6702,6 +6728,81 @@
             hideWarehouseNotice
         );
     </script>
+
+    {% if bulk_ui_e2e %}
+    <script>
+        window.addEventListener("load", function() {
+            try {
+                document.getElementById("warehouseMoreTrigger").click();
+                document.getElementById("warehouseBulkToggle").click();
+
+                const productCheckboxes = Array.from(
+                    document.querySelectorAll(
+                        ".js-warehouse-product-select"
+                    )
+                ).slice(0, 2);
+
+                if (productCheckboxes.length !== 2) {
+                    throw new Error("expected two product checkboxes");
+                }
+
+                productCheckboxes.forEach(function(checkbox) {
+                    checkbox.click();
+                });
+                document.getElementById(
+                    "warehouseBulkEditButton"
+                ).click();
+
+                window.requestAnimationFrame(function() {
+                    const form = document.getElementById(
+                        "warehouseBulkForm"
+                    );
+                    const brand = document.getElementById(
+                        "bulkBrandCombobox"
+                    );
+                    const category = document.getElementById(
+                        "bulkCategory"
+                    );
+                    const submit = document.getElementById(
+                        "warehouseBulkSubmit"
+                    );
+                    const isVisible = function(element) {
+                        const styles = window.getComputedStyle(element);
+                        const bounds = element.getBoundingClientRect();
+                        return (
+                            styles.display !== "none"
+                            && styles.visibility !== "hidden"
+                            && styles.opacity !== "0"
+                            && bounds.width > 0
+                            && bounds.height > 0
+                        );
+                    };
+                    const passed = (
+                        isVisible(form)
+                        && isVisible(brand)
+                        && isVisible(category)
+                        && isVisible(submit)
+                        && !brand.querySelector(
+                            ".brand-combobox-trigger"
+                        ).disabled
+                        && !category.querySelector(
+                            ".brand-combobox-trigger"
+                        ).disabled
+                    );
+
+                    document.documentElement.dataset.bulkUiE2e = (
+                        passed ? "pass" : "fail"
+                    );
+                });
+            } catch (error) {
+                document.documentElement.dataset.bulkUiE2e = "fail";
+                document.documentElement.dataset.bulkUiE2eError = (
+                    error.message
+                );
+            }
+        });
+    </script>
+    {% endif %}
 
 </body>
 </html>
