@@ -3680,6 +3680,7 @@
         }
 
     </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/erp-components.css') }}">
 </head>
 <body>
     {% macro render_catalog_combobox(component_id, input_name, options, selected_value="", include_all=false, item_label="значение", all_label="Все", disabled=false, prefix_search=true, empty_label="Ничего не найдено", component_class="", clear_selection_on_search_clear=false) %}
@@ -3725,19 +3726,19 @@
                 </div>
             {% endif %}
 
-            <div class="stats">
-                <div class="stat">
+            <div class="stats erp-stats">
+                <div class="stat erp-stat-card">
                     <div class="stock-summary">
                         <div class="stock-summary-item">
-                            <div class="stat-title">Позиций</div>
-                            <div id="visiblePositionsCount" class="stat-value">{{ visible_positions }}</div>
+                            <div class="stat-title erp-stat-label">Позиций</div>
+                            <div id="visiblePositionsCount" class="stat-value erp-stat-value">{{ visible_positions }}</div>
                         </div>
 
                         <div class="stock-summary-divider"></div>
 
                         <div class="stock-summary-item">
-                            <div class="stat-title">Остаток, единиц</div>
-                            <div class="stat-value">{{ total_stock_display }}</div>
+                            <div class="stat-title erp-stat-label">Остаток, единиц</div>
+                            <div class="stat-value erp-stat-value">{{ total_stock_display }}</div>
                         </div>
 
 
@@ -3763,8 +3764,8 @@
             {% endif %}
 
 
-            <div class="search-card">
-                <form class="search-form" method="get" action="/warehouse">
+            <div class="search-card erp-toolbar-card">
+                <form class="search-form erp-toolbar" method="get" action="/warehouse">
                     <input type="hidden" name="sort_by" value="{{ sort_by }}">
                     <input type="hidden" name="sort_dir" value="{{ sort_dir }}">
                     {% if selected_category %}
@@ -3789,9 +3790,10 @@
                         <input type="hidden" name="date_to" value="{{ created_date_to }}">
                     {% endif %}
 
-                    <div class="search-input-wrap">
+                    <div class="search-input-wrap erp-search-wrap">
                         <input
                             id="warehouseSearchInput"
+                            class="erp-search-input"
                             type="text"
                             name="q"
                             value="{{ query }}"
@@ -3799,7 +3801,7 @@
                         >
                         <button
                             id="warehouseSearchClear"
-                            class="search-clear-button{% if not query %} is-hidden{% endif %}"
+                            class="search-clear-button erp-search-clear{% if not query %} is-hidden{% endif %}"
                             type="button"
                             onclick="clearWarehouseSearch()"
                             aria-label="Очистить поиск"
@@ -3811,7 +3813,7 @@
 
                     <div class="warehouse-filter-actions">
                         <button
-                            class="search-tool-button"
+                            class="search-tool-button erp-secondary-action"
                             type="button"
                             onclick="openFilterDrawer()"
                         >
@@ -3836,7 +3838,7 @@
                     <div id="warehouseMoreMenu" class="warehouse-more-menu">
                         <button
                             id="warehouseMoreTrigger"
-                            class="search-tool-button warehouse-more-trigger"
+                            class="search-tool-button warehouse-more-trigger erp-secondary-action"
                             type="button"
                             aria-controls="warehouseMoreDropdown"
                             aria-expanded="false"
@@ -3874,7 +3876,7 @@
 
                     <button
                         id="warehouseFilterReset"
-                        class="search-tool-button warehouse-reset-button"
+                        class="search-tool-button warehouse-reset-button erp-reset-action"
                         type="button"
                         onclick="resetWarehouseTableFilters()"
                         {% if not (query or selected_brand or selected_category or selected_cell or created_date_from or created_date_to or hide_zero or sort_by != "name" or sort_dir != "asc") %}hidden{% endif %}
@@ -3883,7 +3885,7 @@
                     </button>
 
                     <button
-                        class="add-position-card"
+                        class="add-position-card erp-primary-action"
                         type="button"
                         onclick="toggleWarehouseAddCard()"
                     >
@@ -4080,9 +4082,9 @@
                 </form>
             </div>
 
-            <div class="table-card">
+            <div class="table-card erp-table-card">
                 {% if items %}
-                    <table id="warehouseProductsTable" class="warehouse-products-table">
+                    <table id="warehouseProductsTable" class="warehouse-products-table erp-data-table">
                         <colgroup>
                             <col class="warehouse-col-photo" data-column-key="photo">
                             <col class="warehouse-col-name" data-column-key="name">
@@ -4110,13 +4112,13 @@
                                 </th>
                                 <th data-column-key="name">
                                     <span
-                                        class="warehouse-sort-label{% if sort_by == 'name' %} is-active{% endif %}"
+                                        class="warehouse-sort-label erp-sort-label{% if sort_by == 'name' %} is-active{% endif %}"
                                         data-sort-field="name"
                                         onclick="sortWarehouseTable(this.dataset.sortField)"
                                         title="А → Я / A → Z. Повторное нажатие: Я → А / Z → A"
                                     >
                                         Название
-                                        <span class="warehouse-sort-arrow">
+                                        <span class="warehouse-sort-arrow erp-sort-arrow">
                                             {% if sort_by == "name" %}
                                                 {% if sort_dir == "asc" %}↑{% else %}↓{% endif %}
                                             {% else %}↕{% endif %}
@@ -4128,13 +4130,13 @@
 
                                 <th data-column-key="article">
                                     <span
-                                        class="warehouse-sort-label{% if sort_by == 'article' %} is-active{% endif %}"
+                                        class="warehouse-sort-label erp-sort-label{% if sort_by == 'article' %} is-active{% endif %}"
                                         data-sort-field="article"
                                         onclick="sortWarehouseTable(this.dataset.sortField)"
                                         title="А → Я / A → Z. Повторное нажатие: Я → А / Z → A"
                                     >
                                         Артикул
-                                        <span class="warehouse-sort-arrow">
+                                        <span class="warehouse-sort-arrow erp-sort-arrow">
                                             {% if sort_by == "article" %}
                                                 {% if sort_dir == "asc" %}↑{% else %}↓{% endif %}
                                             {% else %}↕{% endif %}
@@ -4144,13 +4146,13 @@
 
                                 <th data-column-key="brand">
                                     <span
-                                        class="warehouse-sort-label{% if sort_by == 'brand' %} is-active{% endif %}"
+                                        class="warehouse-sort-label erp-sort-label{% if sort_by == 'brand' %} is-active{% endif %}"
                                         data-sort-field="brand"
                                         onclick="sortWarehouseTable(this.dataset.sortField)"
                                         title="А → Я / A → Z. Повторное нажатие: Я → А / Z → A"
                                     >
                                         Бренд
-                                        <span class="warehouse-sort-arrow">
+                                        <span class="warehouse-sort-arrow erp-sort-arrow">
                                             {% if sort_by == "brand" %}
                                                 {% if sort_dir == "asc" %}↑{% else %}↓{% endif %}
                                             {% else %}↕{% endif %}
@@ -4160,13 +4162,13 @@
 
                                 <th data-column-key="category">
                                     <span
-                                        class="warehouse-sort-label{% if sort_by == 'category' %} is-active{% endif %}"
+                                        class="warehouse-sort-label erp-sort-label{% if sort_by == 'category' %} is-active{% endif %}"
                                         data-sort-field="category"
                                         onclick="sortWarehouseTable(this.dataset.sortField)"
                                         title="А → Я / A → Z. Повторное нажатие: Я → А / Z → A"
                                     >
                                         Категория
-                                        <span class="warehouse-sort-arrow">
+                                        <span class="warehouse-sort-arrow erp-sort-arrow">
                                             {% if sort_by == "category" %}
                                                 {% if sort_dir == "asc" %}↑{% else %}↓{% endif %}
                                             {% else %}↕{% endif %}
@@ -4177,13 +4179,13 @@
                                 <th data-column-key="stock">
                                     <div class="stock-column-title">
                                         <span
-                                            class="warehouse-sort-label{% if sort_by == 'stock' %} is-active{% endif %}"
+                                            class="warehouse-sort-label erp-sort-label{% if sort_by == 'stock' %} is-active{% endif %}"
                                             data-sort-field="stock"
                                             onclick="sortWarehouseTable(this.dataset.sortField)"
                                             title="По возрастанию. Повторное нажатие: по убыванию"
                                         >
                                             Остаток
-                                            <span class="warehouse-sort-arrow">
+                                            <span class="warehouse-sort-arrow erp-sort-arrow">
                                                 {% if sort_by == "stock" %}
                                                     {% if sort_dir == "asc" %}↑{% else %}↓{% endif %}
                                                 {% else %}↕{% endif %}
@@ -4240,13 +4242,13 @@
 
                                 <th class="created-column" data-column-key="created">
                                     <span
-                                        class="warehouse-sort-label{% if sort_by == 'created_at' %} is-active{% endif %}"
+                                        class="warehouse-sort-label erp-sort-label{% if sort_by == 'created_at' %} is-active{% endif %}"
                                         data-sort-field="created_at"
                                         onclick="sortWarehouseTable(this.dataset.sortField)"
                                         title="Старые → новые. Повторное нажатие: новые → старые"
                                     >
                                         Добавлено
-                                        <span class="warehouse-sort-arrow">
+                                        <span class="warehouse-sort-arrow erp-sort-arrow">
                                             {% if sort_by == "created_at" %}
                                                 {% if sort_dir == "asc" %}↑{% else %}↓{% endif %}
                                             {% else %}↕{% endif %}
@@ -4256,13 +4258,13 @@
 
                                 <th data-column-key="cell">
                                     <span
-                                        class="warehouse-sort-label{% if sort_by == 'cell' %} is-active{% endif %}"
+                                        class="warehouse-sort-label erp-sort-label{% if sort_by == 'cell' %} is-active{% endif %}"
                                         data-sort-field="cell"
                                         onclick="sortWarehouseTable(this.dataset.sortField)"
                                         title="А → Я / A → Z. Повторное нажатие: Я → А / Z → A"
                                     >
                                         Ячейка
-                                        <span class="warehouse-sort-arrow">
+                                        <span class="warehouse-sort-arrow erp-sort-arrow">
                                             {% if sort_by == "cell" %}
                                                 {% if sort_dir == "asc" %}↑{% else %}↓{% endif %}
                                             {% else %}↕{% endif %}
@@ -4436,7 +4438,7 @@
                 <input type="hidden" name="date_from" value="{{ created_date_from }}">
                 <input type="hidden" name="date_to" value="{{ created_date_to }}">
                 <button
-                    class="warehouse-date-trigger"
+                    class="warehouse-date-trigger erp-period-trigger erp-secondary-action"
                     type="button"
                     aria-haspopup="dialog"
                     aria-expanded="false"
