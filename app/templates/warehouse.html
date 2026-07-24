@@ -291,7 +291,7 @@
         .warehouse-bulk-form {
             position: relative;
             display: none;
-            grid-template-columns: auto repeat(4, minmax(150px, 1fr)) auto;
+            grid-template-columns: repeat(4, minmax(150px, 1fr)) auto;
             gap: 8px;
             align-items: end;
             min-height: 0;
@@ -358,19 +358,34 @@
         }
 
         .warehouse-bulk-action:disabled,
-        .warehouse-bulk-form > button[type="submit"]:disabled {
+        .warehouse-bulk-form-actions button[type="submit"]:disabled {
             cursor: not-allowed;
             opacity: 0.48;
         }
 
-        .warehouse-bulk-form > button[type="submit"] {
+        .warehouse-bulk-form-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .warehouse-bulk-form-actions button {
             min-height: 48px;
+        }
+
+        .warehouse-bulk-form-actions button[type="submit"] {
             background: #2563eb;
             color: #ffffff;
         }
 
-        .warehouse-bulk-form > button[type="submit"]:hover:not(:disabled) {
+        .warehouse-bulk-form-actions button[type="submit"]:hover:not(:disabled) {
             background: #1d4ed8;
+        }
+
+        .warehouse-bulk-cancel {
+            border: 1px solid #dbe3ec;
+            background: #ffffff;
+            color: #334155;
         }
 
         .warehouse-bulk-panel {
@@ -409,6 +424,11 @@
             color: #64748b;
             font-size: 11px;
             font-weight: 750;
+        }
+
+        .warehouse-bulk-field-title {
+            min-height: 15px;
+            color: #64748b;
         }
 
         .warehouse-bulk-field label {
@@ -3965,17 +3985,28 @@
                     action="/warehouse/bulk-edit"
                     onsubmit="return confirmWarehouseBulkEdit()"
                 >
+                <input
+                    id="warehouseBulkReturnQuery"
+                    type="hidden"
+                    name="return_query"
+                    value=""
+                >
                 <div class="warehouse-bulk-field">
-                    <label>
-                        <input type="checkbox" name="apply_brand" value="1" data-bulk-toggle="bulkBrandCombobox">
-                        Изменить бренд
-                    </label>
+                    <input
+                        type="checkbox"
+                        name="apply_brand"
+                        value="1"
+                        data-bulk-toggle="bulkBrandCombobox"
+                        data-bulk-auto-apply="true"
+                        data-bulk-label="Бренд"
+                        hidden
+                    >
+                    <div class="warehouse-bulk-field-title">Бренд</div>
                     {{ render_catalog_combobox(
                         "bulkBrandCombobox",
                         "brand",
                         brand_groups,
                         item_label="бренд",
-                        disabled=true,
                         prefix_search=true,
                         component_class="filter-combobox",
                         clear_selection_on_search_clear=true
@@ -3983,16 +4014,21 @@
                 </div>
 
                 <div class="warehouse-bulk-field">
-                    <label>
-                        <input type="checkbox" name="apply_category" value="1" data-bulk-toggle="bulkCategory">
-                        Изменить категорию
-                    </label>
+                    <input
+                        type="checkbox"
+                        name="apply_category"
+                        value="1"
+                        data-bulk-toggle="bulkCategory"
+                        data-bulk-auto-apply="true"
+                        data-bulk-label="Категория"
+                        hidden
+                    >
+                    <div class="warehouse-bulk-field-title">Категория</div>
                     {{ render_catalog_combobox(
                         "bulkCategory",
                         "category",
                         category_groups,
                         item_label="категорию",
-                        disabled=true,
                         prefix_search=true,
                         component_class="filter-combobox",
                         clear_selection_on_search_clear=true
@@ -4015,9 +4051,18 @@
                     </select>
                 </div>
 
-                <button id="warehouseBulkSubmit" type="submit" disabled>
-                    Применить
-                </button>
+                <div class="warehouse-bulk-form-actions">
+                    <button id="warehouseBulkSubmit" type="submit" disabled>
+                        Применить
+                    </button>
+                    <button
+                        class="warehouse-bulk-cancel"
+                        type="button"
+                        onclick="cancelWarehouseBulkEditor()"
+                    >
+                        Отмена
+                    </button>
+                </div>
                 </form>
             </div>
 
@@ -5202,7 +5247,10 @@
             document.querySelectorAll(
                 '#warehouseBulkForm input[data-bulk-toggle]:checked'
             ).forEach(function(toggle) {
-                selectedActions.push(toggle.parentElement.textContent.trim());
+                selectedActions.push(
+                    toggle.dataset.bulkLabel
+                    || toggle.parentElement.textContent.trim()
+                );
             });
 
             const activity = document.getElementById("bulkActivity");
@@ -5223,8 +5271,17 @@
                 String(window.scrollY)
             );
 
+            const returnQuery = document.getElementById(
+                "warehouseBulkReturnQuery"
+            );
+            if (returnQuery) {
+                returnQuery.value = window.location.search;
+            }
+
             return confirm(
-                "Применить к товарам: " + selectedCount + "?\n\n"
+                "Изменения будут применены к "
+                + selectedCount
+                + " товарам.\n\n"
                 + selectedActions.join(", ")
             );
         }
@@ -5449,16 +5506,19 @@
 
             function syncBulkField() {
                 if (target) {
+                    const autoApply = (
+                        toggle.dataset.bulkAutoApply === "true"
+                    );
                     const field = target.matches("[data-brand-combobox]")
                         ? target.querySelector(".brand-combobox-hidden")
                         : target;
                     const trigger = target.matches("[data-brand-combobox]")
                         ? target.querySelector(".brand-combobox-trigger")
                         : null;
-                    field.disabled = !toggle.checked;
-                    field.required = toggle.checked;
+                    field.disabled = autoApply ? false : !toggle.checked;
+                    field.required = autoApply ? false : toggle.checked;
                     if (trigger) {
-                        trigger.disabled = !toggle.checked;
+                        trigger.disabled = autoApply ? false : !toggle.checked;
                     }
                 }
                 syncWarehouseBulkSelection();
@@ -5570,6 +5630,7 @@
         button.setAttribute("aria-expanded", shouldOpen ? "true" : "false");
 
         if (!shouldOpen) {
+            resetWarehouseBulkEditor();
             toggleWarehouseBulkEditor(false);
             document.querySelectorAll(".warehouse-row-select").forEach(function(checkbox) {
                 checkbox.checked = false;
@@ -5601,6 +5662,42 @@
                 shouldOpen ? "true" : "false"
             );
         }
+    }
+
+    function resetWarehouseBulkEditor() {
+        [
+            "bulkBrandCombobox",
+            "bulkCategory"
+        ].forEach(function(componentId) {
+            const combobox = document.getElementById(componentId);
+            if (combobox) {
+                setBrandComboboxValue(combobox, "");
+                filterBrandList("", combobox);
+            }
+        });
+
+        const cellToggle = document.querySelector(
+            'input[data-bulk-toggle="bulkCell"]'
+        );
+        const cell = document.getElementById("bulkCell");
+        if (cellToggle) {
+            cellToggle.checked = false;
+            cellToggle.dispatchEvent(new Event("change"));
+        }
+        if (cell) {
+            cell.value = "";
+        }
+
+        const activity = document.getElementById("bulkActivity");
+        if (activity) {
+            activity.value = "keep";
+        }
+        syncWarehouseBulkSelection();
+    }
+
+    function cancelWarehouseBulkEditor() {
+        resetWarehouseBulkEditor();
+        toggleWarehouseBulkEditor(false);
     }
 
     function selectAllWarehouseBulkRows() {
@@ -5954,6 +6051,18 @@
                 valueElement.textContent = brand || emptyLabel;
             }
 
+            const bulkField = combobox.closest(
+                ".warehouse-bulk-field"
+            );
+            const autoApplyToggle = bulkField
+                ? bulkField.querySelector(
+                    'input[data-bulk-auto-apply="true"]'
+                )
+                : null;
+            if (autoApplyToggle) {
+                autoApplyToggle.checked = Boolean(brand);
+            }
+
             combobox
                 .querySelectorAll(".brand-combobox-option")
                 .forEach(function(option) {
@@ -5962,6 +6071,10 @@
                         (option.dataset.brand || "") === brand
                     );
                 });
+
+            if (autoApplyToggle) {
+                syncWarehouseBulkSelection();
+            }
         }
 
 
