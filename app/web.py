@@ -36,6 +36,7 @@ from flask import (
     Response,
     abort,
     jsonify,
+    make_response,
     redirect,
     render_template,
     request,
@@ -1193,30 +1194,38 @@ def warehouse_page():
         float(item.get("quantity") or 0) for item in stats_items
     )
 
-    return render_template(
-        "warehouse.html",
-        items=items,
-        query=query,
-        selected_category=selected_category,
-        selected_brand=selected_brand,
-        selected_cell=selected_cell,
-        created_date_from=created_date_from,
-        created_date_to=created_date_to,
-        hide_zero=hide_zero,
-        open_add=request.args.get("open_add") == "1",
-        sort_by=sort_by,
-        sort_dir=sort_dir,
-        add_request_id=uuid.uuid4().hex,
-        visible_positions=visible_positions,
-        brand_groups=brand_groups,
-        category_groups=category_groups,
-        cell_groups=cell_groups,
-        total_stock=total_stock,
-        total_stock_display=format_stock_number(total_stock),
-        total_reserve=total_reserve,
-        total_available=total_available,
-        stock_operations=ExcelProductCatalog().list_manual_stock_operations(),
+    response = make_response(
+        render_template(
+            "warehouse.html",
+            items=items,
+            query=query,
+            selected_category=selected_category,
+            selected_brand=selected_brand,
+            selected_cell=selected_cell,
+            created_date_from=created_date_from,
+            created_date_to=created_date_to,
+            hide_zero=hide_zero,
+            open_add=request.args.get("open_add") == "1",
+            sort_by=sort_by,
+            sort_dir=sort_dir,
+            add_request_id=uuid.uuid4().hex,
+            visible_positions=visible_positions,
+            brand_groups=brand_groups,
+            category_groups=category_groups,
+            cell_groups=cell_groups,
+            total_stock=total_stock,
+            total_stock_display=format_stock_number(total_stock),
+            total_reserve=total_reserve,
+            total_available=total_available,
+            stock_operations=ExcelProductCatalog().list_manual_stock_operations(),
+        )
     )
+    response.headers["Cache-Control"] = (
+        "no-store, no-cache, must-revalidate, max-age=0"
+    )
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 
 @app.route("/warehouse/product/<product_id>/thumbnail")
