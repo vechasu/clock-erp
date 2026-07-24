@@ -1203,6 +1203,43 @@ class OwnerFeedbackTest(unittest.TestCase):
         self.assertIn('salesDateFrom.value = "";', html)
         self.assertIn('salesDateTo.value = "";', html)
 
+    def test_sales_search_clear_matches_warehouse_search_clear(self):
+        with mock.patch.object(
+            web, "get_warehouse_items", return_value=[warehouse_item()]
+        ), mock.patch.object(
+            web, "load_stock_operations", return_value=[]
+        ), mock.patch.object(
+            web, "load_manual_sales", return_value=[]
+        ), mock.patch.object(
+            web, "load_automatic_sales_overrides", return_value={}
+        ), mock.patch.object(
+            web,
+            "get_russian_region_cities",
+            return_value={"Москва": ["Москва"]},
+        ):
+            page = self.client.get("/sales")
+
+        html = page.get_data(as_text=True)
+        self.assertEqual(page.status_code, 200)
+        self.assertIn(
+            'class="sales-search-wrap search-input-wrap"',
+            html,
+        )
+        self.assertIn(
+            'class="search-clear-button is-hidden"',
+            html,
+        )
+        self.assertIn("right: 14px", html)
+        self.assertIn("width: 18px", html)
+        self.assertIn("height: 18px", html)
+        self.assertIn("font-size: 22px", html)
+        self.assertIn("opacity: 0.72", html)
+        self.assertIn('salesSearch.value = "";', html)
+        self.assertIn(
+            'clearSalesSearch?.addEventListener("click"',
+            html,
+        )
+
     def test_sales_product_and_category_text_stays_inside_cells(self):
         manual_sale = {
             "id": "manual-long-values",
