@@ -634,8 +634,12 @@ class OwnerFeedbackTest(unittest.TestCase):
         self.assertIn('id="bulkBrandCombobox"', html)
         self.assertIn('role="combobox"', html)
         self.assertIn('data-brand="Brand"', html)
-        self.assertIn('id="bulkBrandClear"', html)
-        self.assertIn("normalizeBrandSearch", html)
+        self.assertIn(
+            'data-bulk-toggle="bulkBrandCombobox"',
+            html,
+        )
+        self.assertNotIn('id="bulkBrandClear"', html)
+        self.assertNotIn("normalizeBrandSearch", html)
         self.assertIn('event.key === "ArrowDown"', html)
         self.assertNotIn('id="warehouseBrandOptions"', html)
 
@@ -762,6 +766,26 @@ class OwnerFeedbackTest(unittest.TestCase):
         self.assertIn('event.key === "ArrowDown"', html)
         self.assertIn('event.key === "Enter"', html)
         self.assertIn('event.key === "Escape"', html)
+
+        bulk_brand_component = html.split(
+            'id="bulkBrandCombobox"',
+            1,
+        )[1].split('id="bulkCategory"', 1)[0]
+        bulk_category_component = html.split(
+            'id="bulkCategory"',
+            1,
+        )[1].split('data-bulk-toggle="bulkCell"', 1)[0]
+        for component in (
+            bulk_brand_component,
+            bulk_category_component,
+        ):
+            self.assertIn('class="brand-combobox filter-combobox"', component)
+            self.assertIn('data-prefix-search="false"', component)
+            self.assertIn('data-brand-search-input', component)
+            self.assertIn('data-brand-search-clear', component)
+            self.assertIn('disabled', component)
+        self.assertNotIn("bulk-brand-combobox", html)
+        self.assertNotIn("bulk-brand-dropdown", html)
 
     def test_sales_template_has_search_state_resize_fallback_and_mobile_css(self):
         with mock.patch.object(

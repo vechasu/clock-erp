@@ -1075,7 +1075,6 @@ def warehouse_page():
     all_items = get_excel_warehouse_items()
     brand_groups = build_brand_groups(all_items)
     category_groups = build_category_groups(all_items)
-    bulk_brand_options = [group["name"] for group in brand_groups]
     cell_groups = build_cell_groups(all_items)
 
     items = all_items
@@ -1211,7 +1210,6 @@ def warehouse_page():
         visible_positions=visible_positions,
         brand_groups=brand_groups,
         category_groups=category_groups,
-        bulk_brand_options=bulk_brand_options,
         cell_groups=cell_groups,
         total_stock=total_stock,
         total_stock_display=format_stock_number(total_stock),
