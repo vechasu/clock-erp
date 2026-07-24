@@ -1170,6 +1170,53 @@ class OwnerFeedbackTest(unittest.TestCase):
         self.assertIn("clearSalesDateFrom", html)
         self.assertIn("@media (max-width:", html)
 
+    def test_sales_product_and_category_text_stays_inside_cells(self):
+        manual_sale = {
+            "id": "manual-long-values",
+            "created_at": "2026-07-22",
+            "source": "Tictactoy",
+            "product_id": PRODUCT_ID,
+            "product_name": (
+                "Очень длинное название товара для проверки границ ячейки"
+            ),
+            "brand": "Brand",
+            "category": "Очень длинная категория Будильник",
+            "quantity": 1,
+            "unit_price": 1000,
+            "order_status": "completed",
+        }
+
+        with mock.patch.object(
+            web, "get_warehouse_items", return_value=[warehouse_item()]
+        ), mock.patch.object(
+            web, "load_stock_operations", return_value=[]
+        ), mock.patch.object(
+            web, "load_manual_sales", return_value=[manual_sale]
+        ), mock.patch.object(
+            web, "load_automatic_sales_overrides", return_value={}
+        ), mock.patch.object(
+            web,
+            "get_russian_region_cities",
+            return_value={"Москва": ["Москва"]},
+        ):
+            page = self.client.get("/sales")
+
+        html = page.get_data(as_text=True)
+        self.assertEqual(page.status_code, 200)
+        self.assertIn("Очень длинное название товара", html)
+        self.assertIn("Очень длинная категория Будильник", html)
+        self.assertIn(
+            ".sales-table td.col-product .manual-view-value",
+            html,
+        )
+        self.assertIn(
+            ".sales-table td.col-category .automatic-view-value",
+            html,
+        )
+        self.assertIn("text-overflow: ellipsis", html)
+        self.assertIn("white-space: nowrap", html)
+        self.assertIn("overflow: hidden", html)
+
     def test_manual_and_automatic_sales_rows_match_table_headers(self):
         manual_sale = {
             "id": "manual-1",

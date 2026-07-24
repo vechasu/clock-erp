@@ -1822,6 +1822,25 @@
             min-width: 170px;
         }
 
+        .sales-table td {
+            min-width: 0;
+            max-width: 100%;
+            overflow: hidden;
+        }
+
+        .sales-table td.col-product .manual-view-value,
+        .sales-table td.col-product .automatic-view-value,
+        .sales-table td.col-category .manual-view-value,
+        .sales-table td.col-category .automatic-view-value {
+            display: block;
+            width: 100%;
+            min-width: 0;
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
         .sales-table .col-price {
             width: 130px !important;
             min-width: 130px;
