@@ -784,12 +784,16 @@ class OwnerFeedbackTest(unittest.TestCase):
             'id="bulkCategory"',
             1,
         )[1].split('data-bulk-toggle="bulkCell"', 1)[0]
-        for component in (
+        self.assertIn(
+            'data-prefix-search="true"',
             bulk_brand_component,
+        )
+        self.assertIn(
+            'data-prefix-search="false"',
             bulk_category_component,
-        ):
+        )
+        for component in (bulk_brand_component, bulk_category_component):
             self.assertIn('class="brand-combobox filter-combobox"', component)
-            self.assertIn('data-prefix-search="false"', component)
             self.assertIn(
                 'data-clear-selection-on-search-clear="true"',
                 component,
@@ -799,6 +803,77 @@ class OwnerFeedbackTest(unittest.TestCase):
             self.assertIn('disabled', component)
         self.assertNotIn("bulk-brand-combobox", html)
         self.assertNotIn("bulk-brand-dropdown", html)
+
+    def test_bulk_brand_search_matches_visible_name_prefix(self):
+        items = []
+        for index, brand in enumerate(("AARK", "Alpha", "Casio"), start=1):
+            item = warehouse_item()
+            item.update(
+                id=f"{index:08d}-2222-2222-2222-222222222222",
+                brand=brand,
+                category="Наручные часы",
+            )
+            items.append(item)
+
+        with mock.patch.object(
+            web, "get_excel_warehouse_items", return_value=items
+        ):
+            page = self.client.get("/warehouse")
+
+        html = page.get_data(as_text=True)
+        bulk_brand_component = html.split(
+            'id="bulkBrandCombobox"',
+            1,
+        )[1].split('id="bulkCategory"', 1)[0]
+
+        self.assertIn('data-prefix-search="true"', bulk_brand_component)
+        self.assertIn(
+            '<span class="brand-combobox-option-label">AARK</span>',
+            bulk_brand_component,
+        )
+        self.assertIn(
+            '<span class="brand-combobox-option-label">Alpha</span>',
+            bulk_brand_component,
+        )
+        self.assertIn(
+            '<span class="brand-combobox-option-label">Casio</span>',
+            bulk_brand_component,
+        )
+        self.assertIn("trim().toLocaleLowerCase()", html)
+        self.assertIn(
+            'option.querySelector(',
+            html,
+        )
+        self.assertIn(
+            '".brand-combobox-option-label"',
+            html,
+        )
+        self.assertIn("label ? label.textContent : \"\"", html)
+        self.assertIn("brandName.startsWith(query)", html)
+        self.assertEqual(
+            [
+                brand
+                for brand in ("AARK", "Alpha", "Casio")
+                if brand.strip().lower().startswith("a")
+            ],
+            ["AARK", "Alpha"],
+        )
+        self.assertEqual(
+            [
+                brand
+                for brand in ("AARK", "Alpha", "Casio")
+                if brand.strip().lower().startswith("ca")
+            ],
+            ["Casio"],
+        )
+        self.assertNotIn(
+            "Casio",
+            [
+                brand
+                for brand in ("AARK", "Alpha", "Casio")
+                if brand.strip().lower().startswith("A".lower())
+            ],
+        )
 
     def test_sales_template_has_search_state_resize_fallback_and_mobile_css(self):
         with mock.patch.object(
