@@ -2855,6 +2855,10 @@
             color: #1d4ed8;
         }
 
+        .filter-combobox .brand-combobox-option[hidden] {
+            display: none;
+        }
+
 
         /* warehouse-map-products-ui */
 
@@ -3899,7 +3903,7 @@
                         "brand",
                         brand_groups,
                         item_label="бренд",
-                        empty_label="Бренды не найдены",
+                        prefix_search=false,
                         component_class="filter-combobox"
                     ) }}
 
@@ -3908,6 +3912,7 @@
                         "category",
                         category_groups,
                         item_label="категорию",
+                        prefix_search=false,
                         component_class="filter-combobox"
                     ) }}
 

@@ -715,6 +715,54 @@ class OwnerFeedbackTest(unittest.TestCase):
             r'id="warehouseFilterReset"[^>]*\shidden',
         )
 
+    def test_add_product_comboboxes_use_independent_contains_search(self):
+        items = []
+        for index, (brand, category) in enumerate((
+            ("Hypergrand", "Наручные часы"),
+            ("Klokers", "Ремень"),
+            ("Contempus", "Аксессуары"),
+        ), start=1):
+            item = warehouse_item()
+            item.update(
+                id=f"{index:08d}-1111-1111-1111-111111111111",
+                brand=brand,
+                category=category,
+                raw_category=category,
+            )
+            items.append(item)
+
+        with mock.patch.object(
+            web, "get_excel_warehouse_items", return_value=items
+        ):
+            page = self.client.get("/warehouse?open_add=1")
+
+        html = page.get_data(as_text=True)
+        brand_component = html.split('id="addBrandCombobox"', 1)[1].split(
+            'id="addCategoryCombobox"',
+            1,
+        )[0]
+        category_component = html.split('id="addCategoryCombobox"', 1)[1].split(
+            'name="stock"',
+            1,
+        )[0]
+
+        self.assertEqual(html.count('id="addBrandCombobox"'), 1)
+        self.assertEqual(html.count('id="addCategoryCombobox"'), 1)
+        self.assertIn('data-prefix-search="false"', brand_component)
+        self.assertIn('data-prefix-search="false"', category_component)
+        self.assertIn("Ничего не найдено", brand_component)
+        self.assertIn("Ничего не найдено", category_component)
+        self.assertIn(".filter-combobox .brand-combobox-option[hidden]", html)
+        self.assertIn("brandName.includes(query)", html)
+        self.assertIn('this.closest(\'[data-brand-combobox]\')', html)
+        self.assertIn('searchInput.dataset.searchBound === "1"', html)
+        self.assertIn('searchInput.value = ""', html)
+        self.assertIn('filterBrandList("", combobox)', html)
+        self.assertIn('hiddenInput.value = brand', html)
+        self.assertIn('event.key === "ArrowDown"', html)
+        self.assertIn('event.key === "Enter"', html)
+        self.assertIn('event.key === "Escape"', html)
+
     def test_sales_template_has_search_state_resize_fallback_and_mobile_css(self):
         with mock.patch.object(
             web, "get_warehouse_items", return_value=[warehouse_item()]
