@@ -758,10 +758,19 @@ class OwnerFeedbackTest(unittest.TestCase):
         self.assertIn("Ничего не найдено", category_component)
         self.assertIn(".filter-combobox .brand-combobox-option[hidden]", html)
         self.assertIn("brandName.includes(query)", html)
-        self.assertIn('this.closest(\'[data-brand-combobox]\')', html)
+        self.assertIn('searchInput.addEventListener("input"', html)
+        self.assertIn(
+            "filterBrandList(searchInput.value, combobox)",
+            html,
+        )
         self.assertIn('searchInput.dataset.searchBound === "1"', html)
         self.assertIn('searchInput.value = ""', html)
         self.assertIn('filterBrandList("", combobox)', html)
+        self.assertIn(
+            "combobox.dataset.clearSelectionOnSearchClear",
+            html,
+        )
+        self.assertIn('setBrandComboboxValue(combobox, "")', html)
         self.assertIn('hiddenInput.value = brand', html)
         self.assertIn('event.key === "ArrowDown"', html)
         self.assertIn('event.key === "Enter"', html)
@@ -781,6 +790,10 @@ class OwnerFeedbackTest(unittest.TestCase):
         ):
             self.assertIn('class="brand-combobox filter-combobox"', component)
             self.assertIn('data-prefix-search="false"', component)
+            self.assertIn(
+                'data-clear-selection-on-search-clear="true"',
+                component,
+            )
             self.assertIn('data-brand-search-input', component)
             self.assertIn('data-brand-search-clear', component)
             self.assertIn('disabled', component)
