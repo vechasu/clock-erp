@@ -781,6 +781,63 @@ class OwnerFeedbackTest(unittest.TestCase):
             html,
         )
 
+    def test_warehouse_bulk_checkboxes_are_inside_photo_cells(self):
+        item = warehouse_item(has_images=True)
+
+        with mock.patch.object(
+            web, "get_excel_warehouse_items", return_value=[item]
+        ):
+            page = self.client.get("/warehouse")
+
+        html = page.get_data(as_text=True)
+        photo_header = re.search(
+            r'<th data-column-key="photo">(.*?)</th>',
+            html,
+            re.DOTALL,
+        )
+        name_header = re.search(
+            r'<th data-column-key="name">(.*?)</th>',
+            html,
+            re.DOTALL,
+        )
+        photo_cell = re.search(
+            r'<td data-column-key="photo">(.*?)</td>',
+            html,
+            re.DOTALL,
+        )
+        name_cell = re.search(
+            r'<td data-column-key="name">(.*?)</td>',
+            html,
+            re.DOTALL,
+        )
+
+        self.assertIsNotNone(photo_header)
+        self.assertIsNotNone(name_header)
+        self.assertIsNotNone(photo_cell)
+        self.assertIsNotNone(name_cell)
+        self.assertIn('id="warehouseSelectAll"', photo_header.group(1))
+        self.assertNotIn('id="warehouseSelectAll"', name_header.group(1))
+        self.assertIn(
+            "js-warehouse-product-select",
+            photo_cell.group(1),
+        )
+        self.assertIn(
+            "warehouse-product-thumb",
+            photo_cell.group(1),
+        )
+        self.assertLess(
+            photo_cell.group(1).index("js-warehouse-product-select"),
+            photo_cell.group(1).index("warehouse-product-thumb"),
+        )
+        self.assertNotIn(
+            "js-warehouse-product-select",
+            name_cell.group(1),
+        )
+        self.assertIn(
+            "body.warehouse-bulk-edit-open .warehouse-row-select",
+            html,
+        )
+
     def test_warehouse_filters_created_date_range_in_local_time(self):
         first = warehouse_item()
         first.update(
