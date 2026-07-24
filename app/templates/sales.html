@@ -602,7 +602,8 @@
             color: #7f1d1d;
         }
 
-        .sales-search-wrap {
+        .sales-search-wrap,
+        .search-input-wrap {
             position: relative;
             flex: 1 1 auto;
             min-width: 260px;
@@ -610,27 +611,49 @@
 
         .sales-search-wrap .search {
             width: 100%;
-            padding-right: 38px;
+            padding-right: 42px;
         }
 
-        .sales-search-clear {
+        .search-clear-button {
             position: absolute;
             top: 50%;
-            right: 7px;
-            width: 27px;
-            height: 27px;
-            padding: 0;
+            right: 14px;
             transform: translateY(-50%);
-            border: 0;
-            border-radius: 50%;
-            background: #e2e8f0;
-            color: #475569;
-            font-size: 18px;
+            width: 18px;
+            height: 18px;
+            padding: 0;
+            border: none;
+            background: transparent;
+            color: #94a3b8;
+            font-size: 22px;
+            font-weight: 400;
             line-height: 1;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0.72;
+            transition: color 0.15s ease, opacity 0.15s ease;
         }
 
-        .sales-search-clear.is-hidden {
+        .search-clear-button:hover,
+        .search-clear-button:focus-visible {
+            background: transparent;
+            color: #475569;
+            opacity: 1;
+        }
+
+        .search-clear-button:active {
+            color: #334155;
+            opacity: 1;
+        }
+
+        .search-clear-button.is-hidden {
             display: none;
+        }
+
+        .sales-search-wrap .search-clear-button {
+            height: 40px;
         }
 
         .sale-secondary-value {
@@ -2079,7 +2102,7 @@
         <section class="sales-data-card">
 
             <div class="toolbar sales-data-toolbar">
-                <div class="sales-search-wrap">
+                <div class="sales-search-wrap search-input-wrap">
                     <input
                         id="salesSearch"
                         class="search"
@@ -2088,7 +2111,7 @@
                     >
                     <button
                         id="clearSalesSearch"
-                        class="sales-search-clear is-hidden"
+                        class="search-clear-button is-hidden"
                         type="button"
                         aria-label="Очистить поиск"
                         title="Очистить поиск"
