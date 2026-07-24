@@ -1588,7 +1588,7 @@
         /* Конец дружелюбной панели поиска и фильтра дат */
 
 
-        /* Компактная горизонтальная панель дат v2 */
+        /* Единый выбор периода, как на странице склада */
         .sales-data-toolbar {
             display: flex;
             align-items: center;
@@ -1615,40 +1615,51 @@
             box-shadow: none;
         }
 
-        .sales-date-field {
-            display: inline-flex;
+        .warehouse-date-filter {
+            position: relative;
+            flex: 0 0 auto;
+        }
+
+        .sales-period-control {
+            position: relative;
+        }
+
+        .warehouse-date-trigger {
+            display: flex;
             align-items: center;
-            gap: 6px;
-            margin: 0;
-        }
-
-        .sales-date-field span {
-            padding: 0;
-            color: #64748b;
-            font-size: 12px;
-            font-weight: 800;
-            line-height: 1;
-            white-space: nowrap;
-        }
-
-        .sales-date-input {
-            width: 132px;
+            justify-content: space-between;
+            gap: 10px;
+            min-width: 184px;
             height: 40px;
-            padding: 0 28px 0 10px;
-            border: 1px solid #d7dde5;
+            padding: 0 34px 0 13px;
+            border: 1px solid #dce3ed;
             border-radius: 10px;
             background: #ffffff;
             color: #172033;
+            font: inherit;
             font-size: 12px;
             font-weight: 700;
-            outline: none;
-            box-shadow: none;
+            text-align: left;
+            cursor: pointer;
         }
 
-        .sales-date-one-clear {
+        .warehouse-date-trigger:hover {
+            border-color: #c8d2df;
+        }
+
+        .warehouse-date-filter.is-open .warehouse-date-trigger {
+            border-color: #8eb0ff;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.09);
+        }
+
+        .sales-period-icon {
+            color: #64748b;
+        }
+
+        .sales-period-clear {
             position: absolute;
             top: 50%;
-            right: 7px;
+            right: 8px;
             width: 18px;
             height: 18px;
             padding: 0;
@@ -1661,30 +1672,176 @@
             line-height: 16px;
         }
 
-        .sales-date-one-clear:hover:not(:disabled) {
+        .sales-period-clear:hover {
             background: #e2e8f0;
             color: #475569;
         }
 
-        .sales-date-one-clear:disabled {
-            visibility: hidden;
+        .sales-period-clear[hidden] {
+            display: none;
         }
 
-        .sales-date-input:focus {
-            border-color: #2563eb;
-            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
+        .warehouse-calendar-popup {
+            position: absolute;
+            z-index: 80;
+            top: calc(100% + 7px);
+            right: 0;
+            width: min(292px, calc(100vw - 32px));
+            padding: 12px;
+            border: 1px solid #dce3ed;
+            border-radius: 14px;
+            background: #ffffff;
+            box-shadow: 0 16px 40px rgba(15, 23, 42, 0.14);
         }
 
-        .sales-date-separator {
-            margin-top: 0;
-            color: #94a3b8;
-            font-size: 14px;
-            font-weight: 900;
+        .warehouse-calendar-popup[hidden] {
+            display: none;
+        }
+
+        .warehouse-calendar-header {
+            display: grid;
+            grid-template-columns: 30px 1fr 30px;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 9px;
+        }
+
+        .warehouse-calendar-nav {
+            width: 30px;
+            height: 30px;
+            padding: 0;
+            border: 1px solid #e2e8f0;
+            border-radius: 9px;
+            background: #ffffff;
+            color: #475569;
+            font-size: 17px;
             line-height: 1;
+            cursor: pointer;
+        }
+
+        .warehouse-calendar-nav:hover {
+            border-color: #cbd5e1;
+            background: #f8fafc;
+        }
+
+        .warehouse-calendar-month {
+            color: #172033;
+            font-size: 14px;
+            font-weight: 750;
+            text-align: center;
+            text-transform: capitalize;
+        }
+
+        .warehouse-calendar-weekdays,
+        .warehouse-calendar-days {
+            display: grid;
+            grid-template-columns: repeat(7, minmax(0, 1fr));
+        }
+
+        .warehouse-calendar-weekdays {
+            margin-bottom: 3px;
+            color: #94a3b8;
+            font-size: 10px;
+            font-weight: 700;
+            text-align: center;
+        }
+
+        .warehouse-calendar-weekdays span {
+            padding: 4px 0;
+        }
+
+        .warehouse-calendar-day {
+            position: relative;
+            height: 34px;
+            padding: 0;
+            border: 0;
+            background: transparent;
+            color: #334155;
+            font: inherit;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .warehouse-calendar-day span {
+            position: relative;
+            z-index: 1;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+        }
+
+        .warehouse-calendar-day.is-outside {
+            color: #cbd5e1;
+        }
+
+        .warehouse-calendar-day.is-in-range {
+            background: #dbeafe;
+        }
+
+        .warehouse-calendar-day.is-start.is-in-range {
+            background: linear-gradient(to right, transparent 50%, #dbeafe 50%);
+        }
+
+        .warehouse-calendar-day.is-end.is-in-range {
+            background: linear-gradient(to left, transparent 50%, #dbeafe 50%);
+        }
+
+        .warehouse-calendar-day.is-start span,
+        .warehouse-calendar-day.is-end span {
+            background: #2563eb;
+            color: #ffffff;
+        }
+
+        .warehouse-calendar-day.is-today:not(.is-start):not(.is-end) span {
+            border: 1px solid #2563eb;
+        }
+
+        .warehouse-calendar-day:hover span {
+            background: #eff6ff;
+            color: #1d4ed8;
+        }
+
+        .warehouse-calendar-day.is-start:hover span,
+        .warehouse-calendar-day.is-end:hover span {
+            background: #2563eb;
+            color: #ffffff;
+        }
+
+        .warehouse-calendar-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #eef2f7;
+        }
+
+        .warehouse-calendar-actions button {
+            min-height: 34px;
+            padding: 0 12px;
+            border-radius: 9px;
+            font: inherit;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .warehouse-calendar-reset {
+            border: 1px solid #e2e8f0;
+            background: #ffffff;
+            color: #64748b;
+        }
+
+        .warehouse-calendar-apply {
+            border: 1px solid #2563eb;
+            background: #2563eb;
+            color: #ffffff;
         }
 
         .sales-date-clear {
-            flex: 1 1 auto;
             height: 40px;
             padding: 0 12px;
             border: 1px solid #d7dde5;
@@ -1703,9 +1860,8 @@
             color: #334155;
         }
 
-        .sales-date-clear:disabled {
-            opacity: 0.5;
-            cursor: default;
+        .sales-date-clear[hidden] {
+            display: none;
         }
 
         @media (max-width: 1380px) {
@@ -1724,7 +1880,7 @@
                 justify-content: flex-start;
             }
         }
-        /* Конец компактной горизонтальной панели дат v2 */
+        /* Конец единого выбора периода */
 
 
         /* MANUAL SALE PRICE CSS V1 */
@@ -1943,52 +2099,49 @@
                     class="sales-date-filter"
                     aria-label="Фильтр продаж по дате"
                 >
-                    <label class="sales-date-field">
-                        <input
-                            id="salesDateFrom"
-                            class="sales-date-input"
-                            type="date"
-                            aria-label="Дата с"
-                        >
-                        <button
-                            id="clearSalesDateFrom"
-                            class="sales-date-one-clear"
-                            type="button"
-                            aria-label="Очистить дату с"
-                            title="Очистить дату с"
-                            disabled
-                        >×</button>
-                    </label>
-
-                    <span
-                        class="sales-date-separator"
-                        aria-hidden="true"
-                    >
-                        —
-                    </span>
-
-                    <label class="sales-date-field">
-                        <input
-                            id="salesDateTo"
-                            class="sales-date-input"
-                            type="date"
-                            aria-label="Дата по"
-                        >
-                        <button
-                            id="clearSalesDateTo"
-                            class="sales-date-one-clear"
-                            type="button"
-                            aria-label="Очистить дату по"
-                            title="Очистить дату по"
-                            disabled
-                        >×</button>
-                    </label>
+                    <div id="salesDateFilter" class="warehouse-date-filter">
+                        <input id="salesDateFrom" type="hidden">
+                        <input id="salesDateTo" type="hidden">
+                        <div class="sales-period-control">
+                            <button
+                                class="warehouse-date-trigger"
+                                type="button"
+                                aria-haspopup="dialog"
+                                aria-expanded="false"
+                            >
+                                <span data-date-range-label><span class="sales-period-icon">📅</span> Период</span>
+                            </button>
+                            <button
+                                id="clearSalesPeriod"
+                                class="sales-period-clear"
+                                type="button"
+                                aria-label="Очистить период"
+                                title="Очистить период"
+                                hidden
+                            >×</button>
+                        </div>
+                        <div class="warehouse-calendar-popup" role="dialog" aria-label="Выбор периода" hidden>
+                            <div class="warehouse-calendar-header">
+                                <button class="warehouse-calendar-nav" type="button" data-calendar-prev aria-label="Предыдущий месяц">‹</button>
+                                <div class="warehouse-calendar-month" data-calendar-month></div>
+                                <button class="warehouse-calendar-nav" type="button" data-calendar-next aria-label="Следующий месяц">›</button>
+                            </div>
+                            <div class="warehouse-calendar-weekdays">
+                                <span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span>
+                            </div>
+                            <div class="warehouse-calendar-days" data-calendar-days></div>
+                            <div class="warehouse-calendar-actions">
+                                <button class="warehouse-calendar-reset" type="button" data-calendar-reset>Сбросить</button>
+                                <button class="warehouse-calendar-apply" type="button" data-calendar-apply>Применить</button>
+                            </div>
+                        </div>
+                    </div>
 
                     <button
                         id="clearSalesDateFilter"
                         class="sales-date-clear"
                         type="button"
-                        disabled
+                        hidden
                     >
                         Сбросить
                     </button>
@@ -4752,11 +4905,11 @@
     const clearSalesDateFilter =
         document.getElementById("clearSalesDateFilter");
 
-    const clearSalesDateFrom =
-        document.getElementById("clearSalesDateFrom");
+    const clearSalesPeriod =
+        document.getElementById("clearSalesPeriod");
 
-    const clearSalesDateTo =
-        document.getElementById("clearSalesDateTo");
+    const salesDateFilter =
+        document.getElementById("salesDateFilter");
 
     const saleRows = Array.from(
         document.querySelectorAll(".sale-row")
@@ -4861,23 +5014,29 @@
             }
         });
 
-        if (clearSalesDateFilter) {
-            clearSalesDateFilter.disabled =
-                !selectedFrom && !selectedTo;
-        }
-
-        if (clearSalesDateFrom) {
-            clearSalesDateFrom.disabled = !selectedFrom;
-        }
-
-        if (clearSalesDateTo) {
-            clearSalesDateTo.disabled = !selectedTo;
-        }
+        clearSalesDateFilter.hidden =
+            !query && !selectedFrom && !selectedTo;
+        clearSalesPeriod.hidden =
+            !selectedFrom && !selectedTo;
 
         clearSalesSearch?.classList.toggle(
             "is-hidden",
             !query
         );
+
+        const url = new URL(window.location.href);
+        [
+            ["q", salesSearch?.value || ""],
+            ["date_from", selectedFrom],
+            ["date_to", selectedTo],
+        ].forEach(([name, value]) => {
+            if (value) {
+                url.searchParams.set(name, value);
+            } else {
+                url.searchParams.delete(name);
+            }
+        });
+        window.history.replaceState({}, "", url);
 
         try {
             localStorage.setItem(
@@ -4913,48 +5072,31 @@
         applySalesFilters();
     });
 
-    if (salesDateFrom) {
-        salesDateFrom.addEventListener(
-            "change",
-            applySalesFilters
-        );
-    }
-
-    if (salesDateTo) {
-        salesDateTo.addEventListener(
-            "change",
-            applySalesFilters
-        );
-    }
-
     if (clearSalesDateFilter) {
         clearSalesDateFilter.addEventListener(
             "click",
             () => {
-                if (salesDateFrom) {
-                    salesDateFrom.value = "";
-                }
-
-                if (salesDateTo) {
-                    salesDateTo.value = "";
-                }
-
+                salesSearch.value = "";
+                salesDateFrom.value = "";
+                salesDateTo.value = "";
+                updateSalesPeriodLabel();
                 applySalesFilters();
             }
         );
     }
 
-    clearSalesDateFrom?.addEventListener("click", () => {
+    clearSalesPeriod?.addEventListener("click", (event) => {
+        event.stopPropagation();
         salesDateFrom.value = "";
-        salesDateFrom.focus();
+        salesDateTo.value = "";
+        updateSalesPeriodLabel();
         applySalesFilters();
     });
 
-    clearSalesDateTo?.addEventListener("click", () => {
-        salesDateTo.value = "";
-        salesDateTo.focus();
-        applySalesFilters();
-    });
+    const urlFilters = new URL(window.location.href).searchParams;
+    salesSearch.value = urlFilters.get("q") || "";
+    salesDateFrom.value = urlFilters.get("date_from") || "";
+    salesDateTo.value = urlFilters.get("date_to") || "";
 
     try {
         const savedFilters = JSON.parse(
@@ -4962,14 +5104,214 @@
         );
 
         if (savedFilters && typeof savedFilters === "object") {
-            salesSearch.value = savedFilters.search || "";
-            salesDateFrom.value = savedFilters.dateFrom || "";
-            salesDateTo.value = savedFilters.dateTo || "";
+            salesSearch.value =
+                urlFilters.get("q") ?? savedFilters.search ?? "";
+            salesDateFrom.value =
+                urlFilters.get("date_from") ?? savedFilters.dateFrom ?? "";
+            salesDateTo.value =
+                urlFilters.get("date_to") ?? savedFilters.dateTo ?? "";
         }
     } catch (error) {
-        // Используем пустые фильтры.
+        salesSearch.value = urlFilters.get("q") || "";
+        salesDateFrom.value = urlFilters.get("date_from") || "";
+        salesDateTo.value = urlFilters.get("date_to") || "";
     }
 
+    function parseSalesDate(value) {
+        const parts = String(value || "").split("-").map(Number);
+        if (parts.length !== 3 || parts.some(Number.isNaN)) return null;
+        const date = new Date(parts[0], parts[1] - 1, parts[2]);
+        return (
+            date.getFullYear() === parts[0]
+            && date.getMonth() === parts[1] - 1
+            && date.getDate() === parts[2]
+        ) ? date : null;
+    }
+
+    function salesIsoDate(date) {
+        return [
+            date.getFullYear(),
+            String(date.getMonth() + 1).padStart(2, "0"),
+            String(date.getDate()).padStart(2, "0")
+        ].join("-");
+    }
+
+    function displaySalesDate(value) {
+        const date = parseSalesDate(value);
+        return date
+            ? String(date.getDate()).padStart(2, "0") + "."
+                + String(date.getMonth() + 1).padStart(2, "0") + "."
+                + date.getFullYear()
+            : "";
+    }
+
+    function updateSalesPeriodLabel() {
+        const label = salesDateFilter?.querySelector(
+            "[data-date-range-label]"
+        );
+        if (!label) return;
+        label.textContent = salesDateFrom.value
+            ? displaySalesDate(salesDateFrom.value)
+                + " — "
+                + displaySalesDate(salesDateTo.value || salesDateFrom.value)
+            : "📅 Период";
+    }
+
+    function initializeSalesDateFilter() {
+        if (!salesDateFilter) return;
+
+        const trigger = salesDateFilter.querySelector(
+            ".warehouse-date-trigger"
+        );
+        const popup = salesDateFilter.querySelector(
+            ".warehouse-calendar-popup"
+        );
+        const monthLabel = salesDateFilter.querySelector(
+            "[data-calendar-month]"
+        );
+        const daysGrid = salesDateFilter.querySelector(
+            "[data-calendar-days]"
+        );
+        const monthNames = [
+            "январь", "февраль", "март", "апрель", "май", "июнь",
+            "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь"
+        ];
+        let draftFrom = salesDateFrom.value;
+        let draftTo = salesDateTo.value;
+        const initialMonth = parseSalesDate(draftFrom) || new Date();
+        let visibleMonth = new Date(
+            initialMonth.getFullYear(),
+            initialMonth.getMonth(),
+            1
+        );
+
+        const closeCalendar = () => {
+            salesDateFilter.classList.remove("is-open");
+            popup.hidden = true;
+            trigger.setAttribute("aria-expanded", "false");
+        };
+
+        const renderCalendar = () => {
+            const year = visibleMonth.getFullYear();
+            const month = visibleMonth.getMonth();
+            monthLabel.textContent = monthNames[month] + " " + year;
+            daysGrid.innerHTML = "";
+            const firstDay = new Date(year, month, 1);
+            const mondayOffset = (firstDay.getDay() + 6) % 7;
+            const firstVisible = new Date(year, month, 1 - mondayOffset);
+            const today = salesIsoDate(new Date());
+
+            for (let index = 0; index < 42; index += 1) {
+                const date = new Date(
+                    firstVisible.getFullYear(),
+                    firstVisible.getMonth(),
+                    firstVisible.getDate() + index
+                );
+                const value = salesIsoDate(date);
+                const button = document.createElement("button");
+                button.type = "button";
+                button.className = "warehouse-calendar-day";
+                button.dataset.date = value;
+                button.setAttribute("aria-label", displaySalesDate(value));
+                button.innerHTML = "<span>" + date.getDate() + "</span>";
+                if (date.getMonth() !== month) {
+                    button.classList.add("is-outside");
+                }
+                if (value === today) button.classList.add("is-today");
+                if (value === draftFrom) button.classList.add("is-start");
+                if (value === draftTo) button.classList.add("is-end");
+                if (
+                    draftFrom && draftTo
+                    && value >= draftFrom && value <= draftTo
+                ) {
+                    button.classList.add("is-in-range");
+                }
+                button.addEventListener("click", () => {
+                    if (!draftFrom || draftTo) {
+                        draftFrom = value;
+                        draftTo = "";
+                    } else if (value < draftFrom) {
+                        draftTo = draftFrom;
+                        draftFrom = value;
+                    } else {
+                        draftTo = value;
+                    }
+                    renderCalendar();
+                });
+                daysGrid.appendChild(button);
+            }
+        };
+
+        trigger.addEventListener("click", () => {
+            const opening = popup.hidden;
+            if (!opening) {
+                closeCalendar();
+                return;
+            }
+            draftFrom = salesDateFrom.value;
+            draftTo = salesDateTo.value;
+            const selected = parseSalesDate(draftFrom);
+            if (selected) {
+                visibleMonth = new Date(
+                    selected.getFullYear(),
+                    selected.getMonth(),
+                    1
+                );
+            }
+            salesDateFilter.classList.add("is-open");
+            popup.hidden = false;
+            trigger.setAttribute("aria-expanded", "true");
+            renderCalendar();
+        });
+
+        salesDateFilter.querySelector("[data-calendar-prev]")
+            .addEventListener("click", () => {
+                visibleMonth = new Date(
+                    visibleMonth.getFullYear(),
+                    visibleMonth.getMonth() - 1,
+                    1
+                );
+                renderCalendar();
+            });
+        salesDateFilter.querySelector("[data-calendar-next]")
+            .addEventListener("click", () => {
+                visibleMonth = new Date(
+                    visibleMonth.getFullYear(),
+                    visibleMonth.getMonth() + 1,
+                    1
+                );
+                renderCalendar();
+            });
+        salesDateFilter.querySelector("[data-calendar-reset]")
+            .addEventListener("click", () => {
+                draftFrom = "";
+                draftTo = "";
+                salesDateFrom.value = "";
+                salesDateTo.value = "";
+                updateSalesPeriodLabel();
+                closeCalendar();
+                applySalesFilters();
+            });
+        salesDateFilter.querySelector("[data-calendar-apply]")
+            .addEventListener("click", () => {
+                if (draftFrom && !draftTo) draftTo = draftFrom;
+                salesDateFrom.value = draftFrom;
+                salesDateTo.value = draftTo;
+                updateSalesPeriodLabel();
+                closeCalendar();
+                applySalesFilters();
+            });
+        popup.addEventListener("click", event => event.stopPropagation());
+        document.addEventListener("click", event => {
+            if (!salesDateFilter.contains(event.target)) closeCalendar();
+        });
+        document.addEventListener("keydown", event => {
+            if (event.key === "Escape") closeCalendar();
+        });
+    }
+
+    updateSalesPeriodLabel();
+    initializeSalesDateFilter();
     applySalesFilters();
 
     const editableSaleForms = Array.from(
