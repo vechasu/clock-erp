@@ -711,6 +711,12 @@ class OwnerFeedbackTest(unittest.TestCase):
 
         html = page.get_data(as_text=True)
         self.assertEqual(page.status_code, 200)
+        self.assertEqual(
+            page.headers["Cache-Control"],
+            "no-store, no-cache, must-revalidate, max-age=0",
+        )
+        self.assertEqual(page.headers["Pragma"], "no-cache")
+        self.assertEqual(page.headers["Expires"], "0")
         self.assertIn('id="warehouseBulkPanel"', html)
         self.assertIn('class="warehouse-bulk-toolbar"', html)
         self.assertIn("Выбрано: 0 товаров", html)
