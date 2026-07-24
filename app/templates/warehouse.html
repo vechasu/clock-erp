@@ -1504,6 +1504,71 @@
             display: none;
         }
 
+        .warehouse-more-menu {
+            position: relative;
+        }
+
+        .warehouse-more-trigger {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 7px;
+        }
+
+        .warehouse-more-arrow {
+            font-size: 11px;
+            transition: transform 0.15s ease;
+        }
+
+        .warehouse-more-menu.is-open .warehouse-more-arrow {
+            transform: rotate(180deg);
+        }
+
+        .warehouse-more-dropdown {
+            position: absolute;
+            z-index: 45;
+            top: calc(100% + 7px);
+            right: 0;
+            display: none;
+            width: 228px;
+            max-width: calc(100vw - 32px);
+            padding: 6px;
+            border: 1px solid #dfe5ed;
+            border-radius: 12px;
+            background: #ffffff;
+            box-shadow: 0 14px 34px rgba(15, 23, 42, 0.14);
+        }
+
+        .warehouse-more-menu.is-open .warehouse-more-dropdown {
+            display: grid;
+            gap: 3px;
+        }
+
+        .search-form .warehouse-more-item {
+            display: flex;
+            align-items: center;
+            width: 100%;
+            height: 40px;
+            min-height: 40px;
+            padding: 0 12px;
+            border: 0;
+            border-radius: 9px;
+            background: #ffffff;
+            color: #334155;
+            font: inherit;
+            font-size: 13px;
+            font-weight: 650;
+            text-align: left;
+            cursor: pointer;
+        }
+
+        .search-form .warehouse-more-item:hover,
+        .search-form .warehouse-more-item:focus-visible {
+            background: #f1f5f9;
+            color: #1d4ed8;
+            outline: none;
+        }
+
         .search-form .add-position-card {
             width: auto;
             min-width: 176px;
@@ -1561,6 +1626,11 @@
 
             .warehouse-filter-actions .search-tool-button {
                 flex: 1 1 140px;
+            }
+
+            .warehouse-more-menu,
+            .warehouse-more-trigger {
+                width: 100%;
             }
         }
 
@@ -3738,24 +3808,44 @@
                         {% endif %}
                     </div>
 
-                    <button
-                        id="warehouseBulkToggle"
-                        class="search-tool-button"
-                        type="button"
-                        aria-controls="warehouseBulkPanel"
-                        aria-expanded="false"
-                        onclick="toggleWarehouseBulkPanel()"
-                    >
-                        Массовое редактирование
-                    </button>
-
-                    <button
-                        class="search-tool-button"
-                        type="button"
-                        onclick="openWarehouseMapDrawer()"
-                    >
-                        Карта склада
-                    </button>
+                    <div id="warehouseMoreMenu" class="warehouse-more-menu">
+                        <button
+                            id="warehouseMoreTrigger"
+                            class="search-tool-button warehouse-more-trigger"
+                            type="button"
+                            aria-controls="warehouseMoreDropdown"
+                            aria-expanded="false"
+                            onclick="toggleWarehouseMoreMenu(event)"
+                        >
+                            Ещё
+                            <span class="warehouse-more-arrow">▾</span>
+                        </button>
+                        <div
+                            id="warehouseMoreDropdown"
+                            class="warehouse-more-dropdown"
+                            role="menu"
+                        >
+                            <button
+                                id="warehouseBulkToggle"
+                                class="warehouse-more-item"
+                                type="button"
+                                role="menuitem"
+                                aria-controls="warehouseBulkPanel"
+                                aria-expanded="false"
+                                onclick="runWarehouseMoreAction('bulk')"
+                            >
+                                Массовое редактирование
+                            </button>
+                            <button
+                                class="warehouse-more-item"
+                                type="button"
+                                role="menuitem"
+                                onclick="runWarehouseMoreAction('map')"
+                            >
+                                Карта склада
+                            </button>
+                        </div>
+                    </div>
 
                     <button
                         id="warehouseFilterReset"
@@ -5540,6 +5630,52 @@
     </script>
 
 <script>
+    function setWarehouseMoreMenuOpen(isOpen) {
+        const menu = document.getElementById("warehouseMoreMenu");
+        const trigger = document.getElementById("warehouseMoreTrigger");
+
+        if (!menu || !trigger) {
+            return;
+        }
+
+        menu.classList.toggle("is-open", isOpen);
+        trigger.setAttribute("aria-expanded", isOpen ? "true" : "false");
+    }
+
+    function toggleWarehouseMoreMenu(event) {
+        if (event) {
+            event.stopPropagation();
+        }
+
+        const menu = document.getElementById("warehouseMoreMenu");
+        setWarehouseMoreMenuOpen(
+            Boolean(menu && !menu.classList.contains("is-open"))
+        );
+    }
+
+    function runWarehouseMoreAction(action) {
+        setWarehouseMoreMenuOpen(false);
+
+        if (action === "bulk") {
+            toggleWarehouseBulkPanel();
+        } else if (action === "map") {
+            openWarehouseMapDrawer();
+        }
+    }
+
+    document.addEventListener("click", function(event) {
+        const menu = document.getElementById("warehouseMoreMenu");
+        if (menu && !menu.contains(event.target)) {
+            setWarehouseMoreMenuOpen(false);
+        }
+    });
+
+    document.addEventListener("keydown", function(event) {
+        if (event.key === "Escape") {
+            setWarehouseMoreMenuOpen(false);
+        }
+    });
+
     function toggleWarehouseBulkPanel(forceOpen) {
         const panel = document.getElementById("warehouseBulkPanel");
         const button = document.getElementById("warehouseBulkToggle");
