@@ -3594,12 +3594,12 @@
                 <div class="brand-combobox-options" role="listbox">
                     {% if include_all %}
                         <button class="brand-combobox-option {% if not selected_value %}active{% endif %}" type="button" role="option" data-brand="" data-brand-search="{{ all_label|lower|e }}" onclick="selectBrandOption(this)">
-                            <span>{{ all_label }}</span><span>{{ options | sum(attribute='count') }}</span>
+                            <span class="brand-combobox-option-label">{{ all_label }}</span><span>{{ options | sum(attribute='count') }}</span>
                         </button>
                     {% endif %}
                     {% for option in options %}
                         <button class="brand-combobox-option {% if selected_value == option.name %}active{% endif %}" type="button" role="option" data-brand="{{ option.name|e }}" data-brand-search="{{ option.name|lower|e }}" onclick="selectBrandOption(this)">
-                            <span>{{ option.name }}</span><span>{{ option.count }}</span>
+                            <span class="brand-combobox-option-label">{{ option.name }}</span><span>{{ option.count }}</span>
                         </button>
                     {% endfor %}
                     <div class="brand-combobox-empty" data-brand-empty hidden>{{ empty_label }}</div>
@@ -3884,7 +3884,7 @@
                         brand_groups,
                         item_label="бренд",
                         disabled=true,
-                        prefix_search=false,
+                        prefix_search=true,
                         component_class="filter-combobox",
                         clear_selection_on_search_clear=true
                     ) }}
@@ -5638,17 +5638,25 @@
         }
 
 
+        function normalizeComboboxSearchValue(value) {
+            return (value || "").trim().toLocaleLowerCase();
+        }
+
+
         function filterBrandList(value, combobox) {
-            const query = (value || "").trim().toLowerCase();
+            const query = normalizeComboboxSearchValue(value);
             let visibleCount = 0;
 
             combobox
                 .querySelectorAll(".brand-combobox-option")
                 .forEach(function(option) {
                     option.classList.remove("is-keyboard-active");
-                    const brandName = (
-                        option.dataset.brandSearch || ""
-                    ).toLowerCase();
+                    const label = option.querySelector(
+                        ".brand-combobox-option-label"
+                    );
+                    const brandName = normalizeComboboxSearchValue(
+                        label ? label.textContent : ""
+                    );
 
                     const matches = combobox.dataset.prefixSearch === "true"
                         ? brandName.startsWith(query)
@@ -5680,6 +5688,12 @@
                 }
                 searchInput.dataset.searchBound = "1";
                 searchInput.addEventListener("input", function() {
+                    if (
+                        combobox.dataset.clearSelectionOnSearchClear
+                        === "true"
+                    ) {
+                        setBrandComboboxValue(combobox, "");
+                    }
                     filterBrandList(searchInput.value, combobox);
                 });
                 clearButton.addEventListener("click", function() {
