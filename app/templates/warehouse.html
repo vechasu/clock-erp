@@ -261,7 +261,14 @@
         .warehouse-product-name-cell {
             display: flex;
             align-items: center;
-            gap: 9px;
+            min-width: 0;
+        }
+
+        .warehouse-product-photo-cell {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
             min-width: 0;
         }
 
@@ -459,19 +466,22 @@
         }
 
         .warehouse-row-select {
+            display: none;
             width: 16px;
             height: 16px;
             flex: 0 0 16px;
-            opacity: 0;
-            visibility: hidden;
-            pointer-events: none;
-            transition: opacity 0.16s ease;
         }
 
         body.warehouse-bulk-edit-open .warehouse-row-select {
-            opacity: 1;
-            visibility: visible;
-            pointer-events: auto;
+            display: block;
+        }
+
+        body.warehouse-bulk-edit-open
+        .warehouse-products-table th[data-column-key="photo"],
+        body.warehouse-bulk-edit-open
+        .warehouse-products-table td[data-column-key="photo"] {
+            padding-right: 4px;
+            padding-left: 4px;
         }
 
         .warehouse-products-table tbody tr.is-bulk-selected td {
@@ -4107,14 +4117,18 @@
                         </colgroup>
                         <thead>
                             <tr>
-                                <th data-column-key="photo">Фото</th>
+                                <th data-column-key="photo">
+                                    <div class="warehouse-product-photo-cell">
+                                        <input
+                                            id="warehouseSelectAll"
+                                            class="warehouse-row-select"
+                                            type="checkbox"
+                                            aria-label="Выбрать все видимые товары"
+                                        >
+                                        <span>Фото</span>
+                                    </div>
+                                </th>
                                 <th data-column-key="name">
-                                    <input
-                                        id="warehouseSelectAll"
-                                        class="warehouse-row-select"
-                                        type="checkbox"
-                                        aria-label="Выбрать все видимые товары"
-                                    >
                                     <span
                                         class="warehouse-sort-label{% if sort_by == 'name' %} is-active{% endif %}"
                                         data-sort-field="name"
@@ -4290,22 +4304,7 @@
                                     {% if hide_zero and item.stock <= 0 %}hidden{% endif %}
                                 >
                                     <td data-column-key="photo">
-                                        {% if item.thumbnail_url %}
-                                            <img
-                                                class="warehouse-product-thumb"
-                                                src="{{ item.thumbnail_url }}"
-                                                alt=""
-                                                loading="lazy"
-                                                onerror="this.hidden=true; this.nextElementSibling.hidden=false"
-                                            >
-                                            <span class="warehouse-product-thumb warehouse-product-thumb-placeholder" hidden aria-hidden="true">⌚</span>
-                                        {% else %}
-                                            <span class="warehouse-product-thumb warehouse-product-thumb-placeholder" aria-hidden="true">⌚</span>
-                                        {% endif %}
-                                    </td>
-
-                                    <td data-column-key="name">
-                                        <div class="warehouse-product-name-cell">
+                                        <div class="warehouse-product-photo-cell">
                                             <input
                                                 class="warehouse-row-select js-warehouse-product-select"
                                                 type="checkbox"
@@ -4314,6 +4313,23 @@
                                                 form="warehouseBulkForm"
                                                 aria-label="Выбрать {{ item.name }}"
                                             >
+                                            {% if item.thumbnail_url %}
+                                                <img
+                                                    class="warehouse-product-thumb"
+                                                    src="{{ item.thumbnail_url }}"
+                                                    alt=""
+                                                    loading="lazy"
+                                                    onerror="this.hidden=true; this.nextElementSibling.hidden=false"
+                                                >
+                                                <span class="warehouse-product-thumb warehouse-product-thumb-placeholder" hidden aria-hidden="true">⌚</span>
+                                            {% else %}
+                                                <span class="warehouse-product-thumb warehouse-product-thumb-placeholder" aria-hidden="true">⌚</span>
+                                            {% endif %}
+                                        </div>
+                                    </td>
+
+                                    <td data-column-key="name">
+                                        <div class="warehouse-product-name-cell">
                                             <div class="name">{{ item.name }}</div>
                                         </div>
                                     </td>
