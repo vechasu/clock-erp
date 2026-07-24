@@ -643,6 +643,60 @@ class OwnerFeedbackTest(unittest.TestCase):
         self.assertIn('event.key === "ArrowDown"', html)
         self.assertNotIn('id="warehouseBrandOptions"', html)
 
+    def test_warehouse_bulk_selection_mode_uses_light_toolbar(self):
+        item = warehouse_item()
+
+        with mock.patch.object(
+            web, "get_excel_warehouse_items", return_value=[item]
+        ):
+            page = self.client.get("/warehouse")
+
+        html = page.get_data(as_text=True)
+        self.assertEqual(page.status_code, 200)
+        self.assertIn('id="warehouseBulkPanel"', html)
+        self.assertIn('class="warehouse-bulk-toolbar"', html)
+        self.assertIn("Выбрано: 0 товаров", html)
+        self.assertIn('id="warehouseBulkSelectAllButton"', html)
+        self.assertIn("Выбрать все", html)
+        self.assertIn('id="warehouseBulkEditButton"', html)
+        self.assertRegex(
+            html,
+            r'id="warehouseBulkEditButton"[^>]*\sdisabled',
+        )
+        self.assertIn("Изменить выбранные", html)
+        self.assertIn("× Выйти", html)
+        self.assertIn("toggleWarehouseBulkEditor(true)", html)
+        self.assertIn("selectAllWarehouseBulkRows()", html)
+        self.assertIn("row.classList.toggle(", html)
+        self.assertIn('"is-bulk-selected"', html)
+        self.assertIn(
+            ".warehouse-products-table tbody "
+            "tr.is-bulk-selected td",
+            html,
+        )
+        self.assertIn("background: #eff6ff", html)
+        self.assertIn(".warehouse-bulk-toolbar", html)
+        self.assertIn("background: #ffffff", html)
+        self.assertIn(
+            'editButton.disabled = !selectedCheckboxes.length',
+            html,
+        )
+        self.assertIn("toggleWarehouseBulkEditor(false)", html)
+        self.assertIn('checkbox.checked = false', html)
+        self.assertIn(
+            'count.textContent = "Выбрано: "',
+            html,
+        )
+        self.assertIn(
+            '.warehouse-bulk-form.is-open',
+            html,
+        )
+        self.assertIn(
+            ".warehouse-bulk-form > button[type=\"submit\"]",
+            html,
+        )
+        self.assertIn("background: #2563eb", html)
+
     def test_warehouse_filters_created_date_range_in_local_time(self):
         first = warehouse_item()
         first.update(

@@ -290,17 +290,87 @@
 
         .warehouse-bulk-form {
             position: relative;
-            display: grid;
+            display: none;
             grid-template-columns: auto repeat(4, minmax(150px, 1fr)) auto;
             gap: 8px;
             align-items: end;
             min-height: 0;
-            margin: 0;
-            padding: 11px 46px 11px 11px;
+            margin: 8px 0 0;
+            padding: 12px;
             overflow: visible;
             border: 1px solid #dbe3ec;
             border-radius: 14px;
             background: #ffffff;
+            box-shadow: 0 8px 22px rgba(15, 23, 42, 0.05);
+        }
+
+        .warehouse-bulk-form.is-open {
+            display: grid;
+        }
+
+        .warehouse-bulk-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 11px 12px;
+            border: 1px solid #dbe3ec;
+            border-radius: 14px;
+            background: #ffffff;
+            box-shadow: 0 8px 22px rgba(15, 23, 42, 0.05);
+        }
+
+        .warehouse-bulk-actions {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .warehouse-bulk-action {
+            min-height: 40px;
+            padding: 9px 13px;
+            border: 1px solid #dbe3ec;
+            border-radius: 11px;
+            background: #ffffff;
+            color: #334155;
+            line-height: 1;
+            box-shadow: none;
+        }
+
+        .warehouse-bulk-action:hover {
+            border-color: #cbd5e1;
+            background: #f8fafc;
+            color: #0f172a;
+        }
+
+        .warehouse-bulk-action-primary {
+            border-color: #2563eb;
+            background: #2563eb;
+            color: #ffffff;
+        }
+
+        .warehouse-bulk-action-primary:hover {
+            border-color: #1d4ed8;
+            background: #1d4ed8;
+            color: #ffffff;
+        }
+
+        .warehouse-bulk-action:disabled,
+        .warehouse-bulk-form > button[type="submit"]:disabled {
+            cursor: not-allowed;
+            opacity: 0.48;
+        }
+
+        .warehouse-bulk-form > button[type="submit"] {
+            min-height: 48px;
+            background: #2563eb;
+            color: #ffffff;
+        }
+
+        .warehouse-bulk-form > button[type="submit"]:hover:not(:disabled) {
+            background: #1d4ed8;
         }
 
         .warehouse-bulk-panel {
@@ -325,30 +395,11 @@
             transition-delay: 0s;
         }
 
-        .warehouse-bulk-close {
-            position: absolute;
-            top: 8px;
-            right: 8px;
-            width: 30px;
-            height: 30px;
-            padding: 0;
-            border-radius: 9px;
-            background: #f1f5f9;
-            color: #64748b;
-            font-size: 20px;
-            line-height: 1;
-        }
-
-        .warehouse-bulk-close:hover {
-            background: #e2e8f0;
-            color: #0f172a;
-        }
-
         .warehouse-bulk-count {
             align-self: center;
-            min-width: 92px;
+            min-width: 150px;
             color: #334155;
-            font-size: 13px;
+            font-size: 14px;
             font-weight: 850;
         }
 
@@ -387,6 +438,10 @@
             pointer-events: auto;
         }
 
+        .warehouse-products-table tbody tr.is-bulk-selected td {
+            background: #eff6ff;
+        }
+
         @media (max-width: 1050px) {
             .warehouse-bulk-form {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -394,6 +449,20 @@
         }
 
         @media (max-width: 600px) {
+            .warehouse-bulk-toolbar {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+
+            .warehouse-bulk-actions {
+                width: 100%;
+                justify-content: flex-start;
+            }
+
+            .warehouse-bulk-action {
+                flex: 1 1 auto;
+            }
+
             .warehouse-bulk-form {
                 grid-template-columns: 1fr;
             }
@@ -3856,6 +3925,39 @@
             </div>
 
             <div id="warehouseBulkPanel" class="warehouse-bulk-panel">
+                <div class="warehouse-bulk-toolbar">
+                    <div id="warehouseBulkCount" class="warehouse-bulk-count">
+                        Выбрано: 0 товаров
+                    </div>
+                    <div class="warehouse-bulk-actions">
+                        <button
+                            id="warehouseBulkSelectAllButton"
+                            class="warehouse-bulk-action"
+                            type="button"
+                            onclick="selectAllWarehouseBulkRows()"
+                        >
+                            Выбрать все
+                        </button>
+                        <button
+                            id="warehouseBulkEditButton"
+                            class="warehouse-bulk-action warehouse-bulk-action-primary"
+                            type="button"
+                            aria-controls="warehouseBulkForm"
+                            aria-expanded="false"
+                            disabled
+                            onclick="toggleWarehouseBulkEditor(true)"
+                        >
+                            Изменить выбранные
+                        </button>
+                        <button
+                            class="warehouse-bulk-action"
+                            type="button"
+                            onclick="toggleWarehouseBulkPanel(false)"
+                        >
+                            × Выйти
+                        </button>
+                    </div>
+                </div>
                 <form
                     id="warehouseBulkForm"
                     class="warehouse-bulk-form"
@@ -3863,16 +3965,6 @@
                     action="/warehouse/bulk-edit"
                     onsubmit="return confirmWarehouseBulkEdit()"
                 >
-                    <button
-                        class="warehouse-bulk-close"
-                        type="button"
-                        aria-label="Закрыть массовое редактирование"
-                        onclick="toggleWarehouseBulkPanel(false)"
-                    >×</button>
-                <div id="warehouseBulkCount" class="warehouse-bulk-count">
-                    Выбрано: 0
-                </div>
-
                 <div class="warehouse-bulk-field">
                     <label>
                         <input type="checkbox" name="apply_brand" value="1" data-bulk-toggle="bulkBrandCombobox">
@@ -5036,6 +5128,12 @@
             const submit = document.getElementById(
                 "warehouseBulkSubmit"
             );
+            const editButton = document.getElementById(
+                "warehouseBulkEditButton"
+            );
+            const selectAllButton = document.getElementById(
+                "warehouseBulkSelectAllButton"
+            );
             const hasFieldChange = Boolean(
                 document.querySelector(
                     '#warehouseBulkForm input[data-bulk-toggle]:checked'
@@ -5049,8 +5147,20 @@
             );
 
             if (count) {
-                count.textContent = "Выбрано: " + selectedCheckboxes.length;
+                count.textContent = "Выбрано: "
+                    + selectedCheckboxes.length
+                    + " товаров";
             }
+
+            productCheckboxes.forEach(function(checkbox) {
+                const row = checkbox.closest("tr");
+                if (row) {
+                    row.classList.toggle(
+                        "is-bulk-selected",
+                        checkbox.checked
+                    );
+                }
+            });
 
             if (selectAll) {
                 selectAll.checked = Boolean(
@@ -5061,6 +5171,14 @@
                     selectedVisibleCount
                     && selectedVisibleCount < visibleCheckboxes.length
                 );
+            }
+
+            if (editButton) {
+                editButton.disabled = !selectedCheckboxes.length;
+            }
+
+            if (selectAllButton) {
+                selectAllButton.disabled = !visibleCheckboxes.length;
             }
 
             if (submit) {
@@ -5452,12 +5570,44 @@
         button.setAttribute("aria-expanded", shouldOpen ? "true" : "false");
 
         if (!shouldOpen) {
+            toggleWarehouseBulkEditor(false);
             document.querySelectorAll(".warehouse-row-select").forEach(function(checkbox) {
                 checkbox.checked = false;
                 checkbox.indeterminate = false;
             });
             syncWarehouseBulkSelection();
         }
+    }
+
+    function toggleWarehouseBulkEditor(forceOpen) {
+        const form = document.getElementById("warehouseBulkForm");
+        const editButton = document.getElementById(
+            "warehouseBulkEditButton"
+        );
+
+        if (!form) {
+            return;
+        }
+
+        const shouldOpen = typeof forceOpen === "boolean"
+            ? forceOpen
+            : !form.classList.contains("is-open");
+
+        form.classList.toggle("is-open", shouldOpen);
+
+        if (editButton) {
+            editButton.setAttribute(
+                "aria-expanded",
+                shouldOpen ? "true" : "false"
+            );
+        }
+    }
+
+    function selectAllWarehouseBulkRows() {
+        getWarehouseVisibleProductCheckboxes().forEach(function(checkbox) {
+            checkbox.checked = true;
+        });
+        syncWarehouseBulkSelection();
     }
 
     function toggleWarehouseAddCard() {
