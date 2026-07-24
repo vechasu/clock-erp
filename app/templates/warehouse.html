@@ -1477,6 +1477,33 @@
             transform: translateY(-1px);
         }
 
+        .warehouse-filter-actions {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .search-form .warehouse-reset-button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 98px;
+            background: #ffffff;
+            color: #64748b;
+            border-color: #dfe5ed;
+        }
+
+        .search-form .warehouse-reset-button:hover {
+            background: #f8fafc;
+            color: #334155;
+            border-color: #cbd5e1;
+        }
+
+        .search-form .warehouse-reset-button[hidden] {
+            display: none;
+        }
+
         .search-form .add-position-card {
             width: auto;
             min-width: 176px;
@@ -1526,6 +1553,14 @@
             .search-form .add-position-card {
                 width: 100%;
                 min-width: 0;
+            }
+
+            .warehouse-filter-actions {
+                grid-column: 1 / -1;
+            }
+
+            .warehouse-filter-actions .search-tool-button {
+                flex: 1 1 140px;
             }
         }
 
@@ -2464,15 +2499,37 @@
         .warehouse-active-date {
             display: inline-flex;
             align-items: center;
+            gap: 6px;
             min-height: 30px;
-            margin-left: 8px;
-            padding: 0 10px;
+            padding: 0 6px 0 10px;
             border-radius: 999px;
             background: #eff6ff;
             color: #1d4ed8;
             font-size: 12px;
             font-weight: 700;
             white-space: nowrap;
+        }
+
+        .search-form .warehouse-active-date-clear {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 20px;
+            height: 20px;
+            min-height: 20px;
+            padding: 0;
+            border: 0;
+            border-radius: 50%;
+            background: transparent;
+            color: #5477bd;
+            font-size: 15px;
+            line-height: 1;
+            cursor: pointer;
+        }
+
+        .search-form .warehouse-active-date-clear:hover {
+            background: #dbeafe;
+            color: #1d4ed8;
         }
 
         #filterDrawer > div[style="margin-top: 16px;"] {
@@ -3657,20 +3714,38 @@
                         </button>
                     </div>
 
-                    <button
-                        class="search-tool-button"
-                        type="button"
-                        onclick="openFilterDrawer()"
-                    >
-                        Фильтры
-                    </button>
-                    {% if created_date_from or created_date_to %}
-                        <span class="warehouse-active-date">
-                            {{ created_date_from.split("-")|reverse|join(".") if created_date_from else "…" }}
-                            —
-                            {{ created_date_to.split("-")|reverse|join(".") if created_date_to else "…" }}
-                        </span>
-                    {% endif %}
+                    <div class="warehouse-filter-actions">
+                        <button
+                            class="search-tool-button"
+                            type="button"
+                            onclick="openFilterDrawer()"
+                        >
+                            Фильтры
+                        </button>
+                        <button
+                            id="warehouseFilterReset"
+                            class="search-tool-button warehouse-reset-button"
+                            type="button"
+                            onclick="resetWarehouseTableFilters()"
+                            {% if not (query or selected_brand or selected_category or selected_cell or created_date_from or created_date_to or hide_zero or sort_by != "name" or sort_dir != "asc") %}hidden{% endif %}
+                        >
+                            × Сбросить
+                        </button>
+                        {% if created_date_from or created_date_to %}
+                            <span class="warehouse-active-date">
+                                {{ created_date_from.split("-")|reverse|join(".") if created_date_from else "…" }}
+                                —
+                                {{ created_date_to.split("-")|reverse|join(".") if created_date_to else "…" }}
+                                <button
+                                    class="warehouse-active-date-clear"
+                                    type="button"
+                                    onclick="clearWarehouseDateRange()"
+                                    aria-label="Сбросить диапазон дат"
+                                    title="Сбросить диапазон дат"
+                                >×</button>
+                            </span>
+                        {% endif %}
+                    </div>
 
                     <button
                         id="warehouseBulkToggle"
@@ -5062,7 +5137,66 @@
                 url.pathname + url.search + url.hash
             );
 
+            syncWarehouseResetButton();
             loadWarehouseSearchResults("");
+        }
+
+        function hasWarehouseTableFilters(url) {
+            const params = url.searchParams;
+            const hasValue = (name) => Boolean((params.get(name) || "").trim());
+            const sortBy = params.get("sort_by") || "name";
+            const sortDir = params.get("sort_dir") || "asc";
+
+            return (
+                hasValue("q")
+                || hasValue("brand")
+                || hasValue("category")
+                || hasValue("cell")
+                || hasValue("date_from")
+                || hasValue("date_to")
+                || params.get("hide_zero") === "1"
+                || sortBy !== "name"
+                || sortDir !== "asc"
+            );
+        }
+
+        function syncWarehouseResetButton() {
+            const button = document.getElementById("warehouseFilterReset");
+            if (button) {
+                button.hidden = !hasWarehouseTableFilters(
+                    new URL(window.location.href)
+                );
+            }
+        }
+
+        function navigateWithWarehouseParams(url) {
+            const query = url.searchParams.toString();
+            window.location.assign(
+                url.pathname + (query ? "?" + query : "") + url.hash
+            );
+        }
+
+        function resetWarehouseTableFilters() {
+            const url = new URL(window.location.href);
+            [
+                "q",
+                "brand",
+                "category",
+                "cell",
+                "date_from",
+                "date_to",
+                "hide_zero",
+                "sort_by",
+                "sort_dir"
+            ].forEach(name => url.searchParams.delete(name));
+            navigateWithWarehouseParams(url);
+        }
+
+        function clearWarehouseDateRange() {
+            const url = new URL(window.location.href);
+            url.searchParams.delete("date_from");
+            url.searchParams.delete("date_to");
+            navigateWithWarehouseParams(url);
         }
 
         async function loadWarehouseSearchResults(query) {
@@ -5149,11 +5283,13 @@
                         url.pathname + url.search + url.hash
                     );
 
+                    syncWarehouseResetButton();
                     loadWarehouseSearchResults(query);
                 }, 100);
             });
 
             syncWarehouseSearchClear();
+            syncWarehouseResetButton();
             filterWarehouseRows();
 
             if (sessionStorage.getItem("warehouseSearchKeepFocus") === "1") {
@@ -5525,6 +5661,8 @@
                     "",
                     url.pathname + url.search + url.hash
                 );
+
+                syncWarehouseResetButton();
             }
         }
 
@@ -6152,6 +6290,7 @@
                 "",
                 "/warehouse?" + params.toString()
             );
+            syncWarehouseResetButton();
         }
 
         initializeWarehouseTableView();

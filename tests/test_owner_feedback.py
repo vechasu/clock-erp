@@ -678,6 +678,24 @@ class OwnerFeedbackTest(unittest.TestCase):
         self.assertIn('name="date_from" value="2026-07-22"', html)
         self.assertIn('name="date_to" value="2026-07-22"', html)
         self.assertIn("warehouse-calendar-popup", html)
+        self.assertIn('id="warehouseFilterReset"', html)
+        self.assertNotRegex(
+            html,
+            r'id="warehouseFilterReset"[^>]*\shidden',
+        )
+        self.assertIn('aria-label="Сбросить диапазон дат"', html)
+        self.assertIn("resetWarehouseTableFilters", html)
+        self.assertIn("clearWarehouseDateRange", html)
+
+        with mock.patch.object(
+            web, "get_excel_warehouse_items", return_value=[first, second]
+        ):
+            standard_page = self.client.get("/warehouse")
+
+        self.assertRegex(
+            standard_page.get_data(as_text=True),
+            r'id="warehouseFilterReset"[^>]*\shidden',
+        )
 
     def test_sales_template_has_search_state_resize_fallback_and_mobile_css(self):
         with mock.patch.object(
