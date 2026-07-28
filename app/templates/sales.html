@@ -2291,6 +2291,278 @@
     const salesTypeFilter = document.getElementById(
         "salesTypeFilter"
     );
+    const salesPopoverManager = (() => {
+        const viewportPadding = 16;
+        const popoverGap = 8;
+        const root = document.createElement("div");
+        let activeEntry = null;
+        let positionFrame = 0;
+        let resizeObserver = null;
+
+        root.id = "salesPopoverRoot";
+        root.className = "sales-popover-root";
+        document.body.appendChild(root);
+
+        function clamp(value, minimum, maximum) {
+            return Math.min(
+                Math.max(value, minimum),
+                Math.max(minimum, maximum),
+            );
+        }
+
+        function positionEntry(entry) {
+            if (
+                activeEntry !== entry
+                || entry.panel.hidden
+                || !entry.trigger.isConnected
+            ) {
+                return;
+            }
+
+            const panel = entry.panel;
+            const triggerBounds =
+                entry.trigger.getBoundingClientRect();
+            const visualViewport = window.visualViewport;
+            const viewportLeft =
+                visualViewport?.offsetLeft || 0;
+            const viewportTop =
+                visualViewport?.offsetTop || 0;
+            const viewportWidth =
+                visualViewport?.width || window.innerWidth;
+            const viewportHeight =
+                visualViewport?.height || window.innerHeight;
+            const viewportRight =
+                viewportLeft + viewportWidth;
+            const viewportBottom =
+                viewportTop + viewportHeight;
+
+            panel.style.maxWidth =
+                Math.max(0, viewportWidth - viewportPadding * 2)
+                + "px";
+            panel.style.maxHeight = "none";
+            panel.style.overflowY = "hidden";
+            panel.style.left = "0px";
+            panel.style.top = "0px";
+
+            const naturalBounds = panel.getBoundingClientRect();
+            const naturalHeight = Math.ceil(
+                Math.max(naturalBounds.height, panel.scrollHeight)
+            );
+            const panelWidth = Math.ceil(naturalBounds.width);
+            const spaceBelow = Math.max(
+                0,
+                viewportBottom
+                - viewportPadding
+                - triggerBounds.bottom
+                - popoverGap,
+            );
+            const spaceAbove = Math.max(
+                0,
+                triggerBounds.top
+                - viewportTop
+                - viewportPadding
+                - popoverGap,
+            );
+            let opensDown = true;
+
+            if (naturalHeight > spaceBelow) {
+                opensDown = naturalHeight <= spaceAbove
+                    ? false
+                    : spaceBelow >= spaceAbove;
+            }
+
+            const availableHeight = opensDown
+                ? spaceBelow
+                : spaceAbove;
+            const renderedHeight = Math.min(
+                naturalHeight,
+                availableHeight,
+            );
+            let left = entry.align === "start"
+                ? triggerBounds.left
+                : triggerBounds.right - panelWidth;
+            let top = opensDown
+                ? triggerBounds.bottom + popoverGap
+                : triggerBounds.top
+                    - popoverGap
+                    - renderedHeight;
+
+            left = clamp(
+                left,
+                viewportLeft + viewportPadding,
+                viewportRight - viewportPadding - panelWidth,
+            );
+            top = clamp(
+                top,
+                viewportTop + viewportPadding,
+                viewportBottom
+                    - viewportPadding
+                    - renderedHeight,
+            );
+
+            panel.style.left = Math.round(left) + "px";
+            panel.style.top = Math.round(top) + "px";
+            panel.style.maxHeight =
+                Math.floor(availableHeight) + "px";
+            panel.style.overflowY =
+                naturalHeight > availableHeight
+                    ? "auto"
+                    : "visible";
+            panel.dataset.salesPopoverPlacement =
+                opensDown ? "bottom" : "top";
+            panel.style.visibility = "visible";
+        }
+
+        function schedulePosition() {
+            if (!activeEntry || positionFrame) {
+                return;
+            }
+
+            positionFrame = window.requestAnimationFrame(() => {
+                positionFrame = 0;
+                positionEntry(activeEntry);
+            });
+        }
+
+        function observeEntry(entry) {
+            resizeObserver?.disconnect();
+
+            if (typeof ResizeObserver === "function") {
+                resizeObserver = new ResizeObserver(
+                    schedulePosition
+                );
+                resizeObserver.observe(entry.trigger);
+                resizeObserver.observe(entry.panel);
+            }
+        }
+
+        function stopObserving() {
+            resizeObserver?.disconnect();
+            resizeObserver = null;
+
+            if (positionFrame) {
+                window.cancelAnimationFrame(positionFrame);
+                positionFrame = 0;
+            }
+        }
+
+        function register({
+            trigger,
+            panel,
+            align = "end",
+            onClose = null,
+        }) {
+            const entry = {
+                trigger,
+                panel,
+                align,
+                onClose,
+                api: null,
+            };
+
+            panel.classList.add("sales-viewport-popover");
+
+            function close({returnFocus = false} = {}) {
+                const wasOpen =
+                    activeEntry === entry && !panel.hidden;
+
+                panel.hidden = true;
+                panel.style.visibility = "";
+                trigger.setAttribute("aria-expanded", "false");
+
+                if (activeEntry === entry) {
+                    activeEntry = null;
+                    stopObserving();
+                }
+
+                if (wasOpen && typeof onClose === "function") {
+                    onClose();
+                }
+
+                if (returnFocus) {
+                    trigger.focus();
+                }
+            }
+
+            function open() {
+                if (activeEntry === entry && !panel.hidden) {
+                    schedulePosition();
+                    return;
+                }
+
+                activeEntry?.api.close();
+                root.appendChild(panel);
+                activeEntry = entry;
+                panel.style.visibility = "hidden";
+                panel.hidden = false;
+                trigger.setAttribute("aria-expanded", "true");
+                positionEntry(entry);
+                observeEntry(entry);
+            }
+
+            entry.api = {
+                open,
+                close,
+                toggle() {
+                    if (activeEntry === entry && !panel.hidden) {
+                        close();
+                    } else {
+                        open();
+                    }
+                },
+                isOpen() {
+                    return activeEntry === entry && !panel.hidden;
+                },
+                reposition: schedulePosition,
+            };
+
+            return entry.api;
+        }
+
+        document.addEventListener("click", (event) => {
+            if (!activeEntry) {
+                return;
+            }
+
+            const path = event.composedPath();
+
+            if (
+                !path.includes(activeEntry.panel)
+                && !path.includes(activeEntry.trigger)
+            ) {
+                activeEntry.api.close();
+            }
+        });
+
+        document.addEventListener("keydown", (event) => {
+            if (event.key === "Escape" && activeEntry) {
+                activeEntry.api.close({returnFocus: true});
+            }
+        });
+
+        window.addEventListener(
+            "resize",
+            schedulePosition,
+            {passive: true},
+        );
+        window.addEventListener(
+            "scroll",
+            schedulePosition,
+            {capture: true, passive: true},
+        );
+        window.visualViewport?.addEventListener(
+            "resize",
+            schedulePosition,
+            {passive: true},
+        );
+        window.visualViewport?.addEventListener(
+            "scroll",
+            schedulePosition,
+            {passive: true},
+        );
+
+        return {register, reposition: schedulePosition};
+    })();
     const saleRows = Array.from(
         document.querySelectorAll(".sale-row")
     );
@@ -2667,33 +2939,24 @@
         applySalesFilters();
     });
 
-    function closeSalesFilterPanel(returnFocus = false) {
-        salesFilterPanel.hidden = true;
-        salesFilterTrigger.setAttribute(
-            "aria-expanded",
-            "false",
-        );
+    const salesFilterPopover = salesPopoverManager.register({
+        trigger: salesFilterTrigger,
+        panel: salesFilterPanel,
+    });
 
-        if (returnFocus) {
-            salesFilterTrigger.focus();
-        }
+    function closeSalesFilterPanel(returnFocus = false) {
+        salesFilterPopover.close({returnFocus});
     }
 
     salesFilterTrigger.addEventListener("click", () => {
-        const willOpen = salesFilterPanel.hidden;
-
-        if (!willOpen) {
+        if (salesFilterPopover.isOpen()) {
             closeSalesFilterPanel();
             return;
         }
 
         salesStateFilter.value = appliedSaleState;
         salesTypeFilter.value = appliedSaleType;
-        salesFilterPanel.hidden = false;
-        salesFilterTrigger.setAttribute(
-            "aria-expanded",
-            "true",
-        );
+        salesFilterPopover.open();
         requestAnimationFrame(() => {
             salesStateFilter.focus();
         });
@@ -2719,24 +2982,6 @@
         updateSalesFilterSummary();
         applySalesFilters();
         closeSalesFilterPanel(true);
-    });
-
-    document.addEventListener("click", (event) => {
-        if (
-            !salesFilterPanel.hidden
-            && !event.target.closest(".sales-filter-settings")
-        ) {
-            closeSalesFilterPanel();
-        }
-    });
-
-    document.addEventListener("keydown", (event) => {
-        if (
-            event.key === "Escape"
-            && !salesFilterPanel.hidden
-        ) {
-            closeSalesFilterPanel(true);
-        }
     });
 
     document.addEventListener("click", (event) => {
@@ -2887,11 +3132,17 @@
             initialMonth.getMonth(),
             1,
         );
+        const calendarPopover = salesPopoverManager.register({
+            trigger,
+            panel: popup,
+            onClose() {
+                salesDateFilter.classList.remove("is-open");
+            },
+        });
 
-        function closeCalendar() {
+        function closeCalendar(returnFocus = false) {
             salesDateFilter.classList.remove("is-open");
-            popup.hidden = true;
-            trigger.setAttribute("aria-expanded", "false");
+            calendarPopover.close({returnFocus});
         }
 
         function renderCalendar() {
@@ -2960,7 +3211,7 @@
         }
 
         trigger.addEventListener("click", () => {
-            if (!popup.hidden) {
+            if (calendarPopover.isOpen()) {
                 closeCalendar();
                 return;
             }
@@ -2968,9 +3219,8 @@
             draftFrom = salesDateFrom.value;
             draftTo = salesDateTo.value;
             salesDateFilter.classList.add("is-open");
-            popup.hidden = false;
-            trigger.setAttribute("aria-expanded", "true");
             renderCalendar();
+            calendarPopover.open();
         });
 
         salesDateFilter
@@ -3020,18 +3270,6 @@
                 applySalesFilters();
             });
 
-        document.addEventListener("click", (event) => {
-            if (!event.composedPath().includes(salesDateFilter)) {
-                closeCalendar();
-            }
-        });
-
-        document.addEventListener("keydown", (event) => {
-            if (event.key === "Escape" && !popup.hidden) {
-                closeCalendar();
-                trigger.focus();
-            }
-        });
     }
 
     function sortSalesTable(field, forcedDirection) {
@@ -3347,6 +3585,10 @@
         const settingsMessage = document.getElementById(
             "salesColumnSettingsMessage"
         );
+        const settingsPopover = salesPopoverManager.register({
+            trigger: settingsTrigger,
+            panel: settingsPanel,
+        });
         let suppressSortUntil = 0;
 
         function minimumWidthFor(key) {
@@ -3613,12 +3855,8 @@
             saveView();
         }
 
-        function closeSettings() {
-            settingsPanel.hidden = true;
-            settingsTrigger.setAttribute(
-                "aria-expanded",
-                "false",
-            );
+        function closeSettings(returnFocus = false) {
+            settingsPopover.close({returnFocus});
         }
 
         const view = readView();
@@ -3821,20 +4059,19 @@
         );
 
         settingsTrigger.addEventListener("click", () => {
-            const willOpen = settingsPanel.hidden;
-            settingsPanel.hidden = !willOpen;
-            settingsTrigger.setAttribute(
-                "aria-expanded",
-                String(willOpen),
-            );
-
-            if (willOpen) {
-                setSettingsMessage("");
-                renderSettingsList();
+            if (settingsPopover.isOpen()) {
+                closeSettings();
+                return;
             }
+
+            setSettingsMessage("");
+            renderSettingsList();
+            settingsPopover.open();
         });
 
-        settingsClose.addEventListener("click", closeSettings);
+        settingsClose.addEventListener("click", () => {
+            closeSettings(true);
+        });
         settingsReset.addEventListener("click", () => {
             view.order = sanitizeOrder(defaultOrder);
             view.hidden = [];
@@ -3873,22 +4110,6 @@
             renderSettingsList();
             saveView();
             setSettingsMessage("");
-        });
-
-        document.addEventListener("click", (event) => {
-            if (
-                !settingsPanel.hidden
-                && !event.target.closest(".sales-column-settings")
-            ) {
-                closeSettings();
-            }
-        });
-
-        document.addEventListener("keydown", (event) => {
-            if (event.key === "Escape" && !settingsPanel.hidden) {
-                closeSettings();
-                settingsTrigger.focus();
-            }
         });
 
         window.salesColumnSettings = {
@@ -4943,6 +5164,65 @@
                 (id, index, ids) =>
                     ids.indexOf(id) !== index
             );
+            const popoverFitsViewport = (panel) => {
+                const bounds = panel.getBoundingClientRect();
+                const style = getComputedStyle(panel);
+
+                return (
+                    panel.parentElement?.id === "salesPopoverRoot"
+                    && style.position === "fixed"
+                    && bounds.left >= 15
+                    && bounds.top >= 15
+                    && bounds.right <= window.innerWidth - 15
+                    && bounds.bottom <= window.innerHeight - 15
+                    && ["top", "bottom"].includes(
+                        panel.dataset.salesPopoverPlacement
+                    )
+                    && (
+                        panel.scrollHeight
+                            <= panel.clientHeight + 1
+                        || style.overflowY === "auto"
+                    )
+                    && document.documentElement.scrollWidth
+                        <= document.documentElement.clientWidth
+                );
+            };
+            const popoverChecks = [
+                [
+                    document.querySelector(
+                        ".warehouse-date-trigger"
+                    ),
+                    document.querySelector(
+                        ".warehouse-calendar-popup"
+                    ),
+                ],
+                [
+                    document.getElementById(
+                        "salesFilterTrigger"
+                    ),
+                    document.getElementById(
+                        "salesFilterPanel"
+                    ),
+                ],
+                [
+                    document.getElementById(
+                        "salesColumnSettingsTrigger"
+                    ),
+                    document.getElementById(
+                        "salesColumnSettingsPanel"
+                    ),
+                ],
+            ].map(([trigger, panel]) => {
+                trigger.click();
+                const result = popoverFitsViewport(panel);
+                trigger.click();
+                return result;
+            });
+
+            if (popoverChecks.some((result) => !result)) {
+                throw new Error("popovers");
+            }
+
             resetAllSalesFilters();
             const filterTrigger = document.getElementById(
                 "salesFilterTrigger"

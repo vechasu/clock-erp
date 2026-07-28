@@ -1272,7 +1272,20 @@ class OwnerFeedbackTest(unittest.TestCase):
         self.assertIn("warehouse-calendar-day", html)
         self.assertIn("data-calendar-apply", html)
         self.assertIn("displaySalesDate(salesDateFrom.value)", html)
-        self.assertIn(
+        self.assertIn('root.id = "salesPopoverRoot"', html)
+        self.assertIn("const salesPopoverManager", html)
+        self.assertEqual(
+            html.count("salesPopoverManager.register({"),
+            3,
+        )
+        self.assertIn("root.appendChild(panel)", html)
+        self.assertIn("panel.getBoundingClientRect()", html)
+        self.assertIn("const spaceBelow", html)
+        self.assertIn("const spaceAbove", html)
+        self.assertIn("new ResizeObserver(", html)
+        self.assertIn('panel.dataset.salesPopoverPlacement', html)
+        self.assertIn('window.visualViewport?.addEventListener(', html)
+        self.assertNotIn(
             "event.composedPath().includes(salesDateFilter)",
             html,
         )
@@ -1281,6 +1294,16 @@ class OwnerFeedbackTest(unittest.TestCase):
         self.assertIn('salesSearch.value = "";', html)
         self.assertIn('salesDateFrom.value = "";', html)
         self.assertIn('salesDateTo.value = "";', html)
+
+        css = (
+            Path(web.app.static_folder)
+            / "css"
+            / "erp-components.css"
+        ).read_text(encoding="utf-8")
+        self.assertIn(".sales-popover-root", css)
+        self.assertIn("position: fixed !important;", css)
+        self.assertIn("max-height: calc(100vh - 32px);", css)
+        self.assertIn("overscroll-behavior: contain;", css)
 
     def test_sales_desktop_workspace_has_page_hierarchy_and_accessible_table(self):
         with mock.patch.object(
