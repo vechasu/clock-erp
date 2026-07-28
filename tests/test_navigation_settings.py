@@ -160,6 +160,26 @@ class NavigationSettingsTest(unittest.TestCase):
             },
         )
 
+    def test_disabled_primary_item_is_absent_from_shared_navigation(self):
+        self.seed_navigation(
+            products={"enabled": False, "position": 17},
+        )
+
+        with web.app.test_request_context("/sales"):
+            items = web.get_navigation_items()
+
+        self.assertNotIn(
+            "products",
+            {item["key"] for item in items},
+        )
+        self.assertTrue(
+            next(
+                item
+                for item in items
+                if item["key"] == "sales"
+            )["mobile_primary"]
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

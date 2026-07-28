@@ -244,7 +244,10 @@
 </head>
 
 <body>
-<main class="report-page">
+<div class="app">
+    {% include "_sidebar.html" %}
+    <main class="main">
+    <div class="report-page">
     <header class="report-header">
         <div>
             <h1>
@@ -387,6 +390,8 @@
             </tbody>
         </table>
     </section>
-</main>
+    </div>
+    </main>
+</div>
 </body>
 </html>

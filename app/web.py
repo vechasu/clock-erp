@@ -9327,9 +9327,11 @@ NAVIGATION_DEFINITIONS = [
         "key": "orders",
         "label": "Заказы",
         "description": "Заказы интернет-магазина и карточки заказов.",
-        "icon": "📦",
+        "icon": "orders",
         "href": "/",
         "position": 1,
+        "group": "main",
+        "mobile_primary": False,
         "active_exact": ["/"],
         "active_prefixes": ["/order"],
     },
@@ -9337,19 +9339,25 @@ NAVIGATION_DEFINITIONS = [
         "key": "products",
         "label": "Товары",
         "description": "Каталог, остатки, ячейки и управление товарами.",
-        "icon": "🏷",
+        "icon": "products",
         "href": "/products",
+        "mobile_href": "/warehouse",
         "position": 2,
+        "group": "main",
+        "mobile_primary": True,
         "active_exact": [],
-        "active_prefixes": ["/products"],
+        "active_prefixes": ["/products", "/warehouse"],
+        "active_excluded_prefixes": ["/products/receipts"],
     },
     {
         "key": "sales",
         "label": "Продажи",
         "description": "Ручные продажи, источники и отчёты.",
-        "icon": "💰",
+        "icon": "sales",
         "href": "/sales",
         "position": 3,
+        "group": "main",
+        "mobile_primary": True,
         "active_exact": [],
         "active_prefixes": ["/sales"],
     },
@@ -9357,9 +9365,11 @@ NAVIGATION_DEFINITIONS = [
         "key": "catalog",
         "label": "Весь каталог Bitrix",
         "description": "Карточки, контент и синхронизация каталога Bitrix.",
-        "icon": "🗂",
+        "icon": "catalog",
         "href": "/catalog",
         "position": 3,
+        "group": "main",
+        "mobile_primary": False,
         "active_exact": [],
         "active_prefixes": ["/catalog"],
     },
@@ -9367,19 +9377,23 @@ NAVIGATION_DEFINITIONS = [
         "key": "receipts",
         "label": "Приход",
         "description": "Оформление и проведение поступлений товара.",
-        "icon": "📥",
+        "icon": "receipts",
         "href": "/receipts",
         "position": 4,
+        "group": "main",
+        "mobile_primary": True,
         "active_exact": [],
-        "active_prefixes": ["/receipts"],
+        "active_prefixes": ["/receipts", "/products/receipts"],
     },
     {
         "key": "analytics",
         "label": "Аналитика",
         "description": "Продажи, приходы и текущие остатки товаров.",
-        "icon": "📊",
+        "icon": "analytics",
         "href": "/analytics",
         "position": 5,
+        "group": "main",
+        "mobile_primary": False,
         "active_exact": [],
         "active_prefixes": ["/analytics"],
     },
@@ -9387,9 +9401,11 @@ NAVIGATION_DEFINITIONS = [
         "key": "stock_operations",
         "label": "Журнал операций",
         "description": "История складских движений и операций.",
-        "icon": "📒",
+        "icon": "stock_operations",
         "href": "/stock-operations",
         "position": 6,
+        "group": "main",
+        "mobile_primary": False,
         "active_exact": [],
         "active_prefixes": ["/stock-operations"],
     },
@@ -9397,9 +9413,11 @@ NAVIGATION_DEFINITIONS = [
         "key": "repair",
         "label": "Ремонт",
         "description": "Учёт ремонтных обращений и статусов.",
-        "icon": "🛠",
+        "icon": "repair",
         "href": "/repair",
         "position": 7,
+        "group": "main",
+        "mobile_primary": False,
         "active_exact": [],
         "active_prefixes": ["/repair"],
     },
@@ -9407,9 +9425,11 @@ NAVIGATION_DEFINITIONS = [
         "key": "settings",
         "label": "Настройки",
         "description": "Управление компанией, системой и вкладками.",
-        "icon": "⚙️",
+        "icon": "settings",
         "href": "/settings",
         "position": 8,
+        "group": "system",
+        "mobile_primary": False,
         "active_exact": [],
         "active_prefixes": ["/settings"],
         "required": True,
@@ -9525,9 +9545,38 @@ def save_navigation_settings(settings):
     temporary_path.replace(path)
 
 
+def get_active_navigation_key(current_path):
+    for definition in NAVIGATION_DEFINITIONS:
+        excluded = any(
+            current_path.startswith(prefix)
+            for prefix in definition.get(
+                "active_excluded_prefixes",
+                [],
+            )
+        )
+
+        if excluded:
+            continue
+
+        if (
+            current_path in definition.get("active_exact", [])
+            or any(
+                current_path.startswith(prefix)
+                for prefix in definition.get(
+                    "active_prefixes",
+                    [],
+                )
+            )
+        ):
+            return definition["key"]
+
+    return ""
+
+
 def get_navigation_items(include_disabled=False):
     navigation_settings = load_navigation_settings()
     current_path = request.path
+    active_key = get_active_navigation_key(current_path)
     items = []
 
     for definition in NAVIGATION_DEFINITIONS:
@@ -9549,16 +9598,7 @@ def get_navigation_items(include_disabled=False):
             definition["position"],
         )
 
-        item["active"] = (
-            current_path in definition.get("active_exact", [])
-            or any(
-                current_path.startswith(prefix)
-                for prefix in definition.get(
-                    "active_prefixes",
-                    [],
-                )
-            )
-        )
+        item["active"] = key == active_key
 
         items.append(item)
 
@@ -9573,8 +9613,14 @@ def get_navigation_items(include_disabled=False):
 
 @app.context_processor
 def inject_sidebar_navigation():
+    app_settings = load_app_settings()
+
     return {
         "sidebar_navigation_items": get_navigation_items(),
+        "sidebar_brand": {
+            "title": app_settings["erp_name"],
+            "subtitle": app_settings["company_name"],
+        },
     }
 
 
