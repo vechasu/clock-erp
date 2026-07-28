@@ -1504,9 +1504,13 @@
         /* RECEIPTS EXCEL IMPORT UI V1 END */
 
     </style>
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='css/erp-components.css') }}"
+    >
 </head>
 
-<body>
+<body class="receipts-page">
 <div class="app">
     {% include "_sidebar.html" %}
 
@@ -1558,7 +1562,30 @@
                 oninput="filterReceipts()"
             >
 
-            <div class="receipt-date-group">
+            <button
+                id="receiptMobileFilterTrigger"
+                class="mobile-erp-only receipt-mobile-filter-trigger"
+                type="button"
+                aria-controls="receiptDateGroup"
+                aria-expanded="false"
+            >
+                Период и отчёт
+            </button>
+
+            <label
+                class="mobile-erp-only mobile-erp-sort receipt-mobile-sort"
+                for="receiptMobileSort"
+            >
+                <select id="receiptMobileSort" aria-label="Сортировка приходов">
+                    <option value="date">По дате</option>
+                    <option value="product">По товару</option>
+                    <option value="brand">По бренду</option>
+                    <option value="quantity">По количеству</option>
+                    <option value="amount">По сумме</option>
+                </select>
+            </label>
+
+            <div id="receiptDateGroup" class="receipt-date-group">
                 <label class="receipt-date-field">
                     <input
                         class="receipt-date-input"
@@ -1772,8 +1799,16 @@
                                     data-status="{{ receipt.status_label or 'Проведён' }}"
                                 >
                                     <td class="col-date">
-                                        <span class="receipt-view-value">
+                                        <span class="receipt-view-value receipt-date-desktop">
                                             {{ receipt.receipt_date or receipt.created_at }}
+                                        </span>
+                                        {% set receipt_date_value = receipt.receipt_date or receipt.created_at or "" %}
+                                        <span class="receipt-view-value mobile-erp-only receipt-date-mobile">
+                                            {% if receipt_date_value|length >= 10 %}
+                                                {{ receipt_date_value[8:10] }}.{{ receipt_date_value[5:7] }}.{{ receipt_date_value[:4] }}
+                                            {% else %}
+                                                {{ receipt_date_value or "—" }}
+                                            {% endif %}
                                         </span>
 
                                         <input
@@ -1860,6 +1895,7 @@
                                         <input
                                             class="receipt-table-control receipt-edit-control receipt-number-input"
                                             type="number"
+                                            inputmode="decimal"
                                             name="quantity"
                                             value="{{ receipt_quantity }}"
                                             min="0.01"
@@ -1878,6 +1914,7 @@
                                             <input
                                                 class="receipt-table-control receipt-number-input"
                                                 type="number"
+                                                inputmode="decimal"
                                                 name="purchase_price"
                                                 value="{{ receipt_price }}"
                                                 min="0"
@@ -2049,11 +2086,17 @@
     </main>
 </div>
 
-<div class="modal" id="receiptModal">
+<div
+    class="modal"
+    id="receiptModal"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="receiptModalTitle"
+>
     <div class="modal-dialog">
         <div class="modal-header">
             <div>
-                <h2>Новый приход</h2>
+                <h2 id="receiptModalTitle">Новый приход</h2>
                 <p>После проведения остатки увеличатся в МойСклад</p>
             </div>
 
@@ -2230,6 +2273,7 @@
                             id="receipt_quantity"
                             name="quantity"
                             type="number"
+                            inputmode="decimal"
                             min="1"
                             step="1"
                             value="1"
@@ -2247,6 +2291,7 @@
                             id="receipt_purchase_price"
                             name="purchase_price"
                             type="number"
+                            inputmode="decimal"
                             min="0"
                             step="0.01"
                             placeholder="Например, 5000"
@@ -2345,7 +2390,13 @@
 </div>
 
 <!-- RECEIPTS EXCEL IMPORT MODAL V1 -->
-<div class="modal" id="receiptImportModal">
+<div
+    class="modal"
+    id="receiptImportModal"
+    role="dialog"
+    aria-modal="true"
+    aria-label="Импорт прихода"
+>
     <div class="modal-dialog receipt-import-dialog">
         <div class="modal-header">
             <div>
@@ -3558,10 +3609,20 @@
 
     function openReceiptModal() {
         receiptModal.classList.add("is-open");
+        document.body.classList.add("modal-open");
+        requestAnimationFrame(() => {
+            receiptModal.querySelector(
+                "button:not([disabled]), input:not([disabled])"
+            )?.focus();
+        });
     }
 
     function closeReceiptModal() {
         receiptModal.classList.remove("is-open");
+        document.body.classList.remove("modal-open");
+        document.querySelector(
+            '[onclick="openReceiptModal()"]'
+        )?.focus();
     }
 
 
@@ -4065,6 +4126,29 @@
         clearButton.disabled =
             !dateFrom && !dateTo;
     }
+
+    const receiptFilterToolbar = document.querySelector(
+        ".receipt-filter-toolbar"
+    );
+    const receiptMobileFilterTrigger = document.getElementById(
+        "receiptMobileFilterTrigger"
+    );
+
+    receiptMobileFilterTrigger?.addEventListener("click", () => {
+        const isOpen = receiptFilterToolbar.classList.toggle(
+            "is-mobile-filter-open"
+        );
+        receiptMobileFilterTrigger.setAttribute(
+            "aria-expanded",
+            String(isOpen)
+        );
+    });
+
+    document.getElementById("receiptMobileSort")
+        ?.addEventListener("change", (event) => {
+            receiptSortKey = "";
+            sortReceipts(event.target.value);
+        });
 
     function clearReceiptDateFilter() {
         document.getElementById(
