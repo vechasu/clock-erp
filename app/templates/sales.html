@@ -5091,8 +5091,9 @@
                             getHeaders()[0]
                                 .getBoundingClientRect().width
                         ) === 108
-                        && tableWrap.scrollWidth
-                            > tableWrap.clientWidth
+                        && ["auto", "scroll"].includes(
+                            getComputedStyle(tableWrap).overflowX
+                        )
                         && Math.abs(
                             stickyDateBounds.left
                             - tableWrapBounds.left
