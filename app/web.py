@@ -3192,6 +3192,97 @@ DEFAULT_SALES_SOURCES = [
     "Ziiiro сайт",
 ]
 
+SALES_SOURCE_TABS = [
+    {
+        "key": "all",
+        "label": "Все продажи",
+    },
+    {
+        "key": "tictactoy",
+        "label": "Tictactoy",
+    },
+    {
+        "key": "wildberries",
+        "label": "Wildberries",
+    },
+    {
+        "key": "amazon",
+        "label": "Amazon",
+    },
+]
+
+SALES_SOURCE_LABELS = {
+    item["key"]: item["label"]
+    for item in SALES_SOURCE_TABS
+    if item["key"] != "all"
+}
+
+SALES_SOURCE_ALIASES = {
+    "tictactoy": "tictactoy",
+    "битрикс": "tictactoy",
+    "заказ битрикс": "tictactoy",
+    "wildberries": "wildberries",
+    "вайлдберриз": "wildberries",
+    "wb": "wildberries",
+    "amazon": "amazon",
+    "амазон": "amazon",
+}
+
+SALES_TABLE_COLUMNS = {
+    "all": [
+        ("created_at", "Дата"),
+        ("barcode", "Баркод"),
+        ("source", "Источник"),
+        ("brand", "Бренд"),
+        ("category", "Категория"),
+        ("product_name", "Товар"),
+        ("quantity_display", "Количество"),
+        ("unit_price_display", "Цена"),
+    ],
+    "tictactoy": [
+        ("created_at", "Дата"),
+        ("barcode", "Баркод"),
+        ("brand", "Бренд"),
+        ("category", "Категория"),
+        ("product_name", "Товар"),
+        ("quantity_display", "Количество"),
+        ("unit_price_display", "Цена"),
+        ("order_number", "Номер заказа"),
+        ("track_number", "Номер отправления"),
+        ("delivery_method", "Способ доставки"),
+        ("delivery_cost_display", "Стоимость доставки"),
+        ("region", "Регион"),
+        ("city", "Город"),
+        ("payment_method", "Способ оплаты"),
+        ("note", "Примечание"),
+    ],
+    "wildberries": [
+        ("created_at", "Дата"),
+        ("barcode", "Баркод"),
+        ("brand", "Бренд"),
+        ("category", "Категория"),
+        ("product_name", "Товар"),
+        ("quantity_display", "Количество"),
+        ("unit_price_display", "Цена"),
+        ("note", "Примечание"),
+    ],
+    "amazon": [
+        ("created_at", "Дата"),
+        ("barcode", "Баркод"),
+        ("brand", "Бренд"),
+        ("category", "Категория"),
+        ("product_name", "Товар"),
+        ("quantity_display", "Количество"),
+        ("unit_price_display", "Цена"),
+        ("recipient_name", "ФИО получателя"),
+        ("order_number", "Номер заказа"),
+        ("country", "Страна"),
+        ("delivery_address", "Адрес доставки"),
+        ("invoice_number", "Номер накладной"),
+        ("note", "Примечание"),
+    ],
+}
+
 SALE_STATUS_LABELS = {
     "processing": "В обработке",
     "shipped": "Отправлен",
@@ -3636,6 +3727,95 @@ def normalize_manual_sale_source(value, custom_value=""):
 
     return source or "Свой вариант"
 
+
+def normalize_sales_source_key(value, default=""):
+    normalized = str(value or "").strip().casefold()
+
+    if normalized == "all":
+        return "all"
+
+    return SALES_SOURCE_ALIASES.get(normalized, default)
+
+
+def get_active_sales_source(value):
+    return normalize_sales_source_key(value, default="all")
+
+
+def get_sales_source_label(value):
+    source = normalize_manual_sale_source(value)
+    source_key = normalize_sales_source_key(source)
+
+    return SALES_SOURCE_LABELS.get(source_key, source)
+
+
+def get_sales_columns(source_key):
+    return [
+        {
+            "key": key,
+            "label": label,
+        }
+        for key, label in SALES_TABLE_COLUMNS[
+            get_active_sales_source(source_key)
+        ]
+    ]
+
+
+def filter_sales_by_source(sales, source_key):
+    source_key = get_active_sales_source(source_key)
+    result = []
+
+    for sale in sales:
+        sale_source_key = normalize_sales_source_key(
+            sale.get("source")
+        )
+
+        if source_key == "all":
+            if sale_source_key not in SALES_SOURCE_LABELS:
+                continue
+        elif sale_source_key != source_key:
+            continue
+
+        result.append(sale)
+
+    return result
+
+
+def get_sales_search_fields(source_key):
+    source_key = get_active_sales_source(source_key)
+    fields = [
+        column["key"]
+        for column in get_sales_columns(source_key)
+    ]
+
+    if source_key == "all":
+        fields = [
+            field
+            for field in fields
+            if field != "quantity_display"
+        ]
+
+    return fields
+
+
+def build_sales_search_text(sale, source_key):
+    return " ".join(
+        str(sale.get(field) or "")
+        for field in get_sales_search_fields(source_key)
+    )
+
+
+def get_sales_export_value(sale, column_key):
+    if column_key == "quantity_display":
+        return sale.get("quantity_value") or 0
+
+    if column_key == "unit_price_display":
+        return sale.get("unit_price")
+
+    if column_key == "delivery_cost_display":
+        return sale.get("delivery_cost")
+
+    return sale.get(column_key) or ""
+
 # === CUSTOM DELIVERY BACKEND V1 ===
 def normalize_manual_delivery_method(
     value,
@@ -3663,6 +3843,7 @@ def resolve_sale_product_metadata(
     product_name,
     fallback_brand="",
     fallback_category="",
+    fallback_barcode="",
 ):
     try:
         lookup = build_sales_product_metadata_lookup(
@@ -3673,6 +3854,7 @@ def resolve_sale_product_metadata(
             "product_name": str(product_name or "").strip(),
             "brand": str(fallback_brand or "").strip(),
             "category": str(fallback_category or "").strip(),
+            "barcode": str(fallback_barcode or "").strip(),
         }
 
     product_id = str(product_id or "").strip()
@@ -3689,6 +3871,7 @@ def resolve_sale_product_metadata(
         "product_name": str(product_name or "").strip(),
         "brand": str(fallback_brand or "").strip(),
         "category": str(fallback_category or "").strip(),
+        "barcode": str(fallback_barcode or "").strip(),
     }
 
 
@@ -3703,6 +3886,15 @@ def build_sale_optional_fields(form, existing=None):
     if commission_amount is None:
         raise ValueError(
             "Комиссия должна быть неотрицательной суммой в рублях"
+        )
+
+    delivery_cost = parse_sale_commission(
+        form.get("delivery_cost")
+    )
+
+    if delivery_cost is None:
+        raise ValueError(
+            "Стоимость доставки должна быть неотрицательной суммой"
         )
 
     order_status = normalize_sale_status(
@@ -3734,7 +3926,46 @@ def build_sale_optional_fields(form, existing=None):
         "sticker_number": str(
             form.get("sticker_number") or ""
         ).strip(),
+        "delivery_cost": delivery_cost,
+        "country": str(
+            form.get("country") or ""
+        ).strip(),
+        "delivery_address": str(
+            form.get("delivery_address") or ""
+        ).strip(),
+        "invoice_number": str(
+            form.get("invoice_number") or ""
+        ).strip(),
     }
+
+
+def redirect_to_sales(message, notice="success", form=None):
+    form = form or request.form
+    source_key = get_active_sales_source(
+        form.get("return_source")
+        or form.get("source")
+    )
+    query = {
+        "source": source_key,
+        "notice": notice,
+        "message": message,
+    }
+
+    for key in (
+        "q",
+        "date_from",
+        "date_to",
+        "sort",
+        "sort_dir",
+    ):
+        value = str(
+            form.get(f"return_{key}") or ""
+        ).strip()
+
+        if value:
+            query[key] = value
+
+    return redirect(url_for("sales_page", **query))
 
 
 @app.route("/sales/manual/add", methods=["POST"])
@@ -3757,42 +3988,32 @@ def manual_sale_add():
     # === MANUAL SALE ADD PRICE V1 END ===
 
     if not product_name:
-        return redirect(
-            url_for(
-                "sales_page",
-                notice="error",
-                message="Укажите название товара",
-            )
+        return redirect_to_sales(
+            "Укажите название товара",
+            notice="error",
         )
 
     if quantity <= 0:
-        return redirect(
-            url_for(
-                "sales_page",
-                notice="error",
-                message="Выберите количество от 1 до 25",
-            )
+        return redirect_to_sales(
+            "Выберите количество от 1 до 25",
+            notice="error",
         )
 
     # === MANUAL SALE PRICE VALIDATION V1 ===
     if unit_price is None:
-        return redirect(
-            url_for(
-                "sales_page",
-                notice="error",
-                message="Укажите цену продажи не меньше 1 ₽",
-            )
+        return redirect_to_sales(
+            "Укажите цену продажи не меньше 1 ₽",
+            notice="error",
         )
     # === MANUAL SALE PRICE VALIDATION V1 END ===
 
     try:
         optional_fields = build_sale_optional_fields(request.form)
     except ValueError as error:
-        return redirect(url_for(
-            "sales_page",
+        return redirect_to_sales(
+            str(error),
             notice="error",
-            message=str(error),
-        ))
+        )
 
     product_id = (
         request.form.get("product_id") or ""
@@ -3819,6 +4040,7 @@ def manual_sale_add():
         ),
         "product_id": product_id,
         "product_name": product_name,
+        "barcode": product_metadata.get("barcode") or "",
         "brand": product_metadata.get("brand") or "",
         "category": product_metadata.get("category") or "",
         "quantity": quantity,
@@ -3850,12 +4072,8 @@ def manual_sale_add():
 
     save_manual_sales(sales)
 
-    return redirect(
-        url_for(
-            "sales_page",
-            notice="success",
-            message="Ручная продажа добавлена",
-        )
+    return redirect_to_sales(
+        "Продажа добавлена",
     )
 
 
@@ -3931,6 +4149,7 @@ def manual_sale_update():
             product_name,
             fallback_brand=sale.get("brand"),
             fallback_category=sale.get("category"),
+            fallback_barcode=sale.get("barcode"),
         )
         product_name = (
             product_metadata.get("product_name") or product_name
@@ -3957,6 +4176,7 @@ def manual_sale_update():
         )
         sale["product_id"] = product_id
         sale["product_name"] = product_name
+        sale["barcode"] = product_metadata.get("barcode") or ""
         sale["brand"] = product_metadata.get("brand") or ""
         sale["category"] = product_metadata.get("category") or ""
         sale["quantity"] = quantity
@@ -4235,6 +4455,10 @@ def automatic_sale_update():
             existing_override.get("category")
             or operation.get("category")
         ),
+        fallback_barcode=(
+            existing_override.get("barcode")
+            or operation.get("barcode")
+        ),
     )
     product_name = (
         product_metadata.get("product_name") or product_name
@@ -4260,6 +4484,7 @@ def automatic_sale_update():
             request.form.get("source") or "Tictactoy"
         ).strip(),
         "product_name": product_name,
+        "barcode": product_metadata.get("barcode") or "",
         "brand": product_metadata.get("brand") or "",
         "category": product_metadata.get("category") or "",
         "quantity": quantity,
@@ -4315,6 +4540,12 @@ def build_sales_product_metadata_lookup(items):
         product_name = str(item.get("name") or "").strip()
         metadata = {
             "product_name": product_name,
+            "barcode": str(
+                item.get("barcode")
+                or item.get("code")
+                or item.get("article")
+                or ""
+            ).strip(),
             "brand": str(item.get("brand") or "").strip(),
             "category": str(item.get("category") or "").strip(),
         }
@@ -4337,17 +4568,22 @@ def get_sales_product_metadata(lookup, product_id, product_name):
         or lookup["by_name"].get(product_name)
         or {
             "product_name": "",
+            "barcode": "",
             "brand": "",
             "category": "",
         }
     )
 
 
-def build_sales_report_records():
+def build_sales_report_records(warehouse_items=None):
     operations = load_stock_operations()
     stored_manual_sales = load_manual_sales()
     automatic_overrides = load_automatic_sales_overrides()
-    all_warehouse_items = get_warehouse_items()
+    all_warehouse_items = (
+        get_warehouse_items()
+        if warehouse_items is None
+        else warehouse_items
+    )
     product_metadata_lookup = build_sales_product_metadata_lookup(
         all_warehouse_items
     )
@@ -4411,15 +4647,20 @@ def build_sales_report_records():
             or operation.get("product_name"),
         )
 
+        stored_source = str(
+            override.get("source", "Tictactoy")
+            or "Tictactoy"
+        )
+
         automatic_sales.append({
             "id": operation_id,
             "sale_type": "automatic",
             "sale_type_label": "Автоматическая",
             "is_manual": False,
             "created_at": created_at,
-            "source": str(
-                override.get("source", "Tictactoy")
-                or "Tictactoy"
+            "source": get_sales_source_label(stored_source),
+            "source_key": normalize_sales_source_key(
+                stored_source
             ),
             "order_number": str(
                 override.get(
@@ -4435,6 +4676,15 @@ def build_sales_report_records():
                 override.get(
                     "product_name",
                     operation.get("product_name") or "",
+                )
+                or ""
+            ),
+            "barcode": str(
+                override.get(
+                    "barcode",
+                    operation.get("barcode")
+                    or product_metadata.get("barcode")
+                    or "",
                 )
                 or ""
             ),
@@ -4457,6 +4707,9 @@ def build_sales_report_records():
                 or ""
             ),
             "quantity_value": quantity_number,
+            "quantity_display": format_stock_number(
+                quantity_number
+            ),
             **{
                 "unit_price": parse_sale_price(
                     override.get("unit_price")
@@ -4497,6 +4750,26 @@ def build_sales_report_records():
                 )
                 or ""
             ),
+            "delivery_cost": (
+                parse_sale_commission(
+                    override.get(
+                        "delivery_cost",
+                        operation.get("delivery_cost")
+                        or operation.get("shipping_cost"),
+                    )
+                )
+                or 0
+            ),
+            "delivery_cost_display": format_sale_money(
+                parse_sale_commission(
+                    override.get(
+                        "delivery_cost",
+                        operation.get("delivery_cost")
+                        or operation.get("shipping_cost"),
+                    )
+                )
+                or 0
+            ),
             "region": str(
                 override.get(
                     "region",
@@ -4529,6 +4802,23 @@ def build_sales_report_records():
                 override.get("recipient_name")
                 or operation.get("recipient_name")
                 or operation.get("customer")
+                or ""
+            ),
+            "country": str(
+                override.get("country")
+                or operation.get("country")
+                or ""
+            ),
+            "delivery_address": str(
+                override.get("delivery_address")
+                or operation.get("delivery_address")
+                or operation.get("address")
+                or ""
+            ),
+            "invoice_number": str(
+                override.get("invoice_number")
+                or operation.get("invoice_number")
+                or operation.get("waybill_number")
                 or ""
             ),
             "payment_method": str(
@@ -4577,6 +4867,10 @@ def build_sales_report_records():
             stored_sale.get("product_name"),
         )
 
+        stored_source = normalize_manual_sale_source(
+            stored_sale.get("source")
+        )
+
         manual_sales.append({
             "id": str(stored_sale.get("id") or ""),
             "sale_type": "manual",
@@ -4585,8 +4879,9 @@ def build_sales_report_records():
             "created_at": str(
                 stored_sale.get("created_at") or ""
             ),
-            "source": normalize_manual_sale_source(
-                stored_sale.get("source")
+            "source": get_sales_source_label(stored_source),
+            "source_key": normalize_sales_source_key(
+                stored_source
             ),
             "order_number": str(
                 stored_sale.get("order_number") or ""
@@ -4596,6 +4891,11 @@ def build_sales_report_records():
             ),
             "product_name": str(
                 stored_sale.get("product_name") or ""
+            ),
+            "barcode": str(
+                stored_sale.get("barcode")
+                or product_metadata.get("barcode")
+                or ""
             ),
             "brand": str(
                 stored_sale.get("brand")
@@ -4608,6 +4908,9 @@ def build_sales_report_records():
                 or ""
             ),
             "quantity_value": quantity_number,
+            "quantity_display": format_stock_number(
+                quantity_number
+            ),
             **{
                 "unit_price": parse_sale_price(
                     stored_sale.get("unit_price")
@@ -4638,6 +4941,18 @@ def build_sales_report_records():
             "delivery_method": str(
                 stored_sale.get("delivery_method") or ""
             ),
+            "delivery_cost": (
+                parse_sale_commission(
+                    stored_sale.get("delivery_cost")
+                )
+                or 0
+            ),
+            "delivery_cost_display": format_sale_money(
+                parse_sale_commission(
+                    stored_sale.get("delivery_cost")
+                )
+                or 0
+            ),
             "region": str(
                 stored_sale.get("region") or ""
             ),
@@ -4652,6 +4967,15 @@ def build_sales_report_records():
             ),
             "recipient_name": str(
                 stored_sale.get("recipient_name") or ""
+            ),
+            "country": str(
+                stored_sale.get("country") or ""
+            ),
+            "delivery_address": str(
+                stored_sale.get("delivery_address") or ""
+            ),
+            "invoice_number": str(
+                stored_sale.get("invoice_number") or ""
             ),
             "payment_method": str(
                 stored_sale.get("payment_method") or ""
@@ -4697,6 +5021,9 @@ def build_sales_report_records():
 
 def get_sales_report_filters():
     filters = {
+        "q": (
+            request.args.get("q") or ""
+        ).strip(),
         "date_from": (
             request.args.get("date_from") or ""
         ).strip(),
@@ -4707,8 +5034,10 @@ def get_sales_report_filters():
             request.args.get("sale_type") or ""
         ).strip(),
         "source": (
-            request.args.get("source") or ""
-        ).strip(),
+            get_active_sales_source(
+                request.args.get("source")
+            )
+        ),
         "product": (
             request.args.get("product") or ""
         ).strip(),
@@ -4748,6 +5077,19 @@ def get_sales_report_filters():
 def filter_sales_report_records(sales, filters):
     result = []
 
+    source_key = (
+        get_active_sales_source(filters.get("source"))
+        if filters.get("source")
+        else ""
+    )
+    sales = (
+        filter_sales_by_source(sales, source_key)
+        if source_key
+        else list(sales)
+    )
+    search_query = str(
+        filters.get("q") or ""
+    ).casefold()
     product_query = str(
         filters.get("product") or ""
     ).casefold()
@@ -4784,12 +5126,14 @@ def filter_sales_report_records(sales, filters):
         ):
             continue
 
-        if (
-            filters.get("source")
-            and sale.get("source")
-            != filters["source"]
-        ):
-            continue
+        if search_query:
+            search_text = build_sales_search_text(
+                sale,
+                source_key or "all",
+            ).casefold()
+
+            if search_query not in search_text:
+                continue
 
         if product_query:
             product_text = " ".join([
@@ -4873,11 +5217,16 @@ def build_sales_report_context():
     )
     # === SALES REPORT PRICE V1 END ===
 
+    source_sales = filter_sales_by_source(
+        all_sales,
+        filters["source"],
+    )
+
     def unique_values(field):
         return sorted(
             {
                 str(sale.get(field) or "").strip()
-                for sale in all_sales
+                for sale in source_sales
                 if str(sale.get(field) or "").strip()
             },
             key=str.casefold,
@@ -4886,6 +5235,15 @@ def build_sales_report_context():
     return {
         "sales": sales,
         "filters": filters,
+        "active_source": filters["source"],
+        "active_source_label": (
+            "Все продажи"
+            if filters["source"] == "all"
+            else SALES_SOURCE_LABELS[filters["source"]]
+        ),
+        "report_columns": get_sales_columns(
+            filters["source"]
+        ),
         "total_sales": len(active_sales),
         "total_records": len(sales),
         "total_cancelled": len(sales) - len(active_sales),
@@ -4940,9 +5298,11 @@ def sales_report_excel():
         PatternFill,
         Side,
     )
+    from openpyxl.utils import get_column_letter
 
     context = build_sales_report_context()
     sales = context["sales"]
+    report_columns = context["report_columns"]
 
     workbook = Workbook()
     sheet = workbook.active
@@ -4972,27 +5332,8 @@ def sales_report_excel():
     # === SALES EXCEL PRICE V1 END ===
 
     headers = [
-        "Дата",
-        "Тип",
-        "Статус",
-        "Источник",
-        "Товар",
-        "Бренд",
-        "Категория",
-        "Количество",
-        "Цена за единицу, ₽",
-        "Сумма, ₽",
-        "Комиссия, ₽",
-        "Номер заказа",
-        "Номер стикера",
-        "Трек-номер",
-        "Получатель",
-        "ФИО получателя",
-        "Способ оплаты",
-        "Способ доставки",
-        "Регион",
-        "Город",
-        "Примечание",
+        column["label"]
+        for column in report_columns
     ]
 
     header_row = 4
@@ -5025,27 +5366,11 @@ def sales_report_excel():
         start=header_row + 1,
     ):
         values = [
-            sale.get("created_at") or "",
-            sale.get("sale_type_label") or "",
-            sale.get("order_status_label") or "",
-            sale.get("source") or "",
-            sale.get("product_name") or "",
-            sale.get("brand") or "",
-            sale.get("category") or "",
-            sale.get("quantity_value") or 0,
-            sale.get("unit_price"),
-            sale.get("total_amount"),
-            sale.get("commission_amount") or 0,
-            sale.get("order_number") or "",
-            sale.get("sticker_number") or "",
-            sale.get("track_number") or "",
-            sale.get("recipient") or "",
-            sale.get("recipient_name") or "",
-            sale.get("payment_method") or "",
-            sale.get("delivery_method") or "",
-            sale.get("region") or "",
-            sale.get("city") or "",
-            sale.get("note") or "",
+            get_sales_export_value(
+                sale,
+                column["key"],
+            )
+            for column in report_columns
         ]
 
         for column, value in enumerate(
@@ -5063,7 +5388,11 @@ def sales_report_excel():
             )
 
             if (
-                column in {9, 10, 11}
+                report_columns[column - 1]["key"]
+                in {
+                    "unit_price_display",
+                    "delivery_cost_display",
+                }
                 and value is not None
             ):
                 cell.number_format = '#,##0.00 "₽"'
@@ -5087,28 +5416,23 @@ def sales_report_excel():
                 bottom=thin_side,
             )
 
+    width_by_key = {
+        "created_at": 14,
+        "barcode": 20,
+        "source": 18,
+        "brand": 20,
+        "category": 26,
+        "product_name": 36,
+        "quantity_display": 14,
+        "unit_price_display": 18,
+        "delivery_cost_display": 20,
+        "note": 40,
+        "delivery_address": 42,
+        "recipient_name": 28,
+    }
     widths = [
-        14,
-        16,
-        16,
-        18,
-        34,
-        20,
-        28,
-        12,
-        18,
-        18,
-        18,
-        18,
-        18,
-        24,
-        22,
-        24,
-        20,
-        24,
-        24,
-        20,
-        40,
+        width_by_key.get(column["key"], 24)
+        for column in report_columns
     ]
 
     for index, width in enumerate(
@@ -5116,14 +5440,14 @@ def sales_report_excel():
         start=1,
     ):
         sheet.column_dimensions[
-            chr(64 + index)
+            get_column_letter(index)
         ].width = width
 
     sheet.freeze_panes = "A5"
     sheet.auto_filter.ref = (
         "A{}:{}{}".format(
             header_row,
-            chr(64 + len(headers)),
+            get_column_letter(len(headers)),
             max(header_row, sheet.max_row),
         )
     )
@@ -5174,6 +5498,7 @@ def sales_report_pdf():
 
     context = build_sales_report_context()
     sales = context["sales"]
+    report_columns = context["report_columns"]
 
     def first_existing_font(candidates):
         for candidate in candidates:
@@ -5300,25 +5625,8 @@ def sales_report_pdf():
     ]
 
     headers = [
-        "Дата",
-        "Тип",
-        "Статус",
-        "Источник",
-        "Товар",
-        "Бренд",
-        "Категория",
-        "Кол-во",
-        "Цена, ₽",
-        "Сумма",
-        "Комиссия",
-        "Заказ",
-        "Трек-номер",
-        "Получатель",
-        "Оплата",
-        "Доставка",
-        "Регион",
-        "Город",
-        "Примечание",
+        column["label"]
+        for column in report_columns
     ]
 
     table_data = [[
@@ -5331,47 +5639,8 @@ def sales_report_pdf():
 
     for sale in sales:
         values = [
-            sale.get("created_at") or "",
-            sale.get("sale_type_label") or "",
-            sale.get("order_status_label") or "",
-            sale.get("source") or "",
-            sale.get("product_name") or "",
-            sale.get("brand") or "",
-            sale.get("category") or "",
-            format_stock_number(
-                sale.get("quantity_value") or 0
-            ),
-            sale.get("unit_price_display") or "—",
-            sale.get("total_amount_display") or "—",
-            sale.get("commission_display")
-            if sale.get("commission_amount")
-            else "—",
-            " · ".join(
-                value
-                for value in (
-                    sale.get("order_number") or "",
-                    (
-                        "стикер " + sale.get("sticker_number")
-                        if sale.get("sticker_number")
-                        else ""
-                    ),
-                )
-                if value
-            ),
-            sale.get("track_number") or "",
-            " · ".join(
-                value
-                for value in (
-                    sale.get("recipient_name") or "",
-                    sale.get("recipient") or "",
-                )
-                if value
-            ),
-            sale.get("payment_method") or "",
-            sale.get("delivery_method") or "",
-            sale.get("region") or "",
-            sale.get("city") or "",
-            sale.get("note") or "",
+            sale.get(column["key"]) or "—"
+            for column in report_columns
         ]
 
         row = []
@@ -5379,7 +5648,12 @@ def sales_report_pdf():
         for index, value in enumerate(values):
             style = (
                 centered_cell_style
-                if index in {0, 1, 2, 7, 8, 9, 10}
+                if report_columns[index]["key"] in {
+                    "created_at",
+                    "quantity_display",
+                    "unit_price_display",
+                    "delivery_cost_display",
+                }
                 else cell_style
             )
 
@@ -5392,29 +5666,25 @@ def sales_report_pdf():
 
         table_data.append(row)
 
+    column_weights = {
+        "product_name": 1.8,
+        "category": 1.4,
+        "delivery_address": 2.0,
+        "note": 1.8,
+        "recipient_name": 1.4,
+    }
+    weights = [
+        column_weights.get(column["key"], 1.0)
+        for column in report_columns
+    ]
+    total_weight = sum(weights) or 1
+
     table = Table(
         table_data,
         repeatRows=1,
         colWidths=[
-            18 * mm,  # Дата
-            14 * mm,  # Тип
-            16 * mm,  # Статус
-            18 * mm,  # Источник
-            25 * mm,  # Товар
-            16 * mm,  # Бренд
-            19 * mm,  # Категория
-            11 * mm,  # Количество
-            16 * mm,  # Цена
-            18 * mm,  # Сумма
-            16 * mm,  # Комиссия
-            19 * mm,  # Заказ
-            21 * mm,  # Трек
-            24 * mm,  # Получатель
-            18 * mm,  # Оплата
-            24 * mm,  # Доставка
-            23 * mm,  # Регион
-            18 * mm,  # Город
-            25 * mm,  # Примечание
+            388 * mm * weight / total_weight
+            for weight in weights
         ],
     )
 
@@ -5492,8 +5762,7 @@ def sales_report_pdf():
 # === SALES REPORTS END ===
 
 
-@app.route("/sales")
-def sales_page():
+def build_legacy_sales_page():
     from flask import request
 
     operations = load_stock_operations()
@@ -5864,6 +6133,131 @@ def sales_page():
         message=(request.args.get("message") or "").strip(),
         sales_sources=get_reusable_sales_sources(),
         sale_status_labels=SALE_STATUS_LABELS,
+    )
+
+
+@app.route("/sales")
+def sales_page():
+    all_warehouse_items = get_warehouse_items()
+    all_sales = build_sales_report_records(
+        warehouse_items=all_warehouse_items
+    )
+    active_source = get_active_sales_source(
+        request.args.get("source")
+    )
+    sales = filter_sales_by_source(
+        all_sales,
+        active_source,
+    )
+
+    for sale in sales:
+        sale["search_text"] = build_sales_search_text(
+            sale,
+            active_source,
+        )
+
+    active_sales = [
+        sale
+        for sale in sales
+        if not sale.get("is_cancelled")
+    ]
+    unique_orders = {
+        str(sale.get("order_number") or "").strip()
+        for sale in active_sales
+        if str(sale.get("order_number") or "").strip()
+    }
+    total_quantity = sum(
+        float(sale.get("quantity_value") or 0)
+        for sale in active_sales
+    )
+    preserved_filters = {
+        key: (request.args.get(key) or "").strip()
+        for key in (
+            "q",
+            "date_from",
+            "date_to",
+            "sort",
+            "sort_dir",
+        )
+    }
+
+    def source_url(source_key):
+        query = {
+            "source": source_key,
+        }
+        query.update({
+            key: value
+            for key, value in preserved_filters.items()
+            if value
+        })
+        return url_for("sales_page", **query)
+
+    source_tabs = [
+        {
+            **tab,
+            "url": source_url(tab["key"]),
+            "active": tab["key"] == active_source,
+        }
+        for tab in SALES_SOURCE_TABS
+    ]
+    report_query = {
+        "source": active_source,
+        **{
+            key: value
+            for key, value in preserved_filters.items()
+            if value and key in {
+                "q",
+                "date_from",
+                "date_to",
+            }
+        },
+    }
+    warehouse_items = [
+        {
+            "id": item.get("id") or "",
+            "name": item.get("name") or "",
+            "article": item.get("article") or "",
+            "code": item.get("code") or "",
+            "barcode": (
+                item.get("barcode")
+                or item.get("code")
+                or item.get("article")
+                or ""
+            ),
+            "brand": item.get("brand") or "",
+            "category": item.get("category") or "",
+            "stock": item.get("stock") or 0,
+            "stock_display": item.get("stock_display") or "0",
+        }
+        for item in all_warehouse_items
+        if float(item.get("stock") or 0) > 0
+    ]
+
+    return render_template(
+        "sales.html",
+        sales=sales,
+        source_tabs=source_tabs,
+        active_source=active_source,
+        active_source_label=(
+            "Все продажи"
+            if active_source == "all"
+            else SALES_SOURCE_LABELS[active_source]
+        ),
+        sales_columns=get_sales_columns(active_source),
+        warehouse_items=warehouse_items,
+        total_sales=len(active_sales),
+        total_cancelled=len(sales) - len(active_sales),
+        total_orders=len(unique_orders),
+        total_quantity=format_stock_number(
+            total_quantity
+        ),
+        report_url=url_for(
+            "sales_report_page",
+            **report_query,
+        ),
+        preserved_filters=preserved_filters,
+        notice=(request.args.get("notice") or "").strip(),
+        message=(request.args.get("message") or "").strip(),
     )
 
 

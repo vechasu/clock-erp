@@ -464,13 +464,16 @@ class OwnerFeedbackTest(unittest.TestCase):
             web, "build_sales_report_records", return_value=sales
         ):
             html = self.client.get(
-                "/sales/report?order_number=ORDER-100"
+                "/sales/report?source=tictactoy"
+                "&order_number=ORDER-100"
             )
             xlsx = self.client.get(
-                "/sales/report.xlsx?order_number=ORDER-100"
+                "/sales/report.xlsx?source=tictactoy"
+                "&order_number=ORDER-100"
             )
             pdf = self.client.get(
-                "/sales/report.pdf?order_number=ORDER-100"
+                "/sales/report.pdf?source=tictactoy"
+                "&order_number=ORDER-100"
             )
 
         self.assertEqual(html.status_code, 200)
@@ -481,8 +484,8 @@ class OwnerFeedbackTest(unittest.TestCase):
         self.assertEqual(xlsx.status_code, 200)
         workbook = load_workbook(BytesIO(xlsx.data), read_only=True)
         sheet = workbook.active
-        self.assertEqual(sheet["L5"].value, "ORDER-100")
-        self.assertIsNone(sheet["L6"].value)
+        self.assertEqual(sheet["H5"].value, "ORDER-100")
+        self.assertIsNone(sheet["H6"].value)
 
         self.assertEqual(pdf.status_code, 200)
         self.assertTrue(pdf.data.startswith(b"%PDF"))

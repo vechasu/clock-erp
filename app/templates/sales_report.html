@@ -1,7 +1,7 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ru">
 <head>
-    <meta charset="UTF-8">
+    <meta charset="utf-8">
     <meta
         name="viewport"
         content="width=device-width, initial-scale=1"
@@ -13,12 +13,17 @@
             box-sizing: border-box;
         }
 
+        html,
+        body {
+            max-width: 100%;
+            overflow-x: hidden;
+        }
+
         body {
             margin: 0;
             background: #f3f6fb;
             color: #172033;
             font-family:
-
                 -apple-system,
                 BlinkMacSystemFont,
                 "Segoe UI",
@@ -26,9 +31,10 @@
         }
 
         .report-page {
+            width: 100%;
             max-width: 1600px;
             margin: 0 auto;
-            padding: 28px;
+            padding: 24px;
         }
 
         .report-header {
@@ -36,11 +42,11 @@
             align-items: center;
             justify-content: space-between;
             gap: 20px;
-            margin-bottom: 22px;
+            margin-bottom: 18px;
         }
 
         .report-header h1 {
-            margin: 0 0 6px;
+            margin: 0 0 5px;
             font-size: 27px;
         }
 
@@ -51,28 +57,31 @@
 
         .back-link {
             color: #2563eb;
-            font-weight: 700;
+            font-weight: 750;
             text-decoration: none;
+            white-space: nowrap;
         }
 
         .filter-card,
-        .report-table-card {
-            background: #ffffff;
+        .report-table-card,
+        .stat-card {
             border: 1px solid #dce3ed;
-            border-radius: 15px;
-            box-shadow: 0 8px 25px rgba(15, 23, 42, 0.06);
+            background: #ffffff;
+            box-shadow: 0 8px 25px rgba(15, 23, 42, 0.05);
         }
 
         .filter-card {
-            padding: 20px;
-            margin-bottom: 18px;
+            margin-bottom: 16px;
+            padding: 18px;
+            border-radius: 15px;
         }
 
         .filter-grid {
             display: grid;
             grid-template-columns:
-                repeat(4, minmax(160px, 1fr));
-            gap: 14px;
+                minmax(220px, 1.4fr)
+                repeat(2, minmax(155px, 0.7fr));
+            gap: 12px;
         }
 
         .field {
@@ -98,49 +107,22 @@
             font: inherit;
         }
 
-        .date-control-wrap {
-            position: relative;
-        }
-
-        .date-control-wrap .control {
-            padding-right: 38px;
-        }
-
-        .date-clear {
-            position: absolute;
-            top: 50%;
-            right: 7px;
-            width: 27px;
-            height: 27px;
-            padding: 0;
-            transform: translateY(-50%);
-            border: 0;
-            border-radius: 50%;
-            background: #e2e8f0;
-            color: #475569;
-            cursor: pointer;
-            font-size: 18px;
-            line-height: 1;
-        }
-
-        .date-clear:disabled {
-            display: none;
-        }
-
         .report-actions {
             display: flex;
             flex-wrap: wrap;
-            gap: 10px;
-            margin-top: 18px;
+            gap: 9px;
+            margin-top: 14px;
         }
 
         .button {
+            display: inline-flex;
             min-height: 42px;
-            padding: 10px 16px;
-            border: none;
+            align-items: center;
+            justify-content: center;
+            padding: 9px 15px;
+            border: 0;
             border-radius: 9px;
-            cursor: pointer;
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 800;
             text-decoration: none;
         }
@@ -160,69 +142,77 @@
             color: #991b1b;
         }
 
-        .button-reset {
-            background: #e2e8f0;
-            color: #334155;
-        }
-
         .stats {
             display: grid;
-            grid-template-columns:
-                repeat(5, minmax(140px, 1fr));
-            gap: 14px;
-            margin-bottom: 18px;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            gap: 10px;
+            margin-bottom: 16px;
         }
 
         .stat-card {
-            padding: 18px;
-            background: #ffffff;
-            border: 1px solid #dce3ed;
+            padding: 14px;
             border-radius: 13px;
         }
 
         .stat-label {
             color: #64748b;
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 800;
         }
 
         .stat-value {
-            margin-top: 7px;
-            font-size: 27px;
+            margin-top: 6px;
+            font-size: 23px;
             font-weight: 900;
         }
 
         .report-table-card {
-            overflow: auto;
+            width: 100%;
+            max-width: 100%;
+            overflow-x: auto;
+            border-radius: 15px;
+            overscroll-behavior-x: contain;
         }
 
         table {
-            width: 100%;
-            min-width: 1300px;
+            width: max-content;
+            min-width: 100%;
             border-collapse: collapse;
         }
 
         th,
         td {
-            padding: 11px 10px;
+            min-width: 120px;
+            max-width: 280px;
+            padding: 10px;
+            border-right: 1px solid #e2e8f0;
             border-bottom: 1px solid #e2e8f0;
+            overflow: hidden;
             text-align: left;
+            text-overflow: ellipsis;
             vertical-align: top;
+            white-space: nowrap;
             font-size: 12px;
         }
 
         th {
             position: sticky;
-            top: 0;
             z-index: 2;
+            top: 0;
             background: #eff6ff;
             color: #1e3a8a;
             font-size: 11px;
             text-transform: uppercase;
         }
 
-        tbody tr:hover {
-            background: #f8fafc;
+        tr.is-cancelled td {
+            background: #fff1f2;
+            color: #7f1d1d;
+        }
+
+        .money-cell {
+            text-align: right;
+            font-variant-numeric: tabular-nums;
         }
 
         .empty {
@@ -231,438 +221,169 @@
             text-align: center;
         }
 
-        @media (max-width: 1000px) {
-            .filter-grid {
-                grid-template-columns:
-                    repeat(2, minmax(150px, 1fr));
-            }
-        }
-
-        /* Цена и выручка в отчёте */
-        .stats {
-            grid-template-columns:
-                repeat(5, minmax(0, 1fr));
-        }
-
-        .report-table-card {
-            overflow-x: auto;
-        }
-
-        .report-table-card table {
-            min-width: 1540px;
-        }
-
-        .muted {
-            color: #64748b;
-            font-size: 11px;
-        }
-
-        tr.is-cancelled td {
-            color: #7f1d1d;
-            background: #fff1f2;
-            text-decoration-color: #fca5a5;
-        }
-
-        .money-cell {
-            white-space: nowrap;
-            text-align: right;
-            font-variant-numeric: tabular-nums;
-        }
-
-        .money-total {
-            color: #059669;
-            font-weight: 800;
-        }
-
         @media (max-width: 900px) {
+            .report-page {
+                padding: 14px;
+            }
+
+            .report-header {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+
+            .filter-grid {
+                grid-template-columns: 1fr;
+            }
+
             .stats {
                 grid-template-columns:
                     repeat(2, minmax(0, 1fr));
             }
         }
-        /* Конец цены и выручки в отчёте */
-
-</style>
+    </style>
 </head>
 
 <body>
-    <main class="report-page">
-        <header class="report-header">
-            <div>
-                <h1>Отчёт по продажам</h1>
-                <p>
-                    Сформирован {{ generated_at }}
-                </p>
-            </div>
+<main class="report-page">
+    <header class="report-header">
+        <div>
+            <h1>
+                Отчёт: {{ active_source_label }}
+            </h1>
+            <p>Сформирован {{ generated_at }}</p>
+        </div>
 
-            <a class="back-link" href="/sales">
-                ← Вернуться к продажам
-            </a>
-        </header>
-
-        <form
-            id="salesReportForm"
-            class="filter-card"
-            method="get"
-            action="/sales/report"
+        <a
+            class="back-link"
+            href="{{ url_for('sales_page', source=active_source, q=filters.q, date_from=filters.date_from, date_to=filters.date_to) }}"
         >
-            <div class="filter-grid">
-                <div class="field">
-                    <label for="date_from">Дата с</label>
-                    <div class="date-control-wrap">
-                        <input
-                            id="date_from"
-                            class="control"
-                            type="date"
-                            name="date_from"
-                            value="{{ filters.date_from }}"
-                        >
-                        <button class="date-clear" type="button" data-clear-date="date_from" aria-label="Очистить начальную дату">×</button>
-                    </div>
-                </div>
+            ← Вернуться к продажам
+        </a>
+    </header>
 
-                <div class="field">
-                    <label for="date_to">Дата по</label>
-                    <div class="date-control-wrap">
-                        <input
-                            id="date_to"
-                            class="control"
-                            type="date"
-                            name="date_to"
-                            value="{{ filters.date_to }}"
-                        >
-                        <button class="date-clear" type="button" data-clear-date="date_to" aria-label="Очистить конечную дату">×</button>
-                    </div>
-                </div>
+    <form
+        class="filter-card"
+        method="get"
+        action="{{ url_for('sales_report_page') }}"
+    >
+        <input
+            type="hidden"
+            name="source"
+            value="{{ active_source }}"
+        >
 
-                <div class="field">
-                    <label for="sale_type">Тип продажи</label>
-                    <select
-                        id="sale_type"
-                        class="control"
-                        name="sale_type"
-                    >
-                        <option value="">Все продажи</option>
-                        <option
-                            value="manual"
-                            {% if filters.sale_type == "manual" %}selected{% endif %}
-                        >
-                            Ручные
-                        </option>
-                        <option
-                            value="automatic"
-                            {% if filters.sale_type == "automatic" %}selected{% endif %}
-                        >
-                            Автоматические
-                        </option>
-                    </select>
-                </div>
-
-                <div class="field">
-                    <label for="source">Источник</label>
-                    <select
-                        id="source"
-                        class="control"
-                        name="source"
-                    >
-                        <option value="">Все источники</option>
-
-                        {% for value in sources %}
-                            <option
-                                value="{{ value }}"
-                                {% if filters.source == value %}selected{% endif %}
-                            >
-                                {{ value }}
-                            </option>
-                        {% endfor %}
-                    </select>
-                </div>
-
-                <div class="field">
-                    <label for="product">Товар</label>
-                    <input
-                        id="product"
-                        class="control"
-                        type="search"
-                        name="product"
-                        value="{{ filters.product }}"
-                        list="reportProducts"
-                        placeholder="Название товара"
-                    >
-
-                    <datalist id="reportProducts">
-                        {% for value in products %}
-                            <option value="{{ value }}"></option>
-                        {% endfor %}
-                    </datalist>
-                </div>
-
-                <div class="field">
-                    <label for="order_number">Номер заказа</label>
-                    <input
-                        id="order_number"
-                        class="control"
-                        type="search"
-                        name="order_number"
-                        value="{{ filters.order_number }}"
-                        placeholder="Заказ или стикер"
-                    >
-                </div>
-
-                <div class="field">
-                    <label for="order_status">Статус заказа</label>
-                    <select id="order_status" class="control" name="order_status">
-                        <option value="">Все статусы</option>
-                        {% for value, label in sale_status_labels.items() %}
-                            <option value="{{ value }}" {% if filters.order_status == value %}selected{% endif %}>{{ label }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-
-                <div class="field">
-                    <label for="delivery_method">
-                        Способ доставки
-                    </label>
-
-                    <select
-                        id="delivery_method"
-                        class="control"
-                        name="delivery_method"
-                    >
-                        <option value="">
-                            Все способы
-                        </option>
-
-                        {% for value in delivery_methods %}
-                            <option
-                                value="{{ value }}"
-                                {% if filters.delivery_method == value %}selected{% endif %}
-                            >
-                                {{ value }}
-                            </option>
-                        {% endfor %}
-                    </select>
-                </div>
-
-                <div class="field">
-                    <label for="region">Регион</label>
-
-                    <select
-                        id="region"
-                        class="control"
-                        name="region"
-                    >
-                        <option value="">Все регионы</option>
-
-                        {% for value in regions %}
-                            <option
-                                value="{{ value }}"
-                                {% if filters.region == value %}selected{% endif %}
-                            >
-                                {{ value }}
-                            </option>
-                        {% endfor %}
-                    </select>
-                </div>
-
-                <div class="field">
-                    <label for="city">Город</label>
-
-                    <select
-                        id="city"
-                        class="control"
-                        name="city"
-                    >
-                        <option value="">Все города</option>
-
-                        {% for value in cities %}
-                            <option
-                                value="{{ value }}"
-                                {% if filters.city == value %}selected{% endif %}
-                            >
-                                {{ value }}
-                            </option>
-                        {% endfor %}
-                    </select>
-                </div>
+        <div class="filter-grid">
+            <div class="field">
+                <label for="q">Поиск</label>
+                <input
+                    id="q"
+                    class="control"
+                    type="search"
+                    name="q"
+                    value="{{ filters.q }}"
+                    placeholder="Поиск в текущей вкладке"
+                >
             </div>
 
-            <div class="report-actions">
-                <button
-                    class="button button-primary"
-                    type="submit"
+            <div class="field">
+                <label for="date_from">Дата с</label>
+                <input
+                    id="date_from"
+                    class="control"
+                    type="date"
+                    name="date_from"
+                    value="{{ filters.date_from }}"
                 >
-                    Показать отчёт
-                </button>
-
-                <button
-                    class="button button-excel"
-                    type="submit"
-                    formaction="/sales/report.xlsx"
-                    formmethod="get"
-                >
-                    Скачать Excel
-                </button>
-
-                <button
-                    class="button button-pdf"
-                    type="submit"
-                    formaction="/sales/report.pdf"
-                    formmethod="get"
-                >
-                    Скачать PDF
-                </button>
-
-                <a
-                    class="button button-reset"
-                    href="/sales/report"
-                >
-                    Сбросить фильтры
-                </a>
             </div>
-        </form>
 
-        <section class="stats">
-            <article class="stat-card">
-                <div class="stat-label">Не отменено</div>
-                <div class="stat-value">
-                    {{ total_sales }}
-                </div>
-            </article>
+            <div class="field">
+                <label for="date_to">Дата по</label>
+                <input
+                    id="date_to"
+                    class="control"
+                    type="date"
+                    name="date_to"
+                    value="{{ filters.date_to }}"
+                >
+            </div>
+        </div>
 
-            <article class="stat-card">
-                <div class="stat-label">Отменено</div>
-                <div class="stat-value">{{ total_cancelled }}</div>
-            </article>
+        <div class="report-actions">
+            <button
+                class="button button-primary"
+                type="submit"
+            >
+                Применить
+            </button>
+            <a
+                class="button button-excel"
+                href="{{ url_for('sales_report_excel', source=active_source, q=filters.q, date_from=filters.date_from, date_to=filters.date_to) }}"
+            >
+                Скачать XLSX
+            </a>
+            <a
+                class="button button-pdf"
+                href="{{ url_for('sales_report_pdf', source=active_source, q=filters.q, date_from=filters.date_from, date_to=filters.date_to) }}"
+            >
+                Скачать PDF
+            </a>
+        </div>
+    </form>
 
-            <article class="stat-card">
-                <div class="stat-label">Заказов</div>
-                <div class="stat-value">
-                    {{ total_orders }}
-                </div>
-            </article>
+    <section class="stats">
+        <div class="stat-card">
+            <div class="stat-label">Не отменено</div>
+            <div class="stat-value">{{ total_sales }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Заказов</div>
+            <div class="stat-value">{{ total_orders }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Продано единиц</div>
+            <div class="stat-value">{{ total_quantity }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Отменено</div>
+            <div class="stat-value">{{ total_cancelled }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Выручка</div>
+            <div class="stat-value">
+                {{ total_revenue_display }}
+            </div>
+        </div>
+    </section>
 
-            <article class="stat-card">
-                <div class="stat-label">
-                    Продано единиц
-                </div>
-                <div class="stat-value">
-                    {{ total_quantity }}
-                </div>
-            </article>
-
-
-            <article class="stat-card">
-                <div class="stat-label">
-                    Выручка
-                </div>
-                <div class="stat-value">
-                    {{ total_revenue_display }}
-                </div>
-            </article>
-        </section>
-
-        <section class="report-table-card">
-            {% if sales %}
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Дата</th>
-                            <th>Тип</th>
-                            <th>Статус</th>
-                            <th>Источник</th>
-                            <th>Товар</th>
-                            <th>Бренд</th>
-                            <th>Категория</th>
-                            <th>Количество</th>
-                            <th>Цена, ₽</th>
-                            <th>Сумма</th>
-                            <th>Комиссия</th>
-                            <th>Заказ</th>
-                            <th>Трек-номер</th>
-                            <th>Получатель</th>
-                            <th>Оплата</th>
-                            <th>Доставка</th>
-                            <th>Регион</th>
-                            <th>Город</th>
-                            <th>Примечание</th>
+    <section class="report-table-card">
+        {% if sales %}
+            <table>
+                <thead>
+                    <tr>
+                        {% for column in report_columns %}
+                            <th>{{ column.label }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for sale in sales %}
+                        <tr{% if sale.is_cancelled %} class="is-cancelled"{% endif %}>
+                            {% for column in report_columns %}
+                                {% set value = sale[column.key] %}
+                                <td{% if column.key in ['unit_price_display', 'delivery_cost_display'] %} class="money-cell"{% endif %}>
+                                    {{ value or "—" }}
+                                </td>
+                            {% endfor %}
                         </tr>
-                    </thead>
-
-                    <tbody>
-                        {% for sale in sales %}
-                            <tr{% if sale.is_cancelled %} class="is-cancelled"{% endif %}>
-                                <td>{{ sale.created_at or "—" }}</td>
-                                <td>
-                                    {{ sale.sale_type_label }}
-                                </td>
-                                <td>{{ sale.order_status_label }}</td>
-                                <td>{{ sale.source or "—" }}</td>
-                                <td>
-                                    {{ sale.product_name or "—" }}
-                                </td>
-                                <td>{{ sale.brand or "—" }}</td>
-                                <td>{{ sale.category or "—" }}</td>
-                                <td>
-                                    {{ sale.quantity_value }}
-                                </td>
-                                <td class="money-cell">
-                                    {{ sale.unit_price_display or "—" }}
-                                </td>
-                                <td class="money-cell money-total">
-                                    {{ sale.total_amount_display or "—" }}
-                                </td>
-                                <td class="money-cell">
-                                    {{ sale.commission_display if sale.commission_amount else "—" }}
-                                </td>
-                                <td>
-                                    {{ sale.order_number or "—" }}
-                                    {% if sale.sticker_number %}<br><span class="muted">Стикер: {{ sale.sticker_number }}</span>{% endif %}
-                                </td>
-                                <td>
-                                    {{ sale.track_number or "—" }}
-                                </td>
-                                <td>
-                                    {{ sale.recipient_name or sale.recipient or "—" }}
-                                    {% if sale.recipient_name and sale.recipient %}<br>{{ sale.recipient }}{% endif %}
-                                </td>
-                                <td>{{ sale.payment_method or "—" }}</td>
-                                <td>
-                                    {{ sale.delivery_method or "—" }}
-                                </td>
-                                <td>
-                                    {{ sale.region or "—" }}
-                                </td>
-                                <td>{{ sale.city or "—" }}</td>
-                                <td>{{ sale.note or "—" }}</td>
-                            </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            {% else %}
-                <div class="empty">
-                    По выбранным условиям продаж не найдено
-                </div>
-            {% endif %}
-        </section>
-    </main>
-    <script>
-        document.querySelectorAll("[data-clear-date]").forEach((button) => {
-            const input = document.getElementById(button.dataset.clearDate);
-
-            const sync = () => {
-                button.disabled = !input?.value;
-            };
-
-            button.addEventListener("click", () => {
-                input.value = "";
-                input.focus();
-                sync();
-            });
-
-            input?.addEventListener("change", sync);
-            sync();
-        });
-    </script>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% else %}
+            <div class="empty">
+                По выбранным условиям продаж не найдено.
+            </div>
+        {% endif %}
+    </section>
+</main>
 </body>
 </html>
