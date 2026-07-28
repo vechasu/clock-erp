@@ -59,6 +59,52 @@
     })();
 </script>
 
+<script>
+    document.addEventListener("keydown", (event) => {
+        if (event.key !== "Tab") {
+            return;
+        }
+
+        const dialog = document.querySelector(
+            '.modal.is-open[aria-modal="true"], '
+            + '.drawer.open[aria-modal="true"], '
+            + '.map-modal.open[aria-modal="true"]'
+        );
+
+        if (!dialog) {
+            return;
+        }
+
+        const focusable = Array.from(dialog.querySelectorAll(
+            'a[href], button:not([disabled]), input:not([disabled]), '
+            + 'select:not([disabled]), textarea:not([disabled]), '
+            + '[tabindex]:not([tabindex="-1"])'
+        )).filter((element) => (
+            element.getClientRects().length > 0
+        ));
+
+        if (!focusable.length) {
+            event.preventDefault();
+            dialog.focus();
+            return;
+        }
+
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+
+        if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault();
+            last.focus();
+        } else if (
+            !event.shiftKey
+            && document.activeElement === last
+        ) {
+            event.preventDefault();
+            first.focus();
+        }
+    });
+</script>
+
 <style>
     .app {
         min-height: 100vh;
@@ -432,6 +478,143 @@
         }
     }
 
+    .mobile-erp-navigation,
+    .mobile-erp-more-sheet,
+    .mobile-erp-more-backdrop {
+        display: none;
+    }
+
+    @media (max-width: 767px) {
+        body {
+            padding-bottom: calc(70px + env(safe-area-inset-bottom));
+        }
+
+        body.mobile-erp-menu-open {
+            overflow: hidden;
+        }
+
+        .mobile-erp-navigation {
+            position: fixed;
+            z-index: 900;
+            right: 0;
+            bottom: 0;
+            left: 0;
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            min-height: calc(62px + env(safe-area-inset-bottom));
+            padding: 4px 6px env(safe-area-inset-bottom);
+            border-top: 1px solid #dce4ef;
+            background: rgba(255, 255, 255, 0.97);
+            box-shadow: 0 -8px 24px rgba(15, 23, 42, 0.1);
+            backdrop-filter: blur(14px);
+        }
+
+        .mobile-erp-nav-item {
+            min-width: 0;
+            min-height: 54px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            gap: 2px;
+            padding: 4px 2px;
+            border: 0;
+            border-radius: 12px;
+            background: transparent;
+            color: #64748b;
+            font: inherit;
+            font-size: 11px;
+            font-weight: 750;
+            line-height: 1.15;
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        .mobile-erp-nav-item.active {
+            background: #eff6ff;
+            color: #1d4ed8;
+        }
+
+        .mobile-erp-nav-icon {
+            width: 22px;
+            height: 22px;
+            display: grid;
+            place-items: center;
+        }
+
+        .mobile-erp-nav-icon svg {
+            width: 21px;
+            height: 21px;
+            display: block;
+            stroke: currentColor;
+            stroke-width: 1.9;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        .mobile-erp-more-backdrop {
+            position: fixed;
+            z-index: 905;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.38);
+        }
+
+        .mobile-erp-more-backdrop.is-open {
+            display: block;
+        }
+
+        .mobile-erp-more-sheet {
+            position: fixed;
+            z-index: 910;
+            right: 8px;
+            bottom: calc(70px + env(safe-area-inset-bottom));
+            left: 8px;
+            max-height: min(66vh, 520px);
+            padding: 10px;
+            overflow-y: auto;
+            border: 1px solid #dce4ef;
+            border-radius: 18px;
+            background: #ffffff;
+            box-shadow: 0 22px 60px rgba(15, 23, 42, 0.24);
+        }
+
+        .mobile-erp-more-sheet.is-open {
+            display: grid;
+            gap: 4px;
+        }
+
+        .mobile-erp-more-title {
+            padding: 8px 10px 6px;
+            color: #172033;
+            font-size: 16px;
+            font-weight: 850;
+        }
+
+        .mobile-erp-more-link {
+            min-height: 46px;
+            display: flex;
+            align-items: center;
+            gap: 11px;
+            padding: 0 12px;
+            border-radius: 11px;
+            color: #334155;
+            font-size: 14px;
+            font-weight: 700;
+            text-decoration: none;
+        }
+
+        .mobile-erp-more-link.active {
+            background: #eff6ff;
+            color: #1d4ed8;
+        }
+
+        .mobile-erp-more-link .sidebar-icon {
+            flex-basis: 20px;
+            width: 20px;
+            height: 20px;
+        }
+    }
+
     @media (prefers-reduced-motion: reduce) {
         .app,
         .sidebar,
@@ -531,6 +714,72 @@
     </div>
 </aside>
 
+{% set mobile_products_active = request.path.startswith("/warehouse") %}
+{% set mobile_sales_active = request.path.startswith("/sales") %}
+{% set mobile_receipts_active = request.path.startswith("/receipts") %}
+{% set mobile_more_active = not (mobile_products_active or mobile_sales_active or mobile_receipts_active) %}
+<nav class="mobile-erp-navigation" aria-label="Мобильная навигация">
+    <a
+        class="mobile-erp-nav-item{% if mobile_products_active %} active{% endif %}"
+        href="/warehouse"
+        {% if mobile_products_active %}aria-current="page"{% endif %}
+    >
+        <span class="mobile-erp-nav-icon">{{ sidebar_icon("products") }}</span>
+        <span>Товары</span>
+    </a>
+    <a
+        class="mobile-erp-nav-item{% if mobile_sales_active %} active{% endif %}"
+        href="/sales"
+        {% if mobile_sales_active %}aria-current="page"{% endif %}
+    >
+        <span class="mobile-erp-nav-icon">{{ sidebar_icon("sales") }}</span>
+        <span>Продажи</span>
+    </a>
+    <a
+        class="mobile-erp-nav-item{% if mobile_receipts_active %} active{% endif %}"
+        href="/receipts"
+        {% if mobile_receipts_active %}aria-current="page"{% endif %}
+    >
+        <span class="mobile-erp-nav-icon">{{ sidebar_icon("receipts") }}</span>
+        <span>Приход</span>
+    </a>
+    <button
+        id="mobileErpMoreTrigger"
+        class="mobile-erp-nav-item{% if mobile_more_active %} active{% endif %}"
+        type="button"
+        aria-haspopup="dialog"
+        aria-controls="mobileErpMoreSheet"
+        aria-expanded="false"
+    >
+        <span class="mobile-erp-nav-icon">{{ sidebar_icon("catalog") }}</span>
+        <span>Ещё</span>
+    </button>
+</nav>
+
+<div id="mobileErpMoreBackdrop" class="mobile-erp-more-backdrop"></div>
+<div
+    id="mobileErpMoreSheet"
+    class="mobile-erp-more-sheet"
+    role="dialog"
+    aria-modal="true"
+    aria-label="Дополнительные разделы"
+    hidden
+>
+    <div class="mobile-erp-more-title">Разделы ERP</div>
+    {% for item in sidebar_navigation_items %}
+        {% if item.key not in ["products", "sales", "receipts"] %}
+            <a
+                class="mobile-erp-more-link{% if item.active %} active{% endif %}"
+                href="{{ item.href }}"
+                {% if item.active %}aria-current="page"{% endif %}
+            >
+                <span class="sidebar-icon">{{ sidebar_icon(item.key) }}</span>
+                <span>{{ item.label }}</span>
+            </a>
+        {% endif %}
+    {% endfor %}
+</div>
+
 <script>
     document.addEventListener("DOMContentLoaded", () => {
         const app = document.querySelector(".app");
@@ -567,6 +816,80 @@
                 localStorage.setItem(storageKey, nextState ? "1" : "0");
             } catch (error) {
                 // Панель продолжит работать без сохранения состояния.
+            }
+        });
+    });
+</script>
+
+<script>
+    document.addEventListener("DOMContentLoaded", () => {
+        const trigger = document.getElementById("mobileErpMoreTrigger");
+        const sheet = document.getElementById("mobileErpMoreSheet");
+        const backdrop = document.getElementById("mobileErpMoreBackdrop");
+
+        if (!trigger || !sheet || !backdrop) {
+            return;
+        }
+
+        const focusableSelector = "a[href], button:not([disabled])";
+
+        const closeMenu = (restoreFocus = true) => {
+            sheet.classList.remove("is-open");
+            backdrop.classList.remove("is-open");
+            sheet.hidden = true;
+            trigger.setAttribute("aria-expanded", "false");
+            document.body.classList.remove("mobile-erp-menu-open");
+
+            if (restoreFocus) {
+                trigger.focus();
+            }
+        };
+
+        const openMenu = () => {
+            sheet.hidden = false;
+            sheet.classList.add("is-open");
+            backdrop.classList.add("is-open");
+            trigger.setAttribute("aria-expanded", "true");
+            document.body.classList.add("mobile-erp-menu-open");
+            sheet.querySelector(focusableSelector)?.focus();
+        };
+
+        trigger.addEventListener("click", () => {
+            if (sheet.hidden) {
+                openMenu();
+            } else {
+                closeMenu();
+            }
+        });
+
+        backdrop.addEventListener("click", () => closeMenu());
+
+        document.addEventListener("keydown", (event) => {
+            if (sheet.hidden) {
+                return;
+            }
+
+            if (event.key === "Escape") {
+                closeMenu();
+                return;
+            }
+
+            if (event.key !== "Tab") {
+                return;
+            }
+
+            const focusable = Array.from(
+                sheet.querySelectorAll(focusableSelector)
+            );
+            const first = focusable[0];
+            const last = focusable[focusable.length - 1];
+
+            if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault();
+                last?.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault();
+                first?.focus();
             }
         });
     });

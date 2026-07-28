@@ -2,6 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>ТТТ ERP — Склад</title>
 
     <style>
@@ -3551,7 +3552,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-combobox.css') }}">
     <script src="{{ url_for('static', filename='js/catalog-combobox.js') }}"></script>
 </head>
-<body>
+<body class="warehouse-page">
     {% from "_catalog_combobox.html" import render_catalog_combobox %}
     <div class="app">
         {% include "_sidebar.html" %}
@@ -3606,6 +3607,13 @@
             {% endif %}
 
 
+            {% set warehouse_active_filter_count = (
+                (1 if selected_brand else 0)
+                + (1 if selected_category else 0)
+                + (1 if selected_cell else 0)
+                + (1 if created_date_from or created_date_to else 0)
+                + (1 if hide_zero else 0)
+            ) %}
             <div class="search-card erp-toolbar-card">
                 <form class="search-form erp-toolbar" method="get" action="/warehouse">
                     <input type="hidden" name="sort_by" value="{{ sort_by }}">
@@ -3660,6 +3668,9 @@
                             onclick="openFilterDrawer()"
                         >
                             Фильтры
+                            {% if warehouse_active_filter_count %}
+                                <span class="warehouse-filter-count">{{ warehouse_active_filter_count }}</span>
+                            {% endif %}
                         </button>
                         {% if created_date_from or created_date_to %}
                             <span class="warehouse-active-date">
@@ -3676,6 +3687,24 @@
                             </span>
                         {% endif %}
                     </div>
+
+                    <label
+                        class="mobile-erp-only mobile-erp-sort warehouse-mobile-sort"
+                        for="warehouseMobileSort"
+                    >
+                        <select
+                            id="warehouseMobileSort"
+                            aria-label="Сортировка товаров"
+                            onchange="sortWarehouseTable(this.value)"
+                        >
+                            <option value="name" {% if sort_by == "name" %}selected{% endif %}>По названию</option>
+                            <option value="stock" {% if sort_by == "stock" %}selected{% endif %}>По остатку</option>
+                            <option value="brand" {% if sort_by == "brand" %}selected{% endif %}>По бренду</option>
+                            <option value="category" {% if sort_by == "category" %}selected{% endif %}>По категории</option>
+                            <option value="created_at" {% if sort_by == "created_at" %}selected{% endif %}>По дате</option>
+                            <option value="cell" {% if sort_by == "cell" %}selected{% endif %}>По ячейке</option>
+                        </select>
+                    </label>
 
                     <div id="warehouseMoreMenu" class="warehouse-more-menu">
                         <button
@@ -4180,6 +4209,19 @@
 
                                     <td data-column-key="actions">
                                         {% if item.id %}
+                                            <details class="mobile-erp-only mobile-erp-card-details warehouse-mobile-details">
+                                                <summary>Подробнее</summary>
+                                                <div class="mobile-erp-detail-grid">
+                                                    <div class="mobile-erp-detail-row">
+                                                        <span>Артикул</span>
+                                                        <span>{{ item.article or "—" }}</span>
+                                                    </div>
+                                                    <div class="mobile-erp-detail-row">
+                                                        <span>Добавлено</span>
+                                                        <span>{{ item.created_at_display or "—" }}</span>
+                                                    </div>
+                                                </div>
+                                            </details>
                                             <div class="row-actions">
                                                 <button
                                                     class="edit-button"
@@ -4231,7 +4273,13 @@
         <img id="productGalleryLightboxImage" src="" alt="">
     </div>
 
-    <aside id="filterDrawer" class="drawer">
+    <aside
+        id="filterDrawer"
+        class="drawer"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Фильтры товаров"
+    >
         <div class="drawer-header">
             <div>
                 <div class="drawer-title">Фильтры товаров</div>
@@ -4324,7 +4372,13 @@
     </aside>
 
 
-    <aside id="warehouseMapDrawer" class="map-modal">
+    <aside
+        id="warehouseMapDrawer"
+        class="map-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Карта склада"
+    >
         <div class="drawer-header">
             <div>
                 <div class="drawer-title">Карта склада</div>
@@ -4368,7 +4422,13 @@
     </aside>
 
 
-    <aside id="editDrawer" class="drawer">
+    <aside
+        id="editDrawer"
+        class="drawer"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Карточка товара"
+    >
         <div class="drawer-header">
             <div>
                 <div class="drawer-title">Карточка позиции</div>
@@ -4489,10 +4549,23 @@
             }).join("");
         }
 
+        let warehouseDrawerReturnFocus = null;
+
+        function focusOpenedWarehouseDrawer(drawer) {
+            requestAnimationFrame(function() {
+                drawer.querySelector(
+                    'button:not([disabled]), input:not([disabled]), select:not([disabled])'
+                )?.focus();
+            });
+        }
+
         function openFilterDrawer() {
-            closeAllDrawers();
+            warehouseDrawerReturnFocus = document.activeElement;
+            closeAllDrawers(false);
             document.getElementById("drawerBackdrop").classList.add("open");
-            document.getElementById("filterDrawer").classList.add("open");
+            const drawer = document.getElementById("filterDrawer");
+            drawer.classList.add("open");
+            focusOpenedWarehouseDrawer(drawer);
         }
 
         function initializeWarehouseDateFilter() {
@@ -4690,9 +4763,12 @@
         document.addEventListener("DOMContentLoaded", initializeWarehouseDateFilter);
 
         function openWarehouseMapDrawer() {
-            closeAllDrawers();
+            warehouseDrawerReturnFocus = document.activeElement;
+            closeAllDrawers(false);
             document.getElementById("drawerBackdrop").classList.add("open");
-            document.getElementById("warehouseMapDrawer").classList.add("open");
+            const drawer = document.getElementById("warehouseMapDrawer");
+            drawer.classList.add("open");
+            focusOpenedWarehouseDrawer(drawer);
         }
 
         function openProductGalleryLightbox(imageUrl, productName) {
@@ -4774,7 +4850,8 @@
         }
 
         function openEditDrawer(button) {
-            closeAllDrawers();
+            warehouseDrawerReturnFocus = button;
+            closeAllDrawers(false);
 
             const productName = button.dataset.name || "—";
             const productArticle = button.dataset.article || "—";
@@ -4888,6 +4965,9 @@
             document.getElementById("editDrawer").classList.add("open");
             document.body.classList.add("edit-drawer-open");
             document.body.style.overflow = "hidden";
+            focusOpenedWarehouseDrawer(
+                document.getElementById("editDrawer")
+            );
         }
 
         function filterBrandOptions(value) {
@@ -4922,7 +5002,7 @@
             }
         }
 
-        function closeAllDrawers() {
+        function closeAllDrawers(restoreFocus = true) {
             const ids = ["drawerBackdrop", "filterDrawer", "warehouseMapDrawer", "editDrawer"];
 
             ids.forEach(function(id) {
@@ -4935,6 +5015,10 @@
 
             document.body.style.overflow = "";
             document.body.classList.remove("edit-drawer-open");
+
+            if (restoreFocus) {
+                warehouseDrawerReturnFocus?.focus();
+            }
         }
 
         const warehouseSearchInput = document.getElementById("warehouseSearchInput");

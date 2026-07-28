@@ -1131,7 +1131,7 @@
     ></script>
 </head>
 
-<body>
+<body class="sales-page">
 {% from "_catalog_combobox.html" import render_catalog_combobox %}
 <div class="app">
     {% include "_sidebar.html" %}
@@ -1396,6 +1396,19 @@
                         </div>
                     </div>
                 </div>
+
+                <label
+                    class="mobile-erp-only mobile-erp-sort sales-mobile-sort"
+                    for="salesMobileSort"
+                >
+                    <select id="salesMobileSort" aria-label="Сортировка продаж">
+                        {% for column in sales_columns %}
+                            <option value="{{ column.key }}">
+                                {{ column.label }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </label>
             </div>
 
             <section class="table-card erp-table-card">
@@ -1436,6 +1449,7 @@
                             {% for sale in sales %}
                                 <tr
                                     class="sale-row{% if sale.is_manual %} manual-row{% else %} automatic-row{% endif %}{% if sale.is_cancelled %} is-cancelled{% endif %}"
+                                    data-sale-id="{{ sale.id }}"
                                     data-search="{{ sale.search_text }}"
                                     data-sort-date="{{ sale.created_at[:10] }}"
                                     data-cancelled="{{ '1' if sale.is_cancelled else '0' }}"
@@ -1488,6 +1502,102 @@
                             {% endfor %}
                         </tbody>
                     </table>
+                </div>
+            </section>
+
+            <section
+                id="salesMobileList"
+                class="mobile-erp-list sales-mobile-list"
+                aria-label="Список продаж"
+            >
+                {% for sale in sales %}
+                    <article
+                        class="mobile-erp-card sales-mobile-card{% if sale.is_cancelled %} is-cancelled{% endif %}"
+                        data-sale-id="{{ sale.id }}"
+                    >
+                        <div class="mobile-erp-card-header">
+                            <div>
+                                <div class="sales-mobile-date">
+                                    {% if sale.created_at|length >= 10 %}
+                                        {{ sale.created_at[8:10] }}.{{ sale.created_at[5:7] }}.{{ sale.created_at[:4] }}
+                                    {% else %}
+                                        {{ sale.created_at or "—" }}
+                                    {% endif %}
+                                </div>
+                                <div class="mobile-erp-card-title">
+                                    {{ sale.product_name or "Товар не указан" }}
+                                </div>
+                            </div>
+                            <span class="source-badge">{{ sale.source or "—" }}</span>
+                        </div>
+
+                        <div class="mobile-erp-card-meta">
+                            {{ sale.brand or "Без бренда" }}
+                            {% if sale.category %} · {{ sale.category }}{% endif %}
+                        </div>
+
+                        <div class="mobile-erp-card-kpis">
+                            <div class="mobile-erp-card-kpi">
+                                <span>Количество</span>
+                                <strong>{{ sale.quantity_display or "—" }}</strong>
+                            </div>
+                            <div class="mobile-erp-card-kpi">
+                                <span>Цена</span>
+                                <strong>{{ sale.unit_price_display or "—" }}</strong>
+                            </div>
+                            <div class="mobile-erp-card-kpi">
+                                <span>Итого</span>
+                                <strong>{{ sale.total_amount_display or "—" }}</strong>
+                            </div>
+                        </div>
+
+                        {% if sale.order_number or sale.track_number %}
+                            <div class="sales-mobile-identifiers">
+                                {% if sale.order_number %}
+                                    <span>Заказ: {{ sale.order_number }}</span>
+                                {% endif %}
+                                {% if sale.track_number %}
+                                    <span>Трек: {{ sale.track_number }}</span>
+                                {% endif %}
+                            </div>
+                        {% endif %}
+
+                        <details class="mobile-erp-card-details">
+                            <summary>Подробнее</summary>
+                            <div class="mobile-erp-detail-grid">
+                                {% for column in sales_columns %}
+                                    {% if column.key not in ["created_at", "source", "brand", "category", "product_name", "quantity_display", "unit_price_display"] %}
+                                        <div class="mobile-erp-detail-row">
+                                            <span>{{ column.label }}</span>
+                                            <span>{{ sale[column.key] or "—" }}</span>
+                                        </div>
+                                    {% endif %}
+                                {% endfor %}
+                            </div>
+                        </details>
+
+                        <div class="mobile-erp-card-actions">
+                            <button
+                                class="sales-mobile-edit"
+                                type="button"
+                                data-sale="{{ sale|tojson|forceescape }}"
+                                onclick="openMobileSaleEditor(this)"
+                            >
+                                Изменить
+                            </button>
+                        </div>
+                    </article>
+                {% else %}
+                    <div class="empty sales-mobile-initial-empty">
+                        В этой вкладке пока нет продаж.
+                    </div>
+                {% endfor %}
+                <div
+                    id="salesMobileFilterEmpty"
+                    class="empty sales-mobile-filter-empty"
+                    hidden
+                >
+                    По текущему поиску и периоду продаж не найдено.
                 </div>
             </section>
         </section>
@@ -1547,6 +1657,7 @@
                 method="post"
                 action="{{ url_for('manual_sale_add') }}"
             >
+                <input id="saleEditId" type="hidden" disabled>
                 <input id="saleSource" type="hidden" name="source">
                 <input
                     id="product_name"
@@ -1969,6 +2080,18 @@
     const saleRows = Array.from(
         document.querySelectorAll(".sale-row")
     );
+    const salesMobileCards = Array.from(
+        document.querySelectorAll(".sales-mobile-card")
+    );
+    const salesMobileCardById = new Map(
+        salesMobileCards.map((card) => [
+            card.dataset.saleId,
+            card,
+        ])
+    );
+    const salesMobileFilterEmpty = document.getElementById(
+        "salesMobileFilterEmpty"
+    );
     const salesTable = document.querySelector(".sales-table");
     const salesTableBody = salesTable?.querySelector("tbody");
     const storageKey = "vechasu-sales-filters-v1";
@@ -2141,6 +2264,13 @@
             const visible = matchesSearch && matchesDate;
 
             row.hidden = !visible;
+            const mobileCard = salesMobileCardById.get(
+                row.dataset.saleId
+            );
+
+            if (mobileCard) {
+                mobileCard.hidden = !visible;
+            }
 
             if (visible) {
                 visibleRows.push(row);
@@ -2159,6 +2289,11 @@
 
         if (salesFilterEmptyRow) {
             salesFilterEmptyRow.hidden =
+                visibleRows.length !== 0;
+        }
+
+        if (salesMobileFilterEmpty) {
+            salesMobileFilterEmpty.hidden =
                 visibleRows.length !== 0;
         }
 
@@ -2576,6 +2711,26 @@
             salesTableBody.appendChild(salesFilterEmptyRow);
         }
 
+        const salesMobileList = document.getElementById(
+            "salesMobileList"
+        );
+
+        if (salesMobileList) {
+            rows.forEach(({row}) => {
+                const card = salesMobileCardById.get(
+                    row.dataset.saleId
+                );
+
+                if (card) {
+                    salesMobileList.appendChild(card);
+                }
+            });
+
+            if (salesMobileFilterEmpty) {
+                salesMobileList.appendChild(salesMobileFilterEmpty);
+            }
+        }
+
         salesTable.dataset.sortField = field;
         salesTable.dataset.sortDirection = direction;
 
@@ -2607,6 +2762,17 @@
     }
 
     window.sortSalesTable = sortSalesTable;
+
+    document.getElementById("salesMobileSort")
+        ?.addEventListener("change", (event) => {
+            const field = event.target.value;
+            const direction = (
+                field === "created_at"
+                || field === "quantity_display"
+                || field === "unit_price_display"
+            ) ? "desc" : "asc";
+            sortSalesTable(field, direction);
+        });
 
     document
         .querySelectorAll(".sales-sort-label")
@@ -3273,6 +3439,11 @@
     const modalDescription = document.getElementById(
         "manualSaleModalDescription"
     );
+    const saleEditId = document.getElementById("saleEditId");
+    const saleSubmitButton = manualSaleForm.querySelector(
+        '.form-actions button[type="submit"]'
+    );
+    let manualSaleReturnFocus = null;
 
     function showSaleForm(sourceKey) {
         saleSourceInput.value = sourceLabels[sourceKey];
@@ -3299,6 +3470,12 @@
 
     function resetModalView() {
         manualSaleForm.reset();
+        manualSaleForm.action = "{{ url_for('manual_sale_add') }}";
+        manualSaleForm.dataset.editing = "0";
+        saleEditId.disabled = true;
+        saleEditId.removeAttribute("name");
+        saleEditId.value = "";
+        saleSubmitButton.textContent = "Добавить продажу";
         document.getElementById("product_id").value = "";
         document.getElementById("productMeta").textContent =
             "Баркод, артикул и остаток появятся после выбора товара.";
@@ -3323,14 +3500,21 @@
     }
 
     function openManualSaleModalWindow() {
+        manualSaleReturnFocus = openManualSaleModalButton;
         resetModalView();
         manualSaleModal.classList.add("is-open");
         document.body.classList.add("modal-open");
+        requestAnimationFrame(() => {
+            manualSaleModal.querySelector(
+                "button:not([disabled]), input:not([disabled])"
+            )?.focus();
+        });
     }
 
     function closeManualSaleModalWindow() {
         manualSaleModal.classList.remove("is-open");
         document.body.classList.remove("modal-open");
+        manualSaleReturnFocus?.focus();
     }
 
     openManualSaleModalButton.addEventListener(
@@ -3613,6 +3797,92 @@
     );
 
     resetProductFilters();
+
+    window.openMobileSaleEditor = function (button) {
+        let sale;
+
+        try {
+            sale = JSON.parse(button.dataset.sale || "{}");
+        } catch (error) {
+            return;
+        }
+
+        manualSaleReturnFocus = button;
+        resetModalView();
+        const sourceKey = sale.source_key || "tictactoy";
+        showSaleForm(sourceKey);
+        manualSaleForm.dataset.editing = "1";
+        manualSaleForm.action = sale.is_manual
+            ? "{{ url_for('manual_sale_update') }}"
+            : "{{ url_for('automatic_sale_update') }}";
+        saleEditId.disabled = false;
+        saleEditId.name = sale.is_manual
+            ? "sale_id"
+            : "operation_id";
+        saleEditId.value = sale.id || "";
+        saleSubmitButton.textContent = "Сохранить";
+        modalTitle.textContent = "Изменить продажу";
+        modalDescription.textContent =
+            "Проверьте данные и сохраните изменения.";
+
+        window.setBrandComboboxValue(
+            saleBrandCombobox,
+            sale.brand || "",
+        );
+        refreshCategoryOptions();
+        window.setBrandComboboxValue(
+            saleCategoryCombobox,
+            sale.category || "",
+        );
+        refreshProductOptions();
+        window.setBrandComboboxValue(
+            saleProductCombobox,
+            sale.product_id || "",
+        );
+        productNameInput.value = sale.product_name || "";
+
+        const fieldValues = {
+            created_at: String(sale.created_at || "").slice(0, 10),
+            quantity: sale.quantity_value || 1,
+            unit_price: sale.unit_price || "",
+            order_number: sale.order_number || "",
+            track_number: sale.track_number || "",
+            delivery_method: sale.delivery_method || "",
+            delivery_cost: sale.delivery_cost || "",
+            region: sale.region || "",
+            city: sale.city || "",
+            payment_method: sale.payment_method || "",
+            sticker_number: sale.sticker_number || "",
+            recipient_name: sale.recipient_name || "",
+            platform: sale.platform || "",
+            country: sale.country || "",
+            invoice_number: sale.invoice_number || "",
+            delivery_address: sale.delivery_address || "",
+            note: sale.note || "",
+        };
+
+        Object.entries(fieldValues).forEach(([name, value]) => {
+            manualSaleForm
+                .querySelectorAll('[name="' + name + '"]')
+                .forEach((control) => {
+                    if (!control.disabled) {
+                        control.value = value;
+                    }
+                });
+        });
+
+        productMeta.textContent = [
+            "Бренд: " + (sale.brand || "—"),
+            "Категория: " + (sale.category || "—"),
+        ].join(" · ");
+        manualSaleModal.classList.add("is-open");
+        document.body.classList.add("modal-open");
+        requestAnimationFrame(() => {
+            manualSaleModal.querySelector(
+                ".modal-close"
+            )?.focus();
+        });
+    };
 
     manualSaleForm.addEventListener("submit", (event) => {
         const selectedProduct = warehouseItems.find(
