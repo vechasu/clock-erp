@@ -96,8 +96,8 @@ if [[ "$server_branch" != "$EXPECTED_BRANCH" ]]; then
 fi
 
 server_source_status="$(
-    git status --porcelain --untracked-files=normal \
-        -- . ':(exclude)instance/**'
+    git status --porcelain --untracked-files=normal |
+        awk 'substr($0, 4, 9) != "instance/" { print }'
 )"
 if [[ -n "$server_source_status" ]]; then
     printf '%s\n' \
