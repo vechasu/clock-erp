@@ -1137,6 +1137,43 @@
             </div>
         {% endif %}
 
+        <header class="sales-page-header">
+            <div class="sales-page-heading">
+                <h1>Продажи</h1>
+                <p>Учёт продаж по всем каналам</p>
+            </div>
+
+            <div class="sales-page-actions">
+                <a
+                    id="salesReportLink"
+                    class="button sales-report-button button-secondary erp-secondary-action"
+                    href="{{ report_url }}"
+                >
+                    <svg
+                        class="sales-control-icon"
+                        viewBox="0 0 20 20"
+                        aria-hidden="true"
+                    >
+                        <path
+                            d="M5.5 2.75h5.75l3.25 3.5v10.5a.5.5 0 0 1-.5.5H5.5a.5.5 0 0 1-.5-.5V3.25a.5.5 0 0 1 .5-.5Z"
+                        ></path>
+                        <path d="M11 2.75v3.5h3.5"></path>
+                        <path d="M7.5 10h4.5M7.5 13h4.5"></path>
+                    </svg>
+                    <span data-report-label>Сформировать отчёт</span>
+                </a>
+
+                <button
+                    id="openManualSaleModal"
+                    class="button sales-add-button button-primary erp-primary-action"
+                    type="button"
+                >
+                    <span aria-hidden="true">+</span>
+                    Добавить продажу
+                </button>
+            </div>
+        </header>
+
         <nav
             class="sales-tabs-scroll"
             aria-label="Источники продаж"
@@ -1196,21 +1233,6 @@
                 >{{ total_cancelled }}</span>
             </div>
 
-            <a
-                id="salesReportLink"
-                class="button stats-action-button button-secondary erp-secondary-action"
-                href="{{ report_url }}"
-            >
-                Сформировать отчёт
-            </a>
-
-            <button
-                id="openManualSaleModal"
-                class="button stats-action-button button-primary erp-primary-action"
-                type="button"
-            >
-                + Добавить продажу
-            </button>
         </div>
 
         <section class="sales-data-card">
@@ -1220,6 +1242,14 @@
                 <div
                     class="sales-search-wrap search-input-wrap erp-search-wrap"
                 >
+                    <svg
+                        class="sales-search-icon"
+                        viewBox="0 0 20 20"
+                        aria-hidden="true"
+                    >
+                        <circle cx="8.75" cy="8.75" r="5.25"></circle>
+                        <path d="m12.75 12.75 3.5 3.5"></path>
+                    </svg>
                     <input
                         id="salesSearch"
                         class="search erp-search-input"
@@ -1254,9 +1284,23 @@
                                 aria-haspopup="dialog"
                                 aria-expanded="false"
                             >
-                                <span data-date-range-label>
-                                    📅 Период
-                                </span>
+                                <svg
+                                    class="sales-control-icon"
+                                    viewBox="0 0 20 20"
+                                    aria-hidden="true"
+                                >
+                                    <rect
+                                        x="3"
+                                        y="4.5"
+                                        width="14"
+                                        height="12.5"
+                                        rx="2"
+                                    ></rect>
+                                    <path
+                                        d="M6.5 2.75v3.5M13.5 2.75v3.5M3 8h14"
+                                    ></path>
+                                </svg>
+                                <span data-date-range-label>Период</span>
                             </button>
                             <button
                                 id="clearSalesPeriod"
@@ -1335,6 +1379,104 @@
                     </button>
                 </div>
 
+                <div class="sales-filter-settings">
+                    <button
+                        id="salesFilterTrigger"
+                        class="sales-filter-trigger erp-secondary-action"
+                        type="button"
+                        aria-haspopup="dialog"
+                        aria-controls="salesFilterPanel"
+                        aria-expanded="false"
+                    >
+                        <svg
+                            class="sales-control-icon"
+                            viewBox="0 0 20 20"
+                            aria-hidden="true"
+                        >
+                            <path
+                                d="M3 4h14M5.5 10h9M8 16h4"
+                            ></path>
+                        </svg>
+                        <span>Фильтры</span>
+                        <span
+                            id="salesFilterCount"
+                            class="sales-filter-count"
+                            aria-label="Активных фильтров"
+                            hidden
+                        ></span>
+                    </button>
+                    <div
+                        id="salesFilterPanel"
+                        class="sales-filter-panel"
+                        role="dialog"
+                        aria-labelledby="salesFilterTitle"
+                        hidden
+                    >
+                        <div class="sales-filter-panel-header">
+                            <div>
+                                <p
+                                    id="salesFilterTitle"
+                                    class="sales-filter-panel-title"
+                                >
+                                    Фильтры
+                                </p>
+                                <p class="sales-filter-panel-help">
+                                    Отберите продажи по состоянию и типу.
+                                </p>
+                            </div>
+                            <button
+                                id="salesFilterClose"
+                                class="sales-panel-close"
+                                type="button"
+                                aria-label="Закрыть фильтры"
+                            >×</button>
+                        </div>
+
+                        <div class="sales-filter-fields">
+                            <label class="sales-filter-field">
+                                <span>Состояние</span>
+                                <select id="salesStateFilter">
+                                    <option value="">Все продажи</option>
+                                    <option value="active">
+                                        Не отменено
+                                    </option>
+                                    <option value="cancelled">
+                                        Отменено
+                                    </option>
+                                </select>
+                            </label>
+
+                            <label class="sales-filter-field">
+                                <span>Тип продажи</span>
+                                <select id="salesTypeFilter">
+                                    <option value="">Все типы</option>
+                                    <option value="manual">Ручная</option>
+                                    <option value="automatic">
+                                        Автоматическая
+                                    </option>
+                                </select>
+                            </label>
+                        </div>
+
+                        <div class="sales-filter-panel-actions">
+                            <button
+                                id="salesFilterReset"
+                                class="erp-reset-action"
+                                type="button"
+                            >
+                                Сбросить
+                            </button>
+                            <button
+                                id="salesFilterApply"
+                                class="erp-primary-action"
+                                type="button"
+                            >
+                                Применить
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="sales-column-settings">
                     <button
                         id="salesColumnSettingsTrigger"
@@ -1344,7 +1486,21 @@
                         aria-controls="salesColumnSettingsPanel"
                         aria-expanded="false"
                     >
-                        ⚙ Столбцы
+                        <svg
+                            class="sales-control-icon"
+                            viewBox="0 0 20 20"
+                            aria-hidden="true"
+                        >
+                            <rect
+                                x="3"
+                                y="4"
+                                width="14"
+                                height="12"
+                                rx="2"
+                            ></rect>
+                            <path d="M8 4v12M12.5 4v12"></path>
+                        </svg>
+                        Столбцы
                     </button>
                     <div
                         id="salesColumnSettingsPanel"
@@ -1423,6 +1579,7 @@
                                     <th
                                         class="col-{{ column.key }}"
                                         data-column-key="{{ column.key }}"
+                                        aria-sort="none"
                                     >
                                         <button
                                             class="sales-sort-label erp-sort-label"
@@ -1432,6 +1589,7 @@
                                             {{ column.label }}
                                             <span
                                                 class="sales-sort-arrow erp-sort-arrow"
+                                                aria-hidden="true"
                                             >↕</span>
                                         </button>
                                     </th>
@@ -1447,6 +1605,7 @@
                                     data-search="{{ sale.search_text }}"
                                     data-sort-date="{{ sale.created_at[:10] }}"
                                     data-cancelled="{{ '1' if sale.is_cancelled else '0' }}"
+                                    data-sale-type="{{ sale.sale_type or ('manual' if sale.is_manual else 'automatic') }}"
                                     data-quantity="{{ sale.quantity_value }}"
                                     data-order="{{ sale.order_number }}"
                                 >
@@ -1459,7 +1618,9 @@
                                             title="{{ value }}"
                                         >
                                             {% if column.key == "source" %}
-                                                <span class="source-badge">
+                                                <span
+                                                    class="source-badge source-badge--{{ sale.source_key if sale.source_key in ['tictactoy', 'wildberries', 'amazon'] else 'other' }}"
+                                                >
                                                     {{ value or "—" }}
                                                 </span>
                                             {% elif column.key == "created_at" and value|length >= 10 %}
@@ -1473,7 +1634,11 @@
                                                     {{ value or "—" }}
                                                 </span>
                                             {% elif column.key in ["unit_price_display", "delivery_cost_display"] %}
-                                                {{ value or "—" }}
+                                                <span
+                                                    class="sales-number-value{% if not value %} erp-muted-value{% endif %}"
+                                                >
+                                                    {{ (value or "—")|replace(" ", " ") }}
+                                                </span>
                                             {% else %}
                                                 <span
                                                     class="{% if sale.is_manual %}manual-view-value{% else %}automatic-view-value{% endif %}{% if not value %} erp-muted-value{% endif %}"
@@ -1490,7 +1655,20 @@
                                         class="empty"
                                         colspan="{{ sales_columns|length }}"
                                     >
-                                        В этой вкладке пока нет продаж.
+                                        <div class="sales-empty-state">
+                                            <strong>Продаж пока нет</strong>
+                                            <span>
+                                                Добавьте первую продажу,
+                                                чтобы она появилась здесь.
+                                            </span>
+                                            <button
+                                                class="erp-primary-action"
+                                                type="button"
+                                                data-open-empty-sale
+                                            >
+                                                Добавить продажу
+                                            </button>
+                                        </div>
                                     </td>
                                 </tr>
                             {% endfor %}
@@ -1522,7 +1700,9 @@
                                     {{ sale.product_name or "Товар не указан" }}
                                 </div>
                             </div>
-                            <span class="source-badge">{{ sale.source or "—" }}</span>
+                            <span
+                                class="source-badge source-badge--{{ sale.source_key if sale.source_key in ['tictactoy', 'wildberries', 'amazon'] else 'other' }}"
+                            >{{ sale.source or "—" }}</span>
                         </div>
 
                         <div class="mobile-erp-card-meta">
@@ -1537,11 +1717,15 @@
                             </div>
                             <div class="mobile-erp-card-kpi">
                                 <span>Цена</span>
-                                <strong>{{ sale.unit_price_display or "—" }}</strong>
+                                <strong>
+                                    {{ (sale.unit_price_display or "—")|replace(" ", " ") }}
+                                </strong>
                             </div>
                             <div class="mobile-erp-card-kpi">
                                 <span>Итого</span>
-                                <strong>{{ sale.total_amount_display or "—" }}</strong>
+                                <strong>
+                                    {{ (sale.total_amount_display or "—")|replace(" ", " ") }}
+                                </strong>
                             </div>
                         </div>
 
@@ -1591,7 +1775,19 @@
                     class="empty sales-mobile-filter-empty"
                     hidden
                 >
-                    По текущему поиску и периоду продаж не найдено.
+                    <div class="sales-empty-state">
+                        <strong>Ничего не найдено</strong>
+                        <span>
+                            Измените условия поиска или сбросьте фильтры.
+                        </span>
+                        <button
+                            class="erp-reset-action"
+                            type="button"
+                            data-reset-sales-filters
+                        >
+                            Сбросить фильтры
+                        </button>
+                    </div>
                 </div>
             </section>
         </section>
@@ -2071,6 +2267,30 @@
     const salesReportLink = document.getElementById(
         "salesReportLink"
     );
+    const salesFilterTrigger = document.getElementById(
+        "salesFilterTrigger"
+    );
+    const salesFilterPanel = document.getElementById(
+        "salesFilterPanel"
+    );
+    const salesFilterClose = document.getElementById(
+        "salesFilterClose"
+    );
+    const salesFilterApply = document.getElementById(
+        "salesFilterApply"
+    );
+    const salesFilterReset = document.getElementById(
+        "salesFilterReset"
+    );
+    const salesFilterCount = document.getElementById(
+        "salesFilterCount"
+    );
+    const salesStateFilter = document.getElementById(
+        "salesStateFilter"
+    );
+    const salesTypeFilter = document.getElementById(
+        "salesTypeFilter"
+    );
     const saleRows = Array.from(
         document.querySelectorAll(".sale-row")
     );
@@ -2092,6 +2312,8 @@
     const salesColumnDefinitions = {{ sales_columns | tojson }};
 
     let salesFilterEmptyRow = null;
+    let appliedSaleState = "";
+    let appliedSaleType = "";
 
     if (salesTableBody && saleRows.length) {
         salesFilterEmptyRow = document.createElement("tr");
@@ -2103,8 +2325,21 @@
         emptyCell.colSpan = document.querySelectorAll(
             ".sales-table thead th"
         ).length || 1;
-        emptyCell.textContent =
-            "По текущему поиску и периоду продаж не найдено.";
+
+        const emptyState = document.createElement("div");
+        emptyState.className = "sales-empty-state";
+        const emptyTitle = document.createElement("strong");
+        emptyTitle.textContent = "Ничего не найдено";
+        const emptyText = document.createElement("span");
+        emptyText.textContent =
+            "Измените условия поиска или сбросьте фильтры.";
+        const emptyReset = document.createElement("button");
+        emptyReset.className = "erp-reset-action";
+        emptyReset.type = "button";
+        emptyReset.dataset.resetSalesFilters = "";
+        emptyReset.textContent = "Сбросить фильтры";
+        emptyState.append(emptyTitle, emptyText, emptyReset);
+        emptyCell.appendChild(emptyState);
 
         salesFilterEmptyRow.appendChild(emptyCell);
         salesTableBody.appendChild(salesFilterEmptyRow);
@@ -2155,6 +2390,8 @@
             ["q", salesSearch?.value || ""],
             ["date_from", selectedFrom],
             ["date_to", selectedTo],
+            ["sale_state", appliedSaleState],
+            ["sale_type", appliedSaleType],
         ].forEach(([name, value]) => {
             if (value) {
                 url.searchParams.set(name, value);
@@ -2177,6 +2414,8 @@
                     "q",
                     "date_from",
                     "date_to",
+                    "sale_state",
+                    "sale_type",
                     "sort",
                     "sort_dir",
                 ].forEach((name) => {
@@ -2201,7 +2440,7 @@
         );
         reportUrl.searchParams.set("source", activeSalesSource);
 
-        ["q", "date_from", "date_to"].forEach((name) => {
+        ["q", "date_from", "date_to", "sale_type"].forEach((name) => {
             const value = url.searchParams.get(name);
 
             if (value) {
@@ -2218,6 +2457,26 @@
             selectedFrom;
         document.getElementById("returnDateTo").value =
             selectedTo;
+    }
+
+    function updateSalesFilterSummary() {
+        const activeCount = [
+            appliedSaleState,
+            appliedSaleType,
+        ].filter(Boolean).length;
+
+        salesFilterCount.textContent = String(activeCount);
+        salesFilterCount.hidden = activeCount === 0;
+        salesFilterTrigger.classList.toggle(
+            "is-active",
+            activeCount > 0,
+        );
+        salesFilterTrigger.setAttribute(
+            "aria-label",
+            activeCount
+                ? "Фильтры, активно: " + activeCount
+                : "Фильтры",
+        );
     }
 
     function applySalesFilters() {
@@ -2255,7 +2514,21 @@
                     && rowDate >= dateFrom
                     && rowDate <= dateTo
                 );
-            const visible = matchesSearch && matchesDate;
+            const matchesState =
+                !appliedSaleState
+                || (
+                    appliedSaleState === "cancelled"
+                        ? row.dataset.cancelled === "1"
+                        : row.dataset.cancelled !== "1"
+                );
+            const matchesType =
+                !appliedSaleType
+                || row.dataset.saleType === appliedSaleType;
+            const visible =
+                matchesSearch
+                && matchesDate
+                && matchesState
+                && matchesType;
 
             row.hidden = !visible;
             const mobileCard = salesMobileCardById.get(
@@ -2273,7 +2546,11 @@
 
         updateVisibleStats(visibleRows);
         clearSalesDateFilter.hidden =
-            !query && !selectedFrom && !selectedTo;
+            !query
+            && !selectedFrom
+            && !selectedTo
+            && !appliedSaleState
+            && !appliedSaleType;
         clearSalesPeriod.hidden =
             !selectedFrom && !selectedTo;
         clearSalesSearch?.classList.toggle(
@@ -2301,6 +2578,8 @@
                 search: salesSearch?.value || "",
                 dateFrom: selectedFrom,
                 dateTo: selectedTo,
+                saleState: appliedSaleState,
+                saleType: appliedSaleType,
             };
             localStorage.setItem(
                 storageKey,
@@ -2314,31 +2593,42 @@
     const urlFilters = new URL(
         window.location.href
     ).searchParams;
-    salesSearch.value = urlFilters.get("q") || "";
-    salesDateFrom.value =
-        urlFilters.get("date_from") || "";
-    salesDateTo.value =
-        urlFilters.get("date_to") || "";
+    let storedFilters = {};
 
-    if (
-        !urlFilters.has("q")
-        && !urlFilters.has("date_from")
-        && !urlFilters.has("date_to")
-    ) {
-        try {
-            const stored = JSON.parse(
-                localStorage.getItem(storageKey) || "{}"
-            )[activeSalesSource];
-
-            if (stored) {
-                salesSearch.value = stored.search || "";
-                salesDateFrom.value = stored.dateFrom || "";
-                salesDateTo.value = stored.dateTo || "";
-            }
-        } catch (error) {
-            // Используем пустые фильтры.
-        }
+    try {
+        storedFilters = JSON.parse(
+            localStorage.getItem(storageKey) || "{}"
+        )[activeSalesSource] || {};
+    } catch (error) {
+        // Используем фильтры из URL или пустые значения.
     }
+
+    function filterValue(name, storedName, allowedValues = null) {
+        const value = urlFilters.has(name)
+            ? urlFilters.get(name) || ""
+            : storedFilters[storedName] || "";
+
+        return !allowedValues || allowedValues.includes(value)
+            ? value
+            : "";
+    }
+
+    salesSearch.value = filterValue("q", "search");
+    salesDateFrom.value = filterValue("date_from", "dateFrom");
+    salesDateTo.value = filterValue("date_to", "dateTo");
+    appliedSaleState = filterValue(
+        "sale_state",
+        "saleState",
+        ["", "active", "cancelled"],
+    );
+    appliedSaleType = filterValue(
+        "sale_type",
+        "saleType",
+        ["", "manual", "automatic"],
+    );
+    salesStateFilter.value = appliedSaleState;
+    salesTypeFilter.value = appliedSaleType;
+    updateSalesFilterSummary();
 
     salesSearch?.addEventListener(
         "input",
@@ -2351,13 +2641,23 @@
         applySalesFilters();
     });
 
-    clearSalesDateFilter?.addEventListener("click", () => {
+    function resetAllSalesFilters() {
         salesSearch.value = "";
         salesDateFrom.value = "";
         salesDateTo.value = "";
+        appliedSaleState = "";
+        appliedSaleType = "";
+        salesStateFilter.value = "";
+        salesTypeFilter.value = "";
         updateSalesPeriodLabel();
+        updateSalesFilterSummary();
         applySalesFilters();
-    });
+    }
+
+    clearSalesDateFilter?.addEventListener(
+        "click",
+        resetAllSalesFilters,
+    );
 
     clearSalesPeriod?.addEventListener("click", (event) => {
         event.stopPropagation();
@@ -2365,6 +2665,115 @@
         salesDateTo.value = "";
         updateSalesPeriodLabel();
         applySalesFilters();
+    });
+
+    function closeSalesFilterPanel(returnFocus = false) {
+        salesFilterPanel.hidden = true;
+        salesFilterTrigger.setAttribute(
+            "aria-expanded",
+            "false",
+        );
+
+        if (returnFocus) {
+            salesFilterTrigger.focus();
+        }
+    }
+
+    salesFilterTrigger.addEventListener("click", () => {
+        const willOpen = salesFilterPanel.hidden;
+
+        if (!willOpen) {
+            closeSalesFilterPanel();
+            return;
+        }
+
+        salesStateFilter.value = appliedSaleState;
+        salesTypeFilter.value = appliedSaleType;
+        salesFilterPanel.hidden = false;
+        salesFilterTrigger.setAttribute(
+            "aria-expanded",
+            "true",
+        );
+        requestAnimationFrame(() => {
+            salesStateFilter.focus();
+        });
+    });
+
+    salesFilterClose.addEventListener("click", () => {
+        closeSalesFilterPanel(true);
+    });
+
+    salesFilterApply.addEventListener("click", () => {
+        appliedSaleState = salesStateFilter.value;
+        appliedSaleType = salesTypeFilter.value;
+        updateSalesFilterSummary();
+        applySalesFilters();
+        closeSalesFilterPanel(true);
+    });
+
+    salesFilterReset.addEventListener("click", () => {
+        salesStateFilter.value = "";
+        salesTypeFilter.value = "";
+        appliedSaleState = "";
+        appliedSaleType = "";
+        updateSalesFilterSummary();
+        applySalesFilters();
+        closeSalesFilterPanel(true);
+    });
+
+    document.addEventListener("click", (event) => {
+        if (
+            !salesFilterPanel.hidden
+            && !event.target.closest(".sales-filter-settings")
+        ) {
+            closeSalesFilterPanel();
+        }
+    });
+
+    document.addEventListener("keydown", (event) => {
+        if (
+            event.key === "Escape"
+            && !salesFilterPanel.hidden
+        ) {
+            closeSalesFilterPanel(true);
+        }
+    });
+
+    document.addEventListener("click", (event) => {
+        if (event.target.closest("[data-reset-sales-filters]")) {
+            resetAllSalesFilters();
+        }
+
+        if (event.target.closest("[data-open-empty-sale]")) {
+            document.getElementById("openManualSaleModal")?.click();
+        }
+    });
+
+    salesReportLink.addEventListener("click", (event) => {
+        if (
+            event.metaKey
+            || event.ctrlKey
+            || event.shiftKey
+            || event.altKey
+        ) {
+            return;
+        }
+
+        if (salesReportLink.getAttribute("aria-disabled") === "true") {
+            event.preventDefault();
+            return;
+        }
+
+        salesReportLink.setAttribute("aria-disabled", "true");
+        salesReportLink.setAttribute("aria-busy", "true");
+        salesReportLink.classList.add("is-loading");
+        const reportLabel = salesReportLink.querySelector(
+            "[data-report-label]"
+        );
+
+        if (reportLabel) {
+            reportLabel.textContent = "Формируем…";
+        }
     });
 
     function parseSalesDate(value) {
@@ -2416,6 +2825,9 @@
         const label = salesDateFilter?.querySelector(
             "[data-date-range-label]"
         );
+        const trigger = salesDateFilter?.querySelector(
+            ".warehouse-date-trigger"
+        );
 
         if (!label) {
             return;
@@ -2428,7 +2840,11 @@
                     salesDateTo.value
                     || salesDateFrom.value
                 )
-            : "📅 Период";
+            : "Период";
+        trigger?.classList.toggle(
+            "is-active",
+            Boolean(salesDateFrom.value || salesDateTo.value),
+        );
     }
 
     function initializeSalesDateFilter() {
@@ -2605,8 +3021,15 @@
             });
 
         document.addEventListener("click", (event) => {
-            if (!salesDateFilter.contains(event.target)) {
+            if (!event.composedPath().includes(salesDateFilter)) {
                 closeCalendar();
+            }
+        });
+
+        document.addEventListener("keydown", (event) => {
+            if (event.key === "Escape" && !popup.hidden) {
+                closeCalendar();
+                trigger.focus();
             }
         });
     }
@@ -2733,7 +3156,16 @@
             .forEach((label) => {
                 const active =
                     label.dataset.sortField === field;
+                const headerCell = label.closest("th");
                 label.classList.toggle("is-active", active);
+                headerCell?.setAttribute(
+                    "aria-sort",
+                    active
+                        ? direction === "asc"
+                            ? "ascending"
+                            : "descending"
+                        : "none",
+                );
                 label.querySelector(
                     ".sales-sort-arrow"
                 ).textContent = active
@@ -2781,9 +3213,40 @@
             return;
         }
 
-        const defaultOrder = salesColumnDefinitions.map(
+        const availableColumns = salesColumnDefinitions.map(
             (column) => column.key
         );
+        const recommendedOrder = [
+            "created_at",
+            "order_number",
+            "source",
+            "product_name",
+            "brand",
+            "category",
+            "quantity_display",
+            "unit_price_display",
+            "delivery_cost_display",
+            "delivery_method",
+            "track_number",
+            "barcode",
+            "sticker_number",
+            "recipient_name",
+            "platform",
+            "country",
+            "invoice_number",
+            "region",
+            "city",
+            "payment_method",
+            "note",
+        ];
+        const defaultOrder = [
+            ...recommendedOrder.filter(
+                (key) => availableColumns.includes(key)
+            ),
+            ...availableColumns.filter(
+                (key) => !recommendedOrder.includes(key)
+            ),
+        ];
         const pinnedColumns = [
             "created_at",
             "order_number",
@@ -2794,6 +3257,29 @@
             )
         );
         const defaultWidths = {
+            created_at: 108,
+            order_number: 132,
+            track_number: 124,
+            barcode: 128,
+            source: 104,
+            brand: 104,
+            category: 132,
+            product_name: 300,
+            quantity_display: 96,
+            unit_price_display: 124,
+            delivery_method: 144,
+            delivery_cost_display: 128,
+            region: 132,
+            city: 132,
+            payment_method: 160,
+            note: 220,
+            sticker_number: 132,
+            recipient_name: 170,
+            platform: 150,
+            country: 120,
+            invoice_number: 140,
+        };
+        const legacyDefaultWidths = {
             created_at: 112,
             order_number: 150,
             track_number: 150,
@@ -2816,15 +3302,31 @@
             country: 140,
             invoice_number: 160,
         };
-        const legacyDefaultWidths = {
-            source: 130,
-            brand: 130,
-            category: 190,
-            product_name: 240,
-            quantity_display: 112,
+        const settingsVersion = 3;
+        const minimumWidth = 76;
+        const minimumWidths = {
+            created_at: 108,
+            order_number: 118,
+            track_number: 108,
+            barcode: 112,
+            source: 90,
+            brand: 90,
+            category: 108,
+            product_name: 220,
+            quantity_display: 90,
+            unit_price_display: 112,
+            delivery_method: 120,
+            delivery_cost_display: 112,
+            region: 100,
+            city: 100,
+            payment_method: 130,
+            note: 160,
+            sticker_number: 112,
+            recipient_name: 140,
+            platform: 120,
+            country: 100,
+            invoice_number: 120,
         };
-        const settingsVersion = 2;
-        const minimumWidth = 82;
         const maximumWidth = 520;
         const settingsKey = salesTable.dataset.salesSettingsKey;
         const settingsTrigger = document.getElementById(
@@ -2846,6 +3348,10 @@
             "salesColumnSettingsMessage"
         );
         let suppressSortUntil = 0;
+
+        function minimumWidthFor(key) {
+            return minimumWidths[key] || minimumWidth;
+        }
 
         function sanitizeOrder(value) {
             const order = [];
@@ -2904,7 +3410,7 @@
                 widths[key] = Math.min(
                     maximumWidth,
                     Math.max(
-                        minimumWidth,
+                        minimumWidthFor(key),
                         Number.isFinite(numeric)
                             ? Math.round(numeric)
                             : fallback,
@@ -3147,7 +3653,7 @@
                             view.widths[key] = Math.min(
                                 maximumWidth,
                                 Math.max(
-                                    minimumWidth,
+                                    minimumWidthFor(key),
                                     Math.round(
                                         startWidth
                                         + moveEvent.clientX
@@ -4150,14 +4656,14 @@
         const defaultOrder = [
             "created_at",
             "order_number",
-            "track_number",
-            "barcode",
             "source",
+            "product_name",
             "brand",
             "category",
-            "product_name",
             "quantity_display",
             "unit_price_display",
+            "track_number",
+            "barcode",
         ];
         const getHeaders = () => Array.from(
             document.querySelectorAll(
@@ -4211,7 +4717,7 @@
                 );
                 const headers = getHeaders();
                 const restoredCorrectly = (
-                    restored.version === 2
+                    restored.version === 3
                     && restored.order[0] === "created_at"
                     && restored.order[1] === "order_number"
                     && restored.order[2] === "unit_price_display"
@@ -4250,6 +4756,12 @@
                 );
 
                 if (
+                    headers.find(
+                        (cell) =>
+                            cell.dataset.columnKey
+                                === "unit_price_display"
+                    ).getAttribute("aria-sort") !== "ascending"
+                    ||
                     !getHeaderKeys().every(
                         (key, index) =>
                             getRowKeys()[index] === key
@@ -4339,12 +4851,12 @@
                     === JSON.stringify(defaultOrder)
                 && getHeaders().every((cell) => !cell.hidden)
                 && reset.hidden.length === 0
-                && reset.widths.source === 108
-                && reset.widths.brand === 108
-                && reset.widths.category === 148
-                && reset.widths.product_name === 280
-                && reset.widths.quantity_display === 104
-                && reset.widths.created_at === 112
+                && reset.widths.source === 104
+                && reset.widths.brand === 104
+                && reset.widths.category === 132
+                && reset.widths.product_name === 300
+                && reset.widths.quantity_display === 96
+                && reset.widths.created_at === 108
                 && localStorage.getItem(otherSettingsKey)
                     === otherSettings
                 && document.documentElement.scrollWidth
@@ -4357,7 +4869,7 @@
                         Math.round(
                             getHeaders()[0]
                                 .getBoundingClientRect().width
-                        ) === 112
+                        ) === 108
                         && tableWrap.scrollWidth
                             > tableWrap.clientWidth
                         && Math.abs(
@@ -4423,6 +4935,55 @@
                         toolbarChildrenFit,
                     });
                 throw new Error("reset");
+            }
+
+            const duplicateIds = Array.from(
+                document.querySelectorAll("[id]")
+            ).map((element) => element.id).filter(
+                (id, index, ids) =>
+                    ids.indexOf(id) !== index
+            );
+            resetAllSalesFilters();
+            const filterTrigger = document.getElementById(
+                "salesFilterTrigger"
+            );
+            filterTrigger.click();
+            document.getElementById("salesTypeFilter").value =
+                "manual";
+            document.getElementById("salesFilterApply").click();
+            const filterApplied = (
+                document.getElementById(
+                    "salesFilterCount"
+                ).textContent === "1"
+                && !document.getElementById(
+                    "salesFilterCount"
+                ).hidden
+                && new URL(window.location.href)
+                    .searchParams.get("sale_type") === "manual"
+                && saleRows.some((row) => !row.hidden)
+                && saleRows.every(
+                    (row) =>
+                        row.hidden
+                        || row.dataset.saleType === "manual"
+                )
+            );
+            filterTrigger.click();
+            document.getElementById("salesFilterReset").click();
+            const filterReset = (
+                document.getElementById(
+                    "salesFilterCount"
+                ).hidden
+                && !new URL(window.location.href)
+                    .searchParams.has("sale_type")
+                && saleRows.every((row) => !row.hidden)
+            );
+
+            if (
+                duplicateIds.length
+                || !filterApplied
+                || !filterReset
+            ) {
+                throw new Error("filters");
             }
 
             if (!tableIsVisible()) {
