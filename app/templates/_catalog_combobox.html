@@ -1,0 +1,86 @@
+{% macro render_catalog_combobox(component_id, input_name, options, selected_value="", include_all=false, item_label="значение", all_label="Все", disabled=false, prefix_search=true, empty_label="Ничего не найдено", component_class="", clear_selection_on_search_clear=false, input_id="") %}
+    <div
+        id="{{ component_id }}"
+        class="brand-combobox{% if component_class %} {{ component_class }}{% endif %}"
+        data-brand-combobox
+        data-prefix-search="{{ 'true' if prefix_search else 'false' }}"
+        data-clear-selection-on-search-clear="{{ 'true' if clear_selection_on_search_clear else 'false' }}"
+        data-all-label="{{ all_label if include_all else 'Выберите ' ~ item_label }}"
+    >
+        <input
+            {% if input_id %}id="{{ input_id }}"{% endif %}
+            class="brand-combobox-hidden"
+            type="hidden"
+            name="{{ input_name }}"
+            value="{{ selected_value }}"
+            {% if disabled %}disabled{% endif %}
+        >
+        <button
+            id="{{ component_id }}Trigger"
+            class="brand-combobox-trigger"
+            type="button"
+            role="combobox"
+            aria-haspopup="listbox"
+            aria-expanded="false"
+            {% if disabled %}disabled{% endif %}
+        >
+            <span class="brand-combobox-value">
+                {{ selected_value or (all_label if include_all else "Выберите " ~ item_label) }}
+            </span>
+            <span class="brand-combobox-arrow">▾</span>
+        </button>
+        <div class="brand-combobox-dropdown">
+            <div class="brand-combobox-search-wrap">
+                <input
+                    class="brand-combobox-search"
+                    data-brand-search-input
+                    type="text"
+                    placeholder="Поиск: {{ item_label }}"
+                    autocomplete="off"
+                >
+                <button
+                    class="brand-combobox-search-clear"
+                    data-brand-search-clear
+                    type="button"
+                    aria-label="Очистить поиск"
+                    hidden
+                >×</button>
+            </div>
+            <div class="brand-combobox-options" role="listbox">
+                {% if include_all %}
+                    <button
+                        class="brand-combobox-option{% if not selected_value %} active{% endif %}"
+                        type="button"
+                        role="option"
+                        data-brand=""
+                        data-brand-search="{{ all_label|lower|e }}"
+                    >
+                        <span class="brand-combobox-option-label">
+                            {{ all_label }}
+                        </span>
+                        <span>{{ options | sum(attribute='count') }}</span>
+                    </button>
+                {% endif %}
+                {% for option in options %}
+                    <button
+                        class="brand-combobox-option{% if selected_value == option.name %} active{% endif %}"
+                        type="button"
+                        role="option"
+                        data-brand="{{ option.name|e }}"
+                        data-brand-search="{{ option.name|lower|e }}"
+                    >
+                        <span class="brand-combobox-option-label">
+                            {{ option.name }}
+                        </span>
+                        <span>{{ option.count }}</span>
+                    </button>
+                {% endfor %}
+                <div
+                    class="brand-combobox-empty"
+                    data-brand-empty
+                    hidden
+                >{{ empty_label }}</div>
+            </div>
+        </div>
+    </div>
+{% endmacro %}

@@ -266,6 +266,10 @@ class OwnerFeedbackTest(unittest.TestCase):
             web,
             "get_warehouse_items",
             return_value=[warehouse_item()],
+        ), mock.patch.object(
+            web,
+            "get_excel_warehouse_items",
+            return_value=[warehouse_item()],
         ):
             for index, source in enumerate(sources, start=1):
                 response = self.client.post(
@@ -276,6 +280,8 @@ class OwnerFeedbackTest(unittest.TestCase):
                         "custom_source": "Avito",
                         "product_id": PRODUCT_ID,
                         "product_name": "Подменённое название",
+                        "product_brand": "Brand",
+                        "product_category": "Коллекция",
                         "brand": "Подменённый бренд",
                         "category": "Подменённая категория",
                         "quantity": "1",
@@ -701,7 +707,14 @@ class OwnerFeedbackTest(unittest.TestCase):
         )
         self.assertNotIn('id="bulkBrandClear"', html)
         self.assertNotIn("normalizeBrandSearch", html)
-        self.assertIn('event.key === "ArrowDown"', html)
+        component_js = (
+            web.PROJECT_ROOT
+            / "app"
+            / "static"
+            / "js"
+            / "catalog-combobox.js"
+        ).read_text(encoding="utf-8")
+        self.assertIn('event.key === "ArrowDown"', component_js)
         self.assertNotIn('id="warehouseBrandOptions"', html)
 
     def test_warehouse_bulk_selection_mode_uses_light_toolbar(self):
@@ -713,6 +726,13 @@ class OwnerFeedbackTest(unittest.TestCase):
             page = self.client.get("/warehouse")
 
         html = page.get_data(as_text=True)
+        component_js = (
+            web.PROJECT_ROOT
+            / "app"
+            / "static"
+            / "js"
+            / "catalog-combobox.js"
+        ).read_text(encoding="utf-8")
         self.assertEqual(page.status_code, 200)
         self.assertEqual(
             page.headers["Cache-Control"],
@@ -780,8 +800,8 @@ class OwnerFeedbackTest(unittest.TestCase):
         )
         self.assertIn('name="return_query"', html)
         self.assertIn(
-            "autoApplyToggle.checked = Boolean(brand)",
-            html,
+            "autoApplyToggle.checked = Boolean(value)",
+            component_js,
         )
 
     def test_warehouse_bulk_checkboxes_are_inside_photo_cells(self):
@@ -939,6 +959,21 @@ class OwnerFeedbackTest(unittest.TestCase):
             page = self.client.get("/warehouse?open_add=1")
 
         html = page.get_data(as_text=True)
+        component_js = (
+            web.PROJECT_ROOT
+            / "app"
+            / "static"
+            / "js"
+            / "catalog-combobox.js"
+        ).read_text(encoding="utf-8")
+        component_css = (
+            web.PROJECT_ROOT
+            / "app"
+            / "static"
+            / "css"
+            / "catalog-combobox.css"
+        ).read_text(encoding="utf-8")
+        component_assets = component_js + component_css
         brand_component = html.split('id="addBrandCombobox"', 1)[1].split(
             'id="addCategoryCombobox"',
             1,
@@ -954,25 +989,37 @@ class OwnerFeedbackTest(unittest.TestCase):
         self.assertIn('data-prefix-search="false"', category_component)
         self.assertIn("Ничего не найдено", brand_component)
         self.assertIn("Ничего не найдено", category_component)
-        self.assertIn(".filter-combobox .brand-combobox-option[hidden]", html)
-        self.assertIn("brandName.includes(query)", html)
-        self.assertIn('searchInput.addEventListener("input"', html)
+        self.assertIn(".brand-combobox-option[hidden]", component_assets)
+        self.assertIn("normalized.includes(query)", component_assets)
         self.assertIn(
-            "filterBrandList(searchInput.value, combobox)",
-            html,
+            'searchInput.addEventListener("input"',
+            component_assets,
         )
-        self.assertIn('searchInput.dataset.searchBound === "1"', html)
-        self.assertIn('searchInput.value = ""', html)
-        self.assertIn('filterBrandList("", combobox)', html)
         self.assertIn(
-            "combobox.dataset.clearSelectionOnSearchClear",
-            html,
+            "window.filterBrandList(",
+            component_assets,
         )
-        self.assertIn('setBrandComboboxValue(combobox, "")', html)
-        self.assertIn('hiddenInput.value = brand', html)
-        self.assertIn('event.key === "ArrowDown"', html)
-        self.assertIn('event.key === "Enter"', html)
-        self.assertIn('event.key === "Escape"', html)
+        self.assertIn(
+            'searchInput.dataset.searchBound === "1"',
+            component_assets,
+        )
+        self.assertIn('searchInput.value = ""', component_assets)
+        self.assertIn(
+            'window.filterBrandList("", combobox)',
+            component_assets,
+        )
+        self.assertIn(
+            ".clearSelectionOnSearchClear",
+            component_assets,
+        )
+        self.assertIn(
+            "window.setBrandComboboxValue(",
+            component_assets,
+        )
+        self.assertIn("hiddenInput.value = value", component_assets)
+        self.assertIn('event.key === "ArrowDown"', component_assets)
+        self.assertIn('event.key === "Enter"', component_assets)
+        self.assertIn('event.key === "Escape"', component_assets)
 
         bulk_brand_component = html.split(
             'id="bulkBrandCombobox"',
@@ -1019,35 +1066,37 @@ class OwnerFeedbackTest(unittest.TestCase):
             page = self.client.get("/warehouse")
 
         html = page.get_data(as_text=True)
+        component_js = (
+            web.PROJECT_ROOT
+            / "app"
+            / "static"
+            / "js"
+            / "catalog-combobox.js"
+        ).read_text(encoding="utf-8")
         bulk_brand_component = html.split(
             'id="bulkBrandCombobox"',
             1,
         )[1].split('id="bulkCategory"', 1)[0]
 
         self.assertIn('data-prefix-search="true"', bulk_brand_component)
-        self.assertIn(
-            '<span class="brand-combobox-option-label">AARK</span>',
-            bulk_brand_component,
-        )
-        self.assertIn(
-            '<span class="brand-combobox-option-label">Alpha</span>',
-            bulk_brand_component,
-        )
-        self.assertIn(
-            '<span class="brand-combobox-option-label">Casio</span>',
-            bulk_brand_component,
-        )
-        self.assertIn("trim().toLocaleLowerCase()", html)
+        for brand in ("AARK", "Alpha", "Casio"):
+            self.assertRegex(
+                bulk_brand_component,
+                r'<span class="brand-combobox-option-label">\s*'
+                + brand
+                + r"\s*</span>",
+            )
+        self.assertIn('.toLocaleLowerCase("ru")', component_js)
         self.assertIn(
             'option.querySelector(',
-            html,
+            component_js,
         )
         self.assertIn(
             '".brand-combobox-option-label"',
-            html,
+            component_js,
         )
-        self.assertIn("label ? label.textContent : \"\"", html)
-        self.assertIn("brandName.startsWith(query)", html)
+        self.assertIn("label ? label.textContent : \"\"", component_js)
+        self.assertIn("normalized.startsWith(query)", component_js)
         self.assertEqual(
             [
                 brand
@@ -1095,6 +1144,13 @@ class OwnerFeedbackTest(unittest.TestCase):
             page = self.client.get("/warehouse")
 
         html = page.get_data(as_text=True)
+        component_js = (
+            web.PROJECT_ROOT
+            / "app"
+            / "static"
+            / "js"
+            / "catalog-combobox.js"
+        ).read_text(encoding="utf-8")
         bulk_brand_component = html.split(
             'id="bulkBrandCombobox"',
             1,
@@ -1108,15 +1164,13 @@ class OwnerFeedbackTest(unittest.TestCase):
         self.assertEqual(html.count('id="bulkCategory"'), 1)
         self.assertIn('data-prefix-search="true"', bulk_brand_component)
         self.assertIn('data-prefix-search="true"', bulk_category_component)
-        self.assertIn(
-            '<span class="brand-combobox-option-label">'
-            'Наручные часы</span>',
-            bulk_category_component,
-        )
-        self.assertIn(
-            '<span class="brand-combobox-option-label">Ремень</span>',
-            bulk_category_component,
-        )
+        for category in ("Наручные часы", "Ремень"):
+            self.assertRegex(
+                bulk_category_component,
+                r'<span class="brand-combobox-option-label">\s*'
+                + category
+                + r"\s*</span>",
+            )
         categories = ("Наручные часы", "Ремень", "Аксессуары")
         self.assertEqual(
             [
@@ -1146,8 +1200,14 @@ class OwnerFeedbackTest(unittest.TestCase):
             'data-clear-selection-on-search-clear="true"',
             bulk_category_component,
         )
-        self.assertIn('searchInput.addEventListener("input"', html)
-        self.assertIn('filterBrandList("", combobox)', html)
+        self.assertIn(
+            'searchInput.addEventListener("input"',
+            component_js,
+        )
+        self.assertIn(
+            'window.filterBrandList("", combobox)',
+            component_js,
+        )
 
     def test_sales_template_has_search_state_resize_fallback_and_mobile_css(self):
         with mock.patch.object(
