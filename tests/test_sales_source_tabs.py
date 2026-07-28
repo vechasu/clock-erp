@@ -165,6 +165,11 @@ class SalesSourceTabsTest(unittest.TestCase):
             ),
             mock.patch.object(
                 web,
+                "get_excel_warehouse_items",
+                return_value=[warehouse_item()],
+            ),
+            mock.patch.object(
+                web,
                 "load_stock_operations",
                 return_value=[],
             ),
@@ -424,10 +429,14 @@ class SalesSourceTabsTest(unittest.TestCase):
         ).get_data(as_text=True)
         brand_position = page.index('id="saleBrand"')
         category_position = page.index('id="saleCategory"')
-        product_position = page.index('id="product_name"')
+        product_position = page.index('id="saleProduct"')
 
         self.assertLess(brand_position, category_position)
         self.assertLess(category_position, product_position)
+        self.assertLess(
+            product_position,
+            page.index('id="created_at"'),
+        )
         self.assertIn(
             "function refreshCategoryOptions",
             page,
@@ -441,9 +450,232 @@ class SalesSourceTabsTest(unittest.TestCase):
             page,
         )
         self.assertIn(
-            "selectWarehouseProduct(item)",
+            "refreshProductOptions();",
             page,
         )
+        self.assertIn(
+            "catalog-combobox.css",
+            page,
+        )
+        self.assertIn(
+            "catalog-combobox.js",
+            page,
+        )
+        self.assertIn(
+            "Сначала выберите бренд и категорию",
+            page,
+        )
+        self.assertIn(
+            "item.article",
+            page,
+        )
+        self.assertIn(
+            "item.barcode",
+            page,
+        )
+
+    def test_every_source_tab_renders_the_same_catalog_picker(self):
+        for source in ("all", "tictactoy", "wildberries", "amazon"):
+            with self.subTest(source=source):
+                page = self.client.get(
+                    f"/sales?source={source}"
+                ).get_data(as_text=True)
+
+                self.assertEqual(page.count('id="saleBrand"'), 1)
+                self.assertEqual(page.count('id="saleCategory"'), 1)
+                self.assertEqual(page.count('id="saleProduct"'), 1)
+                self.assertIn(
+                    'name="product_brand"',
+                    page,
+                )
+                self.assertIn(
+                    'name="product_category"',
+                    page,
+                )
+                self.assertIn(
+                    'name="product_id"',
+                    page,
+                )
+
+    def test_picker_uses_sorted_deduplicated_products_catalog(self):
+        first = warehouse_item()
+        first.update(
+            id="catalog-2",
+            name="Модель 10",
+            brand="Zulu",
+            category="Часы/Мужские",
+            stock=2,
+            stock_display="2",
+        )
+        second = warehouse_item()
+        second.update(
+            id="catalog-1",
+            name="Модель 2",
+            brand="Alpha",
+            category="Часы/Женские",
+            stock=3,
+            stock_display="3",
+        )
+        duplicate = dict(second)
+        duplicate["name"] = "Не должен попасть"
+        unavailable = warehouse_item()
+        unavailable.update(
+            id="catalog-3",
+            brand="Hidden",
+            category="Часы",
+            stock=0,
+            stock_display="0",
+        )
+
+        catalog = web.build_sales_catalog_items([
+            first,
+            second,
+            duplicate,
+            unavailable,
+        ])
+
+        self.assertEqual(
+            [item["id"] for item in catalog],
+            ["catalog-1", "catalog-2"],
+        )
+        self.assertEqual(catalog[0]["name"], "Модель 2")
+
+        with mock.patch.object(
+            web,
+            "get_excel_warehouse_items",
+            return_value=[first, second],
+        ):
+            page = self.client.get("/sales").get_data(as_text=True)
+
+        self.assertIn("Alpha", page)
+        self.assertIn("Zulu", page)
+        self.assertIn('"id": "catalog-1"', page)
+        self.assertIn('"id": "catalog-2"', page)
+
+    def test_add_rejects_unknown_or_incompatible_catalog_product(self):
+        base_data = {
+            "created_at": "2026-07-22",
+            "source": "Amazon",
+            "product_name": "Произвольный товар",
+            "quantity": "1",
+            "unit_price": "1000",
+        }
+
+        unknown = self.client.post(
+            "/sales/manual/add",
+            data={
+                **base_data,
+                "product_id": "missing-product",
+            },
+        )
+        incompatible = self.client.post(
+            "/sales/manual/add",
+            data={
+                **base_data,
+                "product_id": PRODUCT_ID,
+                "product_brand": "Другой бренд",
+                "product_category": "Коллекция",
+            },
+        )
+
+        self.assertEqual(unknown.status_code, 302)
+        self.assertEqual(incompatible.status_code, 302)
+        self.assertEqual(web.load_manual_sales(), [])
+        unknown_message = parse_qs(
+            urlparse(unknown.headers["Location"]).query
+        )["message"][0]
+        incompatible_message = parse_qs(
+            urlparse(incompatible.headers["Location"]).query
+        )["message"][0]
+        self.assertEqual(
+            unknown_message,
+            "Выберите товар из каталога",
+        )
+        self.assertIn("не относится", incompatible_message)
+
+    def test_add_requires_brand_and_category_from_catalog_chain(self):
+        response = self.client.post(
+            "/sales/manual/add",
+            data={
+                "created_at": "2026-07-22",
+                "source": "Amazon",
+                "product_id": PRODUCT_ID,
+                "quantity": "1",
+                "unit_price": "1000",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(web.load_manual_sales(), [])
+        self.assertIn(
+            "Выберите бренд",
+            parse_qs(
+                urlparse(response.headers["Location"]).query
+            )["message"][0],
+        )
+
+    def test_add_rejects_quantity_above_catalog_stock_without_writes(self):
+        with mock.patch.object(
+            web,
+            "save_stock_operations",
+        ) as save_stock_operations:
+            response = self.client.post(
+                "/sales/manual/add",
+                data={
+                    "created_at": "2026-07-22",
+                    "source": "Tictactoy",
+                    "product_id": PRODUCT_ID,
+                    "product_brand": "Brand",
+                    "product_category": "Коллекция",
+                    "quantity": "6",
+                    "unit_price": "1000",
+                },
+            )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(web.load_manual_sales(), [])
+        self.assertEqual(
+            parse_qs(
+                urlparse(response.headers["Location"]).query
+            )["message"][0],
+            "Количество превышает доступный остаток",
+        )
+        save_stock_operations.assert_not_called()
+
+    def test_valid_add_saves_once_and_does_not_write_stock(self):
+        original_save = web.save_manual_sales
+
+        with mock.patch.object(
+            web,
+            "save_manual_sales",
+            wraps=original_save,
+        ) as save_manual_sales, mock.patch.object(
+            web,
+            "save_stock_operations",
+        ) as save_stock_operations:
+            response = self.client.post(
+                "/sales/manual/add",
+                data={
+                    "created_at": "2026-07-22",
+                    "source": "Wildberries",
+                    "product_id": PRODUCT_ID,
+                    "product_name": "Подмена",
+                    "product_brand": "Brand",
+                    "product_category": "Коллекция",
+                    "quantity": "1",
+                    "unit_price": "1000",
+                },
+            )
+
+        stored = web.load_manual_sales()
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(len(stored), 1)
+        self.assertEqual(stored[0]["product_name"], "Часы Test")
+        self.assertEqual(stored[0]["brand"], "Brand")
+        self.assertEqual(stored[0]["category"], "Коллекция")
+        self.assertEqual(stored[0]["barcode"], "BARCODE-1")
+        save_manual_sales.assert_called_once()
+        save_stock_operations.assert_not_called()
 
     def test_created_amazon_sale_uses_product_snapshot_and_is_not_duplicated(self):
         response = self.client.post(
@@ -454,6 +686,8 @@ class SalesSourceTabsTest(unittest.TestCase):
                 "return_source": "amazon",
                 "product_id": PRODUCT_ID,
                 "product_name": "Подменённое название",
+                "product_brand": "Brand",
+                "product_category": "Коллекция",
                 "quantity": "2",
                 "unit_price": "1000",
                 "recipient_name": "Иван Иванов",
@@ -504,6 +738,8 @@ class SalesSourceTabsTest(unittest.TestCase):
                 "source": "Tictactoy",
                 "product_id": PRODUCT_ID,
                 "product_name": "Часы Test",
+                "product_brand": "Brand",
+                "product_category": "Коллекция",
                 "quantity": "1",
                 "unit_price": "1200",
                 "order_number": "ORDER-1",
@@ -531,6 +767,8 @@ class SalesSourceTabsTest(unittest.TestCase):
                 "source": "Wildberries",
                 "product_id": PRODUCT_ID,
                 "product_name": "Часы Test",
+                "product_brand": "Brand",
+                "product_category": "Коллекция",
                 "quantity": "1",
                 "unit_price": "1200",
                 "sticker_number": "STICKER-1",

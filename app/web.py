@@ -1007,6 +1007,7 @@ def get_excel_warehouse_items():
             "id": product["id"],
             "name": product.get("excel_name_raw") or "",
             "article": product.get("excel_article") or "",
+            "barcode": product.get("bitrix_barcode") or "",
             "brand": product.get("excel_brand") or "",
             "category": product.get("excel_category") or "",
             "cell": product.get("cell") or "",
@@ -3882,6 +3883,85 @@ def resolve_sale_product_metadata(
     }
 
 
+def build_sales_catalog_items(items):
+    catalog_items = []
+    seen_ids = set()
+
+    for item in items if isinstance(items, list) else []:
+        product_id = str(item.get("id") or "").strip()
+        brand = str(item.get("brand") or "").strip()
+        category = str(item.get("category") or "").strip()
+        product_name = str(item.get("name") or "").strip()
+
+        try:
+            stock = float(item.get("stock") or 0)
+        except (TypeError, ValueError):
+            stock = 0
+
+        if (
+            not product_id
+            or product_id in seen_ids
+            or not brand
+            or not category
+            or not product_name
+            or stock <= 0
+        ):
+            continue
+
+        seen_ids.add(product_id)
+        catalog_items.append({
+            "id": product_id,
+            "name": product_name,
+            "article": str(item.get("article") or "").strip(),
+            "barcode": str(
+                item.get("barcode")
+                or item.get("code")
+                or ""
+            ).strip(),
+            "brand": brand,
+            "category": category,
+            "stock": stock,
+            "stock_display": (
+                item.get("stock_display")
+                or format_stock_number(stock)
+            ),
+        })
+
+    return sorted(
+        catalog_items,
+        key=lambda item: (
+            item["brand"].casefold(),
+            item["category"].casefold(),
+            item["name"].casefold(),
+            item["article"].casefold(),
+            item["barcode"].casefold(),
+            item["id"],
+        ),
+    )
+
+
+def get_sale_catalog_product(product_id, items=None):
+    product_id = str(product_id or "").strip()
+
+    if not product_id:
+        return None
+
+    catalog_items = build_sales_catalog_items(
+        get_excel_warehouse_items()
+        if items is None
+        else items
+    )
+
+    return next(
+        (
+            item
+            for item in catalog_items
+            if item["id"] == product_id
+        ),
+        None,
+    )
+
+
 def build_sale_optional_fields(form, existing=None):
     from datetime import datetime
 
@@ -3994,7 +4074,6 @@ def manual_sale_add():
     from uuid import uuid4
     from flask import request, redirect, url_for
 
-    product_name = (request.form.get("product_name") or "").strip()
     quantity = parse_manual_sale_quantity(request.form.get("quantity"))
 
     # === MANUAL SALE ADD PRICE V1 ===
@@ -4006,12 +4085,6 @@ def manual_sale_add():
         quantity,
     )
     # === MANUAL SALE ADD PRICE V1 END ===
-
-    if not product_name:
-        return redirect_to_sales(
-            "Укажите название товара",
-            notice="error",
-        )
 
     if quantity <= 0:
         return redirect_to_sales(
@@ -4038,13 +4111,65 @@ def manual_sale_add():
     product_id = (
         request.form.get("product_id") or ""
     ).strip()
-    product_metadata = resolve_sale_product_metadata(
-        product_id,
-        product_name,
-    )
-    product_name = (
-        product_metadata.get("product_name") or product_name
-    )
+    try:
+        catalog_product = get_sale_catalog_product(product_id)
+    except Exception:
+        app.logger.exception(
+            "Failed to load the product catalog for a manual sale"
+        )
+        return redirect_to_sales(
+            "Не удалось загрузить каталог товаров",
+            notice="error",
+        )
+
+    if catalog_product is None:
+        return redirect_to_sales(
+            "Выберите товар из каталога",
+            notice="error",
+        )
+
+    selected_brand = str(
+        request.form.get("product_brand") or ""
+    ).strip()
+    selected_category = str(
+        request.form.get("product_category") or ""
+    ).strip()
+
+    if not selected_brand:
+        return redirect_to_sales(
+            "Выберите бренд из каталога",
+            notice="error",
+        )
+
+    if (
+        selected_brand.casefold()
+        != catalog_product["brand"].casefold()
+    ):
+        return redirect_to_sales(
+            "Выбранный товар не относится к указанному бренду",
+            notice="error",
+        )
+
+    if not selected_category:
+        return redirect_to_sales(
+            "Выберите категорию из каталога",
+            notice="error",
+        )
+
+    if (
+        selected_category.casefold()
+        != catalog_product["category"].casefold()
+    ):
+        return redirect_to_sales(
+            "Выбранный товар не относится к указанной категории",
+            notice="error",
+        )
+
+    if quantity > catalog_product["stock"]:
+        return redirect_to_sales(
+            "Количество превышает доступный остаток",
+            notice="error",
+        )
 
     sales = load_manual_sales()
 
@@ -4059,10 +4184,10 @@ def manual_sale_add():
             request.form.get("custom_source"),
         ),
         "product_id": product_id,
-        "product_name": product_name,
-        "barcode": product_metadata.get("barcode") or "",
-        "brand": product_metadata.get("brand") or "",
-        "category": product_metadata.get("category") or "",
+        "product_name": catalog_product["name"],
+        "barcode": catalog_product["barcode"],
+        "brand": catalog_product["brand"],
+        "category": catalog_product["category"],
         "quantity": quantity,
         "unit_price": unit_price,
         "total_amount": total_amount,
@@ -6173,6 +6298,9 @@ def build_legacy_sales_page():
 @app.route("/sales")
 def sales_page():
     all_warehouse_items = get_warehouse_items()
+    catalog_items = build_sales_catalog_items(
+        get_excel_warehouse_items()
+    )
     all_sales = build_sales_report_records(
         warehouse_items=all_warehouse_items
     )
@@ -6246,27 +6374,6 @@ def sales_page():
             }
         },
     }
-    warehouse_items = [
-        {
-            "id": item.get("id") or "",
-            "name": item.get("name") or "",
-            "article": item.get("article") or "",
-            "code": item.get("code") or "",
-            "barcode": (
-                item.get("barcode")
-                or item.get("code")
-                or item.get("article")
-                or ""
-            ),
-            "brand": item.get("brand") or "",
-            "category": item.get("category") or "",
-            "stock": item.get("stock") or 0,
-            "stock_display": item.get("stock_display") or "0",
-        }
-        for item in all_warehouse_items
-        if float(item.get("stock") or 0) > 0
-    ]
-
     return render_template(
         "sales.html",
         sales=sales,
@@ -6278,7 +6385,8 @@ def sales_page():
             else SALES_SOURCE_LABELS[active_source]
         ),
         sales_columns=get_sales_columns(active_source),
-        warehouse_items=warehouse_items,
+        warehouse_items=catalog_items,
+        brand_groups=build_brand_groups(catalog_items),
         total_sales=len(active_sales),
         total_cancelled=len(sales) - len(active_sales),
         total_orders=len(unique_orders),

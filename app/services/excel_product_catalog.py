@@ -647,9 +647,12 @@ class ExcelProductCatalog:
             parameters.append(match_status)
         where_sql = " WHERE " + " AND ".join(where)
         select_sql = (
-            "SELECT p.*, b.source_filename, b.applied_at, b.row_count AS batch_row_count "
+            "SELECT p.*, cp.barcode AS bitrix_barcode, "
+            "b.source_filename, b.applied_at, b.row_count AS batch_row_count "
             "FROM catalog_excel_products p JOIN catalog_excel_batches b "
-            "ON b.id = p.current_batch_id"
+            "ON b.id = p.current_batch_id "
+            "LEFT JOIN catalog_products cp "
+            "ON cp.id = p.bitrix_catalog_product_id"
         )
         with self.database.connect() as connection:
             active_batch = connection.execute(
@@ -731,8 +734,11 @@ class ExcelProductCatalog:
         self.database.initialize()
         with self.database.connect() as connection:
             row = connection.execute(
-                "SELECT p.*, b.source_filename, b.applied_at FROM catalog_excel_products p "
+                "SELECT p.*, cp.barcode AS bitrix_barcode, "
+                "b.source_filename, b.applied_at FROM catalog_excel_products p "
                 "JOIN catalog_excel_batches b ON b.id = p.current_batch_id "
+                "LEFT JOIN catalog_products cp "
+                "ON cp.id = p.bitrix_catalog_product_id "
                 "WHERE p.id = ? AND p.active = 1 AND b.status = 'active'",
                 (int(product_id),),
             ).fetchone()

@@ -924,68 +924,21 @@
             resize: vertical;
         }
 
-        .product-search-field {
-            position: relative;
-        }
-
-        .product-suggestions {
-            position: absolute;
-            z-index: 1200;
-            top: calc(100% + 6px);
-            left: 0;
-            right: 0;
-            display: none;
-            max-height: 280px;
-            overflow-y: auto;
-            border: 1px solid #cfd5dc;
-            border-radius: 10px;
-            background: #ffffff;
-            box-shadow: 0 18px 45px rgba(17, 24, 39, 0.2);
-        }
-
-        .product-suggestions.is-open {
-            display: block;
-        }
-
-        .product-suggestion {
-            display: flex;
-            width: 100%;
-            align-items: center;
-            justify-content: space-between;
-            gap: 12px;
-            padding: 11px 13px;
-            border: 0;
-            border-bottom: 1px solid #e5e7eb;
-            background: #ffffff;
-            text-align: left;
-        }
-
-        .product-suggestion:hover,
-        .product-suggestion.is-active {
-            background: #eff6ff;
-        }
-
-        .product-suggestion-name {
-            overflow: hidden;
-            font-size: 13px;
-            font-weight: 800;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        .product-suggestion-meta,
         .product-meta-preview {
+            margin-top: 6px;
             color: #64748b;
             font-size: 11px;
             line-height: 1.45;
         }
 
-        .product-suggestion-stock {
-            flex: 0 0 auto;
+        .sales-product-combobox .brand-combobox-option {
+            white-space: normal;
+        }
+
+        .sales-product-combobox .catalog-combobox-option-count {
             color: #047857;
             font-size: 11px;
             font-weight: 850;
-            white-space: nowrap;
         }
 
         .source-specific-fields {
@@ -1151,9 +1104,17 @@
         rel="stylesheet"
         href="{{ url_for('static', filename='css/erp-components.css') }}"
     >
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='css/catalog-combobox.css') }}"
+    >
+    <script
+        src="{{ url_for('static', filename='js/catalog-combobox.js') }}"
+    ></script>
 </head>
 
 <body>
+{% from "_catalog_combobox.html" import render_catalog_combobox %}
 <div class="app">
     {% include "_sidebar.html" %}
 
@@ -1566,9 +1527,9 @@
             >
                 <input id="saleSource" type="hidden" name="source">
                 <input
-                    id="product_id"
+                    id="product_name"
                     type="hidden"
-                    name="product_id"
+                    name="product_name"
                 >
                 <input
                     type="hidden"
@@ -1608,6 +1569,59 @@
 
                 <div class="manual-form-grid">
                     <div class="field">
+                        <label for="saleBrandTrigger">Бренд</label>
+                        {{ render_catalog_combobox(
+                            "saleBrand",
+                            "product_brand",
+                            brand_groups,
+                            item_label="бренд",
+                            prefix_search=false,
+                            empty_label="Бренды не найдены",
+                            component_class="filter-combobox",
+                            clear_selection_on_search_clear=true
+                        ) }}
+                    </div>
+
+                    <div class="field">
+                        <label for="saleCategoryTrigger">
+                            Категория
+                        </label>
+                        {{ render_catalog_combobox(
+                            "saleCategory",
+                            "product_category",
+                            [],
+                            item_label="категорию",
+                            disabled=true,
+                            prefix_search=false,
+                            empty_label="Категории не найдены",
+                            component_class="filter-combobox",
+                            clear_selection_on_search_clear=true
+                        ) }}
+                    </div>
+
+                    <div class="field field-wide">
+                        <label for="saleProductTrigger">Товар</label>
+                        {{ render_catalog_combobox(
+                            "saleProduct",
+                            "product_id",
+                            [],
+                            item_label="товар",
+                            disabled=true,
+                            prefix_search=false,
+                            empty_label="Товары не найдены",
+                            component_class="filter-combobox sales-product-combobox",
+                            clear_selection_on_search_clear=true,
+                            input_id="product_id"
+                        ) }}
+                        <div
+                            id="productMeta"
+                            class="product-meta-preview"
+                        >
+                            Баркод, артикул и остаток появятся после выбора товара.
+                        </div>
+                    </div>
+
+                    <div class="field">
                         <label for="created_at">Дата</label>
                         <input
                             id="created_at"
@@ -1632,55 +1646,6 @@
                                 </option>
                             {% endfor %}
                         </select>
-                    </div>
-
-                    <div class="field">
-                        <label for="saleBrand">Бренд</label>
-                        <select
-                            id="saleBrand"
-                            class="control"
-                            name="product_brand"
-                            required
-                        >
-                            <option value="">Выберите бренд</option>
-                        </select>
-                    </div>
-
-                    <div class="field">
-                        <label for="saleCategory">Категория</label>
-                        <select
-                            id="saleCategory"
-                            class="control"
-                            name="product_category"
-                            required
-                            disabled
-                        >
-                            <option value="">Выберите категорию</option>
-                        </select>
-                    </div>
-
-                    <div class="field field-wide product-search-field">
-                        <label for="product_name">Товар</label>
-                        <input
-                            id="product_name"
-                            class="control"
-                            type="text"
-                            name="product_name"
-                            placeholder="Начните вводить название, баркод или артикул"
-                            autocomplete="off"
-                            required
-                            disabled
-                        >
-                        <div
-                            id="productSuggestions"
-                            class="product-suggestions"
-                        ></div>
-                        <div
-                            id="productMeta"
-                            class="product-meta-preview"
-                        >
-                            Баркод, бренд и категория заполнятся из карточки товара.
-                        </div>
                     </div>
 
                     <div class="field">
@@ -3269,7 +3234,7 @@
         manualSaleForm.reset();
         document.getElementById("product_id").value = "";
         document.getElementById("productMeta").textContent =
-            "Баркод, бренд и категория заполнятся из карточки товара.";
+            "Баркод, артикул и остаток появятся после выбора товара.";
         resetProductFilters();
 
         if (activeSalesSource === "all") {
@@ -3337,24 +3302,28 @@
         }
     });
 
-    const productSearchInput = document.getElementById(
+    const productNameInput = document.getElementById(
         "product_name"
     );
-    const saleBrandSelect = document.getElementById("saleBrand");
-    const saleCategorySelect = document.getElementById(
+    const saleBrandCombobox = document.getElementById("saleBrand");
+    const saleCategoryCombobox = document.getElementById(
         "saleCategory"
+    );
+    const saleProductCombobox = document.getElementById(
+        "saleProduct"
+    );
+    const saleBrandInput = saleBrandCombobox.querySelector(
+        ".brand-combobox-hidden"
+    );
+    const saleCategoryInput = saleCategoryCombobox.querySelector(
+        ".brand-combobox-hidden"
     );
     const productIdInput = document.getElementById(
         "product_id"
     );
-    const productSuggestions = document.getElementById(
-        "productSuggestions"
-    );
     const productMeta = document.getElementById(
         "productMeta"
     );
-    let visibleProducts = [];
-    let activeProductIndex = -1;
 
     function normalizeProductSearch(value) {
         return String(value || "")
@@ -3363,355 +3332,239 @@
             .trim();
     }
 
-    function uniqueProductValues(values) {
-        const result = [];
-        const seen = new Set();
-
-        values.forEach((value) => {
-            const displayValue = String(value || "").trim();
-            const key = normalizeProductSearch(displayValue);
-
-            if (!key || seen.has(key)) {
-                return;
-            }
-
-            seen.add(key);
-            result.push(displayValue);
-        });
-
-        return result.sort((first, second) =>
-            first.localeCompare(
-                second,
-                "ru",
-                {numeric: true, sensitivity: "base"},
-            )
-        );
-    }
-
     function productMatchesSelection(item) {
         const brand = normalizeProductSearch(
-            saleBrandSelect.value
+            saleBrandInput.value
         );
         const category = normalizeProductSearch(
-            saleCategorySelect.value
+            saleCategoryInput.value
         );
 
         return (
-            (!brand
-                || normalizeProductSearch(item.brand) === brand)
-            && (!category
-                || normalizeProductSearch(item.category) === category)
+            Boolean(brand)
+            && Boolean(category)
+            && normalizeProductSearch(item.brand) === brand
+            && normalizeProductSearch(item.category) === category
         );
-    }
-
-    function replaceProductOptions(
-        select,
-        values,
-        placeholder,
-        preferredValue = "",
-    ) {
-        const preferredKey = normalizeProductSearch(
-            preferredValue
-        );
-        select.replaceChildren();
-
-        const placeholderOption = document.createElement("option");
-        placeholderOption.value = "";
-        placeholderOption.textContent = placeholder;
-        select.appendChild(placeholderOption);
-
-        let matchedValue = "";
-
-        uniqueProductValues(values).forEach((value) => {
-            const option = document.createElement("option");
-            option.value = value;
-            option.textContent = value;
-            select.appendChild(option);
-
-            if (
-                preferredKey
-                && normalizeProductSearch(value) === preferredKey
-            ) {
-                matchedValue = value;
-            }
-        });
-
-        select.value = matchedValue;
-        return Boolean(matchedValue);
     }
 
     function clearSelectedProduct() {
-        productIdInput.value = "";
-        productSearchInput.value = "";
+        window.setBrandComboboxValue(
+            saleProductCombobox,
+            "",
+        );
+        productNameInput.value = "";
         productMeta.textContent =
-            "Баркод, бренд и категория заполнятся из карточки товара.";
-        productSearchInput.setCustomValidity("");
-        closeProductSuggestions();
+            "Баркод, артикул и остаток появятся после выбора товара.";
     }
 
-    function refreshCategoryOptions(preferredValue = "") {
+    function refreshCategoryOptions() {
         const brand = normalizeProductSearch(
-            saleBrandSelect.value
+            saleBrandInput.value
         );
         const brandProducts = warehouseItems.filter(
             (item) =>
                 brand
                 && normalizeProductSearch(item.brand) === brand
         );
-        const matched = replaceProductOptions(
-            saleCategorySelect,
-            brandProducts.map((item) => item.category),
-            "Выберите категорию",
-            preferredValue,
-        );
+        const categories = new Map();
 
-        saleCategorySelect.disabled = !brand;
-        productSearchInput.disabled = !brand || !matched;
+        brandProducts.forEach((item) => {
+            const category = String(item.category || "").trim();
+            const key = normalizeProductSearch(category);
 
-        if (!matched) {
-            productSearchInput.disabled = true;
-        }
+            if (!key) {
+                return;
+            }
 
-        return matched;
-    }
+            const current = categories.get(key);
+            categories.set(key, {
+                value: current ? current.value : category,
+                count: (current ? current.count : 0) + 1,
+            });
+        });
 
-    function resetProductFilters() {
-        replaceProductOptions(
-            saleBrandSelect,
-            warehouseItems.map((item) => item.brand),
-            "Выберите бренд",
-        );
-        replaceProductOptions(
-            saleCategorySelect,
-            [],
-            "Выберите категорию",
-        );
-        saleCategorySelect.disabled = true;
-        productSearchInput.disabled = true;
-        closeProductSuggestions();
-    }
-
-    function productSearchText(item) {
-        return normalizeProductSearch([
-            item.name,
-            item.barcode,
-            item.article,
-            item.code,
-            item.brand,
-            item.category,
-        ].join(" "));
-    }
-
-    function closeProductSuggestions() {
-        productSuggestions.classList.remove("is-open");
-        activeProductIndex = -1;
-    }
-
-    function selectWarehouseProduct(item) {
-        const brandMatched = replaceProductOptions(
-            saleBrandSelect,
-            warehouseItems.map((product) => product.brand),
-            "Выберите бренд",
-            item.brand,
-        );
-        saleCategorySelect.disabled = !brandMatched;
-        const categoryMatched = refreshCategoryOptions(
-            item.category
-        );
-        productSearchInput.disabled =
-            !brandMatched || !categoryMatched;
-        productSearchInput.value = item.name || "";
-        productIdInput.value = item.id || "";
-        productMeta.textContent = [
-            "Баркод: " + (item.barcode || "—"),
-            "Бренд: " + (item.brand || "—"),
-            "Категория: " + (item.category || "—"),
-        ].join(" · ");
-        productSearchInput.setCustomValidity("");
-        closeProductSuggestions();
-    }
-
-    function renderProductSuggestions() {
-        const query = normalizeProductSearch(
-            productSearchInput.value
-        );
-        visibleProducts = warehouseItems
-            .filter(
-                (item) =>
-                    productMatchesSelection(item)
-                    && (
-                        !query
-                        || productSearchText(item).includes(query)
-                    )
+        const categoryOptions = Array.from(
+            categories.values()
+        ).sort((first, second) =>
+            first.value.localeCompare(
+                second.value,
+                "ru",
+                {numeric: true, sensitivity: "base"},
             )
-            .slice(0, 40);
-        productSuggestions.replaceChildren();
-        activeProductIndex = -1;
+        ).map((category) => ({
+            value: category.value,
+            label: category.value,
+            count: category.count,
+        }));
 
-        if (!visibleProducts.length) {
-            const empty = document.createElement("div");
-            empty.className = "empty";
-            empty.textContent = "Товары не найдены";
-            productSuggestions.appendChild(empty);
-            productSuggestions.classList.add("is-open");
-            return;
-        }
+        window.replaceCatalogComboboxOptions(
+            saleCategoryCombobox,
+            categoryOptions,
+            "Категории не найдены",
+        );
+        window.setCatalogComboboxDisabled(
+            saleCategoryCombobox,
+            !brand,
+            brand
+                ? "Выберите категорию"
+                : "Сначала выберите бренд",
+        );
+    }
 
-        visibleProducts.forEach((item) => {
-            const button = document.createElement("button");
-            button.type = "button";
-            button.className = "product-suggestion";
-
-            const main = document.createElement("div");
-            const name = document.createElement("div");
-            const meta = document.createElement("div");
-            const stock = document.createElement("div");
-
-            name.className = "product-suggestion-name";
-            name.textContent = item.name || "Товар без названия";
-            meta.className = "product-suggestion-meta";
-            meta.textContent = [
+    function refreshProductOptions() {
+        const products = warehouseItems
+            .filter(productMatchesSelection)
+            .slice()
+            .sort((first, second) =>
+                String(first.name || "").localeCompare(
+                    String(second.name || ""),
+                    "ru",
+                    {numeric: true, sensitivity: "base"},
+                )
+                || String(first.article || "").localeCompare(
+                    String(second.article || ""),
+                    "ru",
+                    {numeric: true, sensitivity: "base"},
+                )
+                || String(first.barcode || "").localeCompare(
+                    String(second.barcode || ""),
+                    "ru",
+                    {numeric: true, sensitivity: "base"},
+                )
+            );
+        const options = products.map((item) => ({
+            value: String(item.id || ""),
+            label: item.name || "Товар без названия",
+            searchText: [
+                item.name,
+                item.article,
+                item.barcode,
+            ].filter(Boolean).join(" "),
+            meta: [
+                item.article
+                    ? "Артикул: " + item.article
+                    : "",
                 item.barcode
                     ? "Баркод: " + item.barcode
                     : "",
-                item.brand
-                    ? "Бренд: " + item.brand
-                    : "",
-                item.category
-                    ? "Категория: " + item.category
-                    : "",
-            ].filter(Boolean).join(" · ");
-            stock.className = "product-suggestion-stock";
-            stock.textContent =
-                "Остаток: " + item.stock_display;
+            ].filter(Boolean).join(" · "),
+            count: "Остаток: " + item.stock_display,
+        }));
 
-            main.appendChild(name);
-            main.appendChild(meta);
-            button.appendChild(main);
-            button.appendChild(stock);
-            button.addEventListener("mousedown", (event) => {
-                event.preventDefault();
-                selectWarehouseProduct(item);
-            });
-            productSuggestions.appendChild(button);
-        });
-
-        productSuggestions.classList.add("is-open");
+        window.replaceCatalogComboboxOptions(
+            saleProductCombobox,
+            options,
+            "Товары не найдены",
+        );
+        window.setCatalogComboboxDisabled(
+            saleProductCombobox,
+            !saleBrandInput.value || !saleCategoryInput.value,
+            saleBrandInput.value && saleCategoryInput.value
+                ? "Выберите товар"
+                : "Сначала выберите бренд и категорию",
+        );
     }
 
-    saleBrandSelect.addEventListener("change", () => {
-        const selectedProduct = warehouseItems.find(
-            (item) =>
-                String(item.id || "")
-                === String(productIdInput.value || "")
+    function resetProductFilters() {
+        window.setBrandComboboxValue(
+            saleBrandCombobox,
+            "",
         );
-        const selectedBrand = normalizeProductSearch(
-            saleBrandSelect.value
+        window.setBrandComboboxValue(
+            saleCategoryCombobox,
+            "",
         );
-        const preferredCategory = (
-            selectedProduct
-            && normalizeProductSearch(selectedProduct.brand)
-                === selectedBrand
-        )
-            ? selectedProduct.category
-            : "";
+        window.replaceCatalogComboboxOptions(
+            saleCategoryCombobox,
+            [],
+            "Категории не найдены",
+        );
+        window.setCatalogComboboxDisabled(
+            saleCategoryCombobox,
+            true,
+            "Сначала выберите бренд",
+        );
+        window.replaceCatalogComboboxOptions(
+            saleProductCombobox,
+            [],
+            "Товары не найдены",
+        );
+        window.setCatalogComboboxDisabled(
+            saleProductCombobox,
+            true,
+            "Сначала выберите бренд и категорию",
+        );
+        clearSelectedProduct();
+    }
 
-        refreshCategoryOptions(preferredCategory);
-
-        if (
-            !selectedProduct
-            || !productMatchesSelection(selectedProduct)
-        ) {
+    saleBrandCombobox.addEventListener(
+        "catalog-combobox:change",
+        () => {
+            window.setBrandComboboxValue(
+                saleCategoryCombobox,
+                "",
+            );
             clearSelectedProduct();
-        }
-    });
+            refreshCategoryOptions();
+            refreshProductOptions();
+        },
+    );
 
-    saleCategorySelect.addEventListener("change", () => {
-        const selectedProduct = warehouseItems.find(
-            (item) =>
-                String(item.id || "")
-                === String(productIdInput.value || "")
-        );
-
-        productSearchInput.disabled =
-            !saleBrandSelect.value
-            || !saleCategorySelect.value;
-
-        if (
-            !selectedProduct
-            || !productMatchesSelection(selectedProduct)
-        ) {
+    saleCategoryCombobox.addEventListener(
+        "catalog-combobox:change",
+        () => {
             clearSelectedProduct();
-        }
-    });
+            refreshProductOptions();
+        },
+    );
+
+    saleProductCombobox.addEventListener(
+        "catalog-combobox:change",
+        () => {
+            const item = warehouseItems.find(
+                (candidate) =>
+                    String(candidate.id || "")
+                    === String(productIdInput.value || "")
+            );
+
+            if (!item || !productMatchesSelection(item)) {
+                productIdInput.value = "";
+                productNameInput.value = "";
+                productMeta.textContent =
+                    "Баркод, артикул и остаток появятся после выбора товара.";
+                return;
+            }
+
+            productNameInput.value = item.name || "";
+            productMeta.textContent = [
+                "Баркод: " + (item.barcode || "—"),
+                "Артикул: " + (item.article || "—"),
+                "Остаток: " + item.stock_display,
+            ].join(" · ");
+        },
+    );
 
     resetProductFilters();
 
-    productSearchInput.addEventListener(
-        "focus",
-        renderProductSuggestions,
-    );
-    productSearchInput.addEventListener("input", () => {
-        productIdInput.value = "";
-        productSearchInput.setCustomValidity("");
-        renderProductSuggestions();
-    });
-    productSearchInput.addEventListener("keydown", (event) => {
-        if (!visibleProducts.length) {
-            return;
-        }
-
-        if (event.key === "ArrowDown") {
-            event.preventDefault();
-            activeProductIndex = Math.min(
-                activeProductIndex + 1,
-                visibleProducts.length - 1,
-            );
-        } else if (event.key === "ArrowUp") {
-            event.preventDefault();
-            activeProductIndex = Math.max(
-                activeProductIndex - 1,
-                0,
-            );
-        } else if (
-            event.key === "Enter"
-            && activeProductIndex >= 0
-        ) {
-            event.preventDefault();
-            selectWarehouseProduct(
-                visibleProducts[activeProductIndex]
-            );
-        } else if (event.key === "Escape") {
-            closeProductSuggestions();
-        }
-
-        productSuggestions
-            .querySelectorAll(".product-suggestion")
-            .forEach((button, index) => {
-                button.classList.toggle(
-                    "is-active",
-                    index === activeProductIndex,
-                );
-            });
-    });
-
-    document.addEventListener("click", (event) => {
-        if (
-            event.target !== productSearchInput
-            && !productSuggestions.contains(event.target)
-        ) {
-            closeProductSuggestions();
-        }
-    });
-
     manualSaleForm.addEventListener("submit", (event) => {
-        if (!productIdInput.value) {
+        const selectedProduct = warehouseItems.find(
+            (item) =>
+                String(item.id || "")
+                === String(productIdInput.value || "")
+        );
+
+        if (
+            !selectedProduct
+            || !productMatchesSelection(selectedProduct)
+        ) {
             event.preventDefault();
-            productSearchInput.setCustomValidity(
-                "Выберите товар из выпадающего списка"
+            window.setBrandDropdownOpen(
+                saleProductCombobox,
+                true,
             );
-            productSearchInput.reportValidity();
-            renderProductSuggestions();
+            productMeta.textContent =
+                "Выберите товар из каталога.";
             return;
         }
 
@@ -3736,6 +3589,222 @@
         });
     }
 </script>
+{% if config.TESTING and request.args.get("sales_catalog_picker_e2e") == "1" %}
+<script>
+    window.addEventListener("load", () => {
+        try {
+            const root = document.documentElement;
+            const form = document.getElementById("manualSaleForm");
+            const brand = document.getElementById("saleBrand");
+            const category = document.getElementById("saleCategory");
+            const product = document.getElementById("saleProduct");
+            const brandInput = brand.querySelector(
+                ".brand-combobox-hidden"
+            );
+            const categoryInput = category.querySelector(
+                ".brand-combobox-hidden"
+            );
+            const productInput = product.querySelector(
+                ".brand-combobox-hidden"
+            );
+            const chooseOption = (combobox, value) => {
+                const option = Array.from(
+                    combobox.querySelectorAll(
+                        ".brand-combobox-option"
+                    )
+                ).find(
+                    (candidate) =>
+                        candidate.dataset.brand === value
+                );
+
+                if (!option) {
+                    throw new Error("missing-option-" + value);
+                }
+
+                option.click();
+            };
+            const searchWithKeyboard = (combobox, query) => {
+                combobox.querySelector(
+                    ".brand-combobox-trigger"
+                ).click();
+                const search = combobox.querySelector(
+                    ".brand-combobox-search"
+                );
+                search.value = query;
+                search.dispatchEvent(
+                    new Event("input", {bubbles: true})
+                );
+                search.dispatchEvent(
+                    new KeyboardEvent(
+                        "keydown",
+                        {key: "ArrowDown", bubbles: true}
+                    )
+                );
+                search.dispatchEvent(
+                    new KeyboardEvent(
+                        "keydown",
+                        {key: "Enter", bubbles: true}
+                    )
+                );
+            };
+
+            document.getElementById(
+                "openManualSaleModal"
+            ).click();
+
+            for (const [key, label] of [
+                ["tictactoy", "Tictactoy"],
+                ["wildberries", "Wildberries"],
+                ["amazon", "Amazon"],
+            ]) {
+                document.querySelector(
+                    '[data-sale-source="' + key + '"]'
+                ).click();
+
+                if (
+                    document.getElementById("saleSource").value
+                    !== label
+                    || form.classList.contains("is-hidden")
+                ) {
+                    throw new Error("source-" + key);
+                }
+            }
+
+            const fields = Array.from(
+                form.querySelectorAll(".manual-form-grid > .field")
+            );
+            const fieldIds = fields.slice(0, 3).map(
+                (field) =>
+                    field.querySelector("[data-brand-combobox]").id
+            );
+
+            if (
+                fieldIds.join(",")
+                !== "saleBrand,saleCategory,saleProduct"
+            ) {
+                throw new Error("field-order");
+            }
+
+            if (
+                !category.querySelector(
+                    ".brand-combobox-trigger"
+                ).disabled
+                || !product.querySelector(
+                    ".brand-combobox-trigger"
+                ).disabled
+            ) {
+                throw new Error("initial-disabled");
+            }
+
+            searchWithKeyboard(brand, "lph");
+
+            if (
+                brandInput.value !== "Alpha"
+                || category.querySelector(
+                    ".brand-combobox-trigger"
+                ).disabled
+            ) {
+                throw new Error("brand-search");
+            }
+
+            searchWithKeyboard(category, "ужск");
+
+            if (
+                categoryInput.value !== "Часы/Мужские"
+                || product.querySelector(
+                    ".brand-combobox-trigger"
+                ).disabled
+            ) {
+                throw new Error("category-search");
+            }
+
+            searchWithKeyboard(product, "BAR-ONE");
+
+            if (
+                productInput.value !== "catalog-one"
+                || document.getElementById("product_name").value
+                    !== "Alpha One"
+                || !document.getElementById("productMeta")
+                    .textContent.includes("ARTICLE-ONE")
+            ) {
+                throw new Error("product-search");
+            }
+
+            product.querySelector(
+                ".brand-combobox-trigger"
+            ).click();
+            const productSearch = product.querySelector(
+                ".brand-combobox-search"
+            );
+            productSearch.value = "ARTICLE";
+            productSearch.dispatchEvent(
+                new Event("input", {bubbles: true})
+            );
+
+            if (productInput.value) {
+                throw new Error("product-search-reset");
+            }
+
+            product.querySelector(
+                "[data-brand-search-clear]"
+            ).click();
+
+            if (
+                Array.from(
+                    product.querySelectorAll(
+                        ".brand-combobox-option"
+                    )
+                ).some((option) => option.hidden)
+            ) {
+                throw new Error("product-clear");
+            }
+
+            chooseOption(product, "catalog-one");
+            chooseOption(category, "Ремни");
+
+            if (
+                productInput.value
+                || product.querySelectorAll(
+                    ".brand-combobox-option"
+                ).length !== 1
+            ) {
+                throw new Error("category-reset");
+            }
+
+            chooseOption(brand, "Beta");
+
+            if (
+                categoryInput.value
+                || productInput.value
+                || product.querySelector(
+                    ".brand-combobox-trigger"
+                ).disabled !== true
+            ) {
+                throw new Error("brand-reset");
+            }
+
+            const dialog = document.querySelector(
+                "#manualSaleModal .modal-dialog"
+            ).getBoundingClientRect();
+
+            if (
+                dialog.left < -1
+                || dialog.right > window.innerWidth + 1
+                || document.documentElement.scrollWidth
+                    > window.innerWidth + 1
+            ) {
+                throw new Error("mobile-overflow");
+            }
+
+            root.dataset.salesCatalogPickerE2e = "pass";
+        } catch (error) {
+            document.documentElement.dataset
+                .salesCatalogPickerE2e =
+                "fail-" + error.message;
+        }
+    });
+</script>
+{% endif %}
 {% if config.TESTING and request.args.get("sales_columns_e2e") == "1" %}
 <script>
     window.addEventListener("load", () => {

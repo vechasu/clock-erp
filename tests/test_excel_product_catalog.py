@@ -18,6 +18,7 @@ def bitrix_product(identity=10, name="Watch X1", brand="Brand"):
         "external_product_id": str(identity),
         "external_xml_id": "xml-{}".format(identity),
         "external_sku": "SKU-{}".format(identity),
+        "barcode": "BARCODE-{}".format(identity),
         "code": "watch-{}".format(identity),
         "url": "https://example.test/bitrix/{}".format(identity),
         "name": name,
@@ -141,6 +142,7 @@ class ExcelProductCatalogTest(unittest.TestCase):
     def test_exact_is_enriched_with_preview_photo_price_and_properties(self):
         self.apply_initial()
         item = self.catalog.list_products(query="Watch X1")["items"][0]
+        self.assertEqual(item["bitrix_barcode"], "BARCODE-10")
         self.assertEqual(item["bitrix_thumbnail_url"], "https://example.test/preview.jpg")
         self.assertEqual(item["bitrix_primary_image_url"], "https://example.test/large.jpg")
         self.assertEqual((item["bitrix_price_amount"], item["display_category"]), ("100", "Watches"))
