@@ -187,7 +187,7 @@ class MobileErpLayoutTest(unittest.TestCase):
 
         self.assertIn('data-sale-id="mobile-sale-1"', sales_html)
         self.assertIn('id="salesMobileList"', sales_html)
-        self.assertIn("25 800 ₽", sales_html)
+        self.assertIn("25\u00a0800\u00a0₽", sales_html)
         self.assertIn("openMobileSaleEditor", sales_html)
         self.assertIn('id="salesMobileSort"', sales_html)
 

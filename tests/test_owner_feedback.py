@@ -1229,13 +1229,18 @@ class OwnerFeedbackTest(unittest.TestCase):
         self.assertEqual(page.status_code, 200)
         self.assertIn("vechasu-sales-filters-v1", html)
         self.assertIn("vechasu-sales-scroll-y", html)
-        self.assertIn("const minimumWidth = 82", html)
+        self.assertIn("const minimumWidth = 76", html)
+        self.assertIn("const settingsVersion = 3", html)
         self.assertIn(
             'data-sales-settings-key="sales_all"',
             html,
         )
         self.assertIn('id="salesDateFilter"', html)
         self.assertIn('id="clearSalesPeriod"', html)
+        self.assertIn('id="salesFilterTrigger"', html)
+        self.assertIn('id="salesFilterPanel"', html)
+        self.assertIn('id="salesStateFilter"', html)
+        self.assertIn('id="salesTypeFilter"', html)
         self.assertIn("@media (max-width:", html)
 
     def test_sales_uses_warehouse_period_picker_and_combined_reset(self):
@@ -1259,16 +1264,60 @@ class OwnerFeedbackTest(unittest.TestCase):
         self.assertNotIn('id="clearSalesDateFrom"', html)
         self.assertNotIn('id="clearSalesDateTo"', html)
         self.assertNotIn('class="sales-date-input"', html)
-        self.assertIn("📅 Период", html)
+        self.assertIn(
+            '<span data-date-range-label>Период</span>',
+            html,
+        )
         self.assertIn("warehouse-calendar-popup", html)
         self.assertIn("warehouse-calendar-day", html)
         self.assertIn("data-calendar-apply", html)
         self.assertIn("displaySalesDate(salesDateFrom.value)", html)
+        self.assertIn(
+            "event.composedPath().includes(salesDateFilter)",
+            html,
+        )
         self.assertIn('url.searchParams.set(name, value)', html)
         self.assertIn('url.searchParams.delete(name)', html)
         self.assertIn('salesSearch.value = "";', html)
         self.assertIn('salesDateFrom.value = "";', html)
         self.assertIn('salesDateTo.value = "";', html)
+
+    def test_sales_desktop_workspace_has_page_hierarchy_and_accessible_table(self):
+        with mock.patch.object(
+            web, "get_warehouse_items", return_value=[warehouse_item()]
+        ), mock.patch.object(
+            web, "load_stock_operations", return_value=[]
+        ), mock.patch.object(
+            web, "load_manual_sales", return_value=[]
+        ), mock.patch.object(
+            web, "load_automatic_sales_overrides", return_value={}
+        ), mock.patch.object(
+            web,
+            "get_russian_region_cities",
+            return_value={"Москва": ["Москва"]},
+        ):
+            page = self.client.get("/sales?source=all")
+
+        html = page.get_data(as_text=True)
+        self.assertEqual(page.status_code, 200)
+        self.assertIn('<header class="sales-page-header">', html)
+        self.assertIn("<h1>Продажи</h1>", html)
+        self.assertIn("Учёт продаж по всем каналам", html)
+        self.assertIn('class="sales-page-actions"', html)
+        self.assertIn('aria-current="page"', html)
+        self.assertEqual(
+            html.count('class="stat-card erp-stat-card"'),
+            4,
+        )
+        self.assertIn('aria-sort="none"', html)
+        self.assertIn(
+            'headerCell?.setAttribute(\n'
+            '                    "aria-sort",',
+            html,
+        )
+        self.assertIn("updateSalesFilterSummary()", html)
+        self.assertIn('["sale_state", appliedSaleState]', html)
+        self.assertIn('["sale_type", appliedSaleType]', html)
 
     def test_sales_search_clear_matches_warehouse_search_clear(self):
         with mock.patch.object(
