@@ -42,8 +42,14 @@ from flask import (
     request,
     url_for,
 )
+from app.auth import (
+    configure_auth,
+    require_csrf_when_authenticated,
+    settings_invitation_context,
+)
 
 app = Flask(__name__)
+configure_auth(app, PROJECT_ROOT)
 
 ORDERS_URL = "https://tictactoy.ru/api/orders.php"
 ORDER_URL = "https://tictactoy.ru/api/order.php?id="
@@ -9602,6 +9608,7 @@ def settings_page():
     settings = load_app_settings()
 
     if request.method == "POST":
+        require_csrf_when_authenticated()
         company_name = (
             request.form.get("company_name") or ""
         ).strip()
@@ -9643,6 +9650,7 @@ def settings_page():
         ),
         notice=(request.args.get("notice") or "").strip(),
         message=(request.args.get("message") or "").strip(),
+        **settings_invitation_context(),
     )
 
 
@@ -9651,6 +9659,7 @@ def settings_page():
     methods=["POST"],
 )
 def navigation_toggle(key):
+    require_csrf_when_authenticated()
     definition = next(
         (
             item

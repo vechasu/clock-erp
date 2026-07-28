@@ -1,0 +1,28 @@
+{% extends "auth_base.html" %}
+
+{% block title %}Аккаунт создан — Vechasu ERP{% endblock %}
+
+{% block auth_meta %}
+    <meta http-equiv="refresh" content="2;url={{ target }}">
+{% endblock %}
+
+{% block auth_content %}
+<section class="auth-card" aria-labelledby="success-title">
+    <div class="invitation-confirmed" role="status">
+        Регистрация успешно завершена
+    </div>
+    <header class="auth-card-header">
+        <h2 id="success-title">Аккаунт создан</h2>
+        <p>
+            Вы уже вошли в систему. Сейчас откроется рабочий раздел ERP.
+        </p>
+    </header>
+    <a
+        class="auth-submit"
+        href="{{ target }}"
+        style="display:grid;place-items:center;text-decoration:none"
+    >
+        Перейти в ERP
+    </a>
+</section>
+{% endblock %}

@@ -1,0 +1,90 @@
+{% extends "auth_base.html" %}
+
+{% block title %}Вход — Vechasu ERP{% endblock %}
+
+{% block auth_content %}
+<section class="auth-card" aria-labelledby="login-title">
+    <header class="auth-card-header">
+        <h2 id="login-title">Войти в ERP</h2>
+        <p>Используйте рабочий аккаунт сотрудника TicTacToy.</p>
+    </header>
+
+    {% if error %}
+        <div class="auth-alert" role="alert">{{ error }}</div>
+    {% endif %}
+
+    <form class="auth-form" method="post" novalidate>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="next" value="{{ next_url }}">
+
+        <div class="auth-grid">
+            <div class="auth-field auth-field-wide">
+                <label class="auth-label" for="email">Email</label>
+                <input
+                    class="auth-input"
+                    id="email"
+                    name="email"
+                    type="email"
+                    value="{{ email }}"
+                    maxlength="254"
+                    autocomplete="email"
+                    inputmode="email"
+                    required
+                >
+            </div>
+
+            <div class="auth-field auth-field-wide">
+                <label class="auth-label" for="password">Пароль</label>
+                <div class="auth-input-wrap">
+                    <input
+                        class="auth-input auth-input-password"
+                        id="password"
+                        name="password"
+                        type="password"
+                        maxlength="128"
+                        autocomplete="current-password"
+                        required
+                    >
+                    <button
+                        class="password-toggle"
+                        id="loginPasswordToggle"
+                        type="button"
+                        aria-label="Показать пароль"
+                        aria-pressed="false"
+                    >
+                        Показать
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="auth-actions">
+            <button class="auth-submit" type="submit">Войти</button>
+        </div>
+    </form>
+
+    <p class="auth-switch">
+        Нет аккаунта?
+        <a href="{{ url_for('auth.register', next=next_url) }}">
+            Зарегистрироваться
+        </a>
+    </p>
+</section>
+
+<script>
+    (() => {
+        const button = document.getElementById("loginPasswordToggle");
+        const input = document.getElementById("password");
+        button.addEventListener("click", () => {
+            const show = input.type === "password";
+            input.type = show ? "text" : "password";
+            button.textContent = show ? "Скрыть" : "Показать";
+            button.setAttribute("aria-pressed", String(show));
+            button.setAttribute(
+                "aria-label",
+                show ? "Скрыть пароль" : "Показать пароль"
+            );
+        });
+    })();
+</script>
+{% endblock %}

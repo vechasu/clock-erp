@@ -338,6 +338,39 @@
         text-overflow: ellipsis;
     }
 
+    .sidebar-user {
+        min-width: 0;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 8px;
+        align-items: center;
+        margin-top: auto;
+        padding: 12px 10px;
+        border-top: 1px solid rgba(148, 163, 184, 0.16);
+    }
+
+    .sidebar-user-copy {
+        min-width: 0;
+        overflow: hidden;
+        color: #dbeafe;
+        font-size: 12px;
+        font-weight: 750;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .sidebar-logout {
+        min-height: 34px;
+        padding: 0 9px;
+        border: 1px solid rgba(147, 197, 253, 0.24);
+        border-radius: 9px;
+        background: rgba(255, 255, 255, 0.05);
+        color: #dbeafe;
+        font-size: 11px;
+        font-weight: 800;
+        cursor: pointer;
+    }
+
     .app.sidebar-collapsed .sidebar {
         padding-right: 15px;
         padding-left: 15px;
@@ -358,6 +391,16 @@
     .app.sidebar-collapsed .sidebar-label,
     .app.sidebar-collapsed .sidebar-system-text {
         display: none;
+    }
+
+    .app.sidebar-collapsed .sidebar-user-copy {
+        display: none;
+    }
+
+    .app.sidebar-collapsed .sidebar-user {
+        grid-template-columns: 1fr;
+        padding-right: 0;
+        padding-left: 0;
     }
 
     .app.sidebar-collapsed .sidebar-nav {
@@ -462,6 +505,25 @@
             </a>
         {% endfor %}
     </nav>
+
+    {% if current_user %}
+        <div class="sidebar-user">
+            <span
+                class="sidebar-user-copy"
+                title="{{ current_user.first_name }} {{ current_user.last_name }}"
+            >
+                {{ current_user.first_name }} {{ current_user.last_name }}
+            </span>
+            <form method="post" action="{{ url_for('auth.logout') }}">
+                <input
+                    type="hidden"
+                    name="csrf_token"
+                    value="{{ csrf_token() }}"
+                >
+                <button class="sidebar-logout" type="submit">Выйти</button>
+            </form>
+        </div>
+    {% endif %}
 
     <div class="sidebar-system-status" title="Система работает">
         <span class="sidebar-system-dot"></span>
