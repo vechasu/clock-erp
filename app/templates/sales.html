@@ -238,6 +238,11 @@
             box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
         }
 
+        .search::placeholder {
+            color: #64748b;
+            opacity: 1;
+        }
+
         .search-clear-button {
             position: absolute;
             top: 50%;
@@ -464,20 +469,42 @@
             overflow-x: auto;
             overflow-y: hidden;
             overscroll-behavior-x: contain;
+            scrollbar-color: #94a3b8 #e8edf3;
+            scrollbar-width: thin;
             -webkit-overflow-scrolling: touch;
+        }
+
+        .table-wrap::-webkit-scrollbar {
+            height: 11px;
+        }
+
+        .table-wrap::-webkit-scrollbar-track {
+            border-radius: 999px;
+            background: #e8edf3;
+        }
+
+        .table-wrap::-webkit-scrollbar-thumb {
+            border: 2px solid #e8edf3;
+            border-radius: 999px;
+            background: #94a3b8;
+        }
+
+        .table-wrap::-webkit-scrollbar-thumb:hover {
+            background: #64748b;
         }
 
         .sales-table {
             width: max-content;
-            min-width: 100%;
-            border-collapse: collapse;
+            min-width: 0;
+            border-collapse: separate;
+            border-spacing: 0;
             table-layout: fixed;
         }
 
         .sales-table th,
         .sales-table td {
-            min-width: 118px;
-            max-width: 260px;
+            min-width: 96px;
+            max-width: 520px;
             padding: 9px 10px;
             border-right: 1px solid #d9dee5;
             border-bottom: 1px solid #d9dee5;
@@ -519,26 +546,41 @@
             width: 112px;
         }
 
+        .sales-table .col-order_number {
+            min-width: 140px;
+            width: 150px;
+        }
+
         .sales-table .col-barcode {
             min-width: 150px;
             width: 150px;
         }
 
-        .sales-table .col-product_name,
+        .sales-table .col-product_name {
+            min-width: 240px;
+            width: 280px;
+        }
+
         .sales-table .col-platform,
         .sales-table .col-note {
             min-width: 220px;
             width: 240px;
         }
 
+        .sales-table .col-source,
+        .sales-table .col-brand {
+            min-width: 96px;
+            width: 108px;
+        }
+
         .sales-table .col-category {
-            min-width: 170px;
-            width: 190px;
+            min-width: 128px;
+            width: 148px;
         }
 
         .sales-table .col-quantity_display {
-            min-width: 112px;
-            width: 112px;
+            min-width: 100px;
+            width: 104px;
             text-align: center;
         }
 
@@ -568,7 +610,9 @@
         }
 
         .sales-sort-arrow {
-            color: #94a3b8;
+            color: #64748b;
+            font-size: 12px;
+            font-weight: 900;
         }
 
         .sales-column-resize-handle {
@@ -750,13 +794,25 @@
 
         .source-badge {
             display: inline-flex;
+            max-width: 100%;
             min-height: 25px;
             align-items: center;
             padding: 3px 8px;
+            overflow: hidden;
             border-radius: 999px;
             background: #e5e7eb;
             font-size: 11px;
             font-weight: 850;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .sales-table td > span:not(.source-badge) {
+            display: block;
+            width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
         .erp-product-primary,
@@ -963,15 +1019,6 @@
             .stats {
                 grid-template-columns: repeat(3, minmax(0, 1fr));
             }
-
-            .toolbar {
-                flex-wrap: wrap;
-                align-items: stretch;
-            }
-
-            .sales-search-wrap {
-                flex-basis: 100%;
-            }
         }
 
         @media (max-width: 900px) {
@@ -983,25 +1030,6 @@
 
             .stats {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
-            }
-
-            .sales-date-filter {
-                width: 100%;
-                justify-content: flex-start;
-            }
-
-            .sales-column-settings {
-                width: 100%;
-            }
-
-            .sales-column-settings-trigger {
-                width: 100%;
-            }
-
-            .sales-column-settings-panel {
-                right: auto;
-                left: 0;
-                width: min(340px, 100%);
             }
 
             .warehouse-date-filter {
@@ -1027,15 +1055,6 @@
         }
 
         @media (max-width: 560px) {
-            .toolbar.sales-data-toolbar.erp-toolbar {
-                grid-template-columns: minmax(0, 1fr);
-            }
-
-            .sales-data-toolbar .sales-column-settings {
-                grid-column: 1 / -1;
-                width: 100%;
-            }
-
             .stats {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
             }
@@ -1055,12 +1074,11 @@
 
             .sales-search-wrap,
             .search-input-wrap {
-                min-width: 100%;
+                min-width: 0;
             }
 
             .sales-date-filter {
-                align-items: stretch;
-                flex-direction: column;
+                min-width: 0;
             }
 
             .sales-date-clear {
@@ -1435,6 +1453,10 @@
                                             {% if column.key == "source" %}
                                                 <span class="source-badge">
                                                     {{ value or "—" }}
+                                                </span>
+                                            {% elif column.key == "created_at" and value|length >= 10 %}
+                                                <span>
+                                                    {{ value[8:10] }}.{{ value[5:7] }}.{{ value[:4] }}
                                                 </span>
                                             {% elif column.key == "product_name" %}
                                                 <span
@@ -2602,6 +2624,10 @@
         const defaultOrder = salesColumnDefinitions.map(
             (column) => column.key
         );
+        const pinnedColumns = [
+            "created_at",
+            "order_number",
+        ];
         const labels = Object.fromEntries(
             salesColumnDefinitions.map(
                 (column) => [column.key, column.label]
@@ -2612,11 +2638,11 @@
             order_number: 150,
             track_number: 150,
             barcode: 150,
-            source: 130,
-            brand: 130,
-            category: 190,
-            product_name: 240,
-            quantity_display: 112,
+            source: 108,
+            brand: 108,
+            category: 148,
+            product_name: 280,
+            quantity_display: 104,
             unit_price_display: 138,
             delivery_method: 160,
             delivery_cost_display: 138,
@@ -2630,6 +2656,14 @@
             country: 140,
             invoice_number: 160,
         };
+        const legacyDefaultWidths = {
+            source: 130,
+            brand: 130,
+            category: 190,
+            product_name: 240,
+            quantity_display: 112,
+        };
+        const settingsVersion = 2;
         const minimumWidth = 82;
         const maximumWidth = 520;
         const settingsKey = salesTable.dataset.salesSettingsKey;
@@ -2672,7 +2706,14 @@
                     order.push(key);
                 }
             });
-            return order;
+            return [
+                ...pinnedColumns.filter(
+                    (key) => order.includes(key)
+                ),
+                ...order.filter(
+                    (key) => !pinnedColumns.includes(key)
+                ),
+            ];
         }
 
         function sanitizeHidden(value, order) {
@@ -2718,11 +2759,31 @@
                 ? value
                 : {};
             const order = sanitizeOrder(source.order);
+            const sourceWidths = (
+                source.widths
+                && typeof source.widths === "object"
+            )
+                ? {...source.widths}
+                : {};
+
+            if (source.version !== settingsVersion) {
+                Object.entries(legacyDefaultWidths).forEach(
+                    ([key, legacyWidth]) => {
+                        if (
+                            !Object.hasOwn(sourceWidths, key)
+                            || Number(sourceWidths[key]) === legacyWidth
+                        ) {
+                            sourceWidths[key] = defaultWidths[key];
+                        }
+                    }
+                );
+            }
 
             return {
+                version: settingsVersion,
                 order,
                 hidden: sanitizeHidden(source.hidden, order),
-                widths: sanitizeWidths(source.widths),
+                widths: sanitizeWidths(sourceWidths),
             };
         }
 
@@ -2817,6 +2878,12 @@
             });
 
             salesTable.style.width = totalWidth + "px";
+            salesTable.style.setProperty(
+                "--sales-sticky-date-width",
+                view.hidden.includes("created_at")
+                    ? "0px"
+                    : view.widths.created_at + "px",
+            );
             updateEmptyRows();
         }
 
@@ -2874,7 +2941,7 @@
             }
 
             order.splice(targetIndex, 0, sourceKey);
-            view.order = order;
+            view.order = sanitizeOrder(order);
             applyView();
             renderSettingsList();
             saveView();
@@ -3103,7 +3170,7 @@
 
         settingsClose.addEventListener("click", closeSettings);
         settingsReset.addEventListener("click", () => {
-            view.order = defaultOrder.slice();
+            view.order = sanitizeOrder(defaultOrder);
             view.hidden = [];
             view.widths = sanitizeWidths({});
             applyView();
@@ -3877,21 +3944,25 @@
                 );
                 const headers = getHeaders();
                 const restoredCorrectly = (
-                    restored.order[0] === "unit_price_display"
-                    && restored.order[1] === "created_at"
+                    restored.version === 2
+                    && restored.order[0] === "created_at"
+                    && restored.order[1] === "order_number"
+                    && restored.order[2] === "unit_price_display"
                     && !restored.order.includes("removed_column")
                     && restored.order.length === defaultOrder.length
                     && restored.hidden.length === 1
                     && restored.hidden[0] === "track_number"
                     && headers[0].dataset.columnKey
-                        === "unit_price_display"
+                        === "created_at"
+                    && headers[1].dataset.columnKey
+                        === "order_number"
                     && headers.find(
                         (cell) =>
                             cell.dataset.columnKey
                                 === "track_number"
                     ).hidden
                     && Math.round(
-                        headers[0].getBoundingClientRect().width
+                        headers[2].getBoundingClientRect().width
                     ) === 211
                     && getHeaderKeys().every(
                         (key, index) =>
@@ -3974,11 +4045,34 @@
                 localStorage.getItem(settingsKey)
             );
             const tableWrap = document.querySelector(".table-wrap");
+            tableWrap.scrollLeft = 240;
+            const tableWrapBounds =
+                tableWrap.getBoundingClientRect();
+            const stickyDateBounds = getHeaders()[0]
+                .getBoundingClientRect();
+            const stickyOrderBounds = getHeaders()[1]
+                .getBoundingClientRect();
+            const toolbar = document.querySelector(
+                ".sales-data-toolbar"
+            );
+            const toolbarBounds = toolbar.getBoundingClientRect();
+            const toolbarChildrenFit = Array.from(
+                toolbar.children
+            ).every((element) => {
+                const bounds = element.getBoundingClientRect();
+                return bounds.left >= toolbarBounds.left - 1
+                    && bounds.right <= toolbarBounds.right + 1;
+            });
             const resetCorrectly = (
                 JSON.stringify(getHeaderKeys())
                     === JSON.stringify(defaultOrder)
                 && getHeaders().every((cell) => !cell.hidden)
                 && reset.hidden.length === 0
+                && reset.widths.source === 108
+                && reset.widths.brand === 108
+                && reset.widths.category === 148
+                && reset.widths.product_name === 280
+                && reset.widths.quantity_display === 104
                 && reset.widths.created_at === 112
                 && Math.round(
                     getHeaders()[0].getBoundingClientRect().width
@@ -3988,10 +4082,111 @@
                 && document.documentElement.scrollWidth
                     <= document.documentElement.clientWidth
                 && tableWrap.scrollWidth > tableWrap.clientWidth
+                && Math.abs(
+                    stickyDateBounds.left - tableWrapBounds.left
+                ) <= 1
+                && Math.abs(
+                    stickyOrderBounds.left
+                    - stickyDateBounds.right
+                ) <= 1
+                && toolbar.scrollWidth <= toolbar.clientWidth
+                && toolbarChildrenFit
+                && /^\d{2}\.\d{2}\.\d{4}$/.test(
+                    document.querySelector(
+                        ".sale-row .col-created_at"
+                    ).textContent.trim()
+                )
             );
 
             if (!resetCorrectly) {
+                document.documentElement.dataset
+                    .salesColumnsE2eDetails = JSON.stringify({
+                        headerKeys: getHeaderKeys(),
+                        hidden: reset.hidden,
+                        widths: reset.widths,
+                        firstHeaderWidth: Math.round(
+                            getHeaders()[0]
+                                .getBoundingClientRect().width
+                        ),
+                        otherSettingsMatch:
+                            localStorage.getItem(otherSettingsKey)
+                                === otherSettings,
+                        pageWidth: [
+                            document.documentElement.scrollWidth,
+                            document.documentElement.clientWidth,
+                        ],
+                        tableWidth: [
+                            tableWrap.scrollWidth,
+                            tableWrap.clientWidth,
+                        ],
+                        sticky: [
+                            Math.round(
+                                stickyDateBounds.left
+                                - tableWrapBounds.left
+                            ),
+                            Math.round(
+                                stickyOrderBounds.left
+                                - stickyDateBounds.right
+                            ),
+                        ],
+                        toolbarWidth: [
+                            toolbar.scrollWidth,
+                            toolbar.clientWidth,
+                        ],
+                        toolbarChildrenFit,
+                    });
                 throw new Error("reset");
+            }
+
+            const resizeHeader = getHeaders().find(
+                (header) =>
+                    header.dataset.columnKey === "category"
+            );
+            const resizeHandle = resizeHeader.querySelector(
+                ".sales-column-resize-handle"
+            );
+            const resizeStartWidth = Math.round(
+                resizeHeader.getBoundingClientRect().width
+            );
+            const resizeStartX =
+                resizeHeader.getBoundingClientRect().right - 2;
+
+            resizeHandle.dispatchEvent(new PointerEvent(
+                "pointerdown",
+                {
+                    bubbles: true,
+                    button: 0,
+                    clientX: resizeStartX,
+                },
+            ));
+            window.dispatchEvent(new PointerEvent(
+                "pointermove",
+                {
+                    bubbles: true,
+                    clientX: resizeStartX + 24,
+                },
+            ));
+            window.dispatchEvent(new PointerEvent(
+                "pointerup",
+                {
+                    bubbles: true,
+                    clientX: resizeStartX + 24,
+                },
+            ));
+
+            const resizeEndWidth = Math.round(
+                resizeHeader.getBoundingClientRect().width
+            );
+            const resizedView = JSON.parse(
+                localStorage.getItem(settingsKey)
+            );
+
+            if (
+                resizeEndWidth !== resizeStartWidth + 24
+                || resizedView.widths.category
+                    !== resizeStartWidth + 24
+            ) {
+                throw new Error("resize");
             }
 
             document.documentElement.dataset.salesColumnsE2e =

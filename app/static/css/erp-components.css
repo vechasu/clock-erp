@@ -391,3 +391,143 @@
         transition: none;
     }
 }
+
+/*
+ * Sales page: compact toolbar, internally scrollable table and pinned identity
+ * columns. These rules intentionally come last so shared responsive grid rules
+ * do not split the sales controls into separate full-width rows.
+ */
+.sales-data-toolbar.erp-toolbar {
+    display: flex;
+    min-height: 0;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.sales-data-toolbar .sales-search-wrap {
+    min-width: min(280px, 100%);
+    flex: 1 1 360px;
+}
+
+.sales-data-toolbar .sales-date-filter {
+    min-width: 0;
+    flex: 0 1 auto;
+    flex-wrap: wrap;
+}
+
+.sales-data-toolbar .sales-column-settings {
+    width: auto;
+    flex: 0 0 auto;
+}
+
+.sales-data-toolbar .sales-column-settings-trigger {
+    width: auto;
+    height: 44px;
+    min-height: 44px;
+}
+
+.sales-data-toolbar .warehouse-date-trigger [data-date-range-label] {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sales-table.erp-data-table {
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.sales-table.erp-data-table th {
+    background: #eef2f7;
+    color: #1e293b;
+}
+
+.sales-table.erp-data-table .erp-sort-arrow {
+    color: #64748b;
+    font-size: 12px;
+}
+
+.sales-table.erp-data-table tbody td {
+    background: #ffffff;
+}
+
+.sales-table.erp-data-table tbody tr:hover td {
+    background: #f8fafc;
+}
+
+.sales-table.erp-data-table .sale-row.is-cancelled td {
+    background: #fff1f2;
+    color: #7f1d1d;
+}
+
+.sales-table.erp-data-table .sale-row.is-cancelled:hover td {
+    background: #ffe4e6;
+}
+
+.sales-table.erp-data-table .col-created_at,
+.sales-table.erp-data-table .col-order_number {
+    position: sticky;
+    z-index: 2;
+    background-clip: padding-box;
+}
+
+.sales-table.erp-data-table .col-created_at {
+    left: 0;
+}
+
+.sales-table.erp-data-table .col-order_number {
+    left: var(--sales-sticky-date-width, 112px);
+    box-shadow: 1px 0 0 #d9e0e8, 7px 0 12px -12px #334155;
+}
+
+.sales-table.erp-data-table thead .col-created_at,
+.sales-table.erp-data-table thead .col-order_number {
+    z-index: 6;
+    background: #eef2f7;
+}
+
+@media (max-width: 560px) {
+    .sales-data-toolbar .sales-search-wrap {
+        min-width: 0;
+        flex-basis: 100%;
+    }
+
+    .sales-data-toolbar .sales-date-filter {
+        flex: 1 1 150px;
+    }
+
+    .sales-data-toolbar .warehouse-date-filter {
+        width: 100%;
+    }
+
+    .sales-data-toolbar .erp-period-trigger {
+        width: 100%;
+        min-width: 0;
+        min-height: 44px;
+        padding-right: 34px;
+        padding-left: 12px;
+    }
+
+    .sales-data-toolbar .sales-column-settings-trigger {
+        min-width: 104px;
+        padding-right: 12px;
+        padding-left: 12px;
+    }
+
+    .sales-data-toolbar .sales-column-settings-panel {
+        width: min(340px, calc(100vw - 46px));
+    }
+
+    .sales-data-toolbar .warehouse-calendar-popup {
+        right: auto;
+        left: 0;
+        width: min(292px, calc(100vw - 46px));
+    }
+
+    .sales-data-toolbar .sales-date-clear {
+        width: auto;
+        flex: 1 1 100%;
+    }
+}
