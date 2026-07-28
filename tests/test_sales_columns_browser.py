@@ -147,7 +147,10 @@ class SalesColumnsBrowserTest(unittest.TestCase):
 
         try:
             for width, height in (
+                (1920, 1080),
                 (1440, 900),
+                (1366, 900),
+                (1280, 900),
                 (1024, 900),
                 (768, 900),
                 (430, 932),

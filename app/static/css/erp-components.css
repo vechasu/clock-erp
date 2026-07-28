@@ -983,6 +983,48 @@
     font-size: 12px;
 }
 
+.sales-popover-root {
+    position: fixed;
+    z-index: 950;
+    inset: 0;
+    overflow: visible;
+    pointer-events: none;
+}
+
+.sales-popover-root > .sales-viewport-popover {
+    position: fixed !important;
+    inset: auto;
+    max-width: calc(100vw - 32px);
+    max-height: calc(100vh - 32px);
+    margin: 0 !important;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    pointer-events: auto;
+    scrollbar-color: #b8c5d6 transparent;
+    scrollbar-width: thin;
+}
+
+.sales-popover-root > .sales-viewport-popover::-webkit-scrollbar {
+    width: 8px;
+}
+
+.sales-popover-root > .sales-viewport-popover::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background: #b8c5d6;
+    background-clip: padding-box;
+}
+
+.sales-popover-root
+    > .sales-viewport-popover[data-sales-popover-placement="bottom"] {
+    transform-origin: top right;
+}
+
+.sales-popover-root
+    > .sales-viewport-popover[data-sales-popover-placement="top"] {
+    transform-origin: bottom right;
+}
+
 .sales-table.erp-data-table {
     border-collapse: separate;
     border-spacing: 0;
