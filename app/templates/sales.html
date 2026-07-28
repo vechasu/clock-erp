@@ -4176,6 +4176,9 @@
         const getRowKeys = () => Array.from(
             document.querySelector(".sale-row").children
         ).map((cell) => cell.dataset.columnKey);
+        const tableWrap = document.querySelector(".table-wrap");
+        const tableIsVisible = () =>
+            tableWrap.getClientRects().length > 0;
         const phase = sessionStorage.getItem(phaseKey) || "start";
 
         try {
@@ -4231,9 +4234,12 @@
                             cell.dataset.columnKey
                                 === "track_number"
                     ).hidden
-                    && Math.round(
-                        headers[2].getBoundingClientRect().width
-                    ) === 211
+                    && (
+                        !tableIsVisible()
+                        || Math.round(
+                            headers[2].getBoundingClientRect().width
+                        ) === 211
+                    )
                     && getHeaderKeys().every(
                         (key, index) =>
                             getRowKeys()[index] === key
@@ -4314,7 +4320,6 @@
             const reset = JSON.parse(
                 localStorage.getItem(settingsKey)
             );
-            const tableWrap = document.querySelector(".table-wrap");
             tableWrap.scrollLeft = 240;
             const tableWrapBounds =
                 tableWrap.getBoundingClientRect();
@@ -4346,23 +4351,39 @@
                 && reset.widths.product_name === 280
                 && reset.widths.quantity_display === 104
                 && reset.widths.created_at === 112
-                && Math.round(
-                    getHeaders()[0].getBoundingClientRect().width
-                ) === 112
                 && localStorage.getItem(otherSettingsKey)
                     === otherSettings
                 && document.documentElement.scrollWidth
                     <= document.documentElement.clientWidth
-                && tableWrap.scrollWidth > tableWrap.clientWidth
-                && Math.abs(
-                    stickyDateBounds.left - tableWrapBounds.left
-                ) <= 1
-                && Math.abs(
-                    stickyOrderBounds.left
-                    - stickyDateBounds.right
-                ) <= 1
                 && toolbar.scrollWidth <= toolbar.clientWidth
                 && toolbarChildrenFit
+                && (
+                    tableIsVisible()
+                    ? (
+                        Math.round(
+                            getHeaders()[0]
+                                .getBoundingClientRect().width
+                        ) === 112
+                        && tableWrap.scrollWidth
+                            > tableWrap.clientWidth
+                        && Math.abs(
+                            stickyDateBounds.left
+                            - tableWrapBounds.left
+                        ) <= 1
+                        && Math.abs(
+                            stickyOrderBounds.left
+                            - stickyDateBounds.right
+                        ) <= 1
+                    )
+                    : (
+                        document.querySelector(
+                            ".sales-mobile-list"
+                        ).getClientRects().length > 0
+                        && document.querySelector(
+                            ".sales-mobile-card"
+                        ).getClientRects().length > 0
+                    )
+                )
                 && /^\d{2}\.\d{2}\.\d{4}$/.test(
                     document.querySelector(
                         ".sale-row .col-created_at"
@@ -4408,6 +4429,13 @@
                         toolbarChildrenFit,
                     });
                 throw new Error("reset");
+            }
+
+            if (!tableIsVisible()) {
+                document.documentElement.dataset.salesColumnsE2e =
+                    "pass";
+                sessionStorage.removeItem(phaseKey);
+                return;
             }
 
             const resizeHeader = getHeaders().find(
