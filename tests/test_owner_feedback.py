@@ -1169,7 +1169,11 @@ class OwnerFeedbackTest(unittest.TestCase):
         self.assertEqual(page.status_code, 200)
         self.assertIn("vechasu-sales-filters-v1", html)
         self.assertIn("vechasu-sales-scroll-y", html)
-        self.assertIn("minimumPixels[index] || 82", html)
+        self.assertIn("const minimumWidth = 82", html)
+        self.assertIn(
+            'data-sales-settings-key="sales_all"',
+            html,
+        )
         self.assertIn('id="salesDateFilter"', html)
         self.assertIn('id="clearSalesPeriod"', html)
         self.assertIn("@media (max-width:", html)

@@ -307,6 +307,60 @@ class SalesSourceTabsTest(unittest.TestCase):
                     expected,
                 )
 
+    def test_each_tab_has_independent_column_settings_storage(self):
+        for source in EXPECTED_COLUMNS:
+            with self.subTest(source=source):
+                page = self.client.get(
+                    f"/sales?source={source}"
+                ).get_data(as_text=True)
+
+                self.assertIn(
+                    f'data-sales-settings-key="sales_{source}"',
+                    page,
+                )
+                self.assertIn(
+                    'id="salesColumnSettingsTrigger"',
+                    page,
+                )
+                self.assertIn(
+                    'id="salesColumnSettingsReset"',
+                    page,
+                )
+                self.assertIn(
+                    "localStorage.getItem(settingsKey)",
+                    page,
+                )
+                self.assertIn(
+                    "localStorage.setItem(",
+                    page,
+                )
+
+    def test_column_settings_keep_one_visible_and_accept_new_columns(self):
+        page = self.client.get(
+            "/sales?source=all"
+        ).get_data(as_text=True)
+
+        self.assertIn(
+            "defaultOrder.forEach((key) => {",
+            page,
+        )
+        self.assertIn(
+            "if (hidden.length >= order.length)",
+            page,
+        )
+        self.assertIn(
+            "Оставьте видимым хотя бы один столбец.",
+            page,
+        )
+        self.assertIn(
+            "view.order = defaultOrder.slice();",
+            page,
+        )
+        self.assertIn(
+            "salesColumnSettings = {",
+            page,
+        )
+
     def test_source_url_is_active_and_filters_survive_tab_links(self):
         response = self.client.get(
             "/sales?source=amazon&q=Berlin"

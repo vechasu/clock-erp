@@ -586,6 +586,168 @@
             background: rgba(37, 99, 235, 0.2);
         }
 
+        body.sales-table-interacting {
+            cursor: grabbing;
+            user-select: none;
+        }
+
+        body.sales-column-resizing {
+            cursor: col-resize;
+        }
+
+        .sales-table th.sales-drop-before::before,
+        .sales-table th.sales-drop-after::after {
+            position: absolute;
+            z-index: 4;
+            top: 0;
+            bottom: 0;
+            width: 3px;
+            border-radius: 3px;
+            background: #2563eb;
+            content: "";
+        }
+
+        .sales-table th.sales-drop-before::before {
+            left: -2px;
+        }
+
+        .sales-table th.sales-drop-after::after {
+            right: -2px;
+        }
+
+        .sales-column-settings {
+            position: relative;
+            flex: 0 0 auto;
+        }
+
+        .sales-column-settings-trigger {
+            min-height: 40px;
+            padding: 0 13px;
+            border: 1px solid #d7dde5;
+            border-radius: 10px;
+            background: #ffffff;
+            color: #475569;
+            font-size: 12px;
+            font-weight: 800;
+            white-space: nowrap;
+        }
+
+        .sales-column-settings-trigger:hover,
+        .sales-column-settings-trigger[aria-expanded="true"] {
+            border-color: #93c5fd;
+            background: #eff6ff;
+            color: #1d4ed8;
+        }
+
+        .sales-column-settings-panel {
+            position: absolute;
+            z-index: 110;
+            top: calc(100% + 7px);
+            right: 0;
+            width: min(340px, calc(100vw - 32px));
+            padding: 13px;
+            border: 1px solid #dce3ed;
+            border-radius: 14px;
+            background: #ffffff;
+            box-shadow: 0 16px 40px rgba(15, 23, 42, 0.16);
+        }
+
+        .sales-column-settings-panel[hidden] {
+            display: none;
+        }
+
+        .sales-column-settings-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 10px;
+        }
+
+        .sales-column-settings-title {
+            margin: 0 0 3px;
+            color: #172033;
+            font-size: 14px;
+            font-weight: 850;
+        }
+
+        .sales-column-settings-help,
+        .sales-column-settings-message {
+            margin: 0;
+            color: #64748b;
+            font-size: 11px;
+            line-height: 1.4;
+        }
+
+        .sales-column-settings-close {
+            width: 28px;
+            height: 28px;
+            flex: 0 0 auto;
+            padding: 0;
+            border: 0;
+            border-radius: 8px;
+            background: #f1f5f9;
+            color: #64748b;
+            font-size: 19px;
+            line-height: 1;
+        }
+
+        .sales-column-settings-list {
+            display: grid;
+            max-height: min(390px, 52vh);
+            gap: 5px;
+            overflow-y: auto;
+        }
+
+        .sales-column-settings-item {
+            display: flex;
+            min-height: 38px;
+            align-items: center;
+            padding: 5px 9px;
+            border: 1px solid #e2e8f0;
+            border-radius: 9px;
+            background: #ffffff;
+        }
+
+        .sales-column-settings-item label {
+            display: flex;
+            min-width: 0;
+            align-items: center;
+            gap: 8px;
+            color: #334155;
+            font-size: 12px;
+            font-weight: 750;
+            cursor: pointer;
+        }
+
+        .sales-column-settings-item input {
+            width: 16px;
+            height: 16px;
+            flex: 0 0 auto;
+            accent-color: #2563eb;
+        }
+
+        .sales-column-settings-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #e2e8f0;
+        }
+
+        .sales-column-settings-reset {
+            min-height: 34px;
+            padding: 0 11px;
+            border: 1px solid #d7dde5;
+            border-radius: 9px;
+            background: #ffffff;
+            color: #475569;
+            font-size: 11px;
+            font-weight: 800;
+        }
+
         .source-badge {
             display: inline-flex;
             min-height: 25px;
@@ -875,6 +1037,20 @@
                 justify-content: flex-start;
             }
 
+            .sales-column-settings {
+                width: 100%;
+            }
+
+            .sales-column-settings-trigger {
+                width: 100%;
+            }
+
+            .sales-column-settings-panel {
+                right: auto;
+                left: 0;
+                width: min(340px, 100%);
+            }
+
             .warehouse-date-filter {
                 min-width: 0;
                 flex: 1 1 auto;
@@ -898,6 +1074,15 @@
         }
 
         @media (max-width: 560px) {
+            .toolbar.sales-data-toolbar.erp-toolbar {
+                grid-template-columns: minmax(0, 1fr);
+            }
+
+            .sales-data-toolbar .sales-column-settings {
+                grid-column: 1 / -1;
+                width: 100%;
+            }
+
             .stats {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
             }
@@ -1176,6 +1361,62 @@
                         Сбросить
                     </button>
                 </div>
+
+                <div class="sales-column-settings">
+                    <button
+                        id="salesColumnSettingsTrigger"
+                        class="sales-column-settings-trigger"
+                        type="button"
+                        aria-haspopup="dialog"
+                        aria-controls="salesColumnSettingsPanel"
+                        aria-expanded="false"
+                    >
+                        ⚙ Столбцы
+                    </button>
+                    <div
+                        id="salesColumnSettingsPanel"
+                        class="sales-column-settings-panel"
+                        role="dialog"
+                        aria-label="Настройка столбцов продаж"
+                        hidden
+                    >
+                        <div class="sales-column-settings-header">
+                            <div>
+                                <p class="sales-column-settings-title">
+                                    Столбцы таблицы
+                                </p>
+                                <p class="sales-column-settings-help">
+                                    Перетаскивайте заголовки таблицы
+                                    и выбирайте видимые столбцы.
+                                </p>
+                            </div>
+                            <button
+                                id="salesColumnSettingsClose"
+                                class="sales-column-settings-close"
+                                type="button"
+                                aria-label="Закрыть настройки столбцов"
+                            >×</button>
+                        </div>
+                        <div
+                            id="salesColumnSettingsList"
+                            class="sales-column-settings-list"
+                        ></div>
+                        <div class="sales-column-settings-footer">
+                            <p
+                                id="salesColumnSettingsMessage"
+                                class="sales-column-settings-message"
+                                aria-live="polite"
+                            ></p>
+                            <button
+                                id="salesColumnSettingsReset"
+                                class="sales-column-settings-reset"
+                                type="button"
+                            >
+                                Сбросить
+                            </button>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <section class="table-card erp-table-card">
@@ -1183,7 +1424,13 @@
                     <table
                         class="sales-table erp-data-table"
                         data-source="{{ active_source }}"
+                        data-sales-settings-key="sales_{{ active_source }}"
                     >
+                        <colgroup>
+                            {% for column in sales_columns %}
+                                <col data-column-key="{{ column.key }}">
+                            {% endfor %}
+                        </colgroup>
                         <thead>
                             <tr>
                                 {% for column in sales_columns %}
@@ -1738,6 +1985,7 @@
     const salesTable = document.querySelector(".sales-table");
     const salesTableBody = salesTable?.querySelector("tbody");
     const storageKey = "vechasu-sales-filters-v1";
+    const salesColumnDefinitions = {{ sales_columns | tojson }};
 
     let salesFilterEmptyRow = null;
 
@@ -2381,54 +2629,575 @@
             });
         });
 
-    (function initializeSalesColumnResize() {
+    (function initializeSalesColumnSettings() {
         if (!salesTable) {
             return;
         }
 
-        const headers = Array.from(
-            salesTable.querySelectorAll("thead th")
+        const defaultOrder = salesColumnDefinitions.map(
+            (column) => column.key
         );
-        const minimumPixels = headers.map(() => 82);
+        const labels = Object.fromEntries(
+            salesColumnDefinitions.map(
+                (column) => [column.key, column.label]
+            )
+        );
+        const defaultWidths = {
+            created_at: 112,
+            order_number: 150,
+            track_number: 150,
+            barcode: 150,
+            source: 130,
+            brand: 130,
+            category: 190,
+            product_name: 240,
+            quantity_display: 112,
+            unit_price_display: 138,
+            delivery_method: 160,
+            delivery_cost_display: 138,
+            region: 150,
+            city: 150,
+            payment_method: 170,
+            note: 240,
+            sticker_number: 150,
+            recipient_name: 190,
+            platform: 180,
+            country: 140,
+            invoice_number: 160,
+        };
+        const minimumWidth = 82;
+        const maximumWidth = 520;
+        const settingsKey = salesTable.dataset.salesSettingsKey;
+        const settingsTrigger = document.getElementById(
+            "salesColumnSettingsTrigger"
+        );
+        const settingsPanel = document.getElementById(
+            "salesColumnSettingsPanel"
+        );
+        const settingsClose = document.getElementById(
+            "salesColumnSettingsClose"
+        );
+        const settingsList = document.getElementById(
+            "salesColumnSettingsList"
+        );
+        const settingsReset = document.getElementById(
+            "salesColumnSettingsReset"
+        );
+        const settingsMessage = document.getElementById(
+            "salesColumnSettingsMessage"
+        );
+        let suppressSortUntil = 0;
 
-        headers.slice(0, -1).forEach((header, index) => {
-            const handle = document.createElement("span");
-            handle.className = "sales-column-resize-handle";
-            header.appendChild(handle);
+        function sanitizeOrder(value) {
+            const order = [];
 
-            handle.addEventListener("mousedown", (event) => {
-                event.preventDefault();
-                const startX = event.clientX;
-                const startWidth =
-                    header.getBoundingClientRect().width;
-                const minimumWidth =
-                    minimumPixels[index] || 82;
+            if (Array.isArray(value)) {
+                value.forEach((key) => {
+                    if (
+                        defaultOrder.includes(key)
+                        && !order.includes(key)
+                    ) {
+                        order.push(key);
+                    }
+                });
+            }
 
-                function move(moveEvent) {
-                    header.style.width =
-                        Math.max(
-                            minimumWidth,
-                            startWidth
-                            + moveEvent.clientX
-                            - startX,
-                        ) + "px";
+            defaultOrder.forEach((key) => {
+                if (!order.includes(key)) {
+                    order.push(key);
                 }
-
-                function finish() {
-                    document.removeEventListener(
-                        "mousemove",
-                        move,
-                    );
-                    document.removeEventListener(
-                        "mouseup",
-                        finish,
-                    );
-                }
-
-                document.addEventListener("mousemove", move);
-                document.addEventListener("mouseup", finish);
             });
+            return order;
+        }
+
+        function sanitizeHidden(value, order) {
+            const hidden = Array.isArray(value)
+                ? value.filter(
+                    (key, index) =>
+                        defaultOrder.includes(key)
+                        && value.indexOf(key) === index
+                )
+                : [];
+
+            if (hidden.length >= order.length) {
+                return hidden.filter((key) => key !== order[0]);
+            }
+
+            return hidden;
+        }
+
+        function sanitizeWidths(value) {
+            const widths = {};
+            const source = value && typeof value === "object"
+                ? value
+                : {};
+
+            defaultOrder.forEach((key) => {
+                const fallback = defaultWidths[key] || 130;
+                const numeric = Number(source[key]);
+                widths[key] = Math.min(
+                    maximumWidth,
+                    Math.max(
+                        minimumWidth,
+                        Number.isFinite(numeric)
+                            ? Math.round(numeric)
+                            : fallback,
+                    ),
+                );
+            });
+            return widths;
+        }
+
+        function normalizeView(value) {
+            const source = value && typeof value === "object"
+                ? value
+                : {};
+            const order = sanitizeOrder(source.order);
+
+            return {
+                order,
+                hidden: sanitizeHidden(source.hidden, order),
+                widths: sanitizeWidths(source.widths),
+            };
+        }
+
+        function readView() {
+            try {
+                return normalizeView(
+                    JSON.parse(
+                        localStorage.getItem(settingsKey) || "{}"
+                    )
+                );
+            } catch (error) {
+                return normalizeView({});
+            }
+        }
+
+        function saveView() {
+            try {
+                localStorage.setItem(
+                    settingsKey,
+                    JSON.stringify(view),
+                );
+            } catch (error) {
+                // Настройка остаётся рабочей до перезагрузки.
+            }
+        }
+
+        function updateEmptyRows() {
+            const visibleCount = Math.max(
+                1,
+                view.order.length - view.hidden.length,
+            );
+            salesTable
+                .querySelectorAll(
+                    ".sales-filter-empty-cell, "
+                    + ".sales-initial-empty-row td"
+                )
+                .forEach((cell) => {
+                    cell.colSpan = visibleCount;
+                });
+        }
+
+        function applyOrder() {
+            salesTable.querySelectorAll("tr").forEach((row) => {
+                view.order.forEach((key) => {
+                    const cell = row.querySelector(
+                        '[data-column-key="' + key + '"]'
+                    );
+
+                    if (cell) {
+                        row.appendChild(cell);
+                    }
+                });
+            });
+
+            const colgroup = salesTable.querySelector("colgroup");
+
+            if (colgroup) {
+                view.order.forEach((key) => {
+                    const column = colgroup.querySelector(
+                        '[data-column-key="' + key + '"]'
+                    );
+
+                    if (column) {
+                        colgroup.appendChild(column);
+                    }
+                });
+            }
+        }
+
+        function applyVisibilityAndWidths() {
+            let totalWidth = 0;
+
+            view.order.forEach((key) => {
+                const hidden = view.hidden.includes(key);
+                const width = view.widths[key];
+
+                salesTable
+                    .querySelectorAll(
+                        '[data-column-key="' + key + '"]'
+                    )
+                    .forEach((element) => {
+                        element.hidden = hidden;
+
+                        if (element.tagName === "COL") {
+                            element.style.width = width + "px";
+                        }
+                    });
+
+                if (!hidden) {
+                    totalWidth += width;
+                }
+            });
+
+            salesTable.style.width = totalWidth + "px";
+            updateEmptyRows();
+        }
+
+        function applyView() {
+            applyOrder();
+            applyVisibilityAndWidths();
+        }
+
+        function setSettingsMessage(message) {
+            settingsMessage.textContent = message || "";
+        }
+
+        function renderSettingsList() {
+            settingsList.replaceChildren();
+            const visibleCount =
+                view.order.length - view.hidden.length;
+
+            view.order.forEach((key) => {
+                const item = document.createElement("div");
+                item.className = "sales-column-settings-item";
+                item.dataset.columnSettingsKey = key;
+
+                const label = document.createElement("label");
+                const checkbox = document.createElement("input");
+                checkbox.type = "checkbox";
+                checkbox.checked = !view.hidden.includes(key);
+                checkbox.disabled =
+                    checkbox.checked && visibleCount === 1;
+                checkbox.dataset.columnVisibilityKey = key;
+                const labelText = document.createElement("span");
+                labelText.textContent = labels[key] || key;
+
+                label.append(checkbox, labelText);
+                item.appendChild(label);
+                settingsList.appendChild(item);
+            });
+        }
+
+        function moveColumn(sourceKey, targetKey, after) {
+            if (
+                sourceKey === targetKey
+                || !view.order.includes(sourceKey)
+                || !view.order.includes(targetKey)
+            ) {
+                return;
+            }
+
+            const order = view.order.filter(
+                (key) => key !== sourceKey
+            );
+            let targetIndex = order.indexOf(targetKey);
+
+            if (after) {
+                targetIndex += 1;
+            }
+
+            order.splice(targetIndex, 0, sourceKey);
+            view.order = order;
+            applyView();
+            renderSettingsList();
+            saveView();
+        }
+
+        function closeSettings() {
+            settingsPanel.hidden = true;
+            settingsTrigger.setAttribute(
+                "aria-expanded",
+                "false",
+            );
+        }
+
+        const view = readView();
+        applyView();
+        saveView();
+        renderSettingsList();
+
+        salesTable
+            .querySelectorAll("thead th[data-column-key]")
+            .forEach((header) => {
+                const handle = document.createElement("span");
+                handle.className = "sales-column-resize-handle";
+                handle.setAttribute("aria-hidden", "true");
+                header.appendChild(handle);
+
+                handle.addEventListener(
+                    "pointerdown",
+                    (event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        const key = header.dataset.columnKey;
+                        const startX = event.clientX;
+                        const startWidth =
+                            header.getBoundingClientRect().width;
+                        handle.classList.add("is-active");
+                        document.body.classList.add(
+                            "sales-table-interacting",
+                            "sales-column-resizing",
+                        );
+
+                        function resizeColumn(moveEvent) {
+                            view.widths[key] = Math.min(
+                                maximumWidth,
+                                Math.max(
+                                    minimumWidth,
+                                    Math.round(
+                                        startWidth
+                                        + moveEvent.clientX
+                                        - startX,
+                                    ),
+                                ),
+                            );
+                            applyVisibilityAndWidths();
+                        }
+
+                        function finishResize() {
+                            handle.classList.remove("is-active");
+                            document.body.classList.remove(
+                                "sales-table-interacting",
+                                "sales-column-resizing",
+                            );
+                            saveView();
+                            window.removeEventListener(
+                                "pointermove",
+                                resizeColumn,
+                            );
+                        }
+
+                        window.addEventListener(
+                            "pointermove",
+                            resizeColumn,
+                        );
+                        window.addEventListener(
+                            "pointerup",
+                            finishResize,
+                            {once: true},
+                        );
+                    },
+                );
+            });
+
+        let headerDrag = null;
+        salesTable
+            .querySelector("thead")
+            .addEventListener("pointerdown", (event) => {
+                if (
+                    event.button !== 0
+                    || event.target.closest(
+                        ".sales-column-resize-handle"
+                    )
+                ) {
+                    return;
+                }
+
+                const header = event.target.closest(
+                    "th[data-column-key]"
+                );
+
+                if (!header || header.hidden) {
+                    return;
+                }
+
+                headerDrag = {
+                    header,
+                    startX: event.clientX,
+                    dragging: false,
+                    target: null,
+                    after: false,
+                };
+            });
+
+        window.addEventListener("pointermove", (event) => {
+            if (!headerDrag) {
+                return;
+            }
+
+            if (
+                !headerDrag.dragging
+                && Math.abs(event.clientX - headerDrag.startX) < 6
+            ) {
+                return;
+            }
+
+            headerDrag.dragging = true;
+            document.body.classList.add(
+                "sales-table-interacting"
+            );
+            salesTable
+                .querySelectorAll(
+                    ".sales-drop-before, .sales-drop-after"
+                )
+                .forEach((header) => {
+                    header.classList.remove(
+                        "sales-drop-before",
+                        "sales-drop-after",
+                    );
+                });
+
+            const element = document.elementFromPoint(
+                event.clientX,
+                event.clientY,
+            );
+            const target = element
+                ? element.closest("th[data-column-key]")
+                : null;
+
+            if (
+                !target
+                || target === headerDrag.header
+                || target.hidden
+            ) {
+                headerDrag.target = null;
+                return;
+            }
+
+            const bounds = target.getBoundingClientRect();
+            headerDrag.target = target;
+            headerDrag.after =
+                event.clientX > bounds.left + bounds.width / 2;
+            target.classList.add(
+                headerDrag.after
+                    ? "sales-drop-after"
+                    : "sales-drop-before",
+            );
         });
+
+        window.addEventListener("pointerup", () => {
+            if (!headerDrag) {
+                return;
+            }
+
+            if (headerDrag.dragging) {
+                suppressSortUntil = Date.now() + 350;
+
+                if (headerDrag.target) {
+                    moveColumn(
+                        headerDrag.header.dataset.columnKey,
+                        headerDrag.target.dataset.columnKey,
+                        headerDrag.after,
+                    );
+                }
+
+                salesTable
+                    .querySelectorAll(
+                        ".sales-drop-before, .sales-drop-after"
+                    )
+                    .forEach((header) => {
+                        header.classList.remove(
+                            "sales-drop-before",
+                            "sales-drop-after",
+                        );
+                    });
+                document.body.classList.remove(
+                    "sales-table-interacting"
+                );
+            }
+
+            headerDrag = null;
+        });
+
+        salesTable.addEventListener(
+            "click",
+            (event) => {
+                if (Date.now() < suppressSortUntil) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                }
+            },
+            true,
+        );
+
+        settingsTrigger.addEventListener("click", () => {
+            const willOpen = settingsPanel.hidden;
+            settingsPanel.hidden = !willOpen;
+            settingsTrigger.setAttribute(
+                "aria-expanded",
+                String(willOpen),
+            );
+
+            if (willOpen) {
+                setSettingsMessage("");
+                renderSettingsList();
+            }
+        });
+
+        settingsClose.addEventListener("click", closeSettings);
+        settingsReset.addEventListener("click", () => {
+            view.order = defaultOrder.slice();
+            view.hidden = [];
+            view.widths = sanitizeWidths({});
+            applyView();
+            renderSettingsList();
+            saveView();
+            setSettingsMessage("Настройки сброшены.");
+        });
+
+        settingsList.addEventListener("change", (event) => {
+            const checkbox = event.target.closest(
+                "[data-column-visibility-key]"
+            );
+
+            if (!checkbox) {
+                return;
+            }
+
+            const key = checkbox.dataset.columnVisibilityKey;
+            const visibleCount =
+                view.order.length - view.hidden.length;
+
+            if (!checkbox.checked && visibleCount <= 1) {
+                checkbox.checked = true;
+                setSettingsMessage(
+                    "Оставьте видимым хотя бы один столбец."
+                );
+                return;
+            }
+
+            view.hidden = checkbox.checked
+                ? view.hidden.filter((item) => item !== key)
+                : [...view.hidden, key];
+            applyVisibilityAndWidths();
+            renderSettingsList();
+            saveView();
+            setSettingsMessage("");
+        });
+
+        document.addEventListener("click", (event) => {
+            if (
+                !settingsPanel.hidden
+                && !event.target.closest(".sales-column-settings")
+            ) {
+                closeSettings();
+            }
+        });
+
+        document.addEventListener("keydown", (event) => {
+            if (event.key === "Escape" && !settingsPanel.hidden) {
+                closeSettings();
+                settingsTrigger.focus();
+            }
+        });
+
+        window.salesColumnSettings = {
+            key: settingsKey,
+            getView: () => JSON.parse(JSON.stringify(view)),
+            reset: () => settingsReset.click(),
+        };
     })();
 
     const sortField = urlFilters.get("sort");
@@ -2967,5 +3736,207 @@
         });
     }
 </script>
+{% if config.TESTING and request.args.get("sales_columns_e2e") == "1" %}
+<script>
+    window.addEventListener("load", () => {
+        const phaseKey = "sales-columns-e2e-phase";
+        const settingsKey = "sales_all";
+        const otherSettingsKey = "sales_tictactoy";
+        const otherSettings = JSON.stringify({
+            order: ["barcode"],
+            hidden: ["note"],
+            widths: {barcode: 177},
+        });
+        const defaultOrder = [
+            "created_at",
+            "order_number",
+            "track_number",
+            "barcode",
+            "source",
+            "brand",
+            "category",
+            "product_name",
+            "quantity_display",
+            "unit_price_display",
+        ];
+        const getHeaders = () => Array.from(
+            document.querySelectorAll(
+                ".sales-table thead th"
+            )
+        );
+        const getHeaderKeys = () => getHeaders().map(
+            (cell) => cell.dataset.columnKey
+        );
+        const getRowKeys = () => Array.from(
+            document.querySelector(".sale-row").children
+        ).map((cell) => cell.dataset.columnKey);
+        const phase = sessionStorage.getItem(phaseKey) || "start";
+
+        try {
+            if (phase === "start") {
+                localStorage.setItem(
+                    settingsKey,
+                    JSON.stringify({
+                        order: [
+                            "removed_column",
+                            "unit_price_display",
+                            "created_at",
+                        ],
+                        hidden: [
+                            "track_number",
+                            "removed_column",
+                        ],
+                        widths: {
+                            unit_price_display: 211,
+                            created_at: -10,
+                            removed_column: 999,
+                        },
+                    }),
+                );
+                localStorage.setItem(
+                    otherSettingsKey,
+                    otherSettings,
+                );
+                sessionStorage.setItem(phaseKey, "restore");
+                window.location.reload();
+                return;
+            }
+
+            if (phase === "restore") {
+                const restored = JSON.parse(
+                    localStorage.getItem(settingsKey)
+                );
+                const headers = getHeaders();
+                const restoredCorrectly = (
+                    restored.order[0] === "unit_price_display"
+                    && restored.order[1] === "created_at"
+                    && !restored.order.includes("removed_column")
+                    && restored.order.length === defaultOrder.length
+                    && restored.hidden.length === 1
+                    && restored.hidden[0] === "track_number"
+                    && headers[0].dataset.columnKey
+                        === "unit_price_display"
+                    && headers.find(
+                        (cell) =>
+                            cell.dataset.columnKey
+                                === "track_number"
+                    ).hidden
+                    && Math.round(
+                        headers[0].getBoundingClientRect().width
+                    ) === 211
+                    && getHeaderKeys().every(
+                        (key, index) =>
+                            getRowKeys()[index] === key
+                    )
+                );
+
+                if (!restoredCorrectly) {
+                    throw new Error("restore");
+                }
+
+                window.sortSalesTable(
+                    "unit_price_display",
+                    "asc",
+                );
+
+                if (
+                    !getHeaderKeys().every(
+                        (key, index) =>
+                            getRowKeys()[index] === key
+                    )
+                ) {
+                    throw new Error("sort-alignment");
+                }
+
+                localStorage.setItem(settingsKey, "{");
+                sessionStorage.setItem(phaseKey, "corrupt");
+                window.location.reload();
+                return;
+            }
+
+            if (phase === "corrupt") {
+                const recovered = JSON.parse(
+                    localStorage.getItem(settingsKey)
+                );
+
+                if (
+                    JSON.stringify(recovered.order)
+                        !== JSON.stringify(defaultOrder)
+                    || recovered.hidden.length
+                ) {
+                    throw new Error("corrupt");
+                }
+
+                localStorage.setItem(
+                    settingsKey,
+                    JSON.stringify({
+                        order: defaultOrder,
+                        hidden: defaultOrder,
+                        widths: {},
+                    }),
+                );
+                sessionStorage.setItem(phaseKey, "last-visible");
+                window.location.reload();
+                return;
+            }
+
+            const visibleHeaders = getHeaders().filter(
+                (cell) => !cell.hidden
+            );
+            const disabledToggles = document.querySelectorAll(
+                "#salesColumnSettingsPanel "
+                + "input[data-column-visibility-key]:disabled"
+            );
+
+            if (
+                visibleHeaders.length !== 1
+                || visibleHeaders[0].dataset.columnKey
+                    !== "created_at"
+                || disabledToggles.length !== 1
+            ) {
+                throw new Error("last-visible");
+            }
+
+            document.getElementById(
+                "salesColumnSettingsReset"
+            ).click();
+
+            const reset = JSON.parse(
+                localStorage.getItem(settingsKey)
+            );
+            const tableWrap = document.querySelector(".table-wrap");
+            const resetCorrectly = (
+                JSON.stringify(getHeaderKeys())
+                    === JSON.stringify(defaultOrder)
+                && getHeaders().every((cell) => !cell.hidden)
+                && reset.hidden.length === 0
+                && reset.widths.created_at === 112
+                && Math.round(
+                    getHeaders()[0].getBoundingClientRect().width
+                ) === 112
+                && localStorage.getItem(otherSettingsKey)
+                    === otherSettings
+                && document.documentElement.scrollWidth
+                    <= document.documentElement.clientWidth
+                && tableWrap.scrollWidth > tableWrap.clientWidth
+            );
+
+            if (!resetCorrectly) {
+                throw new Error("reset");
+            }
+
+            document.documentElement.dataset.salesColumnsE2e =
+                "pass";
+            sessionStorage.removeItem(phaseKey);
+        } catch (error) {
+            document.documentElement.dataset.salesColumnsE2e =
+                "fail";
+            document.documentElement.dataset
+                .salesColumnsE2eError = error.message;
+            sessionStorage.removeItem(phaseKey);
+        }
+    });
+</script>
+{% endif %}
 </body>
 </html>
