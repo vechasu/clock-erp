@@ -1304,6 +1304,12 @@ class OwnerFeedbackTest(unittest.TestCase):
         self.assertIn("position: fixed !important;", css)
         self.assertIn("max-height: calc(100vh - 32px);", css)
         self.assertIn("overscroll-behavior: contain;", css)
+        self.assertIn(
+            "> .sales-column-settings-panel",
+            css,
+        )
+        self.assertIn("flex: 1 1 auto;", css)
+        self.assertIn("max-height: none;", css)
 
     def test_sales_desktop_workspace_has_page_hierarchy_and_accessible_table(self):
         with mock.patch.object(
