@@ -5168,6 +5168,22 @@
             const popoverFitsViewport = (panel) => {
                 const bounds = panel.getBoundingClientRect();
                 const style = getComputedStyle(panel);
+                const columnList = panel.querySelector(
+                    ".sales-column-settings-list"
+                );
+                const columnScrollIsAccessible = (
+                    !columnList
+                    || (
+                        panel.scrollHeight
+                            <= panel.clientHeight + 1
+                        && (
+                            columnList.scrollHeight
+                                <= columnList.clientHeight + 1
+                            || getComputedStyle(columnList)
+                                .overflowY === "auto"
+                        )
+                    )
+                );
 
                 return (
                     panel.parentElement?.id === "salesPopoverRoot"
@@ -5184,6 +5200,7 @@
                             <= panel.clientHeight + 1
                         || style.overflowY === "auto"
                     )
+                    && columnScrollIsAccessible
                     && document.documentElement.scrollWidth
                         <= document.documentElement.clientWidth
                 );

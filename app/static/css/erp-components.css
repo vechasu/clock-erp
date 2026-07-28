@@ -1015,6 +1015,32 @@
     background-clip: padding-box;
 }
 
+.sales-popover-root > .sales-viewport-popover[hidden] {
+    display: none;
+}
+
+.sales-popover-root > .sales-column-settings-panel {
+    display: flex;
+    flex-direction: column;
+}
+
+.sales-popover-root
+    > .sales-column-settings-panel
+    .sales-column-settings-header,
+.sales-popover-root
+    > .sales-column-settings-panel
+    .sales-column-settings-footer {
+    flex: 0 0 auto;
+}
+
+.sales-popover-root
+    > .sales-column-settings-panel
+    .sales-column-settings-list {
+    min-height: 0;
+    flex: 1 1 auto;
+    max-height: none;
+}
+
 .sales-popover-root
     > .sales-viewport-popover[data-sales-popover-placement="bottom"] {
     transform-origin: top right;
