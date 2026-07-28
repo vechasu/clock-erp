@@ -550,6 +550,76 @@
             text-align: right;
         }
 
+        .sales-table.erp-data-table .col-actions {
+            position: sticky;
+            z-index: 3;
+            right: 0;
+            width: 78px;
+            min-width: 78px;
+            max-width: 78px;
+            padding: 7px 8px;
+            overflow: visible;
+            background-clip: padding-box;
+            text-align: center;
+            box-shadow:
+                -1px 0 0 #d9e0e8,
+                -8px 0 15px -14px #334155;
+        }
+
+        .sales-table.erp-data-table thead .col-actions {
+            z-index: 7;
+            background: #f3f6f9;
+        }
+
+        .sales-row-actions {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+
+        .sales-row-action {
+            display: inline-flex;
+            width: 28px;
+            min-width: 28px;
+            height: 28px;
+            min-height: 28px;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            border: 0;
+            border-radius: 7px;
+            background: #dbeafe;
+            color: #1d4ed8;
+        }
+
+        .sales-row-action:hover,
+        .sales-row-action:focus-visible {
+            background: #bfdbfe;
+        }
+
+        .sales-row-action:focus-visible {
+            outline: 2px solid #2563eb;
+            outline-offset: 2px;
+        }
+
+        .sales-row-action svg {
+            width: 13px;
+            height: 13px;
+            pointer-events: none;
+        }
+
+        .sales-row-delete {
+            background: #f1f5f9;
+            color: #64748b;
+        }
+
+        .sales-row-delete:hover,
+        .sales-row-delete:focus-visible {
+            background: #fee2e2;
+            color: #dc2626;
+        }
+
         .sales-sort-label {
             display: inline-flex;
             width: 100%;
@@ -972,6 +1042,23 @@
             justify-content: flex-end;
             gap: 9px;
             padding-top: 6px;
+        }
+
+        .sale-form-error {
+            grid-column: 1 / -1;
+            margin: 0;
+            padding: 10px 12px;
+            border: 1px solid #fecaca;
+            border-radius: 10px;
+            background: #fff1f2;
+            color: #991b1b;
+            font-size: 13px;
+            font-weight: 750;
+            line-height: 1.4;
+        }
+
+        .sale-form-error[hidden] {
+            display: none;
         }
 
         @media (max-width: 1380px) {
@@ -1566,6 +1653,10 @@
                             {% for column in sales_columns %}
                                 <col data-column-key="{{ column.key }}">
                             {% endfor %}
+                            <col
+                                data-system-column="actions"
+                                style="width: 78px"
+                            >
                         </colgroup>
                         <thead>
                             <tr>
@@ -1588,6 +1679,13 @@
                                         </button>
                                     </th>
                                 {% endfor %}
+                                <th
+                                    class="col-actions"
+                                    data-system-column="actions"
+                                    scope="col"
+                                >
+                                    Действия
+                                </th>
                             </tr>
                         </thead>
 
@@ -1642,12 +1740,66 @@
                                             {% endif %}
                                         </td>
                                     {% endfor %}
+                                    <td
+                                        class="col-actions"
+                                        data-system-column="actions"
+                                    >
+                                        <div class="sales-row-actions">
+                                            <button
+                                                class="sales-row-action sales-row-edit"
+                                                type="button"
+                                                title="Редактировать продажу"
+                                                aria-label="Редактировать продажу"
+                                                data-sale="{{ sale|tojson|forceescape }}"
+                                                onclick="openSaleEditor(this)"
+                                            >
+                                                <svg
+                                                    viewBox="0 0 24 24"
+                                                    fill="none"
+                                                    stroke="currentColor"
+                                                    stroke-width="2"
+                                                    stroke-linecap="round"
+                                                    stroke-linejoin="round"
+                                                    aria-hidden="true"
+                                                >
+                                                    <path d="M12 20h9"></path>
+                                                    <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+                                                </svg>
+                                            </button>
+                                            <button
+                                                class="sales-row-action sales-row-delete"
+                                                type="button"
+                                                title="Удалить продажу"
+                                                aria-label="Удалить продажу"
+                                                data-sale-id="{{ sale.id }}"
+                                                data-sale-type="{{ sale.sale_type }}"
+                                                data-sale-label="{{ sale.order_number or sale.product_name or sale.id }}"
+                                                onclick="deleteSale(this)"
+                                            >
+                                                <svg
+                                                    viewBox="0 0 24 24"
+                                                    fill="none"
+                                                    stroke="currentColor"
+                                                    stroke-width="2"
+                                                    stroke-linecap="round"
+                                                    stroke-linejoin="round"
+                                                    aria-hidden="true"
+                                                >
+                                                    <path d="M3 6h18"></path>
+                                                    <path d="M8 6V4h8v2"></path>
+                                                    <path d="M19 6l-1 14H6L5 6"></path>
+                                                    <path d="M10 11v6"></path>
+                                                    <path d="M14 11v6"></path>
+                                                </svg>
+                                            </button>
+                                        </div>
+                                    </td>
                                 </tr>
                             {% else %}
                                 <tr class="sales-initial-empty-row">
                                     <td
                                         class="empty"
-                                        colspan="{{ sales_columns|length }}"
+                                        colspan="{{ sales_columns|length + 1 }}"
                                     >
                                         <div class="sales-empty-state">
                                             <strong>Продаж пока нет</strong>
@@ -1752,10 +1904,24 @@
                             <button
                                 class="sales-mobile-edit"
                                 type="button"
+                                title="Редактировать продажу"
+                                aria-label="Редактировать продажу"
                                 data-sale="{{ sale|tojson|forceescape }}"
-                                onclick="openMobileSaleEditor(this)"
+                                onclick="openSaleEditor(this)"
                             >
-                                Изменить
+                                Редактировать
+                            </button>
+                            <button
+                                class="sales-mobile-delete sales-row-delete"
+                                type="button"
+                                title="Удалить продажу"
+                                aria-label="Удалить продажу"
+                                data-sale-id="{{ sale.id }}"
+                                data-sale-type="{{ sale.sale_type }}"
+                                data-sale-label="{{ sale.order_number or sale.product_name or sale.id }}"
+                                onclick="deleteSale(this)"
+                            >
+                                Удалить
                             </button>
                         </div>
                     </article>
@@ -1841,6 +2007,11 @@
                 method="post"
                 action="{{ url_for('manual_sale_add') }}"
             >
+                <input
+                    type="hidden"
+                    name="csrf_token"
+                    value="{{ csrf_token() }}"
+                >
                 <input id="saleEditId" type="hidden" disabled>
                 <input id="saleSource" type="hidden" name="source">
                 <input
@@ -1885,6 +2056,12 @@
                 >
 
                 <div class="manual-form-grid">
+                    <p
+                        id="saleFormError"
+                        class="sale-form-error"
+                        role="alert"
+                        hidden
+                    ></p>
                     <div class="field">
                         <label for="saleBrandTrigger">Бренд</label>
                         {{ render_catalog_combobox(
@@ -1976,6 +2153,36 @@
                             step="0.01"
                             inputmode="decimal"
                             required
+                        >
+                    </div>
+
+                    <div class="field">
+                        <label for="sale_order_status">Статус</label>
+                        <select
+                            id="sale_order_status"
+                            class="control"
+                            name="order_status"
+                        >
+                            {% for key, label in sale_status_labels.items() %}
+                                <option value="{{ key }}">
+                                    {{ label }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="field">
+                        <label for="commission_amount">
+                            Комиссия, ₽
+                        </label>
+                        <input
+                            id="commission_amount"
+                            class="control"
+                            type="number"
+                            name="commission_amount"
+                            min="0"
+                            step="0.01"
+                            inputmode="decimal"
                         >
                     </div>
 
@@ -3742,7 +3949,7 @@
                     + ".sales-initial-empty-row td"
                 )
                 .forEach((cell) => {
-                    cell.colSpan = visibleCount;
+                    cell.colSpan = visibleCount + 1;
                 });
         }
 
@@ -3757,6 +3964,14 @@
                         row.appendChild(cell);
                     }
                 });
+
+                const actions = row.querySelector(
+                    '[data-system-column="actions"]'
+                );
+
+                if (actions) {
+                    row.appendChild(actions);
+                }
             });
 
             const colgroup = salesTable.querySelector("colgroup");
@@ -3771,6 +3986,14 @@
                         colgroup.appendChild(column);
                     }
                 });
+
+                const actions = colgroup.querySelector(
+                    '[data-system-column="actions"]'
+                );
+
+                if (actions) {
+                    colgroup.appendChild(actions);
+                }
             }
         }
 
@@ -3798,7 +4021,7 @@
                 }
             });
 
-            salesTable.style.width = totalWidth + "px";
+            salesTable.style.width = totalWidth + 78 + "px";
             salesTable.style.setProperty(
                 "--sales-sticky-date-width",
                 view.hidden.includes("created_at")
@@ -4177,7 +4400,35 @@
     const saleSubmitButton = manualSaleForm.querySelector(
         '.form-actions button[type="submit"]'
     );
+    const saleFormError = document.getElementById("saleFormError");
     let manualSaleReturnFocus = null;
+    let editingSale = null;
+
+    function setSaleFormError(message = "") {
+        saleFormError.textContent = message;
+        saleFormError.hidden = !message;
+    }
+
+    function rememberSalesPosition() {
+        sessionStorage.setItem(
+            "vechasu-sales-scroll-y",
+            String(window.scrollY),
+        );
+        sessionStorage.setItem(
+            "vechasu-sales-table-scroll-x",
+            String(
+                document.querySelector(".table-wrap")?.scrollLeft || 0
+            ),
+        );
+    }
+
+    function reloadSalesWithNotice(message, notice = "success") {
+        rememberSalesPosition();
+        const url = new URL(window.location.href);
+        url.searchParams.set("notice", notice);
+        url.searchParams.set("message", message);
+        window.location.assign(url);
+    }
 
     function showSaleForm(sourceKey) {
         saleSourceInput.value = sourceLabels[sourceKey];
@@ -4206,6 +4457,8 @@
         manualSaleForm.reset();
         manualSaleForm.action = "{{ url_for('manual_sale_add') }}";
         manualSaleForm.dataset.editing = "0";
+        editingSale = null;
+        setSaleFormError();
         saleEditId.disabled = true;
         saleEditId.removeAttribute("name");
         saleEditId.value = "";
@@ -4248,6 +4501,7 @@
     function closeManualSaleModalWindow() {
         manualSaleModal.classList.remove("is-open");
         document.body.classList.remove("modal-open");
+        setSaleFormError();
         manualSaleReturnFocus?.focus();
     }
 
@@ -4532,7 +4786,7 @@
 
     resetProductFilters();
 
-    window.openMobileSaleEditor = function (button) {
+    window.openSaleEditor = function (button) {
         let sale;
 
         try {
@@ -4543,6 +4797,7 @@
 
         manualSaleReturnFocus = button;
         resetModalView();
+        editingSale = sale;
         const sourceKey = sale.source_key || "tictactoy";
         showSaleForm(sourceKey);
         manualSaleForm.dataset.editing = "1";
@@ -4554,8 +4809,8 @@
             ? "sale_id"
             : "operation_id";
         saleEditId.value = sale.id || "";
-        saleSubmitButton.textContent = "Сохранить";
-        modalTitle.textContent = "Изменить продажу";
+        saleSubmitButton.textContent = "Сохранить изменения";
+        modalTitle.textContent = "Редактировать продажу";
         modalDescription.textContent =
             "Проверьте данные и сохраните изменения.";
 
@@ -4573,12 +4828,15 @@
             saleProductCombobox,
             sale.product_id || "",
         );
+        productIdInput.value = sale.product_id || "";
         productNameInput.value = sale.product_name || "";
 
         const fieldValues = {
             created_at: String(sale.created_at || "").slice(0, 10),
             quantity: sale.quantity_value || 1,
             unit_price: sale.unit_price || "",
+            order_status: sale.order_status || "processing",
+            commission_amount: sale.commission_amount || "",
             order_number: sale.order_number || "",
             track_number: sale.track_number || "",
             delivery_method: sale.delivery_method || "",
@@ -4618,16 +4876,85 @@
         });
     };
 
-    manualSaleForm.addEventListener("submit", (event) => {
+    window.openMobileSaleEditor = window.openSaleEditor;
+
+    window.deleteSale = async function (button) {
+        const saleLabel = button.dataset.saleLabel || "";
+        const confirmation = saleLabel
+            ? (
+                "Удалить продажу «"
+                + saleLabel
+                + "»? Запись исчезнет из раздела «Продажи»."
+            )
+            : "Удалить эту продажу?";
+
+        if (!window.confirm(confirmation)) {
+            return;
+        }
+
+        button.disabled = true;
+        button.setAttribute("aria-busy", "true");
+        const data = new FormData();
+        data.set("sale_id", button.dataset.saleId || "");
+        data.set("sale_type", button.dataset.saleType || "");
+        data.set(
+            "csrf_token",
+            manualSaleForm.elements.csrf_token?.value || "",
+        );
+
+        try {
+            const response = await fetch(
+                "{{ url_for('sale_delete') }}",
+                {
+                    method: "POST",
+                    headers: {
+                        "X-Requested-With": "XMLHttpRequest",
+                    },
+                    body: data,
+                },
+            );
+            const result = await response.json();
+
+            if (!response.ok || !result.ok) {
+                throw new Error(
+                    result.message || "Не удалось удалить продажу"
+                );
+            }
+
+            reloadSalesWithNotice(
+                result.message || "Продажа удалена"
+            );
+        } catch (error) {
+            window.alert(
+                error.message || "Не удалось удалить продажу"
+            );
+            button.disabled = false;
+            button.removeAttribute("aria-busy");
+            button.focus();
+        }
+    };
+
+    manualSaleForm.addEventListener("submit", async (event) => {
+        const isEditing =
+            manualSaleForm.dataset.editing === "1";
         const selectedProduct = warehouseItems.find(
             (item) =>
                 String(item.id || "")
                 === String(productIdInput.value || "")
         );
+        const keepsOriginalProduct = (
+            isEditing
+            && editingSale
+            && String(productIdInput.value || "")
+                === String(editingSale.product_id || "")
+        );
 
         if (
-            !selectedProduct
-            || !productMatchesSelection(selectedProduct)
+            (
+                !selectedProduct
+                || !productMatchesSelection(selectedProduct)
+            )
+            && !keepsOriginalProduct
         ) {
             event.preventDefault();
             window.setBrandDropdownOpen(
@@ -4639,16 +4966,62 @@
             return;
         }
 
-        sessionStorage.setItem(
-            "vechasu-sales-scroll-y",
-            String(window.scrollY),
-        );
+        rememberSalesPosition();
+
+        if (!isEditing) {
+            return;
+        }
+
+        event.preventDefault();
+        setSaleFormError();
+        saleSubmitButton.disabled = true;
+        manualSaleForm.setAttribute("aria-busy", "true");
+
+        try {
+            const response = await fetch(
+                manualSaleForm.action,
+                {
+                    method: "POST",
+                    headers: {
+                        "X-Requested-With": "XMLHttpRequest",
+                    },
+                    body: new FormData(manualSaleForm),
+                },
+            );
+            const result = await response.json();
+
+            if (!response.ok || !result.ok) {
+                throw new Error(
+                    result.message || "Не удалось сохранить изменения"
+                );
+            }
+
+            reloadSalesWithNotice(
+                result.message || "Изменения сохранены"
+            );
+        } catch (error) {
+            setSaleFormError(
+                error.message || "Не удалось сохранить изменения"
+            );
+            saleFormError.scrollIntoView({
+                block: "nearest",
+            });
+        } finally {
+            saleSubmitButton.disabled = false;
+            manualSaleForm.removeAttribute("aria-busy");
+        }
     });
 
     const savedSalesScrollValue = sessionStorage.getItem(
         "vechasu-sales-scroll-y"
     );
+    const savedSalesTableScrollValue = sessionStorage.getItem(
+        "vechasu-sales-table-scroll-x"
+    );
     const savedSalesScroll = Number(savedSalesScrollValue);
+    const savedSalesTableScroll = Number(
+        savedSalesTableScrollValue
+    );
 
     if (
         savedSalesScrollValue !== null
@@ -4657,6 +5030,22 @@
         sessionStorage.removeItem("vechasu-sales-scroll-y");
         requestAnimationFrame(() => {
             window.scrollTo(0, savedSalesScroll);
+        });
+    }
+
+    if (
+        savedSalesTableScrollValue !== null
+        && Number.isFinite(savedSalesTableScroll)
+    ) {
+        sessionStorage.removeItem(
+            "vechasu-sales-table-scroll-x"
+        );
+        requestAnimationFrame(() => {
+            const tableWrap = document.querySelector(".table-wrap");
+
+            if (tableWrap) {
+                tableWrap.scrollLeft = savedSalesTableScroll;
+            }
         });
     }
 </script>
@@ -4901,7 +5290,7 @@
         ];
         const getHeaders = () => Array.from(
             document.querySelectorAll(
-                ".sales-table thead th"
+                ".sales-table thead th[data-column-key]"
             )
         );
         const getHeaderKeys = () => getHeaders().map(
@@ -4909,7 +5298,17 @@
         );
         const getRowKeys = () => Array.from(
             document.querySelector(".sale-row").children
+        ).filter(
+            (cell) => cell.dataset.columnKey
         ).map((cell) => cell.dataset.columnKey);
+        const actionHeader = document.querySelector(
+            '.sales-table thead [data-system-column="actions"]'
+        );
+        const actionCells = Array.from(
+            document.querySelectorAll(
+                '.sale-row [data-system-column="actions"]'
+            )
+        );
         const tableWrap = document.querySelector(".table-wrap");
         const tableIsVisible = () =>
             tableWrap.getClientRects().length > 0;
@@ -4977,6 +5376,12 @@
                     && getHeaderKeys().every(
                         (key, index) =>
                             getRowKeys()[index] === key
+                    )
+                    && actionHeader
+                        === actionHeader.parentElement.lastElementChild
+                    && actionCells.every(
+                        (cell) =>
+                            cell === cell.parentElement.lastElementChild
                     )
                 );
 
@@ -5167,6 +5572,18 @@
                 && toolbar.scrollWidth <= toolbar.clientWidth
                 && toolbarChildrenFit
                 && toolbarActionsAligned
+                && getComputedStyle(actionHeader).position === "sticky"
+                && getComputedStyle(actionHeader).right === "0px"
+                && actionCells.every(
+                    (cell) =>
+                        cell.querySelectorAll(
+                            ".sales-row-action"
+                        ).length === 2
+                        && cell === cell.parentElement.lastElementChild
+                )
+                && !document.querySelector(
+                    '[data-column-visibility-key="actions"]'
+                )
                 && (
                     tableIsVisible()
                     ? (

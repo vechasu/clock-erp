@@ -4081,6 +4081,41 @@ def redirect_to_sales(message, notice="success", form=None):
     return redirect(url_for("sales_page", **query))
 
 
+def respond_to_sales_action(
+    message,
+    notice="success",
+    status_code=200,
+    form=None,
+):
+    if (
+        request.headers.get("X-Requested-With")
+        == "XMLHttpRequest"
+    ):
+        return jsonify(
+            ok=notice == "success",
+            message=message,
+        ), status_code
+
+    return redirect_to_sales(
+        message,
+        notice=notice,
+        form=form,
+    )
+
+
+def validate_sale_form_date(value):
+    from datetime import date
+
+    normalized = str(value or "").strip()
+
+    try:
+        date.fromisoformat(normalized)
+    except (TypeError, ValueError):
+        raise ValueError("Укажите корректную дату продажи")
+
+    return normalized
+
+
 @app.route("/sales/manual/add", methods=["POST"])
 def manual_sale_add():
     from datetime import date
@@ -4237,7 +4272,7 @@ def manual_sale_add():
 
 @app.route("/sales/manual/update", methods=["POST"])
 def manual_sale_update():
-    from flask import request, redirect, url_for
+    require_csrf_when_authenticated()
 
     sale_id = (request.form.get("sale_id") or "").strip()
     product_name = (request.form.get("product_name") or "").strip()
@@ -4255,39 +4290,42 @@ def manual_sale_update():
     # === SALES PRICE EDIT AND TABLE V2 END ===
 
     if not sale_id:
-        return redirect(
-            url_for(
-                "sales_page",
-                notice="error",
-                message="Продажа не найдена",
-            )
+        return respond_to_sales_action(
+            "Продажа не найдена",
+            notice="error",
+            status_code=400,
         )
 
     if not product_name:
-        return redirect(
-            url_for(
-                "sales_page",
-                notice="error",
-                message="Укажите название товара",
-            )
+        return respond_to_sales_action(
+            "Укажите название товара",
+            notice="error",
+            status_code=400,
         )
 
     if quantity <= 0:
-        return redirect(
-            url_for(
-                "sales_page",
-                notice="error",
-                message="Выберите количество от 1 до 25",
-            )
+        return respond_to_sales_action(
+            "Выберите количество от 1 до 25",
+            notice="error",
+            status_code=400,
         )
 
     if unit_price is None:
-        return redirect(
-            url_for(
-                "sales_page",
-                notice="error",
-                message="Укажите цену продажи не меньше 1 ₽",
-            )
+        return respond_to_sales_action(
+            "Укажите цену продажи не меньше 1 ₽",
+            notice="error",
+            status_code=400,
+        )
+
+    try:
+        created_at = validate_sale_form_date(
+            request.form.get("created_at")
+        )
+    except ValueError as error:
+        return respond_to_sales_action(
+            str(error),
+            notice="error",
+            status_code=400,
         )
 
     sales = load_manual_sales()
@@ -4296,6 +4334,13 @@ def manual_sale_update():
     for sale in sales:
         if str(sale.get("id") or "") != sale_id:
             continue
+
+        if sale.get("deleted_at"):
+            return respond_to_sales_action(
+                "Продажа уже удалена",
+                notice="error",
+                status_code=410,
+            )
 
         product_id = (
             request.form.get("product_id")
@@ -4319,15 +4364,13 @@ def manual_sale_update():
                 existing=sale,
             )
         except ValueError as error:
-            return redirect(url_for(
-                "sales_page",
+            return respond_to_sales_action(
+                str(error),
                 notice="error",
-                message=str(error),
-            ))
+                status_code=400,
+            )
 
-        sale["created_at"] = (
-            request.form.get("created_at") or ""
-        ).strip()
+        sale["created_at"] = created_at
         sale["source"] = normalize_manual_sale_source(
             request.form.get("source"),
             request.form.get("custom_source"),
@@ -4371,22 +4414,16 @@ def manual_sale_update():
         break
 
     if not sale_found:
-        return redirect(
-            url_for(
-                "sales_page",
-                notice="error",
-                message="Продажа не найдена",
-            )
+        return respond_to_sales_action(
+            "Продажа не найдена",
+            notice="error",
+            status_code=404,
         )
 
     save_manual_sales(sales)
 
-    return redirect(
-        url_for(
-            "sales_page",
-            notice="success",
-            message="Ручная продажа сохранена",
-        )
+    return respond_to_sales_action(
+        "Изменения сохранены",
     )
 
 
@@ -4520,7 +4557,7 @@ def sale_status_update():
 
 @app.route("/sales/automatic/update", methods=["POST"])
 def automatic_sale_update():
-    from flask import request, redirect, url_for
+    require_csrf_when_authenticated()
 
     operation_id = (
         request.form.get("operation_id") or ""
@@ -4544,12 +4581,10 @@ def automatic_sale_update():
     )
 
     if not operation_id:
-        return redirect(
-            url_for(
-                "sales_page",
-                notice="error",
-                message="Автоматическая продажа не найдена",
-            )
+        return respond_to_sales_action(
+            "Автоматическая продажа не найдена",
+            notice="error",
+            status_code=400,
         )
 
     operation = next(
@@ -4564,43 +4599,54 @@ def automatic_sale_update():
     )
 
     if not operation:
-        return redirect(
-            url_for(
-                "sales_page",
-                notice="error",
-                message="Исходная операция продажи не найдена",
-            )
+        return respond_to_sales_action(
+            "Исходная операция продажи не найдена",
+            notice="error",
+            status_code=404,
         )
 
     if not product_name:
-        return redirect(
-            url_for(
-                "sales_page",
-                notice="error",
-                message="Укажите название товара",
-            )
+        return respond_to_sales_action(
+            "Укажите название товара",
+            notice="error",
+            status_code=400,
         )
 
     if quantity <= 0:
-        return redirect(
-            url_for(
-                "sales_page",
-                notice="error",
-                message="Выберите количество от 1 до 25",
-            )
+        return respond_to_sales_action(
+            "Выберите количество от 1 до 25",
+            notice="error",
+            status_code=400,
         )
 
     if unit_price is None:
-        return redirect(
-            url_for(
-                "sales_page",
-                notice="error",
-                message="Укажите цену продажи не меньше 1 ₽",
-            )
+        return respond_to_sales_action(
+            "Укажите цену продажи не меньше 1 ₽",
+            notice="error",
+            status_code=400,
         )
 
     overrides = load_automatic_sales_overrides()
     existing_override = overrides.get(operation_id) or {}
+
+    if existing_override.get("deleted_at"):
+        return respond_to_sales_action(
+            "Продажа уже удалена",
+            notice="error",
+            status_code=410,
+        )
+
+    try:
+        created_at = validate_sale_form_date(
+            request.form.get("created_at")
+        )
+    except ValueError as error:
+        return respond_to_sales_action(
+            str(error),
+            notice="error",
+            status_code=400,
+        )
+
     product_id = str(operation.get("product_id") or "").strip()
     product_metadata = resolve_sale_product_metadata(
         product_id,
@@ -4628,16 +4674,14 @@ def automatic_sale_update():
             existing=existing_override,
         )
     except ValueError as error:
-        return redirect(url_for(
-            "sales_page",
+        return respond_to_sales_action(
+            str(error),
             notice="error",
-            message=str(error),
-        ))
+            status_code=400,
+        )
 
     overrides[operation_id] = {
-        "created_at": (
-            request.form.get("created_at") or ""
-        ).strip(),
+        "created_at": created_at,
         "source": (
             request.form.get("source") or "Tictactoy"
         ).strip(),
@@ -4674,13 +4718,94 @@ def automatic_sale_update():
 
     save_automatic_sales_overrides(overrides)
 
-    return redirect(
-        url_for(
-            "sales_page",
-            notice="success",
-            message="Автоматическая продажа сохранена",
-        )
+    return respond_to_sales_action(
+        "Изменения сохранены",
     )
+
+
+@app.route("/sales/delete", methods=["POST"])
+def sale_delete():
+    from datetime import datetime
+
+    require_csrf_when_authenticated()
+    sale_id = str(request.form.get("sale_id") or "").strip()
+    sale_type = str(request.form.get("sale_type") or "").strip()
+
+    if not sale_id:
+        return respond_to_sales_action(
+            "Продажа не найдена",
+            notice="error",
+            status_code=400,
+        )
+
+    deleted_at = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+    if sale_type == "manual":
+        sales = load_manual_sales()
+        sale = next(
+            (
+                item
+                for item in sales
+                if str(item.get("id") or "") == sale_id
+            ),
+            None,
+        )
+
+        if sale is None:
+            return respond_to_sales_action(
+                "Ручная продажа не найдена",
+                notice="error",
+                status_code=404,
+            )
+
+        if sale.get("deleted_at"):
+            return respond_to_sales_action(
+                "Продажа уже удалена",
+                notice="error",
+                status_code=410,
+            )
+
+        sale["deleted_at"] = deleted_at
+        save_manual_sales(sales)
+    elif sale_type == "automatic":
+        operation_exists = any(
+            str(operation.get("id") or "") == sale_id
+            and str(operation.get("source") or "") == "Заказ Битрикс"
+            and str(operation.get("type") or "") in {"writeoff", "loss"}
+            for operation in load_stock_operations()
+        )
+
+        if not operation_exists:
+            return respond_to_sales_action(
+                "Автоматическая продажа не найдена",
+                notice="error",
+                status_code=404,
+            )
+
+        overrides = load_automatic_sales_overrides()
+        override = overrides.get(sale_id)
+
+        if not isinstance(override, dict):
+            override = {}
+
+        if override.get("deleted_at"):
+            return respond_to_sales_action(
+                "Продажа уже удалена",
+                notice="error",
+                status_code=410,
+            )
+
+        override["deleted_at"] = deleted_at
+        overrides[sale_id] = override
+        save_automatic_sales_overrides(overrides)
+    else:
+        return respond_to_sales_action(
+            "Неизвестный тип продажи",
+            notice="error",
+            status_code=400,
+        )
+
+    return respond_to_sales_action("Продажа удалена")
 
 
 
@@ -4768,6 +4893,9 @@ def build_sales_report_records(warehouse_items=None):
 
         if not isinstance(override, dict):
             override = {}
+
+        if override.get("deleted_at"):
+            continue
 
         try:
             original_quantity = float(
@@ -5024,6 +5152,9 @@ def build_sales_report_records(warehouse_items=None):
         })
 
     for stored_sale in reversed(stored_manual_sales):
+        if stored_sale.get("deleted_at"):
+            continue
+
         quantity_number = parse_manual_sale_quantity(
             stored_sale.get("quantity")
         )
@@ -5969,6 +6100,9 @@ def build_legacy_sales_page():
         if not isinstance(override, dict):
             override = {}
 
+        if override.get("deleted_at"):
+            continue
+
         try:
             original_quantity = float(
                 operation.get("quantity") or 0
@@ -6165,6 +6299,9 @@ def build_legacy_sales_page():
         })
 
     for stored_sale in reversed(stored_manual_sales):
+        if stored_sale.get("deleted_at"):
+            continue
+
         quantity_number = parse_manual_sale_quantity(
             stored_sale.get("quantity")
         )
@@ -6410,6 +6547,7 @@ def sales_page():
             "sales_report_page",
             **report_query,
         ),
+        sale_status_labels=SALE_STATUS_LABELS,
         preserved_filters=preserved_filters,
         notice=(request.args.get("notice") or "").strip(),
         message=(request.args.get("message") or "").strip(),
