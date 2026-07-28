@@ -200,11 +200,14 @@ for healthcheck_url in "${HEALTHCHECK_URLS[@]}"; do
     printf 'HTTP_200=%s\n' "$healthcheck_url"
 done
 
-root_headers="$(curl --silent --show-error --max-time 10 --head \
-    http://127.0.0.1:5000/)"
+root_headers="$(
+    curl --silent --show-error --max-time 10 --head \
+        http://127.0.0.1:5000/ |
+        tr -d '\r'
+)"
 printf '%s\n' "$root_headers" | grep -Eq '^HTTP/[^ ]+ 302'
 printf '%s\n' "$root_headers" |
-    grep -Eiq '^location: (https?://[^/]+)?/register\r?$'
+    grep -Eiq '^location: (https?://[^/]+)?/register$'
 
 if journalctl -u "$SERVICE_NAME" --since "-2 minutes" \
     --priority=err --no-pager --quiet | grep -q .; then
