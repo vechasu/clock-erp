@@ -2363,6 +2363,10 @@
                 - viewportPadding
                 - popoverGap,
             );
+            const viewportAvailableHeight = Math.max(
+                0,
+                viewportHeight - viewportPadding * 2,
+            );
             let opensDown = true;
 
             if (naturalHeight > spaceBelow) {
@@ -2372,8 +2376,14 @@
             }
 
             const availableHeight = opensDown
-                ? spaceBelow
-                : spaceAbove;
+                ? Math.min(
+                    spaceBelow,
+                    viewportAvailableHeight,
+                )
+                : Math.min(
+                    spaceAbove,
+                    viewportAvailableHeight,
+                );
             const renderedHeight = Math.min(
                 naturalHeight,
                 availableHeight,
