@@ -42,6 +42,7 @@ from flask import (
     request,
     url_for,
 )
+from werkzeug.middleware.proxy_fix import ProxyFix
 from app.auth import (
     configure_auth,
     require_csrf_when_authenticated,
@@ -49,6 +50,12 @@ from app.auth import (
 )
 
 app = Flask(__name__)
+app.wsgi_app = ProxyFix(
+    app.wsgi_app,
+    x_for=1,
+    x_proto=1,
+    x_host=1,
+)
 configure_auth(app, PROJECT_ROOT)
 
 ORDERS_URL = "https://tictactoy.ru/api/orders.php"
