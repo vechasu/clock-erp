@@ -1,3 +1,4 @@
+{% from "_navigation_icons.html" import navigation_icon %}
 <!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -223,6 +224,16 @@
             font-size: 20px;
         }
 
+        .navigation-item-icon svg {
+            width: 22px;
+            height: 22px;
+            fill: none;
+            stroke: #2563eb;
+            stroke-width: 1.8;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
         .navigation-item-text {
             min-width: 0;
         }
@@ -437,7 +448,7 @@
                         {% endif %}
                             <span class="navigation-item-main">
                                 <span class="navigation-item-icon">
-                                    {{ item.icon }}
+                                    {{ navigation_icon(item.icon) }}
                                 </span>
 
                                 <span class="navigation-item-text">

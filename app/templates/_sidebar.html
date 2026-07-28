@@ -1,641 +1,33 @@
-{% macro sidebar_icon(key) -%}
-    {% if key == "orders" %}
-        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M4 7.5L12 3l8 4.5v9L12 21l-8-4.5v-9Z" />
-            <path d="M4.5 7.5 12 12l7.5-4.5M12 12v9" />
-        </svg>
-    {% elif key == "products" %}
-        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M20 13 13 20a2 2 0 0 1-2.8 0L4 13.8A2 2 0 0 1 4 11V5a1 1 0 0 1 1-1h6a2 2 0 0 1 1.4.6L20 12.2a1 1 0 0 1 0 1.4Z" />
-            <path d="M8.5 8.5h.01" />
-        </svg>
-    {% elif key == "catalog" %}
-        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <rect x="3" y="3" width="7" height="7" rx="1.5" />
-            <rect x="14" y="3" width="7" height="7" rx="1.5" />
-            <rect x="3" y="14" width="7" height="7" rx="1.5" />
-            <rect x="14" y="14" width="7" height="7" rx="1.5" />
-        </svg>
-    {% elif key == "sales" %}
-        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M6 8h12l1 12H5L6 8Z" />
-            <path d="M9 9V6a3 3 0 0 1 6 0v3" />
-        </svg>
-    {% elif key == "receipts" %}
-        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M4 13h4l2 3h4l2-3h4v7H4v-7Z" />
-            <path d="M12 3v9m0 0 3-3m-3 3L9 9" />
-        </svg>
-    {% elif key == "analytics" %}
-        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M4 20V10m6 10V4m6 16v-7m4 7H2" />
-        </svg>
-    {% elif key == "stock_operations" %}
-        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M6 4h12a2 2 0 0 1 2 2v14H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" />
-            <path d="M8 8h8M8 12h8M8 16h5" />
-        </svg>
-    {% elif key == "repair" %}
-        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M14.7 6.3a4 4 0 0 0-5-5L12 3.6 9.6 6 7.3 3.7a4 4 0 0 0 5 5L5 16a2 2 0 1 0 3 3l7.3-7.3a4 4 0 0 0 5-5L18 9l-3-3 2.3-2.3Z" />
-        </svg>
-    {% else %}
-        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" />
-            <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3A1.7 1.7 0 0 0 10 3v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z" />
-        </svg>
-    {% endif %}
-{%- endmacro %}
-
-<script>
-    (() => {
-        try {
-            if (localStorage.getItem("ttt-erp-sidebar-collapsed") === "1") {
-                document.querySelector(".app")?.classList.add("sidebar-collapsed");
-            }
-        } catch (error) {
-            // Начальное состояние останется раскрытым.
-        }
-    })();
-</script>
-
-<script>
-    document.addEventListener("keydown", (event) => {
-        if (event.key !== "Tab") {
-            return;
-        }
-
-        const dialog = document.querySelector(
-            '.modal.is-open[aria-modal="true"], '
-            + '.drawer.open[aria-modal="true"], '
-            + '.map-modal.open[aria-modal="true"]'
-        );
-
-        if (!dialog) {
-            return;
-        }
-
-        const focusable = Array.from(dialog.querySelectorAll(
-            'a[href], button:not([disabled]), input:not([disabled]), '
-            + 'select:not([disabled]), textarea:not([disabled]), '
-            + '[tabindex]:not([tabindex="-1"])'
-        )).filter((element) => (
-            element.getClientRects().length > 0
-        ));
-
-        if (!focusable.length) {
-            event.preventDefault();
-            dialog.focus();
-            return;
-        }
-
-        const first = focusable[0];
-        const last = focusable[focusable.length - 1];
-
-        if (event.shiftKey && document.activeElement === first) {
-            event.preventDefault();
-            last.focus();
-        } else if (
-            !event.shiftKey
-            && document.activeElement === last
-        ) {
-            event.preventDefault();
-            first.focus();
-        }
-    });
-</script>
-
-<style>
-    .app {
-        min-height: 100vh;
-        display: grid;
-        grid-template-columns: 244px minmax(0, 1fr);
-        transition: grid-template-columns 0.25s ease;
-    }
-
-    .app.sidebar-collapsed {
-        grid-template-columns: 76px minmax(0, 1fr);
-    }
-
-    .sidebar {
-        position: relative;
-        z-index: 20;
-        min-width: 0;
-        min-height: 100vh;
-        display: flex;
-        flex-direction: column;
-        overflow: hidden;
-        box-sizing: border-box;
-        padding: 16px 15px;
-        background: #0b2745;
-        color: #f8fafc;
-        box-shadow: 4px 0 18px rgba(15, 23, 42, 0.12);
-        transition: padding 0.25s ease;
-    }
-
-    .sidebar-brand {
-        min-width: 0;
-        min-height: 44px;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-    }
-
-    .sidebar-brand-link {
-        min-width: 0;
-        flex: 1 1 auto;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        color: #f8fafc;
-        text-decoration: none;
-    }
-
-    .sidebar-brand-link:hover {
-        color: #f8fafc;
-        text-decoration: none;
-    }
-
-    .sidebar-logo-mark {
-        flex: 0 0 34px;
-        width: 34px;
-        height: 34px;
-        display: grid;
-        place-items: center;
-        border: 1px solid rgba(147, 197, 253, 0.28);
-        border-radius: 11px;
-        background: rgba(96, 165, 250, 0.14);
-        color: #bfdbfe;
-        font-size: 15px;
-        font-weight: 800;
-        letter-spacing: -0.04em;
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
-    }
-
-    .sidebar-brand-copy {
-        min-width: 0;
-        overflow: hidden;
-        white-space: nowrap;
-    }
-
-    .sidebar-brand-title {
-        display: block;
-        overflow: hidden;
-        color: #f8fafc;
-        font-size: 18px;
-        font-weight: 700;
-        line-height: 1.15;
-        letter-spacing: -0.02em;
-        text-overflow: ellipsis;
-    }
-
-    .sidebar-brand-subtitle {
-        display: block;
-        margin-top: 3px;
-        overflow: hidden;
-        color: #94a3b8;
-        font-size: 12px;
-        font-weight: 500;
-        line-height: 1.2;
-        text-overflow: ellipsis;
-    }
-
-    .sidebar-toggle {
-        flex: 0 0 32px;
-        width: 32px;
-        height: 32px;
-        display: grid;
-        place-items: center;
-        padding: 0;
-        border: 1px solid rgba(255, 255, 255, 0.12);
-        border-radius: 10px;
-        background: rgba(255, 255, 255, 0.06);
-        color: #bfdbfe;
-        cursor: pointer;
-        transition:
-            background 0.2s ease,
-            border-color 0.2s ease,
-            color 0.2s ease,
-            transform 0.2s ease;
-    }
-
-    .sidebar-toggle:hover {
-        border-color: rgba(147, 197, 253, 0.38);
-        background: rgba(255, 255, 255, 0.12);
-        color: #f8fafc;
-        transform: translateY(-1px);
-    }
-
-    .sidebar-toggle:focus-visible {
-        outline: 2px solid #60a5fa;
-        outline-offset: 2px;
-    }
-
-    .sidebar-toggle-icon {
-        width: 17px;
-        height: 17px;
-        display: block;
-        transition: transform 0.25s ease;
-    }
-
-    .sidebar-toggle.is-collapsed .sidebar-toggle-icon {
-        transform: rotate(180deg);
-    }
-
-    .sidebar-nav {
-        min-width: 0;
-        margin-top: 28px;
-    }
-
-    .sidebar-nav-group-title {
-        height: 15px;
-        margin: 0 10px 8px;
-        overflow: hidden;
-        color: #7890ad;
-        font-size: 10px;
-        font-weight: 700;
-        line-height: 15px;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        white-space: nowrap;
-    }
-
-    .sidebar-nav-group-title:not(:first-child) {
-        margin-top: 20px;
-    }
-
-    .sidebar-link {
-        position: relative;
-        width: 100%;
-        height: 49px;
-        display: flex;
-        align-items: center;
-        gap: 11px;
-        box-sizing: border-box;
-        margin-bottom: 6px;
-        padding: 0 12px;
-        overflow: hidden;
-        border-radius: 13px;
-        color: #cbd5e1;
-        font-size: 15px;
-        font-weight: 600;
-        line-height: 1.2;
-        text-decoration: none;
-        white-space: nowrap;
-        transition:
-            background 0.2s ease,
-            color 0.2s ease;
-    }
-
-    .sidebar-link::before {
-        position: absolute;
-        top: 11px;
-        bottom: 11px;
-        left: 0;
-        width: 3px;
-        border-radius: 0 3px 3px 0;
-        background: transparent;
-        content: "";
-        transition: background 0.2s ease;
-    }
-
-    .sidebar-link:hover {
-        background: rgba(255, 255, 255, 0.07);
-        color: #f8fafc;
-        text-decoration: none;
-    }
-
-    .sidebar-link.active,
-    .sidebar-link.active:hover {
-        background: rgba(96, 165, 250, 0.16);
-        color: #f8fafc;
-    }
-
-    .sidebar-link.active::before {
-        background: #60a5fa;
-    }
-
-    .sidebar-link.disabled {
-        opacity: 0.55;
-        cursor: default;
-        pointer-events: none;
-    }
-
-    .sidebar-icon {
-        flex: 0 0 22px;
-        width: 22px;
-        height: 22px;
-        display: grid;
-        place-items: center;
-        color: #9fb3c8;
-        transition: color 0.2s ease;
-    }
-
-    .sidebar-icon svg {
-        width: 22px;
-        height: 22px;
-        display: block;
-        stroke: currentColor;
-        stroke-width: 1.8;
-        stroke-linecap: round;
-        stroke-linejoin: round;
-    }
-
-    .sidebar-link:hover .sidebar-icon,
-    .sidebar-link.active .sidebar-icon {
-        color: #bfdbfe;
-    }
-
-    .sidebar-label {
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-
-    .sidebar-system-status {
-        min-width: 0;
-        min-height: 40px;
-        display: flex;
-        align-items: center;
-        gap: 9px;
-        box-sizing: border-box;
-        margin-top: auto;
-        padding: 0 12px;
-        overflow: hidden;
-        border: 1px solid rgba(134, 239, 172, 0.12);
-        border-radius: 12px;
-        background: rgba(22, 163, 74, 0.08);
-        color: #d1fae5;
-        font-size: 13px;
-        font-weight: 600;
-        white-space: nowrap;
-    }
-
-    .sidebar-system-dot {
-        flex: 0 0 8px;
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        background: #22c55e;
-        box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.12);
-    }
-
-    .sidebar-system-text {
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-
-    .sidebar-user {
-        min-width: 0;
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) auto;
-        gap: 8px;
-        align-items: center;
-        margin-top: auto;
-        padding: 12px 10px;
-        border-top: 1px solid rgba(148, 163, 184, 0.16);
-    }
-
-    .sidebar-user-copy {
-        min-width: 0;
-        overflow: hidden;
-        color: #dbeafe;
-        font-size: 12px;
-        font-weight: 750;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-    }
-
-    .sidebar-logout {
-        min-height: 34px;
-        padding: 0 9px;
-        border: 1px solid rgba(147, 197, 253, 0.24);
-        border-radius: 9px;
-        background: rgba(255, 255, 255, 0.05);
-        color: #dbeafe;
-        font-size: 11px;
-        font-weight: 800;
-        cursor: pointer;
-    }
-
-    .app.sidebar-collapsed .sidebar {
-        padding-right: 15px;
-        padding-left: 15px;
-    }
-
-    .app.sidebar-collapsed .sidebar-brand {
-        min-height: 80px;
-        flex-direction: column;
-        gap: 8px;
-    }
-
-    .app.sidebar-collapsed .sidebar-brand-link {
-        flex: 0 0 34px;
-    }
-
-    .app.sidebar-collapsed .sidebar-brand-copy,
-    .app.sidebar-collapsed .sidebar-nav-group-title,
-    .app.sidebar-collapsed .sidebar-label,
-    .app.sidebar-collapsed .sidebar-system-text {
-        display: none;
-    }
-
-    .app.sidebar-collapsed .sidebar-user-copy {
-        display: none;
-    }
-
-    .app.sidebar-collapsed .sidebar-user {
-        grid-template-columns: 1fr;
-        padding-right: 0;
-        padding-left: 0;
-    }
-
-    .app.sidebar-collapsed .sidebar-nav {
-        margin-top: 18px;
-    }
-
-    .app.sidebar-collapsed .sidebar-link {
-        justify-content: center;
-        gap: 0;
-        padding-right: 12px;
-        padding-left: 12px;
-    }
-
-    .app.sidebar-collapsed .sidebar-system-status {
-        justify-content: center;
-        padding: 0;
-        border-color: transparent;
-        background: transparent;
-    }
-
-    @media (max-width: 1100px) {
-        .app,
-        .app.sidebar-collapsed {
-            grid-template-columns: minmax(0, 1fr);
-        }
-
-        .sidebar {
-            display: none;
-        }
-    }
-
-    .mobile-erp-navigation,
-    .mobile-erp-more-sheet,
-    .mobile-erp-more-backdrop {
-        display: none;
-    }
-
-    @media (max-width: 767px) {
-        body {
-            padding-bottom: calc(70px + env(safe-area-inset-bottom));
-        }
-
-        body.mobile-erp-menu-open {
-            overflow: hidden;
-        }
-
-        .mobile-erp-navigation {
-            position: fixed;
-            z-index: 900;
-            right: 0;
-            bottom: 0;
-            left: 0;
-            display: grid;
-            grid-template-columns: repeat(4, minmax(0, 1fr));
-            min-height: calc(62px + env(safe-area-inset-bottom));
-            padding: 4px 6px env(safe-area-inset-bottom);
-            border-top: 1px solid #dce4ef;
-            background: rgba(255, 255, 255, 0.97);
-            box-shadow: 0 -8px 24px rgba(15, 23, 42, 0.1);
-            backdrop-filter: blur(14px);
-        }
-
-        .mobile-erp-nav-item {
-            min-width: 0;
-            min-height: 54px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            flex-direction: column;
-            gap: 2px;
-            padding: 4px 2px;
-            border: 0;
-            border-radius: 12px;
-            background: transparent;
-            color: #64748b;
-            font: inherit;
-            font-size: 11px;
-            font-weight: 750;
-            line-height: 1.15;
-            text-decoration: none;
-            cursor: pointer;
-        }
-
-        .mobile-erp-nav-item.active {
-            background: #eff6ff;
-            color: #1d4ed8;
-        }
-
-        .mobile-erp-nav-icon {
-            width: 22px;
-            height: 22px;
-            display: grid;
-            place-items: center;
-        }
-
-        .mobile-erp-nav-icon svg {
-            width: 21px;
-            height: 21px;
-            display: block;
-            stroke: currentColor;
-            stroke-width: 1.9;
-            stroke-linecap: round;
-            stroke-linejoin: round;
-        }
-
-        .mobile-erp-more-backdrop {
-            position: fixed;
-            z-index: 905;
-            inset: 0;
-            background: rgba(15, 23, 42, 0.38);
-        }
-
-        .mobile-erp-more-backdrop.is-open {
-            display: block;
-        }
-
-        .mobile-erp-more-sheet {
-            position: fixed;
-            z-index: 910;
-            right: 8px;
-            bottom: calc(70px + env(safe-area-inset-bottom));
-            left: 8px;
-            max-height: min(66vh, 520px);
-            padding: 10px;
-            overflow-y: auto;
-            border: 1px solid #dce4ef;
-            border-radius: 18px;
-            background: #ffffff;
-            box-shadow: 0 22px 60px rgba(15, 23, 42, 0.24);
-        }
-
-        .mobile-erp-more-sheet.is-open {
-            display: grid;
-            gap: 4px;
-        }
-
-        .mobile-erp-more-title {
-            padding: 8px 10px 6px;
-            color: #172033;
-            font-size: 16px;
-            font-weight: 850;
-        }
-
-        .mobile-erp-more-link {
-            min-height: 46px;
-            display: flex;
-            align-items: center;
-            gap: 11px;
-            padding: 0 12px;
-            border-radius: 11px;
-            color: #334155;
-            font-size: 14px;
-            font-weight: 700;
-            text-decoration: none;
-        }
-
-        .mobile-erp-more-link.active {
-            background: #eff6ff;
-            color: #1d4ed8;
-        }
-
-        .mobile-erp-more-link .sidebar-icon {
-            flex-basis: 20px;
-            width: 20px;
-            height: 20px;
-        }
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-        .app,
-        .sidebar,
-        .sidebar-toggle-icon {
-            transition: none;
-        }
-    }
-</style>
-
-<aside class="sidebar" id="appSidebar">
+{% from "_navigation_icons.html" import navigation_icon %}
+<link
+    rel="stylesheet"
+    href="{{ url_for('static', filename='css/sidebar.css') }}"
+>
+<script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
+
+<aside
+    class="sidebar"
+    id="appSidebar"
+    aria-label="Навигация Vechasu ERP"
+>
     <div class="sidebar-brand">
         <a
             class="sidebar-brand-link"
             href="/"
-            aria-label="TTT ERP — главная"
-            title="TTT ERP"
+            aria-label="{{ sidebar_brand.title }} — главная"
+            title="{{ sidebar_brand.title }}"
         >
-            <span class="sidebar-logo-mark" aria-hidden="true">TTT</span>
+            <span class="sidebar-logo-mark" aria-hidden="true">VE</span>
             <span class="sidebar-brand-copy">
-                <span class="sidebar-brand-title">TTT ERP</span>
-                <span class="sidebar-brand-subtitle">Управление магазином</span>
+                <span class="sidebar-brand-title">
+                    {{ sidebar_brand.title }}
+                </span>
+                <span
+                    class="sidebar-brand-subtitle"
+                    title="{{ sidebar_brand.subtitle }}"
+                >
+                    {{ sidebar_brand.subtitle }}
+                </span>
             </span>
         </a>
 
@@ -644,6 +36,7 @@
             class="sidebar-toggle"
             type="button"
             aria-label="Свернуть боковую панель"
+            aria-controls="appSidebar"
             aria-expanded="true"
             title="Свернуть боковую панель"
         >
@@ -654,9 +47,9 @@
                 aria-hidden="true"
             >
                 <path
-                    d="M15 6L9 12L15 18"
+                    d="M15 6 9 12l6 6"
                     stroke="currentColor"
-                    stroke-width="2.4"
+                    stroke-width="2.3"
                     stroke-linecap="round"
                     stroke-linejoin="round"
                 />
@@ -667,96 +60,132 @@
     <nav class="sidebar-nav" aria-label="Основная навигация">
         {% set navigation_group = namespace(current="") %}
         {% for item in sidebar_navigation_items %}
-            {% set item_group = "system" if item.key == "settings" else "main" %}
-            {% if item_group != navigation_group.current %}
+            {% if item.group != navigation_group.current %}
                 <div class="sidebar-nav-group-title">
-                    {{ "Система" if item_group == "system" else "Основное" }}
+                    {{ "Система" if item.group == "system" else "Основное" }}
                 </div>
-                {% set navigation_group.current = item_group %}
+                {% set navigation_group.current = item.group %}
             {% endif %}
 
             <a
                 class="sidebar-link{% if item.active %} active{% endif %}"
                 href="{{ item.href }}"
                 title="{{ item.label }}"
+                data-tooltip="{{ item.label }}"
                 {% if item.active %}aria-current="page"{% endif %}
             >
                 <span class="sidebar-icon">
-                    {{ sidebar_icon(item.key) }}
+                    {{ navigation_icon(item.icon) }}
                 </span>
                 <span class="sidebar-label">{{ item.label }}</span>
             </a>
         {% endfor %}
     </nav>
 
-    {% if current_user %}
-        <div class="sidebar-user">
-            <span
-                class="sidebar-user-copy"
-                title="{{ current_user.first_name }} {{ current_user.last_name }}"
-            >
-                {{ current_user.first_name }} {{ current_user.last_name }}
-            </span>
-            <form method="post" action="{{ url_for('auth.logout') }}">
-                <input
-                    type="hidden"
-                    name="csrf_token"
-                    value="{{ csrf_token() }}"
-                >
-                <button class="sidebar-logout" type="submit">Выйти</button>
-            </form>
+    <div class="sidebar-footer">
+        <div
+            class="sidebar-system-status"
+            title="Система работает"
+            aria-label="Система работает"
+        >
+            <span class="sidebar-system-dot" aria-hidden="true"></span>
+            <span class="sidebar-system-text">Система работает</span>
         </div>
-    {% endif %}
 
-    <div class="sidebar-system-status" title="Система работает">
-        <span class="sidebar-system-dot"></span>
-        <span class="sidebar-system-text">Система работает</span>
+        {% if current_user %}
+            {% set user_name = (
+                current_user.first_name
+                ~ " "
+                ~ current_user.last_name
+            )|trim %}
+            {% set user_initials = (
+                current_user.first_name[:1]
+                ~ current_user.last_name[:1]
+            )|upper %}
+            <div class="sidebar-user">
+                <span
+                    class="sidebar-user-avatar"
+                    title="{{ user_name }}"
+                    aria-hidden="true"
+                >
+                    {{ user_initials }}
+                </span>
+                <span class="sidebar-user-copy">
+                    <span class="sidebar-user-name" title="{{ user_name }}">
+                        {{ user_name }}
+                    </span>
+                    <span class="sidebar-user-role">
+                        {{
+                            "Администратор"
+                            if current_user.role == "admin"
+                            else "Сотрудник"
+                        }}
+                    </span>
+                </span>
+                <form method="post" action="{{ url_for('auth.logout') }}">
+                    <input
+                        type="hidden"
+                        name="csrf_token"
+                        value="{{ csrf_token() }}"
+                    >
+                    <button
+                        class="sidebar-logout"
+                        type="submit"
+                        aria-label="Выйти из системы"
+                        title="Выйти из системы"
+                    >
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M10 5H5v14h5" />
+                            <path d="M14 8l4 4-4 4M8 12h10" />
+                        </svg>
+                    </button>
+                </form>
+            </div>
+        {% endif %}
     </div>
 </aside>
 
-{% set mobile_products_active = request.path.startswith("/warehouse") %}
-{% set mobile_sales_active = request.path.startswith("/sales") %}
-{% set mobile_receipts_active = request.path.startswith("/receipts") %}
-{% set mobile_more_active = not (mobile_products_active or mobile_sales_active or mobile_receipts_active) %}
+{% set mobile_state = namespace(more_active=false) %}
+{% for item in sidebar_navigation_items %}
+    {% if item.active and not item.mobile_primary %}
+        {% set mobile_state.more_active = true %}
+    {% endif %}
+{% endfor %}
+
 <nav class="mobile-erp-navigation" aria-label="Мобильная навигация">
-    <a
-        class="mobile-erp-nav-item{% if mobile_products_active %} active{% endif %}"
-        href="/warehouse"
-        {% if mobile_products_active %}aria-current="page"{% endif %}
-    >
-        <span class="mobile-erp-nav-icon">{{ sidebar_icon("products") }}</span>
-        <span>Товары</span>
-    </a>
-    <a
-        class="mobile-erp-nav-item{% if mobile_sales_active %} active{% endif %}"
-        href="/sales"
-        {% if mobile_sales_active %}aria-current="page"{% endif %}
-    >
-        <span class="mobile-erp-nav-icon">{{ sidebar_icon("sales") }}</span>
-        <span>Продажи</span>
-    </a>
-    <a
-        class="mobile-erp-nav-item{% if mobile_receipts_active %} active{% endif %}"
-        href="/receipts"
-        {% if mobile_receipts_active %}aria-current="page"{% endif %}
-    >
-        <span class="mobile-erp-nav-icon">{{ sidebar_icon("receipts") }}</span>
-        <span>Приход</span>
-    </a>
+    {% for item in sidebar_navigation_items %}
+        {% if item.mobile_primary %}
+            <a
+                class="mobile-erp-nav-item{% if item.active %} active{% endif %}"
+                href="{{ item.mobile_href or item.href }}"
+                {% if item.active %}aria-current="page"{% endif %}
+            >
+                <span class="mobile-erp-nav-icon">
+                    {{ navigation_icon(item.icon) }}
+                </span>
+                <span>{{ item.label }}</span>
+            </a>
+        {% endif %}
+    {% endfor %}
     <button
         id="mobileErpMoreTrigger"
-        class="mobile-erp-nav-item{% if mobile_more_active %} active{% endif %}"
+        class="mobile-erp-nav-item{% if mobile_state.more_active %} active{% endif %}"
         type="button"
         aria-haspopup="dialog"
         aria-controls="mobileErpMoreSheet"
         aria-expanded="false"
     >
-        <span class="mobile-erp-nav-icon">{{ sidebar_icon("catalog") }}</span>
+        <span class="mobile-erp-nav-icon">
+            {{ navigation_icon("catalog") }}
+        </span>
         <span>Ещё</span>
     </button>
 </nav>
 
-<div id="mobileErpMoreBackdrop" class="mobile-erp-more-backdrop"></div>
+<div
+    id="mobileErpMoreBackdrop"
+    class="mobile-erp-more-backdrop"
+></div>
 <div
     id="mobileErpMoreSheet"
     class="mobile-erp-more-sheet"
@@ -767,130 +196,17 @@
 >
     <div class="mobile-erp-more-title">Разделы ERP</div>
     {% for item in sidebar_navigation_items %}
-        {% if item.key not in ["products", "sales", "receipts"] %}
+        {% if not item.mobile_primary %}
             <a
                 class="mobile-erp-more-link{% if item.active %} active{% endif %}"
-                href="{{ item.href }}"
+                href="{{ item.mobile_href or item.href }}"
                 {% if item.active %}aria-current="page"{% endif %}
             >
-                <span class="sidebar-icon">{{ sidebar_icon(item.key) }}</span>
+                <span class="sidebar-icon">
+                    {{ navigation_icon(item.icon) }}
+                </span>
                 <span>{{ item.label }}</span>
             </a>
         {% endif %}
     {% endfor %}
 </div>
-
-<script>
-    document.addEventListener("DOMContentLoaded", () => {
-        const app = document.querySelector(".app");
-        const toggle = document.getElementById("sidebarToggle");
-
-        if (!app || !toggle) {
-            return;
-        }
-
-        const storageKey = "ttt-erp-sidebar-collapsed";
-
-        const applySidebarState = (collapsed) => {
-            app.classList.toggle("sidebar-collapsed", collapsed);
-            toggle.classList.toggle("is-collapsed", collapsed);
-            toggle.setAttribute("aria-expanded", String(!collapsed));
-            toggle.setAttribute(
-                "aria-label",
-                collapsed
-                    ? "Развернуть боковую панель"
-                    : "Свернуть боковую панель"
-            );
-            toggle.title = collapsed
-                ? "Развернуть боковую панель"
-                : "Свернуть боковую панель";
-        };
-
-        applySidebarState(app.classList.contains("sidebar-collapsed"));
-
-        toggle.addEventListener("click", () => {
-            const nextState = !app.classList.contains("sidebar-collapsed");
-            applySidebarState(nextState);
-
-            try {
-                localStorage.setItem(storageKey, nextState ? "1" : "0");
-            } catch (error) {
-                // Панель продолжит работать без сохранения состояния.
-            }
-        });
-    });
-</script>
-
-<script>
-    document.addEventListener("DOMContentLoaded", () => {
-        const trigger = document.getElementById("mobileErpMoreTrigger");
-        const sheet = document.getElementById("mobileErpMoreSheet");
-        const backdrop = document.getElementById("mobileErpMoreBackdrop");
-
-        if (!trigger || !sheet || !backdrop) {
-            return;
-        }
-
-        const focusableSelector = "a[href], button:not([disabled])";
-
-        const closeMenu = (restoreFocus = true) => {
-            sheet.classList.remove("is-open");
-            backdrop.classList.remove("is-open");
-            sheet.hidden = true;
-            trigger.setAttribute("aria-expanded", "false");
-            document.body.classList.remove("mobile-erp-menu-open");
-
-            if (restoreFocus) {
-                trigger.focus();
-            }
-        };
-
-        const openMenu = () => {
-            sheet.hidden = false;
-            sheet.classList.add("is-open");
-            backdrop.classList.add("is-open");
-            trigger.setAttribute("aria-expanded", "true");
-            document.body.classList.add("mobile-erp-menu-open");
-            sheet.querySelector(focusableSelector)?.focus();
-        };
-
-        trigger.addEventListener("click", () => {
-            if (sheet.hidden) {
-                openMenu();
-            } else {
-                closeMenu();
-            }
-        });
-
-        backdrop.addEventListener("click", () => closeMenu());
-
-        document.addEventListener("keydown", (event) => {
-            if (sheet.hidden) {
-                return;
-            }
-
-            if (event.key === "Escape") {
-                closeMenu();
-                return;
-            }
-
-            if (event.key !== "Tab") {
-                return;
-            }
-
-            const focusable = Array.from(
-                sheet.querySelectorAll(focusableSelector)
-            );
-            const first = focusable[0];
-            const last = focusable[focusable.length - 1];
-
-            if (event.shiftKey && document.activeElement === first) {
-                event.preventDefault();
-                last?.focus();
-            } else if (!event.shiftKey && document.activeElement === last) {
-                event.preventDefault();
-                first?.focus();
-            }
-        });
-    });
-</script>
