@@ -237,34 +237,6 @@
             opacity: 1;
         }
 
-        .search-clear-button {
-            position: absolute;
-            top: 50%;
-            right: 14px;
-            display: flex;
-            width: 18px;
-            height: 18px;
-            align-items: center;
-            justify-content: center;
-            padding: 0;
-            transform: translateY(-50%);
-            border: none;
-            background: transparent;
-            color: #94a3b8;
-            font-size: 22px;
-            line-height: 1;
-            opacity: 0.72;
-        }
-
-        .search-clear-button.is-hidden {
-            display: none;
-        }
-
-        .search-clear-button:hover {
-            color: #475569;
-            opacity: 1;
-        }
-
         .sales-date-filter {
             display: flex;
             flex: 0 0 auto;
@@ -277,7 +249,11 @@
         }
 
         .sales-period-control {
-            position: relative;
+            display: grid;
+            min-width: 0;
+            grid-template-columns: minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 8px;
         }
 
         .warehouse-date-trigger {
@@ -286,7 +262,7 @@
             height: 40px;
             align-items: center;
             justify-content: space-between;
-            padding: 0 34px 0 13px;
+            padding: 0 13px;
             border: 1px solid #dce3ed;
             border-radius: 10px;
             background: #ffffff;
@@ -296,19 +272,8 @@
         }
 
         .sales-period-clear {
-            position: absolute;
-            top: 50%;
-            right: 8px;
-            width: 18px;
-            height: 18px;
-            padding: 0;
-            transform: translateY(-50%);
-            border: 0;
-            border-radius: 50%;
-            background: transparent;
-            color: #94a3b8;
-            font-size: 18px;
-            line-height: 16px;
+            position: static;
+            transform: none;
         }
 
         .sales-period-clear[hidden],
@@ -1259,7 +1224,7 @@
                     >
                     <button
                         id="clearSalesSearch"
-                        class="search-clear-button erp-search-clear is-hidden"
+                        class="erp-clear-control erp-search-clear is-hidden"
                         type="button"
                         aria-label="Очистить поиск"
                         title="Очистить поиск"
@@ -1307,15 +1272,18 @@
                                             ></path>
                                         </svg>
                                     </span>
-                                    <span data-date-range-label>Период</span>
+                                    <span
+                                        class="sales-period-label"
+                                        data-date-range-label
+                                    >Период</span>
                                 </span>
                             </button>
                             <button
                                 id="clearSalesPeriod"
-                                class="sales-period-clear"
+                                class="erp-clear-control sales-period-clear"
                                 type="button"
-                                aria-label="Очистить период"
-                                title="Очистить период"
+                                aria-label="Сбросить период"
+                                title="Сбросить период"
                                 hidden
                             >×</button>
                         </div>
@@ -2967,8 +2935,7 @@
         resetAllSalesFilters,
     );
 
-    clearSalesPeriod?.addEventListener("click", (event) => {
-        event.stopPropagation();
+    clearSalesPeriod?.addEventListener("click", () => {
         salesDateFrom.value = "";
         salesDateTo.value = "";
         updateSalesPeriodLabel();
@@ -3114,6 +3081,10 @@
             return;
         }
 
+        const hasSelectedPeriod = Boolean(
+            salesDateFrom.value || salesDateTo.value
+        );
+
         label.textContent = salesDateFrom.value
             ? displaySalesDate(salesDateFrom.value)
                 + " — "
@@ -3124,7 +3095,13 @@
             : "Период";
         trigger?.classList.toggle(
             "is-active",
-            Boolean(salesDateFrom.value || salesDateTo.value),
+            hasSelectedPeriod,
+        );
+        salesDateFilter.closest(
+            ".sales-date-filter"
+        )?.classList.toggle(
+            "has-active-period",
+            hasSelectedPeriod,
         );
     }
 

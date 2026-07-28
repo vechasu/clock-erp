@@ -1265,9 +1265,10 @@ class OwnerFeedbackTest(unittest.TestCase):
         self.assertNotIn('id="clearSalesDateTo"', html)
         self.assertNotIn('class="sales-date-input"', html)
         self.assertIn(
-            '<span data-date-range-label>Период</span>',
+            'class="sales-period-label"',
             html,
         )
+        self.assertIn("data-date-range-label", html)
         self.assertEqual(
             html.count(
                 'class="sales-toolbar-action-content"'
@@ -1389,18 +1390,51 @@ class OwnerFeedbackTest(unittest.TestCase):
             html,
         )
         self.assertIn(
-            'class="search-clear-button erp-search-clear is-hidden"',
+            'class="erp-clear-control erp-search-clear is-hidden"',
             html,
         )
-        self.assertIn("right: 14px", html)
-        self.assertIn("width: 18px", html)
-        self.assertIn("height: 18px", html)
-        self.assertIn("font-size: 22px", html)
-        self.assertIn("opacity: 0.72", html)
+        self.assertIn(
+            'class="erp-clear-control sales-period-clear"',
+            html,
+        )
+        self.assertIn('aria-label="Сбросить период"', html)
         self.assertIn('salesSearch.value = "";', html)
         self.assertIn(
             'clearSalesSearch?.addEventListener("click"',
             html,
+        )
+        self.assertNotIn(
+            'clearSalesPeriod?.addEventListener("click", (event)',
+            html,
+        )
+
+        css = (
+            Path(web.app.static_folder)
+            / "css"
+            / "erp-components.css"
+        ).read_text(encoding="utf-8")
+        self.assertIn(".erp-clear-control {", css)
+        self.assertIn(
+            '.erp-search-input[type="search"]'
+            "::-webkit-search-cancel-button",
+            css,
+        )
+        self.assertIn("grid-template-columns: minmax(0, 1fr) auto;", html)
+        self.assertIn(
+            ".erp-clear-control.is-hidden,\n"
+            ".erp-clear-control[hidden]",
+            css,
+        )
+
+        warehouse_template = (
+            Path(web.app.root_path)
+            / web.app.template_folder
+            / "warehouse.html"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            'class="erp-clear-control erp-search-clear'
+            "{% if not query %} is-hidden{% endif %}\"",
+            warehouse_template,
         )
 
     def test_sales_and_warehouse_use_shared_design_components(self):
