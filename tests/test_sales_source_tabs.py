@@ -358,7 +358,7 @@ class SalesSourceTabsTest(unittest.TestCase):
             page,
         )
         self.assertIn(
-            "view.order = defaultOrder.slice();",
+            "view.order = sanitizeOrder(defaultOrder);",
             page,
         )
         self.assertIn(
@@ -1022,9 +1022,50 @@ class SalesSourceTabsTest(unittest.TestCase):
         self.assertIn("overflow-x: hidden", template)
         self.assertIn(".table-wrap", template)
         self.assertIn("overflow-x: auto", template)
+        self.assertIn("scrollbar-color: #94a3b8 #e8edf3", template)
         self.assertIn(".sales-tabs-scroll", template)
         self.assertIn("@media (max-width: 560px)", template)
         self.assertIn("max-width: 100%", template)
+
+    def test_sales_table_pins_identity_columns_and_formats_date_visually(self):
+        records = [
+            sale_record(
+                source="Amazon",
+                created_at="2026-07-27",
+                order_number="AMZ-27",
+            ),
+        ]
+
+        with mock.patch.object(
+            web,
+            "build_sales_report_records",
+            return_value=records,
+        ):
+            page = self.client.get(
+                "/sales?source=amazon"
+            ).get_data(as_text=True)
+
+        self.assertIn("27.07.2026", page)
+        self.assertIn(
+            'data-sort-date="2026-07-27"',
+            page,
+        )
+        self.assertIn(
+            'title="2026-07-27"',
+            page,
+        )
+        self.assertIn(
+            'const pinnedColumns = [',
+            page,
+        )
+        self.assertIn(
+            '"created_at",\n            "order_number",',
+            page,
+        )
+        self.assertIn(
+            '"--sales-sticky-date-width"',
+            page,
+        )
 
 
 if __name__ == "__main__":

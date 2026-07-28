@@ -147,8 +147,12 @@ class SalesColumnsBrowserTest(unittest.TestCase):
 
         try:
             for width, height in (
-                (1280, 900),
+                (1440, 900),
+                (1024, 900),
+                (768, 900),
+                (430, 932),
                 (390, 844),
+                (375, 812),
                 (320, 700),
             ):
                 with self.subTest(width=width):
