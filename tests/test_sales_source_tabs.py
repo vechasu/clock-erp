@@ -15,6 +15,65 @@ from app import web
 
 PRODUCT_ID = "11111111-1111-1111-1111-111111111111"
 
+EXPECTED_COLUMNS = {
+    "all": [
+        "Дата",
+        "Номер заказа",
+        "Трекинг",
+        "Баркод",
+        "Источник",
+        "Бренд",
+        "Категория",
+        "Товар",
+        "Количество",
+        "Цена",
+    ],
+    "tictactoy": [
+        "Дата",
+        "Баркод",
+        "Бренд",
+        "Категория",
+        "Товар",
+        "Количество",
+        "Цена продажи",
+        "Номер заказа",
+        "Трекинг",
+        "Способ доставки",
+        "Стоимость доставки",
+        "Регион",
+        "Город",
+        "Способ оплаты",
+        "Примечание",
+    ],
+    "wildberries": [
+        "Дата",
+        "Баркод",
+        "Бренд",
+        "Категория",
+        "Товар",
+        "Номер стикера",
+        "Номер заказа",
+        "Количество",
+        "Цена продажи",
+        "Примечание",
+    ],
+    "amazon": [
+        "Дата",
+        "Баркод",
+        "Бренд",
+        "Категория",
+        "Товар",
+        "Количество",
+        "Цена",
+        "ФИО получателя",
+        "Номер заказа",
+        "Площадка",
+        "Страна",
+        "Номер накладной",
+        "Примечание",
+    ],
+}
+
 
 def warehouse_item():
     return {
@@ -59,6 +118,7 @@ def sale_record(source="Tictactoy", **changes):
         "city": "Москва",
         "payment_method": "Карта",
         "recipient_name": "Иван Иванов",
+        "platform": "Amazon.de",
         "country": "Германия",
         "delivery_address": "Berlin, Test str. 1",
         "invoice_number": "INV-100",
@@ -67,7 +127,7 @@ def sale_record(source="Tictactoy", **changes):
         "order_status_label": "Завершён",
         "is_cancelled": False,
         "cancelled_at": "",
-        "sticker_number": "",
+        "sticker_number": "STICKER-100",
         "commission_amount": 0,
         "commission_display": "0 ₽",
     }
@@ -226,11 +286,25 @@ class SalesSourceTabsTest(unittest.TestCase):
         self.assertEqual(web.load_manual_sales(), stored)
 
     def test_each_tab_uses_exact_column_names_and_order(self):
-        for source, columns in web.SALES_TABLE_COLUMNS.items():
+        self.assertEqual(
+            set(web.SALES_TABLE_COLUMNS),
+            set(EXPECTED_COLUMNS),
+        )
+
+        for source, expected in EXPECTED_COLUMNS.items():
             with self.subTest(source=source):
                 self.assertEqual(
                     self.get_headers(source),
-                    [label for _, label in columns],
+                    expected,
+                )
+                self.assertEqual(
+                    [
+                        label
+                        for _, label in web.SALES_TABLE_COLUMNS[
+                            source
+                        ]
+                    ],
+                    expected,
                 )
 
     def test_source_url_is_active_and_filters_survive_tab_links(self):
@@ -290,6 +364,33 @@ class SalesSourceTabsTest(unittest.TestCase):
         )
         self.assertNotIn("Ручные продажи", amazon_page)
 
+    def test_form_uses_brand_category_product_cascade(self):
+        page = self.client.get(
+            "/sales?source=wildberries"
+        ).get_data(as_text=True)
+        brand_position = page.index('id="saleBrand"')
+        category_position = page.index('id="saleCategory"')
+        product_position = page.index('id="product_name"')
+
+        self.assertLess(brand_position, category_position)
+        self.assertLess(category_position, product_position)
+        self.assertIn(
+            "function refreshCategoryOptions",
+            page,
+        )
+        self.assertIn(
+            "function productMatchesSelection",
+            page,
+        )
+        self.assertIn(
+            "clearSelectedProduct();",
+            page,
+        )
+        self.assertIn(
+            "selectWarehouseProduct(item)",
+            page,
+        )
+
     def test_created_amazon_sale_uses_product_snapshot_and_is_not_duplicated(self):
         response = self.client.post(
             "/sales/manual/add",
@@ -303,6 +404,7 @@ class SalesSourceTabsTest(unittest.TestCase):
                 "unit_price": "1000",
                 "recipient_name": "Иван Иванов",
                 "order_number": "AMZ-100",
+                "platform": "Amazon.de",
                 "country": "Германия",
                 "delivery_address": "Berlin, Test str. 1",
                 "invoice_number": "INV-100",
@@ -324,7 +426,13 @@ class SalesSourceTabsTest(unittest.TestCase):
             stored[0]["delivery_address"],
             "Berlin, Test str. 1",
         )
+        self.assertEqual(stored[0]["platform"], "Amazon.de")
         self.assertEqual(stored[0]["invoice_number"], "INV-100")
+        self.assertEqual(records[0]["platform"], "Amazon.de")
+        self.assertNotIn(
+            "Адрес доставки",
+            self.get_headers("amazon"),
+        )
         self.assertEqual(
             len(web.filter_sales_by_source(records, "all")),
             1,
@@ -361,10 +469,78 @@ class SalesSourceTabsTest(unittest.TestCase):
         self.assertEqual(sale["payment_method"], "Карта")
         self.assertEqual(sale["note"], "Tictactoy note")
 
+    def test_wildberries_sticker_and_order_are_saved(self):
+        self.client.post(
+            "/sales/manual/add",
+            data={
+                "created_at": "2026-07-22",
+                "source": "Wildberries",
+                "product_id": PRODUCT_ID,
+                "product_name": "Часы Test",
+                "quantity": "1",
+                "unit_price": "1200",
+                "sticker_number": "STICKER-1",
+                "order_number": "WB-ORDER-1",
+                "note": "Wildberries note",
+            },
+        )
+        sale = web.load_manual_sales()[0]
+
+        self.assertEqual(sale["sticker_number"], "STICKER-1")
+        self.assertEqual(sale["order_number"], "WB-ORDER-1")
+        self.assertEqual(sale["note"], "Wildberries note")
+
+    def test_old_amazon_address_is_preserved_but_not_used_as_platform(self):
+        stored = [{
+            "id": "amazon-old",
+            "source": "Amazon",
+            "product_id": PRODUCT_ID,
+            "product_name": "Часы Test",
+            "quantity": 1,
+            "unit_price": 1000,
+            "delivery_address": "Berlin, Real address 1",
+        }]
+        self.manual_sales_path.write_text(
+            json.dumps(stored, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+        records = web.build_sales_report_records()
+
+        self.assertEqual(
+            records[0]["delivery_address"],
+            "Berlin, Real address 1",
+        )
+        self.assertEqual(records[0]["platform"], "")
+        self.assertEqual(web.load_manual_sales(), stored)
+        preserved_optional_fields = web.build_sale_optional_fields(
+            {},
+            existing={
+                "delivery_address": "Berlin, Real address 1",
+                "platform": "Amazon.de",
+            },
+        )
+        self.assertEqual(
+            preserved_optional_fields["delivery_address"],
+            "Berlin, Real address 1",
+        )
+        self.assertEqual(
+            preserved_optional_fields["platform"],
+            "Amazon.de",
+        )
+        self.assertNotIn(
+            "delivery_address",
+            [
+                key
+                for key, _ in web.SALES_TABLE_COLUMNS["amazon"]
+            ],
+        )
+
     def test_search_uses_only_fields_of_active_source(self):
         amazon = sale_record(
             source="Amazon",
             delivery_address="Berlin address",
+            platform="Marketplace-DE",
         )
         all_search = web.build_sales_search_text(
             amazon,
@@ -376,9 +552,19 @@ class SalesSourceTabsTest(unittest.TestCase):
         )
 
         self.assertIn("Amazon", all_search)
+        self.assertIn("ORDER-100", all_search)
+        self.assertIn("TRACK-100", all_search)
         self.assertNotIn("Berlin address", all_search)
         self.assertIn("Berlin address", amazon_search)
+        self.assertIn("Marketplace-DE", amazon_search)
         self.assertNotIn("Amazon", amazon_search)
+
+        wildberries_search = web.build_sales_search_text(
+            sale_record(source="Wildberries"),
+            "wildberries",
+        )
+        self.assertIn("STICKER-100", wildberries_search)
+        self.assertIn("ORDER-100", wildberries_search)
 
         filtered = web.filter_sales_report_records(
             [amazon],
@@ -449,7 +635,7 @@ class SalesSourceTabsTest(unittest.TestCase):
             "build_sales_report_records",
             return_value=records,
         ):
-            for source in web.SALES_TABLE_COLUMNS:
+            for source, expected in EXPECTED_COLUMNS.items():
                 with self.subTest(source=source):
                     html_response = self.client.get(
                         f"/sales/report?source={source}"
@@ -457,12 +643,6 @@ class SalesSourceTabsTest(unittest.TestCase):
                     xlsx_response = self.client.get(
                         f"/sales/report.xlsx?source={source}"
                     )
-                    expected = [
-                        label
-                        for _, label in web.SALES_TABLE_COLUMNS[
-                            source
-                        ]
-                    ]
                     report_page = html_response.get_data(
                         as_text=True
                     )
@@ -503,6 +683,15 @@ class SalesSourceTabsTest(unittest.TestCase):
 
                     if source == "amazon":
                         self.assertIn("AMZ-100", report_page)
+                        self.assertIn("Amazon.de", report_page)
+                        self.assertNotIn(
+                            "<th>Адрес доставки</th>",
+                            report_page,
+                        )
+                        self.assertEqual(
+                            sheet["J5"].value,
+                            "Amazon.de",
+                        )
                         self.assertNotIn(
                             "TRACK-100",
                             report_page,

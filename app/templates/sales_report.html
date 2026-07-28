@@ -356,33 +356,36 @@
     </section>
 
     <section class="report-table-card">
-        {% if sales %}
-            <table>
-                <thead>
-                    <tr>
+        <table>
+            <thead>
+                <tr>
+                    {% for column in report_columns %}
+                        <th>{{ column.label }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for sale in sales %}
+                    <tr{% if sale.is_cancelled %} class="is-cancelled"{% endif %}>
                         {% for column in report_columns %}
-                            <th>{{ column.label }}</th>
+                            {% set value = sale[column.key] %}
+                            <td{% if column.key in ['unit_price_display', 'delivery_cost_display'] %} class="money-cell"{% endif %}>
+                                {{ value or "—" }}
+                            </td>
                         {% endfor %}
                     </tr>
-                </thead>
-                <tbody>
-                    {% for sale in sales %}
-                        <tr{% if sale.is_cancelled %} class="is-cancelled"{% endif %}>
-                            {% for column in report_columns %}
-                                {% set value = sale[column.key] %}
-                                <td{% if column.key in ['unit_price_display', 'delivery_cost_display'] %} class="money-cell"{% endif %}>
-                                    {{ value or "—" }}
-                                </td>
-                            {% endfor %}
-                        </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        {% else %}
-            <div class="empty">
-                По выбранным условиям продаж не найдено.
-            </div>
-        {% endif %}
+                {% else %}
+                    <tr>
+                        <td
+                            class="empty"
+                            colspan="{{ report_columns|length }}"
+                        >
+                            По выбранным условиям продаж не найдено.
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </section>
 </main>
 </body>
