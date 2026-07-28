@@ -9064,7 +9064,6 @@ def save_app_settings(settings):
 @app.route("/settings", methods=["GET", "POST"])
 def settings_page():
     settings = load_app_settings()
-    navigation_settings = load_navigation_settings()
 
     if request.method == "POST":
         company_name = (
@@ -9093,34 +9092,7 @@ def settings_page():
             "low_stock_threshold": low_stock_threshold,
         }
 
-        updated_navigation_settings = {}
-
-        for item in NAVIGATION_DEFINITIONS:
-            key = item["key"]
-            current_item = navigation_settings.get(key, {})
-
-            if item.get("required"):
-                enabled = True
-            else:
-                enabled = (
-                    request.form.get(
-                        f"navigation_{key}"
-                    )
-                    == "on"
-                )
-
-            updated_navigation_settings[key] = {
-                "enabled": enabled,
-                "position": current_item.get(
-                    "position",
-                    item["position"],
-                ),
-            }
-
         save_app_settings(settings)
-        save_navigation_settings(
-            updated_navigation_settings
-        )
 
         return redirect(
             "/settings?notice=success"
@@ -9135,6 +9107,56 @@ def settings_page():
         ),
         notice=(request.args.get("notice") or "").strip(),
         message=(request.args.get("message") or "").strip(),
+    )
+
+
+@app.route(
+    "/settings/navigation/<key>/toggle",
+    methods=["POST"],
+)
+def navigation_toggle(key):
+    definition = next(
+        (
+            item
+            for item in NAVIGATION_DEFINITIONS
+            if item["key"] == key
+        ),
+        None,
+    )
+
+    if definition is None:
+        abort(404)
+
+    if definition.get("required"):
+        return redirect(
+            "/settings?notice=success"
+            "&message=Обязательный раздел нельзя отключить"
+        )
+
+    navigation_settings = load_navigation_settings()
+    current_item = navigation_settings[key]
+    enabled = not bool(current_item.get("enabled", True))
+
+    navigation_settings[key] = {
+        "enabled": enabled,
+        "position": current_item.get(
+            "position",
+            definition["position"],
+        ),
+    }
+
+    save_navigation_settings(navigation_settings)
+
+    state = "включён" if enabled else "отключён"
+
+    return redirect(
+        url_for(
+            "settings_page",
+            notice="success",
+            message=(
+                f"Раздел «{definition['label']}» {state}"
+            ),
+        )
     )
 
 

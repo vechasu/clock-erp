@@ -56,6 +56,10 @@
             box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
         }
 
+        .settings-card + .settings-card {
+            margin-top: 18px;
+        }
+
         .settings-section {
             margin-bottom: 30px;
         }
@@ -244,9 +248,9 @@
             width: 48px;
             height: 27px;
             margin: 0;
+            padding: 0;
             border: 0;
             border-radius: 999px;
-            appearance: none;
             background: #cbd5e1;
             cursor: pointer;
             outline: none;
@@ -266,11 +270,11 @@
             transition: transform 0.2s ease;
         }
 
-        .module-toggle:checked {
+        .module-toggle[aria-checked="true"] {
             background: #2563eb;
         }
 
-        .module-toggle:checked::after {
+        .module-toggle[aria-checked="true"]::after {
             transform: translateX(21px);
         }
 
@@ -278,9 +282,9 @@
             box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.16);
         }
 
-        .module-toggle:disabled {
+        .module-toggle[aria-disabled="true"] {
             background: #93c5fd;
-            cursor: not-allowed;
+            cursor: default;
             opacity: 0.75;
         }
 
@@ -391,6 +395,14 @@
             </section>
 
 
+            <div class="actions">
+                <button class="button" type="submit">
+                    Сохранить настройки
+                </button>
+            </div>
+        </form>
+
+        <section class="settings-card">
             <section class="settings-section">
                 <h2>Вкладки бокового меню</h2>
 
@@ -401,9 +413,17 @@
 
                 <div class="navigation-list">
                     {% for item in navigation_items %}
-                        <label
-                            class="navigation-item{% if item.required %} navigation-item-required{% endif %}"
-                        >
+                        {% if item.required %}
+                            <div
+                                class="navigation-item navigation-item-required"
+                            >
+                        {% else %}
+                            <form
+                                class="navigation-item"
+                                method="post"
+                                action="{{ url_for('navigation_toggle', key=item.key) }}"
+                            >
+                        {% endif %}
                             <span class="navigation-item-main">
                                 <span class="navigation-item-icon">
                                     {{ item.icon }}
@@ -426,25 +446,32 @@
                                 </span>
                             </span>
 
-                            <input
-                                class="module-toggle"
-                                type="checkbox"
-                                name="navigation_{{ item.key }}"
-                                {% if item.enabled %}checked{% endif %}
-                                {% if item.required %}disabled{% endif %}
-                                aria-label="Показывать вкладку {{ item.label }}"
-                            >
-                        </label>
+                            {% if item.required %}
+                                <span
+                                    class="module-toggle"
+                                    role="switch"
+                                    aria-checked="true"
+                                    aria-disabled="true"
+                                    aria-label="Вкладка {{ item.label }} всегда включена"
+                                ></span>
+                            {% else %}
+                                <button
+                                    class="module-toggle"
+                                    type="submit"
+                                    role="switch"
+                                    aria-checked="{{ 'true' if item.enabled else 'false' }}"
+                                    aria-label="{{ 'Отключить' if item.enabled else 'Включить' }} вкладку {{ item.label }}"
+                                ></button>
+                            {% endif %}
+                        {% if item.required %}
+                            </div>
+                        {% else %}
+                            </form>
+                        {% endif %}
                     {% endfor %}
                 </div>
             </section>
-
-            <div class="actions">
-                <button class="button" type="submit">
-                    Сохранить настройки
-                </button>
-            </div>
-        </form>
+        </section>
     </main>
 </div>
 </body>
