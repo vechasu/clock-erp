@@ -122,8 +122,8 @@ else
     printf '%s\n' 'BACKUP_SKIPPED: no runtime data found'
 fi
 
-git fetch "$REMOTE_NAME" "$EXPECTED_BRANCH"
-FETCHED_COMMIT="$(git rev-parse FETCH_HEAD)"
+git fetch "$REMOTE_NAME"
+FETCHED_COMMIT="$(git rev-parse "$REMOTE_NAME/$EXPECTED_BRANCH")"
 git merge --ff-only "$FETCHED_COMMIT"
 
 CURRENT_COMMIT="$(git rev-parse HEAD)"
@@ -203,7 +203,8 @@ done
 root_headers="$(curl --silent --show-error --max-time 10 --head \
     http://127.0.0.1:5000/)"
 printf '%s\n' "$root_headers" | grep -Eq '^HTTP/[^ ]+ 302'
-printf '%s\n' "$root_headers" | grep -Eiq '^location: /register'
+printf '%s\n' "$root_headers" |
+    grep -Eiq '^location: (https?://[^/]+)?/register\r?$'
 
 if journalctl -u "$SERVICE_NAME" --since "-2 minutes" \
     --priority=err --no-pager --quiet | grep -q .; then
