@@ -809,7 +809,7 @@
 .sales-data-toolbar .sales-column-settings-trigger {
     height: 42px;
     min-height: 42px;
-    gap: 7px;
+    gap: 0;
     padding-right: 12px;
     padding-left: 12px;
     border: 1px solid #dfe5ed;
@@ -818,6 +818,35 @@
     color: #475569;
     font-size: 12px;
     font-weight: 800;
+}
+
+.sales-data-toolbar .sales-toolbar-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.sales-toolbar-action-content {
+    display: inline-flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    line-height: 1;
+}
+
+.sales-toolbar-icon-slot {
+    width: 20px;
+    height: 20px;
+    display: inline-flex;
+    flex: 0 0 20px;
+    align-items: center;
+    justify-content: center;
+}
+
+.sales-toolbar-icon-slot .sales-control-icon {
+    width: 18px;
+    height: 18px;
 }
 
 .sales-data-toolbar .erp-secondary-action:hover,
@@ -842,8 +871,6 @@
 
 .sales-data-toolbar .sales-column-settings-trigger {
     width: auto;
-    height: 44px;
-    min-height: 44px;
 }
 
 .sales-data-toolbar .warehouse-date-trigger [data-date-range-label] {
@@ -1408,6 +1435,11 @@
         min-height: 44px;
         padding-right: 34px;
         padding-left: 12px;
+    }
+
+    .sales-data-toolbar .sales-toolbar-action {
+        height: 44px;
+        min-height: 44px;
     }
 
     .sales-data-toolbar .sales-column-settings-trigger {

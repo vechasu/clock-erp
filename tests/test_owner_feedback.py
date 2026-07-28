@@ -1268,6 +1268,21 @@ class OwnerFeedbackTest(unittest.TestCase):
             '<span data-date-range-label>Период</span>',
             html,
         )
+        self.assertEqual(
+            html.count(
+                'class="sales-toolbar-action-content"'
+            ),
+            3,
+        )
+        self.assertEqual(
+            html.count('class="sales-toolbar-icon-slot"'),
+            3,
+        )
+        self.assertIn(
+            "sales-column-settings-trigger "
+            "erp-secondary-action sales-toolbar-action",
+            html,
+        )
         self.assertIn("warehouse-calendar-popup", html)
         self.assertIn("warehouse-calendar-day", html)
         self.assertIn("data-calendar-apply", html)
@@ -1310,6 +1325,9 @@ class OwnerFeedbackTest(unittest.TestCase):
         )
         self.assertIn("flex: 1 1 auto;", css)
         self.assertIn("max-height: none;", css)
+        self.assertIn(".sales-toolbar-action-content", css)
+        self.assertIn(".sales-toolbar-icon-slot", css)
+        self.assertIn("flex: 0 0 20px;", css)
 
     def test_sales_desktop_workspace_has_page_hierarchy_and_accessible_table(self):
         with mock.patch.object(
