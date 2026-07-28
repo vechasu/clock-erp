@@ -1279,28 +1279,36 @@
 
                         <div class="sales-period-control">
                             <button
-                                class="warehouse-date-trigger erp-period-trigger erp-secondary-action"
+                                class="warehouse-date-trigger erp-period-trigger erp-secondary-action sales-toolbar-action"
                                 type="button"
                                 aria-haspopup="dialog"
                                 aria-expanded="false"
                             >
-                                <svg
-                                    class="sales-control-icon"
-                                    viewBox="0 0 20 20"
-                                    aria-hidden="true"
+                                <span
+                                    class="sales-toolbar-action-content"
                                 >
-                                    <rect
-                                        x="3"
-                                        y="4.5"
-                                        width="14"
-                                        height="12.5"
-                                        rx="2"
-                                    ></rect>
-                                    <path
-                                        d="M6.5 2.75v3.5M13.5 2.75v3.5M3 8h14"
-                                    ></path>
-                                </svg>
-                                <span data-date-range-label>Период</span>
+                                    <span
+                                        class="sales-toolbar-icon-slot"
+                                        aria-hidden="true"
+                                    >
+                                        <svg
+                                            class="sales-control-icon"
+                                            viewBox="0 0 20 20"
+                                        >
+                                            <rect
+                                                x="3"
+                                                y="4.5"
+                                                width="14"
+                                                height="12.5"
+                                                rx="2"
+                                            ></rect>
+                                            <path
+                                                d="M6.5 2.75v3.5M13.5 2.75v3.5M3 8h14"
+                                            ></path>
+                                        </svg>
+                                    </span>
+                                    <span data-date-range-label>Период</span>
+                                </span>
                             </button>
                             <button
                                 id="clearSalesPeriod"
@@ -1382,28 +1390,36 @@
                 <div class="sales-filter-settings">
                     <button
                         id="salesFilterTrigger"
-                        class="sales-filter-trigger erp-secondary-action"
+                        class="sales-filter-trigger erp-secondary-action sales-toolbar-action"
                         type="button"
                         aria-haspopup="dialog"
                         aria-controls="salesFilterPanel"
                         aria-expanded="false"
                     >
-                        <svg
-                            class="sales-control-icon"
-                            viewBox="0 0 20 20"
-                            aria-hidden="true"
-                        >
-                            <path
-                                d="M3 4h14M5.5 10h9M8 16h4"
-                            ></path>
-                        </svg>
-                        <span>Фильтры</span>
                         <span
-                            id="salesFilterCount"
-                            class="sales-filter-count"
-                            aria-label="Активных фильтров"
-                            hidden
-                        ></span>
+                            class="sales-toolbar-action-content"
+                        >
+                            <span
+                                class="sales-toolbar-icon-slot"
+                                aria-hidden="true"
+                            >
+                                <svg
+                                    class="sales-control-icon"
+                                    viewBox="0 0 20 20"
+                                >
+                                    <path
+                                        d="M3 4h14M5.5 10h9M8 16h4"
+                                    ></path>
+                                </svg>
+                            </span>
+                            <span>Фильтры</span>
+                            <span
+                                id="salesFilterCount"
+                                class="sales-filter-count"
+                                aria-label="Активных фильтров"
+                                hidden
+                            ></span>
+                        </span>
                     </button>
                     <div
                         id="salesFilterPanel"
@@ -1480,27 +1496,37 @@
                 <div class="sales-column-settings">
                     <button
                         id="salesColumnSettingsTrigger"
-                        class="sales-column-settings-trigger"
+                        class="sales-column-settings-trigger erp-secondary-action sales-toolbar-action"
                         type="button"
                         aria-haspopup="dialog"
                         aria-controls="salesColumnSettingsPanel"
                         aria-expanded="false"
                     >
-                        <svg
-                            class="sales-control-icon"
-                            viewBox="0 0 20 20"
-                            aria-hidden="true"
+                        <span
+                            class="sales-toolbar-action-content"
                         >
-                            <rect
-                                x="3"
-                                y="4"
-                                width="14"
-                                height="12"
-                                rx="2"
-                            ></rect>
-                            <path d="M8 4v12M12.5 4v12"></path>
-                        </svg>
-                        Столбцы
+                            <span
+                                class="sales-toolbar-icon-slot"
+                                aria-hidden="true"
+                            >
+                                <svg
+                                    class="sales-control-icon"
+                                    viewBox="0 0 20 20"
+                                >
+                                    <rect
+                                        x="3"
+                                        y="4"
+                                        width="14"
+                                        height="12"
+                                        rx="2"
+                                    ></rect>
+                                    <path
+                                        d="M8 4v12M12.5 4v12"
+                                    ></path>
+                                </svg>
+                            </span>
+                            <span>Столбцы</span>
+                        </span>
                     </button>
                     <div
                         id="salesColumnSettingsPanel"
@@ -5077,6 +5103,73 @@
                 return bounds.left >= toolbarBounds.left - 1
                     && bounds.right <= toolbarBounds.right + 1;
             });
+            const allToolbarActions = Array.from(
+                document.querySelectorAll(
+                    ".sales-toolbar-action"
+                )
+            );
+            const toolbarActions = allToolbarActions.filter(
+                (button) => button.getClientRects().length > 0
+            );
+            const toolbarActionHeights = toolbarActions.map(
+                (button) => Math.round(
+                    button.getBoundingClientRect().height
+                )
+            );
+            const toolbarActionsAligned = (
+                window.innerWidth < 1024
+                || (
+                    allToolbarActions.length === 3
+                    && toolbarActions.length === 3
+                    && new Set(toolbarActionHeights).size === 1
+                    && toolbarActions.every((button) => {
+                        const buttonBounds =
+                            button.getBoundingClientRect();
+                        const content = button.querySelector(
+                            ".sales-toolbar-action-content"
+                        );
+                        const contentBounds =
+                            content.getBoundingClientRect();
+                        const iconSlot = content.querySelector(
+                            ".sales-toolbar-icon-slot"
+                        );
+                        const iconSlotBounds =
+                            iconSlot.getBoundingClientRect();
+                        const iconBounds = iconSlot.querySelector(
+                            ".sales-control-icon"
+                        ).getBoundingClientRect();
+                        const style = getComputedStyle(button);
+                        const contentStyle =
+                            getComputedStyle(content);
+
+                        return (
+                            style.display === "inline-flex"
+                            && style.alignItems === "center"
+                            && style.justifyContent === "center"
+                            && ["flex", "inline-flex"].includes(
+                                contentStyle.display
+                            )
+                            && contentStyle.gap === "7px"
+                            && Math.abs(
+                                (
+                                    contentBounds.left
+                                    + contentBounds.width / 2
+                                )
+                                - (
+                                    buttonBounds.left
+                                    + buttonBounds.width / 2
+                                )
+                            ) <= 0.5
+                            && Math.round(iconSlotBounds.width)
+                                === 20
+                            && Math.round(iconSlotBounds.height)
+                                === 20
+                            && Math.round(iconBounds.width) === 18
+                            && Math.round(iconBounds.height) === 18
+                        );
+                    })
+                )
+            );
             const resetCorrectly = (
                 JSON.stringify(getHeaderKeys())
                     === JSON.stringify(defaultOrder)
@@ -5094,6 +5187,7 @@
                     <= document.documentElement.clientWidth
                 && toolbar.scrollWidth <= toolbar.clientWidth
                 && toolbarChildrenFit
+                && toolbarActionsAligned
                 && (
                     tableIsVisible()
                     ? (
@@ -5165,6 +5259,8 @@
                             toolbar.clientWidth,
                         ],
                         toolbarChildrenFit,
+                        toolbarActionHeights,
+                        toolbarActionsAligned,
                     });
                 throw new Error("reset");
             }
