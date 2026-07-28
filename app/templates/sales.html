@@ -5120,7 +5120,9 @@
                             getComputedStyle(content);
 
                         return (
-                            style.display === "inline-flex"
+                            ["flex", "inline-flex"].includes(
+                                style.display
+                            )
                             && style.alignItems === "center"
                             && style.justifyContent === "center"
                             && ["flex", "inline-flex"].includes(
