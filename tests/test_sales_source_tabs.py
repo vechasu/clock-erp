@@ -300,7 +300,7 @@ class SalesSourceTabsTest(unittest.TestCase):
             with self.subTest(source=source):
                 self.assertEqual(
                     self.get_headers(source),
-                    expected,
+                    [*expected, "Действия"],
                 )
                 self.assertEqual(
                     [
@@ -310,6 +310,63 @@ class SalesSourceTabsTest(unittest.TestCase):
                         ]
                     ],
                     expected,
+                )
+
+    def test_actions_are_locked_last_and_shared_by_every_source_tab(self):
+        stored = [
+            {
+                "id": source,
+                "source": source,
+                "product_id": PRODUCT_ID,
+                "product_name": "Часы Test",
+                "quantity": 1,
+                "unit_price": 1000,
+                "created_at": "2026-07-22",
+            }
+            for source in ("Tictactoy", "Wildberries", "Amazon")
+        ]
+        self.manual_sales_path.write_text(
+            json.dumps(stored, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+        for source in EXPECTED_COLUMNS:
+            with self.subTest(source=source):
+                page = self.client.get(
+                    f"/sales?source={source}"
+                ).get_data(as_text=True)
+
+                self.assertEqual(
+                    self.get_headers(source)[-1],
+                    "Действия",
+                )
+                self.assertIn(
+                    'data-system-column="actions"',
+                    page,
+                )
+                self.assertIn(
+                    'aria-label="Редактировать продажу"',
+                    page,
+                )
+                self.assertIn(
+                    'aria-label="Удалить продажу"',
+                    page,
+                )
+                self.assertIn(
+                    'onclick="openSaleEditor(this)"',
+                    page,
+                )
+                self.assertIn(
+                    'onclick="deleteSale(this)"',
+                    page,
+                )
+                self.assertNotIn(
+                    'data-column-visibility-key="actions"',
+                    page,
+                )
+                self.assertNotIn(
+                    'data-sort-field="actions"',
+                    page,
                 )
 
     def test_each_tab_has_independent_column_settings_storage(self):
@@ -675,6 +732,229 @@ class SalesSourceTabsTest(unittest.TestCase):
         self.assertEqual(stored[0]["category"], "Коллекция")
         self.assertEqual(stored[0]["barcode"], "BARCODE-1")
         save_manual_sales.assert_called_once()
+        save_stock_operations.assert_not_called()
+
+    def test_ajax_edit_updates_manual_sale_without_stock_write(self):
+        self.manual_sales_path.write_text(
+            json.dumps([
+                {
+                    "id": "manual-1",
+                    "created_at": "2026-07-22",
+                    "source": "Amazon",
+                    "product_id": PRODUCT_ID,
+                    "product_name": "Часы Test",
+                    "barcode": "BARCODE-1",
+                    "brand": "Brand",
+                    "category": "Коллекция",
+                    "quantity": 1,
+                    "unit_price": 1000,
+                    "order_number": "OLD-1",
+                },
+            ], ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+        with mock.patch.object(
+            web,
+            "save_stock_operations",
+        ) as save_stock_operations:
+            response = self.client.post(
+                "/sales/manual/update",
+                data={
+                    "sale_id": "manual-1",
+                    "created_at": "2026-07-28",
+                    "source": "Amazon",
+                    "product_id": PRODUCT_ID,
+                    "product_name": "Часы Test",
+                    "quantity": "2",
+                    "unit_price": "1250",
+                    "order_status": "completed",
+                    "commission_amount": "75.50",
+                    "order_number": "AMZ-NEW",
+                    "recipient_name": "Иван Иванов",
+                    "platform": "Amazon.de",
+                    "country": "Германия",
+                    "invoice_number": "INV-NEW",
+                    "note": "Обновлено",
+                },
+                headers={
+                    "X-Requested-With": "XMLHttpRequest",
+                },
+            )
+
+        stored = web.load_manual_sales()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.get_json(),
+            {"ok": True, "message": "Изменения сохранены"},
+        )
+        self.assertEqual(len(stored), 1)
+        self.assertEqual(stored[0]["id"], "manual-1")
+        self.assertEqual(stored[0]["created_at"], "2026-07-28")
+        self.assertEqual(stored[0]["quantity"], 2)
+        self.assertEqual(stored[0]["unit_price"], 1250.0)
+        self.assertEqual(stored[0]["total_amount"], 2500.0)
+        self.assertEqual(stored[0]["commission_amount"], 75.5)
+        self.assertEqual(stored[0]["order_number"], "AMZ-NEW")
+        save_stock_operations.assert_not_called()
+
+    def test_ajax_edit_validation_keeps_manual_sale_unchanged(self):
+        stored = [{
+            "id": "manual-1",
+            "created_at": "2026-07-22",
+            "source": "Tictactoy",
+            "product_id": PRODUCT_ID,
+            "product_name": "Часы Test",
+            "quantity": 1,
+            "unit_price": 1000,
+        }]
+        self.manual_sales_path.write_text(
+            json.dumps(stored, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+        response = self.client.post(
+            "/sales/manual/update",
+            data={
+                "sale_id": "manual-1",
+                "created_at": "28.07.2026",
+                "source": "Tictactoy",
+                "product_id": PRODUCT_ID,
+                "product_name": "Часы Test",
+                "quantity": "2",
+                "unit_price": "1250",
+            },
+            headers={"X-Requested-With": "XMLHttpRequest"},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()["ok"], False)
+        self.assertEqual(
+            response.get_json()["message"],
+            "Укажите корректную дату продажи",
+        )
+        self.assertEqual(web.load_manual_sales(), stored)
+
+    def test_ajax_edit_updates_automatic_override_not_stock_operation(self):
+        operation = {
+            "id": "automatic-1",
+            "created_at": "2026-07-22",
+            "source": "Заказ Битрикс",
+            "type": "writeoff",
+            "product_id": PRODUCT_ID,
+            "product_name": "Часы Test",
+            "quantity": 1,
+            "order_number": "ORDER-1",
+        }
+
+        with mock.patch.object(
+            web,
+            "load_stock_operations",
+            return_value=[operation],
+        ), mock.patch.object(
+            web,
+            "save_stock_operations",
+        ) as save_stock_operations:
+            response = self.client.post(
+                "/sales/automatic/update",
+                data={
+                    "operation_id": "automatic-1",
+                    "created_at": "2026-07-28",
+                    "source": "Tictactoy",
+                    "product_name": "Часы Test",
+                    "quantity": "2",
+                    "unit_price": "1500",
+                    "order_status": "processing",
+                    "order_number": "ORDER-1",
+                },
+                headers={
+                    "X-Requested-With": "XMLHttpRequest",
+                },
+            )
+
+        overrides = web.load_automatic_sales_overrides()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(overrides["automatic-1"]["quantity"], 2)
+        self.assertEqual(
+            overrides["automatic-1"]["total_amount"],
+            3000.0,
+        )
+        self.assertEqual(operation["quantity"], 1)
+        save_stock_operations.assert_not_called()
+
+    def test_delete_soft_hides_manual_and_automatic_sales_without_stock_write(self):
+        self.manual_sales_path.write_text(
+            json.dumps([
+                {
+                    "id": "manual-1",
+                    "created_at": "2026-07-22",
+                    "source": "Amazon",
+                    "product_id": PRODUCT_ID,
+                    "product_name": "Часы Test",
+                    "quantity": 1,
+                    "unit_price": 1000,
+                },
+            ], ensure_ascii=False),
+            encoding="utf-8",
+        )
+        operation = {
+            "id": "automatic-1",
+            "created_at": "2026-07-22",
+            "source": "Заказ Битрикс",
+            "type": "writeoff",
+            "product_id": PRODUCT_ID,
+            "product_name": "Часы Test",
+            "quantity": 1,
+        }
+
+        with mock.patch.object(
+            web,
+            "load_stock_operations",
+            return_value=[operation],
+        ), mock.patch.object(
+            web,
+            "save_stock_operations",
+        ) as save_stock_operations:
+            manual_response = self.client.post(
+                "/sales/delete",
+                data={
+                    "sale_id": "manual-1",
+                    "sale_type": "manual",
+                },
+                headers={
+                    "X-Requested-With": "XMLHttpRequest",
+                },
+            )
+            automatic_response = self.client.post(
+                "/sales/delete",
+                data={
+                    "sale_id": "automatic-1",
+                    "sale_type": "automatic",
+                },
+                headers={
+                    "X-Requested-With": "XMLHttpRequest",
+                },
+            )
+            records = web.build_sales_report_records()
+            repeated_response = self.client.post(
+                "/sales/delete",
+                data={
+                    "sale_id": "automatic-1",
+                    "sale_type": "automatic",
+                },
+                headers={
+                    "X-Requested-With": "XMLHttpRequest",
+                },
+            )
+
+        manual_sales = web.load_manual_sales()
+        overrides = web.load_automatic_sales_overrides()
+        self.assertEqual(manual_response.status_code, 200)
+        self.assertEqual(automatic_response.status_code, 200)
+        self.assertEqual(repeated_response.status_code, 410)
+        self.assertTrue(manual_sales[0]["deleted_at"])
+        self.assertTrue(overrides["automatic-1"]["deleted_at"])
+        self.assertEqual(records, [])
         save_stock_operations.assert_not_called()
 
     def test_created_amazon_sale_uses_product_snapshot_and_is_not_duplicated(self):
