@@ -1,0 +1,66 @@
+{% extends "auth_base.html" %}
+
+{% block title %}Приглашение создано — Vechasu ERP{% endblock %}
+
+{% block auth_content %}
+<section class="auth-card" aria-labelledby="invitation-title">
+    <div class="invitation-confirmed" role="status">
+        Одноразовое приглашение создано
+    </div>
+    <header class="auth-card-header">
+        <h2 id="invitation-title">Передайте ссылку сотруднику</h2>
+        <p>
+            {{ role_label }}{% if email %} · {{ email }}{% endif %}
+            · действует {{ lifetime_hours }} ч.
+            После ухода с этой страницы ссылка больше не показывается.
+        </p>
+    </header>
+
+    <div class="auth-field">
+        <label class="auth-label" for="invitationLink">
+            Ссылка приглашения
+        </label>
+        <input
+            class="auth-input"
+            id="invitationLink"
+            value="{{ invitation_link }}"
+            readonly
+        >
+    </div>
+
+    <div class="auth-actions" style="display:grid;gap:12px">
+        <button class="auth-submit" id="copyInvitation" type="button">
+            Скопировать ссылку
+        </button>
+        <a
+            href="{{ url_for('settings_page') }}"
+            style="color:#2563eb;text-align:center;font-size:13px;font-weight:800"
+        >
+            Вернуться в настройки
+        </a>
+    </div>
+    <div class="auth-live" id="copyStatus" aria-live="polite"></div>
+</section>
+
+<script>
+    (() => {
+        const input = document.getElementById("invitationLink");
+        const button = document.getElementById("copyInvitation");
+        const status = document.getElementById("copyStatus");
+        input.value = new URL(input.value, window.location.origin).href;
+
+        button.addEventListener("click", async () => {
+            try {
+                await navigator.clipboard.writeText(input.value);
+                button.textContent = "Ссылка скопирована";
+                status.textContent = "Ссылка приглашения скопирована.";
+            } catch (error) {
+                input.select();
+                document.execCommand("copy");
+                button.textContent = "Ссылка скопирована";
+                status.textContent = "Ссылка приглашения скопирована.";
+            }
+        });
+    })();
+</script>
+{% endblock %}

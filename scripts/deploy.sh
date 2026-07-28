@@ -41,9 +41,10 @@ readonly EXPECTED_BRANCH="main"
 readonly REMOTE_NAME="origin"
 readonly PROJECT_DIR="/opt/clock-erp"
 readonly SERVICE_NAME="clock-erp"
+readonly BACKUP_DIR="/opt/clock-erp-backups"
 readonly HEALTHCHECK_URLS=(
-    "http://127.0.0.1:5000/"
-    "http://127.0.0.1:5000/analytics?period=all"
+    "http://127.0.0.1:5000/register"
+    "http://127.0.0.1:5000/login"
 )
 
 PREVIOUS_COMMIT=""
@@ -94,14 +95,32 @@ if [[ "$server_branch" != "$EXPECTED_BRANCH" ]]; then
     false
 fi
 
-server_status="$(git status --porcelain --untracked-files=normal)"
-if [[ -n "$server_status" ]]; then
+server_source_status="$(
+    git status --porcelain --untracked-files=normal \
+        -- . ':(exclude)instance/**'
+)"
+if [[ -n "$server_source_status" ]]; then
     printf '%s\n' \
-        'Server repository is dirty; deployment stopped without changes' >&2
+        'Server source tree is dirty; deployment stopped without changes' >&2
     false
 fi
 
 PREVIOUS_COMMIT="$(git rev-parse HEAD)"
+
+mkdir -p "$BACKUP_DIR"
+chmod 700 "$BACKUP_DIR"
+BACKUP_PATH="$BACKUP_DIR/clock-erp-$(date +%Y%m%d-%H%M%S).tar.gz"
+backup_items=()
+[[ -f .env ]] && backup_items+=(".env")
+[[ -d instance ]] && backup_items+=("instance")
+
+if [[ "${#backup_items[@]}" -gt 0 ]]; then
+    tar -czf "$BACKUP_PATH" "${backup_items[@]}"
+    chmod 600 "$BACKUP_PATH"
+    printf 'BACKUP_PATH=%s\n' "$BACKUP_PATH"
+else
+    printf '%s\n' 'BACKUP_SKIPPED: no runtime data found'
+fi
 
 git fetch "$REMOTE_NAME" "$EXPECTED_BRANCH"
 FETCHED_COMMIT="$(git rev-parse FETCH_HEAD)"
@@ -152,25 +171,45 @@ systemctl restart "$SERVICE_NAME"
 systemctl is-active --quiet "$SERVICE_NAME"
 
 for healthcheck_url in "${HEALTHCHECK_URLS[@]}"; do
-    http_ok=0
+    http_status=""
 
     for attempt in {1..10}; do
-        if curl --fail --silent --show-error \
-            --max-time 10 \
-            --output /dev/null \
-            "$healthcheck_url"; then
-            http_ok=1
+        if ! http_status="$(
+            curl --location --silent --show-error \
+                --max-time 10 \
+                --output /dev/null \
+                --write-out '%{http_code}' \
+                "$healthcheck_url"
+        )"; then
+            http_status="000"
+        fi
+
+        if [[ "$http_status" == "200" ]]; then
             break
         fi
 
         sleep 1
     done
 
-    if [[ "$http_ok" != "1" ]]; then
-        printf 'HTTP health check failed: %s\n' "$healthcheck_url" >&2
+    if [[ "$http_status" != "200" ]]; then
+        printf 'HTTP health check failed: %s returned %s\n' \
+            "$healthcheck_url" "$http_status" >&2
         false
     fi
+
+    printf 'HTTP_200=%s\n' "$healthcheck_url"
 done
+
+root_headers="$(curl --silent --show-error --max-time 10 --head \
+    http://127.0.0.1:5000/)"
+printf '%s\n' "$root_headers" | grep -Eq '^HTTP/[^ ]+ 302'
+printf '%s\n' "$root_headers" | grep -Eiq '^location: /register'
+
+if journalctl -u "$SERVICE_NAME" --since "-2 minutes" \
+    --priority=err --no-pager --quiet | grep -q .; then
+    printf '%s\n' 'Service reported errors after restart' >&2
+    false
+fi
 
 trap - ERR
 printf 'DEPLOY_COMMIT=%s\n' "$CURRENT_COMMIT"

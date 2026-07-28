@@ -160,6 +160,11 @@
             color: #166534;
         }
 
+        .notice-error {
+            border: 1px solid #fecaca;
+            background: #fef2f2;
+            color: #b42318;
+        }
 
         .navigation-list {
             display: grid;
@@ -325,6 +330,7 @@
         {% endif %}
 
         <form class="settings-card" method="post">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <section class="settings-section">
                 <h2>Компания</h2>
                 <p>
@@ -423,6 +429,11 @@
                                 method="post"
                                 action="{{ url_for('navigation_toggle', key=item.key) }}"
                             >
+                                <input
+                                    type="hidden"
+                                    name="csrf_token"
+                                    value="{{ csrf_token() }}"
+                                >
                         {% endif %}
                             <span class="navigation-item-main">
                                 <span class="navigation-item-icon">
@@ -472,6 +483,10 @@
                 </div>
             </section>
         </section>
+
+        {% if can_manage_invitations %}
+            {% include "_employee_invitations.html" %}
+        {% endif %}
     </main>
 </div>
 </body>
