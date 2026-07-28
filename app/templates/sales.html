@@ -525,7 +525,7 @@
         }
 
         .sales-table .col-product_name,
-        .sales-table .col-delivery_address,
+        .sales-table .col-platform,
         .sales-table .col-note {
             min-width: 220px;
             width: 240px;
@@ -1387,6 +1387,31 @@
                         </select>
                     </div>
 
+                    <div class="field">
+                        <label for="saleBrand">Бренд</label>
+                        <select
+                            id="saleBrand"
+                            class="control"
+                            name="product_brand"
+                            required
+                        >
+                            <option value="">Выберите бренд</option>
+                        </select>
+                    </div>
+
+                    <div class="field">
+                        <label for="saleCategory">Категория</label>
+                        <select
+                            id="saleCategory"
+                            class="control"
+                            name="product_category"
+                            required
+                            disabled
+                        >
+                            <option value="">Выберите категорию</option>
+                        </select>
+                    </div>
+
                     <div class="field field-wide product-search-field">
                         <label for="product_name">Товар</label>
                         <input
@@ -1397,6 +1422,7 @@
                             placeholder="Начните вводить название, баркод или артикул"
                             autocomplete="off"
                             required
+                            disabled
                         >
                         <div
                             id="productSuggestions"
@@ -1527,6 +1553,30 @@
                         class="source-specific-fields"
                         data-source-fields="wildberries"
                     >
+                        <div class="field">
+                            <label for="wildberries_sticker_number">
+                                Номер стикера
+                            </label>
+                            <input
+                                id="wildberries_sticker_number"
+                                class="control"
+                                type="text"
+                                name="sticker_number"
+                            >
+                        </div>
+
+                        <div class="field">
+                            <label for="wildberries_order_number">
+                                Номер заказа
+                            </label>
+                            <input
+                                id="wildberries_order_number"
+                                class="control"
+                                type="text"
+                                name="order_number"
+                            >
+                        </div>
+
                         <div class="field field-wide">
                             <label for="wildberries_note">
                                 Примечание
@@ -1564,6 +1614,16 @@
                                 class="control"
                                 type="text"
                                 name="order_number"
+                            >
+                        </div>
+
+                        <div class="field">
+                            <label for="platform">Площадка</label>
+                            <input
+                                id="platform"
+                                class="control"
+                                type="text"
+                                name="platform"
                             >
                         </div>
 
@@ -2441,6 +2501,7 @@
         document.getElementById("product_id").value = "";
         document.getElementById("productMeta").textContent =
             "Баркод, бренд и категория заполнятся из карточки товара.";
+        resetProductFilters();
 
         if (activeSalesSource === "all") {
             sourceChoicePanel.classList.remove("is-hidden");
@@ -2510,6 +2571,10 @@
     const productSearchInput = document.getElementById(
         "product_name"
     );
+    const saleBrandSelect = document.getElementById("saleBrand");
+    const saleCategorySelect = document.getElementById(
+        "saleCategory"
+    );
     const productIdInput = document.getElementById(
         "product_id"
     );
@@ -2529,6 +2594,134 @@
             .trim();
     }
 
+    function uniqueProductValues(values) {
+        const result = [];
+        const seen = new Set();
+
+        values.forEach((value) => {
+            const displayValue = String(value || "").trim();
+            const key = normalizeProductSearch(displayValue);
+
+            if (!key || seen.has(key)) {
+                return;
+            }
+
+            seen.add(key);
+            result.push(displayValue);
+        });
+
+        return result.sort((first, second) =>
+            first.localeCompare(
+                second,
+                "ru",
+                {numeric: true, sensitivity: "base"},
+            )
+        );
+    }
+
+    function productMatchesSelection(item) {
+        const brand = normalizeProductSearch(
+            saleBrandSelect.value
+        );
+        const category = normalizeProductSearch(
+            saleCategorySelect.value
+        );
+
+        return (
+            (!brand
+                || normalizeProductSearch(item.brand) === brand)
+            && (!category
+                || normalizeProductSearch(item.category) === category)
+        );
+    }
+
+    function replaceProductOptions(
+        select,
+        values,
+        placeholder,
+        preferredValue = "",
+    ) {
+        const preferredKey = normalizeProductSearch(
+            preferredValue
+        );
+        select.replaceChildren();
+
+        const placeholderOption = document.createElement("option");
+        placeholderOption.value = "";
+        placeholderOption.textContent = placeholder;
+        select.appendChild(placeholderOption);
+
+        let matchedValue = "";
+
+        uniqueProductValues(values).forEach((value) => {
+            const option = document.createElement("option");
+            option.value = value;
+            option.textContent = value;
+            select.appendChild(option);
+
+            if (
+                preferredKey
+                && normalizeProductSearch(value) === preferredKey
+            ) {
+                matchedValue = value;
+            }
+        });
+
+        select.value = matchedValue;
+        return Boolean(matchedValue);
+    }
+
+    function clearSelectedProduct() {
+        productIdInput.value = "";
+        productSearchInput.value = "";
+        productMeta.textContent =
+            "Баркод, бренд и категория заполнятся из карточки товара.";
+        productSearchInput.setCustomValidity("");
+        closeProductSuggestions();
+    }
+
+    function refreshCategoryOptions(preferredValue = "") {
+        const brand = normalizeProductSearch(
+            saleBrandSelect.value
+        );
+        const brandProducts = warehouseItems.filter(
+            (item) =>
+                brand
+                && normalizeProductSearch(item.brand) === brand
+        );
+        const matched = replaceProductOptions(
+            saleCategorySelect,
+            brandProducts.map((item) => item.category),
+            "Выберите категорию",
+            preferredValue,
+        );
+
+        saleCategorySelect.disabled = !brand;
+        productSearchInput.disabled = !brand || !matched;
+
+        if (!matched) {
+            productSearchInput.disabled = true;
+        }
+
+        return matched;
+    }
+
+    function resetProductFilters() {
+        replaceProductOptions(
+            saleBrandSelect,
+            warehouseItems.map((item) => item.brand),
+            "Выберите бренд",
+        );
+        replaceProductOptions(
+            saleCategorySelect,
+            [],
+            "Выберите категорию",
+        );
+        saleCategorySelect.disabled = true;
+        productSearchInput.disabled = true;
+        closeProductSuggestions();
+    }
+
     function productSearchText(item) {
         return normalizeProductSearch([
             item.name,
@@ -2546,6 +2739,18 @@
     }
 
     function selectWarehouseProduct(item) {
+        const brandMatched = replaceProductOptions(
+            saleBrandSelect,
+            warehouseItems.map((product) => product.brand),
+            "Выберите бренд",
+            item.brand,
+        );
+        saleCategorySelect.disabled = !brandMatched;
+        const categoryMatched = refreshCategoryOptions(
+            item.category
+        );
+        productSearchInput.disabled =
+            !brandMatched || !categoryMatched;
         productSearchInput.value = item.name || "";
         productIdInput.value = item.id || "";
         productMeta.textContent = [
@@ -2564,8 +2769,11 @@
         visibleProducts = warehouseItems
             .filter(
                 (item) =>
-                    !query
-                    || productSearchText(item).includes(query)
+                    productMatchesSelection(item)
+                    && (
+                        !query
+                        || productSearchText(item).includes(query)
+                    )
             )
             .slice(0, 40);
         productSuggestions.replaceChildren();
@@ -2621,6 +2829,54 @@
 
         productSuggestions.classList.add("is-open");
     }
+
+    saleBrandSelect.addEventListener("change", () => {
+        const selectedProduct = warehouseItems.find(
+            (item) =>
+                String(item.id || "")
+                === String(productIdInput.value || "")
+        );
+        const selectedBrand = normalizeProductSearch(
+            saleBrandSelect.value
+        );
+        const preferredCategory = (
+            selectedProduct
+            && normalizeProductSearch(selectedProduct.brand)
+                === selectedBrand
+        )
+            ? selectedProduct.category
+            : "";
+
+        refreshCategoryOptions(preferredCategory);
+
+        if (
+            !selectedProduct
+            || !productMatchesSelection(selectedProduct)
+        ) {
+            clearSelectedProduct();
+        }
+    });
+
+    saleCategorySelect.addEventListener("change", () => {
+        const selectedProduct = warehouseItems.find(
+            (item) =>
+                String(item.id || "")
+                === String(productIdInput.value || "")
+        );
+
+        productSearchInput.disabled =
+            !saleBrandSelect.value
+            || !saleCategorySelect.value;
+
+        if (
+            !selectedProduct
+            || !productMatchesSelection(selectedProduct)
+        ) {
+            clearSelectedProduct();
+        }
+    });
+
+    resetProductFilters();
 
     productSearchInput.addEventListener(
         "focus",

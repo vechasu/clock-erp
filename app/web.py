@@ -3231,6 +3231,8 @@ SALES_SOURCE_ALIASES = {
 SALES_TABLE_COLUMNS = {
     "all": [
         ("created_at", "Дата"),
+        ("order_number", "Номер заказа"),
+        ("track_number", "Трекинг"),
         ("barcode", "Баркод"),
         ("source", "Источник"),
         ("brand", "Бренд"),
@@ -3246,9 +3248,9 @@ SALES_TABLE_COLUMNS = {
         ("category", "Категория"),
         ("product_name", "Товар"),
         ("quantity_display", "Количество"),
-        ("unit_price_display", "Цена"),
+        ("unit_price_display", "Цена продажи"),
         ("order_number", "Номер заказа"),
-        ("track_number", "Номер отправления"),
+        ("track_number", "Трекинг"),
         ("delivery_method", "Способ доставки"),
         ("delivery_cost_display", "Стоимость доставки"),
         ("region", "Регион"),
@@ -3262,8 +3264,10 @@ SALES_TABLE_COLUMNS = {
         ("brand", "Бренд"),
         ("category", "Категория"),
         ("product_name", "Товар"),
+        ("sticker_number", "Номер стикера"),
+        ("order_number", "Номер заказа"),
         ("quantity_display", "Количество"),
-        ("unit_price_display", "Цена"),
+        ("unit_price_display", "Цена продажи"),
         ("note", "Примечание"),
     ],
     "amazon": [
@@ -3276,8 +3280,8 @@ SALES_TABLE_COLUMNS = {
         ("unit_price_display", "Цена"),
         ("recipient_name", "ФИО получателя"),
         ("order_number", "Номер заказа"),
+        ("platform", "Площадка"),
         ("country", "Страна"),
-        ("delivery_address", "Адрес доставки"),
         ("invoice_number", "Номер накладной"),
         ("note", "Примечание"),
     ],
@@ -3794,6 +3798,9 @@ def get_sales_search_fields(source_key):
             if field != "quantity_display"
         ]
 
+    if source_key == "amazon":
+        fields.append("delivery_address")
+
     return fields
 
 
@@ -3931,7 +3938,20 @@ def build_sale_optional_fields(form, existing=None):
             form.get("country") or ""
         ).strip(),
         "delivery_address": str(
-            form.get("delivery_address") or ""
+            (
+                form.get("delivery_address")
+                if "delivery_address" in form
+                else existing.get("delivery_address")
+            )
+            or ""
+        ).strip(),
+        "platform": str(
+            (
+                form.get("platform")
+                if "platform" in form
+                else existing.get("platform")
+            )
+            or ""
         ).strip(),
         "invoice_number": str(
             form.get("invoice_number") or ""
@@ -4739,6 +4759,7 @@ def build_sales_report_records(warehouse_items=None):
                     "track_number",
                     operation.get("track_number")
                     or operation.get("shipment_number")
+                    or operation.get("tracking_number")
                     or "",
                 )
                 or ""
@@ -4813,6 +4834,13 @@ def build_sales_report_records(warehouse_items=None):
                 override.get("delivery_address")
                 or operation.get("delivery_address")
                 or operation.get("address")
+                or ""
+            ),
+            "platform": str(
+                override.get("platform")
+                or operation.get("platform")
+                or operation.get("marketplace")
+                or operation.get("sales_channel")
                 or ""
             ),
             "invoice_number": str(
@@ -4936,7 +4964,10 @@ def build_sales_report_records(warehouse_items=None):
                 ),
             },
             "track_number": str(
-                stored_sale.get("track_number") or ""
+                stored_sale.get("track_number")
+                or stored_sale.get("shipment_number")
+                or stored_sale.get("tracking_number")
+                or ""
             ),
             "delivery_method": str(
                 stored_sale.get("delivery_method") or ""
@@ -4973,6 +5004,9 @@ def build_sales_report_records(warehouse_items=None):
             ),
             "delivery_address": str(
                 stored_sale.get("delivery_address") or ""
+            ),
+            "platform": str(
+                stored_sale.get("platform") or ""
             ),
             "invoice_number": str(
                 stored_sale.get("invoice_number") or ""
@@ -5427,7 +5461,7 @@ def sales_report_excel():
         "unit_price_display": 18,
         "delivery_cost_display": 20,
         "note": 40,
-        "delivery_address": 42,
+        "platform": 24,
         "recipient_name": 28,
     }
     widths = [
@@ -5669,7 +5703,7 @@ def sales_report_pdf():
     column_weights = {
         "product_name": 1.8,
         "category": 1.4,
-        "delivery_address": 2.0,
+        "platform": 1.3,
         "note": 1.8,
         "recipient_name": 1.4,
     }
