@@ -532,13 +532,18 @@ class OwnerFeedbackTest(unittest.TestCase):
 
         self.assertEqual(archived.status_code, 302)
         self.assertEqual(len(cases_after_archive), 1)
-        self.assertEqual(cases_after_archive[0]["status"], "completed")
+        self.assertEqual(cases_after_archive[0]["status"], "at_us")
         self.assertTrue(cases_after_archive[0]["archived_at"])
+        self.assertTrue(cases_after_archive[0]["history"])
         self.assertNotIn("R-2026-0001", active_page.get_data(as_text=True))
         self.assertIn("R-2026-0001", archive_page.get_data(as_text=True))
         self.assertEqual(restored.status_code, 302)
-        self.assertEqual(cases_after_restore[0]["status"], "in_progress")
+        self.assertEqual(cases_after_restore[0]["status"], "at_master")
         self.assertEqual(cases_after_restore[0]["archived_at"], "")
+        self.assertGreater(
+            len(cases_after_restore[0]["history"]),
+            len(cases_after_archive[0]["history"]),
+        )
 
     def test_warehouse_bulk_edit_validates_then_updates_selected_items(self):
         catalog = mock.Mock()

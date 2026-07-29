@@ -1,11 +1,13 @@
 import sys
 from pathlib import Path
+from datetime import datetime
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 import time
+import copy
 import json
 import os
 import fcntl
@@ -38,6 +40,24 @@ from app.services.sales_inventory import (
     ReturnConflictError,
     SalesInventory,
     SalesInventoryError,
+)
+from app.services.repair_cases import (
+    LEGACY_STATUS_MAP,
+    REPAIR_CHANNEL_LABELS,
+    REPAIR_LOCATION_LABELS,
+    REPAIR_SCHEMA_VERSION,
+    REPAIR_STATUS_LABELS,
+    REPAIR_TYPE_LABELS,
+    SHIPMENT_DIRECTION_LABELS,
+    RepairDataError,
+    append_history_event,
+    latest_repair_event,
+    load_repair_file,
+    make_history_event,
+    migrate_repair_case,
+    mutate_repair_file,
+    repair_now,
+    save_repair_file,
 )
 from flask import (
     Flask,
@@ -2813,38 +2833,990 @@ def build_cell_groups(items):
 # -----------------------------
 
 def get_repair_cases_path():
-    from pathlib import Path
     path = Path("instance")
     path.mkdir(exist_ok=True)
     return path / "repair_cases.json"
 
 
 def load_repair_cases():
-    import json
-
-    path = get_repair_cases_path()
-
-    if not path.exists():
-        return []
-
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return []
-
-    return data if isinstance(data, list) else []
+    return load_repair_file(get_repair_cases_path())
 
 
 def save_repair_cases(cases):
-    import json
+    save_repair_file(get_repair_cases_path(), cases)
 
-    path = get_repair_cases_path()
-    temporary_path = path.with_suffix(".json.tmp")
-    temporary_path.write_text(
-        json.dumps(cases, ensure_ascii=False, indent=2),
-        encoding="utf-8",
+
+def mutate_repair_cases(callback):
+    return mutate_repair_file(get_repair_cases_path(), callback)
+
+
+def current_repair_user_name():
+    user = current_auth_user() or {}
+    full_name = " ".join(
+        str(user.get(field) or "").strip()
+        for field in ("first_name", "last_name")
+    ).strip()
+    return full_name or str(user.get("email") or "").strip() or "Система"
+
+
+def build_repair_catalog_items(items=None):
+    if items is None:
+        try:
+            items = get_excel_warehouse_items()
+        except Exception:
+            app.logger.exception("Failed to load repair product catalog")
+            items = []
+
+    result = []
+    seen = set()
+    for item in items if isinstance(items, list) else []:
+        product_id = str(item.get("id") or "").strip()
+        if not product_id or product_id in seen:
+            continue
+        seen.add(product_id)
+        name = str(item.get("name") or "").strip()
+        brand = str(item.get("brand") or "").strip()
+        article = str(item.get("article") or "").strip()
+        if not name:
+            continue
+        result.append({
+            "id": product_id,
+            "name": name,
+            "brand": brand,
+            "model": str(item.get("model") or "").strip(),
+            "article": article,
+            "image_url": str(
+                item.get("thumbnail_url")
+                or item.get("bitrix_thumbnail_url")
+                or ""
+            ).strip(),
+            "url": (
+                f"/products/{product_id}"
+                if product_id.isdigit()
+                else ""
+            ),
+            "search": " ".join([
+                name,
+                brand,
+                article,
+                str(item.get("barcode") or "").strip(),
+            ]).casefold(),
+        })
+    return sorted(
+        result,
+        key=lambda item: (
+            item["brand"].casefold(),
+            item["name"].casefold(),
+            item["article"].casefold(),
+        ),
     )
-    temporary_path.replace(path)
+
+
+def get_repair_catalog_product(product_id, items=None):
+    product_id = str(product_id or "").strip()
+    if not product_id:
+        return None
+    return next(
+        (
+            item
+            for item in build_repair_catalog_items(items)
+            if item["id"] == product_id
+        ),
+        None,
+    )
+
+
+def _repair_text(value):
+    return str(value or "").strip()
+
+
+def _repair_date(value):
+    return _repair_text(value)[:10]
+
+
+def format_repair_date(value):
+    value = _repair_date(value)
+    if not value:
+        return ""
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").strftime("%d.%m.%Y")
+    except ValueError:
+        return value
+
+
+def repair_case_search_text(case):
+    shipments = case.get("shipments")
+    track_numbers = " ".join(
+        str(shipment.get("track_number") or "")
+        for shipment in shipments
+        if isinstance(shipment, dict)
+    ) if isinstance(shipments, list) else ""
+    return " ".join([
+        _repair_text(case.get("repair_number")),
+        _repair_text(case.get("order_number")),
+        _repair_text(case.get("client_name")),
+        _repair_text(case.get("client_phone")),
+        _repair_text(case.get("client_email")),
+        _repair_text(case.get("client_messenger")),
+        _repair_text(case.get("product_name")),
+        _repair_text(case.get("brand")),
+        _repair_text(case.get("model")),
+        _repair_text(case.get("article")),
+        _repair_text(case.get("serial_number")),
+        _repair_text(case.get("problem")),
+        _repair_text(case.get("diagnostic_result")),
+        _repair_text(case.get("master_conclusion")),
+        _repair_text(case.get("decision")),
+        _repair_text(case.get("contact")),
+        track_numbers,
+    ]).casefold()
+
+
+def repair_case_matches(case, filters):
+    query = _repair_text(filters.get("q")).casefold()
+    if query and query not in repair_case_search_text(case):
+        return False
+    exact_filters = {
+        "status": "status",
+        "type": "request_type",
+        "location": "location",
+        "channel": "communication_channel",
+    }
+    for filter_name, case_field in exact_filters.items():
+        value = _repair_text(filters.get(filter_name))
+        if value and _repair_text(case.get(case_field)) != value:
+            return False
+    date_value = (
+        _repair_date(case.get("request_at"))
+        or _repair_date(case.get("created_at"))
+    )
+    date_from = _repair_date(filters.get("date_from"))
+    date_to = _repair_date(filters.get("date_to"))
+    if date_from and (not date_value or date_value < date_from):
+        return False
+    if date_to and (not date_value or date_value > date_to):
+        return False
+    return True
+
+
+def _repair_order_label(case):
+    order_number = _repair_text(case.get("order_number"))
+    if not order_number:
+        return "Без номера"
+    if case.get("order_source") == "our":
+        return f"Наш №{order_number}"
+    return f"Внешний №{order_number}"
+
+
+def prepare_repair_case(case):
+    prepared = dict(case)
+    prepared.pop("legacy_snapshot", None)
+    prepared["is_archived"] = bool(prepared.get("archived_at"))
+    prepared["status_label"] = REPAIR_STATUS_LABELS.get(
+        prepared.get("status"),
+        prepared.get("status") or "—",
+    )
+    prepared["request_type_label"] = REPAIR_TYPE_LABELS.get(
+        prepared.get("request_type"),
+        prepared.get("request_type") or "—",
+    )
+    prepared["location_label"] = REPAIR_LOCATION_LABELS.get(
+        prepared.get("location"),
+        prepared.get("location") or "—",
+    )
+    prepared["channel_label"] = REPAIR_CHANNEL_LABELS.get(
+        prepared.get("communication_channel"),
+        prepared.get("communication_channel") or "—",
+    )
+    prepared["order_label"] = _repair_order_label(prepared)
+    prepared["latest_event"] = latest_repair_event(prepared)
+    prepared["accepted_at_display"] = format_repair_date(
+        prepared.get("accepted_at")
+    )
+    prepared["master_handoff_at_display"] = format_repair_date(
+        prepared.get("master_handoff_at")
+    )
+    prepared["request_at_display"] = format_repair_date(
+        prepared.get("request_at")
+    )
+    shipments = []
+    for shipment in prepared.get("shipments", []):
+        item = dict(shipment)
+        item["direction_label"] = SHIPMENT_DIRECTION_LABELS.get(
+            item.get("direction"),
+            "Требует уточнения",
+        )
+        item["sent_at_display"] = format_repair_date(item.get("sent_at"))
+        item["received_at_display"] = format_repair_date(
+            item.get("received_at")
+        )
+        shipments.append(item)
+    prepared["shipments"] = shipments
+    prepared["latest_shipment"] = shipments[-1] if shipments else None
+    prepared["search_text"] = repair_case_search_text(prepared)
+    return prepared
+
+
+def _repair_redirect(message, notice="success", **params):
+    params.update({"notice": notice, "message": message})
+    return redirect(url_for("repair_page", **params))
+
+
+def _validated_repair_choice(form, name, choices, default):
+    value = _repair_text(form.get(name)) or default
+    return value if value in choices else default
+
+
+def build_repair_form_payload(form, existing=None, catalog_items=None):
+    existing = existing if isinstance(existing, dict) else {}
+    product_id = _repair_text(form.get("product_id"))
+    catalog_product = get_repair_catalog_product(
+        product_id,
+        catalog_items,
+    ) if product_id else None
+    order_number = _repair_text(form.get("order_number"))
+    order_source = _validated_repair_choice(
+        form,
+        "order_source",
+        {"our", "external", "none"},
+        "none",
+    )
+    if not order_number:
+        order_source = "none"
+
+    payload = {
+        "status": _validated_repair_choice(
+            form,
+            "status",
+            REPAIR_STATUS_LABELS,
+            existing.get("status") or "new",
+        ),
+        "request_type": _validated_repair_choice(
+            form,
+            "request_type",
+            REPAIR_TYPE_LABELS,
+            existing.get("request_type") or "paid_repair",
+        ),
+        "responsible": _repair_text(form.get("responsible")),
+        "order_number": order_number,
+        "order_source": order_source,
+        "client_name": _repair_text(form.get("client_name")),
+        "client_phone": _repair_text(form.get("client_phone")),
+        "client_email": _repair_text(form.get("client_email")),
+        "client_messenger": _repair_text(
+            form.get("client_messenger")
+        ),
+        "product_id": product_id if catalog_product else "",
+        "product_name": (
+            catalog_product["name"]
+            if catalog_product
+            else _repair_text(form.get("product_name"))
+        ),
+        "brand": (
+            catalog_product["brand"]
+            if catalog_product
+            else _repair_text(form.get("brand"))
+        ),
+        "model": (
+            catalog_product["model"]
+            if catalog_product and catalog_product["model"]
+            else _repair_text(form.get("model"))
+        ),
+        "article": (
+            catalog_product["article"]
+            if catalog_product
+            else _repair_text(form.get("article"))
+        ),
+        "product_url": (
+            catalog_product["url"] if catalog_product else ""
+        ),
+        "product_image_url": (
+            catalog_product["image_url"] if catalog_product else ""
+        ),
+        "serial_number": _repair_text(form.get("serial_number")),
+        "equipment": _repair_text(form.get("equipment")),
+        "communication_channel": _validated_repair_choice(
+            form,
+            "communication_channel",
+            REPAIR_CHANNEL_LABELS,
+            "other",
+        ),
+        "contact": _repair_text(form.get("contact")),
+        "problem": _repair_text(form.get("problem")),
+        "diagnostic_result": _repair_text(
+            form.get("diagnostic_result")
+        ),
+        "master_conclusion": _repair_text(
+            form.get("master_conclusion")
+        ),
+        "decision": _repair_text(form.get("decision")),
+        "estimate_cost": _repair_text(form.get("estimate_cost")),
+        "final_cost": _repair_text(form.get("final_cost")),
+        "master": _repair_text(form.get("master")),
+        "location": _validated_repair_choice(
+            form,
+            "location",
+            REPAIR_LOCATION_LABELS,
+            "unknown",
+        ),
+        "request_at": _repair_date(form.get("request_at")),
+        "customer_sent_at": _repair_date(
+            form.get("customer_sent_at")
+        ),
+        "accepted_at": _repair_date(form.get("accepted_at")),
+        "master_handoff_at": _repair_date(
+            form.get("master_handoff_at")
+        ),
+        "repair_completed_at": _repair_date(
+            form.get("repair_completed_at")
+        ),
+        "returned_at": _repair_date(form.get("returned_at")),
+        "due_date": _repair_date(form.get("due_date")),
+        "communication": _repair_text(form.get("communication")),
+        "internal_comment": _repair_text(
+            form.get("internal_comment")
+        ),
+    }
+    payload["repair_type"] = payload["request_type"]
+    if not payload["client_name"]:
+        raise ValueError("Укажите имя клиента")
+    if not payload["product_name"]:
+        raise ValueError("Укажите товар или его название")
+    if not payload["problem"]:
+        raise ValueError("Опишите неисправность")
+    return payload
+
+
+REPAIR_UPLOAD_EXTENSIONS = {
+    "png", "jpg", "jpeg", "webp", "pdf", "txt",
+    "doc", "docx", "xls", "xlsx",
+}
+REPAIR_UPLOAD_MAX_BYTES = 10 * 1024 * 1024
+
+
+def get_repair_uploads_path():
+    path = Path("instance/repair_uploads")
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def save_repair_uploads(case_id):
+    from werkzeug.utils import secure_filename
+
+    uploads = [
+        uploaded
+        for uploaded in request.files.getlist("attachments")
+        if uploaded and uploaded.filename
+    ]
+    if len(uploads) > 6:
+        raise ValueError("За один раз можно добавить не больше 6 файлов")
+    saved = []
+    target_directory = get_repair_uploads_path() / case_id
+    for uploaded in uploads:
+        original_name = Path(uploaded.filename).name
+        safe_name = secure_filename(original_name)
+        extension = safe_name.rsplit(".", 1)[-1].lower() if "." in safe_name else ""
+        if not safe_name or extension not in REPAIR_UPLOAD_EXTENSIONS:
+            raise ValueError(
+                f"Недопустимый формат файла: {original_name}"
+            )
+        uploaded.stream.seek(0, 2)
+        size = uploaded.stream.tell()
+        uploaded.stream.seek(0)
+        if size > REPAIR_UPLOAD_MAX_BYTES:
+            raise ValueError(
+                f"Файл {original_name} больше 10 МБ"
+            )
+        target_directory.mkdir(parents=True, exist_ok=True)
+        stored_name = f"{uuid.uuid4().hex}-{safe_name}"
+        uploaded.save(target_directory / stored_name)
+        saved.append({
+            "id": str(uuid.uuid4()),
+            "name": original_name,
+            "stored_name": stored_name,
+            "size": size,
+            "uploaded_at": repair_now(),
+            "uploaded_by": current_repair_user_name(),
+        })
+    return saved
+
+
+def add_repair_change_history(case, before, actor, comment=""):
+    labels = {
+        "status": "Статус",
+        "location": "Местонахождение",
+        "decision": "Решение",
+        "diagnostic_result": "Результат диагностики",
+        "master_conclusion": "Заключение мастера",
+        "final_cost": "Стоимость ремонта",
+    }
+    changed = []
+    for field, label in labels.items():
+        old_value = _repair_text(before.get(field))
+        new_value = _repair_text(case.get(field))
+        if old_value == new_value:
+            continue
+        append_history_event(
+            case,
+            f"Изменено поле «{label}»",
+            actor=actor,
+            field=field,
+            old_value=old_value,
+            new_value=new_value,
+            comment=comment,
+        )
+        changed.append(label)
+    if not changed:
+        append_history_event(
+            case,
+            "Карточка обновлена",
+            actor=actor,
+            comment=comment,
+        )
+
+
+@app.route("/repair")
+def repair_page():
+    repair_view = _repair_text(request.args.get("view")) or "active"
+    if repair_view not in {"active", "archive", "all"}:
+        repair_view = "active"
+    filters = {
+        "q": _repair_text(request.args.get("q")),
+        "status": _repair_text(request.args.get("status")),
+        "type": _repair_text(request.args.get("type")),
+        "location": _repair_text(request.args.get("location")),
+        "channel": _repair_text(request.args.get("channel")),
+        "date_from": _repair_date(request.args.get("date_from")),
+        "date_to": _repair_date(request.args.get("date_to")),
+        "sort": _repair_text(request.args.get("sort")) or "date_desc",
+    }
+    notice = _repair_text(request.args.get("notice"))
+    message = _repair_text(request.args.get("message"))
+    data_error = ""
+    try:
+        all_cases = load_repair_cases()
+    except RepairDataError as error:
+        app.logger.exception("Repair data load failed")
+        all_cases = []
+        data_error = str(error)
+
+    active_cases = [
+        case for case in all_cases if not case.get("archived_at")
+    ]
+    stats = {
+        "total": len(active_cases),
+        "master": sum(
+            1 for case in active_cases
+            if case.get("status") in {"waiting_master", "at_master"}
+        ),
+        "delivery": sum(
+            1 for case in active_cases
+            if case.get("status") in {
+                "inbound_transit",
+                "outbound_transit",
+            }
+        ),
+    }
+    if repair_view == "active":
+        cases = active_cases
+    elif repair_view == "archive":
+        cases = [
+            case for case in all_cases if case.get("archived_at")
+        ]
+    else:
+        cases = all_cases
+
+    cases = [
+        case for case in cases if repair_case_matches(case, filters)
+    ]
+    if filters["sort"] == "status":
+        order = {key: index for index, key in enumerate(REPAIR_STATUS_LABELS)}
+        cases.sort(
+            key=lambda case: (
+                order.get(case.get("status"), 999),
+                case.get("request_at") or case.get("created_at") or "",
+            )
+        )
+    else:
+        cases.sort(
+            key=lambda case: (
+                case.get("request_at") or case.get("created_at") or "",
+                case.get("created_at") or "",
+            ),
+            reverse=filters["sort"] != "date_asc",
+        )
+
+    catalog_items = build_repair_catalog_items()
+    prepared_cases = [prepare_repair_case(case) for case in cases]
+    return render_template(
+        "repair.html",
+        cases=prepared_cases,
+        filters=filters,
+        repair_view=repair_view,
+        notice=notice,
+        message=message,
+        data_error=data_error,
+        stats=stats,
+        status_labels=REPAIR_STATUS_LABELS,
+        type_labels=REPAIR_TYPE_LABELS,
+        location_labels=REPAIR_LOCATION_LABELS,
+        channel_labels=REPAIR_CHANNEL_LABELS,
+        direction_labels=SHIPMENT_DIRECTION_LABELS,
+        catalog_items=catalog_items,
+    )
+
+
+@app.route("/repair/add", methods=["POST"])
+def repair_add():
+    require_csrf_when_authenticated()
+    now = repair_now()
+    case_id = str(uuid.uuid4())
+    try:
+        catalog_items = build_repair_catalog_items()
+        payload = build_repair_form_payload(
+            request.form,
+            catalog_items=catalog_items,
+        )
+        attachments = save_repair_uploads(case_id)
+    except ValueError as error:
+        return _repair_redirect(str(error), notice="error")
+
+    actor = current_repair_user_name()
+
+    def create_case(cases):
+        existing_numbers = {
+            _repair_text(case.get("repair_number"))
+            for case in cases
+        }
+        year = datetime.now().year
+        sequence = len(cases) + 1
+        repair_number = f"R-{year}-{sequence:04d}"
+        while repair_number in existing_numbers:
+            sequence += 1
+            repair_number = f"R-{year}-{sequence:04d}"
+        case = {
+            "id": case_id,
+            "schema_version": REPAIR_SCHEMA_VERSION,
+            "repair_number": repair_number,
+            "created_at": now,
+            "updated_at": now,
+            "archived_at": "",
+            "shipments": [],
+            "attachments": attachments,
+            "history": [
+                make_history_event(
+                    "Карточка ремонта создана",
+                    actor=actor,
+                    comment=_repair_text(request.form.get("event_comment")),
+                    timestamp=now,
+                )
+            ],
+        }
+        case.update(payload)
+        direction = _repair_text(
+            request.form.get("shipment_direction")
+        )
+        track_number = _repair_text(
+            request.form.get("shipment_track_number")
+        )
+        carrier = _repair_text(request.form.get("shipment_carrier"))
+        if track_number or carrier:
+            if direction not in SHIPMENT_DIRECTION_LABELS:
+                direction = "unknown"
+            shipment = {
+                "id": str(uuid.uuid4()),
+                "direction": direction,
+                "carrier": carrier,
+                "track_number": track_number,
+                "sent_at": _repair_date(
+                    request.form.get("shipment_sent_at")
+                ),
+                "status": _repair_text(
+                    request.form.get("shipment_status")
+                ),
+                "received_at": _repair_date(
+                    request.form.get("shipment_received_at")
+                ),
+            }
+            case["shipments"].append(shipment)
+            append_history_event(
+                case,
+                "Добавлена накладная",
+                actor=actor,
+                field="shipments",
+                new_value=track_number,
+                comment=SHIPMENT_DIRECTION_LABELS[direction],
+                timestamp=now,
+            )
+        cases.append(migrate_repair_case(case, migrated_at=now))
+        return repair_number
+
+    try:
+        repair_number = mutate_repair_cases(create_case)
+    except RepairDataError as error:
+        return _repair_redirect(str(error), notice="error")
+    return _repair_redirect(f"Ремонт {repair_number} добавлен")
+
+
+@app.route("/repair/update", methods=["POST"])
+def repair_update():
+    require_csrf_when_authenticated()
+    case_id = _repair_text(request.form.get("case_id"))
+    actor = current_repair_user_name()
+    try:
+        catalog_items = build_repair_catalog_items()
+        attachments = save_repair_uploads(case_id)
+    except ValueError as error:
+        return _repair_redirect(str(error), notice="error")
+
+    def update_case(cases):
+        for case in cases:
+            if case.get("id") != case_id:
+                continue
+            before = copy.deepcopy(case)
+            payload = build_repair_form_payload(
+                request.form,
+                existing=case,
+                catalog_items=catalog_items,
+            )
+            case.update(payload)
+            case.setdefault("attachments", []).extend(attachments)
+            case["updated_at"] = repair_now()
+            add_repair_change_history(
+                case,
+                before,
+                actor,
+                comment=_repair_text(request.form.get("event_comment")),
+            )
+            return True
+        return False
+
+    try:
+        updated = mutate_repair_cases(update_case)
+    except (RepairDataError, ValueError) as error:
+        return _repair_redirect(str(error), notice="error")
+    if not updated:
+        return _repair_redirect("Ремонт не найден", notice="error")
+    return _repair_redirect("Ремонт обновлён")
+
+
+def _change_repair_status(case_id, status, comment=""):
+    if status not in REPAIR_STATUS_LABELS:
+        return False
+    actor = current_repair_user_name()
+
+    def update_case(cases):
+        for case in cases:
+            if case.get("id") != case_id:
+                continue
+            old_status = _repair_text(case.get("status"))
+            if old_status == status:
+                return True
+            case["status"] = status
+            case["updated_at"] = repair_now()
+            if case.get("archived_at") and status != "completed":
+                case["archived_at"] = ""
+            append_history_event(
+                case,
+                "Изменён статус",
+                actor=actor,
+                field="status",
+                old_value=REPAIR_STATUS_LABELS.get(
+                    old_status,
+                    old_status,
+                ),
+                new_value=REPAIR_STATUS_LABELS[status],
+                comment=comment,
+            )
+            return True
+        return False
+
+    return mutate_repair_cases(update_case)
+
+
+@app.route("/repair/status", methods=["POST"])
+def repair_status():
+    require_csrf_when_authenticated()
+    case_id = _repair_text(request.form.get("case_id"))
+    status = _repair_text(request.form.get("status"))
+    status = LEGACY_STATUS_MAP.get(status, status)
+    try:
+        updated = _change_repair_status(
+            case_id,
+            status,
+            comment=_repair_text(request.form.get("comment")),
+        )
+    except RepairDataError as error:
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            return jsonify({"ok": False, "message": str(error)}), 409
+        return _repair_redirect(str(error), notice="error")
+    if not updated:
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            return jsonify({
+                "ok": False,
+                "message": "Ремонт не найден или статус некорректен",
+            }), 404
+        return _repair_redirect(
+            "Ремонт не найден или статус некорректен",
+            notice="error",
+        )
+    if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+        case = next(
+            (
+                item
+                for item in load_repair_cases()
+                if item.get("id") == case_id
+            ),
+            None,
+        )
+        return jsonify({
+            "ok": True,
+            "case": prepare_repair_case(case) if case else None,
+        })
+    return _repair_redirect("Статус обновлён")
+
+
+@app.route("/repair/action", methods=["POST"])
+def repair_action():
+    require_csrf_when_authenticated()
+    case_id = _repair_text(request.form.get("case_id"))
+    action = _repair_text(request.form.get("action"))
+    actor = current_repair_user_name()
+    action_settings = {
+        "receive": (
+            "at_us",
+            "at_us",
+            "accepted_at",
+            "Часы приняты",
+        ),
+        "handoff": (
+            "at_master",
+            "with_master",
+            "master_handoff_at",
+            "Часы переданы мастеру",
+        ),
+        "return": (
+            "outbound_transit",
+            "outbound_transit",
+            "",
+            "Оформлен возврат клиенту",
+        ),
+        "complete": (
+            "completed",
+            "",
+            "repair_completed_at",
+            "Ремонт завершён",
+        ),
+    }
+
+    def apply_action(cases):
+        for case in cases:
+            if case.get("id") != case_id:
+                continue
+            if action == "archive":
+                if not case.get("archived_at"):
+                    case["archived_at"] = repair_now()
+                    case["updated_at"] = case["archived_at"]
+                    append_history_event(
+                        case,
+                        "Ремонт перенесён в архив",
+                        actor=actor,
+                        comment=_repair_text(request.form.get("comment")),
+                    )
+                return "Ремонт перенесён в архив"
+            if action == "restore":
+                case["archived_at"] = ""
+                if case.get("status") == "completed":
+                    case["status"] = "at_us"
+                case["updated_at"] = repair_now()
+                append_history_event(
+                    case,
+                    "Ремонт восстановлен из архива",
+                    actor=actor,
+                )
+                return "Ремонт восстановлен"
+            if action not in action_settings:
+                return ""
+            status, location, date_field, label = action_settings[action]
+            old_status = _repair_text(case.get("status"))
+            old_location = _repair_text(case.get("location"))
+            case["status"] = status
+            if location:
+                case["location"] = location
+            if date_field:
+                case[date_field] = datetime.now().strftime("%Y-%m-%d")
+            case["updated_at"] = repair_now()
+            append_history_event(
+                case,
+                label,
+                actor=actor,
+                field="status",
+                old_value=REPAIR_STATUS_LABELS.get(
+                    old_status,
+                    old_status,
+                ),
+                new_value=REPAIR_STATUS_LABELS[status],
+                comment=_repair_text(request.form.get("comment")),
+            )
+            if location and old_location != location:
+                append_history_event(
+                    case,
+                    "Изменено местонахождение",
+                    actor=actor,
+                    field="location",
+                    old_value=REPAIR_LOCATION_LABELS.get(
+                        old_location,
+                        old_location,
+                    ),
+                    new_value=REPAIR_LOCATION_LABELS[location],
+                )
+            return label
+        return None
+
+    try:
+        message = mutate_repair_cases(apply_action)
+    except RepairDataError as error:
+        return _repair_redirect(str(error), notice="error")
+    if message is None:
+        return _repair_redirect("Ремонт не найден", notice="error")
+    if not message:
+        return _repair_redirect("Некорректное действие", notice="error")
+    return _repair_redirect(message)
+
+
+@app.route("/repair/logistics/add", methods=["POST"])
+def repair_logistics_add():
+    require_csrf_when_authenticated()
+    case_id = _repair_text(request.form.get("case_id"))
+    direction = _validated_repair_choice(
+        request.form,
+        "direction",
+        SHIPMENT_DIRECTION_LABELS,
+        "unknown",
+    )
+    track_number = _repair_text(request.form.get("track_number"))
+    carrier = _repair_text(request.form.get("carrier"))
+    if not track_number:
+        return _repair_redirect("Укажите трек-номер", notice="error")
+    actor = current_repair_user_name()
+
+    def add_shipment(cases):
+        for case in cases:
+            if case.get("id") != case_id:
+                continue
+            shipment = {
+                "id": str(uuid.uuid4()),
+                "direction": direction,
+                "carrier": carrier,
+                "track_number": track_number,
+                "sent_at": _repair_date(request.form.get("sent_at")),
+                "status": _repair_text(request.form.get("shipment_status")),
+                "received_at": _repair_date(
+                    request.form.get("received_at")
+                ),
+            }
+            case.setdefault("shipments", []).append(shipment)
+            case["updated_at"] = repair_now()
+            if direction == "inbound":
+                case["status"] = "inbound_transit"
+                case["location"] = "inbound_transit"
+            elif direction == "outbound":
+                case["status"] = "outbound_transit"
+                case["location"] = "outbound_transit"
+            append_history_event(
+                case,
+                "Добавлена накладная",
+                actor=actor,
+                field="shipments",
+                new_value=track_number,
+                comment=" · ".join(
+                    value for value in (
+                        SHIPMENT_DIRECTION_LABELS[direction],
+                        carrier,
+                    ) if value
+                ),
+            )
+            return True
+        return False
+
+    try:
+        updated = mutate_repair_cases(add_shipment)
+    except RepairDataError as error:
+        return _repair_redirect(str(error), notice="error")
+    if not updated:
+        return _repair_redirect("Ремонт не найден", notice="error")
+    return _repair_redirect("Накладная добавлена")
+
+
+@app.route("/repair/delete", methods=["POST"])
+def repair_delete():
+    require_csrf_when_authenticated()
+    case_id = _repair_text(request.form.get("case_id"))
+    try:
+        actor = current_repair_user_name()
+
+        def archive_case(cases):
+            for case in cases:
+                if case.get("id") != case_id:
+                    continue
+                if not case.get("archived_at"):
+                    case["archived_at"] = repair_now()
+                    case["updated_at"] = case["archived_at"]
+                    append_history_event(
+                        case,
+                        "Ремонт перенесён в архив",
+                        actor=actor,
+                    )
+                return True
+            return False
+
+        updated = mutate_repair_cases(archive_case)
+    except RepairDataError as error:
+        return _repair_redirect(str(error), notice="error")
+    if not updated:
+        return _repair_redirect("Ремонт не найден", notice="error")
+    return _repair_redirect(
+        "Ремонт перенесён в архив",
+        view="archive",
+    )
+
+
+@app.route("/repair/attachment/<case_id>/<stored_name>")
+def repair_attachment(case_id, stored_name):
+    from flask import send_from_directory
+
+    safe_case_id = _repair_text(case_id)
+    safe_stored_name = Path(stored_name).name
+    try:
+        case = next(
+            (
+                item
+                for item in load_repair_cases()
+                if item.get("id") == safe_case_id
+            ),
+            None,
+        )
+    except RepairDataError:
+        abort(404)
+    if not case:
+        abort(404)
+    attachment = next(
+        (
+            item
+            for item in case.get("attachments", [])
+            if isinstance(item, dict)
+            and item.get("stored_name") == safe_stored_name
+        ),
+        None,
+    )
+    if not attachment:
+        abort(404)
+    return send_from_directory(
+        get_repair_uploads_path() / safe_case_id,
+        safe_stored_name,
+        as_attachment=True,
+        download_name=attachment.get("name") or safe_stored_name,
+    )
 
 
 
@@ -2895,446 +3867,6 @@ def stock_operations_page():
         total_enter=total_enter,
     )
 
-
-REPAIR_STATUS_LABELS = {
-    "new": "Новый",
-    "diagnostics": "Диагностика",
-    "waiting": "Ожидание",
-    "in_progress": "В работе",
-    "ready": "Готов",
-    "issued": "Выдан",
-    "completed": "Завершено",
-}
-
-REPAIR_TYPE_LABELS = {
-    "paid": "Платный",
-    "warranty": "Гарантийный",
-    "service": "Сервисный",
-}
-
-
-@app.route("/repair")
-def repair_page():
-    from flask import render_template, request
-
-    q = (request.args.get("q") or "").strip()
-    status_filter = (request.args.get("status") or "").strip()
-    repair_view = (request.args.get("view") or "active").strip()
-
-    if repair_view not in {"active", "archive", "all"}:
-        repair_view = "active"
-    notice = request.args.get("notice") or ""
-    message = request.args.get("message") or ""
-
-    all_cases = []
-
-    for original_case in load_repair_cases():
-        case = dict(original_case)
-
-        if case.get("status") == "done":
-            case["status"] = "completed"
-
-        case.setdefault("repair_number", "")
-        case.setdefault("accepted_at", "")
-        case.setdefault("due_date", "")
-        case.setdefault("client_name", "")
-        case.setdefault("client_phone", "")
-        case.setdefault("order_number", "")
-        case.setdefault("product_name", "")
-        case.setdefault("serial_number", "")
-        case.setdefault("equipment", "")
-        case.setdefault("problem", case.get("comment") or "")
-        case.setdefault("repair_type", "paid")
-        case.setdefault("master", "")
-        case.setdefault("responsible", "")
-        case.setdefault("estimate_cost", "")
-        case.setdefault("final_cost", "")
-        case.setdefault("status", "new")
-        case.setdefault("communication", "")
-        case.setdefault("internal_comment", "")
-        case.setdefault("updated_at", case.get("created_at") or "")
-        case.setdefault("archived_at", "")
-        case["is_archived"] = bool(case.get("archived_at")) or (
-            case.get("status") == "completed"
-        )
-
-        all_cases.append(case)
-
-    stats = {
-        "total": len(all_cases),
-        "active_total": sum(
-            1 for case in all_cases if not case.get("is_archived")
-        ),
-        "archive_total": sum(
-            1 for case in all_cases if case.get("is_archived")
-        ),
-        "new": sum(
-            1 for case in all_cases
-            if case.get("status") == "new"
-        ),
-        "active": sum(
-            1 for case in all_cases
-            if case.get("status") in {"diagnostics", "in_progress"}
-        ),
-        "waiting": sum(
-            1 for case in all_cases
-            if case.get("status") == "waiting"
-        ),
-        "ready": sum(
-            1 for case in all_cases
-            if case.get("status") == "ready"
-        ),
-    }
-
-    cases = all_cases
-
-    if repair_view == "active":
-        cases = [
-            case for case in cases if not case.get("is_archived")
-        ]
-    elif repair_view == "archive":
-        cases = [
-            case for case in cases if case.get("is_archived")
-        ]
-
-    if status_filter in REPAIR_STATUS_LABELS:
-        cases = [
-            case for case in cases
-            if case.get("status") == status_filter
-        ]
-
-    if q:
-        q_lower = q.lower()
-
-        cases = [
-            case for case in cases
-            if q_lower in " ".join([
-                str(case.get("repair_number") or ""),
-                str(case.get("client_name") or ""),
-                str(case.get("client_phone") or ""),
-                str(case.get("order_number") or ""),
-                str(case.get("product_name") or ""),
-                str(case.get("serial_number") or ""),
-                str(case.get("equipment") or ""),
-                str(case.get("problem") or ""),
-                str(case.get("master") or ""),
-                str(case.get("responsible") or ""),
-                str(case.get("communication") or ""),
-                str(case.get("internal_comment") or ""),
-            ]).lower()
-        ]
-
-    cases = sorted(
-        cases,
-        key=lambda item: (
-            item.get("accepted_at") or "",
-            item.get("created_at") or "",
-        ),
-        reverse=True,
-    )
-
-    return render_template(
-        "repair.html",
-        cases=cases,
-        q=q,
-        status_filter=status_filter,
-        repair_view=repair_view,
-        notice=notice,
-        message=message,
-        stats=stats,
-        status_labels=REPAIR_STATUS_LABELS,
-        type_labels=REPAIR_TYPE_LABELS,
-    )
-
-
-@app.route("/repair/add", methods=["POST"])
-def repair_add():
-    from datetime import datetime
-    from flask import redirect, request
-    import uuid
-
-    now = datetime.now()
-    cases = load_repair_cases()
-
-    client_name = (request.form.get("client_name") or "").strip()
-    client_phone = (request.form.get("client_phone") or "").strip()
-    product_name = (request.form.get("product_name") or "").strip()
-    problem = (request.form.get("problem") or "").strip()
-
-    if not client_name:
-        return redirect(
-            "/repair?notice=error&message=Укажите имя клиента"
-        )
-
-    if not client_phone:
-        return redirect(
-            "/repair?notice=error&message=Укажите телефон клиента"
-        )
-
-    if not product_name:
-        return redirect(
-            "/repair?notice=error&message=Укажите товар"
-        )
-
-    if not problem:
-        return redirect(
-            "/repair?notice=error&message=Опишите неисправность"
-        )
-
-    existing_numbers = {
-        str(case.get("repair_number") or "")
-        for case in cases
-    }
-
-    sequence = len(cases) + 1
-    repair_number = f"R-{now.year}-{sequence:04d}"
-
-    while repair_number in existing_numbers:
-        sequence += 1
-        repair_number = f"R-{now.year}-{sequence:04d}"
-
-    status = (request.form.get("status") or "new").strip()
-
-    if status not in REPAIR_STATUS_LABELS:
-        status = "new"
-
-    repair_type = (
-        request.form.get("repair_type") or "paid"
-    ).strip()
-
-    if repair_type not in REPAIR_TYPE_LABELS:
-        repair_type = "paid"
-
-    cases.append({
-        "id": str(uuid.uuid4()),
-        "repair_number": repair_number,
-        "created_at": now.strftime("%Y-%m-%d %H:%M"),
-        "updated_at": now.strftime("%Y-%m-%d %H:%M"),
-        "accepted_at": (
-            request.form.get("accepted_at")
-            or now.strftime("%Y-%m-%d")
-        ).strip(),
-        "due_date": (
-            request.form.get("due_date") or ""
-        ).strip(),
-        "client_name": client_name,
-        "client_phone": client_phone,
-        "order_number": (
-            request.form.get("order_number") or ""
-        ).strip(),
-        "product_name": product_name,
-        "serial_number": (
-            request.form.get("serial_number") or ""
-        ).strip(),
-        "equipment": (
-            request.form.get("equipment") or ""
-        ).strip(),
-        "problem": problem,
-        "repair_type": repair_type,
-        "master": (
-            request.form.get("master") or ""
-        ).strip(),
-        "responsible": (
-            request.form.get("responsible") or ""
-        ).strip(),
-        "estimate_cost": (
-            request.form.get("estimate_cost") or ""
-        ).strip(),
-        "final_cost": (
-            request.form.get("final_cost") or ""
-        ).strip(),
-        "status": status,
-        "archived_at": (
-            now.strftime("%Y-%m-%d %H:%M")
-            if status == "completed"
-            else ""
-        ),
-        "communication": (
-            request.form.get("communication") or ""
-        ).strip(),
-        "internal_comment": (
-            request.form.get("internal_comment") or ""
-        ).strip(),
-    })
-
-    save_repair_cases(cases)
-
-    return redirect(
-        "/repair?notice=success&message=Ремонт добавлен"
-    )
-
-
-@app.route("/repair/update", methods=["POST"])
-def repair_update():
-    from datetime import datetime
-    from flask import redirect, request
-
-    case_id = (request.form.get("case_id") or "").strip()
-    cases = load_repair_cases()
-    updated = False
-
-    status = (request.form.get("status") or "new").strip()
-
-    if status not in REPAIR_STATUS_LABELS:
-        status = "new"
-
-    repair_type = (
-        request.form.get("repair_type") or "paid"
-    ).strip()
-
-    if repair_type not in REPAIR_TYPE_LABELS:
-        repair_type = "paid"
-
-    for case in cases:
-        if case.get("id") != case_id:
-            continue
-
-        case.update({
-            "accepted_at": (
-                request.form.get("accepted_at") or ""
-            ).strip(),
-            "due_date": (
-                request.form.get("due_date") or ""
-            ).strip(),
-            "client_name": (
-                request.form.get("client_name") or ""
-            ).strip(),
-            "client_phone": (
-                request.form.get("client_phone") or ""
-            ).strip(),
-            "order_number": (
-                request.form.get("order_number") or ""
-            ).strip(),
-            "product_name": (
-                request.form.get("product_name") or ""
-            ).strip(),
-            "serial_number": (
-                request.form.get("serial_number") or ""
-            ).strip(),
-            "equipment": (
-                request.form.get("equipment") or ""
-            ).strip(),
-            "problem": (
-                request.form.get("problem") or ""
-            ).strip(),
-            "repair_type": repair_type,
-            "master": (
-                request.form.get("master") or ""
-            ).strip(),
-            "responsible": (
-                request.form.get("responsible") or ""
-            ).strip(),
-            "estimate_cost": (
-                request.form.get("estimate_cost") or ""
-            ).strip(),
-            "final_cost": (
-                request.form.get("final_cost") or ""
-            ).strip(),
-            "status": status,
-            "archived_at": (
-                datetime.now().strftime("%Y-%m-%d %H:%M")
-                if status == "completed"
-                else ""
-            ),
-            "communication": (
-                request.form.get("communication") or ""
-            ).strip(),
-            "internal_comment": (
-                request.form.get("internal_comment") or ""
-            ).strip(),
-            "updated_at": datetime.now().strftime(
-                "%Y-%m-%d %H:%M"
-            ),
-        })
-
-        updated = True
-        break
-
-    if not updated:
-        return redirect(
-            "/repair?notice=error&message=Ремонт не найден"
-        )
-
-    save_repair_cases(cases)
-
-    return redirect(
-        "/repair?notice=success&message=Ремонт обновлён"
-    )
-
-
-@app.route("/repair/status", methods=["POST"])
-def repair_status():
-    from datetime import datetime
-    from flask import redirect, request
-
-    case_id = (request.form.get("case_id") or "").strip()
-    status = (request.form.get("status") or "new").strip()
-
-    if status not in REPAIR_STATUS_LABELS:
-        return redirect(
-            "/repair?notice=error&message=Некорректный статус"
-        )
-
-    cases = load_repair_cases()
-    updated = False
-
-    for case in cases:
-        if case.get("id") == case_id:
-            case["status"] = status
-            case["updated_at"] = datetime.now().strftime(
-                "%Y-%m-%d %H:%M"
-            )
-            case["archived_at"] = (
-                case["updated_at"]
-                if status == "completed"
-                else ""
-            )
-            updated = True
-            break
-
-    if not updated:
-        return redirect(
-            "/repair?notice=error&message=Ремонт не найден"
-        )
-
-    save_repair_cases(cases)
-
-    return redirect(
-        "/repair?notice=success&message=Статус обновлён"
-    )
-
-
-@app.route("/repair/delete", methods=["POST"])
-def repair_delete():
-    from datetime import datetime
-    from flask import redirect, request
-
-    case_id = (request.form.get("case_id") or "").strip()
-    cases = load_repair_cases()
-
-    archived = False
-
-    for case in cases:
-        if case.get("id") != case_id:
-            continue
-
-        archived_at = datetime.now().strftime("%Y-%m-%d %H:%M")
-        case["status"] = "completed"
-        case["archived_at"] = archived_at
-        case["updated_at"] = archived_at
-        archived = True
-        break
-
-    if not archived:
-        return redirect(
-            "/repair?notice=error&message=Ремонт не найден"
-        )
-
-    save_repair_cases(cases)
-
-    return redirect(
-        "/repair?view=archive&notice=success&message=Ремонт перенесён в архив"
-    )
 
 
 def get_manual_sales_path():
