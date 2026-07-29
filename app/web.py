@@ -3813,10 +3813,17 @@ def get_tictactoy_location_catalog():
 
 
 def parse_manual_sale_quantity(value):
+    from decimal import Decimal, InvalidOperation
+
     try:
-        quantity = int(str(value or "").strip())
-    except Exception:
+        parsed = Decimal(str(value or "").strip())
+    except (InvalidOperation, ValueError):
         return 0
+
+    if parsed != parsed.to_integral_value():
+        return 0
+
+    quantity = int(parsed)
 
     return quantity if 1 <= quantity <= 25 else 0
 
