@@ -44,7 +44,10 @@
             );
         }
 
-        if (isOpen) {
+        if (
+            isOpen
+            && combobox.dataset.searchEnabled !== "false"
+        ) {
             const search = combobox.querySelector(
                 ".brand-combobox-search"
             );
