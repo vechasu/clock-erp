@@ -29,10 +29,7 @@ export function TablePagination({
       </p>
       <label>
         Показывать
-        <select
-          value={pageSize}
-          onChange={(event) => onPageSizeChange(Number(event.target.value))}
-        >
+        <select value={pageSize} onChange={(event) => onPageSizeChange(Number(event.target.value))}>
           {[50, 100, 200].map((size) => (
             <option key={size} value={size}>
               {size}
@@ -47,7 +44,7 @@ export function TablePagination({
           onClick={() => onPageChange(page - 1)}
           disabled={page <= 1}
         >
-          ‹
+          <Icon name="chevronLeft" />
         </button>
         {pageNumbers.map((number, index) => (
           <span className="pagination-unit" key={number}>
@@ -70,9 +67,10 @@ export function TablePagination({
           onClick={() => onPageChange(page + 1)}
           disabled={page >= pages}
         >
-          ›
+          <Icon name="chevronRight" />
         </button>
       </div>
     </div>
   );
 }
+import { Icon } from './Icons';

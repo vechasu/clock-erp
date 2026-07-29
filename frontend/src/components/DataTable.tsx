@@ -10,6 +10,8 @@ import {
 } from '@tanstack/react-table';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 
+import { Icon } from './Icons';
+
 interface DataTableProps<TData> {
   columns: ColumnDef<TData>[];
   data: TData[];
@@ -68,10 +70,7 @@ export function DataTable<TData>({
 
   useEffect(() => {
     if (!storageKey) return;
-    window.localStorage.setItem(
-      `${storageKey}:visibility`,
-      JSON.stringify(columnVisibility),
-    );
+    window.localStorage.setItem(`${storageKey}:visibility`, JSON.stringify(columnVisibility));
     window.localStorage.setItem(`${storageKey}:order`, JSON.stringify(columnOrder));
     window.localStorage.setItem(`${storageKey}:sizing`, JSON.stringify(columnSizing));
   }, [columnOrder, columnSizing, columnVisibility, storageKey]);
@@ -89,7 +88,10 @@ export function DataTable<TData>({
     <>
       <div className="table-tools">
         <details className="column-settings">
-          <summary>Столбцы</summary>
+          <summary>
+            <Icon name="columns" />
+            Столбцы
+          </summary>
           <div>
             {table.getAllLeafColumns().map((column) => (
               <div className="column-setting-row" key={column.id}>
@@ -101,9 +103,9 @@ export function DataTable<TData>({
                     disabled={!column.getCanHide()}
                   />
                   {String(
-                    (column.columnDef.meta as { label?: string } | undefined)?.label
-                      ?? column.columnDef.header
-                      ?? column.id,
+                    (column.columnDef.meta as { label?: string } | undefined)?.label ??
+                      column.columnDef.header ??
+                      column.id,
                   )}
                 </label>
                 <span>
@@ -112,14 +114,14 @@ export function DataTable<TData>({
                     aria-label={`Сдвинуть ${column.id} влево`}
                     onClick={() => moveColumn(column.id, -1)}
                   >
-                    ←
+                    <Icon name="chevronLeft" />
                   </button>
                   <button
                     type="button"
                     aria-label={`Сдвинуть ${column.id} вправо`}
                     onClick={() => moveColumn(column.id, 1)}
                   >
-                    →
+                    <Icon name="chevronRight" />
                   </button>
                 </span>
               </div>
@@ -143,7 +145,21 @@ export function DataTable<TData>({
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
-                  <th key={header.id} style={{ width: header.getSize() }}>
+                  <th
+                    key={header.id}
+                    style={{ width: header.getSize() }}
+                    className={`is-${header.column.id} is-${
+                      (header.column.columnDef.meta as { align?: string } | undefined)?.align ??
+                      'left'
+                    }`}
+                    aria-sort={
+                      header.column.getIsSorted() === 'asc'
+                        ? 'ascending'
+                        : header.column.getIsSorted() === 'desc'
+                          ? 'descending'
+                          : undefined
+                    }
+                  >
                     {header.isPlaceholder ? null : (
                       <button
                         className="sort-button"
@@ -178,7 +194,14 @@ export function DataTable<TData>({
             {table.getRowModel().rows.map((row) => (
               <tr key={row.id}>
                 {row.getVisibleCells().map((cell) => (
-                  <td key={cell.id} style={{ width: cell.column.getSize() }}>
+                  <td
+                    key={cell.id}
+                    style={{ width: cell.column.getSize() }}
+                    className={`is-${cell.column.id} is-${
+                      (cell.column.columnDef.meta as { align?: string } | undefined)?.align ??
+                      'left'
+                    }`}
+                  >
                     {flexRender(cell.column.columnDef.cell, cell.getContext())}
                   </td>
                 ))}

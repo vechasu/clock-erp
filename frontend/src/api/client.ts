@@ -65,3 +65,11 @@ export function jsonRequestInit(method: 'POST' | 'PATCH' | 'DELETE', data?: unkn
     ...(data === undefined ? {} : { body: JSON.stringify(data) }),
   };
 }
+
+export function formDataRequestInit(method: 'POST' | 'PATCH', data: FormData): RequestInit {
+  return {
+    method,
+    headers: csrfToken ? { 'X-CSRF-Token': csrfToken } : {},
+    body: data,
+  };
+}
