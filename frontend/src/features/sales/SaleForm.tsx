@@ -1,6 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useForm } from 'react-hook-form';
+import { Controller, useForm } from 'react-hook-form';
 
+import { SearchableSelect } from '../../components/Controls';
 import {
   saleFormSchema,
   type Sale,
@@ -9,7 +10,6 @@ import {
   type SaleFormValues,
   type SaleLocations,
 } from './schemas';
-import { EntitySelect } from '../../components/Controls';
 
 interface SaleFormProps {
   id: string;
@@ -50,6 +50,7 @@ function defaults(sale?: Sale | null): SaleFormInput {
 
 export function SaleForm({ id, sale, products, locations, onSubmit }: SaleFormProps) {
   const {
+    control,
     register,
     setValue,
     watch,
@@ -68,44 +69,75 @@ export function SaleForm({ id, sale, products, locations, onSubmit }: SaleFormPr
   return (
     <form className="sale-form" id={id} onSubmit={handleSubmit(onSubmit)}>
       <section>
-        <h3>Основное</h3>
+        <h3>1. Товар</h3>
+        <div className="erp-form">
+          <Controller
+            control={control}
+            name="product_id"
+            render={({ field }) => (
+              <div className="form-field span-2">
+                <SearchableSelect
+                  label="Товар"
+                  required
+                  placeholder="Название, артикул или бренд"
+                  options={[
+                    ...products.map((product) => ({
+                      value: product.id,
+                      label: `${product.name} · ${product.brand} · доступно ${product.stock_display}`,
+                      disabled: product.stock <= 0 && product.id !== sale?.product_id,
+                    })),
+                    ...(sale && !products.some((product) => product.id === sale.product_id)
+                      ? [{ value: sale.product_id, label: sale.product_name }]
+                      : []),
+                  ]}
+                  value={field.value}
+                  onChange={(value) => {
+                    field.onChange(value);
+                    const product = products.find((item) => item.id === value);
+                    setValue('product_name', product?.name ?? sale?.product_name ?? '');
+                  }}
+                  disabled={quantityLocked}
+                  error={errors.product_id?.message}
+                  hint={
+                    selected
+                      ? [selected.article, selected.brand, selected.category]
+                          .filter(Boolean)
+                          .join(' · ')
+                      : undefined
+                  }
+                />
+                <input type="hidden" {...register('product_name')} />
+              </div>
+            )}
+          />
+        </div>
+      </section>
+      <section>
+        <h3>2. Параметры продажи</h3>
         <div className="erp-form">
           <label className="form-field">
             <span>Дата продажи *</span>
             <input type="date" {...register('created_at')} />
             {errors.created_at ? <small>{errors.created_at.message}</small> : null}
           </label>
-          <label className="form-field">
-            <span>Источник *</span>
-            <select {...register('source')}>
-              {['Tictactoy', 'Wildberries', 'Amazon', 'Ziiiro сайт'].map((source) => (
-                <option key={source}>{source}</option>
-              ))}
-            </select>
-          </label>
-          <label className="form-field span-2">
-            <span>Товар *</span>
-            <select {...register('product_id')} aria-disabled={quantityLocked}>
-              <option value="">Выберите товар</option>
-              {products.map((product) => (
-                <option key={product.id} value={product.id}>
-                  {product.name} · {product.brand} · доступно {product.stock_display}
-                </option>
-              ))}
-              {sale && !products.some((product) => product.id === sale.product_id) ? (
-                <option value={sale.product_id}>{sale.product_name}</option>
-              ) : null}
-            </select>
-            <input type="hidden" {...register('product_name')} value={selected?.name ?? sale?.product_name ?? ''} />
-            {errors.product_id ? <small>{errors.product_id.message}</small> : null}
-            {selected ? (
-              <em className="field-hint">
-                {[selected.article, selected.brand, selected.category]
-                  .filter(Boolean)
-                  .join(' · ')}
-              </em>
-            ) : null}
-          </label>
+          <Controller
+            control={control}
+            name="source"
+            render={({ field }) => (
+              <SearchableSelect
+                label="Источник"
+                required
+                placeholder="Выберите источник"
+                options={['Tictactoy', 'Wildberries', 'Amazon', 'Ziiiro сайт'].map((source) => ({
+                  value: source,
+                  label: source,
+                }))}
+                value={field.value}
+                onChange={field.onChange}
+                error={errors.source?.message}
+              />
+            )}
+          />
           <label className="form-field">
             <span>Количество *</span>
             <input
@@ -137,74 +169,7 @@ export function SaleForm({ id, sale, products, locations, onSubmit }: SaleFormPr
         </div>
       </section>
       <section>
-        <h3>Доставка и получатель</h3>
-        <div className="erp-form">
-          <label className="form-field">
-            <span>Трек-номер</span>
-            <input {...register('track_number')} />
-          </label>
-          <label className="form-field">
-            <span>Способ доставки</span>
-            <input {...register('delivery_method')} />
-          </label>
-          <EntitySelect
-            label="Страна"
-            placeholder="Не выбрана"
-            options={Object.keys(locations).map((value) => ({
-              value,
-              label: value,
-            }))}
-            {...register('country')}
-            onChange={(event) => {
-              setValue('country', event.target.value);
-              setValue('region', '');
-              setValue('city', '');
-            }}
-          />
-          <EntitySelect
-            label="Регион"
-            placeholder="Не выбран"
-            options={Object.keys(locations[country] ?? {}).map((value) => ({
-              value,
-              label: value,
-            }))}
-            {...register('region')}
-            onChange={(event) => {
-              setValue('region', event.target.value);
-              setValue('city', '');
-            }}
-            disabled={!country}
-          />
-          <EntitySelect
-            label="Город"
-            placeholder="Не выбран"
-            options={(locations[country]?.[region] ?? []).map((value) => ({
-              value,
-              label: value,
-            }))}
-            {...register('city')}
-            disabled={!region}
-          />
-          <label className="form-field">
-            <span>Стоимость доставки</span>
-            <input type="number" min="0" step="0.01" {...register('delivery_cost')} />
-          </label>
-          <label className="form-field span-2">
-            <span>Адрес</span>
-            <input {...register('delivery_address')} />
-          </label>
-          <label className="form-field">
-            <span>Получатель</span>
-            <input {...register('recipient_name')} />
-          </label>
-          <label className="form-field">
-            <span>Телефон / контакт</span>
-            <input {...register('recipient')} />
-          </label>
-        </div>
-      </section>
-      <section>
-        <h3>Оплата и примечания</h3>
+        <h3>3. Оплата и комиссия</h3>
         <div className="erp-form">
           <label className="form-field">
             <span>Способ оплаты</span>
@@ -220,16 +185,109 @@ export function SaleForm({ id, sale, products, locations, onSubmit }: SaleFormPr
             <input {...register('platform')} />
           </label>
           <label className="form-field">
-            <span>Номер накладной</span>
-            <input {...register('invoice_number')} />
-          </label>
-          <label className="form-field">
             <span>Номер стикера</span>
             <input {...register('sticker_number')} />
           </label>
+        </div>
+      </section>
+      <section>
+        <h3>4. Доставка</h3>
+        <div className="erp-form">
+          <label className="form-field">
+            <span>Трек-номер</span>
+            <input {...register('track_number')} />
+          </label>
+          <label className="form-field">
+            <span>Способ доставки</span>
+            <input {...register('delivery_method')} />
+          </label>
+          <label className="form-field">
+            <span>Стоимость доставки</span>
+            <input type="number" min="0" step="0.01" {...register('delivery_cost')} />
+          </label>
+          <label className="form-field">
+            <span>Номер накладной</span>
+            <input {...register('invoice_number')} />
+          </label>
+        </div>
+      </section>
+      <section>
+        <h3>5. Получатель и адрес</h3>
+        <div className="erp-form">
+          <Controller
+            control={control}
+            name="country"
+            render={({ field }) => (
+              <SearchableSelect
+                label="Страна"
+                placeholder="Найдите страну"
+                options={Object.keys(locations).map((value) => ({ value, label: value }))}
+                value={field.value}
+                onChange={(value) => {
+                  field.onChange(value);
+                  setValue('region', '');
+                  setValue('city', '');
+                }}
+              />
+            )}
+          />
+          <Controller
+            control={control}
+            name="region"
+            render={({ field }) => (
+              <SearchableSelect
+                label="Регион"
+                placeholder={country ? 'Найдите регион' : 'Сначала выберите страну'}
+                options={Object.keys(locations[country] ?? {}).map((value) => ({
+                  value,
+                  label: value,
+                }))}
+                value={field.value}
+                onChange={(value) => {
+                  field.onChange(value);
+                  setValue('city', '');
+                }}
+                disabled={!country}
+              />
+            )}
+          />
+          <Controller
+            control={control}
+            name="city"
+            render={({ field }) => (
+              <SearchableSelect
+                label="Город"
+                placeholder={region ? 'Найдите город' : 'Сначала выберите регион'}
+                options={(locations[country]?.[region] ?? []).map((value) => ({
+                  value,
+                  label: value,
+                }))}
+                value={field.value}
+                onChange={field.onChange}
+                disabled={!region}
+              />
+            )}
+          />
+          <label className="form-field">
+            <span>Получатель</span>
+            <input {...register('recipient_name')} />
+          </label>
+          <label className="form-field">
+            <span>Телефон / контакт</span>
+            <input {...register('recipient')} />
+          </label>
+          <label className="form-field span-2">
+            <span>Адрес</span>
+            <input {...register('delivery_address')} />
+          </label>
+        </div>
+      </section>
+      <section>
+        <h3>6. Примечание</h3>
+        <div className="erp-form">
           <label className="form-field span-2">
             <span>Комментарий</span>
-            <textarea rows={3} {...register('note')} />
+            <textarea rows={4} {...register('note')} />
           </label>
         </div>
       </section>

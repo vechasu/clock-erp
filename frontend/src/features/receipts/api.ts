@@ -11,10 +11,7 @@ import {
 
 export async function fetchReceipts(searchParams: URLSearchParams) {
   const query = searchParams.toString();
-  const envelope = await apiRequest(
-    `/receipts${query ? `?${query}` : ''}`,
-    receiptListSchema,
-  );
+  const envelope = await apiRequest(`/receipts${query ? `?${query}` : ''}`, receiptListSchema);
   return {
     receipts: envelope.data,
     meta: receiptsMetaSchema.parse(envelope.meta),
@@ -32,9 +29,8 @@ export async function createReceipt(values: ReceiptFormValues) {
 }
 
 export async function updateReceipt(id: string, values: ReceiptFormValues) {
-  return (
-    await apiRequest(`/receipts/${id}`, receiptSchema, jsonRequestInit('PATCH', values))
-  ).data;
+  return (await apiRequest(`/receipts/${id}`, receiptSchema, jsonRequestInit('PATCH', values)))
+    .data;
 }
 
 export async function deleteReceipt(id: string) {

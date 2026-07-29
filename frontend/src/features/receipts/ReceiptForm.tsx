@@ -1,8 +1,9 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useFieldArray, useForm } from 'react-hook-form';
+import { Controller, useFieldArray, useForm } from 'react-hook-form';
 
 import { ImageUploader } from '../../components/ImageUploader';
-import { BrandSelect, CategorySelect, ProductSelect } from '../../components/Controls';
+import { SearchableSelect } from '../../components/Controls';
+import { Icon } from '../../components/Icons';
 import {
   receiptFormSchema,
   type Receipt,
@@ -50,8 +51,7 @@ export function ReceiptForm({ id, receipt, products, onSubmit }: ReceiptFormProp
   const { fields, append, remove } = useFieldArray({ control, name: 'positions' });
   const watchedPositions = watch('positions');
   const total = watchedPositions.reduce(
-    (sum, position) =>
-      sum + Number(position.quantity || 0) * Number(position.purchase_price || 0),
+    (sum, position) => sum + Number(position.quantity || 0) * Number(position.purchase_price || 0),
     0,
   );
 
@@ -110,56 +110,77 @@ export function ReceiptForm({ id, receipt, products, onSubmit }: ReceiptFormProp
             ),
           ];
           const visibleProducts = products.filter(
-            (product) =>
-              product.brand === selectedBrand && product.category === selectedCategory,
+            (product) => product.brand === selectedBrand && product.category === selectedCategory,
           );
           const selected = products.find(
             (product) => product.id === watchedPositions[index]?.product_id,
           );
-          const brandField = register(`positions.${index}.brand`);
-          const categoryField = register(`positions.${index}.category`);
           return (
             <fieldset className="receipt-position" key={field.id}>
               <legend>Позиция {index + 1}</legend>
-              <BrandSelect
-                label="Бренд *"
-                placeholder="Выберите бренд"
-                options={brands.map((brand) => ({ value: brand, label: brand }))}
-                {...brandField}
-                onChange={(event) => {
-                  brandField.onChange(event);
-                  setValue(`positions.${index}.category`, '');
-                  setValue(`positions.${index}.product_id`, '');
-                }}
+              <Controller
+                control={control}
+                name={`positions.${index}.brand`}
+                render={({ field: controlledField }) => (
+                  <SearchableSelect
+                    label="Бренд"
+                    required
+                    placeholder="Найдите бренд"
+                    options={brands.map((brand) => ({ value: brand, label: brand }))}
+                    value={controlledField.value}
+                    onChange={(value) => {
+                      controlledField.onChange(value);
+                      setValue(`positions.${index}.category`, '');
+                      setValue(`positions.${index}.product_id`, '');
+                    }}
+                    error={errors.positions?.[index]?.brand?.message}
+                  />
+                )}
               />
-              <CategorySelect
-                label="Категория *"
-                placeholder="Выберите категорию"
-                options={categories.map((category) => ({
-                  value: category,
-                  label: category,
-                }))}
-                {...categoryField}
-                onChange={(event) => {
-                  categoryField.onChange(event);
-                  setValue(`positions.${index}.product_id`, '');
-                }}
-                disabled={!selectedBrand}
+              <Controller
+                control={control}
+                name={`positions.${index}.category`}
+                render={({ field: controlledField }) => (
+                  <SearchableSelect
+                    label="Категория"
+                    required
+                    placeholder={selectedBrand ? 'Найдите категорию' : 'Сначала выберите бренд'}
+                    options={categories.map((category) => ({
+                      value: category,
+                      label: category,
+                    }))}
+                    value={controlledField.value}
+                    onChange={(value) => {
+                      controlledField.onChange(value);
+                      setValue(`positions.${index}.product_id`, '');
+                    }}
+                    disabled={!selectedBrand}
+                    error={errors.positions?.[index]?.category?.message}
+                  />
+                )}
               />
               <div className="receipt-product-field">
-                <ProductSelect
-                  label="Товар *"
-                  placeholder="Выберите товар"
-                  options={visibleProducts.map((product) => ({
-                    value: product.id,
-                    label: `${product.name} · остаток ${product.stock_display}`,
-                  }))}
-                  {...register(`positions.${index}.product_id`)}
-                  disabled={!selectedCategory}
+                <Controller
+                  control={control}
+                  name={`positions.${index}.product_id`}
+                  render={({ field: controlledField }) => (
+                    <SearchableSelect
+                      label="Товар"
+                      required
+                      placeholder={
+                        selectedCategory ? 'Найдите товар' : 'Сначала выберите категорию'
+                      }
+                      options={visibleProducts.map((product) => ({
+                        value: product.id,
+                        label: `${product.name} · остаток ${product.stock_display}`,
+                      }))}
+                      value={controlledField.value}
+                      onChange={controlledField.onChange}
+                      disabled={!selectedCategory}
+                      error={errors.positions?.[index]?.product_id?.message}
+                    />
+                  )}
                 />
-                {errors.positions?.[index]?.product_id ? (
-                  <small>{errors.positions[index]?.product_id?.message}</small>
-                ) : null}
                 {selected ? (
                   <em>
                     {[selected.article, selected.category, selected.cell]
@@ -199,7 +220,7 @@ export function ReceiptForm({ id, receipt, products, onSubmit }: ReceiptFormProp
                   onClick={() => remove(index)}
                   aria-label={`Удалить позицию ${index + 1}`}
                 >
-                  ×
+                  <Icon name="close" />
                 </button>
               ) : null}
             </fieldset>

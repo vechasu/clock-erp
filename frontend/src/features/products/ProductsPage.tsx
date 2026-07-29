@@ -7,6 +7,16 @@ import { ApiRequestError } from '../../api/client';
 import { AppShell } from '../../components/AppShell';
 import { DateRangePicker, FilterPanel, LiveSearch } from '../../components/Controls';
 import { DataTable } from '../../components/DataTable';
+import { Icon } from '../../components/Icons';
+import {
+  ActionLink,
+  BulkActionBar,
+  Button,
+  LoadingState,
+  PageHeader,
+  StatsGrid,
+  Toolbar,
+} from '../../components/Layout';
 import { ConfirmDialog, Modal } from '../../components/Modal';
 import { PageState } from '../../components/PageState';
 import { TablePagination } from '../../components/TablePagination';
@@ -33,7 +43,7 @@ function ProductImage({ product }: { product: Product }) {
     <img className="product-thumbnail" src={product.thumbnail_url} alt="" loading="lazy" />
   ) : (
     <span className="product-thumbnail placeholder" aria-hidden="true">
-      ◇
+      <Icon name="package" />
     </span>
   );
 }
@@ -69,9 +79,7 @@ export function ProductsPage() {
     brand: string;
   } | null>(null);
   const [taxonomyName, setTaxonomyName] = useState('');
-  const [toast, setToast] = useState<{ message: string; kind: 'success' | 'error' } | null>(
-    null,
-  );
+  const [toast, setToast] = useState<{ message: string; kind: 'success' | 'error' } | null>(null);
 
   useEffect(() => {
     const current = searchParams.get('q') ?? '';
@@ -243,6 +251,7 @@ export function ProductsPage() {
         header: 'Цена',
         enableSorting: false,
         size: 125,
+        meta: { align: 'right' },
         cell: ({ row }) => row.original.price_display || '—',
       },
       {
@@ -259,6 +268,7 @@ export function ProductsPage() {
         accessorKey: 'stock',
         header: 'Остаток',
         size: 110,
+        meta: { align: 'center' },
         cell: ({ row }) => (
           <span className={`stock-badge${row.original.stock > 0 ? ' is-positive' : ''}`}>
             {row.original.stock_display}
@@ -278,14 +288,20 @@ export function ProductsPage() {
         enableSorting: false,
         enableHiding: false,
         size: 150,
+        meta: { align: 'right' },
         cell: ({ row }) => (
           <div className="row-actions">
-            <button type="button" onClick={() => setEditor(row.original)}>
+            <button
+              type="button"
+              title="Редактировать товар"
+              onClick={() => setEditor(row.original)}
+            >
               Изменить
             </button>
             <button
               className="danger-link"
               type="button"
+              title="Удалить товар"
               onClick={() => setDeleteTarget(row.original)}
             >
               Удалить
@@ -300,114 +316,132 @@ export function ProductsPage() {
   return (
     <AppShell>
       <div className="erp-page">
-        <header className="page-header">
-          <div>
-            <p className="page-eyebrow">Складской каталог</p>
-            <h1>Товары</h1>
-            <p>Управление карточками, остатками и размещением на складе</p>
-          </div>
-          <button className="button primary" type="button" onClick={() => setEditor('new')}>
-            + Добавить товар
-          </button>
-        </header>
+        <PageHeader
+          eyebrow="Складской каталог"
+          title="Товары"
+          description="Управление карточками, остатками и размещением на складе"
+          actions={
+            <>
+              <ActionLink href="/warehouse/export.xlsx" icon="download">
+                Excel
+              </ActionLink>
+              <ActionLink href="/warehouse/export.pdf" icon="download">
+                PDF
+              </ActionLink>
+              <ActionLink href="/warehouse" icon="warehouse">
+                Карта склада
+              </ActionLink>
+              <Button tone="primary" icon="plus" type="button" onClick={() => setEditor('new')}>
+                Добавить товар
+              </Button>
+            </>
+          }
+        />
 
-        <section className="summary-grid" aria-label="Сводка по товарам">
-          <article>
-            <span>Позиций</span>
-            <strong>{meta?.total ?? '—'}</strong>
-          </article>
-          <article>
-            <span>Общий остаток</span>
-            <strong>{meta?.stats.total_stock ?? '—'}</strong>
-          </article>
-          <article>
-            <span>В наличии</span>
-            <strong>{meta?.stats.positive_positions ?? '—'}</strong>
-          </article>
-        </section>
+        <StatsGrid
+          label="Сводка по товарам"
+          loading={productsQuery.isPending}
+          items={[
+            { label: 'Позиций', value: meta?.total ?? '—', tone: 'info' },
+            { label: 'Общий остаток', value: meta?.stats.total_stock ?? '—' },
+            {
+              label: 'В наличии',
+              value: meta?.stats.positive_positions ?? '—',
+              tone: 'success',
+            },
+          ]}
+        />
 
         <section className="workspace-card">
-          <div className="list-toolbar">
+          <Toolbar>
             <LiveSearch
               label="Поиск товаров"
               value={search}
               onChange={setSearch}
               placeholder="Название, артикул, штрихкод, ячейка…"
             />
-            <FilterPanel>
-                <label>
-                  Бренд
-                  <select
-                    value={searchParams.get('brand') ?? ''}
-                    onChange={(event) => setFilter('brand', event.target.value)}
-                  >
-                    <option value="">Все бренды</option>
-                    {meta?.facets.brands.map((item) => (
-                      <option key={item.name} value={item.name}>
-                        {item.name} ({item.count})
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Категория
-                  <select
-                    value={searchParams.get('category') ?? ''}
-                    onChange={(event) => setFilter('category', event.target.value)}
-                  >
-                    <option value="">Все категории</option>
-                    {meta?.facets.categories.map((item) => (
-                      <option key={item.name} value={item.name}>
-                        {item.name} ({item.count})
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Ячейка
-                  <select
-                    value={searchParams.get('cell') ?? ''}
-                    onChange={(event) => setFilter('cell', event.target.value)}
-                  >
-                    <option value="">Все ячейки</option>
-                    {meta?.facets.cells.map((item) => (
-                      <option key={item.cell} value={item.cell}>
-                        {item.cell} ({item.count})
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <DateRangePicker
-                  from={searchParams.get('date_from') ?? ''}
-                  to={searchParams.get('date_to') ?? ''}
-                  onFromChange={(value) => setFilter('date_from', value)}
-                  onToChange={(value) => setFilter('date_to', value)}
-                />
-                <label className="checkbox-field">
-                  <input
-                    type="checkbox"
-                    checked={searchParams.get('in_stock') === '1'}
-                    onChange={(event) => setFilter('in_stock', event.target.checked ? '1' : '')}
-                  />
-                  Только в наличии
-                </label>
-                <button
-                  className="button secondary"
-                  type="button"
-                  onClick={() => {
-                    setSearch('');
-                    setSearchParams({ page: '1', page_size: String(meta?.page_size ?? 50) });
-                  }}
+            <FilterPanel
+              count={
+                ['brand', 'category', 'cell', 'date_from', 'date_to', 'in_stock'].filter((key) =>
+                  searchParams.get(key),
+                ).length
+              }
+            >
+              <label>
+                Бренд
+                <select
+                  value={searchParams.get('brand') ?? ''}
+                  onChange={(event) => setFilter('brand', event.target.value)}
                 >
-                  Сбросить
-                </button>
+                  <option value="">Все бренды</option>
+                  {meta?.facets.brands.map((item) => (
+                    <option key={item.name} value={item.name}>
+                      {item.name} ({item.count})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Категория
+                <select
+                  value={searchParams.get('category') ?? ''}
+                  onChange={(event) => setFilter('category', event.target.value)}
+                >
+                  <option value="">Все категории</option>
+                  {meta?.facets.categories.map((item) => (
+                    <option key={item.name} value={item.name}>
+                      {item.name} ({item.count})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Ячейка
+                <select
+                  value={searchParams.get('cell') ?? ''}
+                  onChange={(event) => setFilter('cell', event.target.value)}
+                >
+                  <option value="">Все ячейки</option>
+                  {meta?.facets.cells.map((item) => (
+                    <option key={item.cell} value={item.cell}>
+                      {item.cell} ({item.count})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <DateRangePicker
+                from={searchParams.get('date_from') ?? ''}
+                to={searchParams.get('date_to') ?? ''}
+                onFromChange={(value) => setFilter('date_from', value)}
+                onToChange={(value) => setFilter('date_to', value)}
+              />
+              <label className="checkbox-field">
+                <input
+                  type="checkbox"
+                  checked={searchParams.get('in_stock') === '1'}
+                  onChange={(event) => setFilter('in_stock', event.target.checked ? '1' : '')}
+                />
+                Только в наличии
+              </label>
+              <button
+                className="button secondary"
+                type="button"
+                onClick={() => {
+                  setSearch('');
+                  setSearchParams({ page: '1', page_size: String(meta?.page_size ?? 50) });
+                }}
+              >
+                Сбросить
+              </button>
             </FilterPanel>
-          </div>
+          </Toolbar>
           <div className="bulk-toolbar">
             <label>
               <input
                 type="checkbox"
-                checked={products.length > 0 && products.every((product) => selectedIds.has(product.id))}
+                checked={
+                  products.length > 0 && products.every((product) => selectedIds.has(product.id))
+                }
                 onChange={(event) => {
                   setSelectedIds((current) => {
                     const next = new Set(current);
@@ -421,17 +455,7 @@ export function ProductsPage() {
               />
               Выбрать текущую страницу
             </label>
-            {selectedIds.size ? (
-              <>
-                <strong>Выбрано: {selectedIds.size}</strong>
-                <button className="button secondary" type="button" onClick={() => setBulkEditorOpen(true)}>
-                  Изменить выбранные
-                </button>
-                <button type="button" onClick={() => setSelectedIds(new Set())}>
-                  Снять выбор
-                </button>
-              </>
-            ) : null}
+            {selectedIds.size ? <strong>Выбрано: {selectedIds.size}</strong> : null}
           </div>
 
           {productsQuery.isError ? (
@@ -440,15 +464,17 @@ export function ProductsPage() {
               title="Не удалось загрузить товары"
               message={errorMessage(productsQuery.error)}
               action={
-                <button className="button secondary" type="button" onClick={() => productsQuery.refetch()}>
+                <button
+                  className="button secondary"
+                  type="button"
+                  onClick={() => productsQuery.refetch()}
+                >
                   Повторить
                 </button>
               }
             />
           ) : productsQuery.isPending ? (
-            <div className="table-loading" role="status">
-              Загружаем товары…
-            </div>
+            <LoadingState label="Загружаем товары…" />
           ) : products.length === 0 ? (
             <PageState
               title="Товары не найдены"
@@ -516,6 +542,11 @@ export function ProductsPage() {
                   </article>
                 )}
               />
+              <BulkActionBar count={selectedIds.size} onClear={() => setSelectedIds(new Set())}>
+                <Button tone="secondary" icon="edit" onClick={() => setBulkEditorOpen(true)}>
+                  Изменить выбранные
+                </Button>
+              </BulkActionBar>
               {meta ? (
                 <TablePagination
                   page={meta.page}
@@ -555,6 +586,8 @@ export function ProductsPage() {
         <ProductForm
           id="product-editor"
           product={editor === 'new' ? null : editor}
+          brands={meta?.facets.brands.map((item) => item.name)}
+          categories={meta?.facets.categories.map((item) => item.name)}
           onCreateBrand={() => setTaxonomyEditor({ kind: 'brand', brand: '' })}
           onCreateCategory={(brand) => {
             if (!brand.trim()) {
@@ -593,7 +626,11 @@ export function ProductsPage() {
         onClose={() => setTaxonomyEditor(null)}
         footer={
           <>
-            <button className="button secondary" type="button" onClick={() => setTaxonomyEditor(null)}>
+            <button
+              className="button secondary"
+              type="button"
+              onClick={() => setTaxonomyEditor(null)}
+            >
               Отмена
             </button>
             <button
@@ -619,15 +656,17 @@ export function ProductsPage() {
         onClose={() => setBulkEditorOpen(false)}
         footer={
           <>
-            <button className="button secondary" type="button" onClick={() => setBulkEditorOpen(false)}>
+            <button
+              className="button secondary"
+              type="button"
+              onClick={() => setBulkEditorOpen(false)}
+            >
               Отмена
             </button>
             <button
               className="button primary"
               type="button"
-              disabled={
-                bulkMutation.isPending || (!bulkBrand && !bulkCategory && !bulkCell)
-              }
+              disabled={bulkMutation.isPending || (!bulkBrand && !bulkCategory && !bulkCell)}
               onClick={() => bulkMutation.mutate()}
             >
               {bulkMutation.isPending ? 'Применяем…' : 'Применить'}

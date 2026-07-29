@@ -7,6 +7,15 @@ import { ApiRequestError } from '../../api/client';
 import { AppShell } from '../../components/AppShell';
 import { DateRangePicker, FilterPanel, LiveSearch } from '../../components/Controls';
 import { DataTable } from '../../components/DataTable';
+import {
+  ActionLink,
+  Button,
+  LoadingState,
+  PageHeader,
+  StatsGrid,
+  StatusBadge,
+  Toolbar,
+} from '../../components/Layout';
 import { ConfirmDialog, Modal } from '../../components/Modal';
 import { PageState } from '../../components/PageState';
 import { TablePagination } from '../../components/TablePagination';
@@ -30,6 +39,10 @@ function formatMoney(value: number) {
   return `${value.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} ₽`;
 }
 
+function formatQuantity(value: number) {
+  return value.toLocaleString('ru-RU', { maximumFractionDigits: 2 });
+}
+
 export function ReceiptsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
@@ -37,9 +50,7 @@ export function ReceiptsPage() {
   const debouncedSearch = useDebouncedValue(search);
   const [editor, setEditor] = useState<Receipt | 'new' | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Receipt | null>(null);
-  const [toast, setToast] = useState<{ message: string; kind: 'success' | 'error' } | null>(
-    null,
-  );
+  const [toast, setToast] = useState<{ message: string; kind: 'success' | 'error' } | null>(null);
 
   useEffect(() => {
     const current = searchParams.get('q') ?? '';
@@ -101,10 +112,12 @@ export function ReceiptsPage() {
   };
   const receipts = receiptsQuery.data?.receipts ?? [];
   const meta = receiptsQuery.data?.meta;
-  const sorting: SortingState = [{
-    id: searchParams.get('sort_by') ?? 'receipt_date',
-    desc: searchParams.get('sort_dir') !== 'asc',
-  }];
+  const sorting: SortingState = [
+    {
+      id: searchParams.get('sort_by') ?? 'receipt_date',
+      desc: searchParams.get('sort_dir') !== 'asc',
+    },
+  ];
 
   const columns = useMemo<ColumnDef<Receipt>[]>(
     () => [
@@ -148,12 +161,15 @@ export function ReceiptsPage() {
         accessorKey: 'total_quantity',
         header: 'Количество',
         size: 120,
+        meta: { align: 'right' },
+        cell: ({ row }) => formatQuantity(row.original.total_quantity),
       },
       {
         id: 'total_amount',
         accessorKey: 'total_amount',
         header: 'Сумма',
         size: 140,
+        meta: { align: 'right' },
         cell: ({ row }) => formatMoney(row.original.total_amount),
       },
       {
@@ -162,7 +178,8 @@ export function ReceiptsPage() {
         header: 'Статус',
         enableSorting: false,
         size: 120,
-        cell: ({ row }) => <span className="status-badge">{row.original.status_label}</span>,
+        meta: { align: 'center' },
+        cell: ({ row }) => <StatusBadge label={row.original.status_label} tone="success" />,
       },
       {
         id: 'actions',
@@ -170,6 +187,7 @@ export function ReceiptsPage() {
         enableSorting: false,
         enableHiding: false,
         size: 150,
+        meta: { align: 'right' },
         cell: ({ row }) => (
           <div className="row-actions">
             <button
@@ -188,6 +206,7 @@ export function ReceiptsPage() {
               className="danger-link"
               type="button"
               onClick={() => setDeleteTarget(row.original)}
+              title="Удалить приход"
             >
               Удалить
             </button>
@@ -201,102 +220,113 @@ export function ReceiptsPage() {
   return (
     <AppShell>
       <div className="erp-page">
-        <header className="page-header">
-          <div>
-            <p className="page-eyebrow">Складские документы</p>
-            <h1>Приходы</h1>
-            <p>Поступления товаров и синхронизация документов МоегоСклада</p>
-          </div>
-          <div className="header-actions">
-            <a className="button secondary" href="/receipts/report">
-              Отчёт
-            </a>
-            <button className="button primary" type="button" onClick={() => setEditor('new')}>
-              + Новый приход
-            </button>
-          </div>
-        </header>
+        <PageHeader
+          eyebrow="Складские документы"
+          title="Приход"
+          description="Поступления товаров и синхронизация документов МоегоСклада"
+          actions={
+            <>
+              <ActionLink href="/products/receipts/new" icon="upload">
+                Импорт Excel
+              </ActionLink>
+              <ActionLink href="/receipts/report" icon="download">
+                Отчёт
+              </ActionLink>
+              <Button tone="primary" icon="plus" onClick={() => setEditor('new')}>
+                Новый приход
+              </Button>
+            </>
+          }
+        />
 
-        <section className="summary-grid" aria-label="Сводка по приходам">
-          <article>
-            <span>Приходов</span>
-            <strong>{meta?.total ?? '—'}</strong>
-          </article>
-          <article>
-            <span>Единиц принято</span>
-            <strong>{meta?.totals.quantity ?? '—'}</strong>
-          </article>
-          <article>
-            <span>Сумма закупки</span>
-            <strong>{meta ? formatMoney(meta.totals.amount) : '—'}</strong>
-          </article>
-        </section>
+        <StatsGrid
+          label="Сводка по приходам"
+          loading={receiptsQuery.isPending}
+          items={[
+            { label: 'Приходов', value: meta?.total ?? '—', tone: 'info' },
+            {
+              label: 'Единиц принято',
+              value: meta ? formatQuantity(meta.totals.quantity) : '—',
+              tone: 'success',
+            },
+            {
+              label: 'Сумма закупки',
+              value: meta ? formatMoney(meta.totals.amount) : '—',
+            },
+          ]}
+        />
 
         <section className="workspace-card">
-          <div className="list-toolbar">
+          <Toolbar>
             <LiveSearch
               label="Поиск приходов"
               value={search}
               onChange={setSearch}
               placeholder="Номер, товар, бренд, комментарий…"
             />
-            <FilterPanel>
-                <DateRangePicker
-                  from={searchParams.get('date_from') ?? ''}
-                  to={searchParams.get('date_to') ?? ''}
-                  onFromChange={(value) => setFilter('date_from', value)}
-                  onToChange={(value) => setFilter('date_to', value)}
-                />
-                <label>
-                  Бренд
-                  <select
-                    value={searchParams.get('brand') ?? ''}
-                    onChange={(event) => setFilter('brand', event.target.value)}
-                  >
-                    <option value="">Все бренды</option>
-                    {meta?.facets.brands.map((item) => (
-                      <option key={item}>{item}</option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Категория
-                  <select
-                    value={searchParams.get('category') ?? ''}
-                    onChange={(event) => setFilter('category', event.target.value)}
-                  >
-                    <option value="">Все категории</option>
-                    {meta?.facets.categories.map((item) => (
-                      <option key={item}>{item}</option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Статус
-                  <select
-                    value={searchParams.get('status') ?? ''}
-                    onChange={(event) => setFilter('status', event.target.value)}
-                  >
-                    <option value="">Все статусы</option>
-                    {meta?.facets.statuses.map((item) => (
-                      <option key={item} value={item}>
-                        {item === 'posted' ? 'Проведён' : item}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <button
-                  className="button secondary"
-                  type="button"
-                  onClick={() => {
-                    setSearch('');
-                    setSearchParams({ page: '1', page_size: String(meta?.page_size ?? 50) });
-                  }}
+            <FilterPanel
+              count={
+                ['date_from', 'date_to', 'brand', 'category', 'status'].filter((key) =>
+                  searchParams.get(key),
+                ).length
+              }
+            >
+              <DateRangePicker
+                from={searchParams.get('date_from') ?? ''}
+                to={searchParams.get('date_to') ?? ''}
+                onFromChange={(value) => setFilter('date_from', value)}
+                onToChange={(value) => setFilter('date_to', value)}
+              />
+              <label>
+                Бренд
+                <select
+                  value={searchParams.get('brand') ?? ''}
+                  onChange={(event) => setFilter('brand', event.target.value)}
                 >
-                  Сбросить
-                </button>
+                  <option value="">Все бренды</option>
+                  {meta?.facets.brands.map((item) => (
+                    <option key={item}>{item}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Категория
+                <select
+                  value={searchParams.get('category') ?? ''}
+                  onChange={(event) => setFilter('category', event.target.value)}
+                >
+                  <option value="">Все категории</option>
+                  {meta?.facets.categories.map((item) => (
+                    <option key={item}>{item}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Статус
+                <select
+                  value={searchParams.get('status') ?? ''}
+                  onChange={(event) => setFilter('status', event.target.value)}
+                >
+                  <option value="">Все статусы</option>
+                  {meta?.facets.statuses.map((item) => (
+                    <option key={item} value={item}>
+                      {item === 'posted' ? 'Проведён' : item}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                className="button secondary"
+                type="button"
+                onClick={() => {
+                  setSearch('');
+                  setSearchParams({ page: '1', page_size: String(meta?.page_size ?? 50) });
+                }}
+              >
+                Сбросить
+              </button>
             </FilterPanel>
-          </div>
+          </Toolbar>
 
           {receiptsQuery.isError ? (
             <PageState
@@ -304,15 +334,17 @@ export function ReceiptsPage() {
               title="Не удалось загрузить приходы"
               message={errorMessage(receiptsQuery.error)}
               action={
-                <button className="button secondary" type="button" onClick={() => receiptsQuery.refetch()}>
+                <button
+                  className="button secondary"
+                  type="button"
+                  onClick={() => receiptsQuery.refetch()}
+                >
                   Повторить
                 </button>
               }
             />
           ) : receiptsQuery.isPending ? (
-            <div className="table-loading" role="status">
-              Загружаем приходы…
-            </div>
+            <LoadingState label="Загружаем приходы…" />
           ) : receipts.length === 0 ? (
             <PageState
               title="Приходов пока нет"
@@ -347,7 +379,8 @@ export function ReceiptsPage() {
                     </div>
                     <h2>{receipt.positions[0]?.product_name || receipt.product_name}</h2>
                     <p>
-                      {receipt.total_quantity} шт. · {formatMoney(receipt.total_amount)}
+                      {formatQuantity(receipt.total_quantity)} шт. ·{' '}
+                      {formatMoney(receipt.total_amount)}
                     </p>
                     <div className="row-actions">
                       <button

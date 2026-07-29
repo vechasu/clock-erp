@@ -190,12 +190,14 @@ test('products support live search and a validated create flow', async ({ page }
   await expect(visibleProductList(page).getByText('Ремешок для часов').first()).toBeVisible();
   await expect(page.getByText('Casio G-Shock GA-2100')).toHaveCount(0);
 
-  await page.getByRole('button', { name: '+ Добавить товар' }).click();
+  await page.getByRole('button', { name: 'Добавить товар' }).click();
   await page.getByRole('button', { name: 'Сохранить' }).click();
   await expect(page.getByText('Название товара обязательно')).toBeVisible();
   await page.getByLabel('Название *').fill('Новый товар');
-  await page.getByPlaceholder('Casio', { exact: true }).fill('Vechasu');
-  await page.getByPlaceholder('Часы / Спортивные').fill('Аксессуары');
+  await page.getByRole('combobox', { name: 'Выберите или найдите бренд' }).fill('Vechasu');
+  await page.getByRole('option', { name: 'Vechasu', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Выберите или найдите категорию' }).fill('Ремешки');
+  await page.getByRole('option', { name: 'Ремешки', exact: true }).click();
   await page.getByRole('spinbutton', { name: 'Остаток' }).fill('3');
   await page.getByRole('button', { name: 'Сохранить' }).click();
   await expect(page.getByText('Товар добавлен')).toBeVisible();
