@@ -3271,6 +3271,7 @@ SALES_TABLE_COLUMNS = {
         ("track_number", "Трекинг"),
         ("delivery_method", "Способ доставки"),
         ("delivery_cost_display", "Стоимость доставки"),
+        ("country", "Страна"),
         ("region", "Регион"),
         ("city", "Город"),
         ("payment_method", "Способ оплаты"),
@@ -3335,6 +3336,16 @@ SALE_PLATFORM_OPTIONS = [
     "Amazon (JP)",
     "Amazon (MX)",
 ]
+
+TICTACTOY_SALE_COUNTRIES = [
+    "Россия",
+    "Беларусь",
+    "Казахстан",
+]
+
+TICTACTOY_LOCATIONS_PATH = (
+    PROJECT_ROOT / "app" / "data" / "tictactoy_locations.json"
+)
 
 PINNED_SALE_COUNTRIES = [
     "Америка",
@@ -3731,186 +3742,36 @@ RUSSIAN_REGIONS = [
 
 
 def get_russian_region_cities():
-    import json
-    from datetime import datetime, timedelta, timezone
-    from pathlib import Path
-    from urllib.request import Request, urlopen
+    return get_tictactoy_location_catalog().get("Россия", {})
 
-    cache_path = Path("instance/russian_region_cities.json")
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
 
-    max_cache_age = timedelta(days=30)
-
-    def load_cache(require_fresh=False):
-        if not cache_path.exists():
-            return None
-
-        try:
-            payload = json.loads(
-                cache_path.read_text(encoding="utf-8")
-            )
-
-            regions = payload.get("regions")
-
-            if not isinstance(regions, dict):
-                return None
-
-            if require_fresh:
-                generated_at_value = str(
-                    payload.get("generated_at") or ""
-                ).strip()
-                generated_at_value = generated_at_value.rstrip("Z")
-
-                for separator in ("+", "-"):
-                    separator_index = generated_at_value.find(
-                        separator,
-                        10,
-                    )
-
-                    if separator_index != -1:
-                        generated_at_value = generated_at_value[
-                            :separator_index
-                        ]
-                        break
-
-                generated_at = None
-
-                for date_format in (
-                    "%Y-%m-%dT%H:%M:%S.%f",
-                    "%Y-%m-%dT%H:%M:%S",
-                ):
-                    try:
-                        generated_at = datetime.strptime(
-                            generated_at_value,
-                            date_format,
-                        )
-                        break
-                    except ValueError:
-                        continue
-
-                if generated_at is None:
-                    return None
-
-                if generated_at.tzinfo is None:
-                    generated_at = generated_at.replace(
-                        tzinfo=timezone.utc
-                    )
-
-                if (
-                    datetime.now(timezone.utc) - generated_at
-                    > max_cache_age
-                ):
-                    return None
-
-            return regions
-        except Exception:
-            return None
-
-    fresh_cache = load_cache(require_fresh=True)
-
-    if fresh_cache is not None:
-        return fresh_cache
-
+def get_tictactoy_location_catalog():
     try:
-        request_object = Request(
-            "https://api.hh.ru/areas",
-            headers={
-                "User-Agent": "VechasuERP/1.0",
-                "Accept": "application/json",
-            },
+        payload = json.loads(
+            TICTACTOY_LOCATIONS_PATH.read_text(encoding="utf-8")
         )
-
-        with urlopen(request_object, timeout=15) as response:
-            countries = json.loads(
-                response.read().decode("utf-8")
-            )
-
-        russia = next(
-            (
-                country
-                for country in countries
-                if country.get("name") == "Россия"
-            ),
-            None,
-        )
-
-        if not russia:
-            raise ValueError(
-                "Россия не найдена в справочнике территорий"
-            )
-
-        region_cities = {}
-
-        def collect_leaf_areas(nodes):
-            names = []
-
-            for node in nodes or []:
-                name = str(node.get("name") or "").strip()
-                children = node.get("areas") or []
-
-                if children:
-                    names.extend(collect_leaf_areas(children))
-                elif name:
-                    names.append(name)
-
-            return names
-
-        federal_cities = {
-            "Москва",
-            "Санкт-Петербург",
-            "Севастополь",
-        }
-
-        for region in russia.get("areas") or []:
-            region_name = str(
-                region.get("name") or ""
-            ).strip()
-
-            if not region_name:
-                continue
-
-            cities = collect_leaf_areas(
-                region.get("areas") or []
-            )
-
-            if region_name in federal_cities:
-                cities.append(region_name)
-
-            region_cities[region_name] = sorted(
-                set(cities),
-                key=str.casefold,
-            )
-
-        payload = {
-            "generated_at": datetime.now(
-                timezone.utc
-            ).isoformat(),
-            "regions": region_cities,
-        }
-
-        temporary_path = cache_path.with_suffix(".tmp")
-        temporary_path.write_text(
-            json.dumps(
-                payload,
-                ensure_ascii=False,
-                indent=2,
-            ),
-            encoding="utf-8",
-        )
-        temporary_path.replace(cache_path)
-
-        return region_cities
-
-    except Exception:
-        old_cache = load_cache(require_fresh=False)
-
-        if old_cache is not None:
-            return old_cache
-
+    except (OSError, json.JSONDecodeError):
         return {
-            region: []
-            for region in RUSSIAN_REGIONS
+            country: {}
+            for country in TICTACTOY_SALE_COUNTRIES
         }
+
+    countries = payload.get("countries")
+
+    if not isinstance(countries, dict):
+        return {
+            country: {}
+            for country in TICTACTOY_SALE_COUNTRIES
+        }
+
+    return {
+        country: (
+            countries.get(country)
+            if isinstance(countries.get(country), dict)
+            else {}
+        )
+        for country in TICTACTOY_SALE_COUNTRIES
+    }
 
 
 def parse_manual_sale_quantity(value):
@@ -4328,7 +4189,12 @@ def build_sale_optional_fields(form, existing=None):
             form.get("recipient_name") or ""
         ).strip(),
         "payment_method": str(
-            form.get("payment_method") or ""
+            (
+                form.get("payment_method")
+                if "payment_method" in form
+                else existing.get("payment_method")
+            )
+            or ""
         ).strip(),
         "commission_amount": commission_amount,
         "commission_type": str(
@@ -4369,6 +4235,75 @@ def build_sale_optional_fields(form, existing=None):
             form.get("invoice_number") or ""
         ).strip(),
     }
+
+
+def build_tictactoy_sale_location_fields(form, existing=None):
+    existing = existing if isinstance(existing, dict) else {}
+    values = {
+        field: str(
+            (
+                form.get(field)
+                if field in form
+                else existing.get(field)
+            )
+            or ""
+        ).strip()
+        for field in ("country", "region", "city")
+    }
+    existing_values = {
+        field: str(existing.get(field) or "").strip()
+        for field in ("country", "region", "city")
+    }
+
+    if (
+        not any(values.values())
+        and any(existing_values.values())
+    ):
+        return existing_values
+
+    country = values["country"]
+    region = values["region"]
+    city = values["city"]
+    locations = get_tictactoy_location_catalog()
+
+    if not country:
+        if "country" not in form and (region or city):
+            return values
+
+        if region or city:
+            raise ValueError(
+                "Сначала выберите страну продажи"
+            )
+
+        return values
+
+    if country not in TICTACTOY_SALE_COUNTRIES:
+        raise ValueError("Выберите страну из списка")
+
+    regions = locations.get(country) or {}
+
+    if not region:
+        if city:
+            raise ValueError(
+                "Сначала выберите область или регион"
+            )
+
+        return values
+
+    if region not in regions:
+        raise ValueError(
+            "Выберите область или регион указанной страны"
+        )
+
+    if not city:
+        return values
+
+    if city not in regions.get(region, []):
+        raise ValueError(
+            "Выберите город указанной области или региона"
+        )
+
+    return values
 
 
 def redirect_to_sales(message, notice="success", form=None):
@@ -4467,8 +4402,24 @@ def manual_sale_add():
         )
     # === MANUAL SALE PRICE VALIDATION V1 END ===
 
+    sale_source = normalize_manual_sale_source(
+        request.form.get("source"),
+        request.form.get("custom_source"),
+    )
+    location_fields = {
+        "country": str(request.form.get("country") or "").strip(),
+        "region": str(request.form.get("region") or "").strip(),
+        "city": str(request.form.get("city") or "").strip(),
+    }
+
     try:
         optional_fields = build_sale_optional_fields(request.form)
+
+        if normalize_sales_source_key(sale_source) == "tictactoy":
+            location_fields = build_tictactoy_sale_location_fields(
+                request.form
+            )
+            optional_fields["country"] = location_fields["country"]
     except ValueError as error:
         return redirect_to_sales(
             str(error),
@@ -4546,10 +4497,7 @@ def manual_sale_add():
             request.form.get("created_at")
             or date.today().isoformat()
         ).strip(),
-        "source": normalize_manual_sale_source(
-            request.form.get("source"),
-            request.form.get("custom_source"),
-        ),
+        "source": sale_source,
         "product_id": product_id,
         "product_name": catalog_product["name"],
         "barcode": catalog_product["barcode"],
@@ -4570,12 +4518,8 @@ def manual_sale_add():
                 "custom_delivery_method"
             ),
         ),
-        "region": (
-            request.form.get("region") or ""
-        ).strip(),
-        "city": (
-            request.form.get("city") or ""
-        ).strip(),
+        "region": location_fields["region"],
+        "city": location_fields["city"],
         "note": (
             request.form.get("note") or ""
         ).strip(),
@@ -4677,11 +4621,56 @@ def manual_sale_update():
             product_metadata.get("product_name") or product_name
         )
 
+        updated_source = normalize_manual_sale_source(
+            request.form.get("source"),
+            request.form.get("custom_source"),
+        )
+        location_fields = {
+            "country": str(
+                (
+                    request.form.get("country")
+                    if "country" in request.form
+                    else sale.get("country")
+                )
+                or ""
+            ).strip(),
+            "region": str(
+                (
+                    request.form.get("region")
+                    if "region" in request.form
+                    else sale.get("region")
+                )
+                or ""
+            ).strip(),
+            "city": str(
+                (
+                    request.form.get("city")
+                    if "city" in request.form
+                    else sale.get("city")
+                )
+                or ""
+            ).strip(),
+        }
+
         try:
             optional_fields = build_sale_optional_fields(
                 request.form,
                 existing=sale,
             )
+
+            if (
+                normalize_sales_source_key(updated_source)
+                == "tictactoy"
+            ):
+                location_fields = (
+                    build_tictactoy_sale_location_fields(
+                        request.form,
+                        existing=sale,
+                    )
+                )
+                optional_fields["country"] = (
+                    location_fields["country"]
+                )
         except ValueError as error:
             return respond_to_sales_action(
                 str(error),
@@ -4690,10 +4679,7 @@ def manual_sale_update():
             )
 
         sale["created_at"] = created_at
-        sale["source"] = normalize_manual_sale_source(
-            request.form.get("source"),
-            request.form.get("custom_source"),
-        )
+        sale["source"] = updated_source
         sale["product_id"] = product_id
         sale["product_name"] = product_name
         sale["barcode"] = product_metadata.get("barcode") or ""
@@ -4718,12 +4704,8 @@ def manual_sale_update():
                 ),
             )
         )
-        sale["region"] = (
-            request.form.get("region") or ""
-        ).strip()
-        sale["city"] = (
-            request.form.get("city") or ""
-        ).strip()
+        sale["region"] = location_fields["region"]
+        sale["city"] = location_fields["city"]
         sale["note"] = (
             request.form.get("note") or ""
         ).strip()
@@ -4987,11 +4969,33 @@ def automatic_sale_update():
         product_metadata.get("product_name") or product_name
     )
 
+    updated_source = (
+        request.form.get("source") or "Tictactoy"
+    ).strip()
+    existing_record = {
+        **operation,
+        **existing_override,
+    }
+    location_fields = {
+        field: str(existing_record.get(field) or "").strip()
+        for field in ("country", "region", "city")
+    }
+
     try:
         optional_fields = build_sale_optional_fields(
             request.form,
-            existing=existing_override,
+            existing=existing_record,
         )
+
+        if (
+            normalize_sales_source_key(updated_source)
+            == "tictactoy"
+        ):
+            location_fields = build_tictactoy_sale_location_fields(
+                request.form,
+                existing=existing_record,
+            )
+            optional_fields["country"] = location_fields["country"]
     except ValueError as error:
         return respond_to_sales_action(
             str(error),
@@ -5001,9 +5005,7 @@ def automatic_sale_update():
 
     overrides[operation_id] = {
         "created_at": created_at,
-        "source": (
-            request.form.get("source") or "Tictactoy"
-        ).strip(),
+        "source": updated_source,
         "product_name": product_name,
         "barcode": product_metadata.get("barcode") or "",
         "brand": product_metadata.get("brand") or "",
@@ -5023,12 +5025,8 @@ def automatic_sale_update():
                 "custom_delivery_method"
             ),
         ),
-        "region": (
-            request.form.get("region") or ""
-        ).strip(),
-        "city": (
-            request.form.get("city") or ""
-        ).strip(),
+        "region": location_fields["region"],
+        "city": location_fields["city"],
         "note": (
             request.form.get("note") or ""
         ).strip(),
@@ -6788,6 +6786,10 @@ def build_legacy_sales_page():
         sale_country_options=build_sale_combobox_options(
             get_sale_country_options()
         ),
+        tictactoy_country_options=build_sale_combobox_options(
+            TICTACTOY_SALE_COUNTRIES
+        ),
+        tictactoy_location_data=get_tictactoy_location_catalog(),
     )
 
 
@@ -6907,6 +6909,10 @@ def sales_page():
         sale_country_options=build_sale_combobox_options(
             get_sale_country_options()
         ),
+        tictactoy_country_options=build_sale_combobox_options(
+            TICTACTOY_SALE_COUNTRIES
+        ),
+        tictactoy_location_data=get_tictactoy_location_catalog(),
         preserved_filters=preserved_filters,
         notice=(request.args.get("notice") or "").strip(),
         message=(request.args.get("message") or "").strip(),

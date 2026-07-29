@@ -1230,7 +1230,7 @@ class OwnerFeedbackTest(unittest.TestCase):
         self.assertIn("vechasu-sales-filters-v1", html)
         self.assertIn("vechasu-sales-scroll-y", html)
         self.assertIn("const minimumWidth = 76", html)
-        self.assertIn("const settingsVersion = 4", html)
+        self.assertIn("const settingsVersion = 5", html)
         self.assertIn(
             'data-sales-settings-key="sales_all"',
             html,

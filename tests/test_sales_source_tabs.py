@@ -44,6 +44,7 @@ EXPECTED_COLUMNS = {
         "Трекинг",
         "Способ доставки",
         "Стоимость доставки",
+        "Страна",
         "Регион",
         "Город",
         "Способ оплаты",
@@ -264,6 +265,9 @@ class SalesSourceTabsTest(unittest.TestCase):
             "saleCommission",
             "salePlatform",
             "saleCountry",
+            "tictactoyCountry",
+            "tictactoyRegion",
+            "tictactoyCity",
         ):
             with self.subTest(component_id=component_id):
                 component_start = page.index(
@@ -330,6 +334,73 @@ class SalesSourceTabsTest(unittest.TestCase):
         )
         for pinned_country in countries[:4]:
             self.assertNotIn(pinned_country, countries[4:])
+
+        self.assertEqual(
+            self.get_combobox_values(
+                page,
+                "tictactoyCountry",
+                'id="tictactoyRegion"',
+            ),
+            web.TICTACTOY_SALE_COUNTRIES,
+        )
+        self.assertIn(
+            'data-search-enabled="false"',
+            page[
+                page.index('id="tictactoyCountry"'):
+                page.index('id="tictactoyRegion"')
+            ],
+        )
+
+        tictactoy_fields = page[
+            page.index('data-source-fields="tictactoy"'):
+            page.index('data-source-fields="wildberries"')
+        ]
+        amazon_fields = page[
+            page.index('data-source-fields="amazon"'):
+            page.index('class="form-actions"')
+        ]
+        self.assertNotIn('name="payment_method"', tictactoy_fields)
+        self.assertNotIn("Способ оплаты", tictactoy_fields)
+        self.assertNotIn('name="delivery_address"', amazon_fields)
+        self.assertNotIn("Адрес доставки", amazon_fields)
+
+    def test_tictactoy_locations_use_committed_site_catalog(self):
+        catalog = web.get_tictactoy_location_catalog()
+
+        self.assertEqual(
+            list(catalog),
+            web.TICTACTOY_SALE_COUNTRIES,
+        )
+        self.assertEqual(catalog["Россия"]["Москва"], ["Москва"])
+        self.assertIn(
+            "Минск",
+            catalog["Беларусь"]["Минская область"],
+        )
+        self.assertIn(
+            "Алматы",
+            catalog["Казахстан"]["Алматинская область"],
+        )
+
+        for country, regions in catalog.items():
+            with self.subTest(country=country):
+                self.assertEqual(
+                    len(regions),
+                    len(set(regions)),
+                )
+                self.assertEqual(
+                    list(regions),
+                    sorted(regions, key=str.casefold),
+                )
+
+                for cities in regions.values():
+                    self.assertEqual(
+                        len(cities),
+                        len(set(cities)),
+                    )
+                    self.assertEqual(
+                        cities,
+                        sorted(cities, key=str.casefold),
+                    )
 
     def test_source_filters_exclude_unknown_from_all_without_deleting(self):
         stored = [
@@ -920,6 +991,7 @@ class SalesSourceTabsTest(unittest.TestCase):
                     "quantity": 1,
                     "unit_price": 1000,
                     "order_number": "OLD-1",
+                    "delivery_address": "Legacy Amazon address",
                 },
             ], ensure_ascii=False),
             encoding="utf-8",
@@ -975,6 +1047,10 @@ class SalesSourceTabsTest(unittest.TestCase):
         self.assertEqual(stored[0]["platform"], "Amazon (CA)")
         self.assertEqual(stored[0]["country"], "Канада")
         self.assertEqual(stored[0]["order_number"], "AMZ-NEW")
+        self.assertEqual(
+            stored[0]["delivery_address"],
+            "Legacy Amazon address",
+        )
         save_stock_operations.assert_not_called()
 
     def test_ajax_edit_validation_keeps_manual_sale_unchanged(self):
@@ -1045,6 +1121,9 @@ class SalesSourceTabsTest(unittest.TestCase):
                     "unit_price": "1500",
                     "order_status": "processing",
                     "order_number": "ORDER-1",
+                    "country": "Россия",
+                    "region": "Москва",
+                    "city": "Москва",
                 },
                 headers={
                     "X-Requested-With": "XMLHttpRequest",
@@ -1058,6 +1137,9 @@ class SalesSourceTabsTest(unittest.TestCase):
             overrides["automatic-1"]["total_amount"],
             3000.0,
         )
+        self.assertEqual(overrides["automatic-1"]["country"], "Россия")
+        self.assertEqual(overrides["automatic-1"]["region"], "Москва")
+        self.assertEqual(overrides["automatic-1"]["city"], "Москва")
         self.assertEqual(operation["quantity"], 1)
         save_stock_operations.assert_not_called()
 
@@ -1205,9 +1287,9 @@ class SalesSourceTabsTest(unittest.TestCase):
                 "track_number": "TRACK-1",
                 "delivery_method": "СДЭК",
                 "delivery_cost": "350,50",
+                "country": "Россия",
                 "region": "Москва",
                 "city": "Москва",
-                "payment_method": "Карта",
                 "note": "Tictactoy note",
             },
         )
@@ -1215,8 +1297,83 @@ class SalesSourceTabsTest(unittest.TestCase):
 
         self.assertEqual(sale["delivery_cost"], 350.5)
         self.assertEqual(sale["track_number"], "TRACK-1")
-        self.assertEqual(sale["payment_method"], "Карта")
+        self.assertEqual(sale["country"], "Россия")
+        self.assertEqual(sale["region"], "Москва")
+        self.assertEqual(sale["city"], "Москва")
+        self.assertEqual(sale["payment_method"], "")
         self.assertEqual(sale["note"], "Tictactoy note")
+
+    def test_tictactoy_location_edit_restores_and_validates_hierarchy(self):
+        stored = {
+            "id": "manual-ttt",
+            "created_at": "2026-07-22",
+            "source": "Tictactoy",
+            "product_id": PRODUCT_ID,
+            "product_name": "Часы Test",
+            "brand": "Brand",
+            "category": "Коллекция",
+            "quantity": 1,
+            "unit_price": 1000,
+            "country": "Россия",
+            "region": "Москва",
+            "city": "Москва",
+            "payment_method": "Историческая оплата",
+        }
+        self.manual_sales_path.write_text(
+            json.dumps([stored], ensure_ascii=False),
+            encoding="utf-8",
+        )
+        common_data = {
+            "sale_id": "manual-ttt",
+            "created_at": "2026-07-28",
+            "source": "Tictactoy",
+            "product_id": PRODUCT_ID,
+            "product_name": "Часы Test",
+            "quantity": "1",
+            "unit_price": "1000",
+            "country": "Беларусь",
+            "region": "Минская область",
+            "city": "Минск",
+        }
+
+        response = self.client.post(
+            "/sales/manual/update",
+            data=common_data,
+            headers={"X-Requested-With": "XMLHttpRequest"},
+        )
+        updated = web.load_manual_sales()[0]
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(updated["country"], "Беларусь")
+        self.assertEqual(updated["region"], "Минская область")
+        self.assertEqual(updated["city"], "Минск")
+        self.assertEqual(
+            updated["payment_method"],
+            "Историческая оплата",
+        )
+        page = self.client.get(
+            "/sales?source=tictactoy"
+        ).get_data(as_text=True)
+        self.assertIn("Беларусь", page)
+        self.assertIn("Минская область", page)
+        self.assertIn("Минск", page)
+
+        invalid_data = {
+            **common_data,
+            "country": "Казахстан",
+            "region": "Минская область",
+        }
+        invalid_response = self.client.post(
+            "/sales/manual/update",
+            data=invalid_data,
+            headers={"X-Requested-With": "XMLHttpRequest"},
+        )
+
+        self.assertEqual(invalid_response.status_code, 400)
+        self.assertEqual(
+            web.load_manual_sales()[0]["country"],
+            "Беларусь",
+        )
 
     def test_wildberries_sticker_and_order_are_saved(self):
         self.client.post(
