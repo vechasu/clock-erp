@@ -637,12 +637,13 @@ class ExcelProductCatalog:
 
     def list_products(self, query="", brand="", category="", cell="",
                       match_status="all", hide_zero=False, sort_by="name",
-                      sort_dir="asc", page=1, per_page=50):
+                      sort_dir="asc", page=1, per_page=50,
+                      created_from="", created_to=""):
         self.database.initialize()
         page = max(1, int(page))
-        per_page = max(1, min(int(per_page), 10000))
+        per_page = max(1, min(int(per_page), 100000))
         allowed_sort_fields = {
-            "name": "p.excel_name_raw",
+            "name": "p.excel_name_raw COLLATE NOCASE",
             "article": "COALESCE(p.excel_article, '')",
             "brand": "COALESCE(p.excel_brand, '')",
             "category": "COALESCE(p.excel_category, '')",
@@ -661,15 +662,39 @@ class ExcelProductCatalog:
         where = ["p.active = 1", visible_cards_sql]
         parameters = []
         if query:
-            escaped_query = text(query).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-            pattern = "%{}%".format(escaped_query)
-            where.append(
-                "(p.excel_name_raw LIKE ? ESCAPE '\\' OR p.bitrix_name LIKE ? ESCAPE '\\' "
-                "OR p.excel_article LIKE ? ESCAPE '\\' OR p.bitrix_xml_id LIKE ? ESCAPE '\\' "
-                "OR p.excel_brand LIKE ? ESCAPE '\\' OR p.bitrix_brand LIKE ? ESCAPE '\\' "
-                "OR p.cell LIKE ? ESCAPE '\\')"
+            def like_pattern(value):
+                escaped = text(value).replace(
+                    "\\", "\\\\"
+                ).replace("%", "\\%").replace("_", "\\_")
+                return "%{}%".format(escaped)
+
+            normalized_pattern = "%{}%".format(
+                normalize_text(query).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
             )
-            parameters.extend([pattern] * 7)
+            search_blob = (
+                "COALESCE(p.excel_name_raw, '') || char(31) || "
+                "COALESCE(p.bitrix_name, '') || char(31) || "
+                "COALESCE(p.excel_article, '') || char(31) || "
+                "COALESCE(p.bitrix_xml_id, '') || char(31) || "
+                "COALESCE(p.excel_brand, '') || char(31) || "
+                "COALESCE(p.bitrix_brand, '') || char(31) || "
+                "COALESCE(p.excel_category, '') || char(31) || "
+                "COALESCE(p.bitrix_category, '') || char(31) || "
+                "COALESCE(p.bitrix_external_product_id, '') || char(31) || "
+                "COALESCE(cp.barcode, '') || char(31) || COALESCE(p.cell, '')"
+            )
+            where.append(
+                "(p.normalized_name LIKE ? ESCAPE '\\' "
+                "OR ({blob}) LIKE ? ESCAPE '\\' "
+                "OR ({blob}) LIKE ? ESCAPE '\\' "
+                "OR ({blob}) LIKE ? ESCAPE '\\')".format(blob=search_blob)
+            )
+            parameters.append(normalized_pattern)
+            parameters.extend([
+                like_pattern(query),
+                like_pattern(text(query).upper()),
+                like_pattern(text(query).title()),
+            ])
         if brand:
             where.append("COALESCE(p.excel_brand, '') = ?")
             parameters.append(brand)
@@ -688,6 +713,12 @@ class ExcelProductCatalog:
                 parameters.append(cell)
         if hide_zero:
             where.append("p.stock > 0")
+        if created_from:
+            where.append("substr(p.created_at, 1, 10) >= ?")
+            parameters.append(created_from)
+        if created_to:
+            where.append("substr(p.created_at, 1, 10) <= ?")
+            parameters.append(created_to)
         if match_status == "requires_mapping":
             where.append("p.match_status = 'ambiguous'")
         elif match_status != "all":
@@ -695,7 +726,14 @@ class ExcelProductCatalog:
             parameters.append(match_status)
         where_sql = " WHERE " + " AND ".join(where)
         select_sql = (
-            "SELECT p.*, cp.barcode AS bitrix_barcode, "
+            "SELECT p.id, p.excel_name_raw, p.excel_article, "
+            "p.excel_brand, p.excel_category, p.stock, p.cell, "
+            "p.created_at, p.updated_at, p.match_status, "
+            "p.bitrix_catalog_product_id, p.bitrix_external_product_id, "
+            "p.bitrix_xml_id, p.bitrix_source_url, "
+            "p.bitrix_primary_image_url, p.bitrix_thumbnail_url, "
+            "p.bitrix_price_amount, p.bitrix_price_currency, "
+            "cp.barcode AS bitrix_barcode, "
             "b.source_filename, b.applied_at, b.row_count AS batch_row_count "
             "FROM catalog_excel_products p JOIN catalog_excel_batches b "
             "ON b.id = p.current_batch_id "
@@ -709,16 +747,23 @@ class ExcelProductCatalog:
             ).fetchone()
             total = connection.execute(
                 "SELECT COUNT(*) FROM catalog_excel_products p "
-                "JOIN catalog_excel_batches b ON b.id = p.current_batch_id" + where_sql,
+                "JOIN catalog_excel_batches b ON b.id = p.current_batch_id "
+                "LEFT JOIN catalog_products cp "
+                "ON cp.id = p.bitrix_catalog_product_id" + where_sql,
                 parameters,
             ).fetchone()[0]
+            pages = (total + per_page - 1) // per_page
+            if pages and page > pages:
+                page = pages
             stats = dict(connection.execute(
                 "SELECT COUNT(*) AS positions, COALESCE(SUM(p.stock), 0) AS total_stock, "
                 "SUM(CASE WHEN p.stock > 0 THEN 1 ELSE 0 END) AS positive_positions, "
                 "SUM(CASE WHEN p.stock <= 0 THEN 1 ELSE 0 END) AS zero_positions, "
                 "SUM(CASE WHEN p.bitrix_catalog_product_id IS NOT NULL THEN 1 ELSE 0 END) "
                 "AS matched_positions FROM catalog_excel_products p "
-                "JOIN catalog_excel_batches b ON b.id = p.current_batch_id" + where_sql,
+                "JOIN catalog_excel_batches b ON b.id = p.current_batch_id "
+                "LEFT JOIN catalog_products cp "
+                "ON cp.id = p.bitrix_catalog_product_id" + where_sql,
                 parameters,
             ).fetchone())
             order_sql = " ORDER BY {} {}".format(
@@ -735,6 +780,15 @@ class ExcelProductCatalog:
                 + visible_cards_sql + " "
                 "AND trim(COALESCE(p.excel_brand, '')) <> '' "
                 "GROUP BY value HAVING COALESCE(SUM(p.stock), 0) >= 1 ORDER BY value"
+            ).fetchall()]
+            brand_groups = [dict(row) for row in connection.execute(
+                "SELECT COALESCE(p.excel_brand, '') AS name, "
+                "COALESCE(SUM(p.stock), 0) AS count "
+                "FROM catalog_excel_products p JOIN catalog_excel_batches b "
+                "ON b.id = p.current_batch_id WHERE p.active = 1 AND "
+                + visible_cards_sql + " "
+                "AND trim(COALESCE(p.excel_brand, '')) <> '' "
+                "GROUP BY name ORDER BY name"
             ).fetchall()]
             categories = [row[0] for row in connection.execute(
                 "SELECT DISTINCT COALESCE(p.excel_category, '') AS value "
@@ -755,7 +809,9 @@ class ExcelProductCatalog:
             cell_groups = [dict(row) for row in connection.execute(
                 "SELECT CASE WHEN trim(COALESCE(p.cell, '')) = '' THEN 'Без ячейки' "
                 "ELSE trim(p.cell) END AS cell, COUNT(*) AS count, "
-                "COALESCE(SUM(p.stock), 0) AS stock FROM catalog_excel_products p "
+                "COALESCE(SUM(p.stock), 0) AS stock, "
+                "GROUP_CONCAT(p.excel_name_raw, char(31)) AS item_names "
+                "FROM catalog_excel_products p "
                 "JOIN catalog_excel_batches b ON b.id = p.current_batch_id "
                 "WHERE p.active = 1 AND " + visible_cards_sql + " "
                 "GROUP BY CASE WHEN trim(COALESCE(p.cell, '')) = '' "
@@ -773,9 +829,10 @@ class ExcelProductCatalog:
         items = [self._prepare_product(dict(row)) for row in rows]
         return {
             "items": items, "total": total, "page": page, "per_page": per_page,
-            "pages": (total + per_page - 1) // per_page,
+            "pages": pages,
             "brands": brands, "categories": categories,
-            "category_groups": category_groups, "cell_groups": cell_groups,
+            "brand_groups": brand_groups, "category_groups": category_groups,
+            "cell_groups": cell_groups,
             "stats": stats, "sort_by": sort_by, "sort_dir": sort_dir,
             "status_counts": status_counts,
             "active_batch": dict(active_batch) if active_batch else None,
