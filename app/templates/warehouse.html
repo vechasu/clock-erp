@@ -4366,7 +4366,7 @@
                                                     data-cell-source="{{ item.cell_source|e }}"
                                                     data-cell-source-label="{{ item.cell_source_label|e }}"
                                                     data-url="{{ item.moysklad_url|e }}"
-                                                    data-detail-url="{{ url_for('warehouse_product_detail', product_id=item.id) }}"
+                                                    data-detail-url="/warehouse/product/{{ item.id }}"
                                                     onclick="openEditDrawer(this)"
                                                 >
                                                     Карточка

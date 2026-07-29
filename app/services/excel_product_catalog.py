@@ -726,14 +726,7 @@ class ExcelProductCatalog:
             parameters.append(match_status)
         where_sql = " WHERE " + " AND ".join(where)
         select_sql = (
-            "SELECT p.id, p.excel_name_raw, p.excel_article, "
-            "p.excel_brand, p.excel_category, p.stock, p.cell, "
-            "p.created_at, p.updated_at, p.match_status, "
-            "p.bitrix_catalog_product_id, p.bitrix_external_product_id, "
-            "p.bitrix_xml_id, p.bitrix_source_url, "
-            "p.bitrix_primary_image_url, p.bitrix_thumbnail_url, "
-            "p.bitrix_price_amount, p.bitrix_price_currency, "
-            "cp.barcode AS bitrix_barcode, "
+            "SELECT p.*, cp.barcode AS bitrix_barcode, "
             "b.source_filename, b.applied_at, b.row_count AS batch_row_count "
             "FROM catalog_excel_products p JOIN catalog_excel_batches b "
             "ON b.id = p.current_batch_id "

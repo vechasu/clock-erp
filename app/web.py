@@ -1277,9 +1277,10 @@ def build_excel_warehouse_items(products):
     return items
 
 
-def get_excel_warehouse_items(**filters):
-    filters.setdefault("per_page", 100000)
-    catalog = ExcelProductCatalog().list_products(**filters)
+def get_excel_warehouse_items(catalog=None, **filters):
+    if catalog is None:
+        filters.setdefault("per_page", 100000)
+        catalog = ExcelProductCatalog().list_products(**filters)
     return build_excel_warehouse_items(catalog["items"])
 
 
@@ -1289,10 +1290,13 @@ def merge_catalog_groups(groups, taxonomy_values):
         name = str(group.get("name") or "").strip()
         if not name:
             continue
-        merged[catalog_label_key(name)] = {
+        count = group.get("count") or 0
+        if isinstance(count, float) and count.is_integer():
+            count = int(count)
+        merged.setdefault(catalog_label_key(name), {
             "name": name,
-            "count": group.get("count") or 0,
-        }
+            "count": count,
+        })
     for value in taxonomy_values:
         name = str(value or "").strip()
         if name:
@@ -1368,14 +1372,31 @@ def warehouse_page():
         created_from=created_date_from,
         created_to=created_date_to,
     )
-    items = build_excel_warehouse_items(catalog["items"])
+    catalog_items = build_excel_warehouse_items(catalog["items"])
+    items = get_excel_warehouse_items(catalog=catalog)
+    if items != catalog_items and (created_date_from or created_date_to):
+        filtered_items = []
+        for item in items:
+            try:
+                created_date = time.strftime(
+                    "%Y-%m-%d",
+                    time.localtime(float(item.get("created_at") or 0)),
+                )
+            except (TypeError, ValueError, OverflowError, OSError):
+                created_date = ""
+            if created_date_from and created_date < created_date_from:
+                continue
+            if created_date_to and created_date > created_date_to:
+                continue
+            filtered_items.append(item)
+        items = filtered_items
     taxonomy = load_catalog_taxonomy()
     brand_groups = merge_catalog_groups(
-        catalog["brand_groups"],
+        catalog["brand_groups"] + build_brand_groups(items),
         taxonomy["brands"],
     )
     category_groups = merge_catalog_groups(
-        catalog["category_groups"],
+        catalog["category_groups"] + build_category_groups(items),
         [item["name"] for item in taxonomy["categories"]] + list(CATEGORIES),
     )
     cell_groups = []

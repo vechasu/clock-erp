@@ -32,6 +32,7 @@ EXPECTED_TABLES = {
     "catalog_excel_receipt_operations",
     "catalog_excel_manual_stock_operations",
     "catalog_stock_movements",
+    "catalog_product_classification_audit",
 }
 
 
