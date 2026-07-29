@@ -2,10 +2,11 @@
     "use strict";
 
     const THEMES = Object.freeze([
+        "classic",
         "klok-green",
         "bn0024-white",
     ]);
-    const DEFAULT_THEME = "bn0024-white";
+    const DEFAULT_THEME = "classic";
     const STORAGE_KEY = "vechasu-erp-theme-v1";
 
     function normalizeTheme(value) {
