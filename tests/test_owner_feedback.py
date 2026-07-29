@@ -490,8 +490,8 @@ class OwnerFeedbackTest(unittest.TestCase):
         self.assertEqual(xlsx.status_code, 200)
         workbook = load_workbook(BytesIO(xlsx.data), read_only=True)
         sheet = workbook.active
-        self.assertEqual(sheet["H5"].value, "ORDER-100")
-        self.assertIsNone(sheet["H6"].value)
+        self.assertEqual(sheet["J5"].value, "ORDER-100")
+        self.assertIsNone(sheet["J6"].value)
 
         self.assertEqual(pdf.status_code, 200)
         self.assertTrue(pdf.data.startswith(b"%PDF"))
@@ -1230,7 +1230,7 @@ class OwnerFeedbackTest(unittest.TestCase):
         self.assertIn("vechasu-sales-filters-v1", html)
         self.assertIn("vechasu-sales-scroll-y", html)
         self.assertIn("const minimumWidth = 76", html)
-        self.assertIn("const settingsVersion = 3", html)
+        self.assertIn("const settingsVersion = 4", html)
         self.assertIn(
             'data-sales-settings-key="sales_all"',
             html,
