@@ -458,6 +458,7 @@
                             }
                         } else if (event.key === "Escape") {
                             event.preventDefault();
+                            event.stopPropagation();
                             window.setBrandDropdownOpen(
                                 combobox,
                                 false

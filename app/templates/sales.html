@@ -2157,33 +2157,33 @@
                     </div>
 
                     <div class="field">
-                        <label for="sale_order_status">Статус</label>
-                        <select
-                            id="sale_order_status"
-                            class="control"
-                            name="order_status"
-                        >
-                            {% for key, label in sale_status_labels.items() %}
-                                <option value="{{ key }}">
-                                    {{ label }}
-                                </option>
-                            {% endfor %}
-                        </select>
+                        <label for="saleStatusTrigger">Статус</label>
+                        {{ render_catalog_combobox(
+                            "saleStatus",
+                            "order_status",
+                            sale_status_options,
+                            item_label="статус",
+                            prefix_search=false,
+                            empty_label="Статусы не найдены",
+                            component_class="filter-combobox",
+                            clear_selection_on_search_clear=true
+                        ) }}
                     </div>
 
                     <div class="field">
-                        <label for="commission_amount">
-                            Комиссия, ₽
+                        <label for="saleCommissionTrigger">
+                            Комиссия
                         </label>
-                        <input
-                            id="commission_amount"
-                            class="control"
-                            type="number"
-                            name="commission_amount"
-                            min="0"
-                            step="0.01"
-                            inputmode="decimal"
-                        >
+                        {{ render_catalog_combobox(
+                            "saleCommission",
+                            "commission",
+                            sale_commission_options,
+                            item_label="комиссию",
+                            prefix_search=false,
+                            empty_label="Варианты комиссии не найдены",
+                            component_class="filter-combobox",
+                            clear_selection_on_search_clear=true
+                        ) }}
                     </div>
 
                     <div
@@ -2354,23 +2354,35 @@
                         </div>
 
                         <div class="field">
-                            <label for="platform">Площадка</label>
-                            <input
-                                id="platform"
-                                class="control"
-                                type="text"
-                                name="platform"
-                            >
+                            <label for="salePlatformTrigger">
+                                Площадка
+                            </label>
+                            {{ render_catalog_combobox(
+                                "salePlatform",
+                                "platform",
+                                sale_platform_options,
+                                item_label="площадку",
+                                prefix_search=false,
+                                empty_label="Площадки не найдены",
+                                component_class="filter-combobox",
+                                clear_selection_on_search_clear=true
+                            ) }}
                         </div>
 
                         <div class="field">
-                            <label for="country">Страна</label>
-                            <input
-                                id="country"
-                                class="control"
-                                type="text"
-                                name="country"
-                            >
+                            <label for="saleCountryTrigger">
+                                Страна
+                            </label>
+                            {{ render_catalog_combobox(
+                                "saleCountry",
+                                "country",
+                                sale_country_options,
+                                item_label="страну",
+                                prefix_search=false,
+                                empty_label="Страны не найдены",
+                                component_class="filter-combobox",
+                                clear_selection_on_search_clear=true
+                            ) }}
                         </div>
 
                         <div class="field">
@@ -2437,6 +2449,7 @@
         wildberries: "Wildberries",
         amazon: "Amazon",
     };
+    const saleStatusLabels = {{ sale_status_labels | tojson }};
     const activeSourceTab = document.querySelector(
         ".sales-tab.is-active"
     );
@@ -3683,6 +3696,8 @@
             "category",
             "quantity_display",
             "unit_price_display",
+            "commission",
+            "order_status_label",
             "delivery_cost_display",
             "delivery_method",
             "track_number",
@@ -3725,6 +3740,8 @@
             product_name: 300,
             quantity_display: 96,
             unit_price_display: 124,
+            commission: 260,
+            order_status_label: 118,
             delivery_method: 144,
             delivery_cost_display: 128,
             region: 132,
@@ -3748,6 +3765,8 @@
             product_name: 280,
             quantity_display: 104,
             unit_price_display: 138,
+            commission: 260,
+            order_status_label: 130,
             delivery_method: 160,
             delivery_cost_display: 138,
             region: 150,
@@ -3760,7 +3779,7 @@
             country: 140,
             invoice_number: 160,
         };
-        const settingsVersion = 3;
+        const settingsVersion = 4;
         const minimumWidth = 76;
         const minimumWidths = {
             created_at: 108,
@@ -3773,6 +3792,8 @@
             product_name: 220,
             quantity_display: 90,
             unit_price_display: 112,
+            commission: 220,
+            order_status_label: 104,
             delivery_method: 120,
             delivery_cost_display: 112,
             region: 100,
@@ -4467,6 +4488,7 @@
         document.getElementById("productMeta").textContent =
             "Баркод, артикул и остаток появятся после выбора товара.";
         resetProductFilters();
+        resetSaleChoiceFields();
 
         if (activeSalesSource === "all") {
             sourceChoicePanel.classList.remove("is-hidden");
@@ -4550,6 +4572,18 @@
     );
     const saleProductCombobox = document.getElementById(
         "saleProduct"
+    );
+    const saleStatusCombobox = document.getElementById(
+        "saleStatus"
+    );
+    const saleCommissionCombobox = document.getElementById(
+        "saleCommission"
+    );
+    const salePlatformCombobox = document.getElementById(
+        "salePlatform"
+    );
+    const saleCountryCombobox = document.getElementById(
+        "saleCountry"
     );
     const saleBrandInput = saleBrandCombobox.querySelector(
         ".brand-combobox-hidden"
@@ -4737,6 +4771,35 @@
         clearSelectedProduct();
     }
 
+    function resetSaleChoiceFields() {
+        [
+            [
+                saleStatusCombobox,
+                "shipped",
+                saleStatusLabels.shipped,
+            ],
+            [saleCommissionCombobox, "", ""],
+            [salePlatformCombobox, "", ""],
+            [saleCountryCombobox, "", ""],
+        ].forEach(([combobox, value, label]) => {
+            window.setBrandComboboxValue(
+                combobox,
+                value,
+                label,
+            );
+            const search = combobox.querySelector(
+                ".brand-combobox-search"
+            );
+
+            if (search) {
+                search.value = "";
+            }
+
+            window.filterBrandList("", combobox);
+            window.setBrandDropdownOpen(combobox, false);
+        });
+    }
+
     saleBrandCombobox.addEventListener(
         "catalog-combobox:change",
         () => {
@@ -4828,6 +4891,26 @@
             saleProductCombobox,
             sale.product_id || "",
         );
+        const editableStatus = ["shipped", "returned"].includes(
+            sale.order_status
+        ) ? sale.order_status : "";
+        window.setBrandComboboxValue(
+            saleStatusCombobox,
+            editableStatus,
+            sale.order_status_label || saleStatusLabels[editableStatus],
+        );
+        window.setBrandComboboxValue(
+            saleCommissionCombobox,
+            sale.commission || "",
+        );
+        window.setBrandComboboxValue(
+            salePlatformCombobox,
+            sale.platform || "",
+        );
+        window.setBrandComboboxValue(
+            saleCountryCombobox,
+            sale.country || "",
+        );
         productIdInput.value = sale.product_id || "";
         productNameInput.value = sale.product_name || "";
 
@@ -4835,8 +4918,6 @@
             created_at: String(sale.created_at || "").slice(0, 10),
             quantity: sale.quantity_value || 1,
             unit_price: sale.unit_price || "",
-            order_status: sale.order_status || "processing",
-            commission_amount: sale.commission_amount || "",
             order_number: sale.order_number || "",
             track_number: sale.track_number || "",
             delivery_method: sale.delivery_method || "",
@@ -4846,8 +4927,6 @@
             payment_method: sale.payment_method || "",
             sticker_number: sale.sticker_number || "",
             recipient_name: sale.recipient_name || "",
-            platform: sale.platform || "",
-            country: sale.country || "",
             invoice_number: sale.invoice_number || "",
             delivery_address: sale.delivery_address || "",
             note: sale.note || "",
@@ -5130,6 +5209,97 @@
                 }
             }
 
+            const status = document.getElementById("saleStatus");
+            const commission = document.getElementById(
+                "saleCommission"
+            );
+            const platform = document.getElementById("salePlatform");
+            const country = document.getElementById("saleCountry");
+            const countryValues = Array.from(
+                country.querySelectorAll(".brand-combobox-option")
+            ).map((option) => option.dataset.brand);
+
+            if (
+                countryValues.slice(0, 4).join(",")
+                !== "Америка,Япония,Канада,Мексика"
+                || new Set(countryValues).size !== countryValues.length
+                || countryValues.length < 195
+            ) {
+                throw new Error("country-options");
+            }
+
+            chooseOption(status, "returned");
+            chooseOption(
+                commission,
+                "Оплата по Робокассе (0,9675 × 0,94)"
+            );
+            chooseOption(platform, "Amazon (US)");
+            searchWithKeyboard(country, "яПО");
+
+            if (
+                status.querySelector(".brand-combobox-hidden").value
+                    !== "returned"
+                || commission.querySelector(
+                    ".brand-combobox-hidden"
+                ).value !== "Оплата по Робокассе (0,9675 × 0,94)"
+                || platform.querySelector(
+                    ".brand-combobox-hidden"
+                ).value !== "Amazon (US)"
+                || country.querySelector(
+                    ".brand-combobox-hidden"
+                ).value !== "Япония"
+                || country.classList.contains("open")
+            ) {
+                throw new Error("sale-choice-selection");
+            }
+
+            country.querySelector(".brand-combobox-trigger").click();
+            const countrySearch = country.querySelector(
+                ".brand-combobox-search"
+            );
+            countrySearch.value = "ар";
+            countrySearch.dispatchEvent(
+                new Event("input", {bubbles: true})
+            );
+
+            if (
+                country.querySelector(
+                    "[data-brand-search-clear]"
+                ).hidden
+            ) {
+                throw new Error("country-clear-hidden");
+            }
+
+            country.querySelector("[data-brand-search-clear]").click();
+
+            if (
+                countrySearch.value
+                || Array.from(
+                    country.querySelectorAll(
+                        ".brand-combobox-option"
+                    )
+                ).some((option) => option.hidden)
+            ) {
+                throw new Error("country-clear");
+            }
+
+            country.querySelector(
+                ".brand-combobox-search"
+            ).dispatchEvent(
+                new KeyboardEvent(
+                    "keydown",
+                    {key: "Escape", bubbles: true}
+                )
+            );
+
+            if (
+                country.classList.contains("open")
+                || !document.getElementById("manualSaleModal")
+                    .classList.contains("is-open")
+            ) {
+                throw new Error("country-escape");
+            }
+
             const fields = Array.from(
                 form.querySelectorAll(".manual-form-grid > .field")
             );
@@ -5285,6 +5455,8 @@
             "category",
             "quantity_display",
             "unit_price_display",
+            "commission",
+            "order_status_label",
             "track_number",
             "barcode",
         ];
@@ -5350,7 +5522,7 @@
                 );
                 const headers = getHeaders();
                 const restoredCorrectly = (
-                    restored.version === 3
+                    restored.version === 4
                     && restored.order[0] === "created_at"
                     && restored.order[1] === "order_number"
                     && restored.order[2] === "unit_price_display"
