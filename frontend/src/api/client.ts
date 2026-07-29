@@ -3,6 +3,8 @@ import type { ZodType } from 'zod';
 import { apiErrorSchema, apiMetaSchema } from '../schemas/api';
 import type { ApiEnvelope, ApiError, ApiMeta } from '../types/api';
 
+let csrfToken = '';
+
 export class ApiRequestError extends Error {
   readonly status: number;
   readonly details: ApiError | null;
@@ -42,10 +44,24 @@ export async function apiRequest<T>(
 
   const record = payload as Record<string, unknown>;
   const meta: ApiMeta = apiMetaSchema.parse(record.meta ?? {});
+  if (typeof meta.csrf_token === 'string') {
+    csrfToken = meta.csrf_token;
+  }
 
   return {
     data: schema.parse(record.data),
     meta,
     error: null,
+  };
+}
+
+export function jsonRequestInit(method: 'POST' | 'PATCH' | 'DELETE', data?: unknown): RequestInit {
+  return {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
+    },
+    ...(data === undefined ? {} : { body: JSON.stringify(data) }),
   };
 }

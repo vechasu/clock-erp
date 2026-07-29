@@ -27,8 +27,8 @@ describe('React infrastructure', () => {
     );
   });
 
-  it('does not pretend that an unknown business module is ready', () => {
-    renderApp('/products');
+  it('keeps a controlled fallback for unknown business modules', () => {
+    renderApp('/customers');
 
     expect(screen.getByRole('heading', { name: 'Раздел ещё не перенесён' })).toBeInTheDocument();
   });
