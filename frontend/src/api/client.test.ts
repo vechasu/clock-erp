@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { apiRequest } from './client';
+import { apiRequest, jsonRequestInit } from './client';
 
 describe('apiRequest', () => {
   afterEach(() => {
@@ -12,7 +12,7 @@ describe('apiRequest', () => {
       new Response(
         JSON.stringify({
           data: { id: 42, name: 'Тестовый товар' },
-          meta: { request_id: 'request-1' },
+          meta: { request_id: 'request-1', csrf_token: 'test-csrf' },
           error: null,
         }),
         {
@@ -30,6 +30,12 @@ describe('apiRequest', () => {
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/v1/products/42',
       expect.objectContaining({ credentials: 'same-origin' }),
+    );
+    expect(jsonRequestInit('PATCH', { name: 'Новое имя' })).toEqual(
+      expect.objectContaining({
+        method: 'PATCH',
+        headers: expect.objectContaining({ 'X-CSRF-Token': 'test-csrf' }),
+      }),
     );
   });
 });
