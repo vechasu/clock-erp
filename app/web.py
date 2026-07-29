@@ -1327,6 +1327,20 @@ def merge_catalog_groups(groups, taxonomy_values):
     return [merged[key] for key in sorted(merged)]
 
 
+def format_active_filter_label(count):
+    count = max(0, int(count or 0))
+    last_two_digits = count % 100
+    last_digit = count % 10
+
+    if last_digit == 1 and last_two_digits != 11:
+        return f"Активен {count} фильтр"
+
+    if last_digit in {2, 3, 4} and last_two_digits not in {12, 13, 14}:
+        return f"Активно {count} фильтра"
+
+    return f"Активно {count} фильтров"
+
+
 @app.route("/warehouse")
 def warehouse_page():
     query = request.args.get("q", "").strip()
@@ -1378,6 +1392,16 @@ def warehouse_page():
 
     if created_date_from and created_date_to and created_date_from > created_date_to:
         created_date_from, created_date_to = created_date_to, created_date_from
+
+    warehouse_active_filter_count = sum((
+        bool(selected_brand),
+        bool(selected_category),
+        bool(selected_cell),
+        bool(created_date_from or created_date_to),
+    ))
+    warehouse_active_filter_label = format_active_filter_label(
+        warehouse_active_filter_count
+    )
 
     catalog = ExcelProductCatalog().list_products(
         query=query,
@@ -1488,6 +1512,8 @@ def warehouse_page():
             created_date_from=created_date_from,
             created_date_to=created_date_to,
             hide_zero=hide_zero,
+            warehouse_active_filter_count=warehouse_active_filter_count,
+            warehouse_active_filter_label=warehouse_active_filter_label,
             open_add=request.args.get("open_add") == "1",
             sort_by=sort_by,
             sort_dir=sort_dir,

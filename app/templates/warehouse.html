@@ -3712,6 +3712,7 @@
 </head>
 <body class="warehouse-page">
     {% from "_catalog_combobox.html" import render_catalog_combobox %}
+    {% from "_filter_count.html" import render_filter_count %}
     {% from "_navigation_icons.html" import navigation_icon %}
     <div class="app">
         {% include "_sidebar.html" %}
@@ -3766,13 +3767,6 @@
             {% endif %}
 
 
-            {% set warehouse_active_filter_count = (
-                (1 if selected_brand else 0)
-                + (1 if selected_category else 0)
-                + (1 if selected_cell else 0)
-                + (1 if created_date_from or created_date_to else 0)
-                + (1 if hide_zero else 0)
-            ) %}
             <div class="search-card erp-toolbar-card">
                 <form class="search-form erp-toolbar" method="get" action="/warehouse">
                     <input type="hidden" name="sort_by" value="{{ sort_by }}">
@@ -3823,14 +3817,26 @@
 
                     <div class="warehouse-filter-actions">
                         <button
-                            class="search-tool-button erp-secondary-action"
+                            id="warehouseFilterTrigger"
+                            class="search-tool-button erp-secondary-action erp-filter-trigger{% if warehouse_active_filter_count %} is-active{% endif %}"
                             type="button"
+                            aria-haspopup="dialog"
+                            aria-controls="filterDrawer"
+                            aria-expanded="false"
+                            aria-label="{% if warehouse_active_filter_count %}Фильтры. {{ warehouse_active_filter_label }}{% else %}Открыть фильтры товаров{% endif %}"
+                            title="{% if warehouse_active_filter_count %}{{ warehouse_active_filter_label }}{% else %}Фильтры товаров{% endif %}"
                             onclick="openFilterDrawer()"
                         >
-                            Фильтры
-                            {% if warehouse_active_filter_count %}
-                                <span class="warehouse-filter-count">{{ warehouse_active_filter_count }}</span>
-                            {% endif %}
+                            <span class="erp-filter-icon-slot" aria-hidden="true">
+                                <svg
+                                    class="erp-filter-icon"
+                                    viewBox="0 0 20 20"
+                                >
+                                    <path d="M3 4h14l-5.5 6.2v4.6l-3 1.5v-6.1L3 4Z"></path>
+                                </svg>
+                            </span>
+                            <span class="erp-filter-label">Фильтры</span>
+                            {{ render_filter_count(warehouse_active_filter_count) }}
                         </button>
                         {% if created_date_from or created_date_to %}
                             <span class="warehouse-active-date">
@@ -3924,7 +3930,7 @@
                         class="search-tool-button warehouse-reset-button erp-reset-action"
                         type="button"
                         onclick="resetWarehouseTableFilters()"
-                        {% if not (query or selected_brand or selected_category or selected_cell or created_date_from or created_date_to or hide_zero or sort_by != "name" or sort_dir != "asc") %}hidden{% endif %}
+                        {% if not warehouse_active_filter_count %}hidden{% endif %}
                     >
                         × Сбросить
                     </button>
@@ -4586,7 +4592,17 @@
         </form>
 
         <div style="margin-top: 16px;">
-            <a class="category-link" href="{{ url_for('warehouse_page') }}">
+            <a
+                class="category-link"
+                href="{{ url_for(
+                    'warehouse_page',
+                    q=query or None,
+                    sort_by=sort_by if sort_by != 'name' else None,
+                    sort_dir=sort_dir if sort_dir != 'asc' else None,
+                    per_page=per_page,
+                    hide_zero='1' if hide_zero else None
+                ) }}"
+            >
                 <span>Сбросить фильтры</span>
             </a>
         </div>
@@ -4797,6 +4813,8 @@
             document.getElementById("drawerBackdrop").classList.add("open");
             const drawer = document.getElementById("filterDrawer");
             drawer.classList.add("open");
+            document.getElementById("warehouseFilterTrigger")
+                ?.setAttribute("aria-expanded", "true");
             focusOpenedWarehouseDrawer(drawer);
         }
 
@@ -5268,6 +5286,8 @@
 
             document.body.style.overflow = "";
             document.body.classList.remove("edit-drawer-open");
+            document.getElementById("warehouseFilterTrigger")
+                ?.setAttribute("aria-expanded", "false");
 
             if (restoreFocus) {
                 warehouseDrawerReturnFocus?.focus();
@@ -5470,29 +5490,23 @@
             loadWarehouseSearchResults("");
         }
 
-        function hasWarehouseTableFilters(url) {
+        function hasWarehousePanelFilters(url) {
             const params = url.searchParams;
             const hasValue = (name) => Boolean((params.get(name) || "").trim());
-            const sortBy = params.get("sort_by") || "name";
-            const sortDir = params.get("sort_dir") || "asc";
 
             return (
-                hasValue("q")
-                || hasValue("brand")
+                hasValue("brand")
                 || hasValue("category")
                 || hasValue("cell")
                 || hasValue("date_from")
                 || hasValue("date_to")
-                || params.get("hide_zero") === "1"
-                || sortBy !== "name"
-                || sortDir !== "asc"
             );
         }
 
         function syncWarehouseResetButton() {
             const button = document.getElementById("warehouseFilterReset");
             if (button) {
-                button.hidden = !hasWarehouseTableFilters(
+                button.hidden = !hasWarehousePanelFilters(
                     new URL(window.location.href)
                 );
             }
@@ -5508,15 +5522,11 @@
         function resetWarehouseTableFilters() {
             const url = new URL(window.location.href);
             [
-                "q",
                 "brand",
                 "category",
                 "cell",
                 "date_from",
                 "date_to",
-                "hide_zero",
-                "sort_by",
-                "sort_dir",
                 "page"
             ].forEach(name => url.searchParams.delete(name));
             navigateWithWarehouseParams(url);

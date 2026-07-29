@@ -453,6 +453,18 @@ html[data-theme] :where(
     color: var(--theme-text-strong) !important;
 }
 
+html[data-theme] .erp-filter-trigger.is-active {
+    border-color: var(--theme-info) !important;
+    background-color: var(--theme-info-soft) !important;
+    color: var(--theme-info) !important;
+}
+
+html[data-theme] .erp-filter-count {
+    border-color: var(--theme-info) !important;
+    background: var(--theme-info) !important;
+    color: #ffffff !important;
+}
+
 html[data-theme] :where(
     .button-primary,
     .btn-primary,

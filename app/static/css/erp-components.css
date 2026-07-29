@@ -674,6 +674,70 @@ select.erp-control {
     transform: translateY(-1px);
 }
 
+.erp-filter-trigger {
+    gap: 8px;
+}
+
+.warehouse-page .erp-filter-trigger {
+    min-width: 148px;
+}
+
+.erp-filter-trigger.is-active {
+    border-color: #93c5fd;
+    background: #eff6ff;
+    color: #1d4ed8;
+}
+
+.erp-filter-trigger:focus-visible {
+    outline: 0;
+    box-shadow: var(--erp-focus-ring);
+}
+
+.erp-filter-icon-slot {
+    width: 18px;
+    height: 18px;
+    display: inline-flex;
+    flex: 0 0 18px;
+    align-items: center;
+    justify-content: center;
+}
+
+.erp-filter-icon {
+    width: 18px;
+    height: 18px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.erp-filter-label {
+    white-space: nowrap;
+}
+
+.erp-filter-count {
+    min-width: 20px;
+    height: 20px;
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: #2563eb;
+    color: #ffffff;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    font-weight: 850;
+    line-height: 1;
+    text-align: center;
+}
+
+.erp-filter-count[hidden] {
+    display: none;
+}
+
 .erp-reset-action {
     border: 1px solid var(--erp-border-strong);
     background: #ffffff;
@@ -1566,25 +1630,6 @@ select.erp-control {
     flex: 0 0 auto;
 }
 
-.sales-filter-count {
-    min-width: 19px;
-    height: 19px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0 6px;
-    border-radius: 999px;
-    background: #2563eb;
-    color: #ffffff;
-    font-size: 10px;
-    font-weight: 850;
-    line-height: 1;
-}
-
-.sales-filter-count[hidden] {
-    display: none;
-}
-
 .sales-filter-panel {
     position: absolute;
     z-index: 120;
@@ -2180,21 +2225,6 @@ select.erp-control {
     .erp-stats,
     .stats {
         min-width: 0;
-    }
-
-    .warehouse-filter-count {
-        min-width: 20px;
-        height: 20px;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        margin-left: 6px;
-        padding: 0 6px;
-        border-radius: 999px;
-        background: #2563eb;
-        color: #ffffff;
-        font-size: 11px;
-        line-height: 1;
     }
 
     .search-form.erp-toolbar {

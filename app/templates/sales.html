@@ -1110,6 +1110,7 @@
 
 <body class="sales-page">
 {% from "_catalog_combobox.html" import render_catalog_combobox %}
+{% from "_filter_count.html" import render_filter_count %}
 <div class="app">
     {% include "_sidebar.html" %}
 
@@ -1376,7 +1377,7 @@
                 <div class="sales-filter-settings">
                     <button
                         id="salesFilterTrigger"
-                        class="sales-filter-trigger erp-secondary-action sales-toolbar-action"
+                        class="sales-filter-trigger erp-secondary-action sales-toolbar-action erp-filter-trigger"
                         type="button"
                         aria-haspopup="dialog"
                         aria-controls="salesFilterPanel"
@@ -1399,12 +1400,12 @@
                                 </svg>
                             </span>
                             <span>Фильтры</span>
-                            <span
-                                id="salesFilterCount"
-                                class="sales-filter-count"
-                                aria-label="Активных фильтров"
-                                hidden
-                            ></span>
+                            {{ render_filter_count(
+                                0,
+                                "salesFilterCount",
+                                "sales-filter-count",
+                                true
+                            ) }}
                         </span>
                     </button>
                     <div
@@ -3127,22 +3128,47 @@
             selectedTo;
     }
 
+    function activeFilterLabel(activeCount) {
+        const lastTwoDigits = activeCount % 100;
+        const lastDigit = activeCount % 10;
+
+        if (lastDigit === 1 && lastTwoDigits !== 11) {
+            return `Активен ${activeCount} фильтр`;
+        }
+
+        if (
+            [2, 3, 4].includes(lastDigit)
+            && ![12, 13, 14].includes(lastTwoDigits)
+        ) {
+            return `Активно ${activeCount} фильтра`;
+        }
+
+        return `Активно ${activeCount} фильтров`;
+    }
+
     function updateSalesFilterSummary() {
         const activeCount = [
             appliedSaleState,
             appliedSaleType,
         ].filter(Boolean).length;
 
-        salesFilterCount.textContent = String(activeCount);
+        salesFilterCount.textContent = (
+            activeCount > 9 ? "9+" : String(activeCount)
+        );
         salesFilterCount.hidden = activeCount === 0;
         salesFilterTrigger.classList.toggle(
             "is-active",
             activeCount > 0,
         );
+        salesFilterTrigger.title = (
+            activeCount
+                ? activeFilterLabel(activeCount)
+                : "Фильтры"
+        );
         salesFilterTrigger.setAttribute(
             "aria-label",
             activeCount
-                ? "Фильтры, активно: " + activeCount
+                ? "Фильтры. " + activeFilterLabel(activeCount)
                 : "Фильтры",
         );
     }
