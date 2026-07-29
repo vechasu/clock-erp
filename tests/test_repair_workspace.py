@@ -10,6 +10,7 @@ from app import web
 from app.services.repair_cases import (
     RepairDataError,
     load_repair_file,
+    migrate_repair_case,
     migrate_repair_file,
     migrate_repair_cases,
     save_repair_file,
@@ -214,6 +215,45 @@ class RepairWorkspaceTest(unittest.TestCase):
             case["history"][0]["action"],
             "Карточка ремонта создана",
         )
+
+    def test_imported_incomplete_case_can_be_edited_without_fake_fields(self):
+        imported = migrate_repair_case({
+            "id": "legacy-incomplete",
+            "schema_version": 2,
+            "repair_number": "R-2026-0100",
+            "created_at": "2026-07-29 15:00",
+            "updated_at": "2026-07-29 15:00",
+            "status": "new",
+            "request_type": "diagnostics",
+            "location": "unknown",
+            "order_number": "20953",
+            "order_source": "our",
+            "client_name": "",
+            "product_name": "",
+            "problem": "",
+            "legacy_import": {
+                "source_key": "repair-03-order-20953",
+            },
+        })
+        save_repair_file(self.cases_path, [imported])
+        response = self.client.post(
+            "/repair/update",
+            data=repair_form(
+                case_id="legacy-incomplete",
+                client_name="",
+                product_id="",
+                product_name="",
+                problem="",
+                status="waiting_decision",
+            ),
+        )
+        stored = load_repair_file(self.cases_path)[0]
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(stored["client_name"], "")
+        self.assertEqual(stored["product_name"], "")
+        self.assertEqual(stored["problem"], "")
+        self.assertEqual(stored["status"], "waiting_decision")
 
     def test_attachment_is_saved_and_downloaded_from_case_card(self):
         data = repair_form()

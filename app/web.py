@@ -3067,7 +3067,12 @@ def _validated_repair_choice(form, name, choices, default):
     return value if value in choices else default
 
 
-def build_repair_form_payload(form, existing=None, catalog_items=None):
+def build_repair_form_payload(
+    form,
+    existing=None,
+    catalog_items=None,
+    allow_missing_required=False,
+):
     existing = existing if isinstance(existing, dict) else {}
     product_id = _repair_text(form.get("product_id"))
     catalog_product = get_repair_catalog_product(
@@ -3178,11 +3183,11 @@ def build_repair_form_payload(form, existing=None, catalog_items=None):
         ),
     }
     payload["repair_type"] = payload["request_type"]
-    if not payload["client_name"]:
+    if not allow_missing_required and not payload["client_name"]:
         raise ValueError("Укажите имя клиента")
-    if not payload["product_name"]:
+    if not allow_missing_required and not payload["product_name"]:
         raise ValueError("Укажите товар или его название")
-    if not payload["problem"]:
+    if not allow_missing_required and not payload["problem"]:
         raise ValueError("Опишите неисправность")
     return payload
 
@@ -3478,6 +3483,7 @@ def repair_update():
                 request.form,
                 existing=case,
                 catalog_items=catalog_items,
+                allow_missing_required=bool(case.get("legacy_import")),
             )
             case.update(payload)
             case.setdefault("attachments", []).extend(attachments)
