@@ -268,12 +268,11 @@ class WarehousePaginationTest(unittest.TestCase):
 
     def test_zero_stock_filter_and_icon_actions_use_shared_components(self):
         html = self.client.get(
-            "/warehouse?hide_zero=1"
+            "/warehouse?in_stock=1"
         ).get_data(as_text=True)
-        self.assertIn("Скрыть нулевые остатки", html)
         self.assertRegex(
             html,
-            r'id="warehouseHideZeroFilter"[^>]*\schecked',
+            r'id="warehouseInStockToggle"[^>]*\schecked',
         )
 
         stock_header = re.search(
@@ -282,7 +281,19 @@ class WarehousePaginationTest(unittest.TestCase):
             re.DOTALL,
         )
         self.assertIsNotNone(stock_header)
-        self.assertNotIn('name="hide_zero"', stock_header.group(1))
+        stock_header_markup = stock_header.group(1)
+        self.assertIn("Остаток", stock_header_markup)
+        self.assertIn('role="switch"', stock_header_markup)
+        self.assertIn('aria-checked="true"', stock_header_markup)
+        self.assertIn(
+            'aria-label="Показать товары с нулевым остатком"',
+            stock_header_markup,
+        )
+        self.assertIn(
+            'title="Показать товары с нулевым остатком"',
+            stock_header_markup,
+        )
+        self.assertNotIn("Скрыть нулевые остатки", html)
 
         actions_cell = re.search(
             r'<td data-column-key="actions">(.*?)</td>',
@@ -297,6 +308,166 @@ class WarehousePaginationTest(unittest.TestCase):
         self.assertIn('aria-label="Удалить товар"', action_markup)
         self.assertNotIn(">Карточка<", action_markup)
         self.assertNotIn(">Удалить<", action_markup)
+
+    def test_in_stock_filter_hides_and_restores_zero_stock(self):
+        all_html = self.client.get(
+            "/warehouse?per_page=100"
+        ).get_data(as_text=True)
+        positive_html = self.client.get(
+            "/warehouse?in_stock=1&per_page=100"
+        ).get_data(as_text=True)
+        restored_html = self.client.get(
+            "/warehouse?per_page=100"
+        ).get_data(as_text=True)
+
+        stock_pattern = (
+            r'<tr\s+data-product-id="[^"]+"\s+'
+            r'data-stock="([^"]+)"'
+        )
+        all_stocks = [
+            float(value)
+            for value in re.findall(stock_pattern, all_html)
+        ]
+        positive_stocks = [
+            float(value)
+            for value in re.findall(stock_pattern, positive_html)
+        ]
+        restored_stocks = [
+            float(value)
+            for value in re.findall(stock_pattern, restored_html)
+        ]
+
+        self.assertIn(0, all_stocks)
+        self.assertTrue(positive_stocks)
+        self.assertTrue(all(stock > 0 for stock in positive_stocks))
+        self.assertIn(0, restored_stocks)
+        self.assertIn(
+            'id="visiblePositionsCount" class="stat-value erp-stat-value">'
+            "2500</div>",
+            positive_html,
+        )
+        self.assertIn(
+            'id="totalStockCount" class="stat-value erp-stat-value">'
+            "2500</div>",
+            positive_html,
+        )
+        self.assertIn(
+            'id="visiblePositionsCount" class="stat-value erp-stat-value">'
+            "5000</div>",
+            restored_html,
+        )
+
+    def test_in_stock_combines_with_search_brand_category_and_date(self):
+        cases = (
+            "/warehouse?q=Product%20000&in_stock=1&per_page=100",
+            "/warehouse?brand=Casio&in_stock=1&per_page=100",
+            "/warehouse?category=Будильники&in_stock=1&per_page=100",
+            (
+                "/warehouse?brand=Casio&category=Будильники"
+                "&in_stock=1&per_page=100"
+            ),
+            (
+                "/warehouse?date_from=2026-07-29&date_to=2026-07-29"
+                "&in_stock=1&per_page=100"
+            ),
+        )
+        stock_pattern = (
+            r'<tr\s+data-product-id="[^"]+"\s+'
+            r'data-stock="([^"]+)"'
+        )
+        for path in cases:
+            with self.subTest(path=path):
+                html = self.client.get(path).get_data(as_text=True)
+                stocks = [
+                    float(value)
+                    for value in re.findall(stock_pattern, html)
+                ]
+                self.assertTrue(stocks)
+                self.assertTrue(all(stock > 0 for stock in stocks))
+                self.assertRegex(
+                    html,
+                    r'id="warehouseInStockToggle"[^>]*\schecked',
+                )
+
+    def test_in_stock_keeps_sort_pagination_and_page_size_state(self):
+        html = self.client.get(
+            "/warehouse?in_stock=1&sort_by=stock&sort_dir=desc"
+            "&page=2&per_page=100"
+        ).get_data(as_text=True)
+        stocks = [
+            float(value)
+            for value in re.findall(
+                r'<tr\s+data-product-id="[^"]+"\s+'
+                r'data-stock="([^"]+)"',
+                html,
+            )
+        ]
+
+        self.assertEqual(len(stocks), 100)
+        self.assertTrue(all(stock > 0 for stock in stocks))
+        self.assertIn(
+            'id="warehouseResultStart">101</span>–<span '
+            'id="warehouseResultEnd">200</span>',
+            html,
+        )
+        self.assertIn("in_stock=1", html)
+        self.assertIn("sort_by=stock", html)
+        self.assertIn("sort_dir=desc", html)
+        self.assertIn("per_page=100", html)
+        self.assertIn(
+            '<option value="100" selected>100</option>',
+            html,
+        )
+        self.assertIn('aria-checked="true"', html)
+        self.assertIn("↓", html)
+
+    def test_in_stock_markup_keeps_toggle_and_sort_handlers_separate(self):
+        html = self.client.get(
+            "/warehouse?brand=1&category=Будильники&q=Product"
+            "&date_from=2026-07-29&date_to=2026-07-29"
+            "&sort_by=stock&sort_dir=desc&page=2&per_page=100"
+        ).get_data(as_text=True)
+        template = (
+            Path(web.app.root_path)
+            / web.app.template_folder
+            / "warehouse.html"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('name="brand" value="1"', html)
+        self.assertIn('id="warehouseInStockToggle"', html)
+        self.assertIn('aria-checked="false"', html)
+        self.assertIn('data-sort-field="stock"', template)
+        self.assertIn(
+            'onclick="sortWarehouseTable(this.dataset.sortField)"',
+            template,
+        )
+        self.assertIn(
+            'onchange="toggleWarehouseInStock(event, this)"',
+            template,
+        )
+        self.assertIn('onclick="event.stopPropagation()"', template)
+        self.assertIn(
+            'url.searchParams.set("in_stock", "1");',
+            template,
+        )
+        self.assertIn(
+            'url.searchParams.delete("in_stock");',
+            template,
+        )
+        self.assertIn(
+            'url.searchParams.delete("page");',
+            template,
+        )
+        toggle_handler = template.split(
+            "function toggleWarehouseInStock", 1
+        )[1].split("document.addEventListener", 1)[0]
+        self.assertNotIn('searchParams.set("brand"', toggle_handler)
+        self.assertNotIn('searchParams.delete("brand"', toggle_handler)
+        sort_handler = template.split(
+            "function sortWarehouseTable", 1
+        )[1].split("initializeWarehouseTableView", 1)[0]
+        self.assertNotIn('searchParams.set("in_stock"', sort_handler)
+        self.assertNotIn('searchParams.delete("in_stock"', sort_handler)
 
     def test_query_count_is_constant_and_response_is_bounded(self):
         catalog = ExcelProductCatalog(self.database)

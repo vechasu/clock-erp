@@ -123,8 +123,8 @@ class WarehouseFilterBadgeTest(unittest.TestCase):
         excluded_only = (
             "?q=часы",
             "?sort_by=stock&sort_dir=desc",
-            "?hide_zero=1",
-            "?q=часы&sort_by=stock&sort_dir=desc&hide_zero=1",
+            "?in_stock=1",
+            "?q=часы&sort_by=stock&sort_dir=desc&in_stock=1",
         )
 
         for query in excluded_only:
@@ -138,7 +138,7 @@ class WarehouseFilterBadgeTest(unittest.TestCase):
 
         markup = self.render(
             "?brand=Casio&q=часы&sort_by=stock"
-            "&sort_dir=desc&hide_zero=1"
+            "&sort_dir=desc&in_stock=1"
         )
         self.assertEqual(self.badge_text(markup), "1")
 
@@ -146,7 +146,7 @@ class WarehouseFilterBadgeTest(unittest.TestCase):
         markup = self.render(
             "?q=часы&brand=Casio&category=Будильники&cell=A-01"
             "&date_from=2026-07-01&date_to=2026-07-29"
-            "&sort_by=stock&sort_dir=desc&per_page=100&hide_zero=1"
+            "&sort_by=stock&sort_dir=desc&per_page=100&in_stock=1"
         )
         link_match = re.search(
             r'class="category-link"\s+href="([^"]+)"',
@@ -161,7 +161,7 @@ class WarehouseFilterBadgeTest(unittest.TestCase):
         self.assertEqual(reset_params["sort_by"], ["stock"])
         self.assertEqual(reset_params["sort_dir"], ["desc"])
         self.assertEqual(reset_params["per_page"], ["100"])
-        self.assertEqual(reset_params["hide_zero"], ["1"])
+        self.assertEqual(reset_params["in_stock"], ["1"])
         for name in ("brand", "category", "cell", "date_from", "date_to"):
             self.assertNotIn(name, reset_params)
 
@@ -178,7 +178,7 @@ class WarehouseFilterBadgeTest(unittest.TestCase):
         reset_script = reset_function.group(1)
         for name in ("brand", "category", "cell", "date_from", "date_to"):
             self.assertIn(f'"{name}"', reset_script)
-        for name in ("q", "sort_by", "sort_dir", "per_page", "hide_zero"):
+        for name in ("q", "sort_by", "sort_dir", "per_page", "in_stock"):
             self.assertNotIn(f'"{name}"', reset_script)
 
     def test_badge_caps_values_above_nine(self):
@@ -212,7 +212,7 @@ class WarehouseFilterBadgeTest(unittest.TestCase):
             "?brand=Casio&category=Будильники&cell=A-01"
             "&date_from=2026-07-01&date_to=2026-07-29"
             "&q=часы&sort_by=stock&sort_dir=desc"
-            "&page=2&per_page=100&hide_zero=1"
+            "&page=2&per_page=100&in_stock=1"
         )
 
         first_markup = self.render(query)
