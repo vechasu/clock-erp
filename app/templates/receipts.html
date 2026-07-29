@@ -75,7 +75,7 @@
         .stats {
             display: grid;
             grid-template-columns:
-                repeat(3, minmax(0, 1fr))
+                repeat(2, minmax(0, 1fr))
                 minmax(210px, 0.9fr);
             gap: 8px;
             margin-bottom: 8px;
@@ -243,10 +243,6 @@
         .col-qty {
             width: 95px;
             text-align: center !important;
-        }
-
-        .col-amount {
-            width: 125px;
         }
 
         .col-status {
@@ -606,77 +602,6 @@
                 grid-column: 1 / -1;
             }
         }
-
-
-
-        /* RECEIPT PRODUCT COMBOBOX CSS V1 */
-        .receipt-product-combobox {
-            position: relative;
-        }
-
-        .receipt-product-suggestions {
-            position: absolute;
-            z-index: 50;
-            top: calc(100% + 6px);
-            left: 0;
-            right: 0;
-            display: none;
-            max-height: 300px;
-            overflow-y: auto;
-            background: #ffffff;
-            border: 1px solid #cbd5e1;
-            border-radius: 12px;
-            box-shadow:
-                0 14px 35px rgba(15, 23, 42, 0.18);
-        }
-
-        .receipt-product-suggestions.is-open {
-            display: block;
-        }
-
-        .receipt-product-suggestion {
-            width: 100%;
-            padding: 11px 13px;
-            border: 0;
-            border-bottom: 1px solid #eef2f7;
-            background: #ffffff;
-            text-align: left;
-            cursor: pointer;
-        }
-
-        .receipt-product-suggestion:last-child {
-            border-bottom: 0;
-        }
-
-        .receipt-product-suggestion:hover,
-        .receipt-product-suggestion.is-active {
-            background: #eff6ff;
-        }
-
-        .receipt-new-product-suggestion {
-            position: sticky;
-            top: 0;
-            z-index: 2;
-            color: #1d4ed8;
-            background: #eff6ff;
-            font-weight: 700;
-        }
-
-        .receipt-product-suggestion-name {
-            color: #172033;
-            font-size: 14px;
-            font-weight: 700;
-        }
-
-        .receipt-product-suggestion-meta {
-            margin-top: 3px;
-            color: #64748b;
-            font-size: 12px;
-            line-height: 1.35;
-        }
-        /* RECEIPT PRODUCT COMBOBOX CSS V1 END */
-
-
         /* RECEIPT CREATE NEXT CSS V2 */
         .button-next-receipt {
             min-height: 42px;
@@ -920,11 +845,6 @@
             width: 7%;
         }
 
-        .receipts-table th.col-amount,
-        .receipts-table td.col-amount {
-            width: 10%;
-        }
-
         .receipts-table th.col-status,
         .receipts-table td.col-status {
             width: 8%;
@@ -1043,72 +963,6 @@
             max-width: none;
         }
 
-        .receipt-date-group {
-            display: flex;
-            flex: 1 1 auto;
-            align-items: center;
-            gap: 7px;
-        }
-
-        .receipt-date-field {
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-        }
-
-        .receipt-date-field span {
-            padding-left: 2px;
-            color: #64748b;
-            font-size: 10px;
-            font-weight: 800;
-        }
-
-        .receipt-date-input {
-            width: 137px;
-            height: 40px;
-            padding: 0 9px;
-            border: 1px solid #cfd5dc;
-            border-radius: 10px;
-            background: #ffffff;
-            color: #172033;
-            font: inherit;
-            font-size: 12px;
-            outline: none;
-        }
-
-        .receipt-date-input:focus {
-            border-color: #2563eb;
-            box-shadow:
-                0 0 0 3px rgba(37, 99, 235, 0.1);
-        }
-
-        .receipt-date-divider {
-            align-self: center;
-            color: #94a3b8;
-            font-weight: 800;
-        }
-
-        .receipt-date-clear {
-            height: 40px;
-            padding: 0 12px;
-            border: 1px solid #cfd5dc;
-            border-radius: 10px;
-            background: #ffffff;
-            color: #475569;
-            font-size: 11px;
-            font-weight: 800;
-            cursor: pointer;
-        }
-
-        .receipt-date-clear:hover:not(:disabled) {
-            background: #f1f5f9;
-        }
-
-        .receipt-date-clear:disabled {
-            cursor: default;
-            opacity: 0.45;
-        }
-
         .receipt-sort-button {
             display: flex;
             align-items: center;
@@ -1145,10 +999,6 @@
 
             .receipt-filter-toolbar .search {
                 flex-basis: 100%;
-            }
-
-            .receipt-date-group {
-                width: 100%;
             }
         }
         /* RECEIPTS DATE FILTER SORT V1 END */
@@ -1493,14 +1343,53 @@
         }
         /* RECEIPTS EXCEL IMPORT UI V1 END */
 
+        .receipt-catalog-create-dialog {
+            width: min(430px, calc(100vw - 28px));
+        }
+
+        .receipt-catalog-create-error {
+            min-height: 20px;
+            margin-top: 8px;
+            color: #b91c1c;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .receipt-catalog-create-dialog .modal-actions {
+            margin-top: 12px;
+        }
+
+        .receipt-edit-control .brand-combobox-trigger {
+            min-height: 40px;
+            height: 40px;
+            border-radius: 10px;
+            font-size: 12px;
+            line-height: 38px;
+        }
+
+        .receipt-edit-control .brand-combobox-dropdown {
+            min-width: 260px;
+        }
+
     </style>
     <link
         rel="stylesheet"
         href="{{ url_for('static', filename='css/erp-components.css') }}"
     >
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='css/catalog-combobox.css') }}"
+    >
+    <script
+        src="{{ url_for('static', filename='js/catalog-combobox.js') }}"
+    ></script>
+    <script
+        src="{{ url_for('static', filename='js/period-picker.js') }}"
+    ></script>
 </head>
 
 <body class="receipts-page">
+{% from "_catalog_combobox.html" import render_catalog_combobox %}
 <div class="app">
     {% include "_sidebar.html" %}
 
@@ -1521,17 +1410,18 @@
         <section class="stats">
             <div class="stat-card">
                 <div class="stat-label">Документов прихода</div>
-                <div class="stat-value">{{ total_receipts }}</div>
+                <div
+                    class="stat-value"
+                    id="receiptStatDocuments"
+                >{{ total_receipts }}</div>
             </div>
 
             <div class="stat-card">
                 <div class="stat-label">Принято единиц</div>
-                <div class="stat-value">{{ total_quantity }}</div>
-            </div>
-
-            <div class="stat-card">
-                <div class="stat-label">Закупочная стоимость</div>
-                <div class="stat-value">{{ "%.2f"|format(total_amount) }} ₽</div>
+                <div
+                    class="stat-value"
+                    id="receiptStatQuantity"
+                >{{ total_quantity }}</div>
             </div>
 
             <button
@@ -1552,16 +1442,6 @@
                 oninput="filterReceipts()"
             >
 
-            <button
-                id="receiptMobileFilterTrigger"
-                class="mobile-erp-only receipt-mobile-filter-trigger"
-                type="button"
-                aria-controls="receiptDateGroup"
-                aria-expanded="false"
-            >
-                Период и отчёт
-            </button>
-
             <label
                 class="mobile-erp-only mobile-erp-sort receipt-mobile-sort"
                 for="receiptMobileSort"
@@ -1571,56 +1451,136 @@
                     <option value="product">По товару</option>
                     <option value="brand">По бренду</option>
                     <option value="quantity">По количеству</option>
-                    <option value="amount">По сумме</option>
                 </select>
             </label>
 
-            <div id="receiptDateGroup" class="receipt-date-group">
-                <label class="receipt-date-field">
+            <div class="sales-date-filter">
+                <div
+                    id="receiptDateFilter"
+                    class="warehouse-date-filter"
+                    aria-label="Фильтр приходов по дате"
+                >
                     <input
-                        class="receipt-date-input"
                         id="receiptDateFrom"
-                        type="date"
-                        aria-label="Дата с"
-                        onchange="filterReceipts()"
+                        data-period-from
+                        type="hidden"
+                        value="{{ receipt_date_from }}"
                     >
-                </label>
-
-                <span class="receipt-date-divider">
-                    —
-                </span>
-
-                <label class="receipt-date-field">
                     <input
-                        class="receipt-date-input"
                         id="receiptDateTo"
-                        type="date"
-                        aria-label="Дата по"
-                        onchange="filterReceipts()"
+                        data-period-to
+                        type="hidden"
+                        value="{{ receipt_date_to }}"
                     >
-                </label>
 
-                <button
-                    class="receipt-date-clear"
-                    id="receiptDateClear"
-                    type="button"
-                    onclick="clearReceiptDateFilter()"
-                    disabled
-                >
-                    Сбросить
-                </button>
+                    <div class="sales-period-control">
+                        <button
+                            class="warehouse-date-trigger erp-period-trigger erp-secondary-action sales-toolbar-action"
+                            type="button"
+                            aria-haspopup="dialog"
+                            aria-expanded="false"
+                        >
+                            <span class="sales-toolbar-action-content">
+                                <span
+                                    class="sales-toolbar-icon-slot"
+                                    aria-hidden="true"
+                                >
+                                    <svg
+                                        class="sales-control-icon"
+                                        viewBox="0 0 20 20"
+                                    >
+                                        <rect
+                                            x="3"
+                                            y="4.5"
+                                            width="14"
+                                            height="12.5"
+                                            rx="2"
+                                        ></rect>
+                                        <path
+                                            d="M6.5 2.75v3.5M13.5 2.75v3.5M3 8h14"
+                                        ></path>
+                                    </svg>
+                                </span>
+                                <span
+                                    class="sales-period-label"
+                                    data-date-range-label
+                                >Период</span>
+                            </span>
+                        </button>
+                        <button
+                            id="clearReceiptPeriod"
+                            class="erp-clear-control sales-period-clear"
+                            type="button"
+                            aria-label="Сбросить период"
+                            title="Сбросить период"
+                            hidden
+                        >×</button>
+                    </div>
 
-                <!-- RECEIPTS REPORT BUTTON V1 -->
-                <button
-                    class="receipt-report-button"
-                    type="button"
-                    onclick="openReceiptsReport()"
-                >
-                    &#1057;&#1092;&#1086;&#1088;&#1084;&#1080;&#1088;&#1086;&#1074;&#1072;&#1090;&#1100; &#1086;&#1090;&#1095;&#1105;&#1090;
-                </button>
-                <!-- RECEIPTS REPORT BUTTON V1 END -->
-
+                    <div
+                        class="warehouse-calendar-popup"
+                        role="dialog"
+                        aria-label="Выбор периода"
+                        hidden
+                    >
+                        <div class="warehouse-calendar-header">
+                            <button
+                                class="warehouse-calendar-nav"
+                                type="button"
+                                data-calendar-prev
+                                aria-label="Предыдущий месяц"
+                            >‹</button>
+                            <div
+                                class="warehouse-calendar-month"
+                                data-calendar-month
+                            ></div>
+                            <button
+                                class="warehouse-calendar-nav"
+                                type="button"
+                                data-calendar-next
+                                aria-label="Следующий месяц"
+                            >›</button>
+                        </div>
+                        <div class="warehouse-calendar-weekdays">
+                            <span>Пн</span>
+                            <span>Вт</span>
+                            <span>Ср</span>
+                            <span>Чт</span>
+                            <span>Пт</span>
+                            <span>Сб</span>
+                            <span>Вс</span>
+                        </div>
+                        <div
+                            class="warehouse-calendar-days"
+                            data-calendar-days
+                        ></div>
+                        <div class="warehouse-calendar-actions">
+                            <button
+                                class="warehouse-calendar-reset"
+                                type="button"
+                                data-calendar-reset
+                            >
+                                Сбросить
+                            </button>
+                            <button
+                                class="warehouse-calendar-apply"
+                                type="button"
+                                data-calendar-apply
+                            >
+                                Применить
+                            </button>
+                        </div>
+                    </div>
+                </div>
             </div>
+
+            <button
+                class="receipt-report-button"
+                type="button"
+                onclick="openReceiptsReport()"
+            >
+                Сформировать отчёт
+            </button>
         </div>
 
         <section class="table-card">
@@ -1725,22 +1685,6 @@
                                     </button>
                                 </th>
 
-                                <th class="col-amount">
-                                    <button
-                                        class="receipt-sort-button"
-                                        type="button"
-                                        onclick="sortReceipts('amount')"
-                                    >
-                                        Сумма
-
-                                        <span
-                                            data-receipt-sort="amount"
-                                        >
-                                            ↕
-                                        </span>
-                                    </button>
-                                </th>
-
                                 <th class="col-status">
                                     <button
                                         class="receipt-sort-button"
@@ -1768,10 +1712,12 @@
                                 {% set edit_form_id = "edit-receipt-" ~ receipt.id %}
                                 {% set receipt_position = receipt.positions[0] if receipt.positions else none %}
                                 {% set receipt_quantity = receipt.quantity if receipt.quantity is defined and receipt.quantity is not none else receipt.total_quantity %}
-                                {% set receipt_price = receipt.purchase_price if receipt.purchase_price is defined and receipt.purchase_price is not none else (receipt_position.purchase_price if receipt_position else 0) %}
+                                {% set receipt_product_id = receipt.product_id or (receipt_position.product_id if receipt_position else "") %}
+                                {% set receipt_product_name = receipt.product_name or (receipt_position.product_name if receipt_position else "") %}
 
                                 <tr
                                     class="receipt-row"
+                                    data-receipt-catalog-context
                                     data-search="{{ (
                                         (receipt.number or '') ~ ' ' ~
                                         (receipt.brand or receipt.supplier or '') ~ ' ' ~
@@ -1783,9 +1729,9 @@
                                     data-document="{{ receipt.number or '' }}"
                                     data-brand="{{ receipt.brand or receipt.supplier or '' }}"
                                     data-category="{{ receipt.category or receipt.invoice_number or '' }}"
-                                    data-product="{{ receipt.product_name or (receipt_position.product_name if receipt_position else '') }}"
+                                    data-product="{{ receipt_product_name }}"
+                                    data-product-id="{{ receipt_product_id }}"
                                     data-quantity="{{ receipt.total_quantity or 0 }}"
-                                    data-amount="{{ receipt.total_amount or 0 }}"
                                     data-status="{{ receipt.status_label or 'Проведён' }}"
                                 >
                                     <td class="col-date">
@@ -1837,14 +1783,25 @@
                                             {{ receipt.brand or receipt.supplier or "—" }}
                                         </span>
 
-                                        <input
-                                            class="receipt-table-control receipt-edit-control"
-                                            type="text"
-                                            name="brand"
-                                            value="{{ receipt.brand or receipt.supplier or '' }}"
-                                            form="{{ edit_form_id }}"
-                                            required
+                                        <div
+                                            class="receipt-edit-control"
+                                            data-receipt-catalog-field="brand"
                                         >
+                                            {{ render_catalog_combobox(
+                                                "receiptEditBrand" ~ loop.index,
+                                                "brand",
+                                                receipt_brand_options,
+                                                receipt.brand or receipt.supplier or "",
+                                                item_label="бренд",
+                                                prefix_search=false,
+                                                empty_label="Бренды не найдены",
+                                                component_class="filter-combobox",
+                                                clear_selection_on_search_clear=true,
+                                                form_id=edit_form_id,
+                                                action_kind="brand",
+                                                action_label="Добавить новый бренд"
+                                            ) }}
+                                        </div>
                                     </td>
 
                                     <td class="col-category">
@@ -1852,29 +1809,53 @@
                                             {{ receipt.category or receipt.invoice_number or "—" }}
                                         </span>
 
-                                        <input
-                                            class="receipt-table-control receipt-edit-control"
-                                            type="text"
-                                            name="category"
-                                            value="{{ receipt.category or receipt.invoice_number or '' }}"
-                                            form="{{ edit_form_id }}"
-                                            required
+                                        <div
+                                            class="receipt-edit-control"
+                                            data-receipt-catalog-field="category"
                                         >
+                                            {{ render_catalog_combobox(
+                                                "receiptEditCategory" ~ loop.index,
+                                                "category",
+                                                [],
+                                                receipt.category or receipt.invoice_number or "",
+                                                item_label="категорию",
+                                                prefix_search=false,
+                                                empty_label="Категории не найдены",
+                                                component_class="filter-combobox",
+                                                clear_selection_on_search_clear=true,
+                                                form_id=edit_form_id,
+                                                action_kind="category",
+                                                action_label="Добавить новую категорию"
+                                            ) }}
+                                        </div>
                                     </td>
 
                                     <td class="col-products">
                                         <!-- RECEIPT PRODUCT NAME ONLY V1 -->
                                         <div class="receipt-view-value receipt-product-name-only">
-                                            {{ receipt.product_name or (receipt_position.product_name if receipt_position else "—") }}
+                                            {{ receipt_product_name or "—" }}
+                                        </div>
+
+                                        <div
+                                            class="receipt-edit-control"
+                                            data-receipt-catalog-field="product"
+                                        >
+                                            {{ render_catalog_combobox(
+                                                "receiptEditProduct" ~ loop.index,
+                                                "product_id",
+                                                [],
+                                                receipt_product_id,
+                                                item_label="товар",
+                                                prefix_search=false,
+                                                empty_label="Товары не найдены",
+                                                component_class="filter-combobox",
+                                                clear_selection_on_search_clear=true,
+                                                form_id=edit_form_id,
+                                                action_kind="product",
+                                                action_label="Добавить новый товар"
+                                            ) }}
                                         </div>
                                         <!-- RECEIPT PRODUCT NAME ONLY V1 END -->
-
-                                        <div class="receipt-edit-control receipt-fixed-product">
-                                            {{ receipt.product_name or (receipt_position.product_name if receipt_position else "Товар") }}
-                                            <small>
-                                                Товар в проведённом приходе не меняется
-                                            </small>
-                                        </div>
                                     </td>
 
                                     <td class="col-qty">
@@ -1893,31 +1874,6 @@
                                             form="{{ edit_form_id }}"
                                             required
                                         >
-                                    </td>
-
-                                    <td class="col-amount">
-                                        <span class="receipt-view-value">
-                                            {{ "%.2f"|format(receipt.total_amount) }} ₽
-                                        </span>
-
-                                        <div class="receipt-edit-control receipt-price-editor">
-                                            <input
-                                                class="receipt-table-control receipt-number-input"
-                                                type="number"
-                                                inputmode="decimal"
-                                                name="purchase_price"
-                                                value="{{ receipt_price }}"
-                                                min="0"
-                                                step="0.01"
-                                                placeholder="Цена"
-                                                form="{{ edit_form_id }}"
-                                                required
-                                            >
-
-                                            <small>
-                                                Цена за единицу
-                                            </small>
-                                        </div>
                                     </td>
 
                                     <td class="col-status">
@@ -2154,7 +2110,10 @@
                 <!-- RECEIPTS EXCEL IMPORT TOOLBAR V1 END -->
 
                 <!-- SIMPLE RECEIPT FORM V1 -->
-                <div class="form-grid receipt-simple-grid">
+                <div
+                    class="form-grid receipt-simple-grid"
+                    data-receipt-catalog-context
+                >
                     <div class="field">
                         <label for="receipt_date">
                             Дата *
@@ -2170,88 +2129,78 @@
                         >
                     </div>
 
-                    <div class="field">
-                        <label for="receipt_brand">
+                    <div
+                        class="field"
+                        data-receipt-catalog-field="brand"
+                    >
+                        <label for="receiptBrandTrigger">
                             Бренд *
                         </label>
 
-                        <input
-                            class="control"
-                            id="receipt_brand"
-                            name="brand"
-                            type="text"
-                            list="receiptBrandOptions"
-                            placeholder="Бренд товара"
-                            autocomplete="off"
-                            required
-                        >
-
-                        <datalist id="receiptBrandOptions">
-                            {% for brand in receipt_brands %}
-                                <option value="{{ brand }}"></option>
-                            {% endfor %}
-                        </datalist>
+                        {{ render_catalog_combobox(
+                            "receiptBrand",
+                            "brand",
+                            receipt_brand_options,
+                            item_label="бренд",
+                            prefix_search=false,
+                            empty_label="Бренды не найдены",
+                            component_class="filter-combobox",
+                            clear_selection_on_search_clear=true,
+                            action_kind="brand",
+                            action_label="Добавить новый бренд"
+                        ) }}
                     </div>
 
-                    <div class="field">
-                        <label for="receipt_category">
+                    <div
+                        class="field"
+                        data-receipt-catalog-field="category"
+                    >
+                        <label for="receiptCategoryTrigger">
                             Категория *
                         </label>
 
-                        <input
-                            class="control"
-                            id="receipt_category"
-                            name="category"
-                            type="text"
-                            list="receiptCategoryOptions"
-                            placeholder="Категория товара"
-                            autocomplete="off"
-                            required
-                        >
-
-                        <datalist id="receiptCategoryOptions">
-                            {% for category in receipt_categories %}
-                                <option value="{{ category }}"></option>
-                            {% endfor %}
-                        </datalist>
+                        {{ render_catalog_combobox(
+                            "receiptCategory",
+                            "category",
+                            [],
+                            item_label="категорию",
+                            disabled=true,
+                            prefix_search=false,
+                            empty_label="Категории не найдены",
+                            component_class="filter-combobox",
+                            clear_selection_on_search_clear=true,
+                            action_kind="category",
+                            action_label="Добавить новую категорию"
+                        ) }}
                     </div>
 
-                    <!-- RECEIPT PRODUCT COMBOBOX V1 -->
                     <div
-                        class="field receipt-product-field receipt-product-combobox"
+                        class="field receipt-product-field"
+                        data-receipt-catalog-field="product"
                     >
-                        <label for="receipt_product_search">
+                        <label for="receiptProductTrigger">
                             Товар *
                         </label>
 
+                        {{ render_catalog_combobox(
+                            "receiptProduct",
+                            "product_id",
+                            [],
+                            item_label="товар",
+                            disabled=true,
+                            prefix_search=false,
+                            empty_label="Товары не найдены",
+                            component_class="filter-combobox",
+                            clear_selection_on_search_clear=true,
+                            action_kind="product",
+                            action_label="Добавить новый товар"
+                        ) }}
                         <input
-                            class="control"
-                            id="receipt_product_search"
-                            type="text"
-                            placeholder="Введите название, артикул или код"
-                            autocomplete="off"
-                            required
-                        >
-
-                        <input
-                            id="receipt_product_id"
-                            name="product_id"
-                            type="hidden"
-                            value="__new__"
-                        >
-
-                        <input
-                            id="receipt_new_product_name"
-                            name="new_product_name"
+                            id="receipt_catalog_product_id"
+                            name="catalog_product_id"
                             type="hidden"
                         >
-
-                        <div
-                            id="receiptProductSuggestions"
-                            class="receipt-product-suggestions"
-                        ></div>
                     </div>
-                    <!-- RECEIPT PRODUCT COMBOBOX V1 END -->
 
                     <div class="field">
                         <label for="receipt_quantity">
@@ -2267,24 +2216,6 @@
                             min="1"
                             step="1"
                             value="1"
-                            required
-                        >
-                    </div>
-
-                    <div class="field">
-                        <label for="receipt_purchase_price">
-                            Закупочная цена, ₽ *
-                        </label>
-
-                        <input
-                            class="control"
-                            id="receipt_purchase_price"
-                            name="purchase_price"
-                            type="number"
-                            inputmode="decimal"
-                            min="0"
-                            step="0.01"
-                            placeholder="Например, 5000"
                             required
                         >
                     </div>
@@ -2488,8 +2419,6 @@
                             <th>Артикул</th>
                             <th>Бренд / категория</th>
                             <th>Количество</th>
-                            <th>Цена</th>
-                            <th>Сумма</th>
                             <th>Проверка</th>
                         </tr>
                     </thead>
@@ -2530,6 +2459,67 @@
     </div>
 </div>
 <!-- RECEIPTS EXCEL IMPORT MODAL V1 END -->
+
+<div
+    class="modal"
+    id="receiptCatalogCreateModal"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="receiptCatalogCreateTitle"
+>
+    <div class="modal-dialog receipt-catalog-create-dialog">
+        <div class="modal-header">
+            <div>
+                <h2 id="receiptCatalogCreateTitle">
+                    Новое значение
+                </h2>
+                <p id="receiptCatalogCreateDescription"></p>
+            </div>
+            <button
+                class="modal-close"
+                id="receiptCatalogCreateClose"
+                type="button"
+                aria-label="Закрыть"
+            >×</button>
+        </div>
+        <form id="receiptCatalogCreateForm" class="modal-body">
+            <div class="field">
+                <label for="receiptCatalogCreateName">
+                    Название *
+                </label>
+                <input
+                    class="control"
+                    id="receiptCatalogCreateName"
+                    type="text"
+                    maxlength="255"
+                    autocomplete="off"
+                    required
+                >
+            </div>
+            <div
+                class="receipt-catalog-create-error"
+                id="receiptCatalogCreateError"
+                role="alert"
+            ></div>
+            <div class="modal-actions">
+                <button
+                    class="button button-secondary"
+                    id="receiptCatalogCreateCancel"
+                    type="button"
+                >
+                    Отмена
+                </button>
+                <button
+                    class="button button-primary"
+                    id="receiptCatalogCreateSubmit"
+                    type="submit"
+                >
+                    Сохранить
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
 
 
 
@@ -2588,35 +2578,17 @@
 
     const receiptProducts =
         {{ warehouse_items | tojson }};
-
-    const receiptProductSearch =
-        document.getElementById(
-            "receipt_product_search"
-        );
-
-    const receiptProductId =
-        document.getElementById(
-            "receipt_product_id"
-        );
-
-    const receiptNewProductName =
-        document.getElementById(
-            "receipt_new_product_name"
-        );
-
-    const receiptProductSuggestions =
-        document.getElementById(
-            "receiptProductSuggestions"
-        );
+    const receiptCatalogCategories =
+        {{ receipt_catalog_categories | tojson }};
 
     const receiptBrand =
         document.getElementById(
-            "receipt_brand"
+            "receiptBrand"
         );
 
     const receiptCategory =
         document.getElementById(
-            "receipt_category"
+            "receiptCategory"
         );
 
     const receiptProductImage =
@@ -2644,7 +2616,6 @@
         );
 
     let receiptSelectedProduct = null;
-    let receiptActiveSuggestionIndex = -1;
     let receiptImageObjectUrl = "";
 
     function clearReceiptImage() {
@@ -2975,26 +2946,17 @@
 
     function getReceiptImportManualFields() {
         return [
-            document.getElementById(
-                "receipt_brand"
+            receiptBrand?.querySelector(
+                ".brand-combobox-hidden"
             ),
-            document.getElementById(
-                "receipt_category"
+            receiptCategory?.querySelector(
+                ".brand-combobox-hidden"
             ),
-            document.getElementById(
-                "receipt_product_search"
-            ),
-            document.getElementById(
-                "receipt_product_id"
-            ),
-            document.getElementById(
-                "receipt_new_product_name"
+            document.querySelector(
+                "#receiptProduct .brand-combobox-hidden"
             ),
             document.getElementById(
                 "receipt_quantity"
-            ),
-            document.getElementById(
-                "receipt_purchase_price"
             ),
             document.getElementById(
                 "receipt_product_image"
@@ -3133,12 +3095,6 @@
                 "Ошибок",
                 receiptImportSummary.errors,
             ],
-            [
-                "Сумма",
-                formatReceiptImportNumber(
-                    receiptImportSummary.total_amount
-                ) + " ₽",
-            ],
         ];
 
         receiptImportStats.innerHTML =
@@ -3271,16 +3227,6 @@
                             row.quantity
                         )
                         + "</td>"
-                        + "<td>"
-                        + formatReceiptImportNumber(
-                            row.purchase_price
-                        )
-                        + " ₽</td>"
-                        + "<td>"
-                        + formatReceiptImportNumber(
-                            row.line_total
-                        )
-                        + " ₽</td>"
                         + '<td><div class="receipt-import-warning">'
                         + escapeReceiptImportHtml(
                             messages || "Готово"
@@ -3486,17 +3432,6 @@
                 0
             );
 
-        const totalAmount =
-            selectedRows.reduce(
-                (total, row) => {
-                    return (
-                        total
-                        + Number(row.line_total || 0)
-                    );
-                },
-                0
-            );
-
         receiptImportPayload.value =
             JSON.stringify(selectedRows);
 
@@ -3510,12 +3445,7 @@
             "Количество: "
             + formatReceiptImportNumber(
                 totalQuantity
-            )
-            + " · Сумма: "
-            + formatReceiptImportNumber(
-                totalAmount
-            )
-            + " ₽";
+            );
 
         receiptImportSelected.classList.add(
             "is-visible"
@@ -3625,405 +3555,559 @@
     }
     // RECEIPT CREATE NEXT SCRIPT V2 END
 
-    // RECEIPT PRODUCT SEARCH SCRIPT V1
-    function normalizeReceiptProduct(value) {
+    function normalizeReceiptCatalogValue(value) {
         return String(value || "")
-            .toLowerCase()
-            .replaceAll("ё", "е")
-            .trim();
+            .trim()
+            .toLocaleLowerCase("ru")
+            .replaceAll("ё", "е");
     }
 
-    function getReceiptProductSearchText(product) {
-        return normalizeReceiptProduct([
-            product.name,
-            product.article,
-            product.code,
-            product.brand,
-            product.category,
-        ].join(" "));
+    function receiptCatalogCombobox(context, field) {
+        return context
+            ?.querySelector(
+                '[data-receipt-catalog-field="'
+                + field
+                + '"] [data-brand-combobox]'
+            ) || null;
     }
 
-    function closeReceiptProductSuggestions() {
-        if (!receiptProductSuggestions) {
-            return;
-        }
-
-        receiptProductSuggestions.classList.remove(
-            "is-open"
-        );
-
-        receiptActiveSuggestionIndex = -1;
+    function receiptCatalogInput(context, field) {
+        return receiptCatalogCombobox(context, field)
+            ?.querySelector(".brand-combobox-hidden")
+            || null;
     }
 
-    function setReceiptNewProductMode(
-        productName,
-        clearClassification = false
-    ) {
-        receiptSelectedProduct = null;
+    function receiptCatalogOptions(values) {
+        const options = new Map();
 
-        receiptProductId.value = "__new__";
-        receiptNewProductName.value =
-            String(productName || "").trim();
+        (values || []).forEach((item) => {
+            const value = String(
+                typeof item === "string"
+                    ? item
+                    : item.value
+            ).trim();
+            const key = normalizeReceiptCatalogValue(value);
 
-        if (clearClassification) {
-            receiptBrand.value = "";
-            receiptCategory.value = "";
-        }
-
-        updateReceiptImageAvailability(null);
-    }
-
-    function selectReceiptExistingProduct(product) {
-        receiptSelectedProduct = product;
-
-        receiptProductSearch.value =
-            product.name || "";
-
-        receiptProductId.value =
-            product.id || "";
-
-        receiptNewProductName.value = "";
-
-        receiptBrand.value =
-            product.brand || "";
-
-        receiptCategory.value =
-            product.category || "";
-
-        updateReceiptImageAvailability(product);
-
-        closeReceiptProductSuggestions();
-    }
-
-    function getReceiptFilteredProducts(query) {
-        const normalizedQuery =
-            normalizeReceiptProduct(query);
-
-        return receiptProducts
-            .filter((product) => {
-                if (!normalizedQuery) {
-                    return true;
-                }
-
-                return getReceiptProductSearchText(
-                    product
-                ).includes(normalizedQuery);
-            })
-            .slice(0, 50);
-    }
-
-    function updateReceiptActiveSuggestion() {
-        const buttons = Array.from(
-            receiptProductSuggestions
-                .querySelectorAll(
-                    ".receipt-product-suggestion"
-                )
-        );
-
-        buttons.forEach((button, index) => {
-            button.classList.toggle(
-                "is-active",
-                index === receiptActiveSuggestionIndex
-            );
+            if (value && !options.has(key)) {
+                options.set(key, {
+                    value,
+                    label: (
+                        typeof item === "string"
+                            ? item
+                            : item.label || value
+                    ),
+                    searchText: (
+                        typeof item === "string"
+                            ? item
+                            : item.searchText || item.label || value
+                    ),
+                    meta: (
+                        typeof item === "string"
+                            ? ""
+                            : item.meta || ""
+                    ),
+                    count: (
+                        typeof item === "string"
+                            ? ""
+                            : item.count ?? ""
+                    ),
+                });
+            }
         });
 
-        const activeButton =
-            buttons[receiptActiveSuggestionIndex];
+        return Array.from(options.values()).sort(
+            (first, second) => first.label.localeCompare(
+                second.label,
+                "ru",
+                {numeric: true, sensitivity: "base"}
+            )
+        );
+    }
 
-        if (activeButton) {
-            activeButton.scrollIntoView({
-                block: "nearest",
+    function receiptCategoriesForBrand(brand) {
+        const brandKey =
+            normalizeReceiptCatalogValue(brand);
+        const values = [];
+
+        receiptProducts.forEach((product) => {
+            if (
+                normalizeReceiptCatalogValue(product.brand)
+                === brandKey
+            ) {
+                values.push(product.category);
+            }
+        });
+        receiptCatalogCategories.forEach((item) => {
+            if (
+                normalizeReceiptCatalogValue(item.brand)
+                === brandKey
+            ) {
+                values.push(item.name);
+            }
+        });
+
+        return receiptCatalogOptions(values);
+    }
+
+    function receiptProductsForSelection(brand, category) {
+        const brandKey =
+            normalizeReceiptCatalogValue(brand);
+        const categoryKey =
+            normalizeReceiptCatalogValue(category);
+
+        return receiptProducts.filter((product) => {
+            return (
+                normalizeReceiptCatalogValue(product.brand)
+                    === brandKey
+                && normalizeReceiptCatalogValue(product.category)
+                    === categoryKey
+            );
+        });
+    }
+
+    function refreshReceiptCategoryCombobox(
+        context,
+        selectedCategory = ""
+    ) {
+        const brandInput =
+            receiptCatalogInput(context, "brand");
+        const categoryCombobox =
+            receiptCatalogCombobox(context, "category");
+        const brand = brandInput?.value || "";
+        const options = receiptCategoriesForBrand(brand);
+
+        if (
+            selectedCategory
+            && !options.some((option) => {
+                return (
+                    normalizeReceiptCatalogValue(option.value)
+                    === normalizeReceiptCatalogValue(selectedCategory)
+                );
+            })
+        ) {
+            options.push({
+                value: selectedCategory,
+                label: selectedCategory,
+                searchText: selectedCategory,
+                count: "",
             });
         }
+
+        window.replaceCatalogComboboxOptions(
+            categoryCombobox,
+            receiptCatalogOptions(options),
+            "Категории не найдены"
+        );
+        window.setCatalogComboboxDisabled(
+            categoryCombobox,
+            !brand,
+            brand
+                ? "Выберите категорию"
+                : "Сначала выберите бренд"
+        );
+        window.setBrandComboboxValue(
+            categoryCombobox,
+            brand ? selectedCategory : ""
+        );
     }
 
-    function renderReceiptProductSuggestions() {
+    function refreshReceiptProductCombobox(
+        context,
+        selectedProductId = ""
+    ) {
+        const brand =
+            receiptCatalogInput(context, "brand")?.value || "";
+        const category =
+            receiptCatalogInput(context, "category")?.value || "";
+        const productCombobox =
+            receiptCatalogCombobox(context, "product");
+        const selectedProductName =
+            context.dataset.product || "";
+        const products = receiptProductsForSelection(
+            brand,
+            category
+        );
+        const options = products.map((product) => ({
+            value: String(product.id || ""),
+            label: product.name || "Товар без названия",
+            searchText: [
+                product.name,
+                product.article,
+                product.code,
+            ].filter(Boolean).join(" "),
+            meta: [
+                product.article
+                    ? "Артикул: " + product.article
+                    : "",
+                product.code
+                    ? "Код: " + product.code
+                    : "",
+            ].filter(Boolean).join(" · "),
+            count: "",
+        }));
+
         if (
-            !receiptProductSearch
-            || !receiptProductSuggestions
+            selectedProductId
+            && !options.some((option) => {
+                return (
+                    String(option.value)
+                    === String(selectedProductId)
+                );
+            })
         ) {
-            return;
+            options.push({
+                value: selectedProductId,
+                label: selectedProductName || "Сохранённый товар",
+                searchText: selectedProductName,
+                meta: "Сохранённая позиция прихода",
+                count: "",
+            });
         }
 
-        const query =
-            receiptProductSearch.value.trim();
-
-        const products =
-            getReceiptFilteredProducts(query);
-
-        receiptProductSuggestions.innerHTML = "";
-        receiptActiveSuggestionIndex = 0;
-
-        const newProductButton =
-            document.createElement("button");
-
-        newProductButton.type = "button";
-        newProductButton.className =
-            "receipt-product-suggestion "
-            + "receipt-new-product-suggestion "
-            + "is-active";
-
-        newProductButton.textContent = query
-            ? `＋ Создать новый товар «${query}»`
-            : "＋ Новый товар";
-
-        newProductButton.addEventListener(
-            "mousedown",
-            (event) => {
-                event.preventDefault();
-
-                setReceiptNewProductMode(
-                    query,
-                    true
-                );
-
-                closeReceiptProductSuggestions();
-                receiptProductSearch.focus();
-            }
+        window.replaceCatalogComboboxOptions(
+            productCombobox,
+            receiptCatalogOptions(options),
+            "Товары не найдены"
+        );
+        window.setCatalogComboboxDisabled(
+            productCombobox,
+            !brand || !category,
+            brand && category
+                ? "Выберите товар"
+                : "Сначала выберите бренд и категорию"
         );
 
-        receiptProductSuggestions.appendChild(
-            newProductButton
-        );
-
-        products.forEach((product) => {
-            const button =
-                document.createElement("button");
-
-            button.type = "button";
-            button.className =
-                "receipt-product-suggestion";
-
-            const name =
-                document.createElement("div");
-
-            name.className =
-                "receipt-product-suggestion-name";
-
-            name.textContent =
-                product.name || "Товар без названия";
-
-            const meta =
-                document.createElement("div");
-
-            meta.className =
-                "receipt-product-suggestion-meta";
-
-            const parts = [];
-
-            if (product.article) {
-                parts.push(
-                    `Артикул: ${product.article}`
-                );
-            } else if (product.code) {
-                parts.push(
-                    `Код: ${product.code}`
-                );
-            }
-
-            if (product.brand) {
-                parts.push(product.brand);
-            }
-
-            if (product.category) {
-                parts.push(product.category);
-            }
-
-            meta.textContent =
-                parts.join(" · ")
-                || "Без дополнительной информации";
-
-            button.appendChild(name);
-            button.appendChild(meta);
-
-            button.addEventListener(
-                "mousedown",
-                (event) => {
-                    event.preventDefault();
-
-                    selectReceiptExistingProduct(
-                        product
-                    );
-                }
-            );
-
-            receiptProductSuggestions.appendChild(
-                button
+        const selectedOption = options.find((option) => {
+            return (
+                String(option.value)
+                === String(selectedProductId)
             );
         });
 
-        receiptProductSuggestions.classList.add(
-            "is-open"
+        window.setBrandComboboxValue(
+            productCombobox,
+            brand && category ? selectedProductId : "",
+            selectedOption?.label || ""
         );
     }
 
-    function findExactReceiptProduct(value) {
-        const normalizedValue =
-            normalizeReceiptProduct(value);
+    function syncReceiptSelectedProduct(context) {
+        const productId =
+            receiptCatalogInput(context, "product")?.value || "";
+        const product = receiptProducts.find((item) => {
+            return String(item.id || "") === String(productId);
+        }) || null;
 
-        if (!normalizedValue) {
-            return null;
-        }
+        if (context.closest("#receiptModal")) {
+            receiptSelectedProduct = product;
+            updateReceiptImageAvailability(product);
 
-        return receiptProducts.find(
-            (product) => {
-                return normalizeReceiptProduct(
-                    product.name
-                ) === normalizedValue;
-            }
-        ) || null;
-    }
-
-    if (receiptProductSearch) {
-        receiptProductSearch.addEventListener(
-            "focus",
-            renderReceiptProductSuggestions
-        );
-
-        receiptProductSearch.addEventListener(
-            "input",
-            () => {
-                if (
-                    receiptImportPayload
-                    && receiptImportPayload.value.trim()
-                ) {
-                    return;
-                }
-
-                const value =
-                    receiptProductSearch.value.trim();
-
-                if (
-                    receiptSelectedProduct
-                    && normalizeReceiptProduct(
-                        receiptSelectedProduct.name
-                    ) !== normalizeReceiptProduct(
-                        value
-                    )
-                ) {
-                    setReceiptNewProductMode(
-                        value,
-                        true
-                    );
-                } else if (!receiptSelectedProduct) {
-                    setReceiptNewProductMode(
-                        value
-                    );
-                }
-
-                renderReceiptProductSuggestions();
-            }
-        );
-
-        receiptProductSearch.addEventListener(
-            "keydown",
-            (event) => {
-                const buttons = Array.from(
-                    receiptProductSuggestions
-                        .querySelectorAll(
-                            ".receipt-product-suggestion"
-                        )
+            const catalogProductInput =
+                document.getElementById(
+                    "receipt_catalog_product_id"
                 );
 
-                if (event.key === "ArrowDown") {
-                    event.preventDefault();
-
-                    receiptActiveSuggestionIndex =
-                        Math.min(
-                            receiptActiveSuggestionIndex + 1,
-                            buttons.length - 1
-                        );
-
-                    updateReceiptActiveSuggestion();
-                }
-
-                if (event.key === "ArrowUp") {
-                    event.preventDefault();
-
-                    receiptActiveSuggestionIndex =
-                        Math.max(
-                            receiptActiveSuggestionIndex - 1,
-                            0
-                        );
-
-                    updateReceiptActiveSuggestion();
-                }
-
-                if (
-                    event.key === "Enter"
-                    && receiptProductSuggestions
-                        .classList.contains("is-open")
-                ) {
-                    event.preventDefault();
-
-                    const activeButton =
-                        buttons[
-                            receiptActiveSuggestionIndex
-                        ];
-
-                    if (activeButton) {
-                        activeButton.dispatchEvent(
-                            new MouseEvent(
-                                "mousedown"
-                            )
-                        );
-                    }
-                }
-
-                if (event.key === "Escape") {
-                    closeReceiptProductSuggestions();
-                }
+            if (catalogProductInput) {
+                catalogProductInput.value = (
+                    product?.catalog_product_id || ""
+                );
             }
-        );
+        }
     }
 
-    if (receiptForm) {
-        receiptForm.addEventListener(
-            "submit",
+    const receiptCatalogContexts = Array.from(
+        document.querySelectorAll(
+            "[data-receipt-catalog-context]"
+        )
+    );
+
+    receiptCatalogContexts.forEach((context) => {
+        const brandCombobox =
+            receiptCatalogCombobox(context, "brand");
+        const categoryCombobox =
+            receiptCatalogCombobox(context, "category");
+        const productCombobox =
+            receiptCatalogCombobox(context, "product");
+        const initialBrand =
+            receiptCatalogInput(context, "brand")?.value || "";
+        const initialCategory =
+            receiptCatalogInput(context, "category")?.value || "";
+        const initialProduct =
+            receiptCatalogInput(context, "product")?.value
+            || context.dataset.productId
+            || "";
+
+        refreshReceiptCategoryCombobox(
+            context,
+            initialCategory
+        );
+        refreshReceiptProductCombobox(
+            context,
+            initialProduct
+        );
+        syncReceiptSelectedProduct(context);
+
+        brandCombobox?.addEventListener(
+            "catalog-combobox:change",
             () => {
-                const value =
-                    receiptProductSearch.value.trim();
-
-                if (
-                    receiptSelectedProduct
-                    && normalizeReceiptProduct(
-                        receiptSelectedProduct.name
-                    ) === normalizeReceiptProduct(
-                        value
-                    )
-                ) {
-                    return;
-                }
-
-                const exactProduct =
-                    findExactReceiptProduct(value);
-
-                if (exactProduct) {
-                    selectReceiptExistingProduct(
-                        exactProduct
-                    );
-
-                    return;
-                }
-
-                setReceiptNewProductMode(value);
+                refreshReceiptCategoryCombobox(context);
+                refreshReceiptProductCombobox(context);
+                syncReceiptSelectedProduct(context);
             }
         );
+        categoryCombobox?.addEventListener(
+            "catalog-combobox:change",
+            () => {
+                refreshReceiptProductCombobox(context);
+                syncReceiptSelectedProduct(context);
+            }
+        );
+        productCombobox?.addEventListener(
+            "catalog-combobox:change",
+            () => syncReceiptSelectedProduct(context)
+        );
+    });
+
+    function restoreReceiptCatalogContext(context) {
+        const brand = context.dataset.brand || "";
+        const category = context.dataset.category || "";
+        const productId = context.dataset.productId || "";
+
+        window.setBrandComboboxValue(
+            receiptCatalogCombobox(context, "brand"),
+            brand
+        );
+        refreshReceiptCategoryCombobox(context, category);
+        refreshReceiptProductCombobox(context, productId);
+        syncReceiptSelectedProduct(context);
     }
 
-    document.addEventListener(
-        "mousedown",
-        (event) => {
-            const combobox = event.target.closest(
-                ".receipt-product-combobox"
-            );
+    const receiptCatalogCreateModal = document.getElementById(
+        "receiptCatalogCreateModal"
+    );
+    const receiptCatalogCreateForm = document.getElementById(
+        "receiptCatalogCreateForm"
+    );
+    const receiptCatalogCreateName = document.getElementById(
+        "receiptCatalogCreateName"
+    );
+    const receiptCatalogCreateTitle = document.getElementById(
+        "receiptCatalogCreateTitle"
+    );
+    const receiptCatalogCreateDescription =
+        document.getElementById(
+            "receiptCatalogCreateDescription"
+        );
+    const receiptCatalogCreateError = document.getElementById(
+        "receiptCatalogCreateError"
+    );
+    const receiptCatalogCreateSubmit = document.getElementById(
+        "receiptCatalogCreateSubmit"
+    );
+    let activeReceiptCatalogCreate = null;
 
-            if (!combobox) {
-                closeReceiptProductSuggestions();
+    function closeReceiptCatalogCreateModal() {
+        receiptCatalogCreateModal.classList.remove("is-open");
+        activeReceiptCatalogCreate?.trigger?.focus();
+        activeReceiptCatalogCreate = null;
+    }
+
+    function replaceReceiptBrandOptions(newBrand) {
+        receiptCatalogContexts.forEach((context) => {
+            const combobox =
+                receiptCatalogCombobox(context, "brand");
+            const currentValue =
+                receiptCatalogInput(context, "brand")?.value || "";
+            const values = Array.from(
+                combobox.querySelectorAll(
+                    ".brand-combobox-option"
+                )
+            ).map((option) => ({
+                value: option.dataset.brand || "",
+                label: option.querySelector(
+                    ".brand-combobox-option-label"
+                )?.textContent.trim() || "",
+            }));
+
+            values.push({
+                value: newBrand,
+                label: newBrand,
+            });
+            window.replaceCatalogComboboxOptions(
+                combobox,
+                receiptCatalogOptions(values),
+                "Бренды не найдены"
+            );
+            window.setBrandComboboxValue(
+                combobox,
+                currentValue
+            );
+        });
+    }
+
+    document.addEventListener("click", (event) => {
+        const trigger = event.target.closest(
+            "[data-catalog-create-action]"
+        );
+
+        if (!trigger) {
+            return;
+        }
+
+        const context = trigger.closest(
+            "[data-receipt-catalog-context]"
+        );
+
+        if (!context) {
+            return;
+        }
+
+        event.preventDefault();
+        const kind = trigger.dataset.catalogCreateAction;
+        const brand =
+            receiptCatalogInput(context, "brand")?.value || "";
+        const category =
+            receiptCatalogInput(context, "category")?.value || "";
+        const labels = {
+            brand: "Новый бренд",
+            category: "Новая категория",
+            product: "Новый товар",
+        };
+        const descriptions = {
+            brand: "Бренд будет доступен в общем каталоге.",
+            category: "Бренд: " + brand,
+            product: "Бренд: " + brand + " · Категория: " + category,
+        };
+
+        activeReceiptCatalogCreate = {
+            kind,
+            context,
+            trigger,
+        };
+        window.setBrandDropdownOpen(
+            trigger.closest("[data-brand-combobox]"),
+            false
+        );
+        receiptCatalogCreateTitle.textContent = labels[kind];
+        receiptCatalogCreateDescription.textContent =
+            descriptions[kind];
+        receiptCatalogCreateName.value = "";
+        receiptCatalogCreateError.textContent = "";
+        receiptCatalogCreateModal.classList.add("is-open");
+        requestAnimationFrame(() => {
+            receiptCatalogCreateName.focus();
+        });
+    });
+
+    receiptCatalogCreateForm.addEventListener(
+        "submit",
+        async (event) => {
+            event.preventDefault();
+
+            if (!activeReceiptCatalogCreate) {
+                return;
+            }
+
+            const name = receiptCatalogCreateName.value
+                .replace(/\s+/g, " ")
+                .trim();
+
+            if (!name) {
+                receiptCatalogCreateError.textContent =
+                    "Введите название";
+                return;
+            }
+
+            const context = activeReceiptCatalogCreate.context;
+            const kind = activeReceiptCatalogCreate.kind;
+            const brand =
+                receiptCatalogInput(context, "brand")?.value || "";
+            const category =
+                receiptCatalogInput(context, "category")?.value || "";
+
+            receiptCatalogCreateSubmit.disabled = true;
+            receiptCatalogCreateError.textContent = "";
+
+            try {
+                const createPayload = new FormData();
+                createPayload.set("kind", kind);
+                createPayload.set("name", name);
+                createPayload.set("brand", brand);
+                createPayload.set("category", category);
+                createPayload.set(
+                    "csrf_token",
+                    receiptForm.elements.csrf_token?.value || ""
+                );
+                const response = await fetch(
+                    "/receipts/catalog/create",
+                    {
+                        method: "POST",
+                        body: createPayload,
+                    }
+                );
+                const result = await response.json();
+
+                if (!response.ok || !result.ok) {
+                    throw new Error(
+                        result.message
+                        || "Не удалось сохранить значение"
+                    );
+                }
+
+                if (kind === "brand") {
+                    replaceReceiptBrandOptions(result.value);
+                    window.setBrandComboboxValue(
+                        receiptCatalogCombobox(context, "brand"),
+                        result.value
+                    );
+                } else if (kind === "category") {
+                    receiptCatalogCategories.push({
+                        brand: result.brand,
+                        name: result.value,
+                    });
+                    refreshReceiptCategoryCombobox(
+                        context,
+                        result.value
+                    );
+                    refreshReceiptProductCombobox(context);
+                } else {
+                    receiptProducts.push(result.product);
+                    refreshReceiptProductCombobox(
+                        context,
+                        result.product.id
+                    );
+                    syncReceiptSelectedProduct(context);
+                }
+
+                closeReceiptCatalogCreateModal();
+            } catch (error) {
+                receiptCatalogCreateError.textContent =
+                    error.message
+                    || "Не удалось сохранить значение";
+            } finally {
+                receiptCatalogCreateSubmit.disabled = false;
             }
         }
     );
-    // RECEIPT PRODUCT SEARCH SCRIPT V1 END
+
+    document.getElementById("receiptCatalogCreateClose")
+        .addEventListener(
+            "click",
+            closeReceiptCatalogCreateModal
+        );
+    document.getElementById("receiptCatalogCreateCancel")
+        .addEventListener(
+            "click",
+            closeReceiptCatalogCreateModal
+        );
+    receiptCatalogCreateModal.addEventListener(
+        "click",
+        (event) => {
+            if (event.target === receiptCatalogCreateModal) {
+                closeReceiptCatalogCreateModal();
+            }
+        }
+    );
 
     // SIMPLE RECEIPT FORM SCRIPT V1 END
 
@@ -4080,6 +4164,8 @@
             ).value || ""
         ).trim();
 
+        const visibleRows = [];
+
         getReceiptRows().forEach((row) => {
             const searchText =
                 row.dataset.search || "";
@@ -4106,33 +4192,50 @@
 
             row.style.display =
                 isVisible ? "" : "none";
+
+            if (isVisible) {
+                visibleRows.push(row);
+            }
         });
 
-        const clearButton =
-            document.getElementById(
-                "receiptDateClear"
-            );
+        document.getElementById(
+            "receiptStatDocuments"
+        ).textContent = String(visibleRows.length);
+        document.getElementById(
+            "receiptStatQuantity"
+        ).textContent = new Intl.NumberFormat(
+            "ru-RU",
+            {maximumFractionDigits: 2}
+        ).format(
+            visibleRows.reduce(
+                (total, row) => {
+                    return (
+                        total
+                        + parseReceiptNumericValue(
+                            row.dataset.quantity
+                        )
+                    );
+                },
+                0
+            )
+        );
 
-        clearButton.disabled =
-            !dateFrom && !dateTo;
+        const url = new URL(window.location.href);
+
+        if (dateFrom) {
+            url.searchParams.set("date_from", dateFrom);
+        } else {
+            url.searchParams.delete("date_from");
+        }
+
+        if (dateTo) {
+            url.searchParams.set("date_to", dateTo);
+        } else {
+            url.searchParams.delete("date_to");
+        }
+
+        window.history.replaceState({}, "", url);
     }
-
-    const receiptFilterToolbar = document.querySelector(
-        ".receipt-filter-toolbar"
-    );
-    const receiptMobileFilterTrigger = document.getElementById(
-        "receiptMobileFilterTrigger"
-    );
-
-    receiptMobileFilterTrigger?.addEventListener("click", () => {
-        const isOpen = receiptFilterToolbar.classList.toggle(
-            "is-mobile-filter-open"
-        );
-        receiptMobileFilterTrigger.setAttribute(
-            "aria-expanded",
-            String(isOpen)
-        );
-    });
 
     document.getElementById("receiptMobileSort")
         ?.addEventListener("change", (event) => {
@@ -4140,22 +4243,25 @@
             sortReceipts(event.target.value);
         });
 
-    function clearReceiptDateFilter() {
-        document.getElementById(
-            "receiptDateFrom"
-        ).value = "";
-
-        document.getElementById(
-            "receiptDateTo"
-        ).value = "";
-
-        filterReceipts();
-    }
+    window.initializeErpPeriodPicker(
+        document.getElementById("receiptDateFilter"),
+        {
+            fromInput: document.getElementById(
+                "receiptDateFrom"
+            ),
+            toInput: document.getElementById(
+                "receiptDateTo"
+            ),
+            clearButton: document.getElementById(
+                "clearReceiptPeriod"
+            ),
+            onChange: filterReceipts,
+        }
+    );
 
     function getReceiptSortValue(row, key) {
         if (
             key === "quantity"
-            || key === "amount"
         ) {
             return parseReceiptNumericValue(
                 row.dataset[key]
@@ -4204,7 +4310,6 @@
             receiptSortDirection = (
                 key === "date"
                 || key === "quantity"
-                || key === "amount"
             )
                 ? "desc"
                 : "asc";
@@ -4261,6 +4366,7 @@
         updateReceiptSortIndicators();
         filterReceipts();
     }
+    filterReceipts();
     // RECEIPTS DATE FILTER SORT SCRIPT V1 END
 
     receiptImportModal.addEventListener(
@@ -4280,6 +4386,16 @@
 
     document.addEventListener("keydown", (event) => {
         if (event.key === "Escape") {
+            if (
+                receiptCatalogCreateModal
+                && receiptCatalogCreateModal.classList.contains(
+                    "is-open"
+                )
+            ) {
+                closeReceiptCatalogCreateModal();
+                return;
+            }
+
             if (
                 receiptImportModal
                 && receiptImportModal.classList.contains(
@@ -4320,6 +4436,9 @@
                                     form.reset();
                                 }
 
+                                restoreReceiptCatalogContext(
+                                    editingRow
+                                );
                                 editingRow.classList.remove(
                                     "is-editing"
                                 );
@@ -4357,6 +4476,7 @@
                         form.reset();
                     }
 
+                    restoreReceiptCatalogContext(row);
                     row.classList.remove(
                         "is-editing"
                     );

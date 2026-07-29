@@ -20,6 +20,176 @@
         0 1px 2px rgba(15, 23, 42, 0.03);
 }
 
+/* Shared sales-style period picker. */
+.warehouse-date-filter {
+    position: relative;
+    min-width: 0;
+}
+
+.sales-period-control {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+}
+
+.warehouse-date-trigger {
+    display: flex;
+    min-width: 184px;
+    height: 40px;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 13px;
+    border: 1px solid #dce3ed;
+    border-radius: 10px;
+    background: #ffffff;
+    color: #172033;
+    font-size: 12px;
+    font-weight: 750;
+}
+
+.sales-period-clear {
+    position: static;
+    transform: none;
+}
+
+.sales-period-clear[hidden] {
+    display: none;
+}
+
+.warehouse-calendar-popup {
+    position: absolute;
+    z-index: 1200;
+    top: calc(100% + 7px);
+    right: 0;
+    width: min(292px, calc(100vw - 32px));
+    padding: 12px;
+    border: 1px solid #dce3ed;
+    border-radius: 14px;
+    background: #ffffff;
+    box-shadow: 0 16px 40px rgba(15, 23, 42, 0.14);
+}
+
+.warehouse-calendar-popup[hidden] {
+    display: none;
+}
+
+.warehouse-calendar-header {
+    display: grid;
+    grid-template-columns: 30px 1fr 30px;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 9px;
+}
+
+.warehouse-calendar-nav {
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border: 1px solid #e2e8f0;
+    border-radius: 9px;
+    background: #ffffff;
+    color: #475569;
+}
+
+.warehouse-calendar-month {
+    color: #172033;
+    font-size: 14px;
+    font-weight: 750;
+    text-align: center;
+}
+
+.warehouse-calendar-weekdays,
+.warehouse-calendar-days {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.warehouse-calendar-weekdays {
+    color: #94a3b8;
+    font-size: 10px;
+    font-weight: 700;
+    text-align: center;
+}
+
+.warehouse-calendar-weekdays span {
+    padding: 4px 0;
+}
+
+.warehouse-calendar-day {
+    height: 34px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: #334155;
+    font-size: 12px;
+}
+
+.warehouse-calendar-day span {
+    display: inline-flex;
+    width: 30px;
+    height: 30px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+}
+
+.warehouse-calendar-day.is-outside {
+    color: #cbd5e1;
+}
+
+.warehouse-calendar-day.is-in-range {
+    background: #dbeafe;
+}
+
+.warehouse-calendar-day.is-start span,
+.warehouse-calendar-day.is-end span {
+    background: #2563eb;
+    color: #ffffff;
+}
+
+.warehouse-calendar-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid #eef2f7;
+}
+
+.warehouse-calendar-actions button {
+    min-height: 34px;
+    padding: 0 12px;
+    border-radius: 9px;
+    font-size: 12px;
+    font-weight: 750;
+}
+
+.warehouse-calendar-reset {
+    border: 1px solid #e2e8f0;
+    background: #ffffff;
+    color: #64748b;
+}
+
+.warehouse-calendar-apply {
+    border: 1px solid #2563eb;
+    background: #2563eb;
+    color: #ffffff;
+}
+
+@media (max-width: 767px) {
+    .warehouse-date-trigger {
+        width: 100%;
+        min-width: 0;
+    }
+
+    .warehouse-calendar-popup {
+        right: auto;
+        left: 0;
+    }
+}
+
 .erp-stats {
     gap: 8px;
     margin-bottom: 8px;
@@ -2051,48 +2221,19 @@
         font-size: 15px;
     }
 
-    .receipt-mobile-filter-trigger {
-        min-width: 0;
-        min-height: 44px;
-        padding: 0 10px;
-        border: 1px solid #dfe5ed;
-        border-radius: 12px;
-        background: #f4f7ff;
-        color: #31588c;
-        font-size: 13px;
-        font-weight: 800;
-    }
-
     .receipt-mobile-sort {
         min-width: 0;
     }
 
-    .receipt-filter-toolbar .receipt-date-group {
-        display: none;
-        grid-column: 1 / -1;
-        grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-        gap: 6px;
-        padding-top: 2px;
-    }
-
-    .receipt-filter-toolbar.is-mobile-filter-open .receipt-date-group {
-        display: grid;
-    }
-
-    .receipt-date-field,
-    .receipt-date-input {
-        width: 100% !important;
+    .receipt-filter-toolbar .sales-date-filter,
+    .receipt-filter-toolbar .warehouse-date-filter {
+        width: 100%;
         min-width: 0;
     }
 
-    .receipt-date-clear,
     .receipt-report-button {
-        grid-column: span 3;
+        grid-column: 1 / -1;
         min-height: 44px;
-    }
-
-    .receipt-date-divider {
-        align-self: center;
     }
 
     .table-card:has(.receipts-table) {
@@ -2228,17 +2369,12 @@
         content: "Количество";
     }
 
-    .receipts-table .receipt-row > .col-amount::before {
-        content: "Сумма";
-    }
-
     .receipts-table .receipt-row > .col-status::before {
         content: "Статус";
     }
 
     .receipts-table .receipt-row > .col-category,
     .receipts-table .receipt-row > .col-qty,
-    .receipts-table .receipt-row > .col-amount,
     .receipts-table .receipt-row > .col-status {
         grid-column: 1 / -1;
     }

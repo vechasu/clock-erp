@@ -171,12 +171,8 @@
             text-align: center !important;
         }
 
-        .col-amount {
-            width: 12%;
-        }
-
         .col-status {
-            width: 10%;
+            width: 12%;
         }
 
         .document-number,
@@ -284,17 +280,6 @@
                 </div>
             </div>
 
-            <div class="stat-card">
-                <div class="stat-label">
-                    &#1047;&#1072;&#1082;&#1091;&#1087;&#1086;&#1095;&#1085;&#1072;&#1103;
-                    &#1089;&#1090;&#1086;&#1080;&#1084;&#1086;&#1089;&#1090;&#1100;
-                </div>
-
-                <div class="stat-value">
-                    {{ "%.2f"|format(total_amount or 0) }}
-                    &#8381;
-                </div>
-            </div>
         </section>
 
         <section class="table-card">
@@ -325,10 +310,6 @@
 
                                 <th class="col-quantity">
                                     &#1050;-&#1074;&#1086;
-                                </th>
-
-                                <th class="col-amount">
-                                    &#1057;&#1091;&#1084;&#1084;&#1072;
                                 </th>
 
                                 <th class="col-status">
@@ -374,11 +355,6 @@
 
                                     <td class="col-quantity">
                                         {{ receipt.total_quantity or 0 }}
-                                    </td>
-
-                                    <td class="col-amount">
-                                        {{ "%.2f"|format(receipt.total_amount or 0) }}
-                                        &#8381;
                                     </td>
 
                                     <td class="col-status">

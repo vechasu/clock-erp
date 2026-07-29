@@ -1292,8 +1292,9 @@ class OwnerFeedbackTest(unittest.TestCase):
         self.assertIn("const salesPopoverManager", html)
         self.assertEqual(
             html.count("salesPopoverManager.register({"),
-            3,
+            2,
         )
+        self.assertIn("initializeErpPeriodPicker(", html)
         self.assertIn("root.appendChild(panel)", html)
         self.assertIn("panel.getBoundingClientRect()", html)
         self.assertIn("const spaceBelow", html)
@@ -1419,7 +1420,10 @@ class OwnerFeedbackTest(unittest.TestCase):
             "::-webkit-search-cancel-button",
             css,
         )
-        self.assertIn("grid-template-columns: minmax(0, 1fr) auto;", html)
+        self.assertIn(
+            "grid-template-columns: minmax(0, 1fr) auto;",
+            css,
+        )
         self.assertIn(
             ".erp-clear-control.is-hidden,\n"
             ".erp-clear-control[hidden]",
