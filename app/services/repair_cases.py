@@ -398,9 +398,10 @@ def migrate_repair_case(source, migrated_at=None):
         mapped_fields += 1
     case["location"] = location
 
-    case["request_at"] = _date_part(
-        case.get("request_at") or case["created_at"]
-    )
+    request_at = case.get("request_at")
+    if not request_at and previous_version < REPAIR_SCHEMA_VERSION:
+        request_at = case["created_at"]
+    case["request_at"] = _date_part(request_at)
     for field in (
         "customer_sent_at",
         "accepted_at",

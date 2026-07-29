@@ -1164,6 +1164,11 @@
         const element = document.getElementById(fieldMap[name]);
         if (element) element.value = value == null ? "" : String(value);
     }
+    function setRequiredRepairFields(required) {
+        ["clientName", "productName", "problem"].forEach(id => {
+            document.getElementById(id).required = required;
+        });
+    }
     function todayIso() {
         const now = new Date();
         return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
@@ -1182,6 +1187,7 @@
         closeDrawer();
         repairForm.reset();
         repairForm.action = "/repair/add";
+        setRequiredRepairFields(true);
         Object.keys(fieldMap).forEach(name => setField(name, ""));
         setField("request_at", todayIso());
         setField("status", "new");
@@ -1201,6 +1207,7 @@
         closeDrawer();
         repairForm.reset();
         repairForm.action = "/repair/update";
+        setRequiredRepairFields(!item.legacy_import);
         Object.keys(fieldMap).forEach(name => setField(name, item[name]));
         setField("event_comment", "");
         document.getElementById("initialShipmentSection").hidden = true;

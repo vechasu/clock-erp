@@ -1,0 +1,448 @@
+{
+  "batch_key": "legacy-google-sheet-repairs-2026-07",
+  "source_url": "https://docs.google.com/spreadsheets/d/10G8ibqUcaZoofqhVgmKBA8_BETbDormlByyd48RwV9U/edit?gid=292553310#gid=292553310",
+  "records": [
+    {
+      "source_key": "repair-01-telegram-ereminvasiliy",
+      "source_row": 2,
+      "label": "Telegram @ereminvasiliy",
+      "fields": {
+        "order_number": "",
+        "order_source": "none",
+        "client_name": "",
+        "client_phone": "",
+        "client_email": "",
+        "client_messenger": "@ereminvasiliy",
+        "product_name": "",
+        "brand": "",
+        "model": "",
+        "communication_channel": "telegram",
+        "contact": "@ereminvasiliy",
+        "problem": "Периодически не переключаются диски секунд, минут и часов, как будто села батарейка. Чаще происходит во время ношения. Если часы лежат в покое, могут работать штатно. Замена батарейки не помогла.",
+        "request_type": "paid_repair",
+        "status": "at_us",
+        "location": "at_us",
+        "decision": "Ожидать обращения клиента для выдачи часов.",
+        "internal_comment": "Исходный статус: ремонт завершён, часы готовы к выдаче.\nСледующее действие: клиент сам напишет, когда захочет забрать часы.\nЧасы сделаны. Ожидаем обращение клиента для получения."
+      },
+      "shipments": [],
+      "review_notes": []
+    },
+    {
+      "source_key": "repair-02-order-20735",
+      "source_row": 3,
+      "label": "Заказ №20735",
+      "fields": {
+        "order_number": "20735",
+        "order_source": "our",
+        "client_name": "",
+        "client_phone": "",
+        "client_email": "",
+        "client_messenger": "",
+        "product_name": "Ziiiro Lunar Black",
+        "brand": "Ziiiro",
+        "model": "Lunar Black",
+        "communication_channel": "email",
+        "contact": "",
+        "problem": "Минутный диск перестал корректно показывать минуты. Предположительно диск слетел со штифта и свободно вращается.",
+        "request_type": "paid_repair",
+        "status": "at_us",
+        "location": "at_us",
+        "decision": "Дождаться подтверждения клиента перед отправкой.",
+        "internal_comment": "Дата покупки из обращения клиента: 31 января 2026 года.\nИзначально клиенту сообщили, что после получения часов будет отправлена новая аналогичная модель. Впоследствии мастер отремонтировал часы. Клиенту отправлено сообщение для подтверждения отправки. Нужно дождаться подтверждения."
+      },
+      "shipments": [
+        {
+          "direction": "inbound",
+          "carrier": "СДЭК",
+          "track_number": "10299847838",
+          "sent_at": "",
+          "status": "Текущий статус СДЭК не подтверждён",
+          "received_at": ""
+        },
+        {
+          "direction": "outbound",
+          "carrier": "СДЭК",
+          "track_number": "10296685636",
+          "sent_at": "",
+          "status": "Отправка ожидает подтверждения клиента; текущий статус СДЭК не подтверждён",
+          "received_at": ""
+        }
+      ],
+      "review_notes": [
+        "Проверить фактический статус обратной накладной 10296685636.",
+        "Статус перенесён из старого Excel, требуется проверка."
+      ]
+    },
+    {
+      "source_key": "repair-03-order-20953",
+      "source_row": 4,
+      "label": "Заказ №20953",
+      "fields": {
+        "order_number": "20953",
+        "order_source": "our",
+        "client_name": "",
+        "client_phone": "",
+        "client_email": "",
+        "client_messenger": "",
+        "product_name": "",
+        "brand": "",
+        "model": "",
+        "communication_channel": "other",
+        "contact": "",
+        "problem": "",
+        "request_type": "diagnostics",
+        "status": "outbound_transit",
+        "location": "outbound_transit",
+        "decision": "",
+        "internal_comment": "Описание неисправности не указано в старом Excel.\nПосле ремонта согласовывался адрес доставки.\nПоследняя запись в старом Excel: «в пути, возвращается клиенту».\nНаправление накладной 10287944607 требует проверки."
+      },
+      "shipments": [
+        {
+          "direction": "unknown",
+          "carrier": "СДЭК",
+          "track_number": "10287944607",
+          "sent_at": "",
+          "status": "В старом Excel: «в пути, возвращается клиенту»; направление требует проверки",
+          "received_at": ""
+        }
+      ],
+      "review_notes": [
+        "Направление накладной 10287944607 требует проверки.",
+        "Проверить, существует ли отдельная обратная накладная.",
+        "Статус перенесён из старого Excel, требуется проверка."
+      ]
+    },
+    {
+      "source_key": "repair-04-repeat-diagnostics",
+      "source_row": 5,
+      "label": "Повторная диагностика, накладные 10292696927 / 10288612556",
+      "fields": {
+        "order_number": "",
+        "order_source": "none",
+        "client_name": "",
+        "client_phone": "",
+        "client_email": "",
+        "client_messenger": "",
+        "product_name": "",
+        "brand": "",
+        "model": "",
+        "communication_channel": "other",
+        "contact": "",
+        "problem": "После предыдущей проверки клиент повторно сообщил о проблеме. Клиенту предложили отправить часы для дополнительной диагностики и принятия решения о возможной замене.",
+        "request_type": "repeat_diagnostics",
+        "status": "outbound_transit",
+        "location": "outbound_transit",
+        "decision": "Дополнительная диагностика и решение о возможной замене.",
+        "internal_comment": "В старом Excel также записано «ждём до среды». Эта запись могла относиться к промежуточному этапу. Последний известный статус: часы возвращаются клиенту."
+      },
+      "shipments": [
+        {
+          "direction": "inbound",
+          "carrier": "СДЭК",
+          "track_number": "10292696927",
+          "sent_at": "",
+          "status": "Текущий статус СДЭК не подтверждён",
+          "received_at": ""
+        },
+        {
+          "direction": "outbound",
+          "carrier": "СДЭК",
+          "track_number": "10288612556",
+          "sent_at": "",
+          "status": "В старом Excel: «в пути, возвращается клиенту»; текущий статус СДЭК не подтверждён",
+          "received_at": ""
+        }
+      ],
+      "review_notes": [
+        "Проверить фактический статус обратной накладной 10288612556.",
+        "Статус перенесён из старого Excel, требуется проверка."
+      ]
+    },
+    {
+      "source_key": "repair-05-klokers",
+      "source_row": 6,
+      "label": "Klokers / Клокерсы",
+      "fields": {
+        "order_number": "",
+        "order_source": "none",
+        "client_name": "",
+        "client_phone": "",
+        "client_email": "",
+        "client_messenger": "",
+        "product_name": "",
+        "brand": "Klokers / Клокерсы",
+        "model": "",
+        "communication_channel": "other",
+        "contact": "",
+        "problem": "",
+        "request_type": "surcharge_accessories",
+        "status": "waiting_payment",
+        "location": "outbound_transit",
+        "decision": "Проверить получение оплаты по СБП.",
+        "internal_comment": "Исходный статус: отправлено клиенту.\nДополнительная продажа: продано 2 ремешка.\nОплата: необходимо было получить оплату по СБП.\nСледующее действие из старого Excel: написать клиенту 06 числа. Год указан как 2026, месяц не определён.\nНе отмечать оплату завершённой без подтверждения. Отдельная продажа ремешков автоматически не создаётся."
+      },
+      "shipments": [
+        {
+          "direction": "outbound",
+          "carrier": "СДЭК",
+          "track_number": "10289654282",
+          "sent_at": "",
+          "status": "Отправлено клиенту по старому Excel; текущий статус СДЭК не подтверждён",
+          "received_at": ""
+        }
+      ],
+      "review_notes": [
+        "Проверить фактическое получение оплаты по СБП.",
+        "Проверить существующую продажу двух ремешков в модуле продаж.",
+        "Месяц следующего действия «написать 06 числа» не определён.",
+        "Статус перенесён из старого Excel, требуется проверка."
+      ]
+    },
+    {
+      "source_key": "repair-06-order-1658546",
+      "source_row": 7,
+      "label": "Заказ сайта Ziiiro №1658546",
+      "fields": {
+        "order_number": "1658546",
+        "order_source": "external",
+        "client_name": "",
+        "client_phone": "",
+        "client_email": "",
+        "client_messenger": "",
+        "product_name": "Ziiiro Eclipse",
+        "brand": "Ziiiro",
+        "model": "Eclipse",
+        "communication_channel": "other",
+        "contact": "",
+        "problem": "Рассинхронизация стрелок или дисков.",
+        "request_type": "repair_completed",
+        "status": "outbound_transit",
+        "location": "outbound_transit",
+        "decision": "Мастер устранил неисправность; часы отправлены клиенту.",
+        "internal_comment": "Источник заказа: сайт Ziiiro.\nМастер устранил неисправность. Перед переносом требовалось проверить, не завершена ли доставка по обратной накладной."
+      },
+      "shipments": [
+        {
+          "direction": "inbound",
+          "carrier": "СДЭК",
+          "track_number": "10287983642",
+          "sent_at": "",
+          "status": "Текущий статус СДЭК не подтверждён",
+          "received_at": ""
+        },
+        {
+          "direction": "outbound",
+          "carrier": "СДЭК",
+          "track_number": "10296696733",
+          "sent_at": "",
+          "status": "Отправлено клиенту по старому Excel; текущий статус СДЭК не подтверждён",
+          "received_at": ""
+        }
+      ],
+      "review_notes": [
+        "Проверить фактический статус обратной накладной 10296696733.",
+        "Статус перенесён из старого Excel, требуется проверка."
+      ]
+    },
+    {
+      "source_key": "repair-07-order-20936",
+      "source_row": 8,
+      "label": "Заказ №20936",
+      "fields": {
+        "order_number": "20936",
+        "order_source": "our",
+        "client_name": "",
+        "client_phone": "",
+        "client_email": "",
+        "client_messenger": "",
+        "product_name": "",
+        "brand": "",
+        "model": "",
+        "communication_channel": "other",
+        "contact": "",
+        "problem": "Со слов клиента, в течение недели часы стали спешить примерно на 10 минут в день.",
+        "request_type": "diagnostics",
+        "status": "waiting_customer_shipment",
+        "location": "with_customer",
+        "decision": "Ожидать поступления часов на диагностику.",
+        "internal_comment": "Клиенту направлена накладная для отправки часов мастеру. В старом Excel указано: «ждём от него часы»."
+      },
+      "shipments": [
+        {
+          "direction": "inbound",
+          "carrier": "СДЭК",
+          "track_number": "10289537646",
+          "sent_at": "",
+          "status": "Накладная выдана клиенту; приём отправления СДЭК не подтверждён",
+          "received_at": ""
+        }
+      ],
+      "order_lookup": {
+        "fill_product_when_single": true
+      },
+      "review_notes": [
+        "Проверить движение накладной 10289537646 и факт поступления часов.",
+        "Статус перенесён из старого Excel, требуется проверка."
+      ]
+    },
+    {
+      "source_key": "repair-08-order-20988",
+      "source_row": 9,
+      "label": "Заказ №20988, Zinvo / Зинво",
+      "fields": {
+        "order_number": "20988",
+        "order_source": "our",
+        "client_name": "",
+        "client_phone": "",
+        "client_email": "",
+        "client_messenger": "",
+        "product_name": "",
+        "brand": "Zinvo / Зинво",
+        "model": "",
+        "communication_channel": "other",
+        "contact": "",
+        "problem": "После ремонта возникла проблема с настройкой минут.",
+        "request_type": "repeat_diagnostics",
+        "status": "waiting_master",
+        "location": "at_us",
+        "decision": "Передать часы мастеру после проверки противоречивых сведений.",
+        "internal_comment": "В старом Excel одновременно указано:\n1. «направили часы ему по накладной 10295918389»;\n2. «часы у нас — передаём мастеру».\nДо выяснения ремонт не отмечен завершённым."
+      },
+      "shipments": [
+        {
+          "direction": "unknown",
+          "carrier": "СДЭК",
+          "track_number": "10295918389",
+          "sent_at": "",
+          "status": "Направление и текущий статус требуют проверки",
+          "received_at": ""
+        }
+      ],
+      "review_notes": [
+        "Сведения о местонахождении часов противоречат друг другу.",
+        "Направление накладной 10295918389 требует проверки.",
+        "Сверить товар из заказа №20988 с указанным брендом Zinvo.",
+        "Статус перенесён из старого Excel, требуется проверка."
+      ]
+    },
+    {
+      "source_key": "repair-09-order-18593-initial",
+      "source_row": 10,
+      "label": "Заказ №18593, Васин Евгений Сергеевич",
+      "fields": {
+        "order_number": "18593",
+        "order_source": "our",
+        "client_name": "Васин Евгений Сергеевич",
+        "client_phone": "",
+        "client_email": "",
+        "client_messenger": "",
+        "product_name": "",
+        "brand": "",
+        "model": "",
+        "communication_channel": "email",
+        "contact": "",
+        "problem": "",
+        "request_type": "diagnostics",
+        "status": "waiting_master",
+        "location": "at_us",
+        "decision": "Согласовать с клиентом пункт выдачи СДЭК.",
+        "internal_comment": "Клиенту написали по электронной почте, ожидается обратная связь.\nПо последней записи часы находились у нас и готовились к передаче мастеру.\nЭту запись нельзя автоматически объединять с другой записью заказа №18593."
+      },
+      "shipments": [
+        {
+          "direction": "unknown",
+          "carrier": "СДЭК",
+          "track_number": "10290895793",
+          "sent_at": "",
+          "status": "Направление и текущий статус требуют проверки",
+          "received_at": ""
+        }
+      ],
+      "review_notes": [
+        "Проверить связь со второй записью заказа №18593.",
+        "Направление накладной 10290895793 требует проверки.",
+        "Статус перенесён из старого Excel, требуется проверка."
+      ]
+    },
+    {
+      "source_key": "repair-10-order-20566",
+      "source_row": 11,
+      "label": "Заказ №20566",
+      "fields": {
+        "order_number": "20566",
+        "order_source": "our",
+        "client_name": "",
+        "client_phone": "",
+        "client_email": "",
+        "client_messenger": "",
+        "product_name": "",
+        "brand": "",
+        "model": "",
+        "communication_channel": "other",
+        "contact": "",
+        "problem": "Часы перестали заводиться.",
+        "request_type": "diagnostics",
+        "status": "new",
+        "location": "unknown",
+        "decision": "",
+        "internal_comment": "В старом Excel нет точного текущего этапа ремонта. Ремонт не считается завершённым без подтверждения."
+      },
+      "shipments": [
+        {
+          "direction": "unknown",
+          "carrier": "СДЭК",
+          "track_number": "10291395035",
+          "sent_at": "",
+          "status": "Направление и текущий статус требуют проверки",
+          "received_at": ""
+        }
+      ],
+      "order_lookup": {
+        "fill_product_when_single": true
+      },
+      "review_notes": [
+        "Определить направление и статус накладной 10291395035.",
+        "Статус перенесён из старого Excel, требуется проверка."
+      ]
+    },
+    {
+      "source_key": "repair-11-order-18593-warranty",
+      "source_row": 12,
+      "label": "Заказ №18593, M2Z",
+      "fields": {
+        "order_number": "18593",
+        "order_source": "our",
+        "client_name": "",
+        "client_phone": "",
+        "client_email": "",
+        "client_messenger": "",
+        "product_name": "M2Z",
+        "brand": "",
+        "model": "M2Z",
+        "communication_channel": "other",
+        "contact": "",
+        "problem": "",
+        "request_type": "warranty_repair",
+        "status": "completed",
+        "location": "with_customer_returned",
+        "decision": "Часы починены по гарантии и возвращены клиенту.",
+        "internal_comment": "Исходный статус: ремонт завершён, часы возвращены клиенту.\nЭту запись нельзя автоматически объединять с другой записью заказа №18593."
+      },
+      "shipments": [
+        {
+          "direction": "outbound",
+          "carrier": "СДЭК",
+          "track_number": "10300354936",
+          "sent_at": "",
+          "status": "Возвращено клиенту по старому Excel; текущий статус СДЭК не подтверждён",
+          "received_at": ""
+        }
+      ],
+      "review_notes": [
+        "Проверить связь с первой записью заказа №18593.",
+        "Не объединять записи только по совпадению номера заказа."
+      ]
+    }
+  ]
+}
