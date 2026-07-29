@@ -1,0 +1,139 @@
+{
+  "baseline_commit": "22129883e6eac32c1ead0d0f23f8f0f1f1c2e6e1",
+  "external_write_policy": "fake_or_read_only",
+  "scenarios": [
+    {
+      "id": "auth_login_logout",
+      "routes": ["/login", "/logout"],
+      "evidence": ["tests/test_auth_registration.py"],
+      "migration_status": "NOT_STARTED",
+      "characterization_status": "IN_PROGRESS"
+    },
+    {
+      "id": "auth_registration",
+      "routes": ["/register", "/register/invitation", "/register/success"],
+      "evidence": ["tests/test_auth_registration.py", "tests/test_registration_browser.py"],
+      "migration_status": "NOT_STARTED",
+      "characterization_status": "IN_PROGRESS"
+    },
+    {
+      "id": "orders_read_and_write",
+      "routes": ["/", "/order/<int:order_id>", "/order/<int:order_id>/status", "/order/<int:order_id>/stock-writeoff"],
+      "evidence": ["tests/test_bitrix_orders.py", "tests/test_owner_feedback.py"],
+      "migration_status": "NOT_STARTED",
+      "characterization_status": "IN_PROGRESS"
+    },
+    {
+      "id": "products_list_search_filter_pagination",
+      "routes": ["/products", "/products/<int:product_id>"],
+      "evidence": ["tests/test_excel_product_catalog.py", "tests/test_warehouse_pagination.py"],
+      "migration_status": "NOT_STARTED",
+      "characterization_status": "IN_PROGRESS"
+    },
+    {
+      "id": "products_create_update_delete",
+      "routes": ["/warehouse/add", "/warehouse/edit", "/products/<int:product_id>/delete"],
+      "evidence": ["tests/test_excel_product_catalog.py", "tests/test_warehouse_initial_stock.py"],
+      "migration_status": "NOT_STARTED",
+      "characterization_status": "IN_PROGRESS"
+    },
+    {
+      "id": "brands_and_categories",
+      "routes": ["/warehouse", "/warehouse/bulk-edit", "/catalog"],
+      "evidence": ["tests/test_product_classification.py", "tests/test_warehouse_bulk_browser.py"],
+      "migration_status": "NOT_STARTED",
+      "characterization_status": "IN_PROGRESS"
+    },
+    {
+      "id": "product_images",
+      "routes": ["/warehouse/add", "/warehouse/edit", "/warehouse/product/<product_id>/thumbnail"],
+      "evidence": ["tests/test_excel_product_catalog.py", "tests/test_owner_feedback.py"],
+      "migration_status": "NOT_STARTED",
+      "characterization_status": "IN_PROGRESS"
+    },
+    {
+      "id": "warehouse_list_and_stock_toggle",
+      "routes": ["/warehouse"],
+      "evidence": ["tests/test_warehouse_filter_badge.py", "tests/test_warehouse_pagination.py"],
+      "migration_status": "NOT_STARTED",
+      "characterization_status": "IN_PROGRESS"
+    },
+    {
+      "id": "warehouse_cells_and_map",
+      "routes": ["/warehouse/category-cell", "/warehouse/cell"],
+      "evidence": ["tests/test_owner_feedback.py", "tests/test_warehouse_bulk_browser.py"],
+      "migration_status": "NOT_STARTED",
+      "characterization_status": "IN_PROGRESS"
+    },
+    {
+      "id": "warehouse_stock_adjustment",
+      "routes": ["/warehouse/stock", "/stock-operations"],
+      "evidence": ["tests/test_warehouse_initial_stock.py", "tests/test_sales_inventory.py"],
+      "migration_status": "NOT_STARTED",
+      "characterization_status": "IN_PROGRESS"
+    },
+    {
+      "id": "warehouse_import_export",
+      "routes": ["/warehouse/export.xlsx", "/warehouse/export.pdf"],
+      "evidence": ["tests/test_warehouse_pagination.py", "tests/test_owner_feedback.py"],
+      "migration_status": "NOT_STARTED",
+      "characterization_status": "IN_PROGRESS"
+    },
+    {
+      "id": "receipts_create_update_delete",
+      "routes": ["/receipts", "/receipts/create", "/receipts/update", "/receipts/delete"],
+      "evidence": ["tests/test_sales_receipts_enhancements.py", "tests/test_owner_feedback.py"],
+      "migration_status": "NOT_STARTED",
+      "characterization_status": "IN_PROGRESS"
+    },
+    {
+      "id": "excel_receipt_import",
+      "routes": ["/products/receipts/preview", "/products/receipts/drafts/<draft_id>/post"],
+      "evidence": ["tests/test_excel_receipt_import.py"],
+      "migration_status": "NOT_STARTED",
+      "characterization_status": "IN_PROGRESS"
+    },
+    {
+      "id": "sales_create_update_delete_return",
+      "routes": ["/sales", "/sales/manual/add", "/sales/manual/update", "/sales/delete", "/sales/return"],
+      "evidence": ["tests/test_sales_inventory.py", "tests/test_sales_source_tabs.py"],
+      "migration_status": "NOT_STARTED",
+      "characterization_status": "IN_PROGRESS"
+    },
+    {
+      "id": "sales_reports_and_exports",
+      "routes": ["/sales/report", "/sales/report.xlsx", "/sales/report.pdf"],
+      "evidence": ["tests/test_owner_feedback.py", "tests/test_sales_receipts_enhancements.py"],
+      "migration_status": "NOT_STARTED",
+      "characterization_status": "IN_PROGRESS"
+    },
+    {
+      "id": "repairs",
+      "routes": ["/repair", "/repair/add", "/repair/update", "/repair/delete"],
+      "evidence": ["tests/test_repair_workspace.py", "tests/test_repair_ui_browser.py"],
+      "migration_status": "NOT_STARTED",
+      "characterization_status": "IN_PROGRESS"
+    },
+    {
+      "id": "settings_navigation_and_themes",
+      "routes": ["/settings", "/settings/navigation/<key>/toggle"],
+      "evidence": ["tests/test_navigation_settings.py", "tests/test_theme_system.py"],
+      "migration_status": "NOT_STARTED",
+      "characterization_status": "IN_PROGRESS"
+    },
+    {
+      "id": "bitrix_integrations",
+      "routes": ["/catalog/import-preview", "/order/<int:order_id>"],
+      "evidence": ["tests/test_bitrix_catalog.py", "tests/test_bitrix_catalog_importer.py", "tests/test_bitrix_orders.py"],
+      "migration_status": "NOT_STARTED",
+      "characterization_status": "IN_PROGRESS"
+    },
+    {
+      "id": "moysklad_integrations",
+      "routes": ["/catalog/mapping", "/catalog/mapping/confirm", "/receipts/create"],
+      "evidence": ["tests/test_moysklad_catalog_mapping.py", "tests/test_owner_feedback.py"],
+      "migration_status": "NOT_STARTED",
+      "characterization_status": "IN_PROGRESS"
+    }
+  ]
+}
