@@ -3,6 +3,7 @@
 
     const storageKey = "ttt-erp-sidebar-collapsed";
     const app = document.querySelector(".app");
+    let hideSidebarTooltip = () => {};
 
     const readCollapsedState = () => {
         try {
@@ -38,6 +39,7 @@
 
             toggle.setAttribute("aria-label", label);
             toggle.title = label;
+            hideSidebarTooltip();
         };
 
         applySidebarState(root.classList.contains("sidebar-collapsed"));
@@ -63,6 +65,100 @@
                 // Сворачивание остаётся доступным без сохранения.
             }
         });
+    };
+
+    const initializeSidebarTooltip = () => {
+        const root = document.querySelector(".app");
+        const tooltip = document.getElementById("sidebarTooltip");
+        const links = Array.from(
+            document.querySelectorAll(".sidebar-link[data-tooltip]")
+        );
+        let activeLink = null;
+
+        if (!root || !tooltip || !links.length) {
+            return () => {};
+        }
+
+        const hide = () => {
+            if (activeLink) {
+                activeLink.removeAttribute("aria-describedby");
+            }
+
+            activeLink = null;
+            tooltip.hidden = true;
+            tooltip.textContent = "";
+            tooltip.style.removeProperty("top");
+            tooltip.style.removeProperty("left");
+        };
+
+        const show = (link) => {
+            if (
+                !root.classList.contains("sidebar-collapsed")
+                || window.matchMedia("(max-width: 767px)").matches
+            ) {
+                hide();
+                return;
+            }
+
+            const label = link.dataset.tooltip || "";
+
+            if (!label) {
+                hide();
+                return;
+            }
+
+            if (activeLink && activeLink !== link) {
+                activeLink.removeAttribute("aria-describedby");
+            }
+
+            activeLink = link;
+            tooltip.textContent = label;
+            tooltip.hidden = false;
+            link.setAttribute("aria-describedby", tooltip.id);
+
+            const linkRect = link.getBoundingClientRect();
+            const tooltipRect = tooltip.getBoundingClientRect();
+            const top = Math.max(
+                8,
+                Math.min(
+                    window.innerHeight - tooltipRect.height - 8,
+                    linkRect.top
+                    + (linkRect.height - tooltipRect.height) / 2
+                )
+            );
+            const left = Math.min(
+                window.innerWidth - tooltipRect.width - 8,
+                linkRect.right + 9
+            );
+
+            tooltip.style.top = `${top}px`;
+            tooltip.style.left = `${left}px`;
+        };
+
+        links.forEach((link) => {
+            link.addEventListener("pointerenter", () => show(link));
+            link.addEventListener("pointerleave", hide);
+            link.addEventListener("focus", () => show(link));
+            link.addEventListener("blur", hide);
+            link.addEventListener("click", hide);
+        });
+
+        document.addEventListener("keydown", (event) => {
+            if (event.key === "Escape") {
+                hide();
+            }
+        });
+        document.addEventListener("pointerdown", hide, true);
+        document.addEventListener("scroll", hide, true);
+        window.addEventListener("resize", hide);
+        window.addEventListener("pagehide", hide);
+        document.addEventListener("visibilitychange", () => {
+            if (document.hidden) {
+                hide();
+            }
+        });
+
+        return hide;
     };
 
     const initializeMobileMenu = () => {
@@ -197,6 +293,7 @@
     };
 
     const initialize = () => {
+        hideSidebarTooltip = initializeSidebarTooltip();
         initializeSidebar();
         initializeMobileMenu();
         initializeDialogFocusTrap();

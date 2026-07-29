@@ -1,20 +1,25 @@
+{% from "_period_picker.html" import period_picker %}
 <!doctype html>
 <html lang="ru">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Vechasu ERP — Ремонт</title>
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='css/erp-components.css') }}"
+    >
     <style>
         * { box-sizing: border-box; }
         :root {
-            --navy: #102a56;
-            --blue: #2563eb;
+            --navy: var(--erp-navy);
+            --blue: var(--erp-primary);
             --blue-soft: #eaf2ff;
-            --ink: #172033;
-            --muted: #697386;
-            --line: #dfe5ee;
-            --surface: #ffffff;
-            --canvas: #f4f7fb;
+            --ink: var(--erp-text);
+            --muted: var(--erp-muted);
+            --line: var(--erp-border);
+            --surface: var(--erp-surface);
+            --canvas: var(--erp-canvas);
             --danger: #b42318;
         }
         html, body { max-width: 100%; overflow-x: hidden; }
@@ -36,15 +41,15 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: 18px;
-            margin: -18px -24px 18px;
-            padding: 19px 24px;
+            gap: 16px;
+            margin: -18px -24px 12px;
+            padding: 12px 24px;
             color: #fff;
             background: linear-gradient(120deg, var(--navy), #174887);
-            box-shadow: 0 7px 24px rgba(16, 42, 86, .16);
+            box-shadow: 0 5px 18px rgba(16, 42, 86, .14);
         }
-        .page-title { margin: 0 0 4px; font-size: 27px; letter-spacing: -.03em; }
-        .page-subtitle { margin: 0; color: #c9d8f0; font-size: 14px; }
+        .page-title { margin: 0 0 2px; font-size: 26px; line-height: 1.1; letter-spacing: -.03em; }
+        .page-subtitle { margin: 0; color: #c9d8f0; font-size: 13px; line-height: 1.35; }
         .button {
             display: inline-flex;
             align-items: center;
@@ -64,11 +69,12 @@
         .button-secondary { border-color: var(--line); background: #fff; }
         .button-danger { border-color: #f5c2c0; background: #fff5f4; color: var(--danger); }
         .hero-add {
-            min-height: 42px;
-            padding: 9px 17px;
+            min-height: 38px;
+            padding: 7px 14px;
             color: var(--navy);
-            box-shadow: 0 5px 16px rgba(0, 0, 0, .13);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, .12);
         }
+        .hero-add:disabled { color: #8a97aa; cursor: not-allowed; opacity: .72; }
         .notice {
             margin-bottom: 14px;
             padding: 11px 14px;
@@ -99,47 +105,44 @@
         .metrics {
             display: grid;
             grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 10px;
-            margin-bottom: 12px;
+            gap: 8px;
+            margin-bottom: 10px;
         }
         .metric {
             min-width: 0;
-            padding: 14px 16px;
+            min-height: 58px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 9px 14px;
             border: 1px solid var(--line);
             border-radius: 12px;
             background: var(--surface);
             box-shadow: 0 3px 12px rgba(22, 37, 63, .04);
         }
-        .metric-label { display: block; color: var(--muted); font-size: 12px; font-weight: 750; }
-        .metric-value { display: block; margin-top: 4px; color: var(--navy); font-size: 25px; font-weight: 850; }
+        .metric-label { color: var(--muted); font-size: 12px; font-weight: 750; line-height: 1.3; }
+        .metric-value { flex: 0 0 auto; color: var(--navy); font-size: 24px; font-weight: 850; line-height: 1; }
         .filters {
-            margin-bottom: 12px;
-            padding: 12px;
+            margin-bottom: 10px;
+            padding: 10px;
             border: 1px solid var(--line);
             border-radius: 12px;
             background: var(--surface);
         }
-        .filter-grid {
-            display: grid;
-            grid-template-columns: minmax(230px, 2fr) repeat(4, minmax(140px, 1fr));
-            gap: 9px;
-        }
-        .filter-row-secondary {
-            display: grid;
-            grid-template-columns: repeat(3, minmax(150px, 1fr)) auto;
-            gap: 9px;
-            margin-top: 9px;
-        }
         .control {
             width: 100%;
-            min-height: 39px;
-            padding: 8px 10px;
+            min-width: 0;
+            min-height: 40px;
+            padding: 7px 12px;
             border: 1px solid #cfd7e3;
-            border-radius: 8px;
+            border-radius: 10px;
             background: #fff;
             color: var(--ink);
+            font-size: 13px;
             outline: none;
         }
+        select.control { padding-right: 34px; text-overflow: ellipsis; }
         .control:focus { border-color: #6f98dc; box-shadow: 0 0 0 3px rgba(37, 99, 235, .12); }
         textarea.control { min-height: 82px; resize: vertical; }
         .search-wrap { position: relative; }
@@ -158,12 +161,16 @@
         }
         .result-summary {
             display: flex;
+            align-items: center;
             justify-content: space-between;
             gap: 12px;
-            margin: 9px 2px 0;
+            min-height: 30px;
+            margin: 6px 2px 0;
             color: var(--muted);
             font-size: 12px;
         }
+        .filter-summary-actions { display: flex; align-items: center; gap: 8px; }
+        .reset-icon { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; }
         .table-card {
             border: 1px solid var(--line);
             border-radius: 12px;
@@ -171,7 +178,12 @@
             box-shadow: 0 5px 18px rgba(22, 37, 63, .05);
             overflow: hidden;
         }
-        .table-wrap { max-height: calc(100vh - 330px); overflow: auto; }
+        .table-wrap {
+            max-width: 100%;
+            max-height: calc(100vh - 295px);
+            overflow: auto;
+            overscroll-behavior: contain;
+        }
         .repair-table {
             width: 100%;
             min-width: 1250px;
@@ -203,7 +215,18 @@
         .repair-table tbody tr { cursor: pointer; transition: background .15s ease; }
         .repair-table tbody tr:hover { background: #f5f8fd; }
         .repair-table tbody tr[hidden] { display: none; }
-        .repair-table th:last-child, .repair-table td:last-child { border-right: 0; }
+        .repair-table th:last-child, .repair-table td:last-child {
+            position: sticky;
+            right: 0;
+            border-right: 0;
+            background: #fff;
+            box-shadow: -8px 0 12px -12px rgba(15, 33, 62, .55);
+        }
+        .repair-table th:last-child {
+            z-index: 5;
+            background: #1c5aa6;
+        }
+        .repair-table tbody tr:hover td:last-child { background: #f5f8fd; }
         .col-status { width: 150px; }
         .col-order { width: 155px; }
         .col-product { width: 175px; }
@@ -257,6 +280,11 @@
             font-size: 20px;
             font-weight: 800;
             list-style: none;
+        }
+        .actions-menu summary:focus-visible {
+            outline: 0;
+            border-color: #6f98dc;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, .14);
         }
         .actions-menu summary::-webkit-details-marker { display: none; }
         .actions-panel {
@@ -453,14 +481,14 @@
         .product-option span { color: var(--muted); font-size: 11px; }
         body.layer-open { overflow: hidden; }
         @media (max-width: 1180px) {
-            .filter-grid { grid-template-columns: minmax(230px, 2fr) repeat(2, minmax(150px, 1fr)); }
+            .repair-filter-main { grid-template-columns: minmax(230px, 1fr) minmax(170px, .7fr); }
         }
         @media (max-width: 900px) {
             .main { padding: 14px; }
-            .repair-hero { margin: -14px -14px 14px; padding: 17px 14px; }
+            .repair-hero { margin: -14px -14px 12px; padding: 11px 14px; }
             .page-title { font-size: 23px; }
             .metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-            .filter-grid, .filter-row-secondary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .repair-filter-main, .repair-filter-more-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
             .table-card { display: none; }
             .mobile-cards { display: grid; }
             .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -469,17 +497,23 @@
         @media (max-width: 560px) {
             .repair-hero { align-items: flex-start; }
             .page-subtitle { display: none; }
-            .hero-add { min-height: 38px; padding: 8px 11px; }
+            .hero-add { min-height: 36px; padding: 6px 10px; }
             .metrics { gap: 7px; }
-            .metric { padding: 11px; }
-            .metric-label { min-height: 28px; font-size: 10px; }
+            .metric { min-height: 54px; padding: 9px 11px; }
+            .metric-label { font-size: 11px; }
             .metric-value { font-size: 21px; }
-            .filter-grid, .filter-row-secondary, .form-grid, .detail-grid { grid-template-columns: 1fr; }
+            .repair-filter-main, .repair-filter-more-grid, .form-grid, .detail-grid { grid-template-columns: 1fr; }
             .field-span-2, .field-span-4 { grid-column: span 1; }
+            .filter-summary-actions { width: 100%; justify-content: space-between; }
             .modal { padding: 0; }
             .modal-dialog { height: 100vh; max-height: 100vh; border-radius: 0; }
             .modal-body { max-height: calc(100vh - 145px); padding: 11px; }
             .drawer { width: 100%; }
+        }
+        @media (max-width: 430px) {
+            .metrics { grid-template-columns: 1fr; }
+            .metric { min-height: 48px; }
+            .result-summary { align-items: flex-start; flex-wrap: wrap; }
         }
     </style>
 </head>
@@ -487,12 +521,17 @@
 <div class="app">
     {% include "_sidebar.html" %}
     <main class="main">
-        <header class="repair-hero">
-            <div>
-                <h1 class="page-title">Ремонт</h1>
-                <p class="page-subtitle">Обращения, диагностика, логистика и история ремонта</p>
+        <header class="repair-hero erp-page-header">
+            <div class="erp-page-heading">
+                <h1 class="page-title erp-page-title">Ремонт</h1>
+                <p class="page-subtitle erp-page-subtitle">Обращения, диагностика, логистика и история ремонта</p>
             </div>
-            <button id="openCreateRepair" class="button hero-add" type="button">＋ Добавить ремонт</button>
+            <button
+                id="openCreateRepair"
+                class="button hero-add erp-page-primary-action"
+                type="button"
+                {% if data_error %}disabled aria-disabled="true"{% endif %}
+            >＋ Добавить ремонт</button>
         </header>
 
         {% if message %}
@@ -502,76 +541,113 @@
             <div class="notice notice-error">{{ data_error }}. Запись отключена до восстановления файла.</div>
         {% endif %}
 
-        <nav class="view-tabs" aria-label="Вид ремонтов">
-            <a class="view-tab{% if repair_view == 'active' %} active{% endif %}" href="/repair">Активные</a>
-            <a class="view-tab{% if repair_view == 'archive' %} active{% endif %}" href="/repair?view=archive">Архив</a>
-            <a class="view-tab{% if repair_view == 'all' %} active{% endif %}" href="/repair?view=all">Все обращения</a>
+        <nav class="view-tabs erp-section-tabs" aria-label="Вид ремонтов">
+            <a class="view-tab erp-section-tab{% if repair_view == 'active' %} active is-active{% endif %}" href="/repair">Активные</a>
+            <a class="view-tab erp-section-tab{% if repair_view == 'archive' %} active is-active{% endif %}" href="/repair?view=archive">Архив</a>
+            <a class="view-tab erp-section-tab{% if repair_view == 'all' %} active is-active{% endif %}" href="/repair?view=all">Все обращения</a>
         </nav>
 
-        <section class="metrics" aria-label="Показатели ремонтов">
-            <article class="metric">
-                <span class="metric-label">Всего обращений</span>
-                <span id="metricTotal" class="metric-value">{{ stats.total }}</span>
+        <section class="metrics erp-metric-grid" aria-label="Показатели ремонтов">
+            <article class="metric erp-metric-card">
+                <span class="metric-label erp-metric-label">Всего обращений</span>
+                <span id="metricTotal" class="metric-value erp-metric-value">{{ stats.total }}</span>
             </article>
-            <article class="metric">
-                <span class="metric-label">У мастера / ожидают мастера</span>
-                <span id="metricMaster" class="metric-value">{{ stats.master }}</span>
+            <article class="metric erp-metric-card">
+                <span class="metric-label erp-metric-label">У мастера / ожидают мастера</span>
+                <span id="metricMaster" class="metric-value erp-metric-value">{{ stats.master }}</span>
             </article>
-            <article class="metric">
-                <span class="metric-label">В доставке</span>
-                <span id="metricDelivery" class="metric-value">{{ stats.delivery }}</span>
+            <article class="metric erp-metric-card">
+                <span class="metric-label erp-metric-label">В доставке</span>
+                <span id="metricDelivery" class="metric-value erp-metric-value">{{ stats.delivery }}</span>
             </article>
         </section>
 
-        <form id="repairFilters" class="filters" method="get" action="/repair">
+        <form id="repairFilters" class="filters erp-filter-panel" method="get" action="/repair">
             <input type="hidden" name="view" value="{{ repair_view }}">
-            <div class="filter-grid">
-                <div class="search-wrap">
-                    <input id="repairSearch" class="control" type="search" name="q" value="{{ filters.q }}" placeholder="Заказ, клиент, телефон, товар, проблема или трек-номер" autocomplete="off">
-                    <button id="clearRepairSearch" class="search-clear" type="button" aria-label="Очистить поиск">×</button>
+            <div class="repair-filter-main erp-filter-main">
+                <div class="search-wrap erp-search-wrap">
+                    <input id="repairSearch" class="control erp-control erp-search-input" type="search" name="q" value="{{ filters.q }}" placeholder="Заказ, клиент, телефон, товар, проблема или трек-номер" autocomplete="off">
+                    <button id="clearRepairSearch" class="search-clear erp-clear-control erp-search-clear" type="button" aria-label="Очистить поиск" title="Очистить поиск">×</button>
                 </div>
-                <select class="control" name="status" data-repair-filter>
+                <select class="control erp-control" name="status" aria-label="Статус" data-repair-filter>
                     <option value="">Все статусы</option>
                     {% for key, label in status_labels.items() %}
                         <option value="{{ key }}" {% if filters.status == key %}selected{% endif %}>{{ label }}</option>
                     {% endfor %}
                 </select>
-                <select class="control" name="type" data-repair-filter>
-                    <option value="">Все типы обращения</option>
+                {{ period_picker(
+                    "repairDateFilter",
+                    "repairDateFrom",
+                    "repairDateTo",
+                    "date_from",
+                    "date_to",
+                    filters.date_from,
+                    filters.date_to,
+                    "clearRepairPeriod",
+                    "Выбор периода ремонта"
+                ) }}
+                <button
+                    id="toggleRepairAdditionalFilters"
+                    class="erp-more-filter-trigger"
+                    type="button"
+                    aria-controls="repairAdditionalFilters"
+                    aria-expanded="false"
+                >
+                    <span id="repairAdditionalFiltersLabel">Дополнительные фильтры</span>
+                </button>
+            </div>
+            <div
+                id="repairAdditionalFilters"
+                class="erp-filter-more"
+                hidden
+            >
+                <div class="repair-filter-more-grid erp-filter-more-grid">
+                    <select class="control erp-control" name="type" aria-label="Тип обращения" data-repair-filter>
+                    <option value="">Все типы</option>
                     {% for key, label in type_labels.items() %}
                         <option value="{{ key }}" {% if filters.type == key %}selected{% endif %}>{{ label }}</option>
                     {% endfor %}
-                </select>
-                <select class="control" name="location" data-repair-filter>
-                    <option value="">Любое местонахождение</option>
+                    </select>
+                    <select class="control erp-control" name="location" aria-label="Местонахождение" data-repair-filter>
+                    <option value="">Все местонахождения</option>
                     {% for key, label in location_labels.items() %}
                         <option value="{{ key }}" {% if filters.location == key %}selected{% endif %}>{{ label }}</option>
                     {% endfor %}
-                </select>
-                <select class="control" name="channel" data-repair-filter>
+                    </select>
+                    <select class="control erp-control" name="channel" aria-label="Канал обращения" data-repair-filter>
                     <option value="">Все каналы</option>
                     {% for key, label in channel_labels.items() %}
                         <option value="{{ key }}" {% if filters.channel == key %}selected{% endif %}>{{ label }}</option>
                     {% endfor %}
-                </select>
+                    </select>
+                    <select class="control erp-control" name="sort" aria-label="Сортировка" data-repair-filter>
+                        <option value="date_desc" {% if filters.sort == 'date_desc' %}selected{% endif %}>Сначала новые</option>
+                        <option value="date_asc" {% if filters.sort == 'date_asc' %}selected{% endif %}>Сначала старые</option>
+                        <option value="status" {% if filters.sort == 'status' %}selected{% endif %}>По статусу</option>
+                    </select>
+                </div>
             </div>
-            <div class="filter-row-secondary">
-                <input class="control" type="date" name="date_from" value="{{ filters.date_from }}" aria-label="Период с" data-repair-filter>
-                <input class="control" type="date" name="date_to" value="{{ filters.date_to }}" aria-label="Период по" data-repair-filter>
-                <select class="control" name="sort" data-repair-filter>
-                    <option value="date_desc" {% if filters.sort == 'date_desc' %}selected{% endif %}>Сначала новые</option>
-                    <option value="date_asc" {% if filters.sort == 'date_asc' %}selected{% endif %}>Сначала старые</option>
-                    <option value="status" {% if filters.sort == 'status' %}selected{% endif %}>По статусу</option>
-                </select>
-                <button id="resetRepairFilters" class="button button-secondary" type="button">Сбросить фильтры</button>
-            </div>
-            <div class="result-summary">
+            <div class="result-summary erp-filter-summary" aria-live="polite">
                 <span id="repairResultCount">Показано: {{ cases|length }}</span>
-                <span>Поиск и фильтры применяются сразу</span>
+                <span class="filter-summary-actions">
+                    <button
+                        id="resetRepairFilters"
+                        class="erp-reset-compact"
+                        type="button"
+                        hidden
+                    >
+                        <svg class="reset-icon" viewBox="0 0 20 20" aria-hidden="true">
+                            <path d="M4.5 5.5v4h4"></path>
+                            <path d="M5 9a5.5 5.5 0 1 1 1.3 4.9"></path>
+                        </svg>
+                        Сбросить
+                    </button>
+                    <span>Поиск и фильтры применяются сразу</span>
+                </span>
             </div>
         </form>
 
-        <section class="table-card">
+        <section class="table-card erp-table-card">
             <div class="table-wrap">
                 <table class="repair-table" aria-label="Ремонты">
                     <thead>
@@ -608,29 +684,29 @@
                                 <div class="cell-sub">{{ case.client_name or "Клиент не указан" }}</div>
                             </td>
                             <td>
-                                <div class="cell-main clamp-2">
+                                <div class="cell-main clamp-2" title="{{ (case.brand ~ (' · ' if case.brand and case.model else '') ~ case.model ~ (' · ' if (case.brand or case.model) and case.product_name else '') ~ case.product_name)|trim }}">
                                     {% if case.brand %}{{ case.brand }}{% endif %}
                                     {% if case.model %} · {{ case.model }}{% endif %}
                                     {% if not case.brand and not case.model %}{{ case.product_name or "—" }}{% endif %}
                                 </div>
                                 {% if (case.brand or case.model) and case.product_name %}
-                                    <div class="cell-sub clamp-2">{{ case.product_name }}</div>
+                                    <div class="cell-sub clamp-2" title="{{ case.product_name }}">{{ case.product_name }}</div>
                                 {% elif case.article %}
                                     <div class="cell-sub">Арт. {{ case.article }}</div>
                                 {% endif %}
                             </td>
                             <td>
                                 <div class="cell-main">{{ case.channel_label }}</div>
-                                <div class="cell-sub clamp-2">{{ case.contact or case.client_phone or case.client_email or "Не указан" }}</div>
+                                <div class="cell-sub clamp-2" title="{{ case.contact or case.client_phone or case.client_email or 'Не указан' }}">{{ case.contact or case.client_phone or case.client_email or "Не указан" }}</div>
                             </td>
                             <td>
                                 <div class="cell-main">{{ case.request_type_label }}</div>
-                                <div class="cell-sub clamp-2">{{ case.problem or "—" }}</div>
+                                <div class="cell-sub clamp-2" title="{{ case.problem or '—' }}">{{ case.problem or "—" }}</div>
                             </td>
                             <td>
                                 <div class="cell-main">{{ case.location_label }}</div>
                                 {% if case.latest_shipment %}
-                                    <div class="cell-sub clamp-2">
+                                    <div class="cell-sub clamp-2" title="{{ case.latest_shipment.direction_label }}{% if case.latest_shipment.carrier %} · {{ case.latest_shipment.carrier }}{% endif %}{% if case.latest_shipment.track_number %} · {{ case.latest_shipment.track_number }}{% endif %}">
                                         {{ case.latest_shipment.direction_label }}
                                         {% if case.latest_shipment.carrier %} · {{ case.latest_shipment.carrier }}{% endif %}
                                         {% if case.latest_shipment.track_number %}<br>{{ case.latest_shipment.track_number }}{% endif %}
@@ -647,7 +723,7 @@
                                     {% if case.master_handoff_at_display %}Мастеру: {{ case.master_handoff_at_display }}{% else %}Мастеру: —{% endif %}
                                 </div>
                             </td>
-                            <td><div class="cell-main clamp-2" data-case-latest-event>{{ case.latest_event or "—" }}</div></td>
+                            <td><div class="cell-main clamp-2" title="{{ case.latest_event or '—' }}" data-case-latest-event>{{ case.latest_event or "—" }}</div></td>
                             <td>
                                 <details class="actions-menu">
                                     <summary aria-label="Открыть действия">⋯</summary>
@@ -692,7 +768,7 @@
                     {% endfor %}
                     </tbody>
                 </table>
-                <div id="desktopEmpty" class="empty" {% if cases %}hidden{% endif %}>
+                <div id="desktopEmpty" class="empty erp-empty-state" {% if cases %}hidden{% endif %}>
                     <strong>Ремонтов не найдено</strong>
                     Измените фильтры или добавьте новое обращение.
                 </div>
@@ -739,7 +815,7 @@
                     </div>
                 </article>
             {% endfor %}
-            <div id="mobileEmpty" class="empty" {% if cases %}hidden{% endif %}>
+            <div id="mobileEmpty" class="empty erp-empty-state" {% if cases %}hidden{% endif %}>
                 <strong>Ремонтов не найдено</strong>
                 Измените фильтры или добавьте обращение.
             </div>
@@ -912,6 +988,7 @@
 
 <script id="repairData" type="application/json">{{ cases|tojson }}</script>
 <script id="repairCatalogData" type="application/json">{{ catalog_items|tojson }}</script>
+<script src="{{ url_for('static', filename='js/period-picker.js') }}"></script>
 <script>
 (function () {
     const cases = JSON.parse(document.getElementById("repairData").textContent || "[]");
@@ -920,12 +997,27 @@
     const statusOrder = {{ status_labels.keys()|list|tojson }};
     const filterForm = document.getElementById("repairFilters");
     const searchInput = document.getElementById("repairSearch");
+    const additionalFilters = document.getElementById("repairAdditionalFilters");
+    const additionalFiltersTrigger = document.getElementById("toggleRepairAdditionalFilters");
+    const additionalFiltersLabel = document.getElementById("repairAdditionalFiltersLabel");
+    const resetFiltersButton = document.getElementById("resetRepairFilters");
     const tableBody = document.getElementById("repairTableBody");
     const mobileCards = document.getElementById("repairMobileCards");
     const drawer = document.getElementById("repairDrawer");
     const overlay = document.getElementById("repairOverlay");
     const modal = document.getElementById("repairModal");
     const repairForm = document.getElementById("repairForm");
+    const initialServerFilterActive = Boolean(
+        searchInput.value
+        || filterForm.elements.status.value
+        || filterForm.elements.type.value
+        || filterForm.elements.location.value
+        || filterForm.elements.channel.value
+        || filterForm.elements.date_from.value
+        || filterForm.elements.date_to.value
+        || filterForm.elements.sort.value !== "date_desc"
+    );
+    let repairPeriodPicker = null;
     let activeCaseId = "";
 
     function normalize(value) {
@@ -983,6 +1075,31 @@
         });
         nodes.forEach(node => container.appendChild(node));
     }
+    function appliedAdditionalFilterCount(filters) {
+        return [
+            filters.type,
+            filters.location,
+            filters.channel,
+            filters.sort !== "date_desc" ? filters.sort : ""
+        ].filter(Boolean).length;
+    }
+    function updateFilterControls(filters) {
+        const additionalCount = appliedAdditionalFilterCount(filters);
+        const hasFilters = Boolean(
+            searchInput.value.trim()
+            || filters.status
+            || filters.dateFrom
+            || filters.dateTo
+            || additionalCount
+        );
+
+        additionalFiltersLabel.textContent = additionalCount
+            ? `Дополнительные фильтры · ${additionalCount}`
+            : "Дополнительные фильтры";
+        additionalFiltersTrigger.classList.toggle("has-active-filters", additionalCount > 0);
+        resetFiltersButton.hidden = !hasFilters;
+        document.getElementById("clearRepairSearch").hidden = !searchInput.value;
+    }
     function applyFilters() {
         const filters = filterValues();
         sortNodes(tableBody, "[data-repair-row]", filters.sort);
@@ -1004,7 +1121,7 @@
         document.getElementById("metricTotal").textContent = visibleCases.length;
         document.getElementById("metricMaster").textContent = visibleCases.filter(item => ["waiting_master", "at_master"].includes(item.status)).length;
         document.getElementById("metricDelivery").textContent = visibleCases.filter(item => ["inbound_transit", "outbound_transit"].includes(item.status)).length;
-        document.getElementById("clearRepairSearch").hidden = !searchInput.value;
+        updateFilterControls(filters);
     }
     function updateRenderedCase(item) {
         const stored = casesById.get(String(item.id));
@@ -1055,17 +1172,46 @@
     filterForm.addEventListener("submit", event => event.preventDefault());
     searchInput.addEventListener("input", applyFilters);
     filterForm.querySelectorAll("[data-repair-filter]").forEach(field => field.addEventListener("change", applyFilters));
+    additionalFiltersTrigger.addEventListener("click", () => {
+        const expanded = additionalFiltersTrigger.getAttribute("aria-expanded") === "true";
+        additionalFilters.hidden = expanded;
+        additionalFiltersTrigger.setAttribute("aria-expanded", String(!expanded));
+    });
+    additionalFilters.addEventListener("keydown", event => {
+        if (event.key !== "Escape") return;
+        additionalFilters.hidden = true;
+        additionalFiltersTrigger.setAttribute("aria-expanded", "false");
+        additionalFiltersTrigger.focus();
+    });
     document.getElementById("clearRepairSearch").addEventListener("click", () => {
         searchInput.value = "";
         searchInput.focus();
         applyFilters();
     });
-    document.getElementById("resetRepairFilters").addEventListener("click", () => {
+    resetFiltersButton.addEventListener("click", () => {
+        if (initialServerFilterActive) {
+            const baseUrl = new URL(window.location.href);
+            baseUrl.search = "";
+            if (filterForm.elements.view.value !== "active") {
+                baseUrl.searchParams.set("view", filterForm.elements.view.value);
+            }
+            window.location.assign(baseUrl);
+            return;
+        }
         searchInput.value = "";
         ["status", "type", "location", "channel", "date_from", "date_to"].forEach(name => filterForm.elements[name].value = "");
         filterForm.elements.sort.value = "date_desc";
+        repairPeriodPicker?.updateLabel();
         applyFilters();
     });
+    repairPeriodPicker = window.initializeErpPeriodPicker(
+        document.getElementById("repairDateFilter"),
+        {
+            clearButton: document.getElementById("clearRepairPeriod"),
+            onChange: applyFilters
+        }
+    );
+    applyFilters();
 
     function openDrawer(caseId) {
         const item = casesById.get(String(caseId));

@@ -60,9 +60,14 @@
         }
 
         document.addEventListener("click", function(event) {
+            const eventPath = typeof event.composedPath === "function"
+                ? event.composedPath()
+                : [];
+
             if (
                 !popup.hidden
                 && !root.contains(event.target)
+                && !eventPath.includes(root)
             ) {
                 close();
             }
@@ -139,7 +144,11 @@
         ];
         let draftFrom = fromInput.value;
         let draftTo = toInput.value;
-        const initialMonth = parseIsoDate(draftFrom) || new Date();
+        const initialMonth = (
+            parseIsoDate(draftFrom)
+            || parseIsoDate(draftTo)
+            || new Date()
+        );
         let visibleMonth = new Date(
             initialMonth.getFullYear(),
             initialMonth.getMonth(),
@@ -152,13 +161,20 @@
             );
 
             if (rangeLabel) {
-                rangeLabel.textContent = fromInput.value
-                    ? displayDate(fromInput.value)
+                if (fromInput.value && toInput.value) {
+                    rangeLabel.textContent =
+                        displayDate(fromInput.value)
                         + " — "
-                        + displayDate(
-                            toInput.value || fromInput.value
-                        )
-                    : "Период";
+                        + displayDate(toInput.value);
+                } else if (fromInput.value) {
+                    rangeLabel.textContent =
+                        "С " + displayDate(fromInput.value);
+                } else if (toInput.value) {
+                    rangeLabel.textContent =
+                        "До " + displayDate(toInput.value);
+                } else {
+                    rangeLabel.textContent = "Период";
+                }
             }
 
             trigger.classList.toggle("is-active", hasPeriod);
@@ -229,6 +245,14 @@
 
                 button.type = "button";
                 button.className = "warehouse-calendar-day";
+                button.setAttribute(
+                    "aria-label",
+                    date.toLocaleDateString("ru-RU", {
+                        day: "numeric",
+                        month: "long",
+                        year: "numeric",
+                    })
+                );
                 number.textContent = String(date.getDate());
                 button.appendChild(number);
 
@@ -248,6 +272,9 @@
                     && value <= draftTo
                 ) {
                     button.classList.add("is-in-range");
+                    button.setAttribute("aria-pressed", "true");
+                } else {
+                    button.setAttribute("aria-pressed", "false");
                 }
 
                 button.addEventListener("click", function() {
@@ -275,7 +302,10 @@
 
             draftFrom = fromInput.value;
             draftTo = toInput.value;
-            const selectedMonth = parseIsoDate(draftFrom);
+            const selectedMonth = (
+                parseIsoDate(draftFrom)
+                || parseIsoDate(draftTo)
+            );
 
             if (selectedMonth) {
                 visibleMonth = new Date(
