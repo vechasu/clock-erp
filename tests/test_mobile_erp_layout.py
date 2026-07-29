@@ -192,7 +192,8 @@ class MobileErpLayoutTest(unittest.TestCase):
         self.assertIn('id="salesMobileSort"', sales_html)
 
         self.assertIn('class="receipt-row"', receipts_html)
-        self.assertIn('id="receiptMobileFilterTrigger"', receipts_html)
+        self.assertIn('id="receiptDateFilter"', receipts_html)
+        self.assertIn("warehouse-calendar-popup", receipts_html)
         self.assertIn('id="receiptMobileSort"', receipts_html)
         self.assertIn("28.07.2026", receipts_html)
         self.assertIn("css/erp-components.css", receipts_html)

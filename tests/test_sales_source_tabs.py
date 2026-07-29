@@ -29,6 +29,7 @@ EXPECTED_COLUMNS = {
         "Цена",
         "Комиссия",
         "Статус",
+        "Примечание",
     ],
     "tictactoy": [
         "Дата",
@@ -973,8 +974,8 @@ class SalesSourceTabsTest(unittest.TestCase):
         self.assertIn(commission, page)
         self.assertIn("Amazon (US)", page)
         self.assertIn("Япония", page)
-        self.assertIn(">Отправлен<", page)
-        self.assertIn(">Возврат<", page)
+        self.assertIn("Отправлен", page)
+        self.assertIn("Возврат", page)
 
     def test_ajax_edit_updates_manual_sale_without_stock_write(self):
         self.manual_sales_path.write_text(

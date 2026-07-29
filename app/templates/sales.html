@@ -244,39 +244,6 @@
             gap: 8px;
         }
 
-        .warehouse-date-filter {
-            position: relative;
-        }
-
-        .sales-period-control {
-            display: grid;
-            min-width: 0;
-            grid-template-columns: minmax(0, 1fr) auto;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .warehouse-date-trigger {
-            display: flex;
-            min-width: 184px;
-            height: 40px;
-            align-items: center;
-            justify-content: space-between;
-            padding: 0 13px;
-            border: 1px solid #dce3ed;
-            border-radius: 10px;
-            background: #ffffff;
-            color: #172033;
-            font-size: 12px;
-            font-weight: 750;
-        }
-
-        .sales-period-clear {
-            position: static;
-            transform: none;
-        }
-
-        .sales-period-clear[hidden],
         .sales-date-clear[hidden] {
             display: none;
         }
@@ -290,126 +257,6 @@
             color: #64748b;
             font-size: 12px;
             font-weight: 800;
-        }
-
-        .warehouse-calendar-popup {
-            position: absolute;
-            z-index: 100;
-            top: calc(100% + 7px);
-            right: 0;
-            width: min(292px, calc(100vw - 32px));
-            padding: 12px;
-            border: 1px solid #dce3ed;
-            border-radius: 14px;
-            background: #ffffff;
-            box-shadow: 0 16px 40px rgba(15, 23, 42, 0.14);
-        }
-
-        .warehouse-calendar-popup[hidden] {
-            display: none;
-        }
-
-        .warehouse-calendar-header {
-            display: grid;
-            grid-template-columns: 30px 1fr 30px;
-            align-items: center;
-            gap: 6px;
-            margin-bottom: 9px;
-        }
-
-        .warehouse-calendar-nav {
-            width: 30px;
-            height: 30px;
-            padding: 0;
-            border: 1px solid #e2e8f0;
-            border-radius: 9px;
-            background: #ffffff;
-            color: #475569;
-        }
-
-        .warehouse-calendar-month {
-            color: #172033;
-            font-size: 14px;
-            font-weight: 750;
-            text-align: center;
-        }
-
-        .warehouse-calendar-weekdays,
-        .warehouse-calendar-days {
-            display: grid;
-            grid-template-columns: repeat(7, minmax(0, 1fr));
-        }
-
-        .warehouse-calendar-weekdays {
-            color: #94a3b8;
-            font-size: 10px;
-            font-weight: 700;
-            text-align: center;
-        }
-
-        .warehouse-calendar-weekdays span {
-            padding: 4px 0;
-        }
-
-        .warehouse-calendar-day {
-            height: 34px;
-            padding: 0;
-            border: 0;
-            background: transparent;
-            color: #334155;
-            font-size: 12px;
-        }
-
-        .warehouse-calendar-day span {
-            display: inline-flex;
-            width: 30px;
-            height: 30px;
-            align-items: center;
-            justify-content: center;
-            border-radius: 50%;
-        }
-
-        .warehouse-calendar-day.is-outside {
-            color: #cbd5e1;
-        }
-
-        .warehouse-calendar-day.is-in-range {
-            background: #dbeafe;
-        }
-
-        .warehouse-calendar-day.is-start span,
-        .warehouse-calendar-day.is-end span {
-            background: #2563eb;
-            color: #ffffff;
-        }
-
-        .warehouse-calendar-actions {
-            display: flex;
-            justify-content: flex-end;
-            gap: 8px;
-            margin-top: 10px;
-            padding-top: 10px;
-            border-top: 1px solid #eef2f7;
-        }
-
-        .warehouse-calendar-actions button {
-            min-height: 34px;
-            padding: 0 12px;
-            border-radius: 9px;
-            font-size: 12px;
-            font-weight: 750;
-        }
-
-        .warehouse-calendar-reset {
-            border: 1px solid #e2e8f0;
-            background: #ffffff;
-            color: #64748b;
-        }
-
-        .warehouse-calendar-apply {
-            border: 1px solid #2563eb;
-            background: #2563eb;
-            color: #ffffff;
         }
 
         .table-card {
@@ -1175,6 +1022,9 @@
     <script
         src="{{ url_for('static', filename='js/catalog-combobox.js') }}"
     ></script>
+    <script
+        src="{{ url_for('static', filename='js/period-picker.js') }}"
+    ></script>
 </head>
 
 <body class="sales-page">
@@ -1731,6 +1581,10 @@
                                                 >
                                                     {{ (value or "—")|replace(" ", " ") }}
                                                 </span>
+                                            {% elif column.key == "note" %}
+                                                <span
+                                                    class="{% if sale.is_manual %}manual-view-value{% else %}automatic-view-value{% endif %}"
+                                                >{{ value or "" }}</span>
                                             {% else %}
                                                 <span
                                                     class="{% if sale.is_manual %}manual-view-value{% else %}automatic-view-value{% endif %}{% if not value %} erp-muted-value{% endif %}"
@@ -1893,7 +1747,13 @@
                                     {% if column.key not in ["created_at", "source", "brand", "category", "product_name", "quantity_display", "unit_price_display"] %}
                                         <div class="mobile-erp-detail-row">
                                             <span>{{ column.label }}</span>
-                                            <span>{{ sale[column.key] or "—" }}</span>
+                                            <span>
+                                                {% if column.key == "note" %}
+                                                    {{ sale[column.key] or "" }}
+                                                {% else %}
+                                                    {{ sale[column.key] or "—" }}
+                                                {% endif %}
+                                            </span>
                                         </div>
                                     {% endif %}
                                 {% endfor %}
@@ -2452,6 +2312,7 @@
 <script>
     const activeSalesSource = {{ active_source | tojson }};
     const warehouseItems = {{ warehouse_items | tojson }};
+    const catalogTaxonomy = {{ catalog_taxonomy | tojson }};
     const tictactoyLocationData = (
         {{ tictactoy_location_data | tojson }}
     );
@@ -3337,183 +3198,18 @@
     }
 
     function initializeSalesDateFilter() {
-        if (!salesDateFilter) {
-            return;
-        }
-
-        const trigger = salesDateFilter.querySelector(
-            ".warehouse-date-trigger"
-        );
-        const popup = salesDateFilter.querySelector(
-            ".warehouse-calendar-popup"
-        );
-        const monthLabel = salesDateFilter.querySelector(
-            "[data-calendar-month]"
-        );
-        const daysGrid = salesDateFilter.querySelector(
-            "[data-calendar-days]"
-        );
-        const monthNames = [
-            "январь",
-            "февраль",
-            "март",
-            "апрель",
-            "май",
-            "июнь",
-            "июль",
-            "август",
-            "сентябрь",
-            "октябрь",
-            "ноябрь",
-            "декабрь",
-        ];
-        let draftFrom = salesDateFrom.value;
-        let draftTo = salesDateTo.value;
-        const initialMonth =
-            parseSalesDate(draftFrom) || new Date();
-        let visibleMonth = new Date(
-            initialMonth.getFullYear(),
-            initialMonth.getMonth(),
-            1,
-        );
-        const calendarPopover = salesPopoverManager.register({
-            trigger,
-            panel: popup,
-            onClose() {
-                salesDateFilter.classList.remove("is-open");
+        window.initializeErpPeriodPicker(
+            salesDateFilter,
+            {
+                fromInput: salesDateFrom,
+                toInput: salesDateTo,
+                popoverManager: salesPopoverManager,
+                onChange() {
+                    updateSalesPeriodLabel();
+                    applySalesFilters();
+                },
             },
-        });
-
-        function closeCalendar(returnFocus = false) {
-            salesDateFilter.classList.remove("is-open");
-            calendarPopover.close({returnFocus});
-        }
-
-        function renderCalendar() {
-            const year = visibleMonth.getFullYear();
-            const month = visibleMonth.getMonth();
-            monthLabel.textContent =
-                monthNames[month] + " " + year;
-            daysGrid.replaceChildren();
-
-            const firstDay = new Date(year, month, 1);
-            const mondayOffset =
-                (firstDay.getDay() + 6) % 7;
-            const firstVisible = new Date(
-                year,
-                month,
-                1 - mondayOffset,
-            );
-
-            for (let index = 0; index < 42; index += 1) {
-                const date = new Date(
-                    firstVisible.getFullYear(),
-                    firstVisible.getMonth(),
-                    firstVisible.getDate() + index,
-                );
-                const value = salesIsoDate(date);
-                const button = document.createElement("button");
-
-                button.type = "button";
-                button.className = "warehouse-calendar-day";
-                button.innerHTML =
-                    "<span>" + date.getDate() + "</span>";
-
-                if (date.getMonth() !== month) {
-                    button.classList.add("is-outside");
-                }
-                if (value === draftFrom) {
-                    button.classList.add("is-start");
-                }
-                if (value === draftTo) {
-                    button.classList.add("is-end");
-                }
-                if (
-                    draftFrom
-                    && draftTo
-                    && value >= draftFrom
-                    && value <= draftTo
-                ) {
-                    button.classList.add("is-in-range");
-                }
-
-                button.addEventListener("click", () => {
-                    if (!draftFrom || draftTo) {
-                        draftFrom = value;
-                        draftTo = "";
-                    } else if (value < draftFrom) {
-                        draftTo = draftFrom;
-                        draftFrom = value;
-                    } else {
-                        draftTo = value;
-                    }
-
-                    renderCalendar();
-                });
-                daysGrid.appendChild(button);
-            }
-        }
-
-        trigger.addEventListener("click", () => {
-            if (calendarPopover.isOpen()) {
-                closeCalendar();
-                return;
-            }
-
-            draftFrom = salesDateFrom.value;
-            draftTo = salesDateTo.value;
-            salesDateFilter.classList.add("is-open");
-            renderCalendar();
-            calendarPopover.open();
-        });
-
-        salesDateFilter
-            .querySelector("[data-calendar-prev]")
-            .addEventListener("click", () => {
-                visibleMonth = new Date(
-                    visibleMonth.getFullYear(),
-                    visibleMonth.getMonth() - 1,
-                    1,
-                );
-                renderCalendar();
-            });
-
-        salesDateFilter
-            .querySelector("[data-calendar-next]")
-            .addEventListener("click", () => {
-                visibleMonth = new Date(
-                    visibleMonth.getFullYear(),
-                    visibleMonth.getMonth() + 1,
-                    1,
-                );
-                renderCalendar();
-            });
-
-        salesDateFilter
-            .querySelector("[data-calendar-reset]")
-            .addEventListener("click", () => {
-                draftFrom = "";
-                draftTo = "";
-                salesDateFrom.value = "";
-                salesDateTo.value = "";
-                updateSalesPeriodLabel();
-                closeCalendar();
-                applySalesFilters();
-            });
-
-        salesDateFilter
-            .querySelector("[data-calendar-apply]")
-            .addEventListener("click", () => {
-                if (draftFrom && !draftTo) {
-                    draftTo = draftFrom;
-                }
-                salesDateFrom.value = draftFrom;
-                salesDateTo.value = draftTo;
-                updateSalesPeriodLabel();
-                closeCalendar();
-                applySalesFilters();
-            });
-
+        );
     }
 
     function sortSalesTable(field, forcedDirection) {
@@ -4676,6 +4372,24 @@
                 count: (current ? current.count : 0) + 1,
             });
         });
+        (catalogTaxonomy.categories || [])
+            .filter((item) => {
+                return (
+                    normalizeProductSearch(item.brand)
+                    === brand
+                );
+            })
+            .forEach((item) => {
+                const category = String(item.name || "").trim();
+                const key = normalizeProductSearch(category);
+
+                if (key && !categories.has(key)) {
+                    categories.set(key, {
+                        value: category,
+                        count: 0,
+                    });
+                }
+            });
 
         const categoryOptions = Array.from(
             categories.values()

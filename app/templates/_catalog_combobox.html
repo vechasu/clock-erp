@@ -1,4 +1,4 @@
-{% macro render_catalog_combobox(component_id, input_name, options, selected_value="", include_all=false, item_label="значение", all_label="Все", disabled=false, prefix_search=true, empty_label="Ничего не найдено", component_class="", clear_selection_on_search_clear=false, input_id="", search_enabled=true) %}
+{% macro render_catalog_combobox(component_id, input_name, options, selected_value="", include_all=false, item_label="значение", all_label="Все", disabled=false, prefix_search=true, empty_label="Ничего не найдено", component_class="", clear_selection_on_search_clear=false, input_id="", search_enabled=true, form_id="", action_kind="", action_label="") %}
     <div
         id="{{ component_id }}"
         class="brand-combobox{% if component_class %} {{ component_class }}{% endif %}"
@@ -14,6 +14,7 @@
             type="hidden"
             name="{{ input_name }}"
             value="{{ selected_value }}"
+            {% if form_id %}form="{{ form_id }}"{% endif %}
             {% if disabled %}disabled{% endif %}
         >
         <button
@@ -86,6 +87,15 @@
                     hidden
                 >{{ empty_label }}</div>
             </div>
+            {% if action_kind and action_label %}
+                <button
+                    class="catalog-combobox-action"
+                    type="button"
+                    data-catalog-create-action="{{ action_kind }}"
+                >
+                    ＋ {{ action_label }}
+                </button>
+            {% endif %}
         </div>
     </div>
 {% endmacro %}

@@ -373,7 +373,11 @@
                         {% for column in report_columns %}
                             {% set value = sale[column.key] %}
                             <td{% if column.key in ['unit_price_display', 'delivery_cost_display'] %} class="money-cell"{% endif %}>
-                                {{ value or "—" }}
+                                {% if column.key == "note" %}
+                                    {{ value or "" }}
+                                {% else %}
+                                    {{ value or "—" }}
+                                {% endif %}
                             </td>
                         {% endfor %}
                     </tr>

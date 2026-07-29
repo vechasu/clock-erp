@@ -941,16 +941,173 @@ def build_category_tree(items):
     return convert(tree)
 
 
+CATALOG_TAXONOMY_PATH = (
+    PROJECT_ROOT / "instance" / "catalog_taxonomy.json"
+)
+
+
+def normalize_catalog_label(value):
+    return " ".join(str(value or "").split())
+
+
+def catalog_label_key(value):
+    return (
+        normalize_catalog_label(value)
+        .casefold()
+        .replace("ё", "е")
+    )
+
+
+def load_catalog_taxonomy():
+    empty = {
+        "brands": [],
+        "categories": [],
+    }
+
+    try:
+        if not CATALOG_TAXONOMY_PATH.exists():
+            return empty
+
+        payload = json.loads(
+            CATALOG_TAXONOMY_PATH.read_text(encoding="utf-8")
+            or "{}"
+        )
+    except (OSError, json.JSONDecodeError):
+        return empty
+
+    brands = []
+    seen_brands = set()
+
+    for value in payload.get("brands") or []:
+        label = normalize_catalog_label(value)
+        key = catalog_label_key(label)
+
+        if label and key not in seen_brands:
+            seen_brands.add(key)
+            brands.append(label)
+
+    categories = []
+    seen_categories = set()
+
+    for item in payload.get("categories") or []:
+        if not isinstance(item, dict):
+            continue
+
+        brand = normalize_catalog_label(item.get("brand"))
+        name = normalize_catalog_label(item.get("name"))
+        key = (
+            catalog_label_key(brand),
+            catalog_label_key(name),
+        )
+
+        if (
+            brand
+            and name
+            and key not in seen_categories
+        ):
+            seen_categories.add(key)
+            categories.append({
+                "brand": brand,
+                "name": name,
+            })
+
+    return {
+        "brands": sorted(brands, key=str.casefold),
+        "categories": sorted(
+            categories,
+            key=lambda item: (
+                item["brand"].casefold(),
+                item["name"].casefold(),
+            ),
+        ),
+    }
+
+
+def save_catalog_taxonomy(taxonomy):
+    CATALOG_TAXONOMY_PATH.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+    temporary_path = CATALOG_TAXONOMY_PATH.with_suffix(
+        ".tmp"
+    )
+    temporary_path.write_text(
+        json.dumps(
+            taxonomy,
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    temporary_path.replace(CATALOG_TAXONOMY_PATH)
+
+
+def remember_catalog_classification(brand, category=""):
+    brand = normalize_catalog_label(brand)
+    category = normalize_catalog_label(category)
+    taxonomy = load_catalog_taxonomy()
+    brand_keys = {
+        catalog_label_key(value)
+        for value in taxonomy["brands"]
+    }
+
+    if brand and catalog_label_key(brand) not in brand_keys:
+        taxonomy["brands"].append(brand)
+
+    category_keys = {
+        (
+            catalog_label_key(item["brand"]),
+            catalog_label_key(item["name"]),
+        )
+        for item in taxonomy["categories"]
+    }
+    category_key = (
+        catalog_label_key(brand),
+        catalog_label_key(category),
+    )
+
+    if (
+        brand
+        and category
+        and category_key not in category_keys
+    ):
+        taxonomy["categories"].append({
+            "brand": brand,
+            "name": category,
+        })
+
+    taxonomy["brands"].sort(key=str.casefold)
+    taxonomy["categories"].sort(
+        key=lambda item: (
+            item["brand"].casefold(),
+            item["name"].casefold(),
+        )
+    )
+    save_catalog_taxonomy(taxonomy)
+
+
 def build_brand_groups(items):
     groups = {}
+    taxonomy_brands = load_catalog_taxonomy()["brands"]
+    taxonomy_brand_keys = {
+        catalog_label_key(brand)
+        for brand in taxonomy_brands
+    }
 
     for item in items:
         brand = str(item.get("brand") or "").strip()
         if not brand or brand == "Без бренда":
             continue
-        key = brand.casefold()
+        key = catalog_label_key(brand)
         group = groups.setdefault(key, {"name": brand, "count": 0.0})
         group["count"] += float(item.get("stock") or 0)
+
+    for brand in taxonomy_brands:
+        groups.setdefault(
+            catalog_label_key(brand),
+            {"name": brand, "count": 0.0},
+        )
 
     for group in groups.values():
         if group["count"].is_integer():
@@ -960,6 +1117,8 @@ def build_brand_groups(items):
         groups[key]
         for key in sorted(groups)
         if groups[key]["count"] >= 1
+        or catalog_label_key(groups[key]["name"])
+            in taxonomy_brand_keys
     ]
 
 
@@ -970,9 +1129,24 @@ def build_category_groups(items):
         category = str(item.get("category") or "").strip()
         if not category or category == "Без категории":
             continue
-        key = category.casefold()
+        key = catalog_label_key(category)
         group = groups.setdefault(key, {"name": category, "count": 0.0})
         group["count"] += float(item.get("stock") or 0)
+
+    taxonomy_categories = {
+        item["name"]
+        for item in load_catalog_taxonomy()["categories"]
+    }
+    taxonomy_category_keys = {
+        catalog_label_key(category)
+        for category in taxonomy_categories
+    }
+
+    for category in taxonomy_categories:
+        groups.setdefault(
+            catalog_label_key(category),
+            {"name": category, "count": 0.0},
+        )
 
     for group in groups.values():
         if group["count"].is_integer():
@@ -982,6 +1156,7 @@ def build_category_groups(items):
         groups[key]
         for key in sorted(groups)
         if groups[key]["count"] >= 1
+        or key in taxonomy_category_keys
     ]
 
 
@@ -3256,6 +3431,7 @@ SALES_TABLE_COLUMNS = {
         ("unit_price_display", "Цена"),
         ("commission", "Комиссия"),
         ("order_status_label", "Статус"),
+        ("note", "Примечание"),
     ],
     "tictactoy": [
         ("created_at", "Дата"),
@@ -6267,7 +6443,11 @@ def sales_report_pdf():
 
     for sale in sales:
         values = [
-            sale.get(column["key"]) or "—"
+            (
+                sale.get(column["key"]) or ""
+                if column["key"] == "note"
+                else sale.get(column["key"]) or "—"
+            )
             for column in report_columns
         ]
 
@@ -6790,6 +6970,7 @@ def build_legacy_sales_page():
             TICTACTOY_SALE_COUNTRIES
         ),
         tictactoy_location_data=get_tictactoy_location_catalog(),
+        catalog_taxonomy=load_catalog_taxonomy(),
     )
 
 
@@ -6885,6 +7066,7 @@ def sales_page():
         sales_columns=get_sales_columns(active_source),
         warehouse_items=catalog_items,
         brand_groups=build_brand_groups(catalog_items),
+        catalog_taxonomy=load_catalog_taxonomy(),
         total_sales=len(active_sales),
         total_cancelled=len(sales) - len(active_sales),
         total_orders=len(unique_orders),
@@ -6975,6 +7157,337 @@ def generate_receipt_number(receipts):
     return f"{prefix}{max(numbers, default=0) + 1:04d}"
 
 
+def build_receipt_catalog_context(items):
+    items = items if isinstance(items, list) else []
+    taxonomy = load_catalog_taxonomy()
+    brands = {}
+    categories = {}
+
+    for item in items:
+        brand = normalize_catalog_label(
+            item.get("brand")
+            or item.get("manufacturer")
+        )
+        category = normalize_catalog_label(
+            item.get("category")
+        )
+
+        if brand and brand != "Без бренда":
+            brands.setdefault(catalog_label_key(brand), brand)
+
+        if brand and category and category != "Без категории":
+            categories.setdefault(
+                (
+                    catalog_label_key(brand),
+                    catalog_label_key(category),
+                ),
+                {
+                    "brand": brand,
+                    "name": category,
+                },
+            )
+
+    for brand in taxonomy["brands"]:
+        brands.setdefault(catalog_label_key(brand), brand)
+
+    for item in taxonomy["categories"]:
+        categories.setdefault(
+            (
+                catalog_label_key(item["brand"]),
+                catalog_label_key(item["name"]),
+            ),
+            dict(item),
+        )
+
+    brand_values = sorted(
+        brands.values(),
+        key=str.casefold,
+    )
+    category_values = sorted(
+        categories.values(),
+        key=lambda item: (
+            item["brand"].casefold(),
+            item["name"].casefold(),
+        ),
+    )
+
+    return {
+        "brands": build_sale_combobox_options(brand_values),
+        "categories": category_values,
+    }
+
+
+def find_catalog_label(values, requested):
+    requested_key = catalog_label_key(requested)
+
+    return next(
+        (
+            value
+            for value in values
+            if catalog_label_key(value) == requested_key
+        ),
+        None,
+    )
+
+
+@app.route("/receipts/catalog/create", methods=["POST"])
+def receipt_catalog_create():
+    require_csrf_when_authenticated()
+    payload = request.get_json(silent=True)
+
+    if not isinstance(payload, dict):
+        payload = request.form
+
+    kind = normalize_catalog_label(payload.get("kind")).lower()
+    name = normalize_catalog_label(payload.get("name"))
+    requested_brand = normalize_catalog_label(
+        payload.get("brand")
+    )
+    requested_category = normalize_catalog_label(
+        payload.get("category")
+    )
+
+    if kind not in {"brand", "category", "product"}:
+        return jsonify(
+            ok=False,
+            message="Неизвестный тип значения каталога",
+        ), 400
+
+    if not name:
+        return jsonify(
+            ok=False,
+            message="Название не может быть пустым",
+        ), 400
+
+    warehouse_items = get_warehouse_items(force=True)
+    try:
+        excel_items = get_excel_warehouse_items()
+    except Exception:
+        excel_items = []
+    taxonomy = build_receipt_catalog_context(warehouse_items)
+    known_brands = [
+        option["value"]
+        for option in taxonomy["brands"]
+    ]
+    brand = find_catalog_label(
+        known_brands,
+        requested_brand,
+    )
+
+    if kind == "brand":
+        if find_catalog_label(known_brands, name):
+            return jsonify(
+                ok=False,
+                message="Такой бренд уже существует",
+            ), 409
+
+        try:
+            MoySkladClient().get_or_create_product_folder(name)
+            remember_catalog_classification(name)
+        except Exception as error:
+            app.logger.exception(
+                "Ошибка создания бренда из прихода"
+            )
+            return jsonify(
+                ok=False,
+                message="Не удалось создать бренд: " + str(error),
+            ), 502
+
+        return jsonify(
+            ok=True,
+            kind=kind,
+            value=name,
+            label=name,
+        )
+
+    if not brand:
+        return jsonify(
+            ok=False,
+            message="Сначала выберите бренд",
+        ), 400
+
+    known_categories = [
+        item["name"]
+        for item in taxonomy["categories"]
+        if (
+            catalog_label_key(item["brand"])
+            == catalog_label_key(brand)
+        )
+    ]
+    category = find_catalog_label(
+        known_categories,
+        requested_category,
+    )
+
+    if kind == "category":
+        if find_catalog_label(known_categories, name):
+            return jsonify(
+                ok=False,
+                message=(
+                    "Такая категория у выбранного бренда "
+                    "уже существует"
+                ),
+            ), 409
+
+        try:
+            MoySkladClient().get_or_create_product_folder(
+                "/".join([brand, name])
+            )
+            remember_catalog_classification(brand, name)
+        except Exception as error:
+            app.logger.exception(
+                "Ошибка создания категории из прихода"
+            )
+            return jsonify(
+                ok=False,
+                message="Не удалось создать категорию: " + str(error),
+            ), 502
+
+        return jsonify(
+            ok=True,
+            kind=kind,
+            value=name,
+            label=name,
+            brand=brand,
+        )
+
+    if not category:
+        return jsonify(
+            ok=False,
+            message="Сначала выберите категорию",
+        ), 400
+
+    all_products = [
+        *warehouse_items,
+        *[
+            {
+                "id": item.get("id"),
+                "name": item.get("name"),
+                "brand": item.get("brand"),
+                "category": item.get("category"),
+            }
+            for item in excel_items
+        ],
+    ]
+    duplicate = next(
+        (
+            item
+            for item in all_products
+            if (
+                catalog_label_key(item.get("brand"))
+                == catalog_label_key(brand)
+                and catalog_label_key(item.get("category"))
+                == catalog_label_key(category)
+                and catalog_label_key(item.get("name"))
+                == catalog_label_key(name)
+            )
+        ),
+        None,
+    )
+
+    if duplicate:
+        return jsonify(
+            ok=False,
+            message=(
+                "Такой товар у выбранных бренда и категории "
+                "уже существует"
+            ),
+        ), 409
+
+    local_product = None
+
+    try:
+        local_product = ExcelProductCatalog().create_product(
+            name=name,
+            brand=brand,
+            category=category,
+        )
+        client = MoySkladClient()
+        product_folder = client.get_or_create_product_folder(
+            "/".join([brand, category])
+        )
+        product_code = (
+            "VECHASU-"
+            + uuid.uuid4().hex[:12].upper()
+        )
+        created_product = client.create_product(
+            name=name,
+            code=product_code,
+            article=None,
+            product_folder=product_folder,
+        )
+
+        if not created_product:
+            raise ValueError("МойСклад не создал товар")
+
+        product_id = normalize_catalog_label(
+            created_product.get("id")
+        )
+
+        if not product_id:
+            raise ValueError("МойСклад не вернул ID товара")
+
+        record_warehouse_created_at(product_id)
+        remember_catalog_classification(brand, category)
+        WAREHOUSE_CACHE["items"] = []
+        WAREHOUSE_CACHE["loaded_at"] = 0
+
+        return jsonify(
+            ok=True,
+            kind=kind,
+            value=product_id,
+            label=(
+                created_product.get("name")
+                or name
+            ),
+            product={
+                "id": product_id,
+                "catalog_product_id": (
+                    local_product.get("id")
+                    if local_product
+                    else ""
+                ),
+                "name": (
+                    created_product.get("name")
+                    or name
+                ),
+                "article": (
+                    created_product.get("article")
+                    or ""
+                ),
+                "code": (
+                    created_product.get("code")
+                    or product_code
+                ),
+                "brand": brand,
+                "category": category,
+                "stock": 0,
+                "stock_display": "0",
+                "has_images": False,
+                "thumbnail_url": "",
+            },
+        )
+    except Exception as error:
+        if local_product:
+            try:
+                ExcelProductCatalog().archive_product(
+                    local_product["id"]
+                )
+            except Exception:
+                app.logger.exception(
+                    "Не удалось убрать локальную карточку "
+                    "после ошибки создания товара"
+                )
+
+        app.logger.exception(
+            "Ошибка создания товара из прихода"
+        )
+        return jsonify(
+            ok=False,
+            message="Не удалось создать товар: " + str(error),
+        ), 502
+
+
 @app.route("/receipts")
 def receipts_page():
     from datetime import datetime
@@ -7007,38 +7520,34 @@ def receipts_page():
         for item in all_warehouse_items
     ]
 
-    receipt_brands = [
-        group["name"] for group in build_brand_groups(get_excel_warehouse_items())
-    ]
-    receipt_categories = sorted(
-        {
-            str(item.get("category") or "").strip()
-            for item in warehouse_items
-            if str(item.get("category") or "").strip()
-            not in {"", "Без категории"}
-        },
-        key=str.casefold,
+    receipt_catalog = build_receipt_catalog_context(
+        warehouse_items
     )
+    date_from = (
+        request.args.get("date_from") or ""
+    ).strip()
+    date_to = (
+        request.args.get("date_to") or ""
+    ).strip()
+
+    if date_from and date_to and date_from > date_to:
+        date_from, date_to = date_to, date_from
 
     total_quantity = sum(
         parse_receipt_number(receipt.get("total_quantity"))
         for receipt in receipts
     )
-    total_amount = sum(
-        parse_receipt_number(receipt.get("total_amount"))
-        for receipt in receipts
-    )
-
     return render_template(
         "receipts.html",
         receipts=receipts,
         warehouse_items=warehouse_items,
-        receipt_brands=receipt_brands,
-        receipt_categories=receipt_categories,
+        receipt_brand_options=receipt_catalog["brands"],
+        receipt_catalog_categories=receipt_catalog["categories"],
+        receipt_date_from=date_from,
+        receipt_date_to=date_to,
         today=datetime.now().strftime("%Y-%m-%d"),
         total_receipts=len(receipts),
         total_quantity=format_stock_number(total_quantity),
-        total_amount=total_amount,
         notice=(request.args.get("notice") or "").strip(),
         message=(request.args.get("message") or "").strip(),
         open_receipt_modal=(
@@ -7103,13 +7612,6 @@ def receipts_report():
         for receipt in receipts
     )
 
-    total_amount = sum(
-        parse_receipt_number(
-            receipt.get("total_amount")
-        )
-        for receipt in receipts
-    )
-
     return render_template(
         "receipts_report.html",
         receipts=receipts,
@@ -7119,7 +7621,6 @@ def receipts_report():
         total_quantity=format_stock_number(
             total_quantity
         ),
-        total_amount=total_amount,
         generated_at=datetime.now().strftime(
             "%d.%m.%Y %H:%M"
         ),
@@ -7290,16 +7791,6 @@ def receipts_import_preview():
             "qty",
             "quantity",
             "stock",
-        },
-        "purchase_price": {
-            "закупочная цена",
-            "цена закупки",
-            "закупка",
-            "закупочная стоимость",
-            "себестоимость",
-            "purchase price",
-            "cost",
-            "price",
         },
         "cell": {
             "ячейка",
@@ -7521,11 +8012,6 @@ def receipts_import_preview():
             row,
             "quantity",
         )
-        raw_purchase_price = read_row_value(
-            row,
-            "purchase_price",
-        )
-
         identifying_values = [
             name,
             article,
@@ -7534,7 +8020,6 @@ def receipts_import_preview():
             category,
             collection,
             raw_quantity,
-            raw_purchase_price,
         ]
 
         if not any(
@@ -7549,10 +8034,7 @@ def receipts_import_preview():
             raw_quantity,
             default=0,
         )
-        purchase_price = parse_receipt_number(
-            raw_purchase_price,
-            default=0,
-        )
+        purchase_price = 0
 
         messages = []
         matched_products = {}
@@ -7665,14 +8147,6 @@ def receipts_import_preview():
                 "Количество должно быть больше нуля"
             )
 
-        if purchase_price < 0:
-            status = "error"
-            status_label = "Ошибка"
-            messages.append(
-                "Закупочная цена не может быть "
-                "отрицательной"
-            )
-
         if status == "new" and not brand:
             status = "error"
             status_label = "Ошибка"
@@ -7686,16 +8160,6 @@ def receipts_import_preview():
             messages.append(
                 "Для нового товара не указана "
                 "категория или коллекция"
-            )
-
-        if (
-            "purchase_price"
-            not in column_indexes
-            or raw_purchase_price == ""
-        ):
-            messages.append(
-                "Закупочная цена не указана — "
-                "используется 0 ₽"
             )
 
         if status == "error":
@@ -7988,6 +8452,9 @@ def receipt_create():
     new_product_name = (
         request.form.get("new_product_name") or ""
     ).strip()
+    catalog_product_id = (
+        request.form.get("catalog_product_id") or ""
+    ).strip()
     # === NEW PRODUCT IN RECEIPT BACKEND V1 END ===
 
     # === RECEIPT CREATE NEXT V2 ===
@@ -8077,7 +8544,35 @@ def receipt_create():
 
     product_ids = request.form.getlist("product_id")
     quantities = request.form.getlist("quantity")
-    purchase_prices = request.form.getlist("purchase_price")
+    purchase_prices = []
+
+    if not import_rows:
+        if not submitted_brand:
+            return redirect(url_for(
+                "receipts_page",
+                notice="error",
+                message="Выберите бренд",
+                open_receipt_modal="1",
+            ))
+
+        if not submitted_category:
+            return redirect(url_for(
+                "receipts_page",
+                notice="error",
+                message="Выберите категорию",
+                open_receipt_modal="1",
+            ))
+
+        if not any(
+            str(product_id or "").strip()
+            for product_id in product_ids
+        ):
+            return redirect(url_for(
+                "receipts_page",
+                notice="error",
+                message="Выберите товар",
+                open_receipt_modal="1",
+            ))
 
     catalog = {
         str(item.get("id") or ""): item
@@ -8136,12 +8631,7 @@ def receipt_create():
                 default=0,
             )
 
-            import_purchase_price = (
-                parse_receipt_number(
-                    import_row.get("purchase_price"),
-                    default=0,
-                )
-            )
+            import_purchase_price = 0
 
             if import_quantity <= 0:
                 return redirect(url_for(
@@ -8151,18 +8641,6 @@ def receipt_create():
                         "Строка импорта "
                         f"{import_index}: количество "
                         "должно быть больше нуля"
-                    ),
-                    open_receipt_modal="1",
-                ))
-
-            if import_purchase_price < 0:
-                return redirect(url_for(
-                    "receipts_page",
-                    notice="error",
-                    message=(
-                        "Строка импорта "
-                        f"{import_index}: закупочная "
-                        "цена не может быть отрицательной"
                     ),
                     open_receipt_modal="1",
                 ))
@@ -8493,13 +8971,6 @@ def receipt_create():
                 message=f"Количество товара «{product.get('name')}» должно быть больше нуля",
             ))
 
-        if purchase_price < 0:
-            return redirect(url_for(
-                "receipts_page",
-                notice="error",
-                message="Закупочная цена не может быть отрицательной",
-            ))
-
         stock_before = parse_receipt_number(product.get("stock"))
 
         imported_metadata = (
@@ -8523,6 +8994,23 @@ def receipt_create():
             or product.get("category")
             or ""
         )
+
+        if not import_rows and product_id != "__new__":
+            if (
+                catalog_label_key(product.get("brand"))
+                != catalog_label_key(submitted_brand)
+                or catalog_label_key(product.get("category"))
+                != catalog_label_key(submitted_category)
+            ):
+                return redirect(url_for(
+                    "receipts_page",
+                    notice="error",
+                    message=(
+                        "Выбранный товар не относится к указанным "
+                        "бренду и категории"
+                    ),
+                    open_receipt_modal="1",
+                ))
 
         positions.append({
             "brand": str(position_brand).strip(),
@@ -8631,6 +9119,21 @@ def receipt_create():
 
         receipts.insert(0, receipt)
         save_receipts(receipts)
+
+        if catalog_product_id and len(positions) == 1:
+            try:
+                ExcelProductCatalog().update_product(
+                    catalog_product_id,
+                    stock=positions[0]["quantity"],
+                    stock_reason=(
+                        "Приход " + receipt_number
+                    ),
+                )
+            except (TypeError, ValueError):
+                app.logger.exception(
+                    "Не удалось обновить остаток новой "
+                    "локальной карточки товара"
+                )
 
         for position in positions:
             add_stock_operation({
@@ -8763,16 +9266,16 @@ def receipt_update():
         request.form.get("category") or ""
     ).strip()
 
+    requested_product_id = (
+        request.form.get("product_id") or ""
+    ).strip()
+
     note = (
         request.form.get("note") or ""
     ).strip()
 
     quantity = parse_receipt_number(
         request.form.get("quantity")
-    )
-
-    purchase_price = parse_receipt_number(
-        request.form.get("purchase_price")
     )
 
     if not receipt_id:
@@ -8803,22 +9306,19 @@ def receipt_update():
             message="Укажите категорию",
         ))
 
+    if not requested_product_id:
+        return redirect(url_for(
+            "receipts_page",
+            notice="error",
+            message="Выберите товар",
+        ))
+
     if quantity <= 0:
         return redirect(url_for(
             "receipts_page",
             notice="error",
             message=(
                 "Количество должно быть больше нуля"
-            ),
-        ))
-
-    if purchase_price < 0:
-        return redirect(url_for(
-            "receipts_page",
-            notice="error",
-            message=(
-                "Закупочная цена не может быть "
-                "отрицательной"
             ),
         ))
 
@@ -8851,13 +9351,13 @@ def receipt_update():
 
     old_position = positions[0]
 
-    product_id = str(
+    old_product_id = str(
         receipt.get("product_id")
         or old_position.get("product_id")
         or ""
     ).strip()
 
-    product_name = str(
+    old_product_name = str(
         receipt.get("product_name")
         or old_position.get("product_name")
         or ""
@@ -8867,7 +9367,7 @@ def receipt_update():
         receipt.get("moysklad_document_id") or ""
     ).strip()
 
-    if not product_id or not document_id:
+    if not old_product_id or not document_id:
         return redirect(url_for(
             "receipts_page",
             notice="error",
@@ -8877,6 +9377,65 @@ def receipt_update():
             ),
         ))
 
+    product_id = requested_product_id
+    product = next(
+        (
+            item
+            for item in get_warehouse_items(force=True)
+            if str(item.get("id") or "").strip() == product_id
+        ),
+        None,
+    )
+
+    if product is None and product_id == old_product_id:
+        product = {
+            **old_position,
+            "id": old_product_id,
+            "name": old_product_name,
+            "brand": (
+                receipt.get("brand")
+                or old_position.get("brand")
+                or brand
+            ),
+            "category": (
+                receipt.get("category")
+                or old_position.get("category")
+                or category
+            ),
+        }
+
+    if product is None:
+        return redirect(url_for(
+            "receipts_page",
+            notice="error",
+            message="Выбранный товар не найден в каталоге",
+        ))
+
+    if (
+        catalog_label_key(product.get("brand"))
+        != catalog_label_key(brand)
+        or catalog_label_key(product.get("category"))
+        != catalog_label_key(category)
+    ):
+        return redirect(url_for(
+            "receipts_page",
+            notice="error",
+            message=(
+                "Выбранный товар не относится к указанным "
+                "бренду и категории"
+            ),
+        ))
+
+    product_name = str(
+        product.get("name")
+        or product.get("product_name")
+        or old_product_name
+    ).strip()
+    purchase_price = parse_receipt_number(
+        old_position.get("purchase_price")
+        if "purchase_price" in old_position
+        else receipt.get("purchase_price")
+    )
     line_total = round(
         quantity * purchase_price,
         2,
@@ -8888,6 +9447,9 @@ def receipt_update():
         "category": category,
         "product_id": product_id,
         "product_name": product_name,
+        "article": product.get("article") or "",
+        "code": product.get("code") or "",
+        "cell": product.get("cell") or "",
         "quantity": quantity,
         "purchase_price": purchase_price,
         "line_total": line_total,
