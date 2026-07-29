@@ -49,11 +49,33 @@ readonly HEALTHCHECK_URLS=(
 
 PREVIOUS_COMMIT=""
 DEPLOY_UPDATED=0
+BACKUP_STAGE=""
+
+cleanup_backup_stage() {
+    if [[ -z "$BACKUP_STAGE" ]]; then
+        return
+    fi
+
+    case "$BACKUP_STAGE" in
+        "$BACKUP_DIR"/.backup-stage.*)
+            rm -rf -- "$BACKUP_STAGE"
+            ;;
+        *)
+            printf 'Unexpected backup staging path: %s\n' \
+                "$BACKUP_STAGE" >&2
+            return 1
+            ;;
+    esac
+
+    BACKUP_STAGE=""
+}
 
 rollback() {
     local exit_code=$?
     trap - ERR
     set +e
+
+    cleanup_backup_stage
 
     printf 'DEPLOY_ERROR: deployment failed with exit code %s\n' "$exit_code" >&2
 
@@ -115,8 +137,37 @@ backup_items=()
 [[ -d instance ]] && backup_items+=("instance")
 
 if [[ "${#backup_items[@]}" -gt 0 ]]; then
-    tar -czf "$BACKUP_PATH" "${backup_items[@]}"
+    BACKUP_STAGE="$(
+        mktemp -d "$BACKUP_DIR/.backup-stage.XXXXXX"
+    )"
+
+    [[ -f .env ]] && cp -p .env "$BACKUP_STAGE/.env"
+
+    if [[ -d instance ]]; then
+        cp -a instance "$BACKUP_STAGE/instance"
+
+        for sqlite_path in instance/*.db; do
+            [[ -f "$sqlite_path" ]] || continue
+
+            sqlite_name="$(basename "$sqlite_path")"
+            staged_sqlite="$BACKUP_STAGE/instance/$sqlite_name"
+            rm -f -- \
+                "$staged_sqlite" \
+                "$staged_sqlite-journal" \
+                "$staged_sqlite-wal" \
+                "$staged_sqlite-shm"
+            sqlite3 "$sqlite_path" \
+                ".timeout 10000" \
+                ".backup '$staged_sqlite'"
+            sqlite3 "$staged_sqlite" \
+                "PRAGMA quick_check;" |
+                grep -qx "ok"
+        done
+    fi
+
+    tar -czf "$BACKUP_PATH" -C "$BACKUP_STAGE" .
     chmod 600 "$BACKUP_PATH"
+    cleanup_backup_stage
     printf 'BACKUP_PATH=%s\n' "$BACKUP_PATH"
 else
     printf '%s\n' 'BACKUP_SKIPPED: no runtime data found'
