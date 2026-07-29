@@ -2231,7 +2231,14 @@
         min-width: 0;
     }
 
+    .receipt-filter-toolbar .erp-period-trigger {
+        width: 100%;
+        min-width: 0;
+    }
+
     .receipt-report-button {
+        width: 100%;
+        min-width: 0;
         grid-column: 1 / -1;
         min-height: 44px;
     }

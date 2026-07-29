@@ -156,9 +156,10 @@ if [[ "${#backup_items[@]}" -gt 0 ]]; then
                 "$staged_sqlite-journal" \
                 "$staged_sqlite-wal" \
                 "$staged_sqlite-shm"
-            sqlite3 "$sqlite_path" \
-                ".timeout 10000" \
-                ".backup '$staged_sqlite'"
+            sqlite3 "$sqlite_path" <<SQLITE_BACKUP
+.timeout 10000
+.backup '$staged_sqlite'
+SQLITE_BACKUP
             sqlite3 "$staged_sqlite" \
                 "PRAGMA quick_check;" |
                 grep -qx "ok"
