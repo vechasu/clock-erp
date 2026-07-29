@@ -3,10 +3,104 @@
  *
  * Page templates retain their layout and business-specific rules. This file
  * is loaded after page CSS and maps every shared visual primitive to one of
- * the two supported design systems.
+ * the three supported design systems.
  */
 
 :root,
+html[data-theme="classic"] {
+    color-scheme: light;
+    --theme-app-bg: #f4f7fb;
+    --theme-workspace-bg: #f4f7fb;
+    --theme-sidebar-bg: #0d2a49;
+    --theme-sidebar-hover: rgba(255, 255, 255, 0.07);
+    --theme-sidebar-active: rgba(96, 165, 250, 0.14);
+    --theme-sidebar-text: #d7e2ee;
+    --theme-sidebar-muted: #8fa7bf;
+    --theme-surface: #ffffff;
+    --theme-surface-muted: #f8fafc;
+    --theme-surface-raised: #ffffff;
+    --theme-text: #172033;
+    --theme-text-strong: #0f172a;
+    --theme-text-muted: #64748b;
+    --theme-border: #e2e8f0;
+    --theme-border-strong: #cbd5e1;
+    --theme-primary: #2563eb;
+    --theme-primary-hover: #1d4ed8;
+    --theme-primary-text: #ffffff;
+    --theme-accent: #60a5fa;
+    --theme-accent-hover: #2563eb;
+    --theme-accent-soft: #eff6ff;
+    --theme-hover: #f8fafc;
+    --theme-active: #eff6ff;
+    --theme-selected: #dbeafe;
+    --theme-focus: #2563eb;
+    --theme-focus-ring: rgba(37, 99, 235, 0.18);
+    --theme-success: #166534;
+    --theme-success-soft: #dcfce7;
+    --theme-warning: #92400e;
+    --theme-warning-soft: #fef3c7;
+    --theme-error: #b42318;
+    --theme-error-soft: #fef2f2;
+    --theme-info: #1d4ed8;
+    --theme-info-soft: #eff6ff;
+    --theme-overlay: rgba(15, 23, 42, 0.42);
+    --theme-shadow:
+        0 8px 24px rgba(15, 23, 42, 0.045),
+        0 1px 2px rgba(15, 23, 42, 0.03);
+    --theme-shadow-raised:
+        0 18px 42px rgba(15, 23, 42, 0.14),
+        0 3px 7px rgba(15, 23, 42, 0.07);
+    --theme-card-radius: 16px;
+    --theme-control-radius: 10px;
+    --theme-pill-radius: 999px;
+    --theme-control-height: 44px;
+    --theme-table-head: #f8fafc;
+    --theme-table-row: #ffffff;
+    --theme-table-row-alt: #fbfcfe;
+    --theme-table-row-hover: #f8fafc;
+    --theme-table-selected: #eff6ff;
+    --theme-input-bg: #ffffff;
+    --theme-input-disabled: #f1f5f9;
+    --theme-scrollbar: #94a3b8;
+    --theme-scrollbar-track: #e2e8f0;
+    --theme-font:
+        Inter,
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        Arial,
+        sans-serif;
+    --theme-heading-weight: 850;
+    --theme-body-weight: 400;
+
+    --navy: var(--theme-sidebar-bg);
+    --blue: var(--theme-primary);
+    --blue-dark: var(--theme-primary-hover);
+    --ink: var(--theme-text);
+    --muted: var(--theme-text-muted);
+    --line: var(--theme-border);
+    --danger: var(--theme-error);
+    --danger-soft: var(--theme-error-soft);
+    --success: var(--theme-success);
+    --sidebar-bg: var(--theme-sidebar-bg);
+    --sidebar-bg-hover: var(--theme-sidebar-hover);
+    --sidebar-bg-active: var(--theme-sidebar-active);
+    --sidebar-text: var(--theme-sidebar-text);
+    --sidebar-text-muted: var(--theme-sidebar-muted);
+    --sidebar-accent: var(--theme-accent);
+    --erp-surface: var(--theme-surface);
+    --erp-surface-muted: var(--theme-surface-muted);
+    --erp-border: var(--theme-border);
+    --erp-border-strong: var(--theme-border-strong);
+    --erp-text: var(--theme-text);
+    --erp-muted: var(--theme-text-muted);
+    --erp-primary: var(--theme-primary);
+    --erp-primary-hover: var(--theme-primary-hover);
+    --erp-radius: var(--theme-card-radius);
+    --erp-control-radius: var(--theme-control-radius);
+    --erp-shadow: var(--theme-shadow);
+}
+
 html[data-theme="bn0024-white"] {
     color-scheme: light;
     --theme-app-bg: #f3f3f1;
@@ -23,7 +117,7 @@ html[data-theme="bn0024-white"] {
     --theme-text-strong: #0e0e0e;
     --theme-text-muted: #666663;
     --theme-border: #d4d4cf;
-    --theme-border-strong: #ababA4;
+    --theme-border-strong: #ababa4;
     --theme-primary: #242423;
     --theme-primary-hover: #090909;
     --theme-primary-text: #ffffff;
@@ -71,33 +165,6 @@ html[data-theme="bn0024-white"] {
         sans-serif;
     --theme-heading-weight: 700;
     --theme-body-weight: 400;
-
-    --navy: var(--theme-sidebar-bg);
-    --blue: var(--theme-primary);
-    --blue-dark: var(--theme-primary-hover);
-    --ink: var(--theme-text);
-    --muted: var(--theme-text-muted);
-    --line: var(--theme-border);
-    --danger: var(--theme-error);
-    --danger-soft: var(--theme-error-soft);
-    --success: var(--theme-success);
-    --sidebar-bg: var(--theme-sidebar-bg);
-    --sidebar-bg-hover: var(--theme-sidebar-hover);
-    --sidebar-bg-active: var(--theme-sidebar-active);
-    --sidebar-text: var(--theme-sidebar-text);
-    --sidebar-text-muted: var(--theme-sidebar-muted);
-    --sidebar-accent: var(--theme-accent);
-    --erp-surface: var(--theme-surface);
-    --erp-surface-muted: var(--theme-surface-muted);
-    --erp-border: var(--theme-border);
-    --erp-border-strong: var(--theme-border-strong);
-    --erp-text: var(--theme-text);
-    --erp-muted: var(--theme-text-muted);
-    --erp-primary: var(--theme-primary);
-    --erp-primary-hover: var(--theme-primary-hover);
-    --erp-radius: var(--theme-card-radius);
-    --erp-control-radius: var(--theme-control-radius);
-    --erp-shadow: var(--theme-shadow);
 }
 
 html[data-theme="klok-green"] {
@@ -948,7 +1015,7 @@ html[data-theme="klok-green"] .auth-brand-panel::after {
 /* Theme chooser. */
 html[data-theme] .theme-options {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 14px;
 }
 
@@ -1038,6 +1105,34 @@ html[data-theme] .theme-option[aria-checked="true"] {
     height: 6px;
 }
 
+.theme-preview-classic {
+    background: #f4f7fb;
+}
+
+.theme-preview-classic .theme-preview-sidebar {
+    background: #0d2a49;
+}
+
+.theme-preview-classic .theme-preview-sidebar::before,
+.theme-preview-classic .theme-preview-sidebar::after {
+    background: #60a5fa;
+}
+
+.theme-preview-classic .theme-preview-heading {
+    border-radius: 5px;
+    background: #172033;
+}
+
+.theme-preview-classic .theme-preview-control {
+    border-radius: 5px;
+    background: #2563eb;
+}
+
+.theme-preview-classic .theme-preview-table span {
+    border-radius: 3px;
+    background: #dbe4ef;
+}
+
 .theme-preview-klok {
     background: #edf5e9;
 }
@@ -1091,7 +1186,7 @@ html[data-theme] .theme-option[aria-checked="true"] {
 }
 
 .theme-preview-bn .theme-preview-control {
-    border: 1px solid #ababA4;
+    border: 1px solid #ababa4;
     background: #ffffff;
 }
 
@@ -1135,7 +1230,7 @@ html[data-theme] .theme-option[aria-checked="true"] {
     color: var(--theme-primary-text);
 }
 
-/* Geometry details distinguish the two systems without affecting layout. */
+/* Theme-specific geometry details do not affect application layout. */
 html[data-theme="bn0024-white"] :where(
     .panel,
     .settings-card,
@@ -1216,6 +1311,12 @@ html[data-theme] ::-webkit-scrollbar-thumb {
         dialog
     ) {
         max-width: calc(100vw - 24px) !important;
+    }
+}
+
+@media (min-width: 768px) and (max-width: 1100px) {
+    html[data-theme] .theme-options {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
 
