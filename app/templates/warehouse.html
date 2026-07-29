@@ -4518,7 +4518,7 @@
 
             <div class="category-cell-form-title">Бренд</div>
 
-            {{ render_catalog_combobox("filterBrandCombobox", "brand", brand_groups, selected_brand, true, "бренд", "Все бренды", prefix_search=false, component_class="filter-combobox") }}
+            {{ render_catalog_combobox("filterBrandCombobox", "brand", filter_brand_groups, selected_brand, true, "бренд", "Все бренды", prefix_search=false, component_class="filter-combobox", all_count=brand_all_count) }}
 
             <div class="category-cell-form-title" style="margin-top: 14px;">
                 Категория

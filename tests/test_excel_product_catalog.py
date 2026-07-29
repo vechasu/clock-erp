@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -393,7 +394,7 @@ class ExcelProductCatalogTest(unittest.TestCase):
         moysklad.assert_not_called()
         bitrix.assert_not_called()
 
-    def test_warehouse_edit_options_only_include_positive_stock_brands(self):
+    def test_warehouse_brand_options_count_products_not_stock(self):
         self.apply_initial()
         from app import web
         web.app.config["TESTING"] = True
@@ -402,7 +403,7 @@ class ExcelProductCatalogTest(unittest.TestCase):
         brand_editor = html.split('id="editBrandCombobox"', 1)[1].split("</form>", 1)[0]
         self.assertEqual(brand_editor.count('data-brand="Brand"'), 1)
         self.assertNotIn('data-brand="Other"', brand_editor)
-        self.assertIn("<span>7</span>", brand_editor)
+        self.assertIn("<span>3</span>", brand_editor)
         self.assertNotIn("<span>7.0</span>", brand_editor)
         self.assertNotIn("Все бренды", brand_editor)
         self.assertNotIn("inlineBrandOptions", html)
@@ -416,6 +417,87 @@ class ExcelProductCatalogTest(unittest.TestCase):
             self.assertNotIn('data-brand="Watches"', category_editor)
         self.assertNotIn('list="warehouseCategoryOptions"', html)
         self.assertNotIn('<select name="category"', html)
+
+    def test_brand_facets_use_other_filters_and_hide_numeric_values(self):
+        self.service.apply(
+            [
+                result(
+                    2, "Alpha zero", 0, brand="Alpha",
+                    category="Watches",
+                ),
+                result(
+                    3, "Alpha stock", 7, brand="Alpha",
+                    category="Watches",
+                ),
+                result(
+                    4, "Beta stock", 2, brand="Beta",
+                    category="Accessories",
+                ),
+            ],
+            "1" * 64,
+            "brand-facets.xlsx",
+        )
+        listing = self.catalog.list_products(per_page=100)
+        self.assertEqual(listing["brand_all_count"], 3)
+        self.assertEqual(listing["brand_groups"], [
+            {"name": "Alpha", "count": 2},
+            {"name": "Beta", "count": 1},
+        ])
+
+        watches = self.catalog.list_products(
+            category="Watches",
+            per_page=100,
+        )
+        self.assertEqual(watches["brand_all_count"], 2)
+        self.assertEqual(
+            watches["brand_groups"],
+            [{"name": "Alpha", "count": 2}],
+        )
+
+        with self.database.transaction() as connection:
+            connection.execute(
+                "UPDATE catalog_excel_products SET excel_brand = '10' "
+                "WHERE excel_name_raw = 'Beta stock'"
+            )
+        guarded = self.catalog.list_products(per_page=100)
+        self.assertEqual(
+            [group["name"] for group in guarded["brand_groups"]],
+            ["Alpha"],
+        )
+
+    def test_excel_import_rejects_numeric_brand_but_keeps_normal_rows(self):
+        batch = self.service.apply(
+            [
+                result(2, "Broken brand", 1, brand="15"),
+                result(3, "Normal brand", 1, brand="Casio"),
+            ],
+            "2" * 64,
+            "numeric-brand.xlsx",
+        )
+        items = self.catalog.list_products(per_page=100)["items"]
+        self.assertEqual(len(items), 2)
+        self.assertEqual(
+            {
+                item["excel_name_raw"]: item["excel_brand"]
+                for item in items
+            },
+            {"Broken brand": "", "Normal brand": "Casio"},
+        )
+        with self.database.connect() as connection:
+            details = json.loads(connection.execute(
+                "SELECT details_json FROM catalog_excel_batches "
+                "WHERE id = ?",
+                (batch["id"],),
+            ).fetchone()[0])
+            raw = json.loads(connection.execute(
+                "SELECT raw_excel_json FROM catalog_excel_products "
+                "WHERE excel_name_raw = 'Broken brand'"
+            ).fetchone()[0])
+        self.assertEqual(
+            details["brand_validation"]["numeric_rejected"],
+            [{"excel_row": 2, "value": "15"}],
+        )
+        self.assertEqual(raw["excel_brand"], "15")
 
     def test_brand_stock_counts_drop_only_redundant_decimal_zero(self):
         from app.web import build_brand_groups

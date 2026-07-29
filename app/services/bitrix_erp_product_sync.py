@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from app.catalog_db import CatalogDatabase
+from app.services.brand_values import normalize_brand
 from app.services.excel_product_catalog import load_bitrix_enrichment
 from app.services.product_classification import classify_product
 from app.services.product_reconciliation import article_quality, normalize_text, reliable_article
@@ -373,7 +374,11 @@ class BitrixERPProductSync:
         }
 
     def _canonical_label(self, connection, column, incoming):
-        incoming = _text(incoming)
+        incoming = (
+            normalize_brand(incoming)
+            if column == "excel_brand"
+            else _text(incoming)
+        )
         key = normalize_text(incoming)
         if not key:
             return ""
@@ -399,12 +404,13 @@ class BitrixERPProductSync:
         name = _text(product.get("name")) or _text(existing.get("excel_name_raw"))
         if self._known_brands is None:
             self._known_brands = {
-                normalize_text(row[0]): _text(row[0])
+                normalize_text(brand): brand
                 for row in connection.execute(
                     "SELECT DISTINCT excel_brand FROM catalog_excel_products "
                     "WHERE trim(COALESCE(excel_brand, '')) <> ''"
                 )
-                if normalize_text(row[0])
+                for brand in (normalize_brand(row[0]),)
+                if normalize_text(brand)
             }
         classification = _classification(
             product,

@@ -3,6 +3,7 @@ import json
 from html.parser import HTMLParser
 
 from app.catalog_db import CatalogDatabase
+from app.services.brand_values import normalize_brand
 from app.services.catalog_data_quality import is_empty_property_row
 
 
@@ -88,7 +89,7 @@ class CatalogReader:
                 value = _json_value(row[1], "")
             values = value if isinstance(value, list) else [value]
             for item in values:
-                brand = " ".join(str(item or "").split())
+                brand = normalize_brand(item)
                 if brand:
                     brands.setdefault(brand.casefold(), brand)
         return sorted(brands.values(), key=str.casefold)

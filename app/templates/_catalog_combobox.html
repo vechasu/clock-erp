@@ -1,4 +1,4 @@
-{% macro render_catalog_combobox(component_id, input_name, options, selected_value="", include_all=false, item_label="значение", all_label="Все", disabled=false, prefix_search=true, empty_label="Ничего не найдено", component_class="", clear_selection_on_search_clear=false, input_id="", search_enabled=true, form_id="", action_kind="", action_label="") %}
+{% macro render_catalog_combobox(component_id, input_name, options, selected_value="", include_all=false, item_label="значение", all_label="Все", disabled=false, prefix_search=true, empty_label="Ничего не найдено", component_class="", clear_selection_on_search_clear=false, input_id="", search_enabled=true, form_id="", action_kind="", action_label="", all_count=none) %}
     <div
         id="{{ component_id }}"
         class="brand-combobox{% if component_class %} {{ component_class }}{% endif %}"
@@ -63,7 +63,7 @@
                         <span class="brand-combobox-option-label">
                             {{ all_label }}
                         </span>
-                        <span>{{ options | sum(attribute='count') }}</span>
+                        <span>{{ all_count if all_count is not none else options | sum(attribute='count') }}</span>
                     </button>
                 {% endif %}
                 {% for option in options %}

@@ -82,6 +82,43 @@ class CatalogNormalizationTest(unittest.TestCase):
         self.assertEqual(product["offers"][0]["external_xml_id"], "offer-2")
         self.assertEqual(product["offers"][0]["brand"], "Brand")
 
+    def test_numeric_brand_flag_is_not_exposed_as_brand_name(self):
+        product = normalize_product({
+            "ID": 1,
+            "NAME": "Fullspot Bianco",
+            "PROPERTIES": [{
+                "ID": 10,
+                "CODE": "BRAND",
+                "NAME": "Отображать в бренде",
+                "VALUE": "1",
+                "DISPLAY_VALUE": "1",
+            }],
+        })
+        self.assertEqual(product["brand"], "")
+        self.assertEqual(
+            product["brand_validation_error"],
+            "brand_missing",
+        )
+        self.assertEqual(product["properties"][0]["display_value"], "1")
+
+    def test_numeric_brand_model_value_is_rejected_and_logged(self):
+        product = normalize_product({
+            "ID": 1,
+            "NAME": "Broken brand",
+            "PROPERTIES": [{
+                "ID": 11,
+                "CODE": "BRAND_MODEL",
+                "NAME": "Марка часов",
+                "VALUE": "100",
+                "DISPLAY_VALUE": "100",
+            }],
+        })
+        self.assertEqual(product["brand"], "")
+        self.assertEqual(
+            product["brand_validation_error"],
+            "numeric_brand_rejected",
+        )
+
     def test_currency_is_preserved(self):
         product = normalize_product({
             "ID": 1,

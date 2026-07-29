@@ -93,6 +93,39 @@ class BitrixCatalogImporterTest(unittest.TestCase):
         self.assertEqual((price["amount"], price["currency"], price["price_type"]), ("15990.0", "RUB", "BASE"))
         self.assertEqual(self.row("SELECT COUNT(*) AS count FROM catalog_prices")["count"], 1)
 
+    def test_numeric_brand_is_not_saved_and_warning_is_in_import_log(self):
+        product = product_fixture()
+        product["brand"] = "100"
+        result = self.importer.import_products([product], "full_sync")
+        saved = self.row(
+            "SELECT brand, normalized_payload_json FROM catalog_products"
+        )
+        sync_run = self.row(
+            "SELECT details_json FROM catalog_sync_runs"
+        )
+        self.assertEqual(saved["brand"], "")
+        self.assertEqual(
+            json.loads(saved["normalized_payload_json"])["brand"],
+            "",
+        )
+        self.assertEqual(
+            result["items"][0]["brand_warning"],
+            "numeric_brand_rejected",
+        )
+        self.assertEqual(
+            json.loads(sync_run["details_json"])[0]["brand_warning"],
+            "numeric_brand_rejected",
+        )
+
+        repeated = self.importer.import_products([product], "full_sync")
+        self.assertEqual(repeated["created"], 0)
+        self.assertEqual(
+            self.row(
+                "SELECT COUNT(*) AS count FROM catalog_products"
+            )["count"],
+            1,
+        )
+
     def test_repeated_import_is_unchanged_and_creates_no_duplicates(self):
         self.importer.import_products([product_fixture()], "full_sync")
         result = self.importer.import_products([product_fixture()], "full_sync")
