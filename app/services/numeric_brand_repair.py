@@ -418,8 +418,11 @@ class NumericBrandRepair:
                     {},
                 )
                 if isinstance(payload, dict):
-                    payload["brand"] = ""
-                    payload["brand_validation_error"] = "brand_missing"
+                    payload["brand"] = resolution["brand"]
+                    if resolution["brand"]:
+                        payload.pop("brand_validation_error", None)
+                    else:
+                        payload["brand_validation_error"] = "brand_missing"
                     normalized_payload = _canonical_payload(payload)
                     payload_hash = hashlib.sha256(
                         normalized_payload.encode("utf-8")

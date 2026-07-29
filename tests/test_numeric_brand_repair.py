@@ -195,19 +195,30 @@ class NumericBrandRepairTest(unittest.TestCase):
                     "FROM catalog_excel_products"
                 )
             }
-            payloads = [
-                json.loads(row[0])
+            payloads = {
+                row["external_product_id"]: json.loads(
+                    row["normalized_payload_json"]
+                )
                 for row in connection.execute(
-                    "SELECT normalized_payload_json "
+                    "SELECT external_product_id, normalized_payload_json "
                     "FROM catalog_products"
                 )
-            ]
+            }
         self.assertEqual(
             catalog,
             {"379": "Fullspot", "236247": ""},
         )
         self.assertEqual(erp, catalog)
-        self.assertTrue(all(payload["brand"] == "" for payload in payloads))
+        self.assertEqual(payloads["379"]["brand"], "Fullspot")
+        self.assertNotIn(
+            "brand_validation_error",
+            payloads["379"],
+        )
+        self.assertEqual(payloads["236247"]["brand"], "")
+        self.assertEqual(
+            payloads["236247"]["brand_validation_error"],
+            "brand_missing",
+        )
 
         repeated = repair.run(
             apply=True,
