@@ -380,6 +380,10 @@ textarea:focus-visible {
   margin-bottom: 18px;
 }
 
+.summary-grid.sales-summary {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .summary-grid article {
   min-height: 92px;
   display: flex;
@@ -421,6 +425,32 @@ textarea:focus-visible {
   gap: 12px;
   padding: 14px 16px;
   border-bottom: 1px solid var(--theme-border);
+}
+
+.source-tabs {
+  min-height: 52px;
+  display: flex;
+  gap: 3px;
+  padding: 8px 14px 0;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--theme-border);
+}
+
+.source-tabs button {
+  min-width: max-content;
+  padding: 0 14px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--theme-text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.source-tabs button.is-active {
+  border-bottom-color: var(--theme-primary);
+  color: var(--theme-primary);
 }
 
 .search-control {
@@ -775,6 +805,58 @@ textarea:focus-visible {
   font-weight: 800;
 }
 
+.sale-product-cell strong,
+.sale-product-cell small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sale-product-cell strong {
+  color: var(--theme-text-strong);
+}
+
+.sale-product-cell small {
+  margin-top: 4px;
+  color: var(--theme-text-muted);
+  font-size: 11px;
+}
+
+.source-badge {
+  display: inline-flex;
+  padding: 4px 8px;
+  border-radius: 7px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.sale-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: #dcfce7;
+  color: #15803d;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.sale-status.is-cancelled {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.sale-status.is-processing {
+  background: #fef3c7;
+  color: #a16207;
+}
+
+.sale-status.has-return {
+  box-shadow: inset 0 0 0 1px #7dd3fc;
+}
+
 .mobile-card-list {
   display: none;
 }
@@ -965,6 +1047,39 @@ textarea:focus-visible {
 .receipt-form {
   display: grid;
   gap: 22px;
+}
+
+.sale-form {
+  display: grid;
+  gap: 22px;
+}
+
+.sale-form section {
+  display: grid;
+  gap: 13px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--theme-border);
+}
+
+.sale-form section:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.sale-form h3 {
+  margin: 0;
+  color: var(--theme-text-strong);
+  font-size: 13px;
+}
+
+.field-hint {
+  color: var(--theme-text-muted);
+  font-size: 10px;
+  font-style: normal;
+}
+
+.mobile-sale-card {
+  border-left: 3px solid #bfdbfe;
 }
 
 .receipt-positions-header {
@@ -1305,6 +1420,10 @@ textarea:focus-visible {
   .summary-grid {
     grid-template-columns: repeat(3, 1fr);
     gap: 7px;
+  }
+
+  .summary-grid.sales-summary {
+    grid-template-columns: repeat(2, 1fr);
   }
 
   .summary-grid article {
