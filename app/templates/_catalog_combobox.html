@@ -1,9 +1,10 @@
-{% macro render_catalog_combobox(component_id, input_name, options, selected_value="", include_all=false, item_label="значение", all_label="Все", disabled=false, prefix_search=true, empty_label="Ничего не найдено", component_class="", clear_selection_on_search_clear=false, input_id="") %}
+{% macro render_catalog_combobox(component_id, input_name, options, selected_value="", include_all=false, item_label="значение", all_label="Все", disabled=false, prefix_search=true, empty_label="Ничего не найдено", component_class="", clear_selection_on_search_clear=false, input_id="", search_enabled=true) %}
     <div
         id="{{ component_id }}"
         class="brand-combobox{% if component_class %} {{ component_class }}{% endif %}"
         data-brand-combobox
         data-prefix-search="{{ 'true' if prefix_search else 'false' }}"
+        data-search-enabled="{{ 'true' if search_enabled else 'false' }}"
         data-clear-selection-on-search-clear="{{ 'true' if clear_selection_on_search_clear else 'false' }}"
         data-all-label="{{ all_label if include_all else 'Выберите ' ~ item_label }}"
     >
@@ -30,7 +31,10 @@
             <span class="brand-combobox-arrow">▾</span>
         </button>
         <div class="brand-combobox-dropdown">
-            <div class="brand-combobox-search-wrap">
+            <div
+                class="brand-combobox-search-wrap"
+                {% if not search_enabled %}hidden{% endif %}
+            >
                 <input
                     class="brand-combobox-search"
                     data-brand-search-input

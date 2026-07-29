@@ -2242,35 +2242,54 @@
                         </div>
 
                         <div class="field">
-                            <label for="region">Регион</label>
-                            <input
-                                id="region"
-                                class="control"
-                                type="text"
-                                name="region"
-                            >
+                            <label for="tictactoyCountryTrigger">
+                                Страна
+                            </label>
+                            {{ render_catalog_combobox(
+                                "tictactoyCountry",
+                                "country",
+                                tictactoy_country_options,
+                                item_label="страну",
+                                prefix_search=false,
+                                empty_label="Страны не найдены",
+                                component_class="filter-combobox",
+                                clear_selection_on_search_clear=true,
+                                search_enabled=false
+                            ) }}
                         </div>
 
                         <div class="field">
-                            <label for="city">Город</label>
-                            <input
-                                id="city"
-                                class="control"
-                                type="text"
-                                name="city"
-                            >
+                            <label for="tictactoyRegionTrigger">
+                                Область/регион
+                            </label>
+                            {{ render_catalog_combobox(
+                                "tictactoyRegion",
+                                "region",
+                                [],
+                                item_label="область/регион",
+                                disabled=true,
+                                prefix_search=false,
+                                empty_label="Регионы не найдены",
+                                component_class="filter-combobox",
+                                clear_selection_on_search_clear=true
+                            ) }}
                         </div>
 
-                        <div class="field field-wide">
-                            <label for="payment_method">
-                                Способ оплаты
+                        <div class="field">
+                            <label for="tictactoyCityTrigger">
+                                Город
                             </label>
-                            <input
-                                id="payment_method"
-                                class="control"
-                                type="text"
-                                name="payment_method"
-                            >
+                            {{ render_catalog_combobox(
+                                "tictactoyCity",
+                                "city",
+                                [],
+                                item_label="город",
+                                disabled=true,
+                                prefix_search=false,
+                                empty_label="Города не найдены",
+                                component_class="filter-combobox",
+                                clear_selection_on_search_clear=true
+                            ) }}
                         </div>
 
                         <div class="field field-wide">
@@ -2378,7 +2397,7 @@
                                 "country",
                                 sale_country_options,
                                 item_label="страну",
-                                prefix_search=false,
+                                prefix_search=true,
                                 empty_label="Страны не найдены",
                                 component_class="filter-combobox",
                                 clear_selection_on_search_clear=true
@@ -2395,17 +2414,6 @@
                                 type="text"
                                 name="invoice_number"
                             >
-                        </div>
-
-                        <div class="field field-wide">
-                            <label for="delivery_address">
-                                Адрес доставки
-                            </label>
-                            <textarea
-                                id="delivery_address"
-                                class="control"
-                                name="delivery_address"
-                            ></textarea>
                         </div>
 
                         <div class="field field-wide">
@@ -2444,6 +2452,9 @@
 <script>
     const activeSalesSource = {{ active_source | tojson }};
     const warehouseItems = {{ warehouse_items | tojson }};
+    const tictactoyLocationData = (
+        {{ tictactoy_location_data | tojson }}
+    );
     const sourceLabels = {
         tictactoy: "Tictactoy",
         wildberries: "Wildberries",
@@ -3779,7 +3790,7 @@
             country: 140,
             invoice_number: 160,
         };
-        const settingsVersion = 4;
+        const settingsVersion = 5;
         const minimumWidth = 76;
         const minimumWidths = {
             created_at: 108,
@@ -4585,6 +4596,15 @@
     const saleCountryCombobox = document.getElementById(
         "saleCountry"
     );
+    const tictactoyCountryCombobox = document.getElementById(
+        "tictactoyCountry"
+    );
+    const tictactoyRegionCombobox = document.getElementById(
+        "tictactoyRegion"
+    );
+    const tictactoyCityCombobox = document.getElementById(
+        "tictactoyCity"
+    );
     const saleBrandInput = saleBrandCombobox.querySelector(
         ".brand-combobox-hidden"
     );
@@ -4781,6 +4801,7 @@
             [saleCommissionCombobox, "", ""],
             [salePlatformCombobox, "", ""],
             [saleCountryCombobox, "", ""],
+            [tictactoyCountryCombobox, "", ""],
         ].forEach(([combobox, value, label]) => {
             window.setBrandComboboxValue(
                 combobox,
@@ -4798,7 +4819,130 @@
             window.filterBrandList("", combobox);
             window.setBrandDropdownOpen(combobox, false);
         });
+
+        resetTictactoyLocationFields();
     }
+
+    function locationOptions(values) {
+        return Array.from(new Set(values || [])).map((value) => ({
+            value,
+            label: value,
+        }));
+    }
+
+    function resetLocationSearch(combobox) {
+        const search = combobox.querySelector(
+            ".brand-combobox-search"
+        );
+
+        if (search) {
+            search.value = "";
+        }
+
+        window.filterBrandList("", combobox);
+        window.setBrandDropdownOpen(combobox, false);
+    }
+
+    function replaceLocationOptions(
+        combobox,
+        values,
+        selectedValue,
+        enabledPlaceholder,
+        disabledPlaceholder,
+        emptyLabel,
+    ) {
+        const uniqueValues = Array.from(new Set(values || []));
+        const value = uniqueValues.includes(selectedValue)
+            ? selectedValue
+            : "";
+
+        window.replaceCatalogComboboxOptions(
+            combobox,
+            locationOptions(uniqueValues),
+            emptyLabel,
+        );
+        window.setBrandComboboxValue(combobox, value);
+        window.setCatalogComboboxDisabled(
+            combobox,
+            uniqueValues.length === 0,
+            uniqueValues.length
+                ? enabledPlaceholder
+                : disabledPlaceholder,
+        );
+        resetLocationSearch(combobox);
+    }
+
+    function refreshTictactoyCities(selectedCity = "") {
+        const country = tictactoyCountryCombobox.querySelector(
+            ".brand-combobox-hidden"
+        ).value;
+        const region = tictactoyRegionCombobox.querySelector(
+            ".brand-combobox-hidden"
+        ).value;
+        const cities = (
+            tictactoyLocationData[country]?.[region] || []
+        );
+
+        replaceLocationOptions(
+            tictactoyCityCombobox,
+            cities,
+            selectedCity,
+            "Выберите город",
+            "Сначала выберите область/регион",
+            "Города не найдены",
+        );
+    }
+
+    function refreshTictactoyRegions(
+        selectedRegion = "",
+        selectedCity = "",
+    ) {
+        const country = tictactoyCountryCombobox.querySelector(
+            ".brand-combobox-hidden"
+        ).value;
+        const regions = Object.keys(
+            tictactoyLocationData[country] || {}
+        );
+
+        replaceLocationOptions(
+            tictactoyRegionCombobox,
+            regions,
+            selectedRegion,
+            "Выберите область/регион",
+            "Сначала выберите страну",
+            "Регионы не найдены",
+        );
+        refreshTictactoyCities(selectedCity);
+    }
+
+    function resetTictactoyLocationFields() {
+        replaceLocationOptions(
+            tictactoyRegionCombobox,
+            [],
+            "",
+            "Выберите область/регион",
+            "Сначала выберите страну",
+            "Регионы не найдены",
+        );
+        replaceLocationOptions(
+            tictactoyCityCombobox,
+            [],
+            "",
+            "Выберите город",
+            "Сначала выберите область/регион",
+            "Города не найдены",
+        );
+    }
+
+    tictactoyCountryCombobox.addEventListener(
+        "catalog-combobox:change",
+        () => refreshTictactoyRegions(),
+    );
+
+    tictactoyRegionCombobox.addEventListener(
+        "catalog-combobox:change",
+        () => refreshTictactoyCities(),
+    );
 
     saleBrandCombobox.addEventListener(
         "catalog-combobox:change",
@@ -4907,10 +5051,21 @@
             salePlatformCombobox,
             sale.platform || "",
         );
-        window.setBrandComboboxValue(
-            saleCountryCombobox,
-            sale.country || "",
-        );
+        if (sourceKey === "amazon") {
+            window.setBrandComboboxValue(
+                saleCountryCombobox,
+                sale.country || "",
+            );
+        } else if (sourceKey === "tictactoy") {
+            window.setBrandComboboxValue(
+                tictactoyCountryCombobox,
+                sale.country || "",
+            );
+            refreshTictactoyRegions(
+                sale.region || "",
+                sale.city || "",
+            );
+        }
         productIdInput.value = sale.product_id || "";
         productNameInput.value = sale.product_name || "";
 
@@ -4922,13 +5077,9 @@
             track_number: sale.track_number || "",
             delivery_method: sale.delivery_method || "",
             delivery_cost: sale.delivery_cost || "",
-            region: sale.region || "",
-            city: sale.city || "",
-            payment_method: sale.payment_method || "",
             sticker_number: sale.sticker_number || "",
             recipient_name: sale.recipient_name || "",
             invoice_number: sale.invoice_number || "",
-            delivery_address: sale.delivery_address || "",
             note: sale.note || "",
         };
 
@@ -5228,6 +5379,41 @@
                 throw new Error("country-options");
             }
 
+            country.querySelector(".brand-combobox-trigger").click();
+            const countryPrefixSearch = country.querySelector(
+                ".brand-combobox-search"
+            );
+
+            for (const query of ["А", "Ав"]) {
+                countryPrefixSearch.value = query;
+                countryPrefixSearch.dispatchEvent(
+                    new Event("input", {bubbles: true})
+                );
+                const normalizedQuery =
+                    window.normalizeComboboxSearchValue(query);
+                const visibleCountries = Array.from(
+                    country.querySelectorAll(
+                        ".brand-combobox-option:not([hidden])"
+                    )
+                );
+
+                if (
+                    !visibleCountries.length
+                    || visibleCountries.some((option) =>
+                        !window.normalizeComboboxSearchValue(
+                            option.dataset.brandSearch
+                        ).startsWith(normalizedQuery)
+                    )
+                ) {
+                    throw new Error(
+                        "country-prefix-search-" + query
+                    );
+                }
+            }
+
+            country.querySelector("[data-brand-search-clear]").click();
+            window.setBrandDropdownOpen(country, false);
+
             chooseOption(status, "returned");
             chooseOption(
                 commission,
@@ -5298,6 +5484,79 @@
                     .classList.contains("is-open")
             ) {
                 throw new Error("country-escape");
+            }
+
+            const tictactoyCountry = document.getElementById(
+                "tictactoyCountry"
+            );
+            const tictactoyRegion = document.getElementById(
+                "tictactoyRegion"
+            );
+            const tictactoyCity = document.getElementById(
+                "tictactoyCity"
+            );
+
+            document.querySelector(
+                '[data-sale-source="tictactoy"]'
+            ).click();
+
+            if (
+                !tictactoyCountry.querySelector(
+                    ".brand-combobox-search-wrap"
+                ).hidden
+                || form.elements.payment_method
+                || form.elements.delivery_address
+            ) {
+                throw new Error("removed-source-fields");
+            }
+
+            chooseOption(tictactoyCountry, "Беларусь");
+
+            if (
+                tictactoyRegion.querySelector(
+                    ".brand-combobox-trigger"
+                ).disabled
+                || !tictactoyCity.querySelector(
+                    ".brand-combobox-trigger"
+                ).disabled
+            ) {
+                throw new Error("location-country-dependency");
+            }
+
+            chooseOption(tictactoyRegion, "Минская область");
+
+            if (
+                tictactoyCity.querySelector(
+                    ".brand-combobox-trigger"
+                ).disabled
+            ) {
+                throw new Error("location-region-dependency");
+            }
+
+            searchWithKeyboard(tictactoyCity, "минск");
+
+            if (
+                tictactoyCity.querySelector(
+                    ".brand-combobox-hidden"
+                ).value !== "Минск"
+            ) {
+                throw new Error("location-city-search");
+            }
+
+            chooseOption(tictactoyCountry, "Казахстан");
+
+            if (
+                tictactoyRegion.querySelector(
+                    ".brand-combobox-hidden"
+                ).value
+                || tictactoyCity.querySelector(
+                    ".brand-combobox-hidden"
+                ).value
+                || !tictactoyCity.querySelector(
+                    ".brand-combobox-trigger"
+                ).disabled
+            ) {
+                throw new Error("location-country-reset");
             }
 
             const fields = Array.from(
@@ -5522,7 +5781,7 @@
                 );
                 const headers = getHeaders();
                 const restoredCorrectly = (
-                    restored.version === 4
+                    restored.version === 5
                     && restored.order[0] === "created_at"
                     && restored.order[1] === "order_number"
                     && restored.order[2] === "unit_price_display"

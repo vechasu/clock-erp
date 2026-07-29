@@ -231,6 +231,7 @@
 
 .brand-combobox-option[hidden],
 .brand-combobox-empty[hidden],
+.brand-combobox-search-wrap[hidden],
 .brand-combobox-search-clear[hidden] {
     display: none;
 }
