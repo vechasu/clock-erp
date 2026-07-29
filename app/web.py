@@ -1445,10 +1445,34 @@ def warehouse_page():
         arguments["page"] = str(target_page)
         return url_for("warehouse_page", **arguments)
 
-    first_page_url = page_url(1) if page > 1 else None
     previous_page_url = page_url(page - 1) if page > 1 else None
     next_page_url = page_url(page + 1) if page < pages else None
-    last_page_url = page_url(pages) if pages and page < pages else None
+    pagination_page_count = pages or 1
+    pagination_page_numbers = {
+        1,
+        pagination_page_count,
+        max(1, page - 1),
+        page,
+        min(pagination_page_count, page + 1),
+    }
+    if page <= 3:
+        pagination_page_numbers.update(
+            range(1, min(3, pagination_page_count) + 1)
+        )
+    if page >= pagination_page_count - 2:
+        pagination_page_numbers.update(
+            range(max(1, pagination_page_count - 2), pagination_page_count + 1)
+        )
+    pagination_items = []
+    previous_number = None
+    for page_number in sorted(pagination_page_numbers):
+        if previous_number is not None and page_number - previous_number > 1:
+            pagination_items.append(None)
+        pagination_items.append({
+            "number": page_number,
+            "url": page_url(page_number),
+        })
+        previous_number = page_number
     export_arguments = request.args.to_dict(flat=True)
     export_arguments.pop("page", None)
     export_arguments.pop("per_page", None)
@@ -1482,10 +1506,9 @@ def warehouse_page():
             page_start=page_start,
             page_end=page_end,
             total_found=catalog["total"],
-            first_page_url=first_page_url,
             previous_page_url=previous_page_url,
             next_page_url=next_page_url,
-            last_page_url=last_page_url,
+            pagination_items=pagination_items,
             warehouse_export_xlsx_url=url_for(
                 "warehouse_export_xlsx",
                 **export_arguments

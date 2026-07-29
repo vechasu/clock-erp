@@ -1,4 +1,5 @@
 import io
+import re
 import tempfile
 import time
 import unittest
@@ -120,9 +121,18 @@ class WarehousePaginationTest(unittest.TestCase):
         html = response.get_data(as_text=True)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(html.count('data-product-id="'), 50)
-        self.assertIn("Найдено 5 000 товаров", html)
-        self.assertIn("Показаны 1–50", html)
-        self.assertIn("Страница 1 из 100", html)
+        self.assertIn(
+            'id="warehouseResultStart">1</span>–<span '
+            'id="warehouseResultEnd">50</span>',
+            html,
+        )
+        self.assertIn('id="warehouseResultTotal">5 000</span>', html)
+        self.assertIn('class="active" aria-current="page">1</span>', html)
+        self.assertIn('aria-label="Страница 2"', html)
+        self.assertIn('aria-label="Страница 100"', html)
+        self.assertNotIn('aria-label="Первая страница"', html)
+        self.assertNotIn('aria-label="Последняя страница"', html)
+        self.assertEqual(html.count('id="warehousePageSize"'), 1)
         self.assertIn('loading="lazy"', html)
         self.assertIn('decoding="async"', html)
         self.assertNotIn('data-gallery="', html)
@@ -180,11 +190,74 @@ class WarehousePaginationTest(unittest.TestCase):
             "/warehouse?q=Product&brand=Omega&sort_by=article"
             "&sort_dir=desc&page=2&per_page=100"
         ).get_data(as_text=True)
-        self.assertIn("Показаны 101–200", html)
-        self.assertIn("Страница 2 из 25", html)
+        self.assertIn(
+            'id="warehouseResultStart">101</span>–<span '
+            'id="warehouseResultEnd">200</span>',
+            html,
+        )
+        self.assertIn('class="active" aria-current="page">2</span>', html)
+        self.assertIn('aria-label="Страница 25"', html)
         self.assertIn("q=Product", html)
         self.assertIn("brand=Omega", html)
         self.assertIn("per_page=100", html)
+
+    def test_first_and_last_pages_use_compact_numbered_pagination(self):
+        first_html = self.client.get("/warehouse").get_data(as_text=True)
+        self.assertNotIn(
+            'href="#" aria-label="Предыдущая страница"',
+            first_html,
+        )
+        self.assertIn('aria-label="Следующая страница"', first_html)
+
+        last_html = self.client.get(
+            "/warehouse?page=100"
+        ).get_data(as_text=True)
+        self.assertIn(
+            'id="warehouseResultStart">4951</span>–<span '
+            'id="warehouseResultEnd">5000</span>',
+            last_html,
+        )
+        self.assertIn(
+            'class="active" aria-current="page">100</span>',
+            last_html,
+        )
+        self.assertIn('aria-label="Предыдущая страница"', last_html)
+        self.assertNotIn(
+            'href="#" aria-label="Следующая страница"',
+            last_html,
+        )
+
+    def test_zero_stock_filter_and_icon_actions_use_shared_components(self):
+        html = self.client.get(
+            "/warehouse?hide_zero=1"
+        ).get_data(as_text=True)
+        self.assertIn("Скрыть нулевые остатки", html)
+        self.assertRegex(
+            html,
+            r'id="warehouseHideZeroFilter"[^>]*\schecked',
+        )
+
+        stock_header = re.search(
+            r'<th data-column-key="stock">(.*?)</th>',
+            html,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(stock_header)
+        self.assertNotIn('name="hide_zero"', stock_header.group(1))
+
+        actions_cell = re.search(
+            r'<td data-column-key="actions">(.*?)</td>',
+            html,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(actions_cell)
+        action_markup = actions_cell.group(1)
+        self.assertIn("erp-table-action-view", action_markup)
+        self.assertIn("erp-table-action-delete", action_markup)
+        self.assertIn('title="Открыть карточку"', action_markup)
+        self.assertIn('aria-label="Удалить товар"', action_markup)
+        self.assertNotIn(">Карточка<", action_markup)
+        self.assertNotIn(">Удалить<", action_markup)
 
     def test_query_count_is_constant_and_response_is_bounded(self):
         catalog = ExcelProductCatalog(self.database)

@@ -92,10 +92,10 @@
         }
 
         .stat {
-            min-height: 62px;
+            min-height: 48px;
             display: flex;
             align-items: center;
-            padding: 10px 16px;
+            padding: 6px 14px;
             background: white;
             border: 1px solid #e5e7eb;
             border-radius: 14px;
@@ -109,18 +109,18 @@
             width: 100%;
         }
 
-                .stock-summary-item {
+        .stock-summary-item {
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
             text-align: center;
-            min-height: 48px;
+            min-height: 36px;
         }
 
-                .stock-summary-divider {
+        .stock-summary-divider {
             width: 1px;
-            height: 38px;
+            height: 28px;
             background: #e5e7eb;
             justify-self: center;
         }
@@ -133,7 +133,7 @@
         }
 
         .stat-value {
-            font-size: 22px;
+            font-size: 20px;
             font-weight: 850;
             line-height: 1;
             letter-spacing: -0.04em;
@@ -259,52 +259,82 @@
             box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
         }
 
-        .warehouse-results-status {
-            display: flex;
+        .warehouse-table-footer {
+            min-height: 42px;
+            display: grid;
+            grid-template-columns: minmax(120px, 1fr) auto minmax(120px, 1fr);
             align-items: center;
-            justify-content: space-between;
-            gap: 16px;
-            margin: 12px 2px;
+            gap: 12px;
+            padding: 4px 10px;
+            border-top: 1px solid #eef2f7;
             color: #4b5563;
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 700;
         }
 
         .warehouse-pagination {
             display: flex;
             align-items: center;
-            gap: 8px;
-            flex-wrap: wrap;
+            justify-content: center;
+            gap: 3px;
+            margin: 0;
+            white-space: nowrap;
         }
 
         .warehouse-pagination a,
         .warehouse-pagination span {
-            min-width: 38px;
-            min-height: 38px;
+            width: 30px;
+            min-width: 30px;
+            height: 30px;
+            min-height: 30px;
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            border: 1px solid #d1d5db;
-            border-radius: 10px;
-            background: white;
-            color: #111827;
+            border: 1px solid transparent;
+            border-radius: 8px;
+            background: transparent;
+            color: #475569;
             text-decoration: none;
         }
 
-        .warehouse-pagination span {
-            color: #9ca3af;
-            background: #f9fafb;
+        .warehouse-pagination a:hover,
+        .warehouse-pagination a:focus-visible {
+            border-color: #dbe3ee;
+            background: #f8fafc;
+            color: #1d4ed8;
+        }
+
+        .warehouse-pagination .active {
+            border-color: #bfdbfe;
+            background: #eff6ff;
+            color: #1d4ed8;
+            font-weight: 850;
+        }
+
+        .warehouse-pagination .is-disabled,
+        .warehouse-pagination .warehouse-pagination-ellipsis {
+            color: #a1aab8;
+        }
+
+        .warehouse-pagination .warehouse-pagination-ellipsis {
+            border-color: transparent;
         }
 
         .warehouse-page-size {
             display: inline-flex;
             align-items: center;
-            gap: 8px;
+            justify-self: end;
+            gap: 6px;
+            white-space: nowrap;
         }
 
-        .warehouse-page-size select {
-            width: auto;
-            padding: 8px 32px 8px 10px;
+        .warehouse-page-size #warehousePageSize {
+            width: 58px;
+            height: 30px;
+            min-height: 30px;
+            padding: 0 24px 0 8px;
+            border-radius: 8px;
+            font-size: 13px;
         }
 
         .warehouse-loading-state {
@@ -331,10 +361,37 @@
             padding: 7px 10px;
         }
 
-        @media (max-width: 768px) {
-            .warehouse-results-status {
-                align-items: flex-start;
-                flex-direction: column;
+        @media (max-width: 767px) {
+            .warehouse-table-footer {
+                grid-template-columns: minmax(0, 1fr) auto;
+                gap: 4px 8px;
+                padding: 7px 2px 2px;
+                border-top: 0;
+            }
+
+            .warehouse-pagination {
+                grid-column: 1 / -1;
+                grid-row: 1;
+                gap: 2px;
+            }
+
+            .warehouse-pagination a,
+            .warehouse-pagination span {
+                width: 28px;
+                min-width: 28px;
+                height: 28px;
+                min-height: 28px;
+                font-size: 12px;
+            }
+
+            .warehouse-results-range {
+                grid-column: 1;
+                grid-row: 2;
+            }
+
+            .warehouse-page-size {
+                grid-column: 2;
+                grid-row: 2;
             }
         }
 
@@ -591,23 +648,23 @@
             table-layout: fixed;
             width: max-content;
             min-width: 100%;
-            --warehouse-row-height: 74px;
+            --warehouse-row-height: 60px;
         }
 
         html:not(.warehouse-table-ready) .warehouse-products-table {
             visibility: hidden;
         }
 
-        .warehouse-products-table .warehouse-col-photo { width: 72px; }
-        .warehouse-products-table .warehouse-col-name { width: 230px; }
-        .warehouse-products-table .warehouse-col-price { width: 90px; }
-        .warehouse-products-table .warehouse-col-article { width: 110px; }
-        .warehouse-products-table .warehouse-col-brand { width: 105px; }
-        .warehouse-products-table .warehouse-col-category { width: 125px; }
-        .warehouse-products-table .warehouse-col-stock { width: 90px; }
-        .warehouse-products-table .warehouse-col-created { width: 120px; }
-        .warehouse-products-table .warehouse-col-cell { width: 85px; }
-        .warehouse-products-table .warehouse-col-actions { width: 175px; }
+        .warehouse-products-table .warehouse-col-photo { width: 64px; }
+        .warehouse-products-table .warehouse-col-name { width: 280px; }
+        .warehouse-products-table .warehouse-col-price { width: 80px; }
+        .warehouse-products-table .warehouse-col-article { width: 96px; }
+        .warehouse-products-table .warehouse-col-brand { width: 95px; }
+        .warehouse-products-table .warehouse-col-category { width: 150px; }
+        .warehouse-products-table .warehouse-col-stock { width: 80px; }
+        .warehouse-products-table .warehouse-col-created { width: 106px; }
+        .warehouse-products-table .warehouse-col-cell { width: 75px; }
+        .warehouse-products-table .warehouse-col-actions { width: 82px; }
 
         .warehouse-products-table th {
             position: relative;
@@ -622,16 +679,20 @@
 
         .warehouse-products-table td {
             height: var(--warehouse-row-height);
+            padding: 8px 10px;
             overflow: hidden;
             vertical-align: middle;
             text-overflow: ellipsis;
             white-space: nowrap;
         }
 
-        .warehouse-products-table td[data-column-key="name"],
-        .warehouse-products-table td[data-column-key="category"] {
+        .warehouse-products-table td[data-column-key="name"] {
             white-space: normal;
             overflow-wrap: anywhere;
+        }
+
+        .warehouse-products-table td[data-column-key="category"] {
+            white-space: nowrap;
         }
 
         .warehouse-column-resize-handle {
@@ -706,12 +767,12 @@
             background: #f9fafb;
             color: #374151;
             font-size: 13px;
-            padding: 14px;
+            padding: 10px;
             border-bottom: 1px solid #e5e7eb;
         }
 
         td {
-            padding: 14px;
+            padding: 8px 10px;
             border-bottom: 1px solid #f3f4f6;
             font-size: 14px;
             vertical-align: middle;
@@ -742,25 +803,13 @@
         }
 
         .row-actions {
-            display: flex;
-            gap: 8px;
+            display: inline-flex;
+            gap: 6px;
             align-items: center;
         }
 
-        .edit-button {
-            background: #e0f2fe;
-            color: #075985;
-            padding: 9px 12px;
-            border-radius: 10px;
-            font-size: 13px;
-        }
-
-        .delete-button {
-            background: #fee2e2;
-            color: #991b1b;
-            padding: 9px 12px;
-            border-radius: 10px;
-            font-size: 13px;
+        .row-actions form {
+            margin: 0;
         }
 
         .empty {
@@ -1073,7 +1122,7 @@
 
         .stat,
         .add-position-card {
-            min-height: 52px;
+            min-height: 48px;
         }
 
         .stat {
@@ -1081,11 +1130,11 @@
         }
 
         .stock-summary-item {
-            min-height: 38px;
+            min-height: 34px;
         }
 
         .stock-summary-divider {
-            height: 30px;
+            height: 26px;
         }
 
         .search-card {
@@ -2238,9 +2287,10 @@
         /* Выравнивание действий таблицы справа */
         .table-card th:last-child,
         .table-card td:last-child {
-            width: 205px;
-            min-width: 205px;
-            padding-right: 24px;
+            width: 82px;
+            min-width: 82px;
+            padding-right: 6px;
+            padding-left: 6px;
             text-align: right;
         }
 
@@ -2458,6 +2508,25 @@
         #filterDrawer .category-cell-form > button[type="submit"]:hover {
             background: #1d4ed8;
             border-color: #1d4ed8;
+        }
+
+        #filterDrawer .warehouse-zero-filter {
+            min-height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-top: 4px;
+            padding: 0 4px;
+            color: #334155;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        #filterDrawer .warehouse-zero-filter .zero-stock-toggle-text {
+            display: inline;
+            white-space: normal;
         }
 
         .warehouse-date-filter {
@@ -3208,13 +3277,33 @@
 
         .warehouse-products-table th[data-column-key="actions"],
         .warehouse-products-table td[data-column-key="actions"] {
-            width: auto;
-            padding-right: 14px;
+            width: 82px;
+            min-width: 82px;
+            padding-right: 6px;
+            padding-left: 6px;
             text-align: center;
         }
 
         .warehouse-products-table td[data-column-key="actions"] .row-actions {
             justify-content: center;
+        }
+
+        @media (min-width: 768px) {
+            .warehouse-products-table th[data-column-key="actions"],
+            .warehouse-products-table td[data-column-key="actions"] {
+                position: sticky;
+                right: 0;
+                z-index: 5;
+                background: var(--erp-surface, #ffffff);
+                box-shadow:
+                    -1px 0 0 var(--erp-border, #e5eaf2),
+                    -10px 0 16px -18px rgba(15, 23, 42, 0.7);
+            }
+
+            .warehouse-products-table th[data-column-key="actions"] {
+                z-index: 7;
+                background: var(--erp-surface-muted, #f8fafc);
+            }
         }
 
         /* Compact product card layout */
@@ -3623,6 +3712,7 @@
 </head>
 <body class="warehouse-page">
     {% from "_catalog_combobox.html" import render_catalog_combobox %}
+    {% from "_navigation_icons.html" import navigation_icon %}
     <div class="app">
         {% include "_sidebar.html" %}
 
@@ -4056,31 +4146,6 @@
                 aria-live="polite"
             ></div>
             <div id="warehouseResults">
-            <div class="warehouse-results-status">
-                <div>
-                    Найдено {{ "{:,}".format(total_found).replace(",", " ") }} товаров.
-                    Показаны {{ page_start }}–{{ page_end }}.
-                </div>
-                <label class="warehouse-page-size">
-                    На странице
-                    <select
-                        id="warehousePageSize"
-                        aria-label="Количество товаров на странице"
-                        onchange="changeWarehousePageSize(this.value)"
-                    >
-                        {% for option in (50, 100, 200) %}
-                            <option value="{{ option }}" {% if per_page == option %}selected{% endif %}>{{ option }}</option>
-                        {% endfor %}
-                    </select>
-                </label>
-                <nav class="warehouse-pagination" aria-label="Страницы товаров">
-                    {% if first_page_url %}<a href="{{ first_page_url }}" aria-label="Первая страница">«</a>{% else %}<span>«</span>{% endif %}
-                    {% if previous_page_url %}<a href="{{ previous_page_url }}" aria-label="Предыдущая страница">‹</a>{% else %}<span>‹</span>{% endif %}
-                    <strong>Страница {{ page }} из {{ pages or 1 }}</strong>
-                    {% if next_page_url %}<a href="{{ next_page_url }}" aria-label="Следующая страница">›</a>{% else %}<span>›</span>{% endif %}
-                    {% if last_page_url %}<a href="{{ last_page_url }}" aria-label="Последняя страница">»</a>{% else %}<span>»</span>{% endif %}
-                </nav>
-            </div>
             <div class="table-card erp-table-card">
                 {% if items %}
                     <table id="warehouseProductsTable" class="warehouse-products-table erp-data-table">
@@ -4176,68 +4241,19 @@
                                 </th>
 
                                 <th data-column-key="stock">
-                                    <div class="stock-column-title">
-                                        <span
-                                            class="warehouse-sort-label erp-sort-label{% if sort_by == 'stock' %} is-active{% endif %}"
-                                            data-sort-field="stock"
-                                            onclick="sortWarehouseTable(this.dataset.sortField)"
-                                            title="По возрастанию. Повторное нажатие: по убыванию"
-                                        >
-                                            Остаток
-                                            <span class="warehouse-sort-arrow erp-sort-arrow">
-                                                {% if sort_by == "stock" %}
-                                                    {% if sort_dir == "asc" %}↑{% else %}↓{% endif %}
-                                                {% else %}↕{% endif %}
-                                            </span>
+                                    <span
+                                        class="warehouse-sort-label erp-sort-label{% if sort_by == 'stock' %} is-active{% endif %}"
+                                        data-sort-field="stock"
+                                        onclick="sortWarehouseTable(this.dataset.sortField)"
+                                        title="По возрастанию. Повторное нажатие: по убыванию"
+                                    >
+                                        Остаток
+                                        <span class="warehouse-sort-arrow erp-sort-arrow">
+                                            {% if sort_by == "stock" %}
+                                                {% if sort_dir == "asc" %}↑{% else %}↓{% endif %}
+                                            {% else %}↕{% endif %}
                                         </span>
-
-                                        <form
-                                            class="stock-header-toggle-form"
-                                            method="get"
-                                            action="/warehouse"
-                                        >
-                                            {% if query %}
-                                                <input type="hidden" name="q" value="{{ query }}">
-                                            {% endif %}
-
-                                            {% if selected_brand %}
-                                                <input type="hidden" name="brand" value="{{ selected_brand }}">
-                                            {% endif %}
-
-                                            {% if selected_category %}
-                                                <input type="hidden" name="category" value="{{ selected_category }}">
-                                            {% endif %}
-
-                                            {% if selected_cell %}
-                                                <input type="hidden" name="cell" value="{{ selected_cell }}">
-                                            {% endif %}
-                                            {% if created_date_from %}
-                                                <input type="hidden" name="date_from" value="{{ created_date_from }}">
-                                            {% endif %}
-                                            {% if created_date_to %}
-                                                <input type="hidden" name="date_to" value="{{ created_date_to }}">
-                                            {% endif %}
-
-                                            <input type="hidden" name="sort_by" value="{{ sort_by }}">
-                                            <input type="hidden" name="sort_dir" value="{{ sort_dir }}">
-                                            <input type="hidden" name="per_page" value="{{ per_page }}">
-
-                                            <label
-                                                class="stock-mini-toggle"
-                                                title="Скрыть товары с нулевым остатком"
-                                                aria-label="Скрыть товары с нулевым остатком"
-                                            >
-                                                <input
-                                                    type="checkbox"
-                                                    name="hide_zero"
-                                                    value="1"
-                                                    {% if hide_zero %}checked{% endif %}
-                                                    onchange="toggleZeroStockRows(this.checked)"
-                                                >
-                                                <span class="stock-mini-slider"></span>
-                                            </label>
-                                        </form>
-                                    </div>
+                                    </span>
                                 </th>
 
                                 <th class="created-column" data-column-key="created">
@@ -4352,10 +4368,12 @@
                                                     </div>
                                                 </div>
                                             </details>
-                                            <div class="row-actions">
+                                            <div class="row-actions erp-table-actions">
                                                 <button
-                                                    class="edit-button"
+                                                    class="erp-table-action erp-table-action-view"
                                                     type="button"
+                                                    title="Открыть карточку"
+                                                    aria-label="Открыть карточку"
                                                     data-id="{{ item.id|e }}"
                                                     data-name="{{ item.name|e }}"
                                                     data-article="{{ (item.article or '')|e }}"
@@ -4369,7 +4387,7 @@
                                                     data-detail-url="/warehouse/product/{{ item.id }}"
                                                     onclick="openEditDrawer(this)"
                                                 >
-                                                    Карточка
+                                                    {{ navigation_icon("products", "erp-table-action-icon") }}
                                                 </button>
 
                                                 <form
@@ -4378,7 +4396,23 @@
                                                     onsubmit="return archiveWarehouseProduct(event, this)"
                                                 >
                                                     <input type="hidden" name="product_id" value="{{ item.id }}">
-                                                    <button class="delete-button" type="submit">Удалить</button>
+                                                    <button
+                                                        class="erp-table-action erp-table-action-delete"
+                                                        type="submit"
+                                                        title="Удалить товар"
+                                                        aria-label="Удалить товар"
+                                                    >
+                                                        <svg
+                                                            viewBox="0 0 24 24"
+                                                            aria-hidden="true"
+                                                        >
+                                                            <path d="M3 6h18"></path>
+                                                            <path d="M8 6V4h8v2"></path>
+                                                            <path d="M19 6l-1 14H6L5 6"></path>
+                                                            <path d="M10 11v6"></path>
+                                                            <path d="M14 11v6"></path>
+                                                        </svg>
+                                                    </button>
                                                 </form>
                                             </div>
                                         {% else %}
@@ -4393,18 +4427,48 @@
                     <div class="empty">Товары не найдены</div>
                 {% endif %}
             </div>
-            <div class="warehouse-results-status">
-                <div>
-                    Найдено {{ "{:,}".format(total_found).replace(",", " ") }} товаров.
-                    Показаны {{ page_start }}–{{ page_end }}.
+            <div class="warehouse-table-footer">
+                <div class="warehouse-results-range">
+                    <span id="warehouseResultStart">{{ page_start }}</span>–<span id="warehouseResultEnd">{{ page_end }}</span>
+                    из
+                    <span id="warehouseResultTotal">{{ "{:,}".format(total_found).replace(",", " ") }}</span>
                 </div>
-                <nav class="warehouse-pagination" aria-label="Страницы товаров">
-                    {% if first_page_url %}<a href="{{ first_page_url }}" aria-label="Первая страница">«</a>{% else %}<span>«</span>{% endif %}
-                    {% if previous_page_url %}<a href="{{ previous_page_url }}" aria-label="Предыдущая страница">‹</a>{% else %}<span>‹</span>{% endif %}
-                    <strong>Страница {{ page }} из {{ pages or 1 }}</strong>
-                    {% if next_page_url %}<a href="{{ next_page_url }}" aria-label="Следующая страница">›</a>{% else %}<span>›</span>{% endif %}
-                    {% if last_page_url %}<a href="{{ last_page_url }}" aria-label="Последняя страница">»</a>{% else %}<span>»</span>{% endif %}
+                <nav class="warehouse-pagination pagination" aria-label="Страницы товаров">
+                    {% if previous_page_url %}
+                        <a href="{{ previous_page_url }}" aria-label="Предыдущая страница">‹</a>
+                    {% else %}
+                        <span class="is-disabled" aria-hidden="true">‹</span>
+                    {% endif %}
+                    {% for pagination_item in pagination_items %}
+                        {% if pagination_item is none %}
+                            <span class="warehouse-pagination-ellipsis" aria-hidden="true">…</span>
+                        {% elif pagination_item.number == page %}
+                            <span class="active" aria-current="page">{{ pagination_item.number }}</span>
+                        {% else %}
+                            <a
+                                href="{{ pagination_item.url }}"
+                                aria-label="Страница {{ pagination_item.number }}"
+                            >{{ pagination_item.number }}</a>
+                        {% endif %}
+                    {% endfor %}
+                    {% if next_page_url %}
+                        <a href="{{ next_page_url }}" aria-label="Следующая страница">›</a>
+                    {% else %}
+                        <span class="is-disabled" aria-hidden="true">›</span>
+                    {% endif %}
                 </nav>
+                <label class="warehouse-page-size">
+                    <select
+                        id="warehousePageSize"
+                        aria-label="Количество товаров на странице"
+                        onchange="changeWarehousePageSize(this.value)"
+                    >
+                        {% for option in (50, 100, 200) %}
+                            <option value="{{ option }}" {% if per_page == option %}selected{% endif %}>{{ option }}</option>
+                        {% endfor %}
+                    </select>
+                    <span>на странице</span>
+                </label>
             </div>
             </div>
         </main>
@@ -4441,10 +4505,6 @@
 
             {% if selected_cell %}
                 <input type="hidden" name="cell" value="{{ selected_cell }}">
-            {% endif %}
-
-            {% if hide_zero %}
-                <input type="hidden" name="hide_zero" value="1">
             {% endif %}
 
             <input type="hidden" name="sort_by" value="{{ sort_by }}">
@@ -4506,11 +4566,27 @@
                 </div>
             </div>
 
+            <label class="warehouse-zero-filter" for="warehouseHideZeroFilter">
+                <span class="zero-stock-toggle-text">
+                    Скрыть нулевые остатки
+                </span>
+                <span class="toggle-switch">
+                    <input
+                        id="warehouseHideZeroFilter"
+                        type="checkbox"
+                        name="hide_zero"
+                        value="1"
+                        {% if hide_zero %}checked{% endif %}
+                    >
+                    <span class="toggle-slider" aria-hidden="true"></span>
+                </span>
+            </label>
+
             <button type="submit">Применить фильтры</button>
         </form>
 
         <div style="margin-top: 16px;">
-            <a class="category-link" href="{{ url_for('warehouse_page', hide_zero='1' if hide_zero else None) }}">
+            <a class="category-link" href="{{ url_for('warehouse_page') }}">
                 <span>Сбросить фильтры</span>
             </a>
         </div>
@@ -5874,6 +5950,14 @@
             );
 
             forms.forEach(function(form) {
+                const checkbox = form.querySelector(
+                    'input[type="checkbox"][name="hide_zero"]'
+                );
+                if (checkbox) {
+                    checkbox.checked = hideZero;
+                    return;
+                }
+
                 let input = form.querySelector(
                     'input[type="hidden"][name="hide_zero"]'
                 );
@@ -5946,7 +6030,7 @@
 
         document.addEventListener("DOMContentLoaded", function() {
             const toggle = document.querySelector(
-                '.stock-mini-toggle input[name="hide_zero"]'
+                '#warehouseHideZeroFilter'
             );
 
             toggleZeroStockRows(
@@ -5966,14 +6050,14 @@
 
 
     <script>
-        const warehouseTableStorageKey = "vechasu.warehouse.table-view.v1";
+        const warehouseTableStorageKey = "vechasu.warehouse.table-view.v2";
         const warehouseTableDefaults = {
             order: ["photo", "name", "price", "article", "brand", "category", "stock", "created", "cell", "actions"],
-            widths: { photo: 72, name: 230, price: 90, article: 110, brand: 105, category: 125, stock: 90, created: 120, cell: 85, actions: 175 }
+            widths: { photo: 64, name: 280, price: 80, article: 96, brand: 95, category: 150, stock: 80, created: 106, cell: 75, actions: 82 }
         };
         const warehouseTableMinimumWidths = {
-            photo: 68, name: 150, price: 90, article: 100, brand: 110,
-            category: 120, stock: 90, created: 120, cell: 85, actions: 145
+            photo: 60, name: 220, price: 72, article: 86, brand: 84,
+            category: 138, stock: 74, created: 96, cell: 68, actions: 82
         };
         let warehouseTableSuppressSortUntil = 0;
 
@@ -6350,13 +6434,15 @@
                 'button[type="submit"]'
             );
 
-            const originalText = button
-                ? button.textContent
-                : "Удалить";
+            const originalTitle = button
+                ? button.getAttribute("title")
+                : "";
 
             if (button) {
                 button.disabled = true;
-                button.textContent = "Удаляем...";
+                button.setAttribute("title", "Удаляем…");
+                button.setAttribute("aria-label", "Удаляем товар");
+                button.setAttribute("aria-busy", "true");
             }
 
             const row = form.closest("tr");
@@ -6402,6 +6488,26 @@
                         }
                     }
 
+                    const resultEnd = document.getElementById(
+                        "warehouseResultEnd"
+                    );
+                    const resultTotal = document.getElementById(
+                        "warehouseResultTotal"
+                    );
+                    [resultEnd, resultTotal].forEach(function(element) {
+                        if (!element) {
+                            return;
+                        }
+                        const current = Number(
+                            element.textContent.replace(/\s/g, "")
+                        );
+                        if (Number.isFinite(current)) {
+                            element.textContent = new Intl.NumberFormat(
+                                "ru-RU"
+                            ).format(Math.max(0, current - 1));
+                        }
+                    });
+
                     const statValues =
                         document.querySelectorAll(
                             ".stock-summary-item .stat-value"
@@ -6440,7 +6546,9 @@
 
                 if (button) {
                     button.disabled = false;
-                    button.textContent = originalText;
+                    button.setAttribute("title", originalTitle || "Удалить товар");
+                    button.setAttribute("aria-label", "Удалить товар");
+                    button.removeAttribute("aria-busy");
                 }
 
                 alert(error.message);
