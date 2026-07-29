@@ -7,12 +7,15 @@ import {
   type SaleCatalogProduct,
   type SaleFormInput,
   type SaleFormValues,
+  type SaleLocations,
 } from './schemas';
+import { EntitySelect } from '../../components/Controls';
 
 interface SaleFormProps {
   id: string;
   sale?: Sale | null;
   products: SaleCatalogProduct[];
+  locations: SaleLocations;
   onSubmit: (values: SaleFormValues) => void;
 }
 
@@ -45,9 +48,10 @@ function defaults(sale?: Sale | null): SaleFormInput {
   };
 }
 
-export function SaleForm({ id, sale, products, onSubmit }: SaleFormProps) {
+export function SaleForm({ id, sale, products, locations, onSubmit }: SaleFormProps) {
   const {
     register,
+    setValue,
     watch,
     handleSubmit,
     formState: { errors },
@@ -56,6 +60,8 @@ export function SaleForm({ id, sale, products, onSubmit }: SaleFormProps) {
     defaultValues: defaults(sale),
   });
   const productId = watch('product_id');
+  const country = watch('country');
+  const region = watch('region');
   const selected = products.find((product) => product.id === productId);
   const quantityLocked = Boolean(sale?.inventory_managed);
 
@@ -141,18 +147,44 @@ export function SaleForm({ id, sale, products, onSubmit }: SaleFormProps) {
             <span>Способ доставки</span>
             <input {...register('delivery_method')} />
           </label>
-          <label className="form-field">
-            <span>Страна</span>
-            <input {...register('country')} />
-          </label>
-          <label className="form-field">
-            <span>Регион</span>
-            <input {...register('region')} />
-          </label>
-          <label className="form-field">
-            <span>Город</span>
-            <input {...register('city')} />
-          </label>
+          <EntitySelect
+            label="Страна"
+            placeholder="Не выбрана"
+            options={Object.keys(locations).map((value) => ({
+              value,
+              label: value,
+            }))}
+            {...register('country')}
+            onChange={(event) => {
+              setValue('country', event.target.value);
+              setValue('region', '');
+              setValue('city', '');
+            }}
+          />
+          <EntitySelect
+            label="Регион"
+            placeholder="Не выбран"
+            options={Object.keys(locations[country] ?? {}).map((value) => ({
+              value,
+              label: value,
+            }))}
+            {...register('region')}
+            onChange={(event) => {
+              setValue('region', event.target.value);
+              setValue('city', '');
+            }}
+            disabled={!country}
+          />
+          <EntitySelect
+            label="Город"
+            placeholder="Не выбран"
+            options={(locations[country]?.[region] ?? []).map((value) => ({
+              value,
+              label: value,
+            }))}
+            {...register('city')}
+            disabled={!region}
+          />
           <label className="form-field">
             <span>Стоимость доставки</span>
             <input type="number" min="0" step="0.01" {...register('delivery_cost')} />

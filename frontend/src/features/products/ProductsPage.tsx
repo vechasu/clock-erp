@@ -5,13 +5,22 @@ import { useSearchParams } from 'react-router-dom';
 
 import { ApiRequestError } from '../../api/client';
 import { AppShell } from '../../components/AppShell';
+import { DateRangePicker, FilterPanel, LiveSearch } from '../../components/Controls';
 import { DataTable } from '../../components/DataTable';
 import { ConfirmDialog, Modal } from '../../components/Modal';
 import { PageState } from '../../components/PageState';
 import { TablePagination } from '../../components/TablePagination';
 import { Toast } from '../../components/Toast';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
-import { createProduct, deleteProduct, fetchProducts, updateProduct } from './api';
+import {
+  bulkUpdateProducts,
+  createBrand,
+  createCategory,
+  createProduct,
+  deleteProduct,
+  fetchProducts,
+  updateProduct,
+} from './api';
 import { ProductForm } from './ProductForm';
 import type { Product, ProductFormValues } from './schemas';
 
@@ -29,6 +38,19 @@ function ProductImage({ product }: { product: Product }) {
   );
 }
 
+function productGalleryUrls(product: Product) {
+  const urls = product.gallery
+    .map((image) => {
+      if (typeof image === 'string') return image;
+      if (!image || typeof image !== 'object') return '';
+      const record = image as Record<string, unknown>;
+      return String(record.original_url || record.url || record.src || '');
+    })
+    .filter(Boolean);
+  if (product.thumbnail_url) urls.unshift(product.thumbnail_url);
+  return [...new Set(urls)];
+}
+
 export function ProductsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
@@ -36,6 +58,17 @@ export function ProductsPage() {
   const debouncedSearch = useDebouncedValue(search);
   const [editor, setEditor] = useState<Product | 'new' | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Product | null>(null);
+  const [galleryTarget, setGalleryTarget] = useState<Product | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [bulkEditorOpen, setBulkEditorOpen] = useState(false);
+  const [bulkBrand, setBulkBrand] = useState('');
+  const [bulkCategory, setBulkCategory] = useState('');
+  const [bulkCell, setBulkCell] = useState('');
+  const [taxonomyEditor, setTaxonomyEditor] = useState<{
+    kind: 'brand' | 'category';
+    brand: string;
+  } | null>(null);
+  const [taxonomyName, setTaxonomyName] = useState('');
   const [toast, setToast] = useState<{ message: string; kind: 'success' | 'error' } | null>(
     null,
   );
@@ -49,6 +82,12 @@ export function ProductsPage() {
     next.set('page', '1');
     setSearchParams(next, { replace: true });
   }, [debouncedSearch, searchParams, setSearchParams]);
+
+  useEffect(() => {
+    if (searchParams.get('open_add') === '1') {
+      setEditor('new');
+    }
+  }, [searchParams]);
 
   const normalizedParams = useMemo(() => {
     const next = new URLSearchParams(searchParams);
@@ -86,6 +125,47 @@ export function ProductsPage() {
     },
     onError: (error) => setToast({ message: errorMessage(error), kind: 'error' }),
   });
+  const bulkMutation = useMutation({
+    mutationFn: () => {
+      const changes = {
+        ...(bulkBrand ? { brand: bulkBrand } : {}),
+        ...(bulkCategory ? { category: bulkCategory } : {}),
+        ...(bulkCell ? { cell: bulkCell } : {}),
+      };
+      return bulkUpdateProducts([...selectedIds], changes);
+    },
+    onSuccess: async (result) => {
+      await invalidate();
+      setBulkEditorOpen(false);
+      setSelectedIds(new Set());
+      setBulkBrand('');
+      setBulkCategory('');
+      setBulkCell('');
+      setToast({
+        message: `Массово обновлено товаров: ${result.updated}`,
+        kind: result.errors.length ? 'error' : 'success',
+      });
+    },
+    onError: (error) => setToast({ message: errorMessage(error), kind: 'error' }),
+  });
+  const taxonomyMutation = useMutation({
+    mutationFn: () => {
+      if (!taxonomyEditor) throw new Error('Не выбран тип справочника');
+      return taxonomyEditor.kind === 'brand'
+        ? createBrand(taxonomyName)
+        : createCategory(taxonomyEditor.brand, taxonomyName);
+    },
+    onSuccess: async () => {
+      await invalidate();
+      setToast({
+        message: taxonomyEditor?.kind === 'brand' ? 'Бренд создан' : 'Категория создана',
+        kind: 'success',
+      });
+      setTaxonomyEditor(null);
+      setTaxonomyName('');
+    },
+    onError: (error) => setToast({ message: errorMessage(error), kind: 'error' }),
+  });
 
   const setFilter = (key: string, value: string, resetPage = true) => {
     const next = new URLSearchParams(searchParams);
@@ -106,19 +186,71 @@ export function ProductsPage() {
   const columns = useMemo<ColumnDef<Product>[]>(
     () => [
       {
+        id: 'select',
+        header: 'Выбор',
+        enableSorting: false,
+        enableHiding: false,
+        size: 52,
+        cell: ({ row }) => (
+          <input
+            type="checkbox"
+            aria-label={`Выбрать ${row.original.name}`}
+            checked={selectedIds.has(row.original.id)}
+            onChange={(event) => {
+              setSelectedIds((current) => {
+                const next = new Set(current);
+                if (event.target.checked) next.add(row.original.id);
+                else next.delete(row.original.id);
+                return next;
+              });
+            }}
+          />
+        ),
+      },
+      {
+        id: 'photo',
+        header: 'Фото',
+        enableSorting: false,
+        size: 74,
+        cell: ({ row }) => (
+          <button
+            className="thumbnail-button"
+            type="button"
+            onClick={() => setGalleryTarget(row.original)}
+            aria-label={`Открыть изображения ${row.original.name}`}
+          >
+            <ProductImage product={row.original} />
+          </button>
+        ),
+      },
+      {
         id: 'name',
         accessorKey: 'name',
-        header: 'Товар',
-        size: 330,
+        header: 'Название',
+        size: 270,
         cell: ({ row }) => (
           <div className="product-cell">
-            <ProductImage product={row.original} />
             <div>
               <strong>{row.original.name}</strong>
-              <small>{row.original.article || row.original.barcode || 'Без артикула'}</small>
+              <small>{row.original.barcode || 'Без штрихкода'}</small>
             </div>
           </div>
         ),
+      },
+      {
+        id: 'price',
+        accessorKey: 'price_display',
+        header: 'Цена',
+        enableSorting: false,
+        size: 125,
+        cell: ({ row }) => row.original.price_display || '—',
+      },
+      {
+        id: 'article',
+        accessorKey: 'article',
+        header: 'Артикул',
+        size: 135,
+        cell: ({ row }) => row.original.article || '—',
       },
       { id: 'brand', accessorKey: 'brand', header: 'Бренд', size: 150 },
       { id: 'category', accessorKey: 'category', header: 'Категория', size: 190 },
@@ -162,7 +294,7 @@ export function ProductsPage() {
         ),
       },
     ],
-    [],
+    [selectedIds],
   );
 
   return (
@@ -196,18 +328,13 @@ export function ProductsPage() {
 
         <section className="workspace-card">
           <div className="list-toolbar">
-            <label className="search-control">
-              <span aria-hidden="true">⌕</span>
-              <span className="visually-hidden">Поиск товаров</span>
-              <input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Название, артикул, штрихкод, ячейка…"
-              />
-            </label>
-            <details className="filter-panel">
-              <summary>Фильтры</summary>
-              <div className="filter-grid">
+            <LiveSearch
+              label="Поиск товаров"
+              value={search}
+              onChange={setSearch}
+              placeholder="Название, артикул, штрихкод, ячейка…"
+            />
+            <FilterPanel>
                 <label>
                   Бренд
                   <select
@@ -250,22 +377,12 @@ export function ProductsPage() {
                     ))}
                   </select>
                 </label>
-                <label>
-                  Добавлено с
-                  <input
-                    type="date"
-                    value={searchParams.get('date_from') ?? ''}
-                    onChange={(event) => setFilter('date_from', event.target.value)}
-                  />
-                </label>
-                <label>
-                  по
-                  <input
-                    type="date"
-                    value={searchParams.get('date_to') ?? ''}
-                    onChange={(event) => setFilter('date_to', event.target.value)}
-                  />
-                </label>
+                <DateRangePicker
+                  from={searchParams.get('date_from') ?? ''}
+                  to={searchParams.get('date_to') ?? ''}
+                  onFromChange={(value) => setFilter('date_from', value)}
+                  onToChange={(value) => setFilter('date_to', value)}
+                />
                 <label className="checkbox-field">
                   <input
                     type="checkbox"
@@ -284,8 +401,37 @@ export function ProductsPage() {
                 >
                   Сбросить
                 </button>
-              </div>
-            </details>
+            </FilterPanel>
+          </div>
+          <div className="bulk-toolbar">
+            <label>
+              <input
+                type="checkbox"
+                checked={products.length > 0 && products.every((product) => selectedIds.has(product.id))}
+                onChange={(event) => {
+                  setSelectedIds((current) => {
+                    const next = new Set(current);
+                    for (const product of products) {
+                      if (event.target.checked) next.add(product.id);
+                      else next.delete(product.id);
+                    }
+                    return next;
+                  });
+                }}
+              />
+              Выбрать текущую страницу
+            </label>
+            {selectedIds.size ? (
+              <>
+                <strong>Выбрано: {selectedIds.size}</strong>
+                <button className="button secondary" type="button" onClick={() => setBulkEditorOpen(true)}>
+                  Изменить выбранные
+                </button>
+                <button type="button" onClick={() => setSelectedIds(new Set())}>
+                  Снять выбор
+                </button>
+              </>
+            ) : null}
           </div>
 
           {productsQuery.isError ? (
@@ -328,8 +474,22 @@ export function ProductsPage() {
                   setSearchParams(updated);
                 }}
                 getRowId={(product) => String(product.id)}
+                storageKey="vechasu:products-table"
                 renderMobileCard={(product) => (
                   <article className="mobile-product-card">
+                    <input
+                      type="checkbox"
+                      aria-label={`Выбрать ${product.name}`}
+                      checked={selectedIds.has(product.id)}
+                      onChange={(event) => {
+                        setSelectedIds((current) => {
+                          const next = new Set(current);
+                          if (event.target.checked) next.add(product.id);
+                          else next.delete(product.id);
+                          return next;
+                        });
+                      }}
+                    />
                     <ProductImage product={product} />
                     <div>
                       <strong>{product.name}</strong>
@@ -395,6 +555,14 @@ export function ProductsPage() {
         <ProductForm
           id="product-editor"
           product={editor === 'new' ? null : editor}
+          onCreateBrand={() => setTaxonomyEditor({ kind: 'brand', brand: '' })}
+          onCreateCategory={(brand) => {
+            if (!brand.trim()) {
+              setToast({ message: 'Сначала укажите бренд', kind: 'error' });
+              return;
+            }
+            setTaxonomyEditor({ kind: 'category', brand });
+          }}
           onSubmit={(values) => {
             if (editor) saveMutation.mutate({ product: editor, values });
           }}
@@ -414,6 +582,94 @@ export function ProductsPage() {
           if (deleteTarget) deleteMutation.mutate(deleteTarget.id);
         }}
       />
+      <Modal
+        open={taxonomyEditor !== null}
+        title={taxonomyEditor?.kind === 'brand' ? 'Новый бренд' : 'Новая категория'}
+        description={
+          taxonomyEditor?.kind === 'category'
+            ? `Бренд: ${taxonomyEditor.brand}`
+            : 'Значение появится в общем справочнике.'
+        }
+        onClose={() => setTaxonomyEditor(null)}
+        footer={
+          <>
+            <button className="button secondary" type="button" onClick={() => setTaxonomyEditor(null)}>
+              Отмена
+            </button>
+            <button
+              className="button primary"
+              type="button"
+              disabled={!taxonomyName.trim() || taxonomyMutation.isPending}
+              onClick={() => taxonomyMutation.mutate()}
+            >
+              Создать
+            </button>
+          </>
+        }
+      >
+        <label className="form-field">
+          <span>Название</span>
+          <input value={taxonomyName} onChange={(event) => setTaxonomyName(event.target.value)} />
+        </label>
+      </Modal>
+      <Modal
+        open={bulkEditorOpen}
+        title={`Изменить выбранные товары (${selectedIds.size})`}
+        description="Заполненные поля будут применены ко всем выбранным карточкам."
+        onClose={() => setBulkEditorOpen(false)}
+        footer={
+          <>
+            <button className="button secondary" type="button" onClick={() => setBulkEditorOpen(false)}>
+              Отмена
+            </button>
+            <button
+              className="button primary"
+              type="button"
+              disabled={
+                bulkMutation.isPending || (!bulkBrand && !bulkCategory && !bulkCell)
+              }
+              onClick={() => bulkMutation.mutate()}
+            >
+              {bulkMutation.isPending ? 'Применяем…' : 'Применить'}
+            </button>
+          </>
+        }
+      >
+        <div className="erp-form">
+          <label className="form-field">
+            <span>Бренд</span>
+            <input value={bulkBrand} onChange={(event) => setBulkBrand(event.target.value)} />
+          </label>
+          <label className="form-field">
+            <span>Категория</span>
+            <input value={bulkCategory} onChange={(event) => setBulkCategory(event.target.value)} />
+          </label>
+          <label className="form-field">
+            <span>Ячейка</span>
+            <input value={bulkCell} onChange={(event) => setBulkCell(event.target.value)} />
+          </label>
+        </div>
+      </Modal>
+      <Modal
+        open={galleryTarget !== null}
+        title={galleryTarget?.name ?? 'Изображения товара'}
+        description="Основное и дополнительные изображения карточки"
+        onClose={() => setGalleryTarget(null)}
+      >
+        {galleryTarget && productGalleryUrls(galleryTarget).length ? (
+          <div className="product-gallery">
+            {productGalleryUrls(galleryTarget).map((url, index) => (
+              <img
+                key={`${url}-${index}`}
+                src={url}
+                alt={`${galleryTarget.name}, изображение ${index + 1}`}
+              />
+            ))}
+          </div>
+        ) : (
+          <PageState title="Изображений нет" message="Для этой карточки фотографии не добавлены." />
+        )}
+      </Modal>
       {toast ? <Toast {...toast} onClose={() => setToast(null)} /> : null}
     </AppShell>
   );

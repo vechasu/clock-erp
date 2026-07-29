@@ -4,6 +4,7 @@ import { apiRequest, jsonRequestInit } from '../../api/client';
 import {
   saleCatalogSchema,
   saleListSchema,
+  saleLocationsSchema,
   saleSchema,
   salesMetaSchema,
   type SaleFormValues,
@@ -20,6 +21,10 @@ export async function fetchSales(searchParams: URLSearchParams) {
 
 export async function fetchSaleCatalog() {
   return (await apiRequest('/sales/catalog?limit=200', saleCatalogSchema)).data;
+}
+
+export async function fetchSaleLocations() {
+  return (await apiRequest('/sales/locations', saleLocationsSchema)).data;
 }
 
 export async function createSale(values: SaleFormValues) {

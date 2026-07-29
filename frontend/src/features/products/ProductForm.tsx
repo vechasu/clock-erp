@@ -13,6 +13,8 @@ interface ProductFormProps {
   id: string;
   product?: Product | null;
   onSubmit: (values: ProductFormValues) => void;
+  onCreateBrand: () => void;
+  onCreateCategory: (brand: string) => void;
 }
 
 function valuesFromProduct(product?: Product | null): ProductFormValues {
@@ -27,16 +29,24 @@ function valuesFromProduct(product?: Product | null): ProductFormValues {
   };
 }
 
-export function ProductForm({ id, product, onSubmit }: ProductFormProps) {
+export function ProductForm({
+  id,
+  product,
+  onSubmit,
+  onCreateBrand,
+  onCreateCategory,
+}: ProductFormProps) {
   const {
     register,
     handleSubmit,
     reset,
+    watch,
     formState: { errors },
   } = useForm<ProductFormInput, unknown, ProductFormValues>({
     resolver: zodResolver(productFormSchema),
     defaultValues: valuesFromProduct(product),
   });
+  const currentBrand = watch('brand');
 
   useEffect(() => {
     reset(valuesFromProduct(product));
@@ -58,11 +68,21 @@ export function ProductForm({ id, product, onSubmit }: ProductFormProps) {
         <input {...register('cell')} placeholder="A-01-02" />
       </label>
       <label className="form-field">
-        <span>Бренд</span>
+        <span className="field-label-with-action">
+          Бренд
+          <button type="button" onClick={onCreateBrand}>
+            Новый бренд
+          </button>
+        </span>
         <input {...register('brand')} placeholder="Casio" />
       </label>
       <label className="form-field">
-        <span>Категория</span>
+        <span className="field-label-with-action">
+          Категория
+          <button type="button" onClick={() => onCreateCategory(currentBrand)}>
+            Новая категория
+          </button>
+        </span>
         <input {...register('category')} placeholder="Часы / Спортивные" />
       </label>
       <label className="form-field">

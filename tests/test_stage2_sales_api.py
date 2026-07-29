@@ -162,6 +162,19 @@ class Stage2SalesApiTest(unittest.TestCase):
         self.assertEqual(invalid.status_code, 422)
         self.assertEqual(invalid.get_json()["code"], "SALE_VALIDATION_FAILED")
 
+    def test_location_catalog_is_available_for_cascading_selects(self):
+        with mock.patch.object(
+            web,
+            "get_tictactoy_location_catalog",
+            return_value={"Россия": {"Москва": ["Москва"]}},
+        ):
+            response = self.client.get("/api/sales/locations")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.get_json()["data"]["Россия"]["Москва"],
+            ["Москва"],
+        )
+
     def test_legacy_and_automatic_sales_keep_source_specific_delete(self):
         self.manual_path.write_text(
             json.dumps([{

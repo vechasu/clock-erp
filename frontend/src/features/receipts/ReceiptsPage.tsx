@@ -5,6 +5,7 @@ import { useSearchParams } from 'react-router-dom';
 
 import { ApiRequestError } from '../../api/client';
 import { AppShell } from '../../components/AppShell';
+import { DateRangePicker, FilterPanel, LiveSearch } from '../../components/Controls';
 import { DataTable } from '../../components/DataTable';
 import { ConfirmDialog, Modal } from '../../components/Modal';
 import { PageState } from '../../components/PageState';
@@ -233,34 +234,19 @@ export function ReceiptsPage() {
 
         <section className="workspace-card">
           <div className="list-toolbar">
-            <label className="search-control">
-              <span aria-hidden="true">⌕</span>
-              <span className="visually-hidden">Поиск приходов</span>
-              <input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Номер, товар, бренд, комментарий…"
-              />
-            </label>
-            <details className="filter-panel">
-              <summary>Фильтры</summary>
-              <div className="filter-grid">
-                <label>
-                  Дата с
-                  <input
-                    type="date"
-                    value={searchParams.get('date_from') ?? ''}
-                    onChange={(event) => setFilter('date_from', event.target.value)}
-                  />
-                </label>
-                <label>
-                  по
-                  <input
-                    type="date"
-                    value={searchParams.get('date_to') ?? ''}
-                    onChange={(event) => setFilter('date_to', event.target.value)}
-                  />
-                </label>
+            <LiveSearch
+              label="Поиск приходов"
+              value={search}
+              onChange={setSearch}
+              placeholder="Номер, товар, бренд, комментарий…"
+            />
+            <FilterPanel>
+                <DateRangePicker
+                  from={searchParams.get('date_from') ?? ''}
+                  to={searchParams.get('date_to') ?? ''}
+                  onFromChange={(value) => setFilter('date_from', value)}
+                  onToChange={(value) => setFilter('date_to', value)}
+                />
                 <label>
                   Бренд
                   <select
@@ -309,8 +295,7 @@ export function ReceiptsPage() {
                 >
                   Сбросить
                 </button>
-              </div>
-            </details>
+            </FilterPanel>
           </div>
 
           {receiptsQuery.isError ? (
@@ -353,6 +338,7 @@ export function ReceiptsPage() {
                   setSearchParams(updated);
                 }}
                 getRowId={(receipt) => receipt.id}
+                storageKey="vechasu:receipts-table"
                 renderMobileCard={(receipt) => (
                   <article className="mobile-document-card">
                     <div>

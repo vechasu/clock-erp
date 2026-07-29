@@ -62,6 +62,10 @@ export const saleCatalogProductSchema = z.object({
 });
 
 export const saleCatalogSchema = z.array(saleCatalogProductSchema);
+export const saleLocationsSchema = z.record(
+  z.string(),
+  z.record(z.string(), z.array(z.string())),
+);
 
 export const saleFormSchema = z.object({
   created_at: z.string().date('Укажите корректную дату'),
@@ -115,5 +119,6 @@ export const salesMetaSchema = z.object({
 
 export type Sale = z.infer<typeof saleSchema>;
 export type SaleCatalogProduct = z.infer<typeof saleCatalogProductSchema>;
+export type SaleLocations = z.infer<typeof saleLocationsSchema>;
 export type SaleFormInput = z.input<typeof saleFormSchema>;
 export type SaleFormValues = z.output<typeof saleFormSchema>;
