@@ -1,10 +1,14 @@
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from app.catalog_db import CatalogDatabase
 from app.services.bitrix_catalog_importer import BitrixCatalogImporter
-from app.services.bitrix_erp_product_sync import BitrixERPProductSync
+from app.services.bitrix_erp_product_sync import (
+    BitrixERPProductSync,
+    create_database_backup,
+)
 from app.services.excel_product_catalog import ExcelProductBatchService, ExcelProductCatalog
 from scripts.sync_bitrix_products import sync_bitrix_products
 
@@ -276,6 +280,41 @@ class BitrixERPProductSyncTest(unittest.TestCase):
         after = self.path.read_bytes()
         self.assertEqual((report["mode"], report["writes_performed"], report["created"]), ("dry_run", 0, 1))
         self.assertEqual(before, after)
+
+    def test_backup_falls_back_to_sqlite_cli_without_connection_backup(self):
+        BitrixCatalogImporter(self.database).import_products([product("9")], "full_sync")
+        source_connection = self.database.connect()
+
+        class ConnectionWithoutBackup:
+            def close(self):
+                source_connection.close()
+
+        backup_root = Path(self.temp.name) / "python36-backups"
+
+        def emulate_sqlite_backup(arguments, **_kwargs):
+            destination_directory = next(backup_root.iterdir())
+            destination = destination_directory / self.path.name
+            sqlite3_module = __import__("sqlite3")
+            source = sqlite3_module.connect(str(self.path))
+            target = sqlite3_module.connect(str(destination))
+            try:
+                source.backup(target)
+            finally:
+                target.close()
+                source.close()
+
+        with mock.patch.object(
+            self.database,
+            "connect",
+            return_value=ConnectionWithoutBackup(),
+        ), mock.patch(
+            "app.services.bitrix_erp_product_sync.subprocess.run",
+            side_effect=emulate_sqlite_backup,
+        ) as run:
+            backup = create_database_backup(self.database, backup_root)
+
+        self.assertTrue(backup.exists())
+        self.assertEqual(run.call_args.args[0][0], "sqlite3")
 
     def test_catalog_only_card_survives_later_excel_batch_and_is_reused(self):
         self.run_sync([product()])

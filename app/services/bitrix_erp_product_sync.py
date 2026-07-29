@@ -3,6 +3,7 @@
 import hashlib
 import json
 import sqlite3
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -112,12 +113,31 @@ def create_database_backup(database, backup_root=None):
     destination_directory.mkdir(parents=True, exist_ok=False)
     destination = destination_directory / database.path.name
     source_connection = database.connect()
-    backup_connection = sqlite3.connect(str(destination))
     try:
-        source_connection.backup(backup_connection)
+        backup_method = getattr(source_connection, "backup", None)
+        if backup_method is not None:
+            backup_connection = sqlite3.connect(str(destination))
+            try:
+                backup_method(backup_connection)
+            finally:
+                backup_connection.close()
+        else:
+            source_connection.close()
+            source_connection = None
+            quoted_destination = str(destination).replace('"', '""')
+            subprocess.run(
+                [
+                    "sqlite3",
+                    str(database.path),
+                    '.backup "{}"'.format(quoted_destination),
+                ],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
     finally:
-        backup_connection.close()
-        source_connection.close()
+        if source_connection is not None:
+            source_connection.close()
     with sqlite3.connect(str(destination)) as connection:
         if connection.execute("PRAGMA quick_check").fetchone()[0] != "ok":
             raise sqlite3.DatabaseError("Catalog backup verification failed")
