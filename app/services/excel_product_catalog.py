@@ -89,6 +89,30 @@ def _load_json(value, fallback):
     return parsed
 
 
+def parse_initial_stock(value):
+    raw_value = str(value if value is not None else "").strip()
+    if not re.fullmatch(r"\d+", raw_value):
+        raise ValueError(
+            "Начальный остаток должен быть целым числом от 0 и выше."
+        )
+    return int(raw_value)
+
+
+def _record_manual_stock_adjustment(
+        connection, product_id, stock_before, stock_after, reason):
+    if stock_after == stock_before:
+        return
+    connection.execute(
+        "INSERT INTO catalog_excel_manual_stock_operations ("
+        "id, product_id, stock_before, stock_after, stock_difference, "
+        "reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (
+            str(uuid.uuid4()), int(product_id), stock_before, stock_after,
+            stock_after - stock_before, text(reason) or None, utc_now(),
+        ),
+    )
+
+
 def _display_property(row):
     value = _load_json(row["display_value_json"], None)
     if value in (None, "", []):
@@ -744,7 +768,8 @@ class ExcelProductCatalog:
             ).fetchone()
         return self._prepare_product(dict(row)) if row else None
 
-    def create_product(self, name, article="", brand="", category="", cell=""):
+    def create_product(
+            self, name, article="", brand="", category="", cell="", stock=0):
         name = text(name)
         if not name:
             raise ValueError("Название товара обязательно.")
@@ -752,6 +777,7 @@ class ExcelProductCatalog:
         brand = text(brand)
         category = text(category)
         cell = text(cell)
+        stock = parse_initial_stock(stock)
         self.database.initialize()
         with self.database.transaction() as connection:
             batch = connection.execute(
@@ -777,9 +803,10 @@ class ExcelProductCatalog:
             values = (
                 source_key, batch["id"], batch["id"], 1,
                 _json({"source": "manual", "name": name, "article": article,
-                       "brand": brand, "category": category, "cell": cell}),
+                       "brand": brand, "category": category, "cell": cell,
+                       "stock": stock}),
                 excel_row, name, normalize_text(name), article or None,
-                article_quality(article), brand, category or None, 0.0, cell or None,
+                article_quality(article), brand, category or None, stock, cell or None,
                 "manual", batch["file_sha256"], "not_found", "manual_create", 0.0,
                 "unmatched", "[]", "unlinked", 0,
             ) + tuple(enrichment.values()) + ("not_linked", now, now)
@@ -790,6 +817,13 @@ class ExcelProductCatalog:
                 values,
             )
             product_id = connection.execute("SELECT last_insert_rowid()").fetchone()[0]
+            _record_manual_stock_adjustment(
+                connection,
+                product_id,
+                0,
+                stock,
+                "Начальный остаток при создании товара",
+            )
         return self.get_product(product_id)
 
     def update_product(self, product_id, name=None, article=None, brand=None,
@@ -838,15 +872,13 @@ class ExcelProductCatalog:
             values["raw_excel_json"] = _json(raw_excel)
             values["updated_at"] = utc_now()
             _restore_columns(connection, product_id, values, PRODUCT_MUTABLE_COLUMNS)
-            if stock is not None and stock_after != stock_before:
-                connection.execute(
-                    "INSERT INTO catalog_excel_manual_stock_operations ("
-                    "id, product_id, stock_before, stock_after, stock_difference, "
-                    "reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        str(uuid.uuid4()), int(product_id), stock_before, stock_after,
-                        stock_after - stock_before, text(stock_reason) or None, utc_now(),
-                    ),
+            if stock is not None:
+                _record_manual_stock_adjustment(
+                    connection,
+                    product_id,
+                    stock_before,
+                    stock_after,
+                    stock_reason,
                 )
         return self.get_product(product_id)
 

@@ -20,6 +20,7 @@ from app.services.catalog_reader import CatalogReader
 from app.services.excel_product_catalog import (
     ExcelProductCatalog,
     ProductDeleteBlockedError,
+    parse_initial_stock,
 )
 from app.services.excel_receipt_import import (
     MAX_EXCEL_FILE_SIZE,
@@ -1373,16 +1374,13 @@ def warehouse_update_cell():
 
 @app.route("/warehouse/add", methods=["POST"])
 def warehouse_add_product():
-    import uuid
-
     name = request.form.get("name", "").strip()
     article = request.form.get("article", "").strip()
     brand = request.form.get("brand", "").strip()
     category = request.form.get("category", "").strip()
     cell = request.form.get("cell", "").strip()
-    stock_raw = request.form.get("stock", "0").strip().replace(",", ".")
+    stock_raw = request.form.get("stock", "").strip()
     request_id = request.form.get("request_id", "").strip()
-    code = f"VECHASU-{uuid.uuid4().hex[:12].upper()}"
 
     if not name:
         return redirect(url_for(
@@ -1392,26 +1390,15 @@ def warehouse_add_product():
         ))
 
     try:
-        stock = float(stock_raw or 0)
-    except ValueError:
+        stock = parse_initial_stock(stock_raw)
+    except ValueError as error:
         return redirect(url_for(
             "warehouse_page",
+            open_add="1",
             notice="error",
-            message="Остаток должен быть числом"
-        ))
-
-    if stock < 0:
-        return redirect(url_for(
-            "warehouse_page",
-            notice="error",
-            message="Начальный остаток не может быть отрицательным"
-        ))
-
-    if stock != 0:
-        return redirect(url_for(
-            "warehouse_page",
-            notice="error",
-            message="Новый товар создаётся с нулевым остатком; остаток задаётся приходом",
+            message=str(error),
+            stock_error=str(error),
+            add_stock=stock_raw,
         ))
 
     if not claim_warehouse_add_request(request_id):
@@ -1423,7 +1410,12 @@ def warehouse_add_product():
 
     try:
         ExcelProductCatalog().create_product(
-            name=name, article=article, brand=brand, category=category, cell=cell,
+            name=name,
+            article=article,
+            brand=brand,
+            category=category,
+            cell=cell,
+            stock=stock,
         )
         return redirect(url_for(
             "warehouse_page", notice="success", message="Товар добавлен"
@@ -1431,100 +1423,6 @@ def warehouse_add_product():
     except (TypeError, ValueError) as error:
         return redirect(url_for(
             "warehouse_page", notice="error", message=str(error)
-        ))
-
-    try:
-        client = MoySkladClient()
-
-        folder_parts = []
-
-        if brand:
-            folder_parts.append(brand)
-
-        if category:
-            folder_parts.append(category)
-        elif brand:
-            folder_parts.append("Без категории")
-
-        product_folder = None
-
-        if folder_parts:
-            product_folder = client.get_or_create_product_folder(
-                "/".join(folder_parts)
-            )
-
-        product = client.create_product(
-            name=name,
-            code=code,
-            article=article or None,
-            product_folder=product_folder,
-        )
-
-        if not product:
-            return redirect(url_for(
-                "warehouse_page",
-                notice="error",
-                message="МойСклад не создал товар"
-            ))
-
-        product_id = str(product.get("id") or "").strip()
-
-        if not product_id:
-            return redirect(url_for(
-                "warehouse_page",
-                notice="error",
-                message="Товар создан, но МойСклад не вернул его ID"
-            ))
-
-        record_warehouse_created_at(product_id)
-
-        completed_actions = []
-
-        if brand:
-            completed_actions.append(f"бренд {brand}")
-
-        if category:
-            completed_actions.append(f"категория {category}")
-
-        if stock > 0:
-            client.create_stock_enter(
-                product_id=product_id,
-                quantity=stock,
-                reason="Начальный остаток при создании товара в Vechasu ERP",
-            )
-            completed_actions.append(f"остаток {format_stock_number(stock)}")
-
-        if cell:
-            set_warehouse_cell(product_id, cell)
-            client.update_product_cell_attribute(product_id, cell)
-            completed_actions.append(f"ячейка {cell}")
-
-        WAREHOUSE_CACHE["items"] = []
-        WAREHOUSE_CACHE["loaded_at"] = 0
-
-        message = "Товар добавлен в МойСклад"
-
-        if completed_actions:
-            message += ": " + ", ".join(completed_actions)
-
-        return redirect(url_for(
-            "warehouse_page",
-            refresh="1",
-            notice="success",
-            message=message,
-        ))
-
-    except Exception as error:
-        print(f"Ошибка добавления товара: {error}")
-
-        WAREHOUSE_CACHE["items"] = []
-        WAREHOUSE_CACHE["loaded_at"] = 0
-
-        return redirect(url_for(
-            "warehouse_page",
-            refresh="1",
-            notice="error",
-            message="Товар мог быть создан, но остаток или ячейка не сохранились"
         ))
 
 
