@@ -284,6 +284,14 @@ CREATE INDEX IF NOT EXISTS idx_catalog_excel_products_match_status
     ON catalog_excel_products(match_status);
 CREATE INDEX IF NOT EXISTS idx_catalog_excel_products_bitrix
     ON catalog_excel_products(bitrix_catalog_product_id);
+CREATE INDEX IF NOT EXISTS idx_catalog_excel_products_bitrix_external
+    ON catalog_excel_products(bitrix_external_product_id);
+CREATE INDEX IF NOT EXISTS idx_catalog_excel_products_bitrix_xml
+    ON catalog_excel_products(bitrix_xml_id COLLATE NOCASE);
+CREATE INDEX IF NOT EXISTS idx_catalog_excel_products_article
+    ON catalog_excel_products(excel_article COLLATE NOCASE);
+CREATE INDEX IF NOT EXISTS idx_catalog_excel_products_normalized_name
+    ON catalog_excel_products(normalized_name);
 
 CREATE TABLE IF NOT EXISTS catalog_excel_batch_rows (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -461,6 +469,76 @@ CREATE TABLE IF NOT EXISTS catalog_excel_manual_stock_operations (
 
 CREATE INDEX IF NOT EXISTS idx_catalog_excel_manual_stock_product
     ON catalog_excel_manual_stock_operations(product_id, created_at);
+
+CREATE TABLE IF NOT EXISTS erp_sales (
+    id TEXT PRIMARY KEY,
+    source TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'completed' CHECK (
+        status IN ('completed', 'partially_returned', 'returned')
+    ),
+    created_at TEXT NOT NULL,
+    returned_at TEXT,
+    return_reason TEXT,
+    user_name TEXT,
+    metadata_json TEXT NOT NULL DEFAULT '{}',
+    inserted_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_erp_sales_status_created
+    ON erp_sales(status, created_at);
+
+CREATE TABLE IF NOT EXISTS erp_sale_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sale_id TEXT NOT NULL REFERENCES erp_sales(id) ON DELETE RESTRICT,
+    product_id INTEGER NOT NULL
+        REFERENCES catalog_excel_products(id) ON DELETE RESTRICT,
+    quantity REAL NOT NULL CHECK (quantity > 0),
+    unit_price REAL NOT NULL CHECK (unit_price >= 0),
+    returned_quantity REAL NOT NULL DEFAULT 0 CHECK (
+        returned_quantity >= 0 AND returned_quantity <= quantity
+    ),
+    status TEXT NOT NULL DEFAULT 'completed' CHECK (
+        status IN ('completed', 'partially_returned', 'returned')
+    ),
+    created_at TEXT NOT NULL,
+    returned_at TEXT,
+    return_reason TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_erp_sale_items_sale
+    ON erp_sale_items(sale_id, id);
+CREATE INDEX IF NOT EXISTS idx_erp_sale_items_product
+    ON erp_sale_items(product_id, created_at);
+
+CREATE TABLE IF NOT EXISTS catalog_stock_movements (
+    id TEXT PRIMARY KEY,
+    product_id INTEGER NOT NULL
+        REFERENCES catalog_excel_products(id) ON DELETE RESTRICT,
+    movement_type TEXT NOT NULL CHECK (
+        movement_type IN (
+            'initial_stock',
+            'receipt',
+            'sale',
+            'return',
+            'manual_adjustment'
+        )
+    ),
+    quantity_delta REAL NOT NULL CHECK (quantity_delta != 0),
+    stock_after REAL NOT NULL CHECK (stock_after >= 0),
+    sale_id TEXT REFERENCES erp_sales(id) ON DELETE RESTRICT,
+    sale_item_id INTEGER
+        REFERENCES erp_sale_items(id) ON DELETE RESTRICT,
+    source TEXT,
+    user_name TEXT,
+    comment TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_catalog_stock_movements_product
+    ON catalog_stock_movements(product_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_catalog_stock_movements_sale
+    ON catalog_stock_movements(sale_id, created_at);
 """
 
 

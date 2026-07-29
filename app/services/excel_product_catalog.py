@@ -89,6 +89,30 @@ def _load_json(value, fallback):
     return parsed
 
 
+def parse_initial_stock(value):
+    raw_value = str(value if value is not None else "").strip()
+    if not re.fullmatch(r"\d+", raw_value):
+        raise ValueError(
+            "Начальный остаток должен быть целым числом от 0 и выше."
+        )
+    return int(raw_value)
+
+
+def _record_manual_stock_adjustment(
+        connection, product_id, stock_before, stock_after, reason):
+    if stock_after == stock_before:
+        return
+    connection.execute(
+        "INSERT INTO catalog_excel_manual_stock_operations ("
+        "id, product_id, stock_before, stock_after, stock_difference, "
+        "reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (
+            str(uuid.uuid4()), int(product_id), stock_before, stock_after,
+            stock_after - stock_before, text(reason) or None, utc_now(),
+        ),
+    )
+
+
 def _display_property(row):
     value = _load_json(row["display_value_json"], None)
     if value in (None, "", []):
@@ -314,7 +338,10 @@ class ExcelProductBatchService:
                 "SELECT * FROM catalog_excel_products WHERE active = 1"
             ).fetchall()
             for product in active_products:
-                if product["source_key"] in incoming_keys:
+                if (
+                    product["source_key"] in incoming_keys
+                    or product["stock_source"] == "bitrix_catalog"
+                ):
                     continue
                 before = _snapshot(product)
                 after = dict(before)
@@ -334,6 +361,23 @@ class ExcelProductBatchService:
                     "SELECT * FROM catalog_excel_products WHERE source_key = ?",
                     (source_key,),
                 ).fetchone()
+                if (
+                    product is None
+                    and result.get("match_status") in AUTOMATIC_STATUSES
+                    and result.get("product_id") is not None
+                ):
+                    linked_cards = connection.execute(
+                        "SELECT * FROM catalog_excel_products "
+                        "WHERE active = 1 AND stock_source = 'bitrix_catalog' "
+                        "AND bitrix_catalog_product_id = ? ORDER BY id",
+                        (int(result["product_id"]),),
+                    ).fetchall()
+                    if len(linked_cards) == 1:
+                        product = linked_cards[0]
+                        connection.execute(
+                            "UPDATE catalog_excel_products SET source_key = ? WHERE id = ?",
+                            (source_key, product["id"]),
+                        )
                 before = _snapshot(product)
                 state = self._state_for_result(
                     connection, result, batch_id, file_sha256, now, product,
@@ -596,7 +640,7 @@ class ExcelProductCatalog:
                       sort_dir="asc", page=1, per_page=50):
         self.database.initialize()
         page = max(1, int(page))
-        per_page = max(1, min(int(per_page), 5000))
+        per_page = max(1, min(int(per_page), 10000))
         allowed_sort_fields = {
             "name": "p.excel_name_raw",
             "article": "COALESCE(p.excel_article, '')",
@@ -610,7 +654,11 @@ class ExcelProductCatalog:
         }
         sort_by = sort_by if sort_by in allowed_sort_fields else "name"
         sort_dir = sort_dir if sort_dir in {"asc", "desc"} else "asc"
-        where = ["p.active = 1", "b.status = 'active'", "p.current_batch_id = b.id"]
+        visible_cards_sql = (
+            "(p.stock_source = 'bitrix_catalog' "
+            "OR (b.status = 'active' AND p.current_batch_id = b.id))"
+        )
+        where = ["p.active = 1", visible_cards_sql]
         parameters = []
         if query:
             escaped_query = text(query).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
@@ -683,14 +731,16 @@ class ExcelProductCatalog:
             brands = [row[0] for row in connection.execute(
                 "SELECT COALESCE(p.excel_brand, '') AS value "
                 "FROM catalog_excel_products p JOIN catalog_excel_batches b "
-                "ON b.id = p.current_batch_id WHERE p.active = 1 AND b.status = 'active' "
+                "ON b.id = p.current_batch_id WHERE p.active = 1 AND "
+                + visible_cards_sql + " "
                 "AND trim(COALESCE(p.excel_brand, '')) <> '' "
                 "GROUP BY value HAVING COALESCE(SUM(p.stock), 0) >= 1 ORDER BY value"
             ).fetchall()]
             categories = [row[0] for row in connection.execute(
                 "SELECT DISTINCT COALESCE(p.excel_category, '') AS value "
                 "FROM catalog_excel_products p JOIN catalog_excel_batches b "
-                "ON b.id = p.current_batch_id WHERE p.active = 1 AND b.status = 'active' "
+                "ON b.id = p.current_batch_id WHERE p.active = 1 AND "
+                + visible_cards_sql + " "
                 "AND trim(COALESCE(p.excel_category, '')) <> '' "
                 "ORDER BY value"
             ).fetchall()]
@@ -698,7 +748,7 @@ class ExcelProductCatalog:
                 "SELECT COALESCE(p.excel_category, '') AS name, "
                 "COUNT(*) AS count FROM catalog_excel_products p "
                 "JOIN catalog_excel_batches b ON b.id = p.current_batch_id "
-                "WHERE p.active = 1 AND b.status = 'active' "
+                "WHERE p.active = 1 AND " + visible_cards_sql + " "
                 "AND trim(COALESCE(p.excel_category, '')) <> '' "
                 "GROUP BY name ORDER BY name"
             ).fetchall()]
@@ -707,7 +757,7 @@ class ExcelProductCatalog:
                 "ELSE trim(p.cell) END AS cell, COUNT(*) AS count, "
                 "COALESCE(SUM(p.stock), 0) AS stock FROM catalog_excel_products p "
                 "JOIN catalog_excel_batches b ON b.id = p.current_batch_id "
-                "WHERE p.active = 1 AND b.status = 'active' "
+                "WHERE p.active = 1 AND " + visible_cards_sql + " "
                 "GROUP BY CASE WHEN trim(COALESCE(p.cell, '')) = '' "
                 "THEN 'Без ячейки' ELSE trim(p.cell) END "
                 "ORDER BY CASE WHEN trim(COALESCE(p.cell, '')) = '' THEN 1 ELSE 0 END, cell"
@@ -716,7 +766,8 @@ class ExcelProductCatalog:
                 row["match_status"]: row["count"] for row in connection.execute(
                     "SELECT p.match_status, COUNT(*) AS count FROM catalog_excel_products p "
                     "JOIN catalog_excel_batches b ON b.id = p.current_batch_id "
-                    "WHERE p.active = 1 AND b.status = 'active' GROUP BY p.match_status"
+                    "WHERE p.active = 1 AND " + visible_cards_sql
+                    + " GROUP BY p.match_status"
                 ).fetchall()
             }
         items = [self._prepare_product(dict(row)) for row in rows]
@@ -739,12 +790,15 @@ class ExcelProductCatalog:
                 "JOIN catalog_excel_batches b ON b.id = p.current_batch_id "
                 "LEFT JOIN catalog_products cp "
                 "ON cp.id = p.bitrix_catalog_product_id "
-                "WHERE p.id = ? AND p.active = 1 AND b.status = 'active'",
+                "WHERE p.id = ? AND p.active = 1 AND "
+                "(p.stock_source = 'bitrix_catalog' "
+                "OR (b.status = 'active' AND p.current_batch_id = b.id))",
                 (int(product_id),),
             ).fetchone()
         return self._prepare_product(dict(row)) if row else None
 
-    def create_product(self, name, article="", brand="", category="", cell=""):
+    def create_product(
+            self, name, article="", brand="", category="", cell="", stock=0):
         name = text(name)
         if not name:
             raise ValueError("Название товара обязательно.")
@@ -752,6 +806,7 @@ class ExcelProductCatalog:
         brand = text(brand)
         category = text(category)
         cell = text(cell)
+        stock = parse_initial_stock(stock)
         self.database.initialize()
         with self.database.transaction() as connection:
             batch = connection.execute(
@@ -777,9 +832,10 @@ class ExcelProductCatalog:
             values = (
                 source_key, batch["id"], batch["id"], 1,
                 _json({"source": "manual", "name": name, "article": article,
-                       "brand": brand, "category": category, "cell": cell}),
+                       "brand": brand, "category": category, "cell": cell,
+                       "stock": stock}),
                 excel_row, name, normalize_text(name), article or None,
-                article_quality(article), brand, category or None, 0.0, cell or None,
+                article_quality(article), brand, category or None, stock, cell or None,
                 "manual", batch["file_sha256"], "not_found", "manual_create", 0.0,
                 "unmatched", "[]", "unlinked", 0,
             ) + tuple(enrichment.values()) + ("not_linked", now, now)
@@ -790,6 +846,13 @@ class ExcelProductCatalog:
                 values,
             )
             product_id = connection.execute("SELECT last_insert_rowid()").fetchone()[0]
+            _record_manual_stock_adjustment(
+                connection,
+                product_id,
+                0,
+                stock,
+                "Начальный остаток при создании товара",
+            )
         return self.get_product(product_id)
 
     def update_product(self, product_id, name=None, article=None, brand=None,
@@ -838,15 +901,13 @@ class ExcelProductCatalog:
             values["raw_excel_json"] = _json(raw_excel)
             values["updated_at"] = utc_now()
             _restore_columns(connection, product_id, values, PRODUCT_MUTABLE_COLUMNS)
-            if stock is not None and stock_after != stock_before:
-                connection.execute(
-                    "INSERT INTO catalog_excel_manual_stock_operations ("
-                    "id, product_id, stock_before, stock_after, stock_difference, "
-                    "reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        str(uuid.uuid4()), int(product_id), stock_before, stock_after,
-                        stock_after - stock_before, text(stock_reason) or None, utc_now(),
-                    ),
+            if stock is not None:
+                _record_manual_stock_adjustment(
+                    connection,
+                    product_id,
+                    stock_before,
+                    stock_after,
+                    stock_reason,
                 )
         return self.get_product(product_id)
 

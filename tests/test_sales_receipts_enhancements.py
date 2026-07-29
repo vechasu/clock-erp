@@ -285,7 +285,21 @@ class SalesReceiptsEnhancementsTest(unittest.TestCase):
         note_column = headers.index("Примечание") + 1
         self.assertIsNone(sheet.cell(5, note_column).value)
         self.assertEqual(pdf_report.status_code, 200)
-        self.assertEqual(pdf_paragraphs[-1], "")
+        report_columns = [
+            *web.get_sales_columns("tictactoy"),
+            {"key": "returned_quantity_display"},
+            {"key": "returned_at"},
+            {"key": "return_reason"},
+        ]
+        note_index = next(
+            index
+            for index, column in enumerate(report_columns)
+            if column["key"] == "note"
+        )
+        self.assertEqual(
+            pdf_paragraphs[-len(report_columns) + note_index],
+            "",
+        )
 
     def test_receipt_period_uses_shared_picker_and_query_values(self):
         receipts = [

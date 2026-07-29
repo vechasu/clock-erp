@@ -44,6 +44,16 @@ def _number(value):
         return None
 
 
+def _decimal_text(value):
+    if value in (None, ""):
+        return None
+    try:
+        decimal_value = Decimal(str(value).replace(" ", "").replace(",", "."))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+    return format(decimal_value, "f")
+
+
 def _boolean(value, default=False):
     if isinstance(value, bool):
         return value
@@ -141,14 +151,20 @@ def normalize_price(raw):
     is_purchase = _boolean(_first(raw, "is_purchase", "IS_PURCHASE")) or any(
         marker in marker_text for marker in PURCHASE_PRICE_MARKERS
     )
+    amount = _first(raw, "value", "amount", "price", "PRICE")
+    base_amount = _first(raw, "base_value", "base_price", "BASE_PRICE")
+    old_amount = _first(raw, "old_value", "old_amount", "old_price", "OLD_PRICE")
     return {
         "type_id": _text(_first(raw, "type_id", "ID", "CATALOG_GROUP_ID")),
         "type_code": code,
         "type_name": name,
         "role": role or ("purchase" if is_purchase else "base" if _boolean(raw.get("is_base")) else "sale"),
-        "value": _number(_first(raw, "value", "amount", "price", "PRICE")),
-        "base_value": _number(_first(raw, "base_value", "base_price", "BASE_PRICE")),
-        "old_value": _number(_first(raw, "old_value", "old_amount", "old_price", "OLD_PRICE")),
+        "value": _number(amount),
+        "value_text": _decimal_text(amount),
+        "base_value": _number(base_amount),
+        "base_value_text": _decimal_text(base_amount),
+        "old_value": _number(old_amount),
+        "old_value_text": _decimal_text(old_amount),
         "old_value_source": _text(_first(raw, "old_value_source", "old_amount_source")),
         "discount": _number(_first(raw, "discount", "DISCOUNT")),
         "currency": _text(_first(raw, "currency", "CURRENCY")),
@@ -220,7 +236,9 @@ def normalize_product(raw, base_url=""):
     brand = _text(_first(raw, "brand", "BRAND"))
     if not brand:
         for prop in properties:
-            if prop["code"].casefold() in {"brand", "manufacturer", "filter_brand"}:
+            if prop["code"].casefold() in {
+                "brand", "brand_model", "manufacturer", "filter_brand",
+            }:
                 brand = _text(prop["display_value"])
                 break
     product = {
