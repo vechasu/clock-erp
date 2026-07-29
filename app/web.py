@@ -12252,5 +12252,515 @@ def api_categories_collection():
     return api_success(api_catalog_values("category"))
 
 
+def serialize_api_receipt(receipt):
+    positions = [
+        {
+            "product_id": str(position.get("product_id") or ""),
+            "product_name": str(position.get("product_name") or ""),
+            "article": str(position.get("article") or ""),
+            "code": str(position.get("code") or ""),
+            "brand": str(position.get("brand") or ""),
+            "category": str(position.get("category") or ""),
+            "cell": str(position.get("cell") or ""),
+            "quantity": parse_receipt_number(position.get("quantity")),
+            "purchase_price": parse_receipt_number(position.get("purchase_price")),
+            "line_total": parse_receipt_number(position.get("line_total")),
+            "stock_before": parse_receipt_number(position.get("stock_before")),
+            "stock_after": parse_receipt_number(position.get("stock_after")),
+        }
+        for position in (receipt.get("positions") or [])
+        if isinstance(position, dict)
+    ]
+    if not positions and receipt.get("product_id"):
+        positions = [{
+            "product_id": str(receipt.get("product_id") or ""),
+            "product_name": str(receipt.get("product_name") or ""),
+            "article": "",
+            "code": "",
+            "brand": str(receipt.get("brand") or ""),
+            "category": str(receipt.get("category") or ""),
+            "cell": "",
+            "quantity": parse_receipt_number(receipt.get("quantity")),
+            "purchase_price": parse_receipt_number(receipt.get("purchase_price")),
+            "line_total": round(
+                parse_receipt_number(receipt.get("quantity"))
+                * parse_receipt_number(receipt.get("purchase_price")),
+                2,
+            ),
+            "stock_before": 0,
+            "stock_after": parse_receipt_number(receipt.get("quantity")),
+        }]
+    return {
+        "id": str(receipt.get("id") or ""),
+        "number": str(receipt.get("number") or ""),
+        "created_at": str(receipt.get("created_at") or ""),
+        "receipt_date": str(
+            receipt.get("receipt_date")
+            or receipt.get("created_at")
+            or ""
+        )[:10],
+        "brand": str(receipt.get("brand") or ""),
+        "category": str(receipt.get("category") or ""),
+        "product_id": str(receipt.get("product_id") or ""),
+        "product_name": str(receipt.get("product_name") or ""),
+        "note": str(receipt.get("note") or ""),
+        "status": str(receipt.get("status") or "posted"),
+        "status_label": str(receipt.get("status_label") or "Проведён"),
+        "positions": positions,
+        "positions_count": len(positions),
+        "total_quantity": parse_receipt_number(
+            receipt.get("total_quantity"),
+            sum(item["quantity"] for item in positions),
+        ),
+        "total_amount": parse_receipt_number(
+            receipt.get("total_amount"),
+            sum(item["line_total"] for item in positions),
+        ),
+        "moysklad_document_id": str(receipt.get("moysklad_document_id") or ""),
+        "moysklad_document_name": str(receipt.get("moysklad_document_name") or ""),
+        "moysklad_document_url": str(receipt.get("moysklad_document_url") or ""),
+    }
+
+
+def receipt_api_catalog_items(force=False):
+    return [
+        {
+            "id": str(item.get("id") or ""),
+            "name": str(item.get("name") or ""),
+            "article": str(item.get("article") or ""),
+            "code": str(item.get("code") or ""),
+            "brand": str(
+                item.get("brand")
+                or item.get("manufacturer")
+                or ""
+            ),
+            "category": str(item.get("category") or ""),
+            "cell": str(item.get("cell") or ""),
+            "stock": parse_receipt_number(item.get("stock")),
+            "stock_display": str(
+                item.get("stock_display")
+                or format_stock_number(item.get("stock") or 0)
+            ),
+            "thumbnail_url": str(item.get("thumbnail_url") or ""),
+            "has_images": bool(item.get("has_images")),
+        }
+        for item in get_warehouse_items(force=force)
+        if isinstance(item, dict) and item.get("id")
+    ]
+
+
+def validate_api_receipt_date(value):
+    normalized = str(value or "").strip()
+    try:
+        datetime.strptime(normalized, "%Y-%m-%d")
+    except (TypeError, ValueError):
+        raise ValueError("Укажите корректную дату прихода.")
+    return normalized
+
+
+def build_api_receipt_positions(payload_positions, catalog):
+    if not isinstance(payload_positions, list) or not payload_positions:
+        raise ValueError("Добавьте хотя бы один товар.")
+    catalog_by_id = {
+        str(item.get("id") or ""): item
+        for item in catalog
+    }
+    positions = []
+    for index, requested in enumerate(payload_positions, start=1):
+        if not isinstance(requested, dict):
+            raise ValueError("Позиция {} заполнена некорректно.".format(index))
+        product_id = str(requested.get("product_id") or "").strip()
+        product = catalog_by_id.get(product_id)
+        if product is None:
+            raise ValueError("Товар в позиции {} не найден в каталоге.".format(index))
+        quantity = parse_receipt_number(requested.get("quantity"), -1)
+        purchase_price = parse_receipt_number(requested.get("purchase_price"), -1)
+        if quantity <= 0:
+            raise ValueError(
+                "Количество в позиции {} должно быть больше нуля.".format(index)
+            )
+        if purchase_price < 0:
+            raise ValueError(
+                "Цена закупки в позиции {} не может быть отрицательной.".format(index)
+            )
+        requested_brand = normalize_catalog_label(requested.get("brand"))
+        requested_category = normalize_catalog_label(requested.get("category"))
+        if (
+            requested_brand
+            and catalog_label_key(requested_brand)
+            != catalog_label_key(product.get("brand"))
+        ):
+            raise ValueError(
+                "Товар в позиции {} не относится к выбранному бренду.".format(index)
+            )
+        if (
+            requested_category
+            and catalog_label_key(requested_category)
+            != catalog_label_key(product.get("category"))
+        ):
+            raise ValueError(
+                "Товар в позиции {} не относится к выбранной категории.".format(index)
+            )
+        stock_before = parse_receipt_number(product.get("stock"))
+        positions.append({
+            "brand": product.get("brand") or "",
+            "category": product.get("category") or "",
+            "product_id": product_id,
+            "product_name": product.get("name") or "",
+            "article": product.get("article") or "",
+            "code": product.get("code") or "",
+            "cell": product.get("cell") or "",
+            "quantity": quantity,
+            "purchase_price": purchase_price,
+            "line_total": round(quantity * purchase_price, 2),
+            "stock_before": stock_before,
+            "stock_after": stock_before + quantity,
+        })
+    return positions
+
+
+@app.route("/api/receipts/catalog", methods=["GET"])
+@app.route("/api/v1/receipts/catalog", methods=["GET"])
+def api_receipts_catalog():
+    query = (request.args.get("q") or "").strip().casefold()
+    brand = (request.args.get("brand") or "").strip()
+    category = (request.args.get("category") or "").strip()
+    items = receipt_api_catalog_items()
+    if query:
+        items = [
+            item for item in items
+            if query in " ".join([
+                item["name"], item["article"], item["code"],
+                item["brand"], item["category"],
+            ]).casefold()
+        ]
+    if brand:
+        items = [item for item in items if item["brand"] == brand]
+    if category:
+        items = [item for item in items if item["category"] == category]
+    limit = api_positive_int(request.args.get("limit"), 100, 200)
+    return api_success(items[:limit], total=len(items))
+
+
+@app.route("/api/receipts", methods=["GET", "POST"])
+@app.route("/api/v1/receipts", methods=["GET", "POST"])
+def api_receipts_collection():
+    if request.method == "POST":
+        require_csrf_when_authenticated()
+        try:
+            payload = api_json_payload()
+            receipt_date = validate_api_receipt_date(
+                payload.get("receipt_date") or payload.get("date")
+            )
+            note = str(payload.get("note") or "").strip()
+            positions = build_api_receipt_positions(
+                payload.get("positions") or payload.get("items"),
+                receipt_api_catalog_items(force=True),
+            )
+        except ValueError as error:
+            return api_error("RECEIPT_VALIDATION_FAILED", str(error), 422)
+
+        receipts = load_receipts()
+        receipt_id = str(uuid.uuid4())
+        receipt_number = generate_receipt_number(receipts)
+        first_position = positions[0]
+        reason_parts = [
+            "Vechasu ERP: приход {}".format(receipt_number),
+            "Товар: {}".format(first_position["product_name"]),
+        ]
+        if note:
+            reason_parts.append("Комментарий: {}".format(note))
+        reason = ". ".join(reason_parts)
+        try:
+            document = MoySkladClient().create_stock_enter_many(
+                positions=positions,
+                reason=reason,
+                moment=receipt_date,
+            )
+            if not document:
+                raise ValueError("МойСклад не создал документ прихода.")
+        except Exception as error:
+            app.logger.exception("Receipt API failed to create MoySklad document")
+            return api_error("REMOTE_DOCUMENT_CONFLICT", str(error), 502)
+
+        created_at = datetime.now().strftime("%Y-%m-%d %H:%M")
+        receipt = {
+            "id": receipt_id,
+            "number": receipt_number,
+            "created_at": created_at,
+            "receipt_date": receipt_date,
+            "brand": first_position["brand"],
+            "category": first_position["category"],
+            "product_id": first_position["product_id"],
+            "product_name": first_position["product_name"],
+            "quantity": first_position["quantity"],
+            "purchase_price": first_position["purchase_price"],
+            "supplier": "",
+            "invoice_number": "",
+            "note": note,
+            "status": "posted",
+            "status_label": "Проведён",
+            "positions": positions,
+            "positions_count": len(positions),
+            "total_quantity": sum(item["quantity"] for item in positions),
+            "total_amount": round(sum(item["line_total"] for item in positions), 2),
+            "moysklad_document_id": str(document.get("id") or ""),
+            "moysklad_document_name": str(document.get("name") or ""),
+            "moysklad_document_url": str(
+                (document.get("meta") or {}).get("uuidHref") or ""
+            ),
+        }
+        try:
+            receipts.insert(0, receipt)
+            save_receipts(receipts)
+            for position in positions:
+                add_stock_operation({
+                    "id": str(uuid.uuid4()),
+                    "created_at": created_at,
+                    "product_id": position["product_id"],
+                    "product_name": position["product_name"],
+                    "type": "enter",
+                    "label": "Приход",
+                    "quantity": position["quantity"],
+                    "stock_before": position["stock_before"],
+                    "stock_after": position["stock_after"],
+                    "diff": position["quantity"],
+                    "source": "Приход",
+                    "reason": reason,
+                    "status": "success",
+                    "receipt_id": receipt_id,
+                    "receipt_number": receipt_number,
+                    "brand": position["brand"],
+                    "category": position["category"],
+                    "purchase_price": position["purchase_price"],
+                    "moysklad_document_id": receipt["moysklad_document_id"],
+                    "moysklad_document_name": receipt["moysklad_document_name"],
+                    "moysklad_document_url": receipt["moysklad_document_url"],
+                })
+        except Exception:
+            app.logger.exception("Receipt API local persistence failed")
+            return api_error(
+                "RECONCILIATION_REQUIRED",
+                "Документ создан в МойСклад, но локальная запись не сохранена.",
+                500,
+            )
+        WAREHOUSE_CACHE["items"] = []
+        WAREHOUSE_CACHE["loaded_at"] = 0
+        return api_success(serialize_api_receipt(receipt), 201)
+
+    receipts = [serialize_api_receipt(item) for item in load_receipts()]
+    query = (request.args.get("q") or "").strip().casefold()
+    date_from = (request.args.get("date_from") or "").strip()
+    date_to = (request.args.get("date_to") or "").strip()
+    status = (request.args.get("status") or "").strip()
+    brand = (request.args.get("brand") or "").strip()
+    category = (request.args.get("category") or "").strip()
+    if query:
+        receipts = [
+            item for item in receipts
+            if query in " ".join([
+                item["number"], item["product_name"], item["brand"],
+                item["category"], item["note"],
+                " ".join(position["product_name"] for position in item["positions"]),
+            ]).casefold()
+        ]
+    if date_from:
+        receipts = [item for item in receipts if item["receipt_date"] >= date_from]
+    if date_to:
+        receipts = [item for item in receipts if item["receipt_date"] <= date_to]
+    if status:
+        receipts = [item for item in receipts if item["status"] == status]
+    if brand:
+        receipts = [item for item in receipts if item["brand"] == brand]
+    if category:
+        receipts = [item for item in receipts if item["category"] == category]
+    sort_by = (request.args.get("sort_by") or "receipt_date").strip()
+    sort_dir = (request.args.get("sort_dir") or "desc").strip()
+    allowed_sort = {
+        "receipt_date", "number", "total_quantity", "total_amount", "created_at",
+    }
+    if sort_by not in allowed_sort:
+        sort_by = "receipt_date"
+    receipts.sort(
+        key=lambda item: (item.get(sort_by), item["id"]),
+        reverse=sort_dir != "asc",
+    )
+    total = len(receipts)
+    page = api_positive_int(request.args.get("page"), 1, 1000000)
+    page_size = api_positive_int(request.args.get("page_size"), 50, 200)
+    pages = (total + page_size - 1) // page_size
+    if pages and page > pages:
+        page = pages
+    start = (page - 1) * page_size
+    visible = receipts[start:start + page_size]
+    return api_success(
+        visible,
+        page=page,
+        page_size=page_size,
+        total=total,
+        pages=pages,
+        totals={
+            "quantity": sum(item["total_quantity"] for item in receipts),
+            "amount": round(sum(item["total_amount"] for item in receipts), 2),
+        },
+        facets={
+            "brands": sorted({item["brand"] for item in receipts if item["brand"]}),
+            "categories": sorted({
+                item["category"] for item in receipts if item["category"]
+            }),
+            "statuses": sorted({item["status"] for item in receipts if item["status"]}),
+        },
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+    )
+
+
+@app.route("/api/receipts/<receipt_id>", methods=["GET", "PATCH", "DELETE"])
+@app.route("/api/v1/receipts/<receipt_id>", methods=["GET", "PATCH", "DELETE"])
+def api_receipt_resource(receipt_id):
+    receipts = load_receipts()
+    receipt = next(
+        (
+            item for item in receipts
+            if str(item.get("id") or "") == str(receipt_id)
+        ),
+        None,
+    )
+    if receipt is None:
+        return api_error("RECEIPT_NOT_FOUND", "Приход не найден.", 404)
+    if request.method == "GET":
+        return api_success(serialize_api_receipt(receipt))
+    require_csrf_when_authenticated()
+    document_id = str(receipt.get("moysklad_document_id") or "").strip()
+    if not document_id:
+        return api_error(
+            "REMOTE_DOCUMENT_CONFLICT",
+            "У прихода нет связанного документа МоегоСклада.",
+            409,
+        )
+    if request.method == "DELETE":
+        try:
+            if not MoySkladClient().delete_stock_enter(document_id):
+                raise ValueError("МойСклад не удалил приход.")
+            save_receipts([
+                item for item in receipts
+                if str(item.get("id") or "") != str(receipt_id)
+            ])
+            save_stock_operations([
+                operation for operation in load_stock_operations()
+                if str(operation.get("receipt_id") or "") != str(receipt_id)
+            ])
+        except Exception as error:
+            app.logger.exception("Receipt API delete failed")
+            return api_error("REMOTE_DOCUMENT_CONFLICT", str(error), 502)
+        WAREHOUSE_CACHE["items"] = []
+        WAREHOUSE_CACHE["loaded_at"] = 0
+        return api_success({"id": str(receipt_id), "deleted": True})
+
+    if len(receipt.get("positions") or []) != 1:
+        return api_error(
+            "RECEIPT_NOT_EDITABLE",
+            "Редактирование доступно только для прихода с одной позицией.",
+            409,
+        )
+    try:
+        payload = api_json_payload()
+        receipt_date = validate_api_receipt_date(
+            payload.get("receipt_date")
+            or payload.get("date")
+            or receipt.get("receipt_date")
+        )
+        note = str(
+            payload.get("note")
+            if "note" in payload
+            else receipt.get("note") or ""
+        ).strip()
+        requested_positions = payload.get("positions") or payload.get("items")
+        if not requested_positions:
+            old = (receipt.get("positions") or [])[0]
+            requested_positions = [{
+                "product_id": payload.get("product_id") or old.get("product_id"),
+                "brand": payload.get("brand") or old.get("brand"),
+                "category": payload.get("category") or old.get("category"),
+                "quantity": (
+                    payload.get("quantity")
+                    if "quantity" in payload
+                    else old.get("quantity")
+                ),
+                "purchase_price": old.get("purchase_price"),
+            }]
+        positions = build_api_receipt_positions(
+            requested_positions,
+            receipt_api_catalog_items(force=True),
+        )
+        if len(positions) != 1:
+            raise ValueError("Редактировать можно только одну позицию.")
+    except ValueError as error:
+        return api_error("RECEIPT_VALIDATION_FAILED", str(error), 422)
+    position = positions[0]
+    reason = ". ".join(filter(None, [
+        "Vechasu ERP: приход {}".format(receipt.get("number") or ""),
+        "Товар: {}".format(position["product_name"]),
+        "Комментарий: {}".format(note) if note else "",
+    ]))
+    try:
+        document = MoySkladClient().update_stock_enter_many(
+            document_id=document_id,
+            positions=positions,
+            reason=reason,
+            moment=receipt_date,
+        )
+        if not document:
+            raise ValueError("МойСклад не обновил приход.")
+        receipt.update({
+            "receipt_date": receipt_date,
+            "brand": position["brand"],
+            "category": position["category"],
+            "product_id": position["product_id"],
+            "product_name": position["product_name"],
+            "quantity": position["quantity"],
+            "purchase_price": position["purchase_price"],
+            "note": note,
+            "positions": positions,
+            "positions_count": 1,
+            "total_quantity": position["quantity"],
+            "total_amount": position["line_total"],
+            "moysklad_document_name": (
+                document.get("name")
+                or receipt.get("moysklad_document_name")
+            ),
+            "moysklad_document_url": (
+                (document.get("meta") or {}).get("uuidHref")
+                or receipt.get("moysklad_document_url")
+            ),
+        })
+        save_receipts(receipts)
+        operations = load_stock_operations()
+        for operation in operations:
+            if str(operation.get("receipt_id") or "") != str(receipt_id):
+                continue
+            operation.update({
+                "product_id": position["product_id"],
+                "product_name": position["product_name"],
+                "brand": position["brand"],
+                "category": position["category"],
+                "quantity": position["quantity"],
+                "diff": position["quantity"],
+                "stock_after": (
+                    parse_receipt_number(operation.get("stock_before"))
+                    + position["quantity"]
+                ),
+                "purchase_price": position["purchase_price"],
+                "reason": reason,
+            })
+        save_stock_operations(operations)
+    except Exception as error:
+        app.logger.exception("Receipt API update failed")
+        return api_error("REMOTE_DOCUMENT_CONFLICT", str(error), 502)
+    WAREHOUSE_CACHE["items"] = []
+    WAREHOUSE_CACHE["loaded_at"] = 0
+    return api_success(serialize_api_receipt(receipt))
+
+
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5050, debug=True)
