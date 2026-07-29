@@ -13375,5 +13375,448 @@ def api_sale_return(sale_id):
     return api_success(serialize_api_sale(updated or sale), 201)
 
 
+def serialize_api_repair(case):
+    prepared = prepare_repair_case(case)
+    prepared["attachments"] = [
+        {
+            **attachment,
+            "url": url_for(
+                "repair_attachment",
+                case_id=prepared["id"],
+                stored_name=attachment.get("stored_name") or "",
+            ),
+        }
+        for attachment in prepared.get("attachments", [])
+        if isinstance(attachment, dict)
+    ]
+    return prepared
+
+
+def api_repair_stats(cases):
+    active = [case for case in cases if not case.get("archived_at")]
+    return {
+        "active": len(active),
+        "at_us": sum(
+            1
+            for case in active
+            if case.get("status") in {"at_us", "waiting_master"}
+        ),
+        "at_master": sum(
+            1
+            for case in active
+            if case.get("status") in {"at_master", "waiting_decision"}
+        ),
+        "delivery": sum(
+            1
+            for case in active
+            if case.get("status") in {"inbound_transit", "outbound_transit"}
+        ),
+        "waiting_payment": sum(
+            1 for case in active if case.get("status") == "waiting_payment"
+        ),
+        "archived": sum(1 for case in cases if case.get("archived_at")),
+    }
+
+
+def find_api_repair(case_id, cases=None):
+    source = cases if cases is not None else load_repair_cases()
+    return next(
+        (
+            case
+            for case in source
+            if str(case.get("id") or "") == str(case_id)
+        ),
+        None,
+    )
+
+
+def create_api_repair(payload):
+    now = repair_now()
+    case_id = str(uuid.uuid4())
+    catalog_items = build_repair_catalog_items()
+    normalized = build_repair_form_payload(
+        payload,
+        catalog_items=catalog_items,
+    )
+    actor = current_repair_user_name()
+
+    def create_case(cases):
+        existing_numbers = {
+            _repair_text(case.get("repair_number"))
+            for case in cases
+        }
+        year = datetime.now().year
+        sequence = len(cases) + 1
+        repair_number = f"R-{year}-{sequence:04d}"
+        while repair_number in existing_numbers:
+            sequence += 1
+            repair_number = f"R-{year}-{sequence:04d}"
+        case = {
+            "id": case_id,
+            "schema_version": REPAIR_SCHEMA_VERSION,
+            "repair_number": repair_number,
+            "created_at": now,
+            "updated_at": now,
+            "archived_at": "",
+            "shipments": [],
+            "attachments": [],
+            "history": [
+                make_history_event(
+                    "Карточка ремонта создана",
+                    actor=actor,
+                    comment=_repair_text(payload.get("event_comment")),
+                    timestamp=now,
+                )
+            ],
+            **normalized,
+        }
+        cases.append(migrate_repair_case(case, migrated_at=now))
+        return case_id
+
+    mutate_repair_cases(create_case)
+    return find_api_repair(case_id)
+
+
+@app.route("/api/repairs/catalog", methods=["GET"])
+@app.route("/api/v1/repairs/catalog", methods=["GET"])
+def api_repairs_catalog():
+    query = (request.args.get("q") or "").strip().casefold()
+    items = build_repair_catalog_items()
+    if query:
+        items = [
+            item for item in items
+            if query in str(item.get("search") or "")
+        ]
+    limit = api_positive_int(request.args.get("limit"), 100, 200)
+    return api_success(items[:limit], total=len(items))
+
+
+@app.route("/api/repairs", methods=["GET", "POST"])
+@app.route("/api/v1/repairs", methods=["GET", "POST"])
+def api_repairs_collection():
+    if request.method == "POST":
+        require_csrf_when_authenticated()
+        try:
+            payload = api_json_payload()
+            case = create_api_repair(payload)
+        except (RepairDataError, ValueError) as error:
+            return api_error("REPAIR_VALIDATION_FAILED", str(error), 422)
+        return api_success(serialize_api_repair(case), 201)
+
+    try:
+        all_cases = load_repair_cases()
+    except RepairDataError as error:
+        return api_error("REPAIR_STORAGE_FAILED", str(error), 500)
+    view = (request.args.get("view") or "active").strip()
+    if view not in {"active", "archive", "all"}:
+        view = "active"
+    filters = {
+        "q": request.args.get("q"),
+        "status": request.args.get("status"),
+        "type": request.args.get("type"),
+        "location": request.args.get("location"),
+        "channel": request.args.get("channel"),
+        "date_from": request.args.get("date_from"),
+        "date_to": request.args.get("date_to"),
+    }
+    if view == "active":
+        cases = [case for case in all_cases if not case.get("archived_at")]
+    elif view == "archive":
+        cases = [case for case in all_cases if case.get("archived_at")]
+    else:
+        cases = list(all_cases)
+    cases = [case for case in cases if repair_case_matches(case, filters)]
+    sort_by = (request.args.get("sort_by") or "request_at").strip()
+    sort_dir = (request.args.get("sort_dir") or "desc").strip()
+    allowed_sort = {
+        "request_at",
+        "repair_number",
+        "client_name",
+        "product_name",
+        "status",
+        "location",
+        "updated_at",
+    }
+    if sort_by not in allowed_sort:
+        sort_by = "request_at"
+    cases.sort(
+        key=lambda case: (
+            str(case.get(sort_by) or "").casefold(),
+            str(case.get("id") or ""),
+        ),
+        reverse=sort_dir != "asc",
+    )
+    total = len(cases)
+    page = api_positive_int(request.args.get("page"), 1, 1000000)
+    page_size = api_positive_int(request.args.get("page_size"), 50, 200)
+    pages = (total + page_size - 1) // page_size
+    if pages and page > pages:
+        page = pages
+    start = (page - 1) * page_size
+    visible = cases[start:start + page_size]
+    return api_success(
+        [serialize_api_repair(case) for case in visible],
+        page=page,
+        page_size=page_size,
+        total=total,
+        pages=pages,
+        stats=api_repair_stats(all_cases),
+        facets={
+            "statuses": [
+                {"value": key, "label": label}
+                for key, label in REPAIR_STATUS_LABELS.items()
+            ],
+            "types": [
+                {"value": key, "label": label}
+                for key, label in REPAIR_TYPE_LABELS.items()
+            ],
+            "locations": [
+                {"value": key, "label": label}
+                for key, label in REPAIR_LOCATION_LABELS.items()
+            ],
+            "channels": [
+                {"value": key, "label": label}
+                for key, label in REPAIR_CHANNEL_LABELS.items()
+            ],
+        },
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+        view=view,
+    )
+
+
+@app.route("/api/repairs/<case_id>", methods=["GET", "PATCH", "DELETE"])
+@app.route("/api/v1/repairs/<case_id>", methods=["GET", "PATCH", "DELETE"])
+def api_repair_resource(case_id):
+    try:
+        case = find_api_repair(case_id)
+    except RepairDataError as error:
+        return api_error("REPAIR_STORAGE_FAILED", str(error), 500)
+    if case is None:
+        return api_error("REPAIR_NOT_FOUND", "Ремонт не найден.", 404)
+    if request.method == "GET":
+        return api_success(serialize_api_repair(case))
+    require_csrf_when_authenticated()
+    if request.method == "DELETE":
+        def archive_case(cases):
+            target = find_api_repair(case_id, cases)
+            if target is None:
+                return False
+            if not target.get("archived_at"):
+                target["archived_at"] = repair_now()
+                target["updated_at"] = target["archived_at"]
+                append_history_event(
+                    target,
+                    "Ремонт перенесён в архив",
+                    actor=current_repair_user_name(),
+                )
+            return True
+
+        try:
+            updated = mutate_repair_cases(archive_case)
+        except RepairDataError as error:
+            return api_error("REPAIR_STORAGE_FAILED", str(error), 500)
+        if not updated:
+            return api_error("REPAIR_NOT_FOUND", "Ремонт не найден.", 404)
+        return api_success({"id": case_id, "archived": True})
+
+    try:
+        payload = api_json_payload()
+
+        def update_case(cases):
+            target = find_api_repair(case_id, cases)
+            if target is None:
+                return False
+            before = copy.deepcopy(target)
+            merged = {**target, **payload}
+            normalized = build_repair_form_payload(
+                merged,
+                existing=target,
+                catalog_items=build_repair_catalog_items(),
+                allow_missing_required=bool(target.get("legacy_import")),
+            )
+            target.update(normalized)
+            target["updated_at"] = repair_now()
+            add_repair_change_history(
+                target,
+                before,
+                current_repair_user_name(),
+                comment=_repair_text(payload.get("event_comment")),
+            )
+            return True
+
+        updated = mutate_repair_cases(update_case)
+    except (RepairDataError, ValueError) as error:
+        return api_error("REPAIR_VALIDATION_FAILED", str(error), 422)
+    if not updated:
+        return api_error("REPAIR_NOT_FOUND", "Ремонт не найден.", 404)
+    return api_success(serialize_api_repair(find_api_repair(case_id)))
+
+
+@app.route("/api/repairs/<case_id>/status", methods=["POST"])
+@app.route("/api/v1/repairs/<case_id>/status", methods=["POST"])
+def api_repair_status(case_id):
+    require_csrf_when_authenticated()
+    try:
+        payload = api_json_payload()
+        status = LEGACY_STATUS_MAP.get(
+            _repair_text(payload.get("status")),
+            _repair_text(payload.get("status")),
+        )
+        updated = _change_repair_status(
+            case_id,
+            status,
+            comment=_repair_text(payload.get("comment")),
+        )
+    except RepairDataError as error:
+        return api_error("REPAIR_STORAGE_FAILED", str(error), 500)
+    if not updated:
+        return api_error(
+            "REPAIR_STATUS_INVALID",
+            "Ремонт не найден или статус некорректен.",
+            422,
+        )
+    return api_success(serialize_api_repair(find_api_repair(case_id)))
+
+
+@app.route("/api/repairs/<case_id>/restore", methods=["POST"])
+@app.route("/api/v1/repairs/<case_id>/restore", methods=["POST"])
+def api_repair_restore(case_id):
+    require_csrf_when_authenticated()
+
+    def restore_case(cases):
+        target = find_api_repair(case_id, cases)
+        if target is None:
+            return False
+        target["archived_at"] = ""
+        if target.get("status") == "completed":
+            target["status"] = "at_us"
+        target["updated_at"] = repair_now()
+        append_history_event(
+            target,
+            "Ремонт восстановлен из архива",
+            actor=current_repair_user_name(),
+        )
+        return True
+
+    try:
+        updated = mutate_repair_cases(restore_case)
+    except RepairDataError as error:
+        return api_error("REPAIR_STORAGE_FAILED", str(error), 500)
+    if not updated:
+        return api_error("REPAIR_NOT_FOUND", "Ремонт не найден.", 404)
+    return api_success(serialize_api_repair(find_api_repair(case_id)))
+
+
+@app.route("/api/repairs/<case_id>/shipments", methods=["POST"])
+@app.route("/api/v1/repairs/<case_id>/shipments", methods=["POST"])
+def api_repair_shipment(case_id):
+    require_csrf_when_authenticated()
+    try:
+        payload = api_json_payload()
+        direction = _repair_text(payload.get("direction")) or "unknown"
+        if direction not in SHIPMENT_DIRECTION_LABELS:
+            raise ValueError("Выберите направление доставки.")
+        track_number = _repair_text(payload.get("track_number"))
+        if not track_number:
+            raise ValueError("Укажите трек-номер.")
+
+        def add_shipment(cases):
+            target = find_api_repair(case_id, cases)
+            if target is None:
+                return False
+            shipment = {
+                "id": str(uuid.uuid4()),
+                "direction": direction,
+                "carrier": _repair_text(payload.get("carrier")),
+                "track_number": track_number,
+                "sent_at": _repair_date(payload.get("sent_at")),
+                "status": _repair_text(payload.get("status")),
+                "received_at": _repair_date(payload.get("received_at")),
+            }
+            target.setdefault("shipments", []).append(shipment)
+            target["updated_at"] = repair_now()
+            if direction == "inbound":
+                target["status"] = "inbound_transit"
+                target["location"] = "inbound_transit"
+            elif direction == "outbound":
+                target["status"] = "outbound_transit"
+                target["location"] = "outbound_transit"
+            append_history_event(
+                target,
+                "Добавлена накладная",
+                actor=current_repair_user_name(),
+                field="shipments",
+                new_value=track_number,
+                comment=SHIPMENT_DIRECTION_LABELS[direction],
+            )
+            return True
+
+        updated = mutate_repair_cases(add_shipment)
+    except (RepairDataError, ValueError) as error:
+        return api_error("REPAIR_SHIPMENT_INVALID", str(error), 422)
+    if not updated:
+        return api_error("REPAIR_NOT_FOUND", "Ремонт не найден.", 404)
+    return api_success(serialize_api_repair(find_api_repair(case_id)), 201)
+
+
+@app.route("/api/repairs/<case_id>/attachments", methods=["POST"])
+@app.route("/api/v1/repairs/<case_id>/attachments", methods=["POST"])
+def api_repair_attachments(case_id):
+    require_csrf_when_authenticated()
+    try:
+        if find_api_repair(case_id) is None:
+            return api_error("REPAIR_NOT_FOUND", "Ремонт не найден.", 404)
+        attachments = save_repair_uploads(case_id)
+        if not attachments:
+            raise ValueError("Выберите файл для загрузки.")
+
+        def add_attachments(cases):
+            target = find_api_repair(case_id, cases)
+            if target is None:
+                return False
+            target.setdefault("attachments", []).extend(attachments)
+            target["updated_at"] = repair_now()
+            append_history_event(
+                target,
+                "Добавлены вложения",
+                actor=current_repair_user_name(),
+                comment=", ".join(
+                    attachment.get("name") or ""
+                    for attachment in attachments
+                ),
+            )
+            return True
+
+        updated = mutate_repair_cases(add_attachments)
+    except (RepairDataError, ValueError) as error:
+        return api_error("REPAIR_ATTACHMENT_INVALID", str(error), 422)
+    if not updated:
+        return api_error("REPAIR_NOT_FOUND", "Ремонт не найден.", 404)
+    return api_success(serialize_api_repair(find_api_repair(case_id)), 201)
+
+
+@app.route("/app", defaults={"react_path": ""}, strict_slashes=False)
+@app.route("/app/<path:react_path>")
+def react_application(react_path):
+    from flask import send_from_directory
+
+    build_directory = PROJECT_ROOT / "app" / "static" / "react"
+    requested_path = (build_directory / react_path).resolve()
+    if (
+        react_path
+        and requested_path.is_file()
+        and build_directory.resolve() in requested_path.parents
+    ):
+        return send_from_directory(build_directory, react_path)
+    index_path = build_directory / "index.html"
+    if not index_path.is_file():
+        return (
+            "React-интерфейс не собран. Выполните frontend production build.",
+            503,
+        )
+    return send_from_directory(build_directory, "index.html")
+
+
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5050, debug=True)
