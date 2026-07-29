@@ -67,6 +67,23 @@ async function mockProductsApi(page: Page) {
     const request = route.request();
     const url = new URL(request.url());
     const match = url.pathname.match(/\/products\/(\d+)$/);
+    if (request.method() === 'PATCH' && url.pathname.endsWith('/products/bulk')) {
+      const body = request.postDataJSON() as {
+        ids: number[];
+        changes: Partial<Product>;
+      };
+      const items: Product[] = [];
+      products = products.map((product) => {
+        if (!body.ids.includes(product.id)) return product;
+        const updated = { ...product, ...body.changes };
+        items.push(updated);
+        return updated;
+      });
+      await route.fulfill({
+        json: envelope({ items, updated: items.length, errors: [] }),
+      });
+      return;
+    }
     if (request.method() === 'POST') {
       const body = request.postDataJSON();
       const created = {
@@ -98,14 +115,22 @@ async function mockProductsApi(page: Page) {
       return;
     }
     const query = (url.searchParams.get('q') ?? '').toLocaleLowerCase('ru');
-    const visible = query
-      ? products.filter((item) =>
+    const brand = url.searchParams.get('brand') ?? '';
+    const category = url.searchParams.get('category') ?? '';
+    const cell = url.searchParams.get('cell') ?? '';
+    const inStock = url.searchParams.get('in_stock') === '1';
+    const visible = products.filter(
+      (item) =>
+        (!query ||
           [item.name, item.article, item.brand, item.cell]
             .join(' ')
             .toLocaleLowerCase('ru')
-            .includes(query),
-        )
-      : products;
+            .includes(query)) &&
+        (!brand || item.brand === brand) &&
+        (!category || item.category === category) &&
+        (!cell || item.cell === cell) &&
+        (!inStock || item.stock > 0),
+    );
     await route.fulfill({
       json: envelope(visible, {
         page: 1,
@@ -147,6 +172,10 @@ function envelope(data: unknown, meta: Record<string, unknown> = {}) {
   };
 }
 
+function visibleProductList(page: Page) {
+  return page.locator('.data-table-wrap:visible, .mobile-card-list:visible');
+}
+
 test.beforeEach(async ({ page }) => {
   await mockProductsApi(page);
 });
@@ -154,19 +183,19 @@ test.beforeEach(async ({ page }) => {
 test('products support live search and a validated create flow', async ({ page }) => {
   await page.goto('/app/products');
   await expect(page.getByRole('heading', { name: 'Товары' })).toBeVisible();
-  await expect(page.getByText('Casio G-Shock GA-2100').first()).toBeVisible();
+  await expect(visibleProductList(page).getByText('Casio G-Shock GA-2100').first()).toBeVisible();
 
   await page.getByPlaceholder('Название, артикул, штрихкод, ячейка…').fill('ремешок');
   await expect(page).toHaveURL(/q=%D1%80%D0%B5%D0%BC%D0%B5%D1%88%D0%BE%D0%BA/i);
-  await expect(page.getByText('Ремешок для часов').first()).toBeVisible();
+  await expect(visibleProductList(page).getByText('Ремешок для часов').first()).toBeVisible();
   await expect(page.getByText('Casio G-Shock GA-2100')).toHaveCount(0);
 
   await page.getByRole('button', { name: '+ Добавить товар' }).click();
   await page.getByRole('button', { name: 'Сохранить' }).click();
   await expect(page.getByText('Название товара обязательно')).toBeVisible();
   await page.getByLabel('Название *').fill('Новый товар');
-  await page.getByRole('textbox', { name: 'Бренд' }).fill('Vechasu');
-  await page.getByRole('textbox', { name: 'Категория' }).fill('Аксессуары');
+  await page.getByPlaceholder('Casio', { exact: true }).fill('Vechasu');
+  await page.getByPlaceholder('Часы / Спортивные').fill('Аксессуары');
   await page.getByRole('spinbutton', { name: 'Остаток' }).fill('3');
   await page.getByRole('button', { name: 'Сохранить' }).click();
   await expect(page.getByText('Товар добавлен')).toBeVisible();
@@ -174,18 +203,46 @@ test('products support live search and a validated create flow', async ({ page }
 
 test('products support edit and confirmed delete', async ({ page }) => {
   await page.goto('/app/products');
-  const zeroProduct = page.getByText('Ремешок для часов').first();
+  const zeroProduct = visibleProductList(page).getByText('Ремешок для часов').first();
   await expect(zeroProduct).toBeVisible();
-  const row = zeroProduct.locator('xpath=ancestor::tr');
+  const row = zeroProduct.locator('xpath=ancestor::tr | ancestor::article');
   await row.getByRole('button', { name: 'Изменить' }).click();
   await page.getByLabel('Название *').fill('Ремешок обновлён');
   await page.getByRole('button', { name: 'Сохранить' }).click();
   await expect(page.getByText('Карточка обновлена')).toBeVisible();
 
-  const updatedRow = page.getByText('Ремешок обновлён').first().locator('xpath=ancestor::tr');
+  const updatedRow = visibleProductList(page)
+    .getByText('Ремешок обновлён')
+    .first()
+    .locator('xpath=ancestor::tr | ancestor::article');
   await updatedRow.getByRole('button', { name: 'Удалить' }).click();
   await expect(page.getByRole('heading', { name: 'Удалить товар?' })).toBeVisible();
   await page.getByRole('button', { name: 'Удалить' }).last().click();
   await expect(page.getByText('Товар удалён')).toBeVisible();
   await expect(page.getByText('Ремешок обновлён')).toHaveCount(0);
+});
+
+test('products persist columns and support filters and bulk edits', async ({ page }) => {
+  await page.goto('/app/products');
+  await page.getByText('Фильтры', { exact: true }).click();
+  await page.getByRole('combobox', { name: 'Бренд', exact: true }).selectOption('Casio');
+  await expect(page).toHaveURL(/brand=Casio/);
+  await expect(visibleProductList(page).getByText('Casio G-Shock GA-2100').first()).toBeVisible();
+  await expect(page.getByText('Ремешок для часов')).toHaveCount(0);
+
+  await page.goto('/app/products');
+  if ((page.viewportSize()?.width ?? 0) > 640) {
+    await page.getByText('Столбцы', { exact: true }).click();
+    await page.getByRole('group').getByLabel('Цена', { exact: true }).uncheck();
+    await expect(page.getByRole('columnheader', { name: /Цена/ })).toHaveCount(0);
+    await page.reload();
+    await expect(page.getByRole('columnheader', { name: /Цена/ })).toHaveCount(0);
+  }
+
+  await visibleProductList(page).getByLabel('Выбрать Casio G-Shock GA-2100').check();
+  await page.getByRole('button', { name: 'Изменить выбранные' }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByLabel('Ячейка').fill('C-03');
+  await dialog.getByRole('button', { name: 'Применить' }).click();
+  await expect(page.getByText('Массово обновлено товаров: 1')).toBeVisible();
 });
