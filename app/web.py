@@ -10,6 +10,7 @@ import json
 import os
 import fcntl
 import uuid
+import click
 import requests
 from urllib.parse import parse_qsl, urlencode
 from app.clients.moysklad import MoySkladClient
@@ -65,6 +66,36 @@ app.wsgi_app = ProxyFix(
     x_host=1,
 )
 configure_auth(app, PROJECT_ROOT)
+
+
+@app.cli.command("sync-bitrix-products")
+@click.option("--dry-run", "mode", flag_value="dry_run", default=True)
+@click.option("--apply", "mode", flag_value="apply")
+@click.option("--page-size", default=200, type=click.IntRange(1, 200))
+@click.option("--backup-root", type=click.Path(path_type=Path))
+def sync_bitrix_products_command(mode, page_size, backup_root):
+    """Safely synchronize every Bitrix catalog product into ERP."""
+    from scripts.sync_bitrix_products import build_client, sync_bitrix_products
+
+    try:
+        report = sync_bitrix_products(
+            client=build_client(),
+            database=CatalogDatabase(),
+            apply=mode == "apply",
+            page_size=page_size,
+            backup_root=backup_root,
+            progress_callback=lambda state: click.echo(
+                json.dumps({"progress": state}, ensure_ascii=False),
+                err=True,
+            ),
+        )
+    except Exception as error:
+        raise click.ClickException(
+            "Bitrix product synchronization failed: {}".format(type(error).__name__)
+        )
+    click.echo(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
+    if report["status"] != "success":
+        raise click.ClickException("Synchronization completed with product errors")
 
 ORDERS_URL = "https://tictactoy.ru/api/orders.php"
 ORDER_URL = "https://tictactoy.ru/api/order.php?id="
@@ -1006,7 +1037,7 @@ def item_in_category(item, selected_category):
 
 
 def get_excel_warehouse_items():
-    catalog = ExcelProductCatalog().list_products(per_page=5000)
+    catalog = ExcelProductCatalog().list_products(per_page=10000)
     items = []
     for product in catalog["items"]:
         created_text = str(product.get("created_at") or "")

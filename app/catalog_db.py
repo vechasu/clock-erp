@@ -284,6 +284,14 @@ CREATE INDEX IF NOT EXISTS idx_catalog_excel_products_match_status
     ON catalog_excel_products(match_status);
 CREATE INDEX IF NOT EXISTS idx_catalog_excel_products_bitrix
     ON catalog_excel_products(bitrix_catalog_product_id);
+CREATE INDEX IF NOT EXISTS idx_catalog_excel_products_bitrix_external
+    ON catalog_excel_products(bitrix_external_product_id);
+CREATE INDEX IF NOT EXISTS idx_catalog_excel_products_bitrix_xml
+    ON catalog_excel_products(bitrix_xml_id COLLATE NOCASE);
+CREATE INDEX IF NOT EXISTS idx_catalog_excel_products_article
+    ON catalog_excel_products(excel_article COLLATE NOCASE);
+CREATE INDEX IF NOT EXISTS idx_catalog_excel_products_normalized_name
+    ON catalog_excel_products(normalized_name);
 
 CREATE TABLE IF NOT EXISTS catalog_excel_batch_rows (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
