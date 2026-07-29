@@ -338,7 +338,10 @@ class ExcelProductBatchService:
                 "SELECT * FROM catalog_excel_products WHERE active = 1"
             ).fetchall()
             for product in active_products:
-                if product["source_key"] in incoming_keys:
+                if (
+                    product["source_key"] in incoming_keys
+                    or product["stock_source"] == "bitrix_catalog"
+                ):
                     continue
                 before = _snapshot(product)
                 after = dict(before)
@@ -358,6 +361,23 @@ class ExcelProductBatchService:
                     "SELECT * FROM catalog_excel_products WHERE source_key = ?",
                     (source_key,),
                 ).fetchone()
+                if (
+                    product is None
+                    and result.get("match_status") in AUTOMATIC_STATUSES
+                    and result.get("product_id") is not None
+                ):
+                    linked_cards = connection.execute(
+                        "SELECT * FROM catalog_excel_products "
+                        "WHERE active = 1 AND stock_source = 'bitrix_catalog' "
+                        "AND bitrix_catalog_product_id = ? ORDER BY id",
+                        (int(result["product_id"]),),
+                    ).fetchall()
+                    if len(linked_cards) == 1:
+                        product = linked_cards[0]
+                        connection.execute(
+                            "UPDATE catalog_excel_products SET source_key = ? WHERE id = ?",
+                            (source_key, product["id"]),
+                        )
                 before = _snapshot(product)
                 state = self._state_for_result(
                     connection, result, batch_id, file_sha256, now, product,
@@ -620,7 +640,7 @@ class ExcelProductCatalog:
                       sort_dir="asc", page=1, per_page=50):
         self.database.initialize()
         page = max(1, int(page))
-        per_page = max(1, min(int(per_page), 5000))
+        per_page = max(1, min(int(per_page), 10000))
         allowed_sort_fields = {
             "name": "p.excel_name_raw",
             "article": "COALESCE(p.excel_article, '')",
@@ -634,7 +654,11 @@ class ExcelProductCatalog:
         }
         sort_by = sort_by if sort_by in allowed_sort_fields else "name"
         sort_dir = sort_dir if sort_dir in {"asc", "desc"} else "asc"
-        where = ["p.active = 1", "b.status = 'active'", "p.current_batch_id = b.id"]
+        visible_cards_sql = (
+            "(p.stock_source = 'bitrix_catalog' "
+            "OR (b.status = 'active' AND p.current_batch_id = b.id))"
+        )
+        where = ["p.active = 1", visible_cards_sql]
         parameters = []
         if query:
             escaped_query = text(query).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
@@ -707,14 +731,16 @@ class ExcelProductCatalog:
             brands = [row[0] for row in connection.execute(
                 "SELECT COALESCE(p.excel_brand, '') AS value "
                 "FROM catalog_excel_products p JOIN catalog_excel_batches b "
-                "ON b.id = p.current_batch_id WHERE p.active = 1 AND b.status = 'active' "
+                "ON b.id = p.current_batch_id WHERE p.active = 1 AND "
+                + visible_cards_sql + " "
                 "AND trim(COALESCE(p.excel_brand, '')) <> '' "
                 "GROUP BY value HAVING COALESCE(SUM(p.stock), 0) >= 1 ORDER BY value"
             ).fetchall()]
             categories = [row[0] for row in connection.execute(
                 "SELECT DISTINCT COALESCE(p.excel_category, '') AS value "
                 "FROM catalog_excel_products p JOIN catalog_excel_batches b "
-                "ON b.id = p.current_batch_id WHERE p.active = 1 AND b.status = 'active' "
+                "ON b.id = p.current_batch_id WHERE p.active = 1 AND "
+                + visible_cards_sql + " "
                 "AND trim(COALESCE(p.excel_category, '')) <> '' "
                 "ORDER BY value"
             ).fetchall()]
@@ -722,7 +748,7 @@ class ExcelProductCatalog:
                 "SELECT COALESCE(p.excel_category, '') AS name, "
                 "COUNT(*) AS count FROM catalog_excel_products p "
                 "JOIN catalog_excel_batches b ON b.id = p.current_batch_id "
-                "WHERE p.active = 1 AND b.status = 'active' "
+                "WHERE p.active = 1 AND " + visible_cards_sql + " "
                 "AND trim(COALESCE(p.excel_category, '')) <> '' "
                 "GROUP BY name ORDER BY name"
             ).fetchall()]
@@ -731,7 +757,7 @@ class ExcelProductCatalog:
                 "ELSE trim(p.cell) END AS cell, COUNT(*) AS count, "
                 "COALESCE(SUM(p.stock), 0) AS stock FROM catalog_excel_products p "
                 "JOIN catalog_excel_batches b ON b.id = p.current_batch_id "
-                "WHERE p.active = 1 AND b.status = 'active' "
+                "WHERE p.active = 1 AND " + visible_cards_sql + " "
                 "GROUP BY CASE WHEN trim(COALESCE(p.cell, '')) = '' "
                 "THEN 'Без ячейки' ELSE trim(p.cell) END "
                 "ORDER BY CASE WHEN trim(COALESCE(p.cell, '')) = '' THEN 1 ELSE 0 END, cell"
@@ -740,7 +766,8 @@ class ExcelProductCatalog:
                 row["match_status"]: row["count"] for row in connection.execute(
                     "SELECT p.match_status, COUNT(*) AS count FROM catalog_excel_products p "
                     "JOIN catalog_excel_batches b ON b.id = p.current_batch_id "
-                    "WHERE p.active = 1 AND b.status = 'active' GROUP BY p.match_status"
+                    "WHERE p.active = 1 AND " + visible_cards_sql
+                    + " GROUP BY p.match_status"
                 ).fetchall()
             }
         items = [self._prepare_product(dict(row)) for row in rows]
@@ -763,7 +790,9 @@ class ExcelProductCatalog:
                 "JOIN catalog_excel_batches b ON b.id = p.current_batch_id "
                 "LEFT JOIN catalog_products cp "
                 "ON cp.id = p.bitrix_catalog_product_id "
-                "WHERE p.id = ? AND p.active = 1 AND b.status = 'active'",
+                "WHERE p.id = ? AND p.active = 1 AND "
+                "(p.stock_source = 'bitrix_catalog' "
+                "OR (b.status = 'active' AND p.current_batch_id = b.id))",
                 (int(product_id),),
             ).fetchone()
         return self._prepare_product(dict(row)) if row else None
