@@ -8,6 +8,8 @@ if str(PROJECT_ROOT) not in sys.path:
 
 import time
 import copy
+import base64
+import binascii
 import json
 import os
 import fcntl
@@ -12419,6 +12421,41 @@ def build_api_receipt_positions(payload_positions, catalog):
     return positions
 
 
+def decode_api_product_image(payload):
+    if payload in (None, ""):
+        return None
+    if not isinstance(payload, dict):
+        raise ValueError("Изображение передано некорректно.")
+    encoded = str(payload.get("base64") or "")
+    if encoded.startswith("data:") and "," in encoded:
+        encoded = encoded.split(",", 1)[1]
+    try:
+        content = base64.b64decode(encoded, validate=True)
+    except (ValueError, binascii.Error):
+        raise ValueError("Изображение передано некорректно.")
+    if not content:
+        raise ValueError("Выбранный файл изображения пуст.")
+    if len(content) > PRODUCT_IMAGE_MAX_BYTES:
+        raise ValueError("Изображение слишком большое. Максимальный размер — 3 МБ.")
+    if content.startswith(b"\xff\xd8\xff"):
+        extension = ".jpg"
+    elif content.startswith(b"\x89PNG\r\n\x1a\n"):
+        extension = ".png"
+    else:
+        raise ValueError("Поддерживаются только изображения JPEG и PNG.")
+    raw_name = Path(str(payload.get("name") or "product")).name
+    stem = raw_name.rsplit(".", 1)[0] or "product"
+    safe_stem = "".join(
+        character
+        for character in stem
+        if character.isalnum() or character in {"-", "_"}
+    ) or "product"
+    return {
+        "filename": (safe_stem + extension)[:255],
+        "content": content,
+    }
+
+
 @app.route("/api/receipts/catalog", methods=["GET"])
 @app.route("/api/v1/receipts/catalog", methods=["GET"])
 def api_receipts_catalog():
@@ -12453,6 +12490,7 @@ def api_receipts_collection():
                 payload.get("receipt_date") or payload.get("date")
             )
             note = str(payload.get("note") or "").strip()
+            product_image = decode_api_product_image(payload.get("product_image"))
             positions = build_api_receipt_positions(
                 payload.get("positions") or payload.get("items"),
                 receipt_api_catalog_items(force=True),
@@ -12544,9 +12582,31 @@ def api_receipts_collection():
                 "Документ создан в МойСклад, но локальная запись не сохранена.",
                 500,
             )
+        image_message = ""
+        if product_image and len(positions) == 1:
+            try:
+                image_product_id = positions[0]["product_id"]
+                image_client = MoySkladClient()
+                if image_client.product_has_images(image_product_id):
+                    image_message = "У товара уже есть фото — дубликат не создавался."
+                elif not image_client.upload_product_image(
+                    image_product_id,
+                    product_image["filename"],
+                    product_image["content"],
+                ):
+                    raise ValueError("МойСклад не сохранил изображение.")
+                else:
+                    image_message = "Фото товара добавлено."
+            except Exception as error:
+                app.logger.exception("Receipt API product image upload failed")
+                image_message = "Приход проведён, но фото не добавлено: {}".format(error)
         WAREHOUSE_CACHE["items"] = []
         WAREHOUSE_CACHE["loaded_at"] = 0
-        return api_success(serialize_api_receipt(receipt), 201)
+        return api_success(
+            serialize_api_receipt(receipt),
+            201,
+            image_message=image_message,
+        )
 
     receipts = [serialize_api_receipt(item) for item in load_receipts()]
     query = (request.args.get("q") or "").strip().casefold()

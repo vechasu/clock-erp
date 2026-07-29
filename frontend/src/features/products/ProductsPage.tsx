@@ -395,7 +395,6 @@ export function ProductsPage() {
         <ProductForm
           id="product-editor"
           product={editor === 'new' ? null : editor}
-          pending={saveMutation.isPending}
           onSubmit={(values) => {
             if (editor) saveMutation.mutate({ product: editor, values });
           }}

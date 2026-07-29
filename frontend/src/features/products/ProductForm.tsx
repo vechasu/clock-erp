@@ -12,7 +12,6 @@ import {
 interface ProductFormProps {
   id: string;
   product?: Product | null;
-  pending?: boolean;
   onSubmit: (values: ProductFormValues) => void;
 }
 
@@ -28,7 +27,7 @@ function valuesFromProduct(product?: Product | null): ProductFormValues {
   };
 }
 
-export function ProductForm({ id, product, pending, onSubmit }: ProductFormProps) {
+export function ProductForm({ id, product, onSubmit }: ProductFormProps) {
   const {
     register,
     handleSubmit,
