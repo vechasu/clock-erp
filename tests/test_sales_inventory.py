@@ -364,7 +364,10 @@ class SalesInventoryWebTest(SalesInventoryTest):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(self.stock(self.product["id"]), 2)
 
-        context = web.build_sales_report_context()
+        with web.app.test_request_context(
+            "/sales/report?source=all"
+        ):
+            context = web.build_sales_report_context()
         self.assertEqual(context["gross_revenue"], 2000)
         self.assertEqual(context["returns_amount"], 1000)
         self.assertEqual(context["total_revenue"], 1000)
