@@ -32,6 +32,12 @@ from app.services.moysklad_catalog_mapping import (
     MoySkladCatalogMatcher,
     load_moysklad_products,
 )
+from app.services.sales_inventory import (
+    InsufficientStockError,
+    ReturnConflictError,
+    SalesInventory,
+    SalesInventoryError,
+)
 from flask import (
     Flask,
     Response,
@@ -46,6 +52,7 @@ from flask import (
 from werkzeug.middleware.proxy_fix import ProxyFix
 from app.auth import (
     configure_auth,
+    current_auth_user,
     require_csrf_when_authenticated,
     settings_invitation_context,
 )
@@ -1232,7 +1239,7 @@ def warehouse_page():
             total_stock_display=format_stock_number(total_stock),
             total_reserve=total_reserve,
             total_available=total_available,
-            stock_operations=ExcelProductCatalog().list_manual_stock_operations(),
+            stock_operations=get_catalog_stock_history(),
             bulk_ui_e2e=(
                 app.testing
                 and request.args.get("bulk_ui_e2e") == "1"
@@ -1798,6 +1805,109 @@ def get_stock_operations_for_product(product_id, limit=10):
     ]
 
     return result[:limit]
+
+
+def get_catalog_stock_history(product_id=None, limit=5000):
+    manual_operations = (
+        ExcelProductCatalog().list_manual_stock_operations(
+            limit=limit
+        )
+    )
+    for operation in manual_operations:
+        reason = str(operation.get("reason") or "")
+        if reason.startswith("Начальный остаток"):
+            operation["type"] = "initial_stock"
+            operation["label"] = "Начальный остаток"
+        else:
+            operation["type"] = "manual_adjustment"
+            operation["label"] = "Ручная корректировка"
+
+    catalog_operations = []
+    database = CatalogDatabase()
+    try:
+        with database.connect() as connection:
+            batch_rows = connection.execute(
+                "SELECT id, product_id, operation_type, "
+                "stock_before, stock_after, stock_difference, "
+                "created_at, details_json "
+                "FROM catalog_excel_stock_operations "
+                "ORDER BY created_at DESC LIMIT ?",
+                (max(1, int(limit)),),
+            ).fetchall()
+            receipt_rows = connection.execute(
+                "SELECT o.id, o.product_id, o.stock_before, "
+                "o.stock_after, o.stock_difference, o.created_at, "
+                "r.number AS receipt_number "
+                "FROM catalog_excel_receipt_operations o "
+                "JOIN catalog_excel_receipts r "
+                "ON r.id = o.receipt_id "
+                "ORDER BY o.created_at DESC LIMIT ?",
+                (max(1, int(limit)),),
+            ).fetchall()
+        for row in batch_rows:
+            operation = dict(row)
+            operation.update({
+                "type": "initial_stock",
+                "label": "Начальный остаток",
+                "quantity": abs(
+                    float(operation["stock_difference"])
+                ),
+                "diff": float(operation["stock_difference"]),
+                "source": "Excel",
+                "reason": "",
+            })
+            catalog_operations.append(operation)
+        for row in receipt_rows:
+            operation = dict(row)
+            operation.update({
+                "type": "receipt",
+                "label": "Приход",
+                "quantity": abs(
+                    float(operation["stock_difference"])
+                ),
+                "diff": float(operation["stock_difference"]),
+                "source": "Приход Excel",
+                "reason": (
+                    "Приход №{}".format(
+                        operation.get("receipt_number") or ""
+                    ).strip()
+                ),
+            })
+            catalog_operations.append(operation)
+    except Exception:
+        app.logger.exception("Failed to load catalog stock history")
+
+    try:
+        sales_movements = SalesInventory().list_movements(
+            product_id=product_id,
+            limit=limit,
+        )
+    except Exception:
+        app.logger.exception("Failed to load sales stock movements")
+        sales_movements = []
+
+    if product_id is not None:
+        product_id = str(product_id)
+        manual_operations = [
+            operation
+            for operation in manual_operations
+            if str(operation.get("product_id") or "")
+            == product_id
+        ]
+        catalog_operations = [
+            operation
+            for operation in catalog_operations
+            if str(operation.get("product_id") or "")
+            == product_id
+        ]
+
+    return sorted(
+        manual_operations + catalog_operations + sales_movements,
+        key=lambda operation: str(
+            operation.get("created_at") or ""
+        ),
+        reverse=True,
+    )[:limit]
 
 
 
@@ -3034,14 +3144,29 @@ def load_manual_sales():
 
     path = get_manual_sales_path()
 
-    if not path.exists():
-        return []
+    legacy_sales = []
+    if path.exists():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            legacy_sales = data if isinstance(data, list) else []
+        except Exception:
+            legacy_sales = []
 
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        return data if isinstance(data, list) else []
+        managed_sales = SalesInventory().list_sales()
     except Exception:
-        return []
+        app.logger.exception("Failed to load transactional sales")
+        managed_sales = []
+
+    managed_ids = {
+        str(sale.get("id") or "")
+        for sale in managed_sales
+    }
+    return [
+        sale
+        for sale in legacy_sales
+        if str(sale.get("id") or "") not in managed_ids
+    ] + managed_sales
 
 
 def save_manual_sales(sales):
@@ -3049,11 +3174,25 @@ def save_manual_sales(sales):
 
     path = get_manual_sales_path()
     temporary_path = path.with_suffix(".json.tmp")
+    legacy_sales = [
+        sale
+        for sale in sales
+        if not sale.get("inventory_managed")
+    ]
     temporary_path.write_text(
-        json.dumps(sales, ensure_ascii=False, indent=2),
+        json.dumps(legacy_sales, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
     temporary_path.replace(path)
+
+
+def current_sales_user_name():
+    user = current_auth_user() or {}
+    full_name = " ".join(
+        str(user.get(field) or "").strip()
+        for field in ("first_name", "last_name")
+    ).strip()
+    return full_name or str(user.get("email") or "").strip()
 
 
 def get_automatic_sales_overrides_path():
@@ -3213,6 +3352,7 @@ SALE_STATUS_LABELS = {
     "shipped": "Отправлен",
     "completed": "Завершён",
     "cancelled": "Отменён",
+    "partially_returned": "Частичный возврат",
     "returned": "Возврат",
 }
 
@@ -4274,6 +4414,7 @@ def manual_sale_add():
     from uuid import uuid4
     from flask import request, redirect, url_for
 
+    require_csrf_when_authenticated()
     quantity = parse_manual_sale_quantity(request.form.get("quantity"))
 
     # === MANUAL SALE ADD PRICE V1 ===
@@ -4383,13 +4524,13 @@ def manual_sale_add():
 
     if quantity > catalog_product["stock"]:
         return redirect_to_sales(
-            "Количество превышает доступный остаток",
+            "Недостаточно товара на складе. Доступно: {}".format(
+                format_stock_number(catalog_product["stock"])
+            ),
             notice="error",
         )
 
-    sales = load_manual_sales()
-
-    sales.append({
+    sale = {
         "id": uuid4().hex,
         "created_at": (
             request.form.get("created_at")
@@ -4422,9 +4563,34 @@ def manual_sale_add():
             request.form.get("note") or ""
         ).strip(),
         **optional_fields,
-    })
+    }
 
-    save_manual_sales(sales)
+    if product_id.isdigit():
+        try:
+            SalesInventory().create_sale(
+                payload=sale,
+                product_id=product_id,
+                quantity=quantity,
+                unit_price=unit_price,
+                user_name=current_sales_user_name(),
+            )
+        except (InsufficientStockError, SalesInventoryError) as error:
+            return redirect_to_sales(
+                str(error),
+                notice="error",
+            )
+        except Exception:
+            app.logger.exception(
+                "Transactional manual sale failed"
+            )
+            return redirect_to_sales(
+                "Продажа не создана. Остаток не изменён.",
+                notice="error",
+            )
+    else:
+        sales = load_manual_sales()
+        sales.append(sale)
+        save_manual_sales(sales)
 
     return redirect_to_sales(
         "Продажа добавлена",
@@ -4491,6 +4657,7 @@ def manual_sale_update():
 
     sales = load_manual_sales()
     sale_found = False
+    managed_sale_updated = False
 
     for sale in sales:
         if str(sale.get("id") or "") != sale_id:
@@ -4508,6 +4675,27 @@ def manual_sale_update():
             or sale.get("product_id")
             or ""
         ).strip()
+        if sale.get("inventory_managed"):
+            if product_id != str(sale.get("product_id") or ""):
+                return respond_to_sales_action(
+                    "Товар проведённой продажи изменить нельзя. "
+                    "Оформите возврат.",
+                    notice="error",
+                    status_code=409,
+                )
+            if (
+                abs(
+                    float(quantity)
+                    - float(sale.get("quantity") or 0)
+                )
+                > 0.000001
+            ):
+                return respond_to_sales_action(
+                    "Количество проведённой продажи изменить нельзя. "
+                    "Оформите возврат.",
+                    notice="error",
+                    status_code=409,
+                )
         product_metadata = resolve_sale_product_metadata(
             product_id,
             product_name,
@@ -4609,6 +4797,22 @@ def manual_sale_update():
         ).strip()
         sale.update(optional_fields)
 
+        if sale.get("inventory_managed"):
+            sale["order_status"] = sale.get("status") or "completed"
+            try:
+                SalesInventory().update_metadata(
+                    sale_id,
+                    sale,
+                    unit_price,
+                )
+            except SalesInventoryError as error:
+                return respond_to_sales_action(
+                    str(error),
+                    notice="error",
+                    status_code=409,
+                )
+            managed_sale_updated = True
+
         sale_found = True
         break
 
@@ -4619,7 +4823,8 @@ def manual_sale_update():
             status_code=404,
         )
 
-    save_manual_sales(sales)
+    if not managed_sale_updated:
+        save_manual_sales(sales)
 
     return respond_to_sales_action(
         "Изменения сохранены",
@@ -4646,6 +4851,16 @@ def manual_sale_delete():
             "sales_page",
             notice="error",
             message="Ручная продажа не найдена",
+        ))
+
+    if sale.get("inventory_managed"):
+        return redirect(url_for(
+            "sales_page",
+            notice="error",
+            message=(
+                "Проведённую продажу удалить нельзя. "
+                "Используйте оформление возврата."
+            ),
         ))
 
     sale["order_status"] = "cancelled"
@@ -4706,6 +4921,16 @@ def sale_status_update():
                 "sales_page",
                 notice="error",
                 message="Ручная продажа не найдена",
+            ))
+
+        if sale.get("inventory_managed"):
+            return redirect(url_for(
+                "sales_page",
+                notice="error",
+                message=(
+                    "Статус проведённой продажи меняется "
+                    "только через оформление возврата"
+                ),
             ))
 
         sale["order_status"] = order_status
@@ -4973,6 +5198,14 @@ def sale_delete():
                 status_code=404,
             )
 
+        if sale.get("inventory_managed"):
+            return respond_to_sales_action(
+                "Проведённую продажу удалить нельзя. "
+                "Используйте оформление возврата.",
+                notice="error",
+                status_code=409,
+            )
+
         if sale.get("deleted_at"):
             return respond_to_sales_action(
                 "Продажа уже удалена",
@@ -5021,6 +5254,55 @@ def sale_delete():
         )
 
     return respond_to_sales_action("Продажа удалена")
+
+
+@app.route("/sales/return", methods=["POST"])
+def sale_return():
+    require_csrf_when_authenticated()
+    sale_id = str(request.form.get("sale_id") or "").strip()
+    reason = str(request.form.get("return_reason") or "").strip()
+    quantity = request.form.get("return_quantity")
+
+    if not sale_id:
+        return respond_to_sales_action(
+            "Продажа не найдена",
+            notice="error",
+            status_code=400,
+        )
+
+    try:
+        sale = SalesInventory().return_sale(
+            sale_id=sale_id,
+            quantity=quantity,
+            reason=reason,
+            user_name=current_sales_user_name(),
+        )
+    except ReturnConflictError as error:
+        return respond_to_sales_action(
+            str(error),
+            notice="error",
+            status_code=409,
+        )
+    except SalesInventoryError as error:
+        return respond_to_sales_action(
+            str(error),
+            notice="error",
+            status_code=400,
+        )
+    except Exception:
+        app.logger.exception("Transactional sale return failed")
+        return respond_to_sales_action(
+            "Возврат не оформлен. Остаток не изменён.",
+            notice="error",
+            status_code=500,
+        )
+
+    message = (
+        "Возврат оформлен"
+        if sale.get("status") == "returned"
+        else "Частичный возврат оформлен"
+    )
+    return respond_to_sales_action(message)
 
 
 
@@ -5378,6 +5660,37 @@ def build_sales_report_records(warehouse_items=None):
         quantity_number = parse_manual_sale_quantity(
             stored_sale.get("quantity")
         )
+        try:
+            returned_quantity = float(
+                stored_sale.get("returned_quantity") or 0
+            )
+        except (TypeError, ValueError):
+            returned_quantity = 0
+        returned_quantity = max(
+            0,
+            min(returned_quantity, float(quantity_number)),
+        )
+        return_status = normalize_sale_status(
+            stored_sale.get("status")
+            or stored_sale.get("order_status")
+        )
+        unit_price = parse_sale_price(
+            stored_sale.get("unit_price")
+        )
+        gross_total_amount = calculate_sale_amount(
+            unit_price,
+            quantity_number,
+        )
+        returned_amount = calculate_sale_amount(
+            unit_price,
+            returned_quantity,
+        )
+        total_amount = (
+            gross_total_amount - returned_amount
+            if gross_total_amount is not None
+            and returned_amount is not None
+            else gross_total_amount
+        )
         product_metadata = get_sales_product_metadata(
             product_metadata_lookup,
             stored_sale.get("product_id"),
@@ -5428,28 +5741,37 @@ def build_sales_report_records(warehouse_items=None):
             "quantity_display": format_stock_number(
                 quantity_number
             ),
+            "net_quantity_value": (
+                float(quantity_number) - returned_quantity
+            ),
+            "returned_quantity": returned_quantity,
+            "returned_quantity_display": format_stock_number(
+                returned_quantity
+            ),
+            "return_available_quantity": max(
+                float(quantity_number) - returned_quantity,
+                0,
+            ),
+            "returned_at": str(
+                stored_sale.get("returned_at") or ""
+            ),
+            "return_reason": str(
+                stored_sale.get("return_reason") or ""
+            ),
+            "return_status": return_status,
+            "inventory_managed": bool(
+                stored_sale.get("inventory_managed")
+            ),
             **{
-                "unit_price": parse_sale_price(
-                    stored_sale.get("unit_price")
-                ),
+                "unit_price": unit_price,
                 "unit_price_display": format_sale_money(
-                    parse_sale_price(
-                        stored_sale.get("unit_price")
-                    )
+                    unit_price
                 ),
-                "total_amount": calculate_sale_amount(
-                    parse_sale_price(
-                        stored_sale.get("unit_price")
-                    ),
-                    quantity_number,
-                ),
+                "gross_total_amount": gross_total_amount,
+                "returned_amount": returned_amount or 0,
+                "total_amount": total_amount,
                 "total_amount_display": format_sale_money(
-                    calculate_sale_amount(
-                        parse_sale_price(
-                            stored_sale.get("unit_price")
-                        ),
-                        quantity_number,
-                    )
+                    total_amount
                 ),
             },
             "track_number": str(
@@ -5519,11 +5841,9 @@ def build_sales_report_records(warehouse_items=None):
                 or 0
             ),
             "commission_type": "fixed_rub",
-            "order_status": normalize_sale_status(
-                stored_sale.get("order_status")
-            ),
+            "order_status": return_status,
             "order_status_label": SALE_STATUS_LABELS[
-                normalize_sale_status(stored_sale.get("order_status"))
+                return_status
             ],
             "is_cancelled": sale_is_cancelled(stored_sale),
             "cancelled_at": str(
@@ -5535,6 +5855,34 @@ def build_sales_report_records(warehouse_items=None):
         })
 
     sales = manual_sales + automatic_sales
+
+    for sale in sales:
+        quantity_value = float(sale.get("quantity_value") or 0)
+        returned_quantity = float(
+            sale.get("returned_quantity") or 0
+        )
+        sale.setdefault("returned_quantity", returned_quantity)
+        sale.setdefault(
+            "returned_quantity_display",
+            format_stock_number(returned_quantity),
+        )
+        sale.setdefault("returned_at", "")
+        sale.setdefault("return_reason", "")
+        sale.setdefault(
+            "return_available_quantity",
+            max(quantity_value - returned_quantity, 0),
+        )
+        sale.setdefault(
+            "net_quantity_value",
+            max(quantity_value - returned_quantity, 0),
+        )
+        sale.setdefault(
+            "gross_total_amount",
+            sale.get("total_amount") or 0,
+        )
+        sale.setdefault("returned_amount", 0)
+        sale.setdefault("return_status", sale.get("order_status"))
+        sale.setdefault("inventory_managed", False)
 
     return sorted(
         sales,
@@ -5731,17 +6079,39 @@ def build_sales_report_context():
     }
 
     total_quantity = sum(
-        float(sale.get("quantity_value") or 0)
+        float(
+            sale.get(
+                "net_quantity_value",
+                sale.get("quantity_value") or 0,
+            )
+        )
         for sale in active_sales
     )
 
-    # === SALES REPORT PRICE V1 ===
+    gross_revenue = sum(
+        float(
+            sale.get(
+                "gross_total_amount",
+                sale.get("total_amount") or 0,
+            )
+            or 0
+        )
+        for sale in active_sales
+    )
+    returns_amount = sum(
+        float(sale.get("returned_amount") or 0)
+        for sale in active_sales
+    )
     total_revenue = sum(
         float(sale.get("total_amount") or 0)
         for sale in active_sales
         if sale.get("total_amount") is not None
     )
-    # === SALES REPORT PRICE V1 END ===
+    returned_sales = [
+        sale
+        for sale in active_sales
+        if float(sale.get("returned_quantity") or 0) > 0
+    ]
 
     source_sales = filter_sales_by_source(
         all_sales,
@@ -5769,7 +6139,20 @@ def build_sales_report_context():
         ),
         "report_columns": get_sales_columns(
             filters["source"]
-        ),
+        ) + [
+            {
+                "key": "returned_quantity_display",
+                "label": "Возвращено",
+            },
+            {
+                "key": "returned_at",
+                "label": "Дата возврата",
+            },
+            {
+                "key": "return_reason",
+                "label": "Причина возврата",
+            },
+        ],
         "total_sales": len(active_sales),
         "total_records": len(sales),
         "total_cancelled": len(sales) - len(active_sales),
@@ -5780,6 +6163,21 @@ def build_sales_report_context():
         "total_revenue": total_revenue,
         "total_revenue_display": format_sale_money(
             total_revenue
+        ),
+        "gross_revenue": gross_revenue,
+        "gross_revenue_display": format_sale_money(
+            gross_revenue
+        ),
+        "returns_amount": returns_amount,
+        "returns_amount_display": format_sale_money(
+            returns_amount
+        ),
+        "total_returned_sales": len(returned_sales),
+        "total_returned_quantity": format_stock_number(
+            sum(
+                float(sale.get("returned_quantity") or 0)
+                for sale in returned_sales
+            )
         ),
         "sources": unique_values("source"),
         "products": unique_values("product_name"),
@@ -5851,11 +6249,15 @@ def sales_report_excel():
     sheet["J2"] = "Единиц"
     sheet["K2"] = context["total_quantity"]
 
-    # === SALES EXCEL PRICE V1 ===
-    sheet["M2"] = "Выручка"
-    sheet["N2"] = context["total_revenue"]
+    sheet["M2"] = "Продажи"
+    sheet["N2"] = context["gross_revenue"]
     sheet["N2"].number_format = '#,##0.00 "₽"'
-    # === SALES EXCEL PRICE V1 END ===
+    sheet["O2"] = "Возвраты"
+    sheet["P2"] = context["returns_amount"]
+    sheet["P2"].number_format = '#,##0.00 "₽"'
+    sheet["Q2"] = "Чистая выручка"
+    sheet["R2"] = context["total_revenue"]
+    sheet["R2"].number_format = '#,##0.00 "₽"'
 
     headers = [
         column["label"]
@@ -6134,13 +6536,17 @@ def sales_report_pdf():
                 "Отменено: {} &nbsp;&nbsp; "
                 "Заказов: {} &nbsp;&nbsp; "
                 "Продано единиц: {} &nbsp;&nbsp; "
-                "Выручка: {}"
+                "Продажи: {} &nbsp;&nbsp; "
+                "Возвраты: {} &nbsp;&nbsp; "
+                "Чистая выручка: {}"
             ).format(
                 escape(context["generated_at"]),
                 context["total_sales"],
                 context["total_cancelled"],
                 context["total_orders"],
                 escape(str(context["total_quantity"])),
+                escape(context["gross_revenue_display"]),
+                escape(context["returns_amount_display"]),
                 escape(
                     context["total_revenue_display"]
                 ),
@@ -9496,6 +9902,10 @@ def excel_product_page(product_id):
     return render_template(
         "excel_product_detail.html", product=product, match_labels=EXCEL_MATCH_LABELS,
         return_to=_safe_products_return_to(request.args.get("return_to")),
+        stock_movements=get_catalog_stock_history(
+            product_id=product_id,
+            limit=100,
+        ),
     )
 
 
