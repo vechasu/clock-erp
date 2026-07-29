@@ -98,9 +98,11 @@ describe('ReceiptsPage', () => {
   it('renders receipt totals and opens a multi-position form', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockImplementation((url: string) =>
-        Promise.resolve(url.includes('/receipts/catalog') ? catalogResponse() : listResponse()),
-      ),
+      vi
+        .fn()
+        .mockImplementation((url: string) =>
+          Promise.resolve(url.includes('/receipts/catalog') ? catalogResponse() : listResponse()),
+        ),
     );
     const user = userEvent.setup();
     render(
@@ -113,7 +115,7 @@ describe('ReceiptsPage', () => {
 
     expect((await screen.findAllByText('PR-2026-0001')).length).toBeGreaterThan(0);
     expect(screen.getAllByText('10 000 ₽').length).toBeGreaterThan(0);
-    await user.click(screen.getByRole('button', { name: '+ Новый приход' }));
+    await user.click(screen.getByRole('button', { name: 'Новый приход' }));
     expect(await screen.findByRole('heading', { name: 'Новый приход' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '+ Добавить позицию' })).toBeInTheDocument();
     expect(screen.getByText('Выбрать JPEG или PNG')).toBeInTheDocument();

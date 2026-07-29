@@ -209,11 +209,12 @@ test('sales support source tabs, live search and validated creation', async ({ p
   await expect(visibleSalesList(page).getByText('BX-1').first()).toBeVisible();
   await expect(page.getByText('ORDER-1')).toHaveCount(0);
 
-  await page.getByRole('button', { name: '+ Новая продажа' }).click();
+  await page.getByRole('button', { name: 'Новая продажа' }).click();
   const dialog = page.getByRole('dialog');
   await dialog.getByRole('button', { name: 'Сохранить' }).click();
   await expect(dialog.getByText('Выберите товар').last()).toBeVisible();
-  await dialog.getByRole('combobox', { name: 'Товар *' }).selectOption('1');
+  await dialog.getByRole('combobox', { name: 'Товар *' }).fill('Casio');
+  await dialog.getByRole('option', { name: /Casio G-Shock/ }).click();
   await dialog.getByRole('spinbutton', { name: 'Количество *' }).fill('2');
   await dialog.getByRole('spinbutton', { name: 'Цена продажи *' }).fill('1500');
   await dialog.getByRole('textbox', { name: 'Номер заказа' }).fill('ORDER-2');

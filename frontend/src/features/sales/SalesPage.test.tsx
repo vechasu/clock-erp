@@ -143,7 +143,7 @@ describe('SalesPage', () => {
     expect(screen.getByText('Доступно: 2')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Отмена' }));
-    await user.click(screen.getByRole('button', { name: '+ Новая продажа' }));
+    await user.click(screen.getByRole('button', { name: 'Новая продажа' }));
     expect(await screen.findByRole('heading', { name: 'Новая продажа' })).toBeInTheDocument();
   });
 });

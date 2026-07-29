@@ -62,7 +62,10 @@ describe('ProductsPage', () => {
   });
 
   it('renders server data and opens the validated product editor', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Promise.resolve(response())));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(() => Promise.resolve(response())),
+    );
     const user = userEvent.setup();
     render(
       <MemoryRouter initialEntries={['/products']}>
@@ -74,9 +77,13 @@ describe('ProductsPage', () => {
 
     expect((await screen.findAllByText('Casio G-Shock')).length).toBeGreaterThan(0);
     expect(screen.getByText('4 шт.')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Товары' })).toHaveClass('is-active');
+    expect(
+      screen
+        .getAllByRole('link', { name: 'Товары' })
+        .some((link) => link.classList.contains('is-active')),
+    ).toBe(true);
 
-    await user.click(screen.getByRole('button', { name: '+ Добавить товар' }));
+    await user.click(screen.getByRole('button', { name: 'Добавить товар' }));
     expect(screen.getByRole('heading', { name: 'Новый товар' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Сохранить' }));
     expect(await screen.findByText('Название товара обязательно')).toBeInTheDocument();

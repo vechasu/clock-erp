@@ -168,20 +168,26 @@ test.beforeEach(async ({ page }) => {
 
 test('receipts create multiple positions with validation', async ({ page }) => {
   await page.goto('/app/receipts');
-  await expect(page.getByRole('heading', { name: 'Приходы' })).toBeVisible();
-  await page.getByRole('button', { name: '+ Новый приход' }).click();
+  await expect(page.getByRole('heading', { name: 'Приход' })).toBeVisible();
+  await page.getByRole('button', { name: 'Новый приход' }).click();
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByRole('heading', { name: 'Новый приход' })).toBeVisible();
   await dialog.getByRole('button', { name: 'Провести приход' }).click();
   await expect(dialog.getByText('Выберите товар', { exact: true }).last()).toBeVisible();
 
-  await dialog.getByRole('combobox', { name: 'Бренд *' }).selectOption('Casio');
-  await dialog.getByRole('combobox', { name: 'Категория *' }).selectOption('Часы');
-  await dialog.getByRole('combobox', { name: 'Товар *' }).selectOption('ms-1');
+  await dialog.getByRole('combobox', { name: 'Бренд *' }).fill('Casio');
+  await dialog.getByRole('option', { name: 'Casio', exact: true }).click();
+  await dialog.getByRole('combobox', { name: 'Категория *' }).fill('Часы');
+  await dialog.getByRole('option', { name: 'Часы', exact: true }).click();
+  await dialog.getByRole('combobox', { name: 'Товар *' }).fill('Casio');
+  await dialog.getByRole('option', { name: /Casio G-Shock/ }).click();
   await dialog.getByRole('button', { name: '+ Добавить позицию' }).click();
-  await dialog.getByRole('combobox', { name: 'Бренд *' }).nth(1).selectOption('Vechasu');
-  await dialog.getByRole('combobox', { name: 'Категория *' }).nth(1).selectOption('Ремешки');
-  await dialog.getByRole('combobox', { name: 'Товар *' }).nth(1).selectOption('ms-2');
+  await dialog.getByRole('combobox', { name: 'Бренд *' }).nth(1).fill('Vechasu');
+  await dialog.getByRole('option', { name: 'Vechasu', exact: true }).click();
+  await dialog.getByRole('combobox', { name: 'Категория *' }).nth(1).fill('Ремешки');
+  await dialog.getByRole('option', { name: 'Ремешки', exact: true }).click();
+  await dialog.getByRole('combobox', { name: 'Товар *' }).nth(1).fill('Ремешок');
+  await dialog.getByRole('option', { name: /Ремешок · остаток/ }).click();
   const quantityInputs = dialog.getByRole('spinbutton', { name: 'Количество *' });
   await quantityInputs.nth(0).fill('2');
   await quantityInputs.nth(1).fill('3');

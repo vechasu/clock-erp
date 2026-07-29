@@ -7,6 +7,17 @@ import { ApiRequestError } from '../../api/client';
 import { AppShell } from '../../components/AppShell';
 import { DateRangePicker, FilterPanel, LiveSearch } from '../../components/Controls';
 import { DataTable } from '../../components/DataTable';
+import {
+  ActionLink,
+  Button,
+  LoadingState,
+  PageHeader,
+  SourceBadge,
+  StatsGrid,
+  StatusBadge,
+  Tabs,
+  Toolbar,
+} from '../../components/Layout';
 import { ConfirmDialog, Modal } from '../../components/Modal';
 import { PageState } from '../../components/PageState';
 import { TablePagination } from '../../components/TablePagination';
@@ -40,6 +51,13 @@ function formatMoney(value: number | null) {
   return `${value.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} ₽`;
 }
 
+function saleStatusTone(status: string, returned: number) {
+  if (returned > 0) return 'warning' as const;
+  if (status === 'cancelled' || status === 'returned') return 'danger' as const;
+  if (status === 'processing') return 'info' as const;
+  return 'success' as const;
+}
+
 export function SalesPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
@@ -50,9 +68,7 @@ export function SalesPage() {
   const [returnTarget, setReturnTarget] = useState<Sale | null>(null);
   const [returnQuantity, setReturnQuantity] = useState('1');
   const [returnReason, setReturnReason] = useState('');
-  const [toast, setToast] = useState<{ message: string; kind: 'success' | 'error' } | null>(
-    null,
-  );
+  const [toast, setToast] = useState<{ message: string; kind: 'success' | 'error' } | null>(null);
 
   useEffect(() => {
     const current = searchParams.get('q') ?? '';
@@ -134,10 +150,12 @@ export function SalesPage() {
   const sales = salesQuery.data?.sales ?? [];
   const meta = salesQuery.data?.meta;
   const activeSource = searchParams.get('source') ?? 'all';
-  const sorting: SortingState = [{
-    id: searchParams.get('sort_by') ?? 'created_at',
-    desc: searchParams.get('sort_dir') !== 'asc',
-  }];
+  const sorting: SortingState = [
+    {
+      id: searchParams.get('sort_by') ?? 'created_at',
+      desc: searchParams.get('sort_dir') !== 'asc',
+    },
+  ];
 
   const columns = useMemo<ColumnDef<Sale>[]>(
     () => [
@@ -172,19 +190,24 @@ export function SalesPage() {
         accessorKey: 'source',
         header: 'Источник',
         size: 125,
-        cell: ({ row }) => <span className="source-badge">{row.original.source}</span>,
+        meta: { align: 'center' },
+        cell: ({ row }) => <SourceBadge source={row.original.source} />,
       },
       {
         id: 'quantity_value',
         accessorKey: 'quantity',
         header: 'Кол-во',
         size: 90,
+        meta: { align: 'right' },
+        cell: ({ row }) =>
+          row.original.quantity.toLocaleString('ru-RU', { maximumFractionDigits: 2 }),
       },
       {
         id: 'total_amount',
         accessorKey: 'total_amount',
         header: 'Сумма',
         size: 130,
+        meta: { align: 'right' },
         cell: ({ row }) => formatMoney(row.original.total_amount),
       },
       {
@@ -192,14 +215,16 @@ export function SalesPage() {
         accessorKey: 'order_status_label',
         header: 'Статус',
         size: 145,
+        meta: { align: 'center' },
         cell: ({ row }) => (
-          <span
-            className={`sale-status is-${row.original.order_status}${
-              row.original.returned_quantity ? ' has-return' : ''
-            }`}
-          >
-            {row.original.order_status_label}
-          </span>
+          <StatusBadge
+            label={
+              row.original.returned_quantity
+                ? `${row.original.order_status_label} · возврат ${row.original.returned_quantity.toLocaleString('ru-RU', { maximumFractionDigits: 2 })}`
+                : row.original.order_status_label
+            }
+            tone={saleStatusTone(row.original.order_status, row.original.returned_quantity)}
+          />
         ),
       },
       {
@@ -208,14 +233,20 @@ export function SalesPage() {
         enableSorting: false,
         enableHiding: false,
         size: 205,
+        meta: { align: 'right' },
         cell: ({ row }) => (
           <div className="row-actions">
-            <button type="button" onClick={() => setEditor(row.original)}>
+            <button
+              type="button"
+              title="Редактировать продажу"
+              onClick={() => setEditor(row.original)}
+            >
               Изменить
             </button>
             {row.original.inventory_managed && row.original.return_available_quantity > 0 ? (
               <button
                 type="button"
+                title="Оформить возврат"
                 onClick={() => {
                   setReturnTarget(row.original);
                   setReturnQuantity(String(row.original.return_available_quantity));
@@ -228,6 +259,7 @@ export function SalesPage() {
               <button
                 className="danger-link"
                 type="button"
+                title="Удалить продажу"
                 onClick={() => setDeleteTarget(row.original)}
               >
                 Удалить
@@ -243,134 +275,139 @@ export function SalesPage() {
   return (
     <AppShell>
       <div className="erp-page">
-        <header className="page-header">
-          <div>
-            <p className="page-eyebrow">Коммерческие операции</p>
-            <h1>Продажи</h1>
-            <p>Ручные и автоматические продажи, статусы и возвраты</p>
-          </div>
-          <div className="header-actions">
-            <a className="button secondary" href="/sales/report">
-              Отчёт
-            </a>
-            <button className="button primary" type="button" onClick={() => setEditor('new')}>
-              + Новая продажа
-            </button>
-          </div>
-        </header>
+        <PageHeader
+          eyebrow="Коммерческие операции"
+          title="Продажи"
+          description="Ручные и автоматические продажи, статусы и возвраты"
+          actions={
+            <>
+              <ActionLink href="/sales/report" icon="download">
+                Отчёт
+              </ActionLink>
+              <Button tone="primary" icon="plus" onClick={() => setEditor('new')}>
+                Новая продажа
+              </Button>
+            </>
+          }
+        />
 
-        <section className="summary-grid sales-summary" aria-label="Сводка по продажам">
-          <article>
-            <span>Продаж</span>
-            <strong>{meta?.totals.active ?? '—'}</strong>
-          </article>
-          <article>
-            <span>Единиц</span>
-            <strong>{meta?.totals.quantity ?? '—'}</strong>
-          </article>
-          <article>
-            <span>Выручка</span>
-            <strong>{meta ? formatMoney(meta.totals.revenue) : '—'}</strong>
-          </article>
-          <article>
-            <span>Возвраты</span>
-            <strong>{meta ? formatMoney(meta.totals.returned) : '—'}</strong>
-          </article>
-        </section>
+        <StatsGrid
+          label="Сводка по продажам"
+          loading={salesQuery.isPending}
+          items={[
+            { label: 'Продаж', value: meta?.totals.active ?? '—', tone: 'info' },
+            {
+              label: 'Единиц',
+              value:
+                meta?.totals.quantity.toLocaleString('ru-RU', {
+                  maximumFractionDigits: 2,
+                }) ?? '—',
+              tone: 'success',
+            },
+            { label: 'Выручка', value: meta ? formatMoney(meta.totals.revenue) : '—' },
+            {
+              label: 'Возвраты',
+              value: meta ? formatMoney(meta.totals.returned) : '—',
+              tone: meta?.totals.returned ? 'warning' : 'default',
+            },
+          ]}
+        />
 
         <section className="workspace-card">
-          <div className="source-tabs" role="tablist" aria-label="Источники продаж">
-            {sourceTabs.map((tab) => (
-              <button
-                key={tab.key}
-                role="tab"
-                type="button"
-                aria-selected={activeSource === tab.key}
-                className={activeSource === tab.key ? 'is-active' : ''}
-                onClick={() => setFilter('source', tab.key)}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-          <div className="list-toolbar">
+          <Tabs
+            label="Источники продаж"
+            items={sourceTabs}
+            active={activeSource}
+            onChange={(key) => setFilter('source', key)}
+          />
+          <Toolbar>
             <LiveSearch
               label="Поиск продаж"
               value={search}
               onChange={setSearch}
               placeholder="Заказ, товар, трек-номер, получатель…"
             />
-            <FilterPanel>
-                <DateRangePicker
-                  from={searchParams.get('date_from') ?? ''}
-                  to={searchParams.get('date_to') ?? ''}
-                  onFromChange={(value) => setFilter('date_from', value)}
-                  onToChange={(value) => setFilter('date_to', value)}
-                />
-                <label>
-                  Тип
-                  <select
-                    value={searchParams.get('sale_type') ?? ''}
-                    onChange={(event) => setFilter('sale_type', event.target.value)}
-                  >
-                    <option value="">Все типы</option>
-                    <option value="manual">Ручные</option>
-                    <option value="automatic">Автоматические</option>
-                  </select>
-                </label>
-                <label>
-                  Статус
-                  <select
-                    value={searchParams.get('status') ?? ''}
-                    onChange={(event) => setFilter('status', event.target.value)}
-                  >
-                    <option value="">Все статусы</option>
-                    <option value="completed">Выполнен</option>
-                    <option value="processing">В работе</option>
-                    <option value="cancelled">Отменён</option>
-                    <option value="partially_returned">Частичный возврат</option>
-                    <option value="returned">Возвращён</option>
-                  </select>
-                </label>
-                <label>
-                  Бренд
-                  <select
-                    value={searchParams.get('brand') ?? ''}
-                    onChange={(event) => setFilter('brand', event.target.value)}
-                  >
-                    <option value="">Все бренды</option>
-                    {meta?.facets.brands.map((item) => (
-                      <option key={item}>{item}</option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Категория
-                  <select
-                    value={searchParams.get('category') ?? ''}
-                    onChange={(event) => setFilter('category', event.target.value)}
-                  >
-                    <option value="">Все категории</option>
-                    {meta?.facets.categories.map((item) => (
-                      <option key={item}>{item}</option>
-                    ))}
-                  </select>
-                </label>
-                <button
-                  className="button secondary"
-                  type="button"
-                  onClick={() => {
-                    setSearch('');
-                    setSearchParams({
-                      source: activeSource,
-                      page: '1',
-                      page_size: String(meta?.page_size ?? 50),
-                    });
-                  }}
+            <FilterPanel
+              count={
+                ['date_from', 'date_to', 'sale_type', 'status', 'brand', 'category'].filter((key) =>
+                  searchParams.get(key),
+                ).length
+              }
+            >
+              <DateRangePicker
+                from={searchParams.get('date_from') ?? ''}
+                to={searchParams.get('date_to') ?? ''}
+                onFromChange={(value) => setFilter('date_from', value)}
+                onToChange={(value) => setFilter('date_to', value)}
+              />
+              <label>
+                Тип
+                <select
+                  value={searchParams.get('sale_type') ?? ''}
+                  onChange={(event) => setFilter('sale_type', event.target.value)}
                 >
-                  Сбросить
-                </button>
+                  <option value="">Все типы</option>
+                  <option value="manual">Ручные</option>
+                  <option value="automatic">Автоматические</option>
+                </select>
+              </label>
+              <label>
+                Статус
+                <select
+                  value={searchParams.get('status') ?? ''}
+                  onChange={(event) => setFilter('status', event.target.value)}
+                >
+                  <option value="">Все статусы</option>
+                  <option value="completed">Выполнен</option>
+                  <option value="processing">В работе</option>
+                  <option value="cancelled">Отменён</option>
+                  <option value="partially_returned">Частичный возврат</option>
+                  <option value="returned">Возвращён</option>
+                </select>
+              </label>
+              <label>
+                Бренд
+                <select
+                  value={searchParams.get('brand') ?? ''}
+                  onChange={(event) => setFilter('brand', event.target.value)}
+                >
+                  <option value="">Все бренды</option>
+                  {meta?.facets.brands.map((item) => (
+                    <option key={item}>{item}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Категория
+                <select
+                  value={searchParams.get('category') ?? ''}
+                  onChange={(event) => setFilter('category', event.target.value)}
+                >
+                  <option value="">Все категории</option>
+                  {meta?.facets.categories.map((item) => (
+                    <option key={item}>{item}</option>
+                  ))}
+                </select>
+              </label>
+              <button
+                className="button secondary"
+                type="button"
+                onClick={() => {
+                  setSearch('');
+                  setSearchParams({
+                    source: activeSource,
+                    page: '1',
+                    page_size: String(meta?.page_size ?? 50),
+                  });
+                }}
+              >
+                Сбросить
+              </button>
             </FilterPanel>
+          </Toolbar>
+          <div className="table-legend" aria-label="Обозначения">
+            <StatusBadge label="Возврат" tone="warning" />
+            <span>Жёлтый статус означает полный или частичный возврат.</span>
           </div>
 
           {salesQuery.isError ? (
@@ -379,15 +416,17 @@ export function SalesPage() {
               title="Не удалось загрузить продажи"
               message={errorMessage(salesQuery.error)}
               action={
-                <button className="button secondary" type="button" onClick={() => salesQuery.refetch()}>
+                <button
+                  className="button secondary"
+                  type="button"
+                  onClick={() => salesQuery.refetch()}
+                >
                   Повторить
                 </button>
               }
             />
           ) : salesQuery.isPending ? (
-            <div className="table-loading" role="status">
-              Загружаем продажи…
-            </div>
+            <LoadingState label="Загружаем продажи…" />
           ) : sales.length === 0 ? (
             <PageState
               title="Продажи не найдены"
@@ -520,7 +559,11 @@ export function SalesPage() {
         onClose={() => setReturnTarget(null)}
         footer={
           <>
-            <button className="button secondary" type="button" onClick={() => setReturnTarget(null)}>
+            <button
+              className="button secondary"
+              type="button"
+              onClick={() => setReturnTarget(null)}
+            >
               Отмена
             </button>
             <button

@@ -9,10 +9,7 @@ import {
 
 export async function fetchProducts(searchParams: URLSearchParams) {
   const query = searchParams.toString();
-  const envelope = await apiRequest(
-    `/products${query ? `?${query}` : ''}`,
-    productListSchema,
-  );
+  const envelope = await apiRequest(`/products${query ? `?${query}` : ''}`, productListSchema);
   return {
     products: envelope.data,
     meta: productsMetaSchema.parse(envelope.meta),
@@ -20,15 +17,12 @@ export async function fetchProducts(searchParams: URLSearchParams) {
 }
 
 export async function createProduct(values: ProductFormValues) {
-  return (
-    await apiRequest('/products', productSchema, jsonRequestInit('POST', values))
-  ).data;
+  return (await apiRequest('/products', productSchema, jsonRequestInit('POST', values))).data;
 }
 
 export async function updateProduct(id: number, values: ProductFormValues) {
-  return (
-    await apiRequest(`/products/${id}`, productSchema, jsonRequestInit('PATCH', values))
-  ).data;
+  return (await apiRequest(`/products/${id}`, productSchema, jsonRequestInit('PATCH', values)))
+    .data;
 }
 
 export async function deleteProduct(id: number) {

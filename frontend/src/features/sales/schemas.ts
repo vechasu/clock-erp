@@ -62,10 +62,7 @@ export const saleCatalogProductSchema = z.object({
 });
 
 export const saleCatalogSchema = z.array(saleCatalogProductSchema);
-export const saleLocationsSchema = z.record(
-  z.string(),
-  z.record(z.string(), z.array(z.string())),
-);
+export const saleLocationsSchema = z.record(z.string(), z.record(z.string(), z.array(z.string())));
 
 export const saleFormSchema = z.object({
   created_at: z.string().date('Укажите корректную дату'),

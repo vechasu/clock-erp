@@ -1,7 +1,8 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect } from 'react';
-import { useForm } from 'react-hook-form';
+import { Controller, useForm } from 'react-hook-form';
 
+import { SearchableSelect } from '../../components/Controls';
 import {
   productFormSchema,
   type Product,
@@ -15,6 +16,8 @@ interface ProductFormProps {
   onSubmit: (values: ProductFormValues) => void;
   onCreateBrand: () => void;
   onCreateCategory: (brand: string) => void;
+  brands?: string[];
+  categories?: string[];
 }
 
 function valuesFromProduct(product?: Product | null): ProductFormValues {
@@ -35,9 +38,12 @@ export function ProductForm({
   onSubmit,
   onCreateBrand,
   onCreateCategory,
+  brands = [],
+  categories = [],
 }: ProductFormProps) {
   const {
     register,
+    control,
     handleSubmit,
     reset,
     watch,
@@ -67,24 +73,53 @@ export function ProductForm({
         <span>Ячейка</span>
         <input {...register('cell')} placeholder="A-01-02" />
       </label>
-      <label className="form-field">
+      <div className="form-field">
         <span className="field-label-with-action">
           Бренд
           <button type="button" onClick={onCreateBrand}>
             Новый бренд
           </button>
         </span>
-        <input {...register('brand')} placeholder="Casio" />
-      </label>
-      <label className="form-field">
+        <Controller
+          control={control}
+          name="brand"
+          render={({ field }) => (
+            <SearchableSelect
+              label="Выберите или найдите бренд"
+              placeholder="Например, Casio"
+              options={[...new Set([field.value, ...brands].filter(Boolean))].map((brand) => ({
+                value: brand,
+                label: brand,
+              }))}
+              value={field.value}
+              onChange={field.onChange}
+            />
+          )}
+        />
+      </div>
+      <div className="form-field">
         <span className="field-label-with-action">
           Категория
           <button type="button" onClick={() => onCreateCategory(currentBrand)}>
             Новая категория
           </button>
         </span>
-        <input {...register('category')} placeholder="Часы / Спортивные" />
-      </label>
+        <Controller
+          control={control}
+          name="category"
+          render={({ field }) => (
+            <SearchableSelect
+              label="Выберите или найдите категорию"
+              placeholder="Например, Спортивные часы"
+              options={[...new Set([field.value, ...categories].filter(Boolean))].map(
+                (category) => ({ value: category, label: category }),
+              )}
+              value={field.value}
+              onChange={field.onChange}
+            />
+          )}
+        />
+      </div>
       <label className="form-field">
         <span>Остаток</span>
         <input {...register('stock')} type="number" min="0" step="1" />
