@@ -155,6 +155,26 @@ class Stage2ReceiptsApiTest(unittest.TestCase):
             invalid.get_json()["code"],
             "RECEIPT_VALIDATION_FAILED",
         )
+        invalid_image = self.client.post(
+            "/api/receipts",
+            json={
+                "receipt_date": "2026-07-30",
+                "positions": [{
+                    "product_id": "ms-1",
+                    "quantity": 1,
+                    "purchase_price": 1,
+                }],
+                "product_image": {
+                    "name": "payload.png",
+                    "base64": "not-base64",
+                },
+            },
+        )
+        self.assertEqual(invalid_image.status_code, 422)
+        self.assertEqual(
+            invalid_image.get_json()["code"],
+            "RECEIPT_VALIDATION_FAILED",
+        )
 
         self.remote.create_stock_enter_many.side_effect = RuntimeError(
             "remote unavailable"
