@@ -1,5 +1,7 @@
 import { useRef, useState } from 'react';
 
+import { Icon } from './Icons';
+
 export interface EncodedImage {
   name: string;
   type: string;
@@ -30,11 +32,12 @@ export function ImageUploader({ label = 'Фото товара', onChange }: Ima
         <div className="image-preview">
           <img src={preview} alt="Предпросмотр загружаемого товара" />
           <button type="button" onClick={clear} aria-label="Удалить выбранное фото">
-            ×
+            <Icon name="close" />
           </button>
         </div>
       ) : (
         <button type="button" className="image-dropzone" onClick={() => inputRef.current?.click()}>
+          <Icon name="upload" />
           <strong>Выбрать JPEG или PNG</strong>
           <small>До 3 МБ. Фото не заменяет уже существующее.</small>
         </button>
