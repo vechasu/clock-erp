@@ -77,8 +77,10 @@ from flask import (
     url_for,
 )
 from werkzeug.middleware.proxy_fix import ProxyFix
+from werkzeug.exceptions import HTTPException
 from app.auth import (
     configure_auth,
+    csrf_token,
     current_auth_user,
     require_csrf_when_authenticated,
     settings_invitation_context,
@@ -11958,6 +11960,296 @@ def navigation_toggle(key):
             ),
         )
     )
+
+
+def api_success(data, status=200, **meta):
+    response_meta = {
+        "request_id": uuid.uuid4().hex,
+        "csrf_token": csrf_token(),
+        **meta,
+    }
+    return jsonify({
+        "data": data,
+        "meta": response_meta,
+        "error": None,
+    }), status
+
+
+def api_error(code, message, status=400, fields=None):
+    payload = {
+        "code": code,
+        "message": message,
+        "request_id": uuid.uuid4().hex,
+    }
+    if fields:
+        payload["fields"] = fields
+    return jsonify(payload), status
+
+
+@app.errorhandler(HTTPException)
+def api_http_exception(error):
+    if not request.path.startswith("/api/"):
+        return error
+    description = str(error.description or error.name)
+    if "подтвердить форму" in description:
+        return api_error("CSRF_INVALID", description, 403)
+    return api_error(
+        "HTTP_{}".format(error.code or 500),
+        description,
+        error.code or 500,
+    )
+
+
+def api_json_payload():
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        raise ValueError("Ожидается JSON-объект.")
+    return payload
+
+
+def api_positive_int(value, default, maximum):
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(1, min(parsed, maximum))
+
+
+def serialize_api_product(product):
+    projected = build_excel_warehouse_items([product])[0]
+    return {
+        **projected,
+        "match_status": product.get("match_status") or "",
+        "match_confidence": product.get("match_confidence"),
+        "properties": product.get("properties") or [],
+        "source_url": product.get("bitrix_source_url") or "",
+        "updated_at": product.get("updated_at") or "",
+    }
+
+
+@app.route("/api/products", methods=["GET", "POST"])
+@app.route("/api/v1/products", methods=["GET", "POST"])
+def api_products_collection():
+    catalog_service = ExcelProductCatalog()
+    if request.method == "POST":
+        require_csrf_when_authenticated()
+        try:
+            payload = api_json_payload()
+            product = catalog_service.create_product(
+                name=payload.get("name"),
+                article=payload.get("article", ""),
+                brand=payload.get("brand", ""),
+                category=payload.get("category", ""),
+                cell=payload.get("cell", ""),
+                stock=payload.get("stock", 0),
+            )
+        except ValueError as error:
+            return api_error(
+                "PRODUCT_VALIDATION_FAILED",
+                str(error),
+                422,
+            )
+        return api_success(serialize_api_product(product), 201)
+
+    sort_by = (request.args.get("sort_by") or request.args.get("sort") or "name").strip()
+    sort_dir = (request.args.get("sort_dir") or "asc").strip().lower()
+    if sort_by.startswith("-"):
+        sort_by = sort_by[1:]
+        sort_dir = "desc"
+    page = api_positive_int(request.args.get("page"), 1, 1000000)
+    page_size = api_positive_int(
+        request.args.get("page_size") or request.args.get("per_page"),
+        50,
+        200,
+    )
+    listing = catalog_service.list_products(
+        query=(request.args.get("q") or request.args.get("query") or "").strip(),
+        brand=(request.args.get("brand") or "").strip(),
+        category=(request.args.get("category") or "").strip(),
+        cell=(request.args.get("cell") or "").strip(),
+        match_status=(request.args.get("match_status") or "all").strip(),
+        hide_zero=(
+            (request.args.get("in_stock") or request.args.get("hide_zero") or "")
+            .strip()
+            .lower()
+            in {"1", "true", "yes"}
+        ),
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+        page=page,
+        per_page=page_size,
+        created_from=(request.args.get("date_from") or "").strip(),
+        created_to=(request.args.get("date_to") or "").strip(),
+    )
+    return api_success(
+        [serialize_api_product(item) for item in listing["items"]],
+        page=listing["page"],
+        page_size=listing["per_page"],
+        total=listing["total"],
+        pages=listing["pages"],
+        stats=listing["stats"],
+        facets={
+            "brands": listing["brand_groups"],
+            "categories": listing["category_groups"],
+            "cells": listing["cell_groups"],
+        },
+        sort_by=listing["sort_by"],
+        sort_dir=listing["sort_dir"],
+    )
+
+
+@app.route("/api/products/<int:product_id>", methods=["GET", "PATCH", "DELETE"])
+@app.route("/api/v1/products/<int:product_id>", methods=["GET", "PATCH", "DELETE"])
+def api_product_resource(product_id):
+    catalog_service = ExcelProductCatalog()
+    product = catalog_service.get_product(product_id)
+    if product is None:
+        return api_error("PRODUCT_NOT_FOUND", "Товар не найден.", 404)
+    if request.method == "GET":
+        return api_success(serialize_api_product(product))
+    require_csrf_when_authenticated()
+    if request.method == "DELETE":
+        try:
+            catalog_service.archive_product(product_id)
+        except ProductDeleteBlockedError as error:
+            return api_error("PRODUCT_REFERENCED", str(error), 409)
+        except ValueError as error:
+            return api_error("PRODUCT_NOT_FOUND", str(error), 404)
+        return api_success({"id": product_id, "deleted": True})
+
+    try:
+        payload = api_json_payload()
+        allowed_fields = {
+            "name", "article", "brand", "category", "cell", "stock", "stock_reason",
+        }
+        unknown_fields = set(payload) - allowed_fields
+        if unknown_fields:
+            return api_error(
+                "PRODUCT_VALIDATION_FAILED",
+                "Переданы неизвестные поля.",
+                422,
+                {"payload": sorted(unknown_fields)},
+            )
+        if not payload:
+            return api_error(
+                "PRODUCT_VALIDATION_FAILED",
+                "Не передано ни одного изменения.",
+                422,
+            )
+        updated = catalog_service.update_product(product_id, **payload)
+    except ValueError as error:
+        return api_error("PRODUCT_VALIDATION_FAILED", str(error), 422)
+    return api_success(serialize_api_product(updated))
+
+
+def api_catalog_values(kind):
+    listing = ExcelProductCatalog().list_products(page=1, per_page=1)
+    taxonomy = load_catalog_taxonomy()
+    if kind == "brand":
+        counts = {
+            catalog_label_key(item["name"]): item["count"]
+            for item in listing["brand_groups"]
+        }
+        values = {
+            catalog_label_key(value): value
+            for value in taxonomy["brands"]
+        }
+        for value in listing["brands"]:
+            values.setdefault(catalog_label_key(value), value)
+        return [
+            {"name": values[key], "count": counts.get(key, 0)}
+            for key in sorted(values, key=lambda item: values[item].casefold())
+        ]
+
+    counts = {
+        catalog_label_key(item["name"]): item["count"]
+        for item in listing["category_groups"]
+    }
+    values = {}
+    for item in taxonomy["categories"]:
+        key = (
+            catalog_label_key(item["brand"]),
+            catalog_label_key(item["name"]),
+        )
+        values[key] = {
+            "name": item["name"],
+            "brand": item["brand"],
+        }
+    for value in listing["categories"]:
+        key = ("", catalog_label_key(value))
+        values.setdefault(key, {"name": value, "brand": ""})
+    return [
+        {
+            **values[key],
+            "count": counts.get(key[1], 0),
+        }
+        for key in sorted(
+            values,
+            key=lambda item: (
+                values[item]["brand"].casefold(),
+                values[item]["name"].casefold(),
+            ),
+        )
+    ]
+
+
+@app.route("/api/brands", methods=["GET", "POST"])
+@app.route("/api/v1/brands", methods=["GET", "POST"])
+def api_brands_collection():
+    if request.method == "POST":
+        require_csrf_when_authenticated()
+        try:
+            payload = api_json_payload()
+        except ValueError as error:
+            return api_error("BRAND_VALIDATION_FAILED", str(error), 400)
+        name = normalize_catalog_label(payload.get("name"))
+        if not name:
+            return api_error(
+                "BRAND_VALIDATION_FAILED",
+                "Название бренда обязательно.",
+                422,
+            )
+        existing = api_catalog_values("brand")
+        if any(catalog_label_key(item["name"]) == catalog_label_key(name) for item in existing):
+            return api_error("BRAND_ALREADY_EXISTS", "Такой бренд уже существует.", 409)
+        remember_catalog_classification(name)
+        created = {"name": name, "count": 0}
+        return api_success(created, 201)
+    return api_success(api_catalog_values("brand"))
+
+
+@app.route("/api/categories", methods=["GET", "POST"])
+@app.route("/api/v1/categories", methods=["GET", "POST"])
+def api_categories_collection():
+    if request.method == "POST":
+        require_csrf_when_authenticated()
+        try:
+            payload = api_json_payload()
+        except ValueError as error:
+            return api_error("CATEGORY_VALIDATION_FAILED", str(error), 400)
+        name = normalize_catalog_label(payload.get("name"))
+        brand = normalize_catalog_label(payload.get("brand"))
+        if not name or not brand:
+            return api_error(
+                "CATEGORY_VALIDATION_FAILED",
+                "Бренд и название категории обязательны.",
+                422,
+            )
+        existing = api_catalog_values("category")
+        if any(
+            catalog_label_key(item["name"]) == catalog_label_key(name)
+            and catalog_label_key(item["brand"]) == catalog_label_key(brand)
+            for item in existing
+        ):
+            return api_error(
+                "CATEGORY_ALREADY_EXISTS",
+                "Такая категория уже существует у выбранного бренда.",
+                409,
+            )
+        remember_catalog_classification(brand, name)
+        created = {"name": name, "brand": brand, "count": 0}
+        return api_success(created, 201)
+    return api_success(api_catalog_values("category"))
 
 
 if __name__ == "__main__":

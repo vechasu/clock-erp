@@ -16,6 +16,7 @@ from flask import (
     abort,
     current_app,
     g,
+    jsonify,
     redirect,
     render_template,
     request,
@@ -527,7 +528,10 @@ def csrf_token():
 
 def csrf_is_valid():
     expected = session.get("_csrf_token", "")
-    provided = request.form.get("csrf_token", "")
+    provided = (
+        request.headers.get("X-CSRF-Token")
+        or request.form.get("csrf_token", "")
+    )
     return bool(expected and hmac.compare_digest(expected, provided))
 
 
@@ -909,6 +913,11 @@ def configure_auth(app, project_root):
             return None
         if g.current_user:
             return None
+        if request.path.startswith("/api/"):
+            return jsonify({
+                "code": "AUTH_REQUIRED",
+                "message": "Требуется авторизация.",
+            }), 401
         if request.path == "/":
             return redirect(url_for("auth.register"))
         return redirect(
