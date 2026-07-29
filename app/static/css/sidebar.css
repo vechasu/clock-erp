@@ -494,6 +494,27 @@ body {
     height: 34px;
 }
 
+.erp-tooltip {
+    position: fixed;
+    z-index: 1300;
+    max-width: min(220px, calc(100vw - 24px));
+    padding: 7px 9px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    background: #14263d;
+    color: #ffffff;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.25;
+    white-space: nowrap;
+    pointer-events: none;
+    box-shadow: 0 8px 22px rgba(15, 23, 42, 0.2);
+}
+
+.erp-tooltip[hidden] {
+    display: none;
+}
+
 .mobile-erp-navigation,
 .mobile-erp-more-sheet,
 .mobile-erp-more-backdrop {
@@ -515,6 +536,10 @@ body {
     }
 
     .sidebar {
+        display: none;
+    }
+
+    .erp-tooltip {
         display: none;
     }
 

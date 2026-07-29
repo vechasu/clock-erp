@@ -501,14 +501,130 @@ class RepairWorkspaceTest(unittest.TestCase):
         )
 
         page_html = page.get_data(as_text=True)
-        self.assertIn('id="metricTotal" class="metric-value">2', page_html)
-        self.assertIn('id="metricMaster" class="metric-value">1', page_html)
-        self.assertIn('id="metricDelivery" class="metric-value">1', page_html)
+        self.assertRegex(
+            page_html,
+            r'id="metricTotal" class="[^"]*metric-value[^"]*">2',
+        )
+        self.assertRegex(
+            page_html,
+            r'id="metricMaster" class="[^"]*metric-value[^"]*">1',
+        )
+        self.assertRegex(
+            page_html,
+            r'id="metricDelivery" class="[^"]*metric-value[^"]*">1',
+        )
         self.assertIn("ORDER-TWO", search.get_data(as_text=True))
         self.assertNotIn("ORDER-ONE", search.get_data(as_text=True))
         self.assertIn("ORDER-TWO", filtered.get_data(as_text=True))
         self.assertNotIn("ORDER-ONE", filtered.get_data(as_text=True))
         self.assertNotIn("ORDER-TWO", excluded.get_data(as_text=True))
+
+    def test_repair_uses_shared_compact_components_and_accessible_filters(self):
+        self.create_repair(
+            request_type="warranty_repair",
+            location="with_customer",
+            communication_channel="telegram",
+            request_at="2026-07-20",
+        )
+
+        response = self.client.get(
+            "/repair?type=warranty_repair"
+            "&location=with_customer"
+            "&channel=telegram"
+            "&sort=status"
+            "&date_from=2026-07-01"
+            "&date_to=2026-07-29"
+        )
+        html = response.get_data(as_text=True)
+
+        self.assertEqual(response.status_code, 200)
+        for token in (
+            "css/erp-components.css",
+            "js/period-picker.js",
+            'class="repair-hero erp-page-header"',
+            'class="metrics erp-metric-grid"',
+            'class="filters erp-filter-panel"',
+            'id="repairDateFilter"',
+            'name="date_from"',
+            'name="date_to"',
+            'id="toggleRepairAdditionalFilters"',
+            'aria-controls="repairAdditionalFilters"',
+            'aria-expanded="false"',
+            'id="repairAdditionalFilters"',
+            "Дополнительные фильтры",
+            "Все типы",
+            "Все местонахождения",
+            "Сначала новые",
+            'id="resetRepairFilters"',
+        ):
+            self.assertIn(token, html)
+
+        self.assertRegex(
+            html,
+            r'id="repairAdditionalFilters"\s+class="erp-filter-more"\s+hidden',
+        )
+        self.assertRegex(
+            html,
+            r'<option value="warranty_repair" selected>',
+        )
+        self.assertRegex(
+            html,
+            r'<option value="with_customer" selected>',
+        )
+        self.assertRegex(
+            html,
+            r'<option value="telegram" selected>',
+        )
+        self.assertRegex(html, r'<option value="status" selected>')
+        self.assertIn(
+            "additionalFiltersTrigger.setAttribute"
+            '("aria-expanded", String(!expanded))',
+            html,
+        )
+        self.assertIn("appliedAdditionalFilterCount", html)
+        self.assertIn("repairPeriodPicker?.updateLabel()", html)
+        self.assertIn("initialServerFilterActive", html)
+
+    def test_empty_and_long_value_states_keep_full_information_available(self):
+        empty_html = self.client.get("/repair").get_data(as_text=True)
+        long_product = (
+            "Vechasu Expedition Chronograph Limited Edition "
+            "с очень длинным названием модели"
+        )
+        long_problem = (
+            "После длительного хранения часы периодически останавливаются, "
+            "сбрасывают дату и требуют подробной диагностики механизма."
+        )
+        long_contact = (
+            "@customer_with_a_very_long_messenger_identifier"
+        )
+
+        self.create_repair(
+            product_id="",
+            product_name=long_product,
+            brand="Vechasu",
+            model="Expedition Chronograph Limited Edition",
+            problem=long_problem,
+            contact=long_contact,
+        )
+        html = self.client.get("/repair").get_data(as_text=True)
+
+        self.assertRegex(
+            empty_html,
+            r'id="desktopEmpty" class="empty erp-empty-state"\s*>',
+        )
+        self.assertIn("Ремонтов не найдено", empty_html)
+        self.assertIn(long_product, html)
+        self.assertIn(long_problem, html)
+        self.assertIn(long_contact, html)
+        self.assertGreaterEqual(html.count("clamp-2"), 5)
+        self.assertIn('title="' + long_problem + '"', html)
+        self.assertIn('title="' + long_contact + '"', html)
+        self.assertIn(
+            ".repair-table th:last-child, .repair-table td:last-child",
+            html,
+        )
+        self.assertIn("position: sticky", html)
 
 
 if __name__ == "__main__":

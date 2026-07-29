@@ -1,0 +1,121 @@
+{% macro period_picker(
+    root_id,
+    from_id,
+    to_id,
+    from_name,
+    to_name,
+    from_value="",
+    to_value="",
+    clear_id="",
+    aria_label="Выбор периода"
+) %}
+<div
+    id="{{ root_id }}"
+    class="warehouse-date-filter erp-period-picker"
+    aria-label="{{ aria_label }}"
+>
+    <input
+        id="{{ from_id }}"
+        name="{{ from_name }}"
+        data-period-from
+        type="hidden"
+        value="{{ from_value }}"
+    >
+    <input
+        id="{{ to_id }}"
+        name="{{ to_name }}"
+        data-period-to
+        type="hidden"
+        value="{{ to_value }}"
+    >
+
+    <div class="sales-period-control">
+        <button
+            class="warehouse-date-trigger erp-period-trigger erp-secondary-action"
+            type="button"
+            aria-haspopup="dialog"
+            aria-controls="{{ root_id }}Popup"
+            aria-expanded="false"
+        >
+            <span class="erp-period-trigger-content">
+                <svg
+                    class="erp-period-icon"
+                    viewBox="0 0 20 20"
+                    aria-hidden="true"
+                >
+                    <rect x="3" y="4.5" width="14" height="12.5" rx="2"></rect>
+                    <path d="M6.5 2.75v3.5M13.5 2.75v3.5M3 8h14"></path>
+                </svg>
+                <span data-date-range-label>Период</span>
+            </span>
+        </button>
+        <button
+            {% if clear_id %}id="{{ clear_id }}"{% endif %}
+            class="erp-clear-control sales-period-clear"
+            type="button"
+            aria-label="Сбросить период"
+            title="Сбросить период"
+            hidden
+        >×</button>
+    </div>
+
+    <div
+        id="{{ root_id }}Popup"
+        class="warehouse-calendar-popup"
+        role="dialog"
+        aria-label="{{ aria_label }}"
+        hidden
+    >
+        <div class="warehouse-calendar-header">
+            <button
+                class="warehouse-calendar-nav"
+                type="button"
+                data-calendar-prev
+                aria-label="Предыдущий месяц"
+            >‹</button>
+            <div
+                class="warehouse-calendar-month"
+                data-calendar-month
+                aria-live="polite"
+            ></div>
+            <button
+                class="warehouse-calendar-nav"
+                type="button"
+                data-calendar-next
+                aria-label="Следующий месяц"
+            >›</button>
+        </div>
+        <div class="warehouse-calendar-weekdays" aria-hidden="true">
+            <span>Пн</span>
+            <span>Вт</span>
+            <span>Ср</span>
+            <span>Чт</span>
+            <span>Пт</span>
+            <span>Сб</span>
+            <span>Вс</span>
+        </div>
+        <div
+            class="warehouse-calendar-days"
+            data-calendar-days
+            role="group"
+            aria-label="Дни месяца"
+        ></div>
+        <div class="warehouse-calendar-actions">
+            <button
+                class="warehouse-calendar-reset"
+                type="button"
+                data-calendar-reset
+            >
+                Сбросить
+            </button>
+            <button
+                class="warehouse-calendar-apply"
+                type="button"
+                data-calendar-apply
+            >
+                Применить
+            </button>
+        </div>
+    </div>
+</div>
+{% endmacro %}

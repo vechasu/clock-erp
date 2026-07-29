@@ -1,4 +1,5 @@
 import unittest
+import re
 from pathlib import Path
 
 from app import web
@@ -152,6 +153,45 @@ class SidebarComponentTest(unittest.TestCase):
         self.assertIn("localStorage.setItem", javascript)
         self.assertIn('aria-expanded', javascript)
         self.assertIn("initializeMobileMenu", javascript)
+
+    def test_collapsed_sidebar_tooltip_cannot_remain_stuck(self):
+        sidebar = (
+            self.templates / "_sidebar.html"
+        ).read_text(encoding="utf-8")
+        css = (
+            self.static / "css" / "sidebar.css"
+        ).read_text(encoding="utf-8")
+        javascript = (
+            self.static / "js" / "sidebar.js"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('id="sidebarTooltip"', sidebar)
+        self.assertIn('role="tooltip"', sidebar)
+        self.assertIn('data-tooltip="{{ item.label }}"', sidebar)
+        self.assertNotRegex(
+            sidebar,
+            re.compile(
+                r'class="sidebar-link[^"]*"[^>]*\btitle=',
+                re.DOTALL,
+            ),
+        )
+        self.assertIn(".erp-tooltip[hidden]", css)
+        self.assertIn("pointer-events: none", css)
+        self.assertIn("initializeSidebarTooltip", javascript)
+        self.assertIn('root.classList.contains("sidebar-collapsed")', javascript)
+        for event_name in (
+            "pointerenter",
+            "pointerleave",
+            "focus",
+            "blur",
+            "keydown",
+            "scroll",
+            "pagehide",
+            "visibilitychange",
+        ):
+            self.assertIn(event_name, javascript)
+        self.assertIn('event.key === "Escape"', javascript)
+        self.assertIn('tooltip.hidden = true', javascript)
 
 
 if __name__ == "__main__":

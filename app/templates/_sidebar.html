@@ -75,7 +75,7 @@
             <a
                 class="sidebar-link{% if item.active %} active{% endif %}"
                 href="{{ item.href }}"
-                title="{{ item.label }}"
+                aria-label="{{ item.label }}"
                 data-tooltip="{{ item.label }}"
                 {% if item.active %}aria-current="page"{% endif %}
             >
@@ -149,6 +149,13 @@
         {% endif %}
     </div>
 </aside>
+
+<div
+    id="sidebarTooltip"
+    class="sidebar-tooltip erp-tooltip"
+    role="tooltip"
+    hidden
+></div>
 
 {% set mobile_state = namespace(more_active=false) %}
 {% for item in sidebar_navigation_items %}
