@@ -12822,5 +12822,497 @@ def api_receipt_resource(receipt_id):
     return api_success(serialize_api_receipt(receipt))
 
 
+API_SALE_TEXT_FIELDS = (
+    "order_number", "track_number", "delivery_method", "region", "city", "note",
+    "recipient", "recipient_name", "payment_method", "commission", "country",
+    "delivery_address", "platform", "invoice_number", "sticker_number",
+)
+
+
+def serialize_api_sale(sale):
+    return {
+        "id": str(sale.get("id") or ""),
+        "sale_type": str(sale.get("sale_type") or ""),
+        "sale_type_label": str(sale.get("sale_type_label") or ""),
+        "is_manual": bool(sale.get("is_manual")),
+        "inventory_managed": bool(sale.get("inventory_managed")),
+        "created_at": str(sale.get("created_at") or ""),
+        "source": str(sale.get("source") or ""),
+        "source_key": str(sale.get("source_key") or ""),
+        "order_number": str(sale.get("order_number") or ""),
+        "product_id": str(sale.get("product_id") or ""),
+        "product_name": str(sale.get("product_name") or ""),
+        "barcode": str(sale.get("barcode") or ""),
+        "brand": str(sale.get("brand") or ""),
+        "category": str(sale.get("category") or ""),
+        "quantity": float(sale.get("quantity_value") or 0),
+        "quantity_display": str(sale.get("quantity_display") or ""),
+        "net_quantity": float(sale.get("net_quantity_value") or 0),
+        "returned_quantity": float(sale.get("returned_quantity") or 0),
+        "return_available_quantity": float(
+            sale.get("return_available_quantity") or 0
+        ),
+        "returned_at": str(sale.get("returned_at") or ""),
+        "return_reason": str(sale.get("return_reason") or ""),
+        "unit_price": (
+            float(sale["unit_price"])
+            if sale.get("unit_price") is not None
+            else None
+        ),
+        "total_amount": (
+            float(sale["total_amount"])
+            if sale.get("total_amount") is not None
+            else None
+        ),
+        "gross_total_amount": float(sale.get("gross_total_amount") or 0),
+        "returned_amount": float(sale.get("returned_amount") or 0),
+        "order_status": str(sale.get("order_status") or "completed"),
+        "order_status_label": str(
+            sale.get("order_status_label")
+            or SALE_STATUS_LABELS.get(
+                normalize_sale_status(sale.get("order_status")),
+                "",
+            )
+        ),
+        "is_cancelled": bool(sale.get("is_cancelled")),
+        "cancelled_at": str(sale.get("cancelled_at") or ""),
+        "track_number": str(sale.get("track_number") or ""),
+        "delivery_method": str(sale.get("delivery_method") or ""),
+        "delivery_cost": float(sale.get("delivery_cost") or 0),
+        "region": str(sale.get("region") or ""),
+        "city": str(sale.get("city") or ""),
+        "note": str(sale.get("note") or ""),
+        "recipient": str(sale.get("recipient") or ""),
+        "recipient_name": str(sale.get("recipient_name") or ""),
+        "payment_method": str(sale.get("payment_method") or ""),
+        "commission": str(sale.get("commission") or ""),
+        "commission_amount": float(sale.get("commission_amount") or 0),
+        "country": str(sale.get("country") or ""),
+        "delivery_address": str(sale.get("delivery_address") or ""),
+        "platform": str(sale.get("platform") or ""),
+        "invoice_number": str(sale.get("invoice_number") or ""),
+        "sticker_number": str(sale.get("sticker_number") or ""),
+    }
+
+
+def api_sales_records():
+    return build_sales_report_records(
+        warehouse_items=get_excel_warehouse_items()
+    )
+
+
+def find_api_sale(sale_id):
+    return next(
+        (
+            sale for sale in api_sales_records()
+            if str(sale.get("id") or "") == str(sale_id)
+        ),
+        None,
+    )
+
+
+def api_sale_catalog_items():
+    return build_sales_catalog_items(get_excel_warehouse_items())
+
+
+def normalize_api_sale_payload(payload, existing=None, require_catalog=False):
+    existing = existing if isinstance(existing, dict) else {}
+    created_at = validate_sale_form_date(
+        payload.get("created_at")
+        or payload.get("date")
+        or existing.get("created_at")
+    )
+    product_id = str(
+        payload.get("product_id")
+        or existing.get("product_id")
+        or ""
+    ).strip()
+    product = get_sale_catalog_product(
+        product_id,
+        items=api_sale_catalog_items(),
+    )
+    if require_catalog and product is None:
+        raise ValueError("Выберите товар из каталога.")
+    product_name = str(
+        (product or {}).get("name")
+        or payload.get("product_name")
+        or existing.get("product_name")
+        or ""
+    ).strip()
+    if not product_name:
+        raise ValueError("Укажите название товара.")
+    quantity = parse_manual_sale_quantity(
+        payload.get("quantity")
+        if "quantity" in payload
+        else existing.get("quantity_value")
+        or existing.get("quantity")
+    )
+    if quantity <= 0:
+        raise ValueError("Выберите количество от 1 до 25.")
+    unit_price = parse_sale_price(
+        payload.get("unit_price")
+        if "unit_price" in payload
+        else existing.get("unit_price")
+    )
+    if unit_price is None:
+        raise ValueError("Укажите цену продажи не меньше 1 ₽.")
+    if product is not None and quantity > float(product["stock"]):
+        if not existing.get("inventory_managed"):
+            raise InsufficientStockError(product["stock"])
+    source = normalize_manual_sale_source(
+        payload.get("source")
+        if "source" in payload
+        else existing.get("source")
+    )
+    merged_form = {
+        **existing,
+        **payload,
+    }
+    optional_fields = build_sale_optional_fields(
+        merged_form,
+        existing=existing,
+    )
+    location_fields = {
+        field: str(merged_form.get(field) or "").strip()
+        for field in ("country", "region", "city")
+    }
+    if normalize_sales_source_key(source) == "tictactoy":
+        location_fields = build_tictactoy_sale_location_fields(
+            merged_form,
+            existing=existing,
+        )
+        optional_fields["country"] = location_fields["country"]
+    normalized = {
+        "id": str(existing.get("id") or payload.get("id") or uuid.uuid4().hex),
+        "created_at": created_at,
+        "source": source,
+        "product_id": product_id,
+        "product_name": product_name,
+        "barcode": str(
+            (product or {}).get("barcode")
+            or payload.get("barcode")
+            or existing.get("barcode")
+            or ""
+        ),
+        "brand": str(
+            (product or {}).get("brand")
+            or payload.get("brand")
+            or existing.get("brand")
+            or ""
+        ),
+        "category": str(
+            (product or {}).get("category")
+            or payload.get("category")
+            or existing.get("category")
+            or ""
+        ),
+        "quantity": quantity,
+        "unit_price": unit_price,
+        "total_amount": calculate_sale_amount(unit_price, quantity),
+        **{
+            field: str(
+                payload.get(field)
+                if field in payload
+                else existing.get(field)
+                or ""
+            ).strip()
+            for field in API_SALE_TEXT_FIELDS
+        },
+        "region": location_fields["region"],
+        "city": location_fields["city"],
+        **optional_fields,
+    }
+    return normalized
+
+
+@app.route("/api/sales/catalog", methods=["GET"])
+@app.route("/api/v1/sales/catalog", methods=["GET"])
+def api_sales_catalog():
+    query = (request.args.get("q") or "").strip().casefold()
+    items = api_sale_catalog_items()
+    if query:
+        items = [
+            item for item in items
+            if query in " ".join([
+                item["name"], item["article"], item["barcode"],
+                item["brand"], item["category"],
+            ]).casefold()
+        ]
+    limit = api_positive_int(request.args.get("limit"), 100, 200)
+    return api_success(items[:limit], total=len(items))
+
+
+@app.route("/api/sales/sources", methods=["GET"])
+@app.route("/api/v1/sales/sources", methods=["GET"])
+def api_sales_sources():
+    return api_success([
+        {
+            "key": item["key"],
+            "label": item["label"],
+        }
+        for item in SALES_SOURCE_TABS
+    ])
+
+
+@app.route("/api/sales", methods=["GET", "POST"])
+@app.route("/api/v1/sales", methods=["GET", "POST"])
+def api_sales_collection():
+    if request.method == "POST":
+        require_csrf_when_authenticated()
+        try:
+            payload = api_json_payload()
+            sale = normalize_api_sale_payload(
+                payload,
+                require_catalog=True,
+            )
+            created = SalesInventory().create_sale(
+                payload=sale,
+                product_id=sale["product_id"],
+                quantity=sale["quantity"],
+                unit_price=sale["unit_price"],
+                user_name=current_sales_user_name(),
+            )
+        except InsufficientStockError as error:
+            return api_error("INSUFFICIENT_STOCK", str(error), 409)
+        except (SalesInventoryError, ValueError) as error:
+            return api_error("SALE_VALIDATION_FAILED", str(error), 422)
+        except Exception:
+            app.logger.exception("Sales API transactional create failed")
+            return api_error(
+                "SALE_CREATE_FAILED",
+                "Продажа не создана. Остаток не изменён.",
+                500,
+            )
+        record = find_api_sale(created["id"])
+        return api_success(
+            serialize_api_sale(record or {
+                **created,
+                "sale_type": "manual",
+                "sale_type_label": "Ручная",
+                "is_manual": True,
+                "quantity_value": created.get("quantity"),
+                "net_quantity_value": created.get("quantity"),
+            }),
+            201,
+        )
+
+    sales = api_sales_records()
+    source = get_active_sales_source(request.args.get("source"))
+    sales = filter_sales_by_source(sales, source)
+    query = (request.args.get("q") or "").strip().casefold()
+    date_from = (request.args.get("date_from") or "").strip()
+    date_to = (request.args.get("date_to") or "").strip()
+    status = (request.args.get("status") or "").strip()
+    sale_type = (request.args.get("sale_type") or "").strip()
+    brand = (request.args.get("brand") or "").strip()
+    category = (request.args.get("category") or "").strip()
+    product = (request.args.get("product") or "").strip()
+    if query:
+        sales = [
+            item for item in sales
+            if query in build_sales_search_text(item, source).casefold()
+            or query in " ".join([
+                str(item.get("note") or ""),
+                str(item.get("brand") or ""),
+                str(item.get("category") or ""),
+            ]).casefold()
+        ]
+    if date_from:
+        sales = [item for item in sales if str(item.get("created_at") or "")[:10] >= date_from]
+    if date_to:
+        sales = [item for item in sales if str(item.get("created_at") or "")[:10] <= date_to]
+    if status:
+        sales = [item for item in sales if item.get("order_status") == status]
+    if sale_type:
+        sales = [item for item in sales if item.get("sale_type") == sale_type]
+    if brand:
+        sales = [item for item in sales if item.get("brand") == brand]
+    if category:
+        sales = [item for item in sales if item.get("category") == category]
+    if product:
+        sales = [item for item in sales if item.get("product_id") == product]
+    sort_by = (request.args.get("sort_by") or "created_at").strip()
+    sort_dir = (request.args.get("sort_dir") or "desc").strip()
+    allowed_sort = {
+        "created_at", "order_number", "product_name", "quantity_value",
+        "total_amount", "source", "order_status",
+    }
+    if sort_by not in allowed_sort:
+        sort_by = "created_at"
+    numeric_sort_fields = {"quantity_value", "total_amount"}
+    sales.sort(
+        key=lambda item: (
+            item.get(sort_by) is not None,
+            (
+                float(item.get(sort_by) or 0)
+                if sort_by in numeric_sort_fields
+                else str(item.get(sort_by) or "").casefold()
+            ),
+            str(item.get("id") or ""),
+        ),
+        reverse=sort_dir != "asc",
+    )
+    total = len(sales)
+    active = [sale for sale in sales if not sale.get("is_cancelled")]
+    page = api_positive_int(request.args.get("page"), 1, 1000000)
+    page_size = api_positive_int(request.args.get("page_size"), 50, 200)
+    pages = (total + page_size - 1) // page_size
+    if pages and page > pages:
+        page = pages
+    start = (page - 1) * page_size
+    visible = sales[start:start + page_size]
+    return api_success(
+        [serialize_api_sale(item) for item in visible],
+        page=page,
+        page_size=page_size,
+        total=total,
+        pages=pages,
+        totals={
+            "active": len(active),
+            "cancelled": total - len(active),
+            "quantity": sum(float(item.get("net_quantity_value") or 0) for item in active),
+            "revenue": round(sum(float(item.get("total_amount") or 0) for item in active), 2),
+            "returned": round(sum(float(item.get("returned_amount") or 0) for item in active), 2),
+        },
+        facets={
+            "sources": sorted({
+                str(item.get("source_key") or "")
+                for item in sales if item.get("source_key")
+            }),
+            "brands": sorted({
+                str(item.get("brand") or "")
+                for item in sales if item.get("brand")
+            }),
+            "categories": sorted({
+                str(item.get("category") or "")
+                for item in sales if item.get("category")
+            }),
+            "statuses": sorted({
+                str(item.get("order_status") or "")
+                for item in sales if item.get("order_status")
+            }),
+        },
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+    )
+
+
+@app.route("/api/sales/<sale_id>", methods=["GET", "PATCH", "DELETE"])
+@app.route("/api/v1/sales/<sale_id>", methods=["GET", "PATCH", "DELETE"])
+def api_sale_resource(sale_id):
+    record = find_api_sale(sale_id)
+    if record is None:
+        return api_error("SALE_NOT_FOUND", "Продажа не найдена.", 404)
+    if request.method == "GET":
+        return api_success(serialize_api_sale(record))
+    require_csrf_when_authenticated()
+    if request.method == "DELETE":
+        if record.get("sale_type") == "manual":
+            sales = load_manual_sales()
+            stored = next(
+                (
+                    item for item in sales
+                    if str(item.get("id") or "") == str(sale_id)
+                ),
+                None,
+            )
+            if stored is None:
+                return api_error("SALE_NOT_FOUND", "Продажа не найдена.", 404)
+            if stored.get("inventory_managed"):
+                return api_error(
+                    "SALE_NOT_EDITABLE",
+                    "Проведённую продажу удалить нельзя. Используйте возврат.",
+                    409,
+                )
+            stored["deleted_at"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+            save_manual_sales(sales)
+        elif record.get("sale_type") == "automatic":
+            overrides = load_automatic_sales_overrides()
+            override = overrides.get(str(sale_id)) or {}
+            override["deleted_at"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+            overrides[str(sale_id)] = override
+            save_automatic_sales_overrides(overrides)
+        else:
+            return api_error("SALE_SOURCE_UNSUPPORTED", "Источник продажи не поддержан.", 409)
+        return api_success({"id": str(sale_id), "deleted": True})
+
+    try:
+        payload = api_json_payload()
+        normalized = normalize_api_sale_payload(payload, existing=record)
+    except InsufficientStockError as error:
+        return api_error("INSUFFICIENT_STOCK", str(error), 409)
+    except ValueError as error:
+        return api_error("SALE_VALIDATION_FAILED", str(error), 422)
+    if record.get("sale_type") == "manual":
+        sales = load_manual_sales()
+        stored = next(
+            (
+                item for item in sales
+                if str(item.get("id") or "") == str(sale_id)
+            ),
+            None,
+        )
+        if stored is None:
+            return api_error("SALE_NOT_FOUND", "Продажа не найдена.", 404)
+        if stored.get("inventory_managed"):
+            if normalized["product_id"] != str(stored.get("product_id") or ""):
+                return api_error(
+                    "SALE_NOT_EDITABLE",
+                    "Товар проведённой продажи изменить нельзя.",
+                    409,
+                )
+            if abs(float(normalized["quantity"]) - float(stored.get("quantity") or 0)) > 0.000001:
+                return api_error(
+                    "SALE_NOT_EDITABLE",
+                    "Количество проведённой продажи изменить нельзя.",
+                    409,
+                )
+            normalized["inventory_managed"] = True
+            normalized["automatic_stock_applied"] = True
+            try:
+                SalesInventory().update_metadata(
+                    sale_id,
+                    normalized,
+                    normalized["unit_price"],
+                )
+            except SalesInventoryError as error:
+                return api_error("SALE_NOT_EDITABLE", str(error), 409)
+        else:
+            stored.update(normalized)
+            save_manual_sales(sales)
+    elif record.get("sale_type") == "automatic":
+        overrides = load_automatic_sales_overrides()
+        current = overrides.get(str(sale_id)) or {}
+        if current.get("deleted_at"):
+            return api_error("SALE_NOT_FOUND", "Продажа удалена.", 410)
+        current.update(normalized)
+        overrides[str(sale_id)] = current
+        save_automatic_sales_overrides(overrides)
+    else:
+        return api_error("SALE_SOURCE_UNSUPPORTED", "Источник продажи не поддержан.", 409)
+    updated = find_api_sale(sale_id)
+    return api_success(serialize_api_sale(updated or {**record, **normalized}))
+
+
+@app.route("/api/sales/<sale_id>/returns", methods=["POST"])
+@app.route("/api/v1/sales/<sale_id>/returns", methods=["POST"])
+def api_sale_return(sale_id):
+    require_csrf_when_authenticated()
+    try:
+        payload = api_json_payload()
+        sale = SalesInventory().return_sale(
+            sale_id=sale_id,
+            quantity=payload.get("quantity"),
+            reason=str(payload.get("reason") or "").strip(),
+            user_name=current_sales_user_name(),
+        )
+    except ReturnConflictError as error:
+        return api_error("RETURN_EXCEEDS_SOLD", str(error), 409)
+    except (SalesInventoryError, ValueError) as error:
+        return api_error("SALE_VALIDATION_FAILED", str(error), 422)
+    updated = find_api_sale(sale["id"])
+    return api_success(serialize_api_sale(updated or sale), 201)
+
+
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5050, debug=True)
