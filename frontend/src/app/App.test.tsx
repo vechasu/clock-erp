@@ -15,16 +15,10 @@ function renderApp(initialEntry = '/') {
 }
 
 describe('React infrastructure', () => {
-  it('exposes the guarded parallel entry point', () => {
+  it('opens the unified products workspace by default', async () => {
     renderApp();
 
-    expect(
-      screen.getByRole('heading', { name: 'React-инфраструктура подготовлена' }),
-    ).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Открыть текущий интерфейс' })).toHaveAttribute(
-      'href',
-      '/',
-    );
+    expect(await screen.findByRole('heading', { name: 'Товары' })).toBeInTheDocument();
   });
 
   it('keeps a controlled fallback for unknown business modules', () => {
