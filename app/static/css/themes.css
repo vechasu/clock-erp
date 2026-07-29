@@ -549,6 +549,31 @@ html[data-theme] :where(
     color: var(--theme-accent-hover) !important;
 }
 
+html[data-theme] .erp-table-action {
+    border-color: transparent !important;
+    background: transparent !important;
+    color: var(--theme-accent-hover) !important;
+    box-shadow: none !important;
+}
+
+html[data-theme] .erp-table-action:hover,
+html[data-theme] .erp-table-action:focus-visible {
+    border-color: var(--theme-border) !important;
+    background: var(--theme-hover) !important;
+    color: var(--theme-accent-hover) !important;
+}
+
+html[data-theme] .erp-table-action-delete {
+    color: var(--theme-error) !important;
+}
+
+html[data-theme] .erp-table-action-delete:hover,
+html[data-theme] .erp-table-action-delete:focus-visible {
+    border-color: var(--theme-error-soft) !important;
+    background: var(--theme-error-soft) !important;
+    color: var(--theme-error) !important;
+}
+
 html[data-theme] .module-toggle {
     border: 1px solid var(--theme-border-strong) !important;
     border-radius: var(--theme-pill-radius) !important;
