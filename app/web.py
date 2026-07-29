@@ -12100,6 +12100,61 @@ def api_products_collection():
     )
 
 
+@app.route("/api/products/bulk", methods=["PATCH"])
+@app.route("/api/v1/products/bulk", methods=["PATCH"])
+def api_products_bulk_update():
+    require_csrf_when_authenticated()
+    try:
+        payload = api_json_payload()
+        product_ids = payload.get("ids")
+        changes = payload.get("changes")
+        if not isinstance(product_ids, list) or not product_ids:
+            raise ValueError("Выберите хотя бы один товар.")
+        if len(product_ids) > 200:
+            raise ValueError("За один раз можно изменить не больше 200 товаров.")
+        if not isinstance(changes, dict) or not changes:
+            raise ValueError("Не выбраны поля для изменения.")
+        allowed_fields = {"brand", "category", "cell"}
+        unknown_fields = set(changes) - allowed_fields
+        if unknown_fields:
+            raise ValueError("Переданы неизвестные поля массового изменения.")
+        normalized_changes = {
+            key: changes[key]
+            for key in allowed_fields
+            if key in changes
+        }
+        if not normalized_changes:
+            raise ValueError("Не выбраны поля для изменения.")
+    except ValueError as error:
+        return api_error("PRODUCT_BULK_VALIDATION_FAILED", str(error), 422)
+
+    catalog_service = ExcelProductCatalog()
+    updated = []
+    errors = []
+    for raw_product_id in product_ids:
+        try:
+            product_id = int(raw_product_id)
+            product = catalog_service.update_product(
+                product_id,
+                **normalized_changes
+            )
+            updated.append(serialize_api_product(product))
+        except (TypeError, ValueError) as error:
+            errors.append({
+                "id": str(raw_product_id),
+                "message": str(error),
+            })
+    status = 207 if errors else 200
+    return api_success(
+        {
+            "items": updated,
+            "updated": len(updated),
+            "errors": errors,
+        },
+        status,
+    )
+
+
 @app.route("/api/products/<int:product_id>", methods=["GET", "PATCH", "DELETE"])
 @app.route("/api/v1/products/<int:product_id>", methods=["GET", "PATCH", "DELETE"])
 def api_product_resource(product_id):
@@ -13052,6 +13107,12 @@ def api_sales_sources():
         }
         for item in SALES_SOURCE_TABS
     ])
+
+
+@app.route("/api/sales/locations", methods=["GET"])
+@app.route("/api/v1/sales/locations", methods=["GET"])
+def api_sales_locations():
+    return api_success(get_tictactoy_location_catalog())
 
 
 @app.route("/api/sales", methods=["GET", "POST"])

@@ -427,6 +427,37 @@ textarea:focus-visible {
   border-bottom: 1px solid var(--theme-border);
 }
 
+.bulk-toolbar {
+  min-height: 50px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--theme-border);
+  background: #f8fafc;
+  color: var(--theme-text-muted);
+  font-size: 12px;
+}
+
+.bulk-toolbar label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.bulk-toolbar strong {
+  color: var(--theme-text);
+}
+
+.bulk-toolbar button:not(.button) {
+  border: 0;
+  background: transparent;
+  color: var(--theme-primary);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .source-tabs {
   min-height: 52px;
   display: flex;
@@ -597,6 +628,22 @@ textarea:focus-visible {
   font-size: 12px;
 }
 
+.column-setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.column-setting-row > span {
+  display: flex;
+}
+
+.column-setting-row > span button {
+  width: 24px;
+  text-align: center;
+}
+
 .column-settings > div button {
   border: 0;
   background: transparent;
@@ -727,6 +774,29 @@ textarea:focus-visible {
   background: #f1f5f9;
   color: #94a3b8;
   font-size: 20px;
+}
+
+.thumbnail-button {
+  display: inline-flex;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.product-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.product-gallery img {
+  width: 100%;
+  aspect-ratio: 1;
+  border: 1px solid var(--theme-border);
+  border-radius: 12px;
+  object-fit: cover;
 }
 
 .stock-badge {
@@ -1100,6 +1170,11 @@ textarea:focus-visible {
   font-size: 14px;
 }
 
+.receipt-position-actions {
+  display: flex;
+  gap: 8px;
+}
+
 .receipt-positions-header small {
   margin-top: 3px;
   color: var(--theme-text-muted);
@@ -1114,7 +1189,7 @@ textarea:focus-visible {
 .receipt-position {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(240px, 1fr) 125px 145px;
+  grid-template-columns: 140px 160px minmax(220px, 1fr) 105px 125px;
   gap: 12px;
   margin: 0;
   padding: 15px;
@@ -1268,6 +1343,23 @@ textarea:focus-visible {
 .form-field small {
   color: #dc2626;
   font-size: 11px;
+}
+
+.field-label-with-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.field-label-with-action button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--theme-primary);
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 750;
 }
 
 .confirm-illustration {
@@ -1472,11 +1564,23 @@ textarea:focus-visible {
   }
 
   .mobile-product-card {
+    position: relative;
     display: grid;
     grid-template-columns: 54px 1fr;
     gap: 12px;
     padding: 16px;
     border-bottom: 1px solid var(--theme-border);
+  }
+
+  .mobile-product-card > input[type='checkbox'] {
+    position: absolute;
+    z-index: 2;
+    top: 12px;
+    left: 12px;
+  }
+
+  .mobile-product-card > input[type='checkbox'] + .product-thumbnail {
+    grid-column: 1;
   }
 
   .mobile-product-card .product-thumbnail {
@@ -1515,6 +1619,11 @@ textarea:focus-visible {
     gap: 10px;
   }
 
+  .bulk-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
   .pagination-buttons {
     width: 100%;
     justify-content: center;
@@ -1528,6 +1637,10 @@ textarea:focus-visible {
   .receipt-positions-header {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .receipt-position-actions {
+    display: grid;
   }
 
   .receipt-position {

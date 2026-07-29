@@ -40,3 +40,40 @@ export async function deleteProduct(id: number) {
     )
   ).data;
 }
+
+export async function bulkUpdateProducts(
+  ids: number[],
+  changes: Partial<Pick<ProductFormValues, 'brand' | 'category' | 'cell'>>,
+) {
+  return (
+    await apiRequest(
+      '/products/bulk',
+      z.object({
+        items: z.array(productSchema),
+        updated: z.number(),
+        errors: z.array(z.object({ id: z.string(), message: z.string() })),
+      }),
+      jsonRequestInit('PATCH', { ids, changes }),
+    )
+  ).data;
+}
+
+export async function createBrand(name: string) {
+  return (
+    await apiRequest(
+      '/brands',
+      z.object({ name: z.string(), count: z.number() }),
+      jsonRequestInit('POST', { name }),
+    )
+  ).data;
+}
+
+export async function createCategory(brand: string, name: string) {
+  return (
+    await apiRequest(
+      '/categories',
+      z.object({ brand: z.string(), name: z.string(), count: z.number() }),
+      jsonRequestInit('POST', { brand, name }),
+    )
+  ).data;
+}

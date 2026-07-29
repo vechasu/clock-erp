@@ -5,13 +5,22 @@ import { useSearchParams } from 'react-router-dom';
 
 import { ApiRequestError } from '../../api/client';
 import { AppShell } from '../../components/AppShell';
+import { DateRangePicker, FilterPanel, LiveSearch } from '../../components/Controls';
 import { DataTable } from '../../components/DataTable';
 import { ConfirmDialog, Modal } from '../../components/Modal';
 import { PageState } from '../../components/PageState';
 import { TablePagination } from '../../components/TablePagination';
 import { Toast } from '../../components/Toast';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
-import { createSale, deleteSale, fetchSaleCatalog, fetchSales, returnSale, updateSale } from './api';
+import {
+  createSale,
+  deleteSale,
+  fetchSaleCatalog,
+  fetchSaleLocations,
+  fetchSales,
+  returnSale,
+  updateSale,
+} from './api';
 import { SaleForm } from './SaleForm';
 import type { Sale, SaleFormValues } from './schemas';
 
@@ -72,6 +81,12 @@ export function SalesPage() {
     queryFn: fetchSaleCatalog,
     enabled: editor !== null,
     staleTime: 60_000,
+  });
+  const locationsQuery = useQuery({
+    queryKey: ['sale-locations'],
+    queryFn: fetchSaleLocations,
+    enabled: editor !== null,
+    staleTime: 24 * 60 * 60 * 1000,
   });
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['sales'] });
   const saveMutation = useMutation({
@@ -279,34 +294,19 @@ export function SalesPage() {
             ))}
           </div>
           <div className="list-toolbar">
-            <label className="search-control">
-              <span aria-hidden="true">⌕</span>
-              <span className="visually-hidden">Поиск продаж</span>
-              <input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Заказ, товар, трек-номер, получатель…"
-              />
-            </label>
-            <details className="filter-panel">
-              <summary>Фильтры</summary>
-              <div className="filter-grid">
-                <label>
-                  Дата с
-                  <input
-                    type="date"
-                    value={searchParams.get('date_from') ?? ''}
-                    onChange={(event) => setFilter('date_from', event.target.value)}
-                  />
-                </label>
-                <label>
-                  по
-                  <input
-                    type="date"
-                    value={searchParams.get('date_to') ?? ''}
-                    onChange={(event) => setFilter('date_to', event.target.value)}
-                  />
-                </label>
+            <LiveSearch
+              label="Поиск продаж"
+              value={search}
+              onChange={setSearch}
+              placeholder="Заказ, товар, трек-номер, получатель…"
+            />
+            <FilterPanel>
+                <DateRangePicker
+                  from={searchParams.get('date_from') ?? ''}
+                  to={searchParams.get('date_to') ?? ''}
+                  onFromChange={(value) => setFilter('date_from', value)}
+                  onToChange={(value) => setFilter('date_to', value)}
+                />
                 <label>
                   Тип
                   <select
@@ -370,8 +370,7 @@ export function SalesPage() {
                 >
                   Сбросить
                 </button>
-              </div>
-            </details>
+            </FilterPanel>
           </div>
 
           {salesQuery.isError ? (
@@ -414,6 +413,7 @@ export function SalesPage() {
                   setSearchParams(updated);
                 }}
                 getRowId={(sale) => sale.id}
+                storageKey="vechasu:sales-table"
                 renderMobileCard={(sale) => (
                   <article className="mobile-document-card mobile-sale-card">
                     <div>
@@ -493,15 +493,20 @@ export function SalesPage() {
           </>
         }
       >
-        {catalogQuery.isError ? (
-          <PageState kind="error" title="Каталог недоступен" message={errorMessage(catalogQuery.error)} />
-        ) : catalogQuery.isPending ? (
+        {catalogQuery.isError || locationsQuery.isError ? (
+          <PageState
+            kind="error"
+            title="Справочники недоступны"
+            message={errorMessage(catalogQuery.error || locationsQuery.error)}
+          />
+        ) : catalogQuery.isPending || locationsQuery.isPending ? (
           <div className="table-loading">Загружаем каталог…</div>
         ) : (
           <SaleForm
             id="sale-editor"
             sale={editor === 'new' ? null : editor}
             products={catalogQuery.data ?? []}
+            locations={locationsQuery.data ?? {}}
             onSubmit={(values) => {
               if (editor) saveMutation.mutate({ sale: editor, values });
             }}

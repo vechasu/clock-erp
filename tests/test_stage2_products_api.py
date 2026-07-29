@@ -146,6 +146,24 @@ class Stage2ProductsApiTest(unittest.TestCase):
             self.client.get("/api/categories").get_json()["data"],
         )
 
+    def test_bulk_update_changes_selected_products_only(self):
+        listing = self.client.get("/api/products?page_size=50").get_json()["data"]
+        selected = [listing[0]["id"], listing[1]["id"]]
+        response = self.client.patch(
+            "/api/products/bulk",
+            json={
+                "ids": selected,
+                "changes": {"brand": "Обновлённый", "cell": "Z-9"},
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["data"]["updated"], 2)
+        updated = self.client.get(
+            "/api/products?brand=Обновлённый&page_size=50"
+        ).get_json()["data"]
+        self.assertEqual({item["id"] for item in updated}, set(selected))
+        self.assertEqual({item["cell"] for item in updated}, {"Z-9"})
+
     def test_authenticated_mutation_requires_header_csrf(self):
         auth_path = self.root / "auth.db"
         web.app.config.update(

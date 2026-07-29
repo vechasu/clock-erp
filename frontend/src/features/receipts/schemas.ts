@@ -60,6 +60,8 @@ export const receiptFormSchema = z.object({
   positions: z
     .array(
       z.object({
+        brand: z.string().min(1, 'Выберите бренд'),
+        category: z.string().min(1, 'Выберите категорию'),
         product_id: z.string().min(1, 'Выберите товар'),
         quantity: z.coerce.number().positive('Количество должно быть больше нуля'),
         purchase_price: z.coerce.number().min(0, 'Цена не может быть отрицательной'),

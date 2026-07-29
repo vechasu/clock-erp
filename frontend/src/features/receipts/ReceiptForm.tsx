@@ -2,6 +2,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useFieldArray, useForm } from 'react-hook-form';
 
 import { ImageUploader } from '../../components/ImageUploader';
+import { BrandSelect, CategorySelect, ProductSelect } from '../../components/Controls';
 import {
   receiptFormSchema,
   type Receipt,
@@ -24,10 +25,12 @@ function defaults(receipt?: Receipt | null): ReceiptFormInput {
     positions: receipt?.positions.length
       ? receipt.positions.map((position) => ({
           product_id: position.product_id,
+          brand: position.brand,
+          category: position.category,
           quantity: position.quantity,
           purchase_price: position.purchase_price,
         }))
-      : [{ product_id: '', quantity: 1, purchase_price: 0 }],
+      : [{ brand: '', category: '', product_id: '', quantity: 1, purchase_price: 0 }],
     product_image: null,
   };
 }
@@ -71,33 +74,89 @@ export function ReceiptForm({ id, receipt, products, onSubmit }: ReceiptFormProp
           <small>Товар, количество и закупочная цена</small>
         </div>
         {!receipt ? (
-          <button
-            className="button secondary"
-            type="button"
-            onClick={() => append({ product_id: '', quantity: 1, purchase_price: 0 })}
-          >
-            + Добавить позицию
-          </button>
+          <div className="receipt-position-actions">
+            <a className="button secondary" href="/app/products?open_add=1">
+              Новый товар / справочник
+            </a>
+            <button
+              className="button secondary"
+              type="button"
+              onClick={() =>
+                append({
+                  brand: '',
+                  category: '',
+                  product_id: '',
+                  quantity: 1,
+                  purchase_price: 0,
+                })
+              }
+            >
+              + Добавить позицию
+            </button>
+          </div>
         ) : null}
       </div>
       <div className="receipt-positions">
         {fields.map((field, index) => {
+          const selectedBrand = watchedPositions[index]?.brand ?? '';
+          const selectedCategory = watchedPositions[index]?.category ?? '';
+          const brands = [...new Set(products.map((product) => product.brand).filter(Boolean))];
+          const categories = [
+            ...new Set(
+              products
+                .filter((product) => product.brand === selectedBrand)
+                .map((product) => product.category)
+                .filter(Boolean),
+            ),
+          ];
+          const visibleProducts = products.filter(
+            (product) =>
+              product.brand === selectedBrand && product.category === selectedCategory,
+          );
           const selected = products.find(
             (product) => product.id === watchedPositions[index]?.product_id,
           );
+          const brandField = register(`positions.${index}.brand`);
+          const categoryField = register(`positions.${index}.category`);
           return (
             <fieldset className="receipt-position" key={field.id}>
               <legend>Позиция {index + 1}</legend>
-              <label className="form-field receipt-product-field">
-                <span>Товар *</span>
-                <select {...register(`positions.${index}.product_id`)}>
-                  <option value="">Выберите товар</option>
-                  {products.map((product) => (
-                    <option key={product.id} value={product.id}>
-                      {product.name} · {product.brand} · остаток {product.stock_display}
-                    </option>
-                  ))}
-                </select>
+              <BrandSelect
+                label="Бренд *"
+                placeholder="Выберите бренд"
+                options={brands.map((brand) => ({ value: brand, label: brand }))}
+                {...brandField}
+                onChange={(event) => {
+                  brandField.onChange(event);
+                  setValue(`positions.${index}.category`, '');
+                  setValue(`positions.${index}.product_id`, '');
+                }}
+              />
+              <CategorySelect
+                label="Категория *"
+                placeholder="Выберите категорию"
+                options={categories.map((category) => ({
+                  value: category,
+                  label: category,
+                }))}
+                {...categoryField}
+                onChange={(event) => {
+                  categoryField.onChange(event);
+                  setValue(`positions.${index}.product_id`, '');
+                }}
+                disabled={!selectedBrand}
+              />
+              <div className="receipt-product-field">
+                <ProductSelect
+                  label="Товар *"
+                  placeholder="Выберите товар"
+                  options={visibleProducts.map((product) => ({
+                    value: product.id,
+                    label: `${product.name} · остаток ${product.stock_display}`,
+                  }))}
+                  {...register(`positions.${index}.product_id`)}
+                  disabled={!selectedCategory}
+                />
                 {errors.positions?.[index]?.product_id ? (
                   <small>{errors.positions[index]?.product_id?.message}</small>
                 ) : null}
@@ -108,7 +167,7 @@ export function ReceiptForm({ id, receipt, products, onSubmit }: ReceiptFormProp
                       .join(' · ')}
                   </em>
                 ) : null}
-              </label>
+              </div>
               <label className="form-field">
                 <span>Количество *</span>
                 <input
