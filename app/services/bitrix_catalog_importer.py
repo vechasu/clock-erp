@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 from app.catalog_db import CatalogDatabase
 from app.clients.bitrix_catalog import normalize_key
+from app.services.brand_values import is_numeric_brand, normalize_brand
 
 
 IMPORT_MODES = {"preview", "create_only", "fill_empty", "update_content", "full_sync"}
@@ -42,7 +43,17 @@ def utc_now():
 
 
 def canonical_payload(product):
-    return json.dumps(product, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    warning = brand_warning(product)
+    product = dict(product)
+    product["brand"] = normalize_brand(product.get("brand"))
+    if warning:
+        product["brand_validation_error"] = warning
+    return json.dumps(
+        product,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
 
 
 def payload_hash(product):
@@ -64,12 +75,13 @@ def nonempty_properties(product):
 
 
 def product_values(product):
+    raw_brand = product.get("brand")
     return {
         "name": str(product.get("name") or "").strip(),
         "slug": str(product.get("code") or "").strip(),
         "article": str(product.get("external_sku") or product.get("code") or "").strip(),
         "barcode": str(product.get("barcode") or "").strip(),
-        "brand": str(product.get("brand") or "").strip(),
+        "brand": normalize_brand(raw_brand),
         "preview_text": product.get("preview_text") or "",
         "detail_text": product.get("detail_text") or "",
         "preview_text_format": product.get("preview_text_type") or "text",
@@ -82,6 +94,24 @@ def product_values(product):
         "external_created_at": product.get("created_at"),
         "external_updated_at": product.get("updated_at"),
     }
+
+
+def brand_warning(product):
+    warning = str(product.get("brand_validation_error") or "").strip()
+    if warning:
+        return warning
+    if is_numeric_brand(product.get("brand")):
+        return "numeric_brand_rejected"
+    if not normalize_brand(product.get("brand")):
+        return "brand_missing"
+    return None
+
+
+def with_brand_warning(product, item):
+    warning = brand_warning(product)
+    if warning:
+        item["brand_warning"] = warning
+    return item
 
 
 class BitrixCatalogImporter:
@@ -147,13 +177,13 @@ class BitrixCatalogImporter:
         items = []
         for product in products:
             values = product_values(product)
-            items.append({
+            items.append(with_brand_warning(product, {
                 "external_product_id": values["external_product_id"],
                 "status": "new",
                 "match_method": "not_found",
                 "target_mode": target_mode,
                 "changes": {key: {"old": None, "new": value} for key, value in values.items()},
-            })
+            }))
         return {
             "mode": "preview",
             "target_mode": target_mode,
@@ -295,13 +325,13 @@ class BitrixCatalogImporter:
             return self._conflict_item(product, match)
         if match.get("product") is None:
             values = product_values(product)
-            return {
+            return with_brand_warning(product, {
                 "external_product_id": values["external_product_id"],
                 "status": "new",
                 "match_method": match["method"],
                 "target_mode": target_mode,
                 "changes": {key: {"old": None, "new": value} for key, value in values.items()},
-            }
+            })
         existing = match["product"]
         changes = self._scalar_changes(existing, product, target_mode)
         relation_changes = self._relation_changes(connection, existing["id"], product, target_mode)
@@ -675,20 +705,20 @@ class BitrixCatalogImporter:
 
     @staticmethod
     def _conflict_item(product, match):
-        return {
+        return with_brand_warning(product, {
             "external_product_id": str(product.get("external_product_id") or ""),
             "status": "requires_mapping",
             "match_method": match["method"],
             "candidate_count": match["candidate_count"],
             "changes": {},
-        }
+        })
 
     @staticmethod
     def _result_item(product, status, match, changes):
-        return {
+        return with_brand_warning(product, {
             "external_product_id": str(product.get("external_product_id") or ""),
             "status": status,
             "match_method": match["method"],
             "candidate_count": match["candidate_count"],
             "changes": changes,
-        }
+        })

@@ -12,6 +12,7 @@ import uuid
 from datetime import datetime, timezone
 
 from app.catalog_db import CatalogDatabase
+from app.services.brand_values import is_numeric_brand, normalize_brand
 from app.services.product_reconciliation import (
     AUTOMATIC_STATUSES,
     article_quality,
@@ -174,7 +175,7 @@ def load_bitrix_enrichment(connection, catalog_product_id):
         "bitrix_external_product_id": product["external_product_id"],
         "bitrix_xml_id": product["external_xml_id"],
         "bitrix_name": product["name"],
-        "bitrix_brand": product["brand"],
+        "bitrix_brand": normalize_brand(product["brand"]) or None,
         "bitrix_category": product["category_name"],
         "bitrix_source_url": product["source_url"],
         "bitrix_primary_image_url": primary.get("original_url") if primary else None,
@@ -257,6 +258,20 @@ class ExcelProductBatchService:
 
     def apply(self, results, file_sha256, source_filename, sheet_name="Импорт"):
         results = [dict(result) for result in results]
+        numeric_brand_rows = []
+        missing_brand_rows = 0
+        for result in results:
+            raw_brand = text(result.get("excel_brand"))
+            if is_numeric_brand(raw_brand):
+                result["_source_excel_brand"] = raw_brand
+                result["excel_brand"] = ""
+                result["brand_validation_error"] = "numeric_brand_rejected"
+                numeric_brand_rows.append({
+                    "excel_row": result.get("excel_row"),
+                    "value": raw_brand,
+                })
+            if not normalize_brand(result.get("excel_brand")):
+                missing_brand_rows += 1
         linked_rows = {}
         for result in results:
             if result.get("match_status") not in AUTOMATIC_STATUSES:
@@ -324,6 +339,10 @@ class ExcelProductBatchService:
                         "product_identity": "excel_row",
                         "duplicate_names": "separate_cards",
                         "stocks": "kept_separate",
+                        "brand_validation": {
+                            "numeric_rejected": numeric_brand_rows,
+                            "missing_count": missing_brand_rows,
+                        },
                     }),
                 ),
             )
@@ -514,7 +533,10 @@ class ExcelProductBatchService:
             "excel_name_number_format": result.get("excel_name_number_format"),
             "excel_name_normalization": result.get("excel_name_normalization"),
             "excel_article": result.get("excel_article"),
-            "excel_brand": result.get("excel_brand"),
+            "excel_brand": result.get(
+                "_source_excel_brand",
+                result.get("excel_brand"),
+            ),
             "category": result.get("category"),
             "stock": result.get("stock"),
             "cell": result.get("cell"),
@@ -528,7 +550,10 @@ class ExcelProductBatchService:
             "normalized_name": normalize_text(result.get("excel_name")),
             "excel_article": text(result.get("excel_article")) or None,
             "article_quality": result.get("article_quality") or article_quality(result.get("excel_article")),
-            "excel_brand": text(result.get("excel_brand")),
+            "excel_brand": (
+                normalize_brand(result.get("excel_brand"))
+                or normalize_brand(enrichment.get("bitrix_brand"))
+            ),
             "excel_category": text(category_for_product_name(
                 result.get("excel_name"), result.get("category")
             )) or None,
@@ -695,9 +720,6 @@ class ExcelProductCatalog:
                 like_pattern(text(query).upper()),
                 like_pattern(text(query).title()),
             ])
-        if brand:
-            where.append("COALESCE(p.excel_brand, '') = ?")
-            parameters.append(brand)
         if category:
             where.append(
                 "(COALESCE(p.excel_category, '') = ? OR "
@@ -724,7 +746,15 @@ class ExcelProductCatalog:
         elif match_status != "all":
             where.append("p.match_status = ?")
             parameters.append(match_status)
+        brand_facet_where = list(where)
+        brand_facet_parameters = list(parameters)
+        if brand:
+            where.append("COALESCE(p.excel_brand, '') = ?")
+            parameters.append(brand)
         where_sql = " WHERE " + " AND ".join(where)
+        brand_facet_where_sql = (
+            " WHERE " + " AND ".join(brand_facet_where)
+        )
         select_sql = (
             "SELECT p.*, cp.barcode AS bitrix_barcode, "
             "b.source_filename, b.applied_at, b.row_count AS batch_row_count "
@@ -766,23 +796,28 @@ class ExcelProductCatalog:
                 select_sql + where_sql + order_sql + ", p.excel_row ASC, p.id ASC LIMIT ? OFFSET ?",
                 parameters + [per_page, (page - 1) * per_page],
             ).fetchall()
-            brands = [row[0] for row in connection.execute(
-                "SELECT COALESCE(p.excel_brand, '') AS value "
-                "FROM catalog_excel_products p JOIN catalog_excel_batches b "
-                "ON b.id = p.current_batch_id WHERE p.active = 1 AND "
-                + visible_cards_sql + " "
-                "AND trim(COALESCE(p.excel_brand, '')) <> '' "
-                "GROUP BY value HAVING COALESCE(SUM(p.stock), 0) >= 1 ORDER BY value"
-            ).fetchall()]
             brand_groups = [dict(row) for row in connection.execute(
-                "SELECT COALESCE(p.excel_brand, '') AS name, "
-                "COALESCE(SUM(p.stock), 0) AS count "
+                "SELECT trim(p.excel_brand) AS name, COUNT(*) AS count "
                 "FROM catalog_excel_products p JOIN catalog_excel_batches b "
-                "ON b.id = p.current_batch_id WHERE p.active = 1 AND "
-                + visible_cards_sql + " "
+                "ON b.id = p.current_batch_id "
+                "LEFT JOIN catalog_products cp "
+                "ON cp.id = p.bitrix_catalog_product_id"
+                + brand_facet_where_sql + " "
                 "AND trim(COALESCE(p.excel_brand, '')) <> '' "
-                "GROUP BY name ORDER BY name"
+                "AND trim(p.excel_brand) GLOB '*[^0-9]*' "
+                "GROUP BY trim(p.excel_brand) COLLATE NOCASE "
+                "HAVING COUNT(*) > 0 ORDER BY name COLLATE NOCASE",
+                brand_facet_parameters,
             ).fetchall()]
+            brand_all_count = connection.execute(
+                "SELECT COUNT(*) FROM catalog_excel_products p "
+                "JOIN catalog_excel_batches b ON b.id = p.current_batch_id "
+                "LEFT JOIN catalog_products cp "
+                "ON cp.id = p.bitrix_catalog_product_id"
+                + brand_facet_where_sql,
+                brand_facet_parameters,
+            ).fetchone()[0]
+            brands = [group["name"] for group in brand_groups]
             categories = [row[0] for row in connection.execute(
                 "SELECT DISTINCT COALESCE(p.excel_category, '') AS value "
                 "FROM catalog_excel_products p JOIN catalog_excel_batches b "
@@ -825,6 +860,7 @@ class ExcelProductCatalog:
             "pages": pages,
             "brands": brands, "categories": categories,
             "brand_groups": brand_groups, "category_groups": category_groups,
+            "brand_all_count": brand_all_count,
             "cell_groups": cell_groups,
             "stats": stats, "sort_by": sort_by, "sort_dir": sort_dir,
             "status_counts": status_counts,
@@ -853,7 +889,9 @@ class ExcelProductCatalog:
         if not name:
             raise ValueError("Название товара обязательно.")
         article = text(article)
-        brand = text(brand)
+        if is_numeric_brand(brand):
+            raise ValueError("Бренд не может состоять только из цифр.")
+        brand = normalize_brand(brand)
         category = text(category)
         cell = text(cell)
         stock = parse_initial_stock(stock)
@@ -925,7 +963,9 @@ class ExcelProductCatalog:
                 values["excel_article"] = text(article) or None
                 values["article_quality"] = article_quality(values["excel_article"])
             if brand is not None:
-                values["excel_brand"] = text(brand)
+                if is_numeric_brand(brand):
+                    raise ValueError("Бренд не может состоять только из цифр.")
+                values["excel_brand"] = normalize_brand(brand)
             if category is not None:
                 values["excel_category"] = text(category) or None
             if cell is not None:

@@ -5,6 +5,7 @@ import uuid
 from collections import defaultdict
 from datetime import datetime, timezone
 
+from app.services.brand_values import brand_from_properties, normalize_brand
 from app.services.product_reconciliation import normalize_text
 
 
@@ -23,12 +24,6 @@ CATEGORY_BY_KEY = {normalize_text(value): value for value in CATEGORIES}
 CATEGORY_BY_KEY.update({
     "watches": "Watches",
 })
-BRAND_PROPERTY_CODES = {
-    "brand",
-    "brand model",
-    "manufacturer",
-    "filter brand",
-}
 JEWELRY_PROPERTY_CODES = {
     "type of accessory",
     "material of accessory",
@@ -115,28 +110,30 @@ def classify_product(product, existing_brand="", existing_category="",
                      known_brands=None):
     """Return deterministic brand/category values without fuzzy guessing."""
     properties = product.get("properties") or []
-    explicit_brand = ""
     useful_codes = set()
     for prop in properties:
         value = _property_value(prop)
         if not _useful_property_value(value):
             continue
         code = normalize_text(prop.get("code"))
-        name = normalize_text(prop.get("name"))
         useful_codes.add(code)
-        if not explicit_brand and (
-            code in BRAND_PROPERTY_CODES
-            or name in {"бренд", "марка часов", "производитель"}
-        ):
-            explicit_brand = _text(value)
-
-    brand = explicit_brand or _text(product.get("brand")) or _text(existing_brand)
+    explicit_brand, _brand_validation_error = brand_from_properties(properties)
+    product_brand = normalize_brand(product.get("brand"))
+    existing_brand = normalize_brand(existing_brand)
+    brand = explicit_brand or product_brand or existing_brand
     brand_reason = (
         "bitrix_brand_property" if explicit_brand
-        else "bitrix_brand" if _text(product.get("brand"))
-        else "existing_erp_brand" if _text(existing_brand)
+        else "bitrix_brand" if product_brand
+        else "existing_erp_brand" if existing_brand
         else ""
     )
+    if known_brands:
+        known_brands = {
+            normalize_text(key): normalized
+            for key, value in known_brands.items()
+            for normalized in (normalize_brand(value),)
+            if normalized and normalize_text(key)
+        }
     if not brand and known_brands:
         matches = {
             known_brands[normalize_text(name)]
@@ -147,7 +144,9 @@ def classify_product(product, existing_brand="", existing_category="",
             brand = matches.pop()
             brand_reason = "known_brand_section"
     if brand and known_brands:
-        brand = known_brands.get(normalize_text(brand), brand)
+        brand = normalize_brand(
+            known_brands.get(normalize_text(brand), brand)
+        )
 
     existing_category = CATEGORY_BY_KEY.get(
         normalize_text(existing_category),
@@ -243,9 +242,10 @@ class ProductClassificationRepair:
         known_brands = {}
         for row in rows:
             for value in (row["brand"], row["excel_brand"]):
+                value = normalize_brand(value)
                 key = normalize_text(value)
                 if key and key not in known_brands:
-                    known_brands[key] = _text(value)
+                    known_brands[key] = value
 
         result = []
         for row in rows:

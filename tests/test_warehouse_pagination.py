@@ -185,6 +185,45 @@ class WarehousePaginationTest(unittest.TestCase):
         articles = [row["excel_article"] for row in combined["items"]]
         self.assertEqual(articles, sorted(articles, reverse=True))
 
+    def test_brand_filter_counts_positions_and_respects_other_filters(self):
+        catalog = ExcelProductCatalog(self.database)
+        listing = catalog.list_products(per_page=50)
+        self.assertEqual(listing["brand_all_count"], self.PRODUCT_COUNT)
+        self.assertEqual(listing["brand_groups"], [
+            {"name": "Casio", "count": 2500},
+            {"name": "Omega", "count": 2500},
+        ])
+
+        searched = catalog.list_products(
+            query="Product 0042",
+            per_page=50,
+        )
+        self.assertEqual(searched["brand_all_count"], 1)
+        self.assertEqual(
+            searched["brand_groups"],
+            [{"name": "Omega", "count": 1}],
+        )
+
+        selected = catalog.list_products(
+            brand="Omega",
+            per_page=50,
+        )
+        self.assertEqual(selected["total"], 2500)
+        self.assertEqual(selected["brand_all_count"], self.PRODUCT_COUNT)
+        self.assertEqual(selected["brand_groups"], listing["brand_groups"])
+
+        html = self.client.get("/warehouse").get_data(as_text=True)
+        brand_filter = html.split(
+            'id="filterBrandCombobox"',
+            1,
+        )[1].split(
+            '<div class="category-cell-form-title"',
+            1,
+        )[0]
+        self.assertIn("Все бренды", brand_filter)
+        self.assertIn("<span>5000</span>", brand_filter)
+        self.assertEqual(brand_filter.count("<span>2500</span>"), 2)
+
     def test_pagination_state_is_kept_in_urls(self):
         html = self.client.get(
             "/warehouse?q=Product&brand=Omega&sort_by=article"

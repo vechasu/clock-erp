@@ -20,6 +20,7 @@ from app.clients.moysklad import MoySkladClient
 from app.catalog_db import CatalogDatabase
 from app.clients.bitrix_catalog import BitrixCatalogReadOnlyClient, BitrixCatalogReadOnlyError
 from app.services.bitrix_catalog_importer import BitrixCatalogImporter
+from app.services.brand_values import normalize_brand
 from app.services.catalog_reader import CatalogReader
 from app.services.excel_product_catalog import (
     ExcelProductCatalog,
@@ -1168,14 +1169,21 @@ def remember_catalog_classification(brand, category=""):
 
 def build_brand_groups(items):
     groups = {}
-    taxonomy_brands = load_catalog_taxonomy()["brands"]
+    taxonomy_brands = [
+        brand
+        for brand in (
+            normalize_brand(value)
+            for value in load_catalog_taxonomy()["brands"]
+        )
+        if brand
+    ]
     taxonomy_brand_keys = {
         catalog_label_key(brand)
         for brand in taxonomy_brands
     }
 
     for item in items:
-        brand = str(item.get("brand") or "").strip()
+        brand = normalize_brand(item.get("brand"))
         if not brand or brand == "Без бренда":
             continue
         key = catalog_label_key(brand)
@@ -1435,9 +1443,20 @@ def warehouse_page():
             filtered_items.append(item)
         items = filtered_items
     taxonomy = load_catalog_taxonomy()
+    filter_brand_groups = merge_catalog_groups(
+        catalog["brand_groups"],
+        [],
+    )
     brand_groups = merge_catalog_groups(
-        catalog["brand_groups"] + build_brand_groups(items),
-        taxonomy["brands"],
+        filter_brand_groups + build_brand_groups(items),
+        [
+            brand
+            for brand in (
+                normalize_brand(value)
+                for value in taxonomy["brands"]
+            )
+            if brand
+        ],
     )
     category_groups = merge_catalog_groups(
         catalog["category_groups"] + build_category_groups(items),
@@ -1520,6 +1539,8 @@ def warehouse_page():
             add_request_id=uuid.uuid4().hex,
             visible_positions=visible_positions,
             brand_groups=brand_groups,
+            filter_brand_groups=filter_brand_groups,
+            brand_all_count=catalog.get("brand_all_count", catalog["total"]),
             category_groups=category_groups,
             cell_groups=cell_groups,
             total_stock=total_stock,

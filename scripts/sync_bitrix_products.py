@@ -13,6 +13,10 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from app.catalog_db import CatalogDatabase  # noqa: E402
 from app.clients.bitrix_catalog import BitrixCatalogReadOnlyClient  # noqa: E402
+from app.services.brand_values import (  # noqa: E402
+    is_numeric_brand,
+    normalize_brand,
+)
 from app.services.bitrix_catalog_importer import BitrixCatalogImporter  # noqa: E402
 from app.services.bitrix_erp_product_sync import (  # noqa: E402
     BitrixERPProductSync,
@@ -39,7 +43,7 @@ def _record_quality(report, product):
     price = product.get("sale_price") or {}
     checks = (
         ("without_price", price.get("value") is None),
-        ("without_brand", not _text(product.get("brand"))),
+        ("without_brand", not normalize_brand(product.get("brand"))),
         (
             "without_category",
             not (
@@ -53,6 +57,13 @@ def _record_quality(report, product):
         if missing:
             report[key]["count"] += 1
             report[key]["products"].append(_quality_item(product))
+    if (
+        product.get("brand_validation_error")
+        == "numeric_brand_rejected"
+        or is_numeric_brand(product.get("brand"))
+    ):
+        report["invalid_brand"]["count"] += 1
+        report["invalid_brand"]["products"].append(_quality_item(product))
 
 
 def _add_source_totals(report, source_result):
@@ -91,6 +102,7 @@ def _initial_report(mode):
         "source_catalog": {key: 0 for key in SOURCE_RESULT_KEYS},
         "without_price": {"count": 0, "products": []},
         "without_brand": {"count": 0, "products": []},
+        "invalid_brand": {"count": 0, "products": []},
         "without_category": {"count": 0, "products": []},
         "without_image": {"count": 0, "products": []},
         "conflicts": [],

@@ -352,6 +352,17 @@ class BitrixERPProductSyncTest(unittest.TestCase):
             (1, 1, 1, 1),
         )
 
+    def test_numeric_brand_is_reported_and_not_created(self):
+        report = self.run_sync([
+            product(brand="100"),
+        ], apply=False)
+        self.assertEqual(report["invalid_brand"]["count"], 1)
+        self.assertEqual(report["without_brand"]["count"], 1)
+        self.assertEqual(
+            report["invalid_brand"]["products"][0]["id"],
+            "1",
+        )
+
     def test_product_listing_includes_zero_stock_catalog_cards(self):
         self.run_sync([product()])
         listing = ExcelProductCatalog(self.database).list_products(per_page=10)

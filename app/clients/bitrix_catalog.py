@@ -7,6 +7,12 @@ from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import requests
 
+from app.services.brand_values import (
+    brand_from_properties,
+    is_numeric_brand,
+    normalize_brand,
+)
+
 
 RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 PURCHASE_PRICE_MARKERS = {"purchase", "purchasing", "cost", "закупочная", "себестоимость"}
@@ -233,14 +239,16 @@ def normalize_product(raw, base_url=""):
     )
     if primary_category_id:
         categories.sort(key=lambda item: 0 if item["id"] == primary_category_id else 1)
-    brand = _text(_first(raw, "brand", "BRAND"))
+    raw_brand = _text(_first(raw, "brand", "BRAND"))
+    brand_validation_error = (
+        "numeric_brand_rejected" if is_numeric_brand(raw_brand) else None
+    )
+    brand = normalize_brand(raw_brand)
     if not brand:
-        for prop in properties:
-            if prop["code"].casefold() in {
-                "brand", "brand_model", "manufacturer", "filter_brand",
-            }:
-                brand = _text(prop["display_value"])
-                break
+        brand, property_error = brand_from_properties(properties)
+        brand_validation_error = brand_validation_error or property_error
+    if not brand and brand_validation_error is None:
+        brand_validation_error = "brand_missing"
     product = {
         "external_source": "bitrix",
         "external_product_id": _text(_first(raw, "id", "ID", "product_id", "PRODUCT_ID")),
@@ -263,6 +271,7 @@ def normalize_product(raw, base_url=""):
         "categories": categories,
         "primary_category_id": primary_category_id,
         "brand": brand,
+        "brand_validation_error": brand_validation_error,
         "properties": properties,
         "images": _normalize_images(raw, base_url),
         "prices": prices,
