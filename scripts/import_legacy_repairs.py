@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import io
 import json
 import sys
 from pathlib import Path
@@ -28,6 +29,25 @@ ACTION_LABELS = {
     "skip": "ПРОПУСТИТЬ",
     "manual": "РУЧНАЯ ПРОВЕРКА",
 }
+
+
+def configure_utf8_output():
+    for name in ("stdout", "stderr"):
+        stream = getattr(sys, name)
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
+            continue
+        encoding = _text(getattr(stream, "encoding", "")).lower()
+        if encoding in {"ascii", "ansi_x3.4-1968", "us-ascii"}:
+            setattr(
+                sys,
+                name,
+                io.TextIOWrapper(
+                    stream.buffer,
+                    encoding="utf-8",
+                    errors="backslashreplace",
+                ),
+            )
 
 
 def _text(value):
@@ -199,4 +219,5 @@ def main():
 
 
 if __name__ == "__main__":
+    configure_utf8_output()
     raise SystemExit(main())

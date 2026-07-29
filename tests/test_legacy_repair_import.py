@@ -1,5 +1,8 @@
 import copy
 import json
+import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -378,6 +381,37 @@ class LegacyRepairImportTest(unittest.TestCase):
             [{"id": "199482", "name": "LUNAR Black"}],
         )
         self.assertNotIn("address", json.dumps(snapshot).lower())
+
+    def test_cli_prints_russian_report_under_ascii_server_locale(self):
+        environment = os.environ.copy()
+        environment.update({
+            "LANG": "C",
+            "LC_ALL": "C",
+            "PYTHONIOENCODING": "ascii",
+            "PYTHONUTF8": "0",
+        })
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(PROJECT_ROOT / "scripts" / "import_legacy_repairs.py"),
+                "--path",
+                str(self.cases_path),
+            ],
+            cwd=str(PROJECT_ROOT),
+            env=environment,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        self.assertEqual(
+            result.returncode,
+            0,
+            result.stderr.decode("utf-8", errors="replace"),
+        )
+        output = result.stdout.decode("utf-8")
+        self.assertIn("Режим: DRY-RUN", output)
+        self.assertIn("требуют проверки=10", output)
 
 
 if __name__ == "__main__":
