@@ -1330,6 +1330,7 @@
         }
 
         .add-card .add-form > input,
+        .add-card .add-form-field > input,
         .add-card .add-form > button[type="submit"] {
             width: 100%;
             height: 46px;
@@ -1341,16 +1342,37 @@
             box-sizing: border-box;
         }
 
-        .add-card .add-form > input {
+        .add-card .add-form > input,
+        .add-card .add-form-field > input {
             border: 1px solid #d1d5db;
             background: #ffffff;
             color: #111827;
             outline: none;
         }
 
-        .add-card .add-form > input:focus {
+        .add-card .add-form > input:focus,
+        .add-card .add-form-field > input:focus {
             border-color: #22c55e;
             box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.12);
+        }
+
+        .add-card .add-form-field {
+            min-width: 0;
+        }
+
+        .add-card .add-form-field > input.is-invalid {
+            border-color: #dc2626;
+            box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1);
+        }
+
+        .add-card .add-form-field-error {
+            display: block;
+            min-height: 16px;
+            margin: 4px 4px 0;
+            color: #b91c1c;
+            font-size: 12px;
+            font-weight: 700;
+            line-height: 1.25;
         }
 
         .add-card .add-form > button[type="submit"] {
@@ -3780,14 +3802,26 @@
                         clear_selection_on_search_clear=true
                     ) }}
 
-                    <input
-                        type="number"
-                        name="stock"
-                        min="0"
-                        step="1"
-                        value="0"
-                        placeholder="Начальный остаток"
-                    >
+                    <div class="add-form-field">
+                        <input
+                            id="addStock"
+                            type="number"
+                            name="stock"
+                            min="0"
+                            step="1"
+                            inputmode="numeric"
+                            required
+                            value="{{ request.args.get('add_stock', '0') if request.args.get('stock_error') else '0' }}"
+                            placeholder="Начальный остаток"
+                            aria-describedby="addStockError"
+                            {% if request.args.get("stock_error") %}class="is-invalid" aria-invalid="true"{% endif %}
+                        >
+                        <span
+                            id="addStockError"
+                            class="add-form-field-error"
+                            aria-live="polite"
+                        >{{ request.args.get("stock_error", "") }}</span>
+                    </div>
 
                     <input
                         type="text"
@@ -6124,7 +6158,44 @@
 
 
     <script>
+        function validateWarehouseInitialStock(input) {
+            const error = document.getElementById("addStockError");
+            const value = String(input.value || "").trim();
+            const message = /^\d+$/.test(value)
+                ? ""
+                : "Введите целое число от 0 и выше.";
+
+            input.setCustomValidity(message);
+            input.classList.toggle("is-invalid", Boolean(message));
+            input.setAttribute("aria-invalid", message ? "true" : "false");
+
+            if (error) {
+                error.textContent = message;
+            }
+
+            return !message;
+        }
+
+        const warehouseInitialStock = document.getElementById("addStock");
+
+        if (warehouseInitialStock) {
+            warehouseInitialStock.addEventListener("invalid", function() {
+                validateWarehouseInitialStock(warehouseInitialStock);
+            });
+            warehouseInitialStock.addEventListener("input", function() {
+                validateWarehouseInitialStock(warehouseInitialStock);
+            });
+        }
+
         function lockWarehouseAddForm(form) {
+            const stockInput = form.querySelector('input[name="stock"]');
+
+            if (stockInput && !validateWarehouseInitialStock(stockInput)) {
+                stockInput.reportValidity();
+                stockInput.focus();
+                return false;
+            }
+
             if (form.dataset.submitting === "1") {
                 return false;
             }
