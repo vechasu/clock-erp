@@ -62,6 +62,10 @@ CREATE INDEX IF NOT EXISTS idx_catalog_products_article
     ON catalog_products(article);
 CREATE INDEX IF NOT EXISTS idx_catalog_products_name
     ON catalog_products(name);
+CREATE INDEX IF NOT EXISTS idx_catalog_products_barcode
+    ON catalog_products(barcode COLLATE NOCASE);
+CREATE INDEX IF NOT EXISTS idx_catalog_products_brand
+    ON catalog_products(brand COLLATE NOCASE);
 
 CREATE TABLE IF NOT EXISTS catalog_product_categories (
     product_id INTEGER NOT NULL REFERENCES catalog_products(id) ON DELETE CASCADE,
@@ -292,6 +296,37 @@ CREATE INDEX IF NOT EXISTS idx_catalog_excel_products_article
     ON catalog_excel_products(excel_article COLLATE NOCASE);
 CREATE INDEX IF NOT EXISTS idx_catalog_excel_products_normalized_name
     ON catalog_excel_products(normalized_name);
+CREATE INDEX IF NOT EXISTS idx_catalog_excel_products_listing_name
+    ON catalog_excel_products(active, excel_name_raw COLLATE NOCASE, id);
+CREATE INDEX IF NOT EXISTS idx_catalog_excel_products_listing_brand
+    ON catalog_excel_products(active, excel_brand COLLATE NOCASE, id);
+CREATE INDEX IF NOT EXISTS idx_catalog_excel_products_listing_category
+    ON catalog_excel_products(active, excel_category COLLATE NOCASE, id);
+CREATE INDEX IF NOT EXISTS idx_catalog_excel_products_listing_stock
+    ON catalog_excel_products(active, stock, id);
+CREATE INDEX IF NOT EXISTS idx_catalog_excel_products_listing_cell
+    ON catalog_excel_products(active, cell COLLATE NOCASE, id);
+CREATE INDEX IF NOT EXISTS idx_catalog_excel_products_listing_created
+    ON catalog_excel_products(active, created_at, id);
+
+CREATE TABLE IF NOT EXISTS catalog_product_classification_audit (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id TEXT NOT NULL,
+    product_id INTEGER NOT NULL
+        REFERENCES catalog_excel_products(id) ON DELETE CASCADE,
+    bitrix_catalog_product_id INTEGER
+        REFERENCES catalog_products(id) ON DELETE SET NULL,
+    status TEXT NOT NULL CHECK (status IN ('updated', 'ambiguous')),
+    reason TEXT NOT NULL,
+    previous_brand TEXT,
+    new_brand TEXT,
+    previous_category TEXT,
+    new_category TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_catalog_product_classification_audit_product
+    ON catalog_product_classification_audit(product_id, created_at);
 
 CREATE TABLE IF NOT EXISTS catalog_excel_batch_rows (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

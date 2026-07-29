@@ -259,6 +259,85 @@
             box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
         }
 
+        .warehouse-results-status {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            margin: 12px 2px;
+            color: #4b5563;
+            font-size: 14px;
+            font-weight: 700;
+        }
+
+        .warehouse-pagination {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .warehouse-pagination a,
+        .warehouse-pagination span {
+            min-width: 38px;
+            min-height: 38px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid #d1d5db;
+            border-radius: 10px;
+            background: white;
+            color: #111827;
+            text-decoration: none;
+        }
+
+        .warehouse-pagination span {
+            color: #9ca3af;
+            background: #f9fafb;
+        }
+
+        .warehouse-page-size {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .warehouse-page-size select {
+            width: auto;
+            padding: 8px 32px 8px 10px;
+        }
+
+        .warehouse-loading-state {
+            display: none;
+            margin: 12px 0;
+            padding: 12px 14px;
+            border-radius: 12px;
+            background: #eff6ff;
+            color: #1d4ed8;
+            font-weight: 700;
+        }
+
+        .warehouse-loading-state.is-visible {
+            display: block;
+        }
+
+        .warehouse-loading-state.is-error {
+            background: #fef2f2;
+            color: #b91c1c;
+        }
+
+        .warehouse-loading-state button {
+            margin-left: 10px;
+            padding: 7px 10px;
+        }
+
+        @media (max-width: 768px) {
+            .warehouse-results-status {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+        }
+
         .warehouse-product-name-cell {
             display: flex;
             align-items: center;
@@ -3571,7 +3650,7 @@
 
                         <div class="stock-summary-item">
                             <div class="stat-title erp-stat-label">Остаток, единиц</div>
-                            <div class="stat-value erp-stat-value">{{ total_stock_display }}</div>
+                            <div id="totalStockCount" class="stat-value erp-stat-value">{{ total_stock_display }}</div>
                         </div>
 
 
@@ -3608,6 +3687,7 @@
                 <form class="search-form erp-toolbar" method="get" action="/warehouse">
                     <input type="hidden" name="sort_by" value="{{ sort_by }}">
                     <input type="hidden" name="sort_dir" value="{{ sort_dir }}">
+                    <input type="hidden" name="per_page" value="{{ per_page }}">
                     {% if selected_category %}
                         <input type="hidden" name="category" value="{{ selected_category }}">
                     {% endif %}
@@ -3732,6 +3812,20 @@
                             >
                                 Карта склада
                             </button>
+                            <a
+                                class="warehouse-more-item"
+                                role="menuitem"
+                                href="{{ warehouse_export_xlsx_url }}"
+                            >
+                                Экспорт Excel
+                            </a>
+                            <a
+                                class="warehouse-more-item"
+                                role="menuitem"
+                                href="{{ warehouse_export_pdf_url }}"
+                            >
+                                Экспорт PDF
+                            </a>
                         </div>
                     </div>
 
@@ -3955,6 +4049,38 @@
                 </form>
             </div>
 
+            <div
+                id="warehouseLoadingState"
+                class="warehouse-loading-state"
+                role="status"
+                aria-live="polite"
+            ></div>
+            <div id="warehouseResults">
+            <div class="warehouse-results-status">
+                <div>
+                    Найдено {{ "{:,}".format(total_found).replace(",", " ") }} товаров.
+                    Показаны {{ page_start }}–{{ page_end }}.
+                </div>
+                <label class="warehouse-page-size">
+                    На странице
+                    <select
+                        id="warehousePageSize"
+                        aria-label="Количество товаров на странице"
+                        onchange="changeWarehousePageSize(this.value)"
+                    >
+                        {% for option in (50, 100, 200) %}
+                            <option value="{{ option }}" {% if per_page == option %}selected{% endif %}>{{ option }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <nav class="warehouse-pagination" aria-label="Страницы товаров">
+                    {% if first_page_url %}<a href="{{ first_page_url }}" aria-label="Первая страница">«</a>{% else %}<span>«</span>{% endif %}
+                    {% if previous_page_url %}<a href="{{ previous_page_url }}" aria-label="Предыдущая страница">‹</a>{% else %}<span>‹</span>{% endif %}
+                    <strong>Страница {{ page }} из {{ pages or 1 }}</strong>
+                    {% if next_page_url %}<a href="{{ next_page_url }}" aria-label="Следующая страница">›</a>{% else %}<span>›</span>{% endif %}
+                    {% if last_page_url %}<a href="{{ last_page_url }}" aria-label="Последняя страница">»</a>{% else %}<span>»</span>{% endif %}
+                </nav>
+            </div>
             <div class="table-card erp-table-card">
                 {% if items %}
                     <table id="warehouseProductsTable" class="warehouse-products-table erp-data-table">
@@ -4094,6 +4220,7 @@
 
                                             <input type="hidden" name="sort_by" value="{{ sort_by }}">
                                             <input type="hidden" name="sort_dir" value="{{ sort_dir }}">
+                                            <input type="hidden" name="per_page" value="{{ per_page }}">
 
                                             <label
                                                 class="stock-mini-toggle"
@@ -4174,6 +4301,7 @@
                                                     src="{{ item.thumbnail_url }}"
                                                     alt=""
                                                     loading="lazy"
+                                                    decoding="async"
                                                     onerror="this.hidden=true; this.nextElementSibling.hidden=false"
                                                 >
                                                 <span class="warehouse-product-thumb warehouse-product-thumb-placeholder" hidden aria-hidden="true">⌚</span>
@@ -4238,7 +4366,7 @@
                                                     data-cell-source="{{ item.cell_source|e }}"
                                                     data-cell-source-label="{{ item.cell_source_label|e }}"
                                                     data-url="{{ item.moysklad_url|e }}"
-                                                    data-gallery="{{ item.gallery|default([], true)|tojson|forceescape }}"
+                                                    data-detail-url="/warehouse/product/{{ item.id }}"
                                                     onclick="openEditDrawer(this)"
                                                 >
                                                     Карточка
@@ -4264,6 +4392,20 @@
                 {% else %}
                     <div class="empty">Товары не найдены</div>
                 {% endif %}
+            </div>
+            <div class="warehouse-results-status">
+                <div>
+                    Найдено {{ "{:,}".format(total_found).replace(",", " ") }} товаров.
+                    Показаны {{ page_start }}–{{ page_end }}.
+                </div>
+                <nav class="warehouse-pagination" aria-label="Страницы товаров">
+                    {% if first_page_url %}<a href="{{ first_page_url }}" aria-label="Первая страница">«</a>{% else %}<span>«</span>{% endif %}
+                    {% if previous_page_url %}<a href="{{ previous_page_url }}" aria-label="Предыдущая страница">‹</a>{% else %}<span>‹</span>{% endif %}
+                    <strong>Страница {{ page }} из {{ pages or 1 }}</strong>
+                    {% if next_page_url %}<a href="{{ next_page_url }}" aria-label="Следующая страница">›</a>{% else %}<span>›</span>{% endif %}
+                    {% if last_page_url %}<a href="{{ last_page_url }}" aria-label="Последняя страница">»</a>{% else %}<span>»</span>{% endif %}
+                </nav>
+            </div>
             </div>
         </main>
     </div>
@@ -4292,6 +4434,7 @@
         </div>
 
         <form class="category-cell-form" method="get" action="/warehouse">
+            <input type="hidden" name="per_page" value="{{ per_page }}">
             {% if query %}
                 <input type="hidden" name="q" value="{{ query }}">
             {% endif %}
@@ -4404,7 +4547,7 @@
             {% for group in cell_groups %}
                 <a
                     class="warehouse-map-cell {% if selected_cell == group.cell %}active{% endif %}"
-                    href="{{ url_for('warehouse_page', cell=group.cell, brand=selected_brand, category=selected_category, q=query, date_from=created_date_from, date_to=created_date_to, hide_zero='1' if hide_zero else None) }}"
+                    href="{{ url_for('warehouse_page', cell=group.cell, brand=selected_brand, category=selected_category, q=query, date_from=created_date_from, date_to=created_date_to, hide_zero='1' if hide_zero else None, per_page=per_page) }}"
                 >
                     <div class="warehouse-map-title">{{ group.cell }}</div>
 
@@ -4448,6 +4591,7 @@
         <div class="product-card-info">
         <form id="inlineProductForm" class="product-inline-form" method="post" action="/warehouse/edit">
             <input id="editProductId" type="hidden" name="product_id">
+            <input id="editReturnQuery" type="hidden" name="return_query" value="{{ request.query_string.decode('utf-8') }}">
             <input type="hidden" name="stock_reason" value="Редактирование карточки товара">
             <div class="product-detail-grid">
             <div class="product-detail-card">
@@ -4861,7 +5005,7 @@
             form.classList.remove("is-editing");
         }
 
-        function openEditDrawer(button) {
+        async function openEditDrawer(button) {
             warehouseDrawerReturnFocus = button;
             closeAllDrawers(false);
 
@@ -4877,17 +5021,8 @@
             const productUrl = button.dataset.url || "#";
             const gallerySection = document.getElementById("detailGallerySection");
             const galleryElement = document.getElementById("detailGallery");
-            let gallery = [];
-
-            try {
-                gallery = JSON.parse(button.dataset.gallery || "[]");
-            } catch (error) {
-                gallery = [];
-            }
-
-            const galleryUrls = gallery
-                .map(function(image) { return image.original_url || image.url || ""; })
-                .filter(Boolean);
+            let galleryUrls = [];
+            const productId = button.dataset.id || button.dataset.productId || "";
             let selectedGalleryIndex = 0;
 
             function renderProductGallery() {
@@ -4904,6 +5039,7 @@
                 mainButton.setAttribute("aria-label", "Открыть фотографию на весь экран");
                 mainImage.src = galleryUrls[selectedGalleryIndex];
                 mainImage.alt = productName;
+                mainImage.decoding = "async";
                 mainButton.appendChild(mainImage);
                 mainButton.addEventListener("click", function() {
                     openProductGalleryLightbox(mainImage.src, productName);
@@ -4927,6 +5063,7 @@
                         image.src = imageUrl;
                         image.alt = productName;
                         image.loading = "lazy";
+                        image.decoding = "async";
                         button.appendChild(image);
                         button.addEventListener("click", function() {
                             selectedGalleryIndex = index;
@@ -4980,6 +5117,34 @@
             focusOpenedWarehouseDrawer(
                 document.getElementById("editDrawer")
             );
+
+            if (button.dataset.detailUrl) {
+                try {
+                    const response = await fetch(button.dataset.detailUrl, {
+                        headers: { "X-Requested-With": "XMLHttpRequest" }
+                    });
+                    if (!response.ok) {
+                        throw new Error("Не удалось загрузить фотографии");
+                    }
+                    const detail = await response.json();
+                    if (
+                        document.getElementById("editProductId").value
+                        !== String(productId)
+                    ) {
+                        return;
+                    }
+                    galleryUrls = (detail.gallery || [])
+                        .map(function(image) {
+                            return image.original_url || image.url || "";
+                        })
+                        .filter(Boolean);
+                    selectedGalleryIndex = 0;
+                    renderProductGallery();
+                    gallerySection.hidden = !galleryElement.childElementCount;
+                } catch (error) {
+                    console.error(error);
+                }
+            }
         }
 
         function filterBrandOptions(value) {
@@ -5051,55 +5216,12 @@
         }
 
         function filterWarehouseRows(hideZeroOverride) {
-            const query = warehouseSearchInput
-                ? warehouseSearchInput.value.trim().toLowerCase()
-                : "";
-
-            const toggle = document.querySelector(
-                '.stock-mini-toggle input[name="hide_zero"]'
-            );
-
-            const hideZero = typeof hideZeroOverride === "boolean"
-                ? hideZeroOverride
-                : Boolean(toggle && toggle.checked);
-
             const rows = Array.from(document.querySelectorAll(
                 "tbody tr[data-name][data-article][data-stock]"
             ));
 
-            rows.forEach(function(row) {
-                const name = row.dataset.name || "";
-                const article = row.dataset.article || "";
-                const stock = Number.parseFloat(
-                    row.dataset.stock || "0"
-                );
-
-                const matchesSearch = (
-                    !query
-                    || name.startsWith(query)
-                    || article.startsWith(query)
-                );
-
-                const matchesStock = !hideZero || stock > 0;
-
-                row.hidden = !matchesSearch || !matchesStock;
-            });
-
-            const visibleCount = rows.filter(function(row) {
-                return !row.hidden;
-            }).length;
-
-            const counter = document.getElementById(
-                "visiblePositionsCount"
-            );
-
-            if (counter) {
-                counter.textContent = String(visibleCount);
-            }
-
             syncWarehouseBulkSelection();
-
-            return visibleCount;
+            return rows.length;
         }
 
         function getWarehouseVisibleProductCheckboxes() {
@@ -5258,6 +5380,7 @@
 
             const url = new URL(window.location.href);
             url.searchParams.delete("q");
+            url.searchParams.delete("page");
 
             window.clearTimeout(warehouseSearchTimer);
 
@@ -5317,7 +5440,8 @@
                 "date_to",
                 "hide_zero",
                 "sort_by",
-                "sort_dir"
+                "sort_dir",
+                "page"
             ].forEach(name => url.searchParams.delete(name));
             navigateWithWarehouseParams(url);
         }
@@ -5338,11 +5462,20 @@
             const controller = new AbortController();
             warehouseSearchController = controller;
             const url = new URL(window.location.href);
+            const loadingState = document.getElementById(
+                "warehouseLoadingState"
+            );
 
             if (query) {
                 url.searchParams.set("q", query);
             } else {
                 url.searchParams.delete("q");
+            }
+            url.searchParams.delete("page");
+
+            if (loadingState) {
+                loadingState.className = "warehouse-loading-state is-visible";
+                loadingState.textContent = "Обновляем товары…";
             }
 
             try {
@@ -5365,27 +5498,74 @@
                     html,
                     "text/html"
                 );
-                const nextTable = documentCopy.querySelector(".table-card");
-                const currentTable = document.querySelector(".table-card");
+                const nextResults = documentCopy.getElementById(
+                    "warehouseResults"
+                );
+                const currentResults = document.getElementById(
+                    "warehouseResults"
+                );
+                const nextCounter = documentCopy.getElementById(
+                    "visiblePositionsCount"
+                );
+                const currentCounter = document.getElementById(
+                    "visiblePositionsCount"
+                );
+                const nextStock = documentCopy.getElementById(
+                    "totalStockCount"
+                );
+                const currentStock = document.getElementById(
+                    "totalStockCount"
+                );
 
-                if (nextTable && currentTable) {
-                    currentTable.innerHTML = nextTable.innerHTML;
+                if (nextResults && currentResults) {
+                    currentResults.innerHTML = nextResults.innerHTML;
+                    if (nextCounter && currentCounter) {
+                        currentCounter.textContent = nextCounter.textContent;
+                    }
+                    if (nextStock && currentStock) {
+                        currentStock.textContent = nextStock.textContent;
+                    }
                     bindWarehouseSelectionHandlers();
                     initializeWarehouseTableView();
                     filterWarehouseRows();
                 }
+                if (loadingState) {
+                    loadingState.className = "warehouse-loading-state";
+                    loadingState.textContent = "";
+                }
             } catch (error) {
                 if (error.name !== "AbortError") {
                     console.error(error);
+                    if (loadingState) {
+                        loadingState.className = (
+                            "warehouse-loading-state is-visible is-error"
+                        );
+                        loadingState.innerHTML = (
+                            "Не удалось обновить товары."
+                            + '<button type="button" onclick="retryWarehouseResults()">'
+                            + "Повторить</button>"
+                        );
+                    }
                 }
             }
+        }
+
+        function retryWarehouseResults() {
+            loadWarehouseSearchResults(
+                warehouseSearchInput ? warehouseSearchInput.value.trim() : ""
+            );
+        }
+
+        function changeWarehousePageSize(value) {
+            const url = new URL(window.location.href);
+            url.searchParams.set("per_page", value);
+            url.searchParams.delete("page");
+            navigateWithWarehouseParams(url);
         }
 
         if (warehouseSearchInput) {
             warehouseSearchInput.addEventListener("input", function() {
                 syncWarehouseSearchClear();
-                filterWarehouseRows();
-
                 window.clearTimeout(warehouseSearchTimer);
 
                 if (warehouseSearchController) {
@@ -5406,6 +5586,7 @@
                     } else {
                         url.searchParams.delete("q");
                     }
+                    url.searchParams.delete("page");
 
                     window.history.replaceState(
                         {},
@@ -5415,7 +5596,7 @@
 
                     syncWarehouseResetButton();
                     loadWarehouseSearchResults(query);
-                }, 100);
+                }, 275);
             });
 
             syncWarehouseSearchClear();
@@ -5745,8 +5926,6 @@
 
 
         function toggleZeroStockRows(hideZero, updateAddress = true) {
-            filterWarehouseRows(hideZero);
-
             syncHideZeroControls(hideZero);
 
             if (updateAddress) {
@@ -5757,15 +5936,11 @@
                 } else {
                     url.searchParams.delete("hide_zero");
                 }
-
-                window.history.replaceState(
-                    {},
-                    "",
-                    url.pathname + url.search + url.hash
-                );
-
-                syncWarehouseResetButton();
+                url.searchParams.delete("page");
+                navigateWithWarehouseParams(url);
+                return;
             }
+            filterWarehouseRows();
         }
 
 
@@ -6026,141 +6201,18 @@
 
         function sortWarehouseTable(field) {
             if (Date.now() < warehouseTableSuppressSortUntil) return;
-            const tableBody = document.querySelector(".table-card tbody");
-
-            if (!tableBody) {
-                return;
-            }
-
-            const params = new URLSearchParams(window.location.search);
-            const currentField = params.get("sort_by") || "name";
-            const currentDirection = params.get("sort_dir") || "asc";
-
-            const nextDirection =
-                currentField === field && currentDirection === "asc"
+            const navigationUrl = new URL(window.location.href);
+            const navigationField = navigationUrl.searchParams.get("sort_by") || "name";
+            const navigationDirection = navigationUrl.searchParams.get("sort_dir") || "asc";
+            navigationUrl.searchParams.set("sort_by", field);
+            navigationUrl.searchParams.set(
+                "sort_dir",
+                navigationField === field && navigationDirection === "asc"
                     ? "desc"
-                    : "asc";
-
-            const columnKeys = {
-                name: "name",
-                article: "article",
-                brand: "brand",
-                category: "category",
-                stock: "stock",
-                created_at: "created",
-                cell: "cell"
-            };
-
-            const getCellText = (row, key) => {
-                const cell = row.querySelector(
-                    '[data-column-key="' + key + '"]'
-                );
-                return cell ? cell.textContent.trim() : "";
-            };
-
-            const getSortValue = (row) => {
-                if (field === "stock") {
-                    return Number(row.dataset.stock || 0);
-                }
-
-                if (field === "created_at") {
-                    const value = getCellText(
-                        row,
-                        columnKeys.created_at
-                    );
-
-                    const match = value.match(
-                        /(\d{2})\.(\d{2})\.(\d{4})/
-                    );
-
-                    if (!match) {
-                        return 0;
-                    }
-
-                    return Date.UTC(
-                        Number(match[3]),
-                        Number(match[2]) - 1,
-                        Number(match[1])
-                    );
-                }
-
-                return getCellText(
-                    row,
-                    columnKeys[field]
-                ).toLocaleLowerCase("ru");
-            };
-
-            const rows = Array.from(tableBody.querySelectorAll("tr"))
-                .map((row, index) => ({ row, index }));
-
-            rows.sort((first, second) => {
-                const firstValue = getSortValue(first.row);
-                const secondValue = getSortValue(second.row);
-
-                let result = 0;
-
-                if (
-                    typeof firstValue === "number" &&
-                    typeof secondValue === "number"
-                ) {
-                    result = firstValue - secondValue;
-                } else {
-                    result = String(firstValue).localeCompare(
-                        String(secondValue),
-                        "ru",
-                        {
-                            numeric: true,
-                            sensitivity: "base"
-                        }
-                    );
-                }
-
-                if (result === 0) {
-                    result = first.index - second.index;
-                }
-
-                return nextDirection === "asc"
-                    ? result
-                    : -result;
-            });
-
-            rows.forEach(({ row }) => {
-                tableBody.appendChild(row);
-            });
-
-            document
-                .querySelectorAll(".warehouse-sort-label")
-                .forEach((label) => {
-                    const isActive =
-                        label.dataset.sortField === field;
-
-                    label.classList.toggle(
-                        "is-active",
-                        isActive
-                    );
-
-                    const arrow = label.querySelector(
-                        ".warehouse-sort-arrow"
-                    );
-
-                    if (arrow) {
-                        arrow.textContent = isActive
-                            ? nextDirection === "asc"
-                                ? "↑"
-                                : "↓"
-                            : "↕";
-                    }
-                });
-
-            params.set("sort_by", field);
-            params.set("sort_dir", nextDirection);
-
-            window.history.replaceState(
-                null,
-                "",
-                "/warehouse?" + params.toString()
+                    : "asc"
             );
-            syncWarehouseResetButton();
+            navigationUrl.searchParams.delete("page");
+            navigateWithWarehouseParams(navigationUrl);
         }
 
         initializeWarehouseTableView();
