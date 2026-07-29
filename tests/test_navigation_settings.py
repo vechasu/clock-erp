@@ -160,6 +160,42 @@ class NavigationSettingsTest(unittest.TestCase):
             },
         )
 
+    def test_company_settings_save_preserves_unknown_app_settings(self):
+        self.app_settings_path.write_text(
+            json.dumps(
+                {
+                    "company_name": "До изменения",
+                    "erp_name": "Старая ERP",
+                    "low_stock_threshold": 2,
+                    "future_user_setting": {
+                        "enabled": True,
+                    },
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        response = self.client.post(
+            "/settings",
+            data={
+                "company_name": "После изменения",
+                "erp_name": "Новая ERP",
+                "low_stock_threshold": "8",
+            },
+        )
+        saved = json.loads(
+            self.app_settings_path.read_text(encoding="utf-8")
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(
+            saved["future_user_setting"],
+            {"enabled": True},
+        )
+        self.assertEqual(saved["company_name"], "После изменения")
+
     def test_disabled_primary_item_is_absent_from_shared_navigation(self):
         self.seed_navigation(
             products={"enabled": False, "position": 17},
