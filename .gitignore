@@ -45,3 +45,12 @@ instance/receipts.json
 instance/catalog.db
 instance/catalog.db-shm
 instance/catalog.db-wal
+
+# React/Vite workspace
+frontend/node_modules/
+frontend/dist/
+frontend/coverage/
+frontend/playwright-report/
+frontend/test-results/
+frontend/.vite/
+frontend/.playwright-browsers/
