@@ -10,8 +10,9 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: 'dist',
-    sourcemap: true,
+    outDir: '../app/static/react',
+    emptyOutDir: true,
+    sourcemap: false,
   },
   test: {
     environment: 'jsdom',

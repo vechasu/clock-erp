@@ -1,16 +1,11 @@
 import { expect, test } from '@playwright/test';
 
-test('parallel React entry point is available without replacing Jinja', async ({ page }) => {
+test('React entry point opens the unified ERP workspace', async ({ page }) => {
   await page.goto('/app/');
 
   await expect(page).toHaveTitle('Vechasu ERP');
-  await expect(
-    page.getByRole('heading', { name: 'React-инфраструктура подготовлена' }),
-  ).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Открыть текущий интерфейс' })).toHaveAttribute(
-    'href',
-    '/',
-  );
+  await expect(page.getByRole('heading', { name: 'Товары' })).toBeVisible();
+  await expect(page).toHaveURL(/\/app\/products$/);
 });
 
 test('unknown React routes keep a controlled empty state', async ({ page }) => {
