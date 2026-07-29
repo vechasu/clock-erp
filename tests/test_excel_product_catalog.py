@@ -378,6 +378,47 @@ class ExcelProductCatalogTest(unittest.TestCase):
         self.assertEqual([item["excel_name_raw"] for item in default_order], ["Alpha", "Beta", "Zulu"])
         self.assertEqual(self.catalog.list_products(per_page=100)["brands"], ["Alpha", "Beta"])
 
+    def test_positive_stock_filter_excludes_empty_negative_and_null_values(self):
+        self.service.apply(
+            [
+                result(2, "Positive", 3),
+                result(3, "Empty", 1),
+                result(4, "Negative", 1),
+            ],
+            "9" * 64,
+            "stock-edge-cases.xlsx",
+        )
+        with self.database.connect() as connection:
+            connection.execute(
+                "UPDATE catalog_excel_products SET stock = '' "
+                "WHERE excel_name_raw = 'Empty'"
+            )
+            connection.execute(
+                "UPDATE catalog_excel_products SET stock = -2 "
+                "WHERE excel_name_raw = 'Negative'"
+            )
+            null_is_positive = connection.execute(
+                "SELECT CAST(NULL AS REAL) > 0"
+            ).fetchone()[0]
+
+        filtered = self.catalog.list_products(
+            hide_zero=True,
+            per_page=100,
+        )
+
+        self.assertEqual(null_is_positive, None)
+        self.assertEqual(
+            [item["excel_name_raw"] for item in filtered["items"]],
+            ["Positive"],
+        )
+        self.assertEqual(
+            (
+                filtered["stats"]["positions"],
+                filtered["stats"]["total_stock"],
+            ),
+            (1, 3),
+        )
+
     def test_products_page_is_simple_daily_workflow_without_external_reads(self):
         self.apply_initial()
         from app import web

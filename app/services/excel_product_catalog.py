@@ -712,7 +712,7 @@ class ExcelProductCatalog:
                 where.append("trim(COALESCE(p.cell, '')) = ?")
                 parameters.append(cell)
         if hide_zero:
-            where.append("p.stock > 0")
+            where.append("CAST(p.stock AS REAL) > 0")
         if created_from:
             where.append("substr(p.created_at, 1, 10) >= ?")
             parameters.append(created_from)

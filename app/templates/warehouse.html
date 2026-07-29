@@ -656,12 +656,12 @@
         }
 
         .warehouse-products-table .warehouse-col-photo { width: 64px; }
-        .warehouse-products-table .warehouse-col-name { width: 280px; }
+        .warehouse-products-table .warehouse-col-name { width: 256px; }
         .warehouse-products-table .warehouse-col-price { width: 80px; }
         .warehouse-products-table .warehouse-col-article { width: 96px; }
         .warehouse-products-table .warehouse-col-brand { width: 95px; }
         .warehouse-products-table .warehouse-col-category { width: 150px; }
-        .warehouse-products-table .warehouse-col-stock { width: 80px; }
+        .warehouse-products-table .warehouse-col-stock { width: 104px; }
         .warehouse-products-table .warehouse-col-created { width: 106px; }
         .warehouse-products-table .warehouse-col-cell { width: 75px; }
         .warehouse-products-table .warehouse-col-actions { width: 82px; }
@@ -1249,37 +1249,36 @@
         .stock-column-title {
             display: inline-flex;
             align-items: center;
-            gap: 7px;
-        }
-
-        .stock-header-toggle-form {
-            display: inline-flex;
-            align-items: center;
-            margin: 0;
+            justify-content: center;
+            gap: 4px;
         }
 
         .stock-mini-toggle {
             position: relative;
             display: inline-block;
-            width: 26px;
+            width: 24px;
             height: 14px;
+            flex: 0 0 auto;
             cursor: pointer;
         }
 
         .stock-mini-toggle input {
             position: absolute;
-            width: 1px;
-            height: 1px;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            margin: 0;
             opacity: 0;
-            pointer-events: none;
+            cursor: pointer;
         }
 
         .stock-mini-slider {
             position: absolute;
             inset: 0;
             border-radius: 999px;
-            background: #d1d5db;
-            transition: none;
+            background: var(--theme-border-strong, #cbd5e1);
+            pointer-events: none;
+            transition: background 0.16s ease;
         }
 
         .stock-mini-slider::after {
@@ -1292,7 +1291,7 @@
             border-radius: 50%;
             background: #ffffff;
             box-shadow: 0 1px 2px rgba(15, 23, 42, 0.25);
-            transition: none;
+            transition: transform 0.16s ease;
         }
 
         .stock-mini-toggle input:checked + .stock-mini-slider {
@@ -1300,7 +1299,42 @@
         }
 
         .stock-mini-toggle input:checked + .stock-mini-slider::after {
-            transform: translateX(12px);
+            transform: translateX(10px);
+        }
+
+        .stock-mini-toggle input:focus-visible + .stock-mini-slider {
+            outline: 2px solid var(--theme-focus, #2563eb);
+            outline-offset: 2px;
+        }
+
+        .warehouse-mobile-stock-controls {
+            display: none;
+        }
+
+        @media (max-width: 767px) {
+            .warehouse-mobile-stock-controls {
+                display: flex;
+                grid-column: 1 / -1;
+                align-items: center;
+                gap: 8px;
+                min-width: 0;
+            }
+
+            .warehouse-mobile-stock-controls .warehouse-mobile-sort {
+                flex: 1 1 auto;
+            }
+
+            .warehouse-mobile-stock-filter {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                width: 44px;
+                height: 44px;
+                flex: 0 0 44px;
+                border: 1px solid var(--theme-border, #e2e8f0);
+                border-radius: var(--theme-control-radius, 10px);
+                background: var(--theme-surface, #ffffff);
+            }
         }
 
 
@@ -3784,8 +3818,8 @@
                         <input type="hidden" name="cell" value="{{ selected_cell }}">
                     {% endif %}
 
-                    {% if hide_zero %}
-                        <input type="hidden" name="hide_zero" value="1">
+                    {% if in_stock %}
+                        <input type="hidden" name="in_stock" value="1">
                     {% endif %}
                     {% if created_date_from %}
                         <input type="hidden" name="date_from" value="{{ created_date_from }}">
@@ -3854,23 +3888,44 @@
                         {% endif %}
                     </div>
 
-                    <label
-                        class="mobile-erp-only mobile-erp-sort warehouse-mobile-sort"
-                        for="warehouseMobileSort"
-                    >
-                        <select
-                            id="warehouseMobileSort"
-                            aria-label="Сортировка товаров"
-                            onchange="sortWarehouseTable(this.value)"
+                    <div class="warehouse-mobile-stock-controls">
+                        <label
+                            class="mobile-erp-sort warehouse-mobile-sort"
+                            for="warehouseMobileSort"
                         >
-                            <option value="name" {% if sort_by == "name" %}selected{% endif %}>По названию</option>
-                            <option value="stock" {% if sort_by == "stock" %}selected{% endif %}>По остатку</option>
-                            <option value="brand" {% if sort_by == "brand" %}selected{% endif %}>По бренду</option>
-                            <option value="category" {% if sort_by == "category" %}selected{% endif %}>По категории</option>
-                            <option value="created_at" {% if sort_by == "created_at" %}selected{% endif %}>По дате</option>
-                            <option value="cell" {% if sort_by == "cell" %}selected{% endif %}>По ячейке</option>
-                        </select>
-                    </label>
+                            <select
+                                id="warehouseMobileSort"
+                                aria-label="Сортировка товаров"
+                                onchange="sortWarehouseTable(this.value)"
+                            >
+                                <option value="name" {% if sort_by == "name" %}selected{% endif %}>По названию</option>
+                                <option value="stock" {% if sort_by == "stock" %}selected{% endif %}>По остатку</option>
+                                <option value="brand" {% if sort_by == "brand" %}selected{% endif %}>По бренду</option>
+                                <option value="category" {% if sort_by == "category" %}selected{% endif %}>По категории</option>
+                                <option value="created_at" {% if sort_by == "created_at" %}selected{% endif %}>По дате</option>
+                                <option value="cell" {% if sort_by == "cell" %}selected{% endif %}>По ячейке</option>
+                            </select>
+                        </label>
+                        <label
+                            class="warehouse-mobile-stock-filter"
+                            title="{% if in_stock %}Показать товары с нулевым остатком{% else %}Показать только товары в наличии{% endif %}"
+                            onclick="event.stopPropagation()"
+                        >
+                            <span class="stock-mini-toggle">
+                                <input
+                                    id="warehouseMobileInStockToggle"
+                                    type="checkbox"
+                                    role="switch"
+                                    aria-checked="{{ 'true' if in_stock else 'false' }}"
+                                    aria-label="{% if in_stock %}Показать товары с нулевым остатком{% else %}Показать только товары в наличии{% endif %}"
+                                    {% if in_stock %}checked{% endif %}
+                                    onclick="event.stopPropagation()"
+                                    onchange="toggleWarehouseInStock(event, this)"
+                                >
+                                <span class="stock-mini-slider" aria-hidden="true"></span>
+                            </span>
+                        </label>
+                    </div>
 
                     <div id="warehouseMoreMenu" class="warehouse-more-menu">
                         <button
@@ -4153,7 +4208,6 @@
             ></div>
             <div id="warehouseResults">
             <div class="table-card erp-table-card">
-                {% if items %}
                     <table id="warehouseProductsTable" class="warehouse-products-table erp-data-table">
                         <colgroup>
                             <col class="warehouse-col-photo" data-column-key="photo">
@@ -4247,18 +4301,37 @@
                                 </th>
 
                                 <th data-column-key="stock">
-                                    <span
-                                        class="warehouse-sort-label erp-sort-label{% if sort_by == 'stock' %} is-active{% endif %}"
-                                        data-sort-field="stock"
-                                        onclick="sortWarehouseTable(this.dataset.sortField)"
-                                        title="По возрастанию. Повторное нажатие: по убыванию"
-                                    >
-                                        Остаток
-                                        <span class="warehouse-sort-arrow erp-sort-arrow">
-                                            {% if sort_by == "stock" %}
-                                                {% if sort_dir == "asc" %}↑{% else %}↓{% endif %}
-                                            {% else %}↕{% endif %}
+                                    <span class="stock-column-title">
+                                        <span
+                                            class="warehouse-sort-label erp-sort-label{% if sort_by == 'stock' %} is-active{% endif %}"
+                                            data-sort-field="stock"
+                                            onclick="sortWarehouseTable(this.dataset.sortField)"
+                                            title="По возрастанию. Повторное нажатие: по убыванию"
+                                        >
+                                            Остаток
+                                            <span class="warehouse-sort-arrow erp-sort-arrow">
+                                                {% if sort_by == "stock" %}
+                                                    {% if sort_dir == "asc" %}↑{% else %}↓{% endif %}
+                                                {% else %}↕{% endif %}
+                                            </span>
                                         </span>
+                                        <label
+                                            class="stock-mini-toggle"
+                                            title="{% if in_stock %}Показать товары с нулевым остатком{% else %}Показать только товары в наличии{% endif %}"
+                                            onclick="event.stopPropagation()"
+                                        >
+                                            <input
+                                                id="warehouseInStockToggle"
+                                                type="checkbox"
+                                                role="switch"
+                                                aria-checked="{{ 'true' if in_stock else 'false' }}"
+                                                aria-label="{% if in_stock %}Показать товары с нулевым остатком{% else %}Показать только товары в наличии{% endif %}"
+                                                {% if in_stock %}checked{% endif %}
+                                                onclick="event.stopPropagation()"
+                                                onchange="toggleWarehouseInStock(event, this)"
+                                            >
+                                            <span class="stock-mini-slider" aria-hidden="true"></span>
+                                        </label>
                                     </span>
                                 </th>
 
@@ -4305,7 +4378,6 @@
                                     data-stock="{{ item.stock }}"
                                     data-name="{{ item.name|lower|e }}"
                                     data-article="{{ (item.article or '')|lower|e }}"
-                                    {% if hide_zero and item.stock <= 0 %}hidden{% endif %}
                                 >
                                     <td data-column-key="photo">
                                         <div class="warehouse-product-photo-cell">
@@ -4429,7 +4501,7 @@
                             {% endfor %}
                         </tbody>
                     </table>
-                {% else %}
+                {% if not items %}
                     <div class="empty">Товары не найдены</div>
                 {% endif %}
             </div>
@@ -4515,6 +4587,9 @@
 
             <input type="hidden" name="sort_by" value="{{ sort_by }}">
             <input type="hidden" name="sort_dir" value="{{ sort_dir }}">
+            {% if in_stock %}
+                <input type="hidden" name="in_stock" value="1">
+            {% endif %}
 
             <div class="category-cell-form-title">Бренд</div>
 
@@ -4572,22 +4647,6 @@
                 </div>
             </div>
 
-            <label class="warehouse-zero-filter" for="warehouseHideZeroFilter">
-                <span class="zero-stock-toggle-text">
-                    Скрыть нулевые остатки
-                </span>
-                <span class="toggle-switch">
-                    <input
-                        id="warehouseHideZeroFilter"
-                        type="checkbox"
-                        name="hide_zero"
-                        value="1"
-                        {% if hide_zero %}checked{% endif %}
-                    >
-                    <span class="toggle-slider" aria-hidden="true"></span>
-                </span>
-            </label>
-
             <button type="submit">Применить фильтры</button>
         </form>
 
@@ -4639,7 +4698,7 @@
             {% for group in cell_groups %}
                 <a
                     class="warehouse-map-cell {% if selected_cell == group.cell %}active{% endif %}"
-                    href="{{ url_for('warehouse_page', cell=group.cell, brand=selected_brand, category=selected_category, q=query, date_from=created_date_from, date_to=created_date_to, hide_zero='1' if hide_zero else None, per_page=per_page) }}"
+                    href="{{ url_for('warehouse_page', cell=group.cell, brand=selected_brand, category=selected_category, q=query, date_from=created_date_from, date_to=created_date_to, in_stock='1' if in_stock else None, per_page=per_page) }}"
                 >
                     <div class="warehouse-map-title">{{ group.cell }}</div>
 
@@ -5954,100 +6013,57 @@
         }
     }
 
-        function syncHideZeroControls(hideZero) {
-            const forms = document.querySelectorAll(
-                'form.search-form, #filterDrawer form[method="get"]'
-            );
+        function setWarehouseInStockSwitches(enabled) {
+            const label = enabled
+                ? "Показать товары с нулевым остатком"
+                : "Показать только товары в наличии";
 
-            forms.forEach(function(form) {
-                const checkbox = form.querySelector(
-                    'input[type="checkbox"][name="hide_zero"]'
+            document.querySelectorAll(
+                "#warehouseInStockToggle, #warehouseMobileInStockToggle"
+            ).forEach(function(toggle) {
+                toggle.checked = enabled;
+                toggle.setAttribute(
+                    "aria-checked",
+                    enabled ? "true" : "false"
                 );
-                if (checkbox) {
-                    checkbox.checked = hideZero;
-                    return;
+                toggle.setAttribute("aria-label", label);
+                const control = toggle.closest("label");
+                if (control) {
+                    control.title = label;
                 }
-
-                let input = form.querySelector(
-                    'input[type="hidden"][name="hide_zero"]'
-                );
-
-                if (hideZero) {
-                    if (!input) {
-                        input = document.createElement("input");
-                        input.type = "hidden";
-                        input.name = "hide_zero";
-                        form.appendChild(input);
-                    }
-
-                    input.value = "1";
-                } else if (input) {
-                    input.remove();
-                }
-            });
-
-            document.querySelectorAll('a[href]').forEach(function(link) {
-                let linkUrl;
-
-                try {
-                    linkUrl = new URL(
-                        link.getAttribute("href"),
-                        window.location.origin
-                    );
-                } catch (error) {
-                    return;
-                }
-
-                if (
-                    linkUrl.origin !== window.location.origin
-                    || linkUrl.pathname !== "/warehouse"
-                ) {
-                    return;
-                }
-
-                if (hideZero) {
-                    linkUrl.searchParams.set("hide_zero", "1");
-                } else {
-                    linkUrl.searchParams.delete("hide_zero");
-                }
-
-                link.setAttribute(
-                    "href",
-                    linkUrl.pathname + linkUrl.search + linkUrl.hash
-                );
             });
         }
 
+        function syncWarehouseInStockSwitches() {
+            setWarehouseInStockSwitches(
+                new URL(window.location.href).searchParams.get("in_stock")
+                    === "1"
+            );
+        }
 
-        function toggleZeroStockRows(hideZero, updateAddress = true) {
-            syncHideZeroControls(hideZero);
+        function toggleWarehouseInStock(event, toggle) {
+            event.stopPropagation();
+            const enabled = Boolean(toggle.checked);
+            setWarehouseInStockSwitches(enabled);
 
-            if (updateAddress) {
-                const url = new URL(window.location.href);
-
-                if (hideZero) {
-                    url.searchParams.set("hide_zero", "1");
-                } else {
-                    url.searchParams.delete("hide_zero");
-                }
-                url.searchParams.delete("page");
-                navigateWithWarehouseParams(url);
-                return;
+            const url = new URL(window.location.href);
+            if (enabled) {
+                url.searchParams.set("in_stock", "1");
+            } else {
+                url.searchParams.delete("in_stock");
             }
-            filterWarehouseRows();
+            url.searchParams.delete("page");
+            navigateWithWarehouseParams(url);
         }
 
-
-        document.addEventListener("DOMContentLoaded", function() {
-            const toggle = document.querySelector(
-                '#warehouseHideZeroFilter'
-            );
-
-            toggleZeroStockRows(
-                Boolean(toggle && toggle.checked),
-                false
-            );
-        });
+        document.addEventListener(
+            "DOMContentLoaded",
+            syncWarehouseInStockSwitches
+        );
+        window.addEventListener(
+            "pageshow",
+            syncWarehouseInStockSwitches
+        );
 
 
         document.addEventListener("keydown", function(event) {
@@ -6063,11 +6079,11 @@
         const warehouseTableStorageKey = "vechasu.warehouse.table-view.v2";
         const warehouseTableDefaults = {
             order: ["photo", "name", "price", "article", "brand", "category", "stock", "created", "cell", "actions"],
-            widths: { photo: 64, name: 280, price: 80, article: 96, brand: 95, category: 150, stock: 80, created: 106, cell: 75, actions: 82 }
+            widths: { photo: 64, name: 256, price: 80, article: 96, brand: 95, category: 150, stock: 104, created: 106, cell: 75, actions: 82 }
         };
         const warehouseTableMinimumWidths = {
-            photo: 60, name: 220, price: 72, article: 86, brand: 84,
-            category: 138, stock: 74, created: 96, cell: 68, actions: 82
+            photo: 60, name: 196, price: 72, article: 86, brand: 84,
+            category: 138, stock: 98, created: 96, cell: 68, actions: 82
         };
         let warehouseTableSuppressSortUntil = 0;
 

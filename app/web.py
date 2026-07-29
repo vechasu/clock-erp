@@ -1349,7 +1349,7 @@ def warehouse_page():
     selected_cell = request.args.get("cell", "").strip()
     created_date_from = request.args.get("date_from", "").strip()
     created_date_to = request.args.get("date_to", "").strip()
-    hide_zero = request.args.get("hide_zero", "").strip() == "1"
+    in_stock = request.args.get("in_stock", "").strip() == "1"
     sort_by = request.args.get("sort_by", "name").strip()
     sort_dir = request.args.get("sort_dir", "asc").strip()
     try:
@@ -1408,7 +1408,7 @@ def warehouse_page():
         brand=selected_brand,
         category=selected_category,
         cell=selected_cell,
-        hide_zero=hide_zero,
+        hide_zero=in_stock,
         sort_by=sort_by,
         sort_dir=sort_dir,
         page=page,
@@ -1511,7 +1511,7 @@ def warehouse_page():
             selected_cell=selected_cell,
             created_date_from=created_date_from,
             created_date_to=created_date_to,
-            hide_zero=hide_zero,
+            in_stock=in_stock,
             warehouse_active_filter_count=warehouse_active_filter_count,
             warehouse_active_filter_label=warehouse_active_filter_label,
             open_add=request.args.get("open_add") == "1",
@@ -1572,7 +1572,7 @@ def warehouse_export_items():
         brand=(request.args.get("brand") or "").strip(),
         category=(request.args.get("category") or "").strip(),
         cell=(request.args.get("cell") or "").strip(),
-        hide_zero=(request.args.get("hide_zero") or "").strip() == "1",
+        hide_zero=(request.args.get("in_stock") or "").strip() == "1",
         sort_by=sort_by,
         sort_dir=sort_dir,
         page=1,
@@ -1893,7 +1893,7 @@ def warehouse_edit_product():
         )
         if key in {
             "q", "brand", "category", "cell", "date_from", "date_to",
-            "hide_zero", "sort_by", "sort_dir", "page", "per_page",
+            "in_stock", "sort_by", "sort_dir", "page", "per_page",
         }
     }
 
@@ -2081,7 +2081,7 @@ def warehouse_bulk_edit():
         )
         if key in {
             "q", "brand", "category", "cell",
-            "date_from", "date_to", "hide_zero",
+            "date_from", "date_to", "in_stock",
             "sort_by", "sort_dir", "page", "per_page",
         }
     }
