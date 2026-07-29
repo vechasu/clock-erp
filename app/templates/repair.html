@@ -2,1293 +2,1252 @@
 <html lang="ru">
 <head>
     <meta charset="utf-8">
-    <title>Vechasu ERP — Ремонт</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-
+    <title>Vechasu ERP — Ремонт</title>
     <style>
-        * {
-            box-sizing: border-box;
-        }
-
+        * { box-sizing: border-box; }
         :root {
-            --bg: #f4f6f8;
-            --card: #ffffff;
-            --border: #dfe3e8;
-            --border-strong: #cfd5dc;
-            --text: #111827;
-            --muted: #6b7280;
+            --navy: #102a56;
             --blue: #2563eb;
-            --blue-dark: #1d4ed8;
-            --green: #059669;
-            --red: #dc2626;
+            --blue-soft: #eaf2ff;
+            --ink: #172033;
+            --muted: #697386;
+            --line: #dfe5ee;
+            --surface: #ffffff;
+            --canvas: #f4f7fb;
+            --danger: #b42318;
         }
-
+        html, body { max-width: 100%; overflow-x: hidden; }
         body {
             margin: 0;
-            background: var(--bg);
-            color: var(--text);
+            background: var(--canvas);
+            color: var(--ink);
             font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         }
-
-        button,
-        input,
-        select,
-        textarea {
-            font: inherit;
-        }
-
-        button {
-            cursor: pointer;
-        }
-
+        button, input, select, textarea { font: inherit; }
+        button { cursor: pointer; }
         .main {
+            width: 100%;
             min-width: 0;
-            padding: 16px 26px 28px;
+            padding: 18px 24px 30px;
             overflow: hidden;
         }
-
-        .page-header {
+        .repair-hero {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: 16px;
-            margin-bottom: 12px;
+            gap: 18px;
+            margin: -18px -24px 18px;
+            padding: 19px 24px;
+            color: #fff;
+            background: linear-gradient(120deg, var(--navy), #174887);
+            box-shadow: 0 7px 24px rgba(16, 42, 86, .16);
         }
-
-        .page-title {
-            margin: 0 0 3px;
-            font-size: 27px;
-            line-height: 1.1;
-            letter-spacing: -0.03em;
-        }
-
-        .page-subtitle {
-            margin: 0;
-            color: var(--muted);
-            font-size: 13px;
-        }
-
-        .notice {
-            margin-bottom: 12px;
-            padding: 12px 14px;
-            border: 1px solid;
-            border-radius: 12px;
-            font-size: 14px;
-            font-weight: 750;
-        }
-
-        .notice-success {
-            color: #166534;
-            background: #dcfce7;
-            border-color: #86efac;
-        }
-
-        .notice-error {
-            color: #991b1b;
-            background: #fee2e2;
-            border-color: #fca5a5;
-        }
-
-        .stats {
-            display: grid;
-            grid-template-columns: repeat(7, minmax(92px, 1fr)) minmax(190px, 1.2fr);
-            gap: 8px;
-            margin-bottom: 12px;
-        }
-
-        .stat-card,
-        .add-button {
-            min-height: 54px;
-            border-radius: 14px;
-        }
-
-        .stat-card {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 10px;
-            padding: 9px 12px;
-            color: inherit;
-            text-decoration: none;
-            background: var(--card);
-            border: 1px solid var(--border);
-            transition: border-color 0.15s ease, transform 0.15s ease;
-        }
-
-        .stat-card:hover {
-            border-color: #9ca3af;
-            transform: translateY(-1px);
-        }
-
-        .stat-card.active {
-            border-color: var(--blue);
-            box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.08);
-        }
-
-        .stat-label {
-            color: var(--muted);
-            font-size: 11px;
-            font-weight: 800;
-        }
-
-        .stat-value {
-            font-size: 21px;
-            line-height: 1;
-            font-weight: 900;
-        }
-
-        .add-button {
-            border: none;
-            padding: 0 18px;
-            color: #ffffff;
-            background: var(--blue);
-            font-size: 14px;
-            font-weight: 850;
-            box-shadow: 0 5px 16px rgba(37, 99, 235, 0.16);
-        }
-
-        .add-button:hover {
-            background: var(--blue-dark);
-        }
-
-        .toolbar {
-            display: grid;
-            grid-template-columns: minmax(260px, 1fr) 210px auto;
-            gap: 9px;
-            margin-bottom: 10px;
-        }
-
-        .control {
-            width: 100%;
-            min-height: 40px;
-            border: 1px solid var(--border-strong);
-            border-radius: 10px;
-            padding: 9px 12px;
-            color: var(--text);
-            background: #ffffff;
-            outline: none;
-        }
-
-        textarea.control {
-            min-height: 88px;
-            resize: vertical;
-            line-height: 1.4;
-        }
-
-        .control:focus {
-            border-color: var(--blue);
-            box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
-        }
-
+        .page-title { margin: 0 0 4px; font-size: 27px; letter-spacing: -.03em; }
+        .page-subtitle { margin: 0; color: #c9d8f0; font-size: 14px; }
         .button {
-            min-height: 38px;
-            border: none;
-            border-radius: 9px;
-            padding: 8px 13px;
-            font-weight: 800;
-            white-space: nowrap;
-        }
-
-        .button-primary {
-            color: #ffffff;
-            background: var(--blue);
-        }
-
-        .button-primary:hover {
-            background: var(--blue-dark);
-        }
-
-        .button-edit {
-            color: #1d4ed8;
-            background: #dbeafe;
-        }
-
-        .button-edit:hover {
-            background: #bfdbfe;
-        }
-
-        .button-delete {
-            color: #991b1b;
-            background: #fee2e2;
-        }
-
-        .button-delete:hover {
-            background: #fecaca;
-        }
-
-        .button-secondary {
-            color: #374151;
-            background: #e5e7eb;
-        }
-
-        .button-secondary:hover {
-            background: #d1d5db;
-        }
-
-        .table-card {
-            overflow: hidden;
-            background: #ffffff;
-            border: 1px solid var(--border-strong);
-            border-radius: 14px;
-        }
-
-        .table-wrap {
-            overflow-x: auto;
-        }
-
-        .repair-table {
-            width: 100%;
-            min-width: 1680px;
-            border-collapse: collapse;
-            table-layout: fixed;
-        }
-
-        .repair-table th,
-        .repair-table td {
-            padding: 9px 10px;
-            border-right: 1px solid #e1e5ea;
-            border-bottom: 1px solid #e1e5ea;
-            text-align: left;
-            vertical-align: top;
-            font-size: 13px;
-            line-height: 1.35;
-        }
-
-        .repair-table th {
-            position: sticky;
-            top: 0;
-            z-index: 2;
-            color: #4b5563;
-            background: #f8fafc;
-            font-size: 11px;
-            font-weight: 850;
-            text-transform: uppercase;
-            letter-spacing: 0.025em;
-        }
-
-        .repair-table th:last-child,
-        .repair-table td:last-child {
-            border-right: none;
-        }
-
-        .repair-table tbody tr:last-child td {
-            border-bottom: none;
-        }
-
-        .repair-table tbody tr:hover {
-            background: #fafcff;
-        }
-
-        .col-number { width: 120px; }
-        .col-date { width: 115px; }
-        .col-status { width: 150px; }
-        .col-client { width: 190px; }
-        .col-product { width: 230px; }
-        .col-problem { width: 280px; }
-        .col-master { width: 150px; }
-        .col-price { width: 130px; }
-        .col-due { width: 115px; }
-        .col-actions { width: 210px; }
-
-        .repair-number {
-            font-weight: 900;
-        }
-
-        .minor {
-            margin-top: 3px;
-            color: var(--muted);
-            font-size: 11px;
-        }
-
-        .cell-title {
-            font-weight: 800;
-        }
-
-        .problem-text {
-            white-space: pre-wrap;
-            overflow-wrap: anywhere;
-        }
-
-        .status-badge,
-        .type-badge {
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            border-radius: 999px;
-            padding: 6px 9px;
-            font-size: 11px;
-            font-weight: 850;
+            min-height: 38px;
+            padding: 8px 13px;
+            border: 1px solid transparent;
+            border-radius: 9px;
+            background: #fff;
+            color: var(--ink);
+            font-size: 13px;
+            font-weight: 750;
+            text-decoration: none;
             white-space: nowrap;
         }
-
-        .status-new {
-            color: #1d4ed8;
-            background: #dbeafe;
+        .button-primary { border-color: var(--blue); background: var(--blue); color: #fff; }
+        .button-secondary { border-color: var(--line); background: #fff; }
+        .button-danger { border-color: #f5c2c0; background: #fff5f4; color: var(--danger); }
+        .hero-add {
+            min-height: 42px;
+            padding: 9px 17px;
+            color: var(--navy);
+            box-shadow: 0 5px 16px rgba(0, 0, 0, .13);
         }
-
-        .status-diagnostics {
-            color: #6d28d9;
-            background: #ede9fe;
+        .notice {
+            margin-bottom: 14px;
+            padding: 11px 14px;
+            border: 1px solid;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 700;
         }
-
-        .status-waiting {
-            color: #92400e;
-            background: #fef3c7;
-        }
-
-        .status-in_progress {
-            color: #075985;
-            background: #cffafe;
-        }
-
-        .status-ready {
-            color: #166534;
-            background: #dcfce7;
-        }
-
-        .status-issued {
-            color: #374151;
-            background: #e5e7eb;
-        }
-
-        .status-completed {
-            color: #166534;
-            background: #dcfce7;
-        }
-
-        .type-paid {
-            color: #1d4ed8;
-            background: #eff6ff;
-        }
-
-        .type-warranty {
-            color: #166534;
-            background: #ecfdf5;
-        }
-
-        .type-service {
-            color: #6d28d9;
-            background: #f5f3ff;
-        }
-
-        .quick-status {
-            width: 100%;
-            margin-top: 7px;
-            padding: 6px 7px;
-            border: 1px solid var(--border-strong);
-            border-radius: 8px;
-            background: #ffffff;
-            font-size: 11px;
-        }
-
-        .action-row {
+        .notice-success { border-color: #86efac; background: #ecfdf3; color: #166534; }
+        .notice-error { border-color: #fca5a5; background: #fff1f2; color: #991b1b; }
+        .view-tabs {
             display: flex;
-            flex-wrap: wrap;
-            gap: 6px;
+            gap: 7px;
+            margin-bottom: 12px;
+            overflow-x: auto;
         }
-
-        .empty {
-            padding: 48px 24px;
-            text-align: center;
+        .view-tab {
+            padding: 7px 11px;
+            border: 1px solid var(--line);
+            border-radius: 999px;
+            background: #fff;
             color: var(--muted);
+            font-size: 13px;
+            font-weight: 750;
+            text-decoration: none;
         }
-
-        .empty-title {
-            margin-bottom: 5px;
-            color: #374151;
-            font-size: 17px;
-            font-weight: 900;
+        .view-tab.active { border-color: #9db8e8; background: var(--blue-soft); color: #174887; }
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+            margin-bottom: 12px;
         }
-
+        .metric {
+            min-width: 0;
+            padding: 14px 16px;
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            background: var(--surface);
+            box-shadow: 0 3px 12px rgba(22, 37, 63, .04);
+        }
+        .metric-label { display: block; color: var(--muted); font-size: 12px; font-weight: 750; }
+        .metric-value { display: block; margin-top: 4px; color: var(--navy); font-size: 25px; font-weight: 850; }
+        .filters {
+            margin-bottom: 12px;
+            padding: 12px;
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            background: var(--surface);
+        }
+        .filter-grid {
+            display: grid;
+            grid-template-columns: minmax(230px, 2fr) repeat(4, minmax(140px, 1fr));
+            gap: 9px;
+        }
+        .filter-row-secondary {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(150px, 1fr)) auto;
+            gap: 9px;
+            margin-top: 9px;
+        }
+        .control {
+            width: 100%;
+            min-height: 39px;
+            padding: 8px 10px;
+            border: 1px solid #cfd7e3;
+            border-radius: 8px;
+            background: #fff;
+            color: var(--ink);
+            outline: none;
+        }
+        .control:focus { border-color: #6f98dc; box-shadow: 0 0 0 3px rgba(37, 99, 235, .12); }
+        textarea.control { min-height: 82px; resize: vertical; }
+        .search-wrap { position: relative; }
+        .search-wrap .control { padding-right: 36px; }
+        .search-clear {
+            position: absolute;
+            top: 50%;
+            right: 7px;
+            width: 27px;
+            height: 27px;
+            border: 0;
+            border-radius: 50%;
+            background: transparent;
+            color: var(--muted);
+            transform: translateY(-50%);
+        }
+        .result-summary {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            margin: 9px 2px 0;
+            color: var(--muted);
+            font-size: 12px;
+        }
+        .table-card {
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            background: var(--surface);
+            box-shadow: 0 5px 18px rgba(22, 37, 63, .05);
+            overflow: hidden;
+        }
+        .table-wrap { max-height: calc(100vh - 330px); overflow: auto; }
+        .repair-table {
+            width: 100%;
+            min-width: 1250px;
+            border-collapse: separate;
+            border-spacing: 0;
+            table-layout: fixed;
+        }
+        .repair-table th {
+            position: sticky;
+            z-index: 3;
+            top: 0;
+            padding: 11px 10px;
+            border-right: 1px solid rgba(255, 255, 255, .18);
+            background: #1c5aa6;
+            color: #fff;
+            font-size: 11px;
+            font-weight: 800;
+            letter-spacing: .035em;
+            text-align: left;
+            text-transform: uppercase;
+        }
+        .repair-table td {
+            padding: 11px 10px;
+            border-right: 1px solid #eef1f5;
+            border-bottom: 1px solid var(--line);
+            vertical-align: top;
+            font-size: 13px;
+        }
+        .repair-table tbody tr { cursor: pointer; transition: background .15s ease; }
+        .repair-table tbody tr:hover { background: #f5f8fd; }
+        .repair-table tbody tr[hidden] { display: none; }
+        .repair-table th:last-child, .repair-table td:last-child { border-right: 0; }
+        .col-status { width: 150px; }
+        .col-order { width: 155px; }
+        .col-product { width: 175px; }
+        .col-contact { width: 140px; }
+        .col-request { width: 175px; }
+        .col-logistics { width: 175px; }
+        .col-dates { width: 145px; }
+        .col-event { width: 185px; }
+        .col-actions { width: 94px; }
+        .cell-main { font-weight: 780; line-height: 1.35; overflow-wrap: anywhere; }
+        .cell-sub {
+            margin-top: 4px;
+            color: var(--muted);
+            font-size: 12px;
+            line-height: 1.35;
+            overflow-wrap: anywhere;
+        }
+        .clamp-2 {
+            display: -webkit-box;
+            overflow: hidden;
+            -webkit-box-orient: vertical;
+            -webkit-line-clamp: 2;
+        }
+        .status-badge {
+            display: inline-flex;
+            max-width: 100%;
+            padding: 5px 8px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 800;
+            line-height: 1.2;
+        }
+        .status-new { background: #e8f1ff; color: #1756a9; }
+        .status-waiting_customer_shipment, .status-waiting_master,
+        .status-waiting_decision, .status-waiting_payment { background: #fff4d6; color: #8a5700; }
+        .status-inbound_transit, .status-outbound_transit { background: #e9f7ff; color: #07648c; }
+        .status-at_us { background: #e9f7ef; color: #157042; }
+        .status-at_master { background: #f0eaff; color: #6338a2; }
+        .status-completed { background: #e8f7ef; color: #157042; }
+        .actions-menu { position: relative; }
+        .actions-menu summary {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 32px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: #fff;
+            color: var(--navy);
+            font-size: 20px;
+            font-weight: 800;
+            list-style: none;
+        }
+        .actions-menu summary::-webkit-details-marker { display: none; }
+        .actions-panel {
+            position: absolute;
+            z-index: 8;
+            top: 36px;
+            right: 0;
+            width: 210px;
+            padding: 7px;
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            background: #fff;
+            box-shadow: 0 12px 28px rgba(17, 32, 57, .18);
+        }
+        .actions-panel button, .actions-panel select {
+            width: 100%;
+            min-height: 34px;
+            padding: 7px 8px;
+            border: 0;
+            border-radius: 7px;
+            background: #fff;
+            color: var(--ink);
+            font-size: 12px;
+            text-align: left;
+        }
+        .actions-panel button:hover { background: #f2f6fc; }
+        .actions-panel .danger { color: var(--danger); }
+        .actions-panel form + form, .actions-panel form + button, .actions-panel button + form { margin-top: 2px; }
+        .empty {
+            padding: 48px 20px;
+            color: var(--muted);
+            text-align: center;
+        }
+        .empty strong { display: block; margin-bottom: 5px; color: var(--ink); }
+        .mobile-cards { display: none; gap: 10px; }
+        .mobile-card {
+            padding: 13px;
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            background: #fff;
+            box-shadow: 0 3px 12px rgba(22, 37, 63, .04);
+        }
+        .mobile-card[hidden] { display: none; }
+        .mobile-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+        .mobile-card-grid { display: grid; gap: 7px; margin-top: 10px; }
+        .mobile-label { color: var(--muted); font-size: 11px; font-weight: 750; text-transform: uppercase; }
+        .mobile-value { margin-top: 2px; font-size: 13px; line-height: 1.4; }
+        .overlay {
+            position: fixed;
+            z-index: 70;
+            inset: 0;
+            visibility: hidden;
+            background: rgba(9, 22, 43, .38);
+            opacity: 0;
+            transition: .2s ease;
+        }
+        .overlay.open { visibility: visible; opacity: 1; }
+        .drawer {
+            position: fixed;
+            z-index: 80;
+            top: 0;
+            right: 0;
+            width: min(620px, 100%);
+            height: 100vh;
+            overflow-y: auto;
+            background: #f7f9fc;
+            box-shadow: -14px 0 36px rgba(15, 33, 62, .2);
+            transform: translateX(103%);
+            transition: transform .22s ease;
+        }
+        .drawer.open { transform: translateX(0); }
+        .drawer-head {
+            position: sticky;
+            z-index: 5;
+            top: 0;
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 18px;
+            background: var(--navy);
+            color: #fff;
+        }
+        .drawer-title { margin: 0 0 5px; font-size: 21px; }
+        .drawer-subtitle { color: #c8d6ec; font-size: 13px; }
+        .icon-button {
+            width: 36px;
+            height: 36px;
+            border: 1px solid rgba(255,255,255,.32);
+            border-radius: 9px;
+            background: rgba(255,255,255,.08);
+            color: #fff;
+            font-size: 22px;
+        }
+        .drawer-body { display: grid; gap: 11px; padding: 14px; }
+        .detail-section {
+            padding: 14px;
+            border: 1px solid var(--line);
+            border-radius: 11px;
+            background: #fff;
+        }
+        .detail-title { margin: 0 0 11px; color: var(--navy); font-size: 14px; }
+        .detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; }
+        .detail-item dt { margin: 0 0 3px; color: var(--muted); font-size: 11px; font-weight: 750; text-transform: uppercase; }
+        .detail-item dd { margin: 0; font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; white-space: pre-wrap; }
+        .product-preview { display: flex; gap: 12px; }
+        .product-image {
+            width: 74px;
+            height: 74px;
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            object-fit: contain;
+            background: #fff;
+        }
+        .shipment-list, .attachment-list { display: grid; gap: 7px; }
+        .shipment, .attachment {
+            padding: 9px 10px;
+            border: 1px solid #e5eaf1;
+            border-radius: 8px;
+            background: #fafcff;
+            font-size: 12px;
+            line-height: 1.45;
+        }
+        .timeline { position: relative; display: grid; gap: 11px; padding-left: 18px; }
+        .timeline::before { content: ""; position: absolute; top: 4px; bottom: 4px; left: 5px; width: 2px; background: #d9e3f1; }
+        .event { position: relative; }
+        .event::before { content: ""; position: absolute; top: 5px; left: -17px; width: 9px; height: 9px; border: 2px solid #fff; border-radius: 50%; background: #3973bd; box-shadow: 0 0 0 1px #9bb8df; }
+        .event-title { font-size: 12px; font-weight: 800; }
+        .event-meta { margin-top: 2px; color: var(--muted); font-size: 11px; }
+        .event-text { margin-top: 3px; font-size: 12px; line-height: 1.45; white-space: pre-wrap; }
+        .drawer-actions { display: flex; gap: 8px; flex-wrap: wrap; }
         .modal {
             position: fixed;
+            z-index: 100;
             inset: 0;
-            z-index: 1000;
             display: none;
-            align-items: flex-start;
+            align-items: center;
             justify-content: center;
-            overflow-y: auto;
-            padding: 28px 18px;
-            background: rgba(15, 23, 42, 0.52);
-            backdrop-filter: blur(3px);
+            padding: 18px;
+            background: rgba(9, 22, 43, .55);
         }
-
-        .modal.open {
-            display: flex;
-        }
-
+        .modal.open { display: flex; }
         .modal-dialog {
-            width: min(1080px, 100%);
+            width: min(980px, 100%);
+            max-height: calc(100vh - 36px);
             overflow: hidden;
-            background: #ffffff;
-            border: 1px solid #d1d5db;
-            border-radius: 18px;
-            box-shadow: 0 26px 80px rgba(15, 23, 42, 0.28);
+            border-radius: 14px;
+            background: #fff;
+            box-shadow: 0 24px 64px rgba(9, 22, 43, .25);
         }
-
-        .modal-header {
+        .modal-header, .modal-footer {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: 16px;
-            padding: 17px 20px;
-            border-bottom: 1px solid #e5e7eb;
-        }
-
-        .modal-title {
-            margin: 0;
-            font-size: 20px;
-        }
-
-        .modal-subtitle {
-            margin: 3px 0 0;
-            color: var(--muted);
-            font-size: 12px;
-        }
-
-        .modal-close {
-            width: 38px;
-            height: 38px;
-            border: none;
-            border-radius: 10px;
-            color: #4b5563;
-            background: #f3f4f6;
-            font-size: 22px;
-        }
-
-        .modal-close:hover {
-            background: #e5e7eb;
-        }
-
-        .modal-body {
-            padding: 20px;
-        }
-
-        .form-section {
-            margin-bottom: 20px;
-            padding-bottom: 20px;
-            border-bottom: 1px solid #e5e7eb;
-        }
-
-        .form-section:last-child {
-            margin-bottom: 0;
-            padding-bottom: 0;
-            border-bottom: none;
-        }
-
-        .section-title {
-            margin: 0 0 11px;
-            font-size: 14px;
-            font-weight: 900;
-        }
-
-        .form-grid {
-            display: grid;
-            grid-template-columns: repeat(4, minmax(0, 1fr));
             gap: 12px;
+            padding: 15px 18px;
+            border-bottom: 1px solid var(--line);
         }
-
-        .field {
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
+        .modal-footer { justify-content: flex-end; border-top: 1px solid var(--line); border-bottom: 0; }
+        .modal-title { margin: 0; color: var(--navy); font-size: 21px; }
+        .modal-subtitle { margin: 3px 0 0; color: var(--muted); font-size: 12px; }
+        .modal-close { border-color: var(--line); color: var(--muted); background: #fff; }
+        .modal-body { max-height: calc(100vh - 170px); padding: 16px 18px; overflow-y: auto; background: #f8fafc; }
+        .form-section { margin-bottom: 12px; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+        .form-section:last-child { margin-bottom: 0; }
+        .form-title { margin: 0 0 11px; color: var(--navy); font-size: 14px; }
+        .form-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 11px; }
+        .field { min-width: 0; }
+        .field-span-2 { grid-column: span 2; }
+        .field-span-4 { grid-column: span 4; }
+        .field label { display: block; margin-bottom: 5px; color: #3e4a5e; font-size: 11px; font-weight: 800; }
+        .required { color: #dc2626; }
+        .field-hint { margin-top: 4px; color: var(--muted); font-size: 11px; }
+        .product-picker { position: relative; }
+        .product-results {
+            position: absolute;
+            z-index: 12;
+            top: calc(100% + 4px);
+            left: 0;
+            right: 0;
+            display: none;
+            max-height: 250px;
+            overflow-y: auto;
+            padding: 5px;
+            border: 1px solid var(--line);
+            border-radius: 9px;
+            background: #fff;
+            box-shadow: 0 12px 26px rgba(15, 33, 62, .16);
         }
-
-        .field-span-2 {
-            grid-column: span 2;
-        }
-
-        .field-span-4 {
-            grid-column: span 4;
-        }
-
-        .field label {
-            color: #4b5563;
-            font-size: 12px;
-            font-weight: 800;
-        }
-
-        .required {
-            color: var(--red);
-        }
-
-        .modal-footer {
-            display: flex;
-            justify-content: flex-end;
-            gap: 8px;
-            padding: 15px 20px;
-            border-top: 1px solid #e5e7eb;
-            background: #f9fafb;
-        }
-
-        body.modal-open {
-            overflow: hidden;
-        }
-
+        .product-results.open { display: block; }
+        .product-option { width: 100%; padding: 8px; border: 0; border-radius: 7px; background: #fff; text-align: left; }
+        .product-option:hover { background: #f0f5fc; }
+        .product-option strong { display: block; font-size: 12px; }
+        .product-option span { color: var(--muted); font-size: 11px; }
+        body.layer-open { overflow: hidden; }
         @media (max-width: 1180px) {
-            .stats {
-                grid-template-columns: repeat(3, minmax(0, 1fr));
-            }
-
-            .form-grid {
-                grid-template-columns: repeat(2, minmax(0, 1fr));
-            }
-
-            .field-span-4 {
-                grid-column: span 2;
-            }
+            .filter-grid { grid-template-columns: minmax(230px, 2fr) repeat(2, minmax(150px, 1fr)); }
         }
-
-        @media (max-width: 820px) {
-            .main {
-                padding: 14px;
-            }
-
-            .stats {
-                grid-template-columns: repeat(2, minmax(0, 1fr));
-            }
-
-            .toolbar {
-                grid-template-columns: 1fr;
-            }
-
-            .form-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .field-span-2,
-            .field-span-4 {
-                grid-column: span 1;
-            }
-
-            .modal {
-                padding: 10px;
-            }
+        @media (max-width: 900px) {
+            .main { padding: 14px; }
+            .repair-hero { margin: -14px -14px 14px; padding: 17px 14px; }
+            .page-title { font-size: 23px; }
+            .metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+            .filter-grid, .filter-row-secondary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .table-card { display: none; }
+            .mobile-cards { display: grid; }
+            .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .field-span-4 { grid-column: span 2; }
+        }
+        @media (max-width: 560px) {
+            .repair-hero { align-items: flex-start; }
+            .page-subtitle { display: none; }
+            .hero-add { min-height: 38px; padding: 8px 11px; }
+            .metrics { gap: 7px; }
+            .metric { padding: 11px; }
+            .metric-label { min-height: 28px; font-size: 10px; }
+            .metric-value { font-size: 21px; }
+            .filter-grid, .filter-row-secondary, .form-grid, .detail-grid { grid-template-columns: 1fr; }
+            .field-span-2, .field-span-4 { grid-column: span 1; }
+            .modal { padding: 0; }
+            .modal-dialog { height: 100vh; max-height: 100vh; border-radius: 0; }
+            .modal-body { max-height: calc(100vh - 145px); padding: 11px; }
+            .drawer { width: 100%; }
         }
     </style>
 </head>
-
 <body>
 <div class="app">
     {% include "_sidebar.html" %}
-
     <main class="main">
-        <header class="page-header">
+        <header class="repair-hero">
             <div>
                 <h1 class="page-title">Ремонт</h1>
-                <p class="page-subtitle">
-                    Приём, диагностика, контроль сроков и выдача клиенту
-                </p>
+                <p class="page-subtitle">Обращения, диагностика, логистика и история ремонта</p>
             </div>
+            <button id="openCreateRepair" class="button hero-add" type="button">＋ Добавить ремонт</button>
         </header>
 
         {% if message %}
-            <div class="notice notice-{{ notice or 'success' }}">
-                {{ message }}
-            </div>
+            <div class="notice notice-{{ notice or 'success' }}">{{ message }}</div>
+        {% endif %}
+        {% if data_error %}
+            <div class="notice notice-error">{{ data_error }}. Запись отключена до восстановления файла.</div>
         {% endif %}
 
-        <section class="stats">
-            <a
-                class="stat-card{% if repair_view == 'active' and not status_filter %} active{% endif %}"
-                href="/repair"
-            >
-                <span class="stat-label">Активные</span>
-                <span class="stat-value">{{ stats.active_total }}</span>
-            </a>
+        <nav class="view-tabs" aria-label="Вид ремонтов">
+            <a class="view-tab{% if repair_view == 'active' %} active{% endif %}" href="/repair">Активные</a>
+            <a class="view-tab{% if repair_view == 'archive' %} active{% endif %}" href="/repair?view=archive">Архив</a>
+            <a class="view-tab{% if repair_view == 'all' %} active{% endif %}" href="/repair?view=all">Все обращения</a>
+        </nav>
 
-            <a
-                class="stat-card{% if repair_view == 'archive' %} active{% endif %}"
-                href="/repair?view=archive"
-            >
-                <span class="stat-label">Архив</span>
-                <span class="stat-value">{{ stats.archive_total }}</span>
-            </a>
-
-            <a
-                class="stat-card{% if repair_view == 'all' %} active{% endif %}"
-                href="/repair?view=all"
-            >
-                <span class="stat-label">Вся история</span>
-                <span class="stat-value">{{ stats.total }}</span>
-            </a>
-
-            <a
-                class="stat-card{% if status_filter == 'new' %} active{% endif %}"
-                href="/repair?status=new"
-            >
-                <span class="stat-label">Новые</span>
-                <span class="stat-value">{{ stats.new }}</span>
-            </a>
-
-            <div class="stat-card">
-                <span class="stat-label">В работе</span>
-                <span class="stat-value">{{ stats.active }}</span>
-            </div>
-
-            <a
-                class="stat-card{% if status_filter == 'waiting' %} active{% endif %}"
-                href="/repair?status=waiting"
-            >
-                <span class="stat-label">Ожидают</span>
-                <span class="stat-value">{{ stats.waiting }}</span>
-            </a>
-
-            <a
-                class="stat-card{% if status_filter == 'ready' %} active{% endif %}"
-                href="/repair?status=ready"
-            >
-                <span class="stat-label">Готовы</span>
-                <span class="stat-value">{{ stats.ready }}</span>
-            </a>
-
-            <button id="openCreateRepair" class="add-button" type="button">
-                + Принять в ремонт
-            </button>
+        <section class="metrics" aria-label="Показатели ремонтов">
+            <article class="metric">
+                <span class="metric-label">Всего обращений</span>
+                <span id="metricTotal" class="metric-value">{{ stats.total }}</span>
+            </article>
+            <article class="metric">
+                <span class="metric-label">У мастера / ожидают мастера</span>
+                <span id="metricMaster" class="metric-value">{{ stats.master }}</span>
+            </article>
+            <article class="metric">
+                <span class="metric-label">В доставке</span>
+                <span id="metricDelivery" class="metric-value">{{ stats.delivery }}</span>
+            </article>
         </section>
 
-        <form class="toolbar" method="get" action="/repair">
+        <form id="repairFilters" class="filters" method="get" action="/repair">
             <input type="hidden" name="view" value="{{ repair_view }}">
-            <input
-                class="control"
-                type="search"
-                name="q"
-                value="{{ q }}"
-                placeholder="Поиск по номеру, клиенту, телефону, заказу, товару или мастеру"
-            >
-
-            <select class="control" name="status">
-                <option value="">Все статусы</option>
-
-                {% for status_key, status_name in status_labels.items() %}
-                    <option
-                        value="{{ status_key }}"
-                        {% if status_filter == status_key %}selected{% endif %}
-                    >
-                        {{ status_name }}
-                    </option>
-                {% endfor %}
-            </select>
-
-            <button class="button button-primary" type="submit">
-                Найти
-            </button>
+            <div class="filter-grid">
+                <div class="search-wrap">
+                    <input id="repairSearch" class="control" type="search" name="q" value="{{ filters.q }}" placeholder="Заказ, клиент, телефон, товар, проблема или трек-номер" autocomplete="off">
+                    <button id="clearRepairSearch" class="search-clear" type="button" aria-label="Очистить поиск">×</button>
+                </div>
+                <select class="control" name="status" data-repair-filter>
+                    <option value="">Все статусы</option>
+                    {% for key, label in status_labels.items() %}
+                        <option value="{{ key }}" {% if filters.status == key %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+                <select class="control" name="type" data-repair-filter>
+                    <option value="">Все типы обращения</option>
+                    {% for key, label in type_labels.items() %}
+                        <option value="{{ key }}" {% if filters.type == key %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+                <select class="control" name="location" data-repair-filter>
+                    <option value="">Любое местонахождение</option>
+                    {% for key, label in location_labels.items() %}
+                        <option value="{{ key }}" {% if filters.location == key %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+                <select class="control" name="channel" data-repair-filter>
+                    <option value="">Все каналы</option>
+                    {% for key, label in channel_labels.items() %}
+                        <option value="{{ key }}" {% if filters.channel == key %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="filter-row-secondary">
+                <input class="control" type="date" name="date_from" value="{{ filters.date_from }}" aria-label="Период с" data-repair-filter>
+                <input class="control" type="date" name="date_to" value="{{ filters.date_to }}" aria-label="Период по" data-repair-filter>
+                <select class="control" name="sort" data-repair-filter>
+                    <option value="date_desc" {% if filters.sort == 'date_desc' %}selected{% endif %}>Сначала новые</option>
+                    <option value="date_asc" {% if filters.sort == 'date_asc' %}selected{% endif %}>Сначала старые</option>
+                    <option value="status" {% if filters.sort == 'status' %}selected{% endif %}>По статусу</option>
+                </select>
+                <button id="resetRepairFilters" class="button button-secondary" type="button">Сбросить фильтры</button>
+            </div>
+            <div class="result-summary">
+                <span id="repairResultCount">Показано: {{ cases|length }}</span>
+                <span>Поиск и фильтры применяются сразу</span>
+            </div>
         </form>
 
         <section class="table-card">
-            {% if cases %}
-                <div class="table-wrap">
-                    <table class="repair-table">
-                        <thead>
-                            <tr>
-                                <th class="col-number">Ремонт</th>
-                                <th class="col-date">Принят</th>
-                                <th class="col-status">Статус</th>
-                                <th class="col-client">Клиент</th>
-                                <th class="col-product">Товар</th>
-                                <th class="col-problem">Неисправность</th>
-                                <th class="col-master">Исполнитель</th>
-                                <th class="col-price">Стоимость</th>
-                                <th class="col-due">Срок</th>
-                                <th class="col-actions">Действия</th>
-                            </tr>
-                        </thead>
-
-                        <tbody>
-                            {% for case in cases %}
-                                <tr>
-                                    <td>
-                                        <div class="repair-number">
-                                            {{ case.repair_number or "Без номера" }}
-                                        </div>
-
-                                        <div class="minor">
-                                            {{ type_labels.get(case.repair_type, case.repair_type) }}
-                                        </div>
-
-                                        {% if case.order_number %}
-                                            <div class="minor">
-                                                Заказ: {{ case.order_number }}
-                                            </div>
-                                        {% endif %}
-                                    </td>
-
-                                    <td>
-                                        <div class="cell-title">
-                                            {{ case.accepted_at or "—" }}
-                                        </div>
-
-                                        <div class="minor">
-                                            Создан: {{ case.created_at or "—" }}
-                                        </div>
-                                    </td>
-
-                                    <td>
-                                        <span class="status-badge status-{{ case.status }}">
-                                            {{ status_labels.get(case.status, case.status) }}
-                                        </span>
-
-                                        <form method="post" action="/repair/status">
+            <div class="table-wrap">
+                <table class="repair-table" aria-label="Ремонты">
+                    <thead>
+                    <tr>
+                        <th class="col-status">Статус</th>
+                        <th class="col-order">Заказ / клиент</th>
+                        <th class="col-product">Товар</th>
+                        <th class="col-contact">Связь</th>
+                        <th class="col-request">Обращение</th>
+                        <th class="col-logistics">Логистика</th>
+                        <th class="col-dates">Ключевые даты</th>
+                        <th class="col-event">Последнее событие</th>
+                        <th class="col-actions">Действия</th>
+                    </tr>
+                    </thead>
+                    <tbody id="repairTableBody">
+                    {% for case in cases %}
+                        <tr
+                            data-repair-row
+                            data-case-id="{{ case.id }}"
+                            data-search="{{ case.search_text|e }}"
+                            data-status="{{ case.status }}"
+                            data-type="{{ case.request_type }}"
+                            data-location="{{ case.location }}"
+                            data-channel="{{ case.communication_channel }}"
+                            data-date="{{ case.request_at or case.created_at[:10] }}"
+                        >
+                            <td>
+                                <span class="status-badge status-{{ case.status }}" data-case-status-badge>{{ case.status_label }}</span>
+                                <div class="cell-sub" data-case-status-location>{{ case.location_label }}</div>
+                            </td>
+                            <td>
+                                <div class="cell-main">{{ case.order_label }}</div>
+                                <div class="cell-sub">{{ case.client_name or "Клиент не указан" }}</div>
+                            </td>
+                            <td>
+                                <div class="cell-main clamp-2">
+                                    {% if case.brand %}{{ case.brand }}{% endif %}
+                                    {% if case.model %} · {{ case.model }}{% endif %}
+                                    {% if not case.brand and not case.model %}{{ case.product_name or "—" }}{% endif %}
+                                </div>
+                                {% if (case.brand or case.model) and case.product_name %}
+                                    <div class="cell-sub clamp-2">{{ case.product_name }}</div>
+                                {% elif case.article %}
+                                    <div class="cell-sub">Арт. {{ case.article }}</div>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <div class="cell-main">{{ case.channel_label }}</div>
+                                <div class="cell-sub clamp-2">{{ case.contact or case.client_phone or case.client_email or "Не указан" }}</div>
+                            </td>
+                            <td>
+                                <div class="cell-main">{{ case.request_type_label }}</div>
+                                <div class="cell-sub clamp-2">{{ case.problem or "—" }}</div>
+                            </td>
+                            <td>
+                                <div class="cell-main">{{ case.location_label }}</div>
+                                {% if case.latest_shipment %}
+                                    <div class="cell-sub clamp-2">
+                                        {{ case.latest_shipment.direction_label }}
+                                        {% if case.latest_shipment.carrier %} · {{ case.latest_shipment.carrier }}{% endif %}
+                                        {% if case.latest_shipment.track_number %}<br>{{ case.latest_shipment.track_number }}{% endif %}
+                                    </div>
+                                {% else %}
+                                    <div class="cell-sub">Отправлений нет</div>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <div class="cell-main">
+                                    {% if case.accepted_at_display %}Приняты: {{ case.accepted_at_display }}{% else %}Приняты: —{% endif %}
+                                </div>
+                                <div class="cell-sub">
+                                    {% if case.master_handoff_at_display %}Мастеру: {{ case.master_handoff_at_display }}{% else %}Мастеру: —{% endif %}
+                                </div>
+                            </td>
+                            <td><div class="cell-main clamp-2" data-case-latest-event>{{ case.latest_event or "—" }}</div></td>
+                            <td>
+                                <details class="actions-menu">
+                                    <summary aria-label="Открыть действия">⋯</summary>
+                                    <div class="actions-panel">
+                                        <button type="button" data-open-case="{{ case.id }}">Открыть карточку</button>
+                                        <button type="button" data-edit-case="{{ case.id }}">Редактировать</button>
+                                        <form method="post" action="/repair/status" data-live-status>
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                             <input type="hidden" name="case_id" value="{{ case.id }}">
-
-                                            <select
-                                                class="quick-status"
-                                                name="status"
-                                                onchange="this.form.submit()"
-                                                aria-label="Изменить статус"
-                                            >
-                                                {% for status_key, status_name in status_labels.items() %}
-                                                    <option
-                                                        value="{{ status_key }}"
-                                                        {% if case.status == status_key %}selected{% endif %}
-                                                    >
-                                                        {{ status_name }}
-                                                    </option>
+                                            <select name="status" aria-label="Изменить статус" onchange="this.form.submit()">
+                                                {% for key, label in status_labels.items() %}
+                                                    <option value="{{ key }}" {% if case.status == key %}selected{% endif %}>{{ label }}</option>
                                                 {% endfor %}
                                             </select>
                                         </form>
-                                    </td>
-
-                                    <td>
-                                        <div class="cell-title">
-                                            {{ case.client_name or "—" }}
-                                        </div>
-
-                                        <div class="minor">
-                                            {{ case.client_phone or "Телефон не указан" }}
-                                        </div>
-
-                                        {% if case.responsible %}
-                                            <div class="minor">
-                                                Ответственный: {{ case.responsible }}
-                                            </div>
-                                        {% endif %}
-                                    </td>
-
-                                    <td>
-                                        <div class="cell-title">
-                                            {{ case.product_name or "—" }}
-                                        </div>
-
-                                        {% if case.serial_number %}
-                                            <div class="minor">
-                                                S/N: {{ case.serial_number }}
-                                            </div>
-                                        {% endif %}
-
-                                        {% if case.equipment %}
-                                            <div class="minor">
-                                                Комплект: {{ case.equipment }}
-                                            </div>
-                                        {% endif %}
-                                    </td>
-
-                                    <td>
-                                        <div class="problem-text">
-                                            {{ case.problem or "—" }}
-                                        </div>
-
-                                        {% if case.internal_comment %}
-                                            <div class="minor">
-                                                Внутренний комментарий: {{ case.internal_comment }}
-                                            </div>
-                                        {% endif %}
-                                    </td>
-
-                                    <td>
-                                        <div class="cell-title">
-                                            {{ case.master or "Не назначен" }}
-                                        </div>
-
-                                        <span class="type-badge type-{{ case.repair_type }}">
-                                            {{ type_labels.get(case.repair_type, case.repair_type) }}
-                                        </span>
-                                    </td>
-
-                                    <td>
-                                        <div class="cell-title">
-                                            {% if case.final_cost %}
-                                                {{ case.final_cost }} ₽
-                                            {% elif case.estimate_cost %}
-                                                ~ {{ case.estimate_cost }} ₽
-                                            {% else %}
-                                                —
-                                            {% endif %}
-                                        </div>
-
-                                        {% if case.estimate_cost and case.final_cost %}
-                                            <div class="minor">
-                                                Оценка: {{ case.estimate_cost }} ₽
-                                            </div>
-                                        {% endif %}
-                                    </td>
-
-                                    <td>
-                                        <div class="cell-title">
-                                            {{ case.due_date or "Не указан" }}
-                                        </div>
-
-                                        <div class="minor">
-                                            Обновлён: {{ case.updated_at or "—" }}
-                                        </div>
-                                    </td>
-
-                                    <td>
-                                        <div class="action-row">
-                                            <button
-                                                class="button button-edit js-edit-repair"
-                                                type="button"
-                                                data-json-id="repair-json-{{ loop.index }}"
-                                            >
-                                                Открыть
-                                            </button>
-
-                                            {% if case.is_archived %}
-                                                <form method="post" action="/repair/status">
+                                        {% if case.is_archived %}
+                                            <form method="post" action="/repair/action">
+                                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                                <input type="hidden" name="case_id" value="{{ case.id }}">
+                                                <input type="hidden" name="action" value="restore">
+                                                <button type="submit">Вернуть из архива</button>
+                                            </form>
+                                        {% else %}
+                                            {% for action, label in [('receive', 'Принять часы'), ('handoff', 'Передать мастеру'), ('return', 'Вернуть клиенту'), ('complete', 'Завершить ремонт')] %}
+                                                <form method="post" action="/repair/action">
+                                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                                     <input type="hidden" name="case_id" value="{{ case.id }}">
-                                                    <input type="hidden" name="status" value="in_progress">
-                                                    <button class="button button-secondary" type="submit">
-                                                        Вернуть
-                                                    </button>
+                                                    <input type="hidden" name="action" value="{{ action }}">
+                                                    <button type="submit">{{ label }}</button>
                                                 </form>
-                                            {% else %}
-                                                <form
-                                                    method="post"
-                                                    action="/repair/delete"
-                                                    onsubmit="return confirm('Перенести ремонт {{ case.repair_number }} в архив?');"
-                                                >
-                                                    <input type="hidden" name="case_id" value="{{ case.id }}">
-
-                                                    <button class="button button-delete" type="submit">
-                                                        В архив
-                                                    </button>
-                                                </form>
-                                            {% endif %}
-                                        </div>
-
-                                        <script
-                                            id="repair-json-{{ loop.index }}"
-                                            type="application/json"
-                                        >{{ case | tojson }}</script>
-                                    </td>
-                                </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
+                                            {% endfor %}
+                                            <form method="post" action="/repair/delete" onsubmit="return confirm('Перенести ремонт {{ case.repair_number }} в архив? История сохранится.');">
+                                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                                <input type="hidden" name="case_id" value="{{ case.id }}">
+                                                <button class="danger" type="submit">Удалить / архивировать</button>
+                                            </form>
+                                        {% endif %}
+                                    </div>
+                                </details>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+                <div id="desktopEmpty" class="empty" {% if cases %}hidden{% endif %}>
+                    <strong>Ремонтов не найдено</strong>
+                    Измените фильтры или добавьте новое обращение.
                 </div>
-            {% else %}
-                <div class="empty">
-                    <div class="empty-title">Ремонтов не найдено</div>
-                    <div>
-                        Добавьте первый ремонт или измените параметры поиска.
+            </div>
+        </section>
+
+        <section id="repairMobileCards" class="mobile-cards" aria-label="Ремонты на телефоне">
+            {% for case in cases %}
+                <article
+                    class="mobile-card"
+                    data-repair-card
+                    data-case-id="{{ case.id }}"
+                    data-search="{{ case.search_text|e }}"
+                    data-status="{{ case.status }}"
+                    data-type="{{ case.request_type }}"
+                    data-location="{{ case.location }}"
+                    data-channel="{{ case.communication_channel }}"
+                    data-date="{{ case.request_at or case.created_at[:10] }}"
+                >
+                    <div class="mobile-card-head">
+                        <button class="status-badge status-{{ case.status }}" type="button" data-open-case="{{ case.id }}" data-case-status-badge>{{ case.status_label }}</button>
+                        <details class="actions-menu">
+                            <summary aria-label="Открыть действия">⋯</summary>
+                            <div class="actions-panel">
+                                <button type="button" data-open-case="{{ case.id }}">Открыть карточку</button>
+                                <button type="button" data-edit-case="{{ case.id }}">Редактировать</button>
+                                {% if not case.is_archived %}
+                                    <form method="post" action="/repair/action">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                        <input type="hidden" name="case_id" value="{{ case.id }}">
+                                        <input type="hidden" name="action" value="complete">
+                                        <button type="submit">Завершить ремонт</button>
+                                    </form>
+                                {% endif %}
+                            </div>
+                        </details>
                     </div>
-                </div>
-            {% endif %}
+                    <div class="mobile-card-grid" data-open-case="{{ case.id }}">
+                        <div><div class="mobile-label">Заказ / клиент</div><div class="mobile-value"><strong>{{ case.order_label }}</strong><br>{{ case.client_name or "—" }}</div></div>
+                        <div><div class="mobile-label">Товар</div><div class="mobile-value">{{ case.brand or case.product_name or "—" }}{% if case.model %} · {{ case.model }}{% endif %}</div></div>
+                        <div><div class="mobile-label">Обращение</div><div class="mobile-value clamp-2">{{ case.problem or "—" }}</div></div>
+                        <div><div class="mobile-label">Местонахождение</div><div class="mobile-value">{{ case.location_label }}</div></div>
+                        <div><div class="mobile-label">Последнее событие</div><div class="mobile-value clamp-2">{{ case.latest_event or "—" }}</div></div>
+                    </div>
+                </article>
+            {% endfor %}
+            <div id="mobileEmpty" class="empty" {% if cases %}hidden{% endif %}>
+                <strong>Ремонтов не найдено</strong>
+                Измените фильтры или добавьте обращение.
+            </div>
         </section>
     </main>
 </div>
 
+<div id="repairOverlay" class="overlay"></div>
+<aside id="repairDrawer" class="drawer" aria-hidden="true" aria-label="Карточка ремонта">
+    <header class="drawer-head">
+        <div>
+            <h2 id="drawerTitle" class="drawer-title">Карточка ремонта</h2>
+            <div id="drawerSubtitle" class="drawer-subtitle"></div>
+        </div>
+        <button id="closeRepairDrawer" class="icon-button" type="button" aria-label="Закрыть">×</button>
+    </header>
+    <div class="drawer-body">
+        <div class="drawer-actions">
+            <button id="drawerEditButton" class="button button-primary" type="button">Редактировать</button>
+        </div>
+        <section class="detail-section">
+            <h3 class="detail-title">Основная информация</h3>
+            <dl id="drawerMain" class="detail-grid"></dl>
+        </section>
+        <section class="detail-section">
+            <h3 class="detail-title">Клиент и заказ</h3>
+            <dl id="drawerClient" class="detail-grid"></dl>
+        </section>
+        <section class="detail-section">
+            <h3 class="detail-title">Товар</h3>
+            <div id="drawerProduct"></div>
+        </section>
+        <section class="detail-section">
+            <h3 class="detail-title">Неисправность</h3>
+            <dl id="drawerProblem" class="detail-grid"></dl>
+            <div id="drawerAttachments" class="attachment-list"></div>
+        </section>
+        <section class="detail-section">
+            <h3 class="detail-title">Логистика</h3>
+            <div id="drawerShipments" class="shipment-list"></div>
+            <form id="shipmentForm" method="post" action="/repair/logistics/add" style="margin-top: 12px;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input id="shipmentCaseId" type="hidden" name="case_id">
+                <div class="form-grid">
+                    <div class="field">
+                        <label>Направление</label>
+                        <select class="control" name="direction">
+                            {% for key, label in direction_labels.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div class="field"><label>Перевозчик</label><input class="control" name="carrier" placeholder="СДЭК, Почта России"></div>
+                    <div class="field"><label>Трек-номер <span class="required">*</span></label><input class="control" name="track_number" required></div>
+                    <div class="field"><label>Дата отправления</label><input class="control" type="date" name="sent_at"></div>
+                    <div class="field field-span-2"><label>Статус доставки</label><input class="control" name="shipment_status"></div>
+                    <div class="field"><label>Дата получения</label><input class="control" type="date" name="received_at"></div>
+                    <div class="field" style="align-self: end;"><button class="button button-secondary" type="submit">Добавить накладную</button></div>
+                </div>
+            </form>
+        </section>
+        <section class="detail-section">
+            <h3 class="detail-title">Даты</h3>
+            <dl id="drawerDates" class="detail-grid"></dl>
+        </section>
+        <section class="detail-section">
+            <h3 class="detail-title">История</h3>
+            <div id="drawerHistory" class="timeline"></div>
+        </section>
+    </div>
+</aside>
+
 <div id="repairModal" class="modal" aria-hidden="true">
     <div class="modal-dialog">
-        <form id="repairForm" method="post" action="/repair/add">
+        <form id="repairForm" method="post" action="/repair/add" enctype="multipart/form-data">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <header class="modal-header">
                 <div>
-                    <h2 id="modalTitle" class="modal-title">
-                        Принять товар в ремонт
-                    </h2>
-
-                    <p id="modalSubtitle" class="modal-subtitle">
-                        Создайте карточку и зафиксируйте состояние товара
-                    </p>
+                    <h2 id="modalTitle" class="modal-title">Добавить ремонт</h2>
+                    <p id="modalSubtitle" class="modal-subtitle">Создайте карточку обращения и первое событие истории</p>
                 </div>
-
-                <button
-                    id="closeRepairModal"
-                    class="modal-close"
-                    type="button"
-                    aria-label="Закрыть"
-                >
-                    ×
-                </button>
+                <button id="closeRepairModal" class="button modal-close" type="button" aria-label="Закрыть">×</button>
             </header>
-
             <div class="modal-body">
                 <input id="caseId" type="hidden" name="case_id">
-
                 <section class="form-section">
-                    <h3 class="section-title">Клиент и заказ</h3>
-
+                    <h3 class="form-title">Клиент и заказ</h3>
                     <div class="form-grid">
-                        <div class="field">
-                            <label>
-                                Имя клиента <span class="required">*</span>
-                            </label>
-                            <input
-                                id="clientName"
-                                class="control"
-                                type="text"
-                                name="client_name"
-                                required
-                            >
-                        </div>
-
-                        <div class="field">
-                            <label>
-                                Телефон <span class="required">*</span>
-                            </label>
-                            <input
-                                id="clientPhone"
-                                class="control"
-                                type="text"
-                                name="client_phone"
-                                placeholder="+7..."
-                                required
-                            >
-                        </div>
-
-                        <div class="field">
-                            <label>Номер заказа</label>
-                            <input
-                                id="orderNumber"
-                                class="control"
-                                type="text"
-                                name="order_number"
-                            >
-                        </div>
-
-                        <div class="field">
-                            <label>Ответственный сотрудник</label>
-                            <input
-                                id="responsible"
-                                class="control"
-                                type="text"
-                                name="responsible"
-                            >
-                        </div>
+                        <div class="field"><label>Имя клиента <span class="required">*</span></label><input id="clientName" class="control" name="client_name" required></div>
+                        <div class="field"><label>Телефон</label><input id="clientPhone" class="control" name="client_phone" placeholder="+7..."></div>
+                        <div class="field"><label>Email</label><input id="clientEmail" class="control" type="email" name="client_email"></div>
+                        <div class="field"><label>Telegram / WhatsApp</label><input id="clientMessenger" class="control" name="client_messenger"></div>
+                        <div class="field"><label>Источник заказа</label><select id="orderSource" class="control" name="order_source"><option value="our">Наш заказ</option><option value="external">Внешний заказ</option><option value="none">Без номера</option></select></div>
+                        <div class="field"><label>Номер заказа</label><input id="orderNumber" class="control" name="order_number"></div>
+                        <div class="field"><label>Канал связи</label><select id="communicationChannel" class="control" name="communication_channel">{% for key, label in channel_labels.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select></div>
+                        <div class="field"><label>Контакт</label><input id="contact" class="control" name="contact" placeholder="@username, телефон или email"></div>
                     </div>
                 </section>
-
                 <section class="form-section">
-                    <h3 class="section-title">Товар и неисправность</h3>
-
+                    <h3 class="form-title">Товар</h3>
                     <div class="form-grid">
-                        <div class="field field-span-2">
-                            <label>
-                                Товар <span class="required">*</span>
-                            </label>
-                            <input
-                                id="productName"
-                                class="control"
-                                type="text"
-                                name="product_name"
-                                placeholder="Бренд, модель, цвет"
-                                required
-                            >
+                        <div class="field field-span-4 product-picker">
+                            <label>Товар из каталога или свободное название <span class="required">*</span></label>
+                            <input id="productId" type="hidden" name="product_id">
+                            <input id="productName" class="control" name="product_name" autocomplete="off" placeholder="Начните вводить бренд, модель или артикул" required>
+                            <div id="productResults" class="product-results"></div>
+                            <div class="field-hint">Выберите товар из списка для постоянной связи product_id или оставьте свободное название.</div>
                         </div>
-
-                        <div class="field">
-                            <label>Серийный номер</label>
-                            <input
-                                id="serialNumber"
-                                class="control"
-                                type="text"
-                                name="serial_number"
-                            >
-                        </div>
-
-                        <div class="field">
-                            <label>Комплектация</label>
-                            <input
-                                id="equipment"
-                                class="control"
-                                type="text"
-                                name="equipment"
-                                placeholder="Коробка, ремешок..."
-                            >
-                        </div>
-
-                        <div class="field field-span-4">
-                            <label>
-                                Описание неисправности <span class="required">*</span>
-                            </label>
-                            <textarea
-                                id="problem"
-                                class="control"
-                                name="problem"
-                                required
-                            ></textarea>
-                        </div>
+                        <div class="field"><label>Бренд</label><input id="brand" class="control" name="brand"></div>
+                        <div class="field"><label>Модель</label><input id="model" class="control" name="model"></div>
+                        <div class="field"><label>Артикул</label><input id="article" class="control" name="article"></div>
+                        <div class="field"><label>Серийный номер</label><input id="serialNumber" class="control" name="serial_number"></div>
+                        <div class="field field-span-2"><label>Комплектация</label><input id="equipment" class="control" name="equipment"></div>
+                        <div class="field field-span-2"><label>Фото и вложения</label><input class="control" type="file" name="attachments" multiple accept=".png,.jpg,.jpeg,.webp,.pdf,.txt,.doc,.docx,.xls,.xlsx"></div>
                     </div>
                 </section>
-
                 <section class="form-section">
-                    <h3 class="section-title">Работа и сроки</h3>
-
+                    <h3 class="form-title">Обращение и решение</h3>
                     <div class="form-grid">
-                        <div class="field">
-                            <label>Дата приёма</label>
-                            <input
-                                id="acceptedAt"
-                                class="control"
-                                type="date"
-                                name="accepted_at"
-                            >
-                        </div>
-
-                        <div class="field">
-                            <label>Плановая дата готовности</label>
-                            <input
-                                id="dueDate"
-                                class="control"
-                                type="date"
-                                name="due_date"
-                            >
-                        </div>
-
-                        <div class="field">
-                            <label>Тип ремонта</label>
-                            <select id="repairType" class="control" name="repair_type">
-                                {% for type_key, type_name in type_labels.items() %}
-                                    <option value="{{ type_key }}">
-                                        {{ type_name }}
-                                    </option>
-                                {% endfor %}
-                            </select>
-                        </div>
-
-                        <div class="field">
-                            <label>Статус</label>
-                            <select id="status" class="control" name="status">
-                                {% for status_key, status_name in status_labels.items() %}
-                                    <option value="{{ status_key }}">
-                                        {{ status_name }}
-                                    </option>
-                                {% endfor %}
-                            </select>
-                        </div>
-
-                        <div class="field">
-                            <label>Мастер</label>
-                            <input
-                                id="master"
-                                class="control"
-                                type="text"
-                                name="master"
-                            >
-                        </div>
-
-                        <div class="field">
-                            <label>Предварительная стоимость</label>
-                            <input
-                                id="estimateCost"
-                                class="control"
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                name="estimate_cost"
-                            >
-                        </div>
-
-                        <div class="field">
-                            <label>Итоговая стоимость</label>
-                            <input
-                                id="finalCost"
-                                class="control"
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                name="final_cost"
-                            >
-                        </div>
+                        <div class="field"><label>Тип обращения</label><select id="requestType" class="control" name="request_type">{% for key, label in type_labels.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select></div>
+                        <div class="field"><label>Статус</label><select id="status" class="control" name="status">{% for key, label in status_labels.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select></div>
+                        <div class="field"><label>Местонахождение</label><select id="location" class="control" name="location">{% for key, label in location_labels.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select></div>
+                        <div class="field"><label>Ответственный</label><input id="responsible" class="control" name="responsible"></div>
+                        <div class="field field-span-4"><label>Описание неисправности <span class="required">*</span></label><textarea id="problem" class="control" name="problem" required></textarea></div>
+                        <div class="field field-span-2"><label>Результат диагностики</label><textarea id="diagnosticResult" class="control" name="diagnostic_result"></textarea></div>
+                        <div class="field field-span-2"><label>Заключение мастера</label><textarea id="masterConclusion" class="control" name="master_conclusion"></textarea></div>
+                        <div class="field field-span-2"><label>Принятое решение</label><textarea id="decision" class="control" name="decision"></textarea></div>
+                        <div class="field"><label>Мастер</label><input id="master" class="control" name="master"></div>
+                        <div class="field"><label>Стоимость ремонта</label><input id="finalCost" class="control" type="number" min="0" step="0.01" name="final_cost"></div>
+                        <div class="field"><label>Предварительная стоимость</label><input id="estimateCost" class="control" type="number" min="0" step="0.01" name="estimate_cost"></div>
                     </div>
                 </section>
-
                 <section class="form-section">
-                    <h3 class="section-title">Коммуникация и заметки</h3>
-
+                    <h3 class="form-title">Даты</h3>
                     <div class="form-grid">
-                        <div class="field field-span-2">
-                            <label>История общения с клиентом</label>
-                            <textarea
-                                id="communication"
-                                class="control"
-                                name="communication"
-                                placeholder="Созвоны, согласование цены, сообщения..."
-                            ></textarea>
-                        </div>
-
-                        <div class="field field-span-2">
-                            <label>Внутренний комментарий</label>
-                            <textarea
-                                id="internalComment"
-                                class="control"
-                                name="internal_comment"
-                                placeholder="Информация только для сотрудников"
-                            ></textarea>
-                        </div>
+                        <div class="field"><label>Дата обращения</label><input id="requestAt" class="control" type="date" name="request_at"></div>
+                        <div class="field"><label>Отправлено клиентом</label><input id="customerSentAt" class="control" type="date" name="customer_sent_at"></div>
+                        <div class="field"><label>Дата поступления</label><input id="acceptedAt" class="control" type="date" name="accepted_at"></div>
+                        <div class="field"><label>Передано мастеру</label><input id="masterHandoffAt" class="control" type="date" name="master_handoff_at"></div>
+                        <div class="field"><label>Ремонт окончен</label><input id="repairCompletedAt" class="control" type="date" name="repair_completed_at"></div>
+                        <div class="field"><label>Возвращено клиенту</label><input id="returnedAt" class="control" type="date" name="returned_at"></div>
+                        <div class="field"><label>Плановый срок</label><input id="dueDate" class="control" type="date" name="due_date"></div>
+                    </div>
+                </section>
+                <section id="initialShipmentSection" class="form-section">
+                    <h3 class="form-title">Первая накладная</h3>
+                    <div class="form-grid">
+                        <div class="field"><label>Направление</label><select class="control" name="shipment_direction">{% for key, label in direction_labels.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select></div>
+                        <div class="field"><label>Перевозчик</label><input class="control" name="shipment_carrier"></div>
+                        <div class="field"><label>Трек-номер</label><input class="control" name="shipment_track_number"></div>
+                        <div class="field"><label>Дата отправления</label><input class="control" type="date" name="shipment_sent_at"></div>
+                        <div class="field field-span-2"><label>Статус доставки</label><input class="control" name="shipment_status"></div>
+                        <div class="field"><label>Дата получения</label><input class="control" type="date" name="shipment_received_at"></div>
+                    </div>
+                </section>
+                <section class="form-section">
+                    <h3 class="form-title">Комментарии</h3>
+                    <div class="form-grid">
+                        <div class="field field-span-2"><label>История общения</label><textarea id="communication" class="control" name="communication"></textarea></div>
+                        <div class="field field-span-2"><label>Внутренний комментарий</label><textarea id="internalComment" class="control" name="internal_comment"></textarea></div>
+                        <div class="field field-span-4"><label>Комментарий к событию</label><input id="eventComment" class="control" name="event_comment" placeholder="Что изменилось или какой следующий шаг"></div>
                     </div>
                 </section>
             </div>
-
             <footer class="modal-footer">
-                <button
-                    id="cancelRepairModal"
-                    class="button button-secondary"
-                    type="button"
-                >
-                    Отмена
-                </button>
-
-                <button
-                    id="submitRepairButton"
-                    class="button button-primary"
-                    type="submit"
-                >
-                    Создать ремонт
-                </button>
+                <button id="cancelRepairModal" class="button button-secondary" type="button">Отмена</button>
+                <button id="submitRepairButton" class="button button-primary" type="submit">Создать ремонт</button>
             </footer>
         </form>
     </div>
 </div>
 
+<script id="repairData" type="application/json">{{ cases|tojson }}</script>
+<script id="repairCatalogData" type="application/json">{{ catalog_items|tojson }}</script>
 <script>
+(function () {
+    const cases = JSON.parse(document.getElementById("repairData").textContent || "[]");
+    const catalog = JSON.parse(document.getElementById("repairCatalogData").textContent || "[]");
+    const casesById = new Map(cases.map(item => [String(item.id), item]));
+    const statusOrder = {{ status_labels.keys()|list|tojson }};
+    const filterForm = document.getElementById("repairFilters");
+    const searchInput = document.getElementById("repairSearch");
+    const tableBody = document.getElementById("repairTableBody");
+    const mobileCards = document.getElementById("repairMobileCards");
+    const drawer = document.getElementById("repairDrawer");
+    const overlay = document.getElementById("repairOverlay");
     const modal = document.getElementById("repairModal");
-    const form = document.getElementById("repairForm");
-    const modalTitle = document.getElementById("modalTitle");
-    const modalSubtitle = document.getElementById("modalSubtitle");
-    const submitButton = document.getElementById("submitRepairButton");
+    const repairForm = document.getElementById("repairForm");
+    let activeCaseId = "";
 
-    const fields = {
-        case_id: document.getElementById("caseId"),
-        accepted_at: document.getElementById("acceptedAt"),
-        due_date: document.getElementById("dueDate"),
-        client_name: document.getElementById("clientName"),
-        client_phone: document.getElementById("clientPhone"),
-        order_number: document.getElementById("orderNumber"),
-        product_name: document.getElementById("productName"),
-        serial_number: document.getElementById("serialNumber"),
-        equipment: document.getElementById("equipment"),
-        problem: document.getElementById("problem"),
-        repair_type: document.getElementById("repairType"),
-        master: document.getElementById("master"),
-        responsible: document.getElementById("responsible"),
-        estimate_cost: document.getElementById("estimateCost"),
-        final_cost: document.getElementById("finalCost"),
-        status: document.getElementById("status"),
-        communication: document.getElementById("communication"),
-        internal_comment: document.getElementById("internalComment")
+    function normalize(value) {
+        return String(value || "").trim().toLocaleLowerCase("ru").replaceAll("ё", "е");
+    }
+    function escapeHtml(value) {
+        return String(value ?? "").replace(/[&<>"']/g, char => ({
+            "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+        })[char]);
+    }
+    function text(value, fallback = "—") {
+        const normalized = String(value || "").trim();
+        return normalized || fallback;
+    }
+    function formatDate(value) {
+        const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+        return match ? `${match[3]}.${match[2]}.${match[1]}` : text(value);
+    }
+    function detailItems(items) {
+        return items.map(([label, value]) =>
+            `<div class="detail-item"><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(text(value))}</dd></div>`
+        ).join("");
+    }
+    function filterValues() {
+        return {
+            q: normalize(searchInput.value),
+            status: filterForm.elements.status.value,
+            type: filterForm.elements.type.value,
+            location: filterForm.elements.location.value,
+            channel: filterForm.elements.channel.value,
+            dateFrom: filterForm.elements.date_from.value,
+            dateTo: filterForm.elements.date_to.value,
+            sort: filterForm.elements.sort.value
+        };
+    }
+    function nodeMatches(node, filters) {
+        if (filters.q && !normalize(node.dataset.search).includes(filters.q)) return false;
+        for (const [key, value] of [["status", filters.status], ["type", filters.type], ["location", filters.location], ["channel", filters.channel]]) {
+            if (value && node.dataset[key] !== value) return false;
+        }
+        const date = node.dataset.date || "";
+        if (filters.dateFrom && (!date || date < filters.dateFrom)) return false;
+        if (filters.dateTo && (!date || date > filters.dateTo)) return false;
+        return true;
+    }
+    function sortNodes(container, selector, sort) {
+        const nodes = Array.from(container.querySelectorAll(selector));
+        nodes.sort((left, right) => {
+            if (sort === "status") {
+                const statusDiff = statusOrder.indexOf(left.dataset.status) - statusOrder.indexOf(right.dataset.status);
+                if (statusDiff) return statusDiff;
+            }
+            const result = String(left.dataset.date || "").localeCompare(String(right.dataset.date || ""));
+            return sort === "date_asc" ? result : -result;
+        });
+        nodes.forEach(node => container.appendChild(node));
+    }
+    function applyFilters() {
+        const filters = filterValues();
+        sortNodes(tableBody, "[data-repair-row]", filters.sort);
+        sortNodes(mobileCards, "[data-repair-card]", filters.sort);
+        let visible = 0;
+        const visibleIds = new Set();
+        document.querySelectorAll("[data-repair-row]").forEach(row => {
+            const show = nodeMatches(row, filters);
+            row.hidden = !show;
+            if (show) { visible += 1; visibleIds.add(row.dataset.caseId); }
+        });
+        document.querySelectorAll("[data-repair-card]").forEach(card => {
+            card.hidden = !nodeMatches(card, filters);
+        });
+        document.getElementById("repairResultCount").textContent = `Показано: ${visible}`;
+        document.getElementById("desktopEmpty").hidden = visible !== 0;
+        document.getElementById("mobileEmpty").hidden = visible !== 0;
+        const visibleCases = cases.filter(item => visibleIds.has(String(item.id)));
+        document.getElementById("metricTotal").textContent = visibleCases.length;
+        document.getElementById("metricMaster").textContent = visibleCases.filter(item => ["waiting_master", "at_master"].includes(item.status)).length;
+        document.getElementById("metricDelivery").textContent = visibleCases.filter(item => ["inbound_transit", "outbound_transit"].includes(item.status)).length;
+        document.getElementById("clearRepairSearch").hidden = !searchInput.value;
+    }
+    function updateRenderedCase(item) {
+        const stored = casesById.get(String(item.id));
+        if (stored) Object.assign(stored, item);
+        document.querySelectorAll(`[data-case-id="${CSS.escape(String(item.id))}"]`).forEach(node => {
+            node.dataset.search = item.search_text || "";
+            node.dataset.status = item.status || "";
+            node.dataset.type = item.request_type || "";
+            node.dataset.location = item.location || "";
+            node.dataset.channel = item.communication_channel || "";
+            node.dataset.date = item.request_at || String(item.created_at || "").slice(0, 10);
+            const badge = node.querySelector("[data-case-status-badge]");
+            if (badge) {
+                badge.className = `status-badge status-${item.status}`;
+                badge.textContent = item.status_label;
+            }
+            const location = node.querySelector("[data-case-status-location]");
+            if (location) location.textContent = item.location_label;
+            const latestEvent = node.querySelector("[data-case-latest-event]");
+            if (latestEvent) latestEvent.textContent = item.latest_event || "—";
+        });
+        applyFilters();
+    }
+    document.querySelectorAll("form[data-live-status]").forEach(form => {
+        form.addEventListener("submit", async event => {
+            event.preventDefault();
+            const select = form.elements.status;
+            select.disabled = true;
+            try {
+                const response = await fetch(form.action, {
+                    method: "POST",
+                    body: new FormData(form),
+                    headers: { "X-Requested-With": "XMLHttpRequest" }
+                });
+                const payload = await response.json();
+                if (!response.ok || !payload.ok || !payload.case) {
+                    throw new Error(payload.message || "Не удалось изменить статус");
+                }
+                updateRenderedCase(payload.case);
+            } catch (error) {
+                window.alert(error.message || "Не удалось изменить статус");
+                window.location.reload();
+            } finally {
+                select.disabled = false;
+            }
+        });
+    });
+    filterForm.addEventListener("submit", event => event.preventDefault());
+    searchInput.addEventListener("input", applyFilters);
+    filterForm.querySelectorAll("[data-repair-filter]").forEach(field => field.addEventListener("change", applyFilters));
+    document.getElementById("clearRepairSearch").addEventListener("click", () => {
+        searchInput.value = "";
+        searchInput.focus();
+        applyFilters();
+    });
+    document.getElementById("resetRepairFilters").addEventListener("click", () => {
+        searchInput.value = "";
+        ["status", "type", "location", "channel", "date_from", "date_to"].forEach(name => filterForm.elements[name].value = "");
+        filterForm.elements.sort.value = "date_desc";
+        applyFilters();
+    });
+
+    function openDrawer(caseId) {
+        const item = casesById.get(String(caseId));
+        if (!item) return;
+        activeCaseId = String(caseId);
+        document.getElementById("drawerTitle").textContent = item.repair_number || "Карточка ремонта";
+        document.getElementById("drawerSubtitle").textContent = `${item.status_label} · ${item.request_type_label}`;
+        document.getElementById("shipmentCaseId").value = item.id;
+        document.getElementById("drawerMain").innerHTML = detailItems([
+            ["ID ремонта", item.id], ["Статус", item.status_label], ["Дата создания", item.created_at],
+            ["Ответственный", item.responsible], ["Тип обращения", item.request_type_label]
+        ]);
+        document.getElementById("drawerClient").innerHTML = detailItems([
+            ["Заказ", item.order_label], ["Имя клиента", item.client_name], ["Телефон", item.client_phone],
+            ["Email", item.client_email], ["Telegram / WhatsApp", item.client_messenger],
+            ["Канал общения", item.channel_label], ["Контакт", item.contact]
+        ]);
+        const productImage = item.product_image_url
+            ? `<img class="product-image" src="${escapeHtml(item.product_image_url)}" alt="">`
+            : "";
+        const productLink = item.product_url
+            ? `<a class="button button-secondary" href="${escapeHtml(item.product_url)}">Открыть товар</a>`
+            : "";
+        document.getElementById("drawerProduct").innerHTML = `
+            <div class="product-preview">${productImage}<div style="flex:1">
+                <div class="cell-main">${escapeHtml(text(item.product_name))}</div>
+                <div class="cell-sub">${escapeHtml([item.brand, item.model].filter(Boolean).join(" · ") || "Бренд и модель не указаны")}</div>
+                <div class="cell-sub">Артикул: ${escapeHtml(text(item.article))} · S/N: ${escapeHtml(text(item.serial_number))}</div>
+                <div style="margin-top:8px">${productLink}</div>
+            </div></div>`;
+        document.getElementById("drawerProblem").innerHTML = detailItems([
+            ["Описание проблемы", item.problem], ["Результат диагностики", item.diagnostic_result],
+            ["Заключение мастера", item.master_conclusion], ["Решение", item.decision],
+            ["Стоимость", item.final_cost ? `${item.final_cost} ₽` : ""], ["Мастер", item.master]
+        ]);
+        const attachments = Array.isArray(item.attachments) ? item.attachments : [];
+        document.getElementById("drawerAttachments").innerHTML = attachments.length
+            ? `<h4 class="detail-title" style="margin-top:12px">Вложения</h4>` + attachments.map(file =>
+                `<a class="attachment" href="/repair/attachment/${encodeURIComponent(item.id)}/${encodeURIComponent(file.stored_name)}">${escapeHtml(file.name)} · ${Math.ceil(Number(file.size || 0) / 1024)} КБ</a>`
+            ).join("")
+            : "";
+        const shipments = Array.isArray(item.shipments) ? item.shipments : [];
+        document.getElementById("drawerShipments").innerHTML = shipments.length
+            ? shipments.map(shipment => `<div class="shipment"><strong>${escapeHtml(shipment.direction_label)}</strong>${shipment.carrier ? ` · ${escapeHtml(shipment.carrier)}` : ""}<br>Трек: ${escapeHtml(text(shipment.track_number))}<br>Отправлено: ${escapeHtml(formatDate(shipment.sent_at))} · Получено: ${escapeHtml(formatDate(shipment.received_at))}${shipment.status ? `<br>${escapeHtml(shipment.status)}` : ""}</div>`).join("")
+            : `<div class="shipment">Отправлений пока нет</div>`;
+        document.getElementById("drawerDates").innerHTML = detailItems([
+            ["Обращение", formatDate(item.request_at)], ["Отправлено клиентом", formatDate(item.customer_sent_at)],
+            ["Поступление", formatDate(item.accepted_at)], ["Передано мастеру", formatDate(item.master_handoff_at)],
+            ["Ремонт окончен", formatDate(item.repair_completed_at)], ["Возвращено клиенту", formatDate(item.returned_at)]
+        ]);
+        const history = Array.isArray(item.history) ? item.history.slice().reverse() : [];
+        document.getElementById("drawerHistory").innerHTML = history.length
+            ? history.map(event => {
+                const change = [event.old_value, event.new_value].filter(Boolean).join(" → ");
+                return `<article class="event"><div class="event-title">${escapeHtml(text(event.action))}</div><div class="event-meta">${escapeHtml(text(event.timestamp))} · ${escapeHtml(text(event.actor, "Система"))}</div>${change ? `<div class="event-text">${escapeHtml(change)}</div>` : ""}${event.comment ? `<div class="event-text">${escapeHtml(event.comment)}</div>` : ""}</article>`;
+            }).join("")
+            : `<div class="event-text">История пока пуста</div>`;
+        drawer.classList.add("open");
+        drawer.setAttribute("aria-hidden", "false");
+        overlay.classList.add("open");
+        document.body.classList.add("layer-open");
+    }
+    function closeDrawer() {
+        drawer.classList.remove("open");
+        drawer.setAttribute("aria-hidden", "true");
+        overlay.classList.remove("open");
+        if (!modal.classList.contains("open")) document.body.classList.remove("layer-open");
+    }
+    document.getElementById("closeRepairDrawer").addEventListener("click", closeDrawer);
+    overlay.addEventListener("click", closeDrawer);
+    document.addEventListener("click", event => {
+        const openButton = event.target.closest("[data-open-case]");
+        if (openButton) { event.preventDefault(); openDrawer(openButton.dataset.openCase); return; }
+        const editButton = event.target.closest("[data-edit-case]");
+        if (editButton) { event.preventDefault(); openEditModal(casesById.get(String(editButton.dataset.editCase))); }
+    });
+    document.querySelectorAll("[data-repair-row]").forEach(row => row.addEventListener("click", event => {
+        if (event.target.closest("button, a, input, select, form, details, summary")) return;
+        openDrawer(row.dataset.caseId);
+    }));
+
+    const fieldMap = {
+        case_id: "caseId", client_name: "clientName", client_phone: "clientPhone", client_email: "clientEmail",
+        client_messenger: "clientMessenger", order_source: "orderSource", order_number: "orderNumber",
+        communication_channel: "communicationChannel", contact: "contact", product_id: "productId",
+        product_name: "productName", brand: "brand", model: "model", article: "article",
+        serial_number: "serialNumber", equipment: "equipment", request_type: "requestType", status: "status",
+        location: "location", responsible: "responsible", problem: "problem", diagnostic_result: "diagnosticResult",
+        master_conclusion: "masterConclusion", decision: "decision", master: "master", final_cost: "finalCost",
+        estimate_cost: "estimateCost", request_at: "requestAt", customer_sent_at: "customerSentAt",
+        accepted_at: "acceptedAt", master_handoff_at: "masterHandoffAt", repair_completed_at: "repairCompletedAt",
+        returned_at: "returnedAt", due_date: "dueDate", communication: "communication",
+        internal_comment: "internalComment", event_comment: "eventComment"
     };
-
+    function setField(name, value) {
+        const element = document.getElementById(fieldMap[name]);
+        if (element) element.value = value == null ? "" : String(value);
+    }
     function todayIso() {
         const now = new Date();
-        const offset = now.getTimezoneOffset();
-        return new Date(now.getTime() - offset * 60000)
-            .toISOString()
-            .slice(0, 10);
+        return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
     }
-
     function openModal() {
         modal.classList.add("open");
         modal.setAttribute("aria-hidden", "false");
-        document.body.classList.add("modal-open");
+        document.body.classList.add("layer-open");
     }
-
     function closeModal() {
         modal.classList.remove("open");
         modal.setAttribute("aria-hidden", "true");
-        document.body.classList.remove("modal-open");
+        if (!drawer.classList.contains("open")) document.body.classList.remove("layer-open");
     }
-
-    function setField(name, value) {
-        if (!fields[name]) {
-            return;
-        }
-
-        fields[name].value = value === null || value === undefined
-            ? ""
-            : String(value);
-    }
-
     function openCreateModal() {
-        form.reset();
-        form.action = "/repair/add";
-
-        Object.keys(fields).forEach(function (name) {
-            setField(name, "");
-        });
-
-        setField("accepted_at", todayIso());
-        setField("repair_type", "paid");
+        closeDrawer();
+        repairForm.reset();
+        repairForm.action = "/repair/add";
+        Object.keys(fieldMap).forEach(name => setField(name, ""));
+        setField("request_at", todayIso());
         setField("status", "new");
-
-        modalTitle.textContent = "Принять товар в ремонт";
-        modalSubtitle.textContent =
-            "Создайте карточку и зафиксируйте состояние товара";
-        submitButton.textContent = "Создать ремонт";
-
+        setField("request_type", "paid_repair");
+        setField("location", "with_customer");
+        setField("communication_channel", "phone");
+        setField("order_source", "none");
+        document.getElementById("initialShipmentSection").hidden = false;
+        document.getElementById("modalTitle").textContent = "Добавить ремонт";
+        document.getElementById("modalSubtitle").textContent = "Создайте карточку обращения и первое событие истории";
+        document.getElementById("submitRepairButton").textContent = "Создать ремонт";
         openModal();
-        fields.client_name.focus();
+        document.getElementById("clientName").focus();
     }
-
-    function openEditModal(data) {
-        form.reset();
-        form.action = "/repair/update";
-
-        Object.keys(fields).forEach(function (name) {
-            setField(name, data[name]);
-        });
-
-        modalTitle.textContent =
-            "Ремонт " + (data.repair_number || "");
-        modalSubtitle.textContent =
-            "Измените данные, стоимость, исполнителя или статус";
-        submitButton.textContent = "Сохранить изменения";
-
+    function openEditModal(item) {
+        if (!item) return;
+        closeDrawer();
+        repairForm.reset();
+        repairForm.action = "/repair/update";
+        Object.keys(fieldMap).forEach(name => setField(name, item[name]));
+        setField("event_comment", "");
+        document.getElementById("initialShipmentSection").hidden = true;
+        document.getElementById("modalTitle").textContent = item.repair_number || "Редактировать ремонт";
+        document.getElementById("modalSubtitle").textContent = "Изменения статуса, места, решения и результата попадут в историю";
+        document.getElementById("submitRepairButton").textContent = "Сохранить изменения";
         openModal();
     }
-
-    document
-        .getElementById("openCreateRepair")
-        .addEventListener("click", openCreateModal);
-
-    document
-        .getElementById("closeRepairModal")
-        .addEventListener("click", closeModal);
-
-    document
-        .getElementById("cancelRepairModal")
-        .addEventListener("click", closeModal);
-
-    document.querySelectorAll(".js-edit-repair").forEach(function (button) {
-        button.addEventListener("click", function () {
-            const jsonElement = document.getElementById(
-                button.dataset.jsonId
-            );
-
-            if (!jsonElement) {
-                return;
-            }
-
-            try {
-                const data = JSON.parse(jsonElement.textContent);
-                openEditModal(data);
-            } catch (error) {
-                console.error("Не удалось открыть ремонт", error);
-            }
-        });
+    document.getElementById("openCreateRepair").addEventListener("click", openCreateModal);
+    document.getElementById("closeRepairModal").addEventListener("click", closeModal);
+    document.getElementById("cancelRepairModal").addEventListener("click", closeModal);
+    document.getElementById("drawerEditButton").addEventListener("click", () => openEditModal(casesById.get(activeCaseId)));
+    modal.addEventListener("click", event => { if (event.target === modal) closeModal(); });
+    document.addEventListener("keydown", event => {
+        if (event.key !== "Escape") return;
+        if (modal.classList.contains("open")) closeModal(); else closeDrawer();
     });
 
-    modal.addEventListener("click", function (event) {
-        if (event.target === modal) {
-            closeModal();
-        }
+    const productInput = document.getElementById("productName");
+    const productResults = document.getElementById("productResults");
+    function renderProductResults() {
+        const query = normalize(productInput.value);
+        if (!query) { productResults.classList.remove("open"); return; }
+        const matches = catalog.filter(item => normalize(item.search).includes(query)).slice(0, 30);
+        productResults.innerHTML = matches.length
+            ? matches.map(item => `<button class="product-option" type="button" data-product-id="${escapeHtml(item.id)}"><strong>${escapeHtml(item.name)}</strong><span>${escapeHtml([item.brand, item.article].filter(Boolean).join(" · "))}</span></button>`).join("")
+            : `<div class="field-hint" style="padding:8px">Совпадений нет — сохранится свободное название.</div>`;
+        productResults.classList.add("open");
+    }
+    productInput.addEventListener("input", () => {
+        document.getElementById("productId").value = "";
+        renderProductResults();
     });
-
-    document.addEventListener("keydown", function (event) {
-        if (event.key === "Escape" && modal.classList.contains("open")) {
-            closeModal();
-        }
+    productResults.addEventListener("click", event => {
+        const option = event.target.closest("[data-product-id]");
+        if (!option) return;
+        const item = catalog.find(product => String(product.id) === option.dataset.productId);
+        if (!item) return;
+        setField("product_id", item.id); setField("product_name", item.name); setField("brand", item.brand);
+        setField("model", item.model); setField("article", item.article);
+        productResults.classList.remove("open");
     });
+    document.addEventListener("click", event => {
+        if (!event.target.closest(".product-picker")) productResults.classList.remove("open");
+    });
+    applyFilters();
+})();
 </script>
 </body>
 </html>

@@ -219,6 +219,15 @@ print(
 )
 PYTHON_CHECK
 
+if [[ -f instance/repair_cases.json ]]; then
+    mkdir -p "$BACKUP_DIR/repair-data"
+    chmod 700 "$BACKUP_DIR/repair-data"
+    "$PYTHON_BIN" scripts/migrate_repair_cases.py \
+        --path instance/repair_cases.json \
+        --backup-dir "$BACKUP_DIR/repair-data" \
+        --apply
+fi
+
 systemctl restart "$SERVICE_NAME"
 systemctl is-active --quiet "$SERVICE_NAME"
 
