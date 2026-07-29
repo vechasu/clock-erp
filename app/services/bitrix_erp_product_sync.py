@@ -9,6 +9,7 @@ from pathlib import Path
 
 from app.catalog_db import CatalogDatabase
 from app.services.excel_product_catalog import load_bitrix_enrichment
+from app.services.product_classification import classify_product
 from app.services.product_reconciliation import article_quality, normalize_text, reliable_article
 
 
@@ -28,10 +29,14 @@ def _json(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True)
 
 
-def _primary_category(product):
-    categories = product.get("categories") or []
-    category = categories[0] if categories else product.get("category") or {}
-    return _text(category.get("name"))
+def _classification(product, existing_brand="", existing_category="",
+                    known_brands=None):
+    return classify_product(
+        product,
+        existing_brand=existing_brand,
+        existing_category=existing_category,
+        known_brands=known_brands,
+    )
 
 
 def _sale_price(product):
@@ -84,13 +89,14 @@ def enrichment_from_product(product, catalog_product_id=None):
         )
         if part
     )
+    classification = _classification(product)
     return {
         "bitrix_catalog_product_id": catalog_product_id,
         "bitrix_external_product_id": _text(product.get("external_product_id")),
         "bitrix_xml_id": _text(product.get("external_xml_id")),
         "bitrix_name": _text(product.get("name")),
-        "bitrix_brand": _text(product.get("brand")) or None,
-        "bitrix_category": _primary_category(product) or None,
+        "bitrix_brand": classification["brand"] or None,
+        "bitrix_category": classification["category"] or None,
         "bitrix_source_url": _text(product.get("url")) or None,
         "bitrix_primary_image_url": primary.get("original_url") if primary else None,
         "bitrix_thumbnail_url": thumbnail.get("original_url") if thumbnail else None,
@@ -150,6 +156,7 @@ class BitrixERPProductSync:
     def __init__(self, database=None):
         self.database = database or CatalogDatabase()
         self._label_cache = {}
+        self._known_brands = None
 
     def preview_products(self, products):
         products = list(products)
@@ -390,13 +397,30 @@ class BitrixERPProductSync:
         existing = dict(existing) if existing is not None else {}
         enrichment = dict(enrichment)
         name = _text(product.get("name")) or _text(existing.get("excel_name_raw"))
+        if self._known_brands is None:
+            self._known_brands = {
+                normalize_text(row[0]): _text(row[0])
+                for row in connection.execute(
+                    "SELECT DISTINCT excel_brand FROM catalog_excel_products "
+                    "WHERE trim(COALESCE(excel_brand, '')) <> ''"
+                )
+                if normalize_text(row[0])
+            }
+        classification = _classification(
+            product,
+            existing_brand=existing.get("excel_brand"),
+            existing_category=existing.get("excel_category"),
+            known_brands=self._known_brands,
+        )
         brand = self._canonical_label(
             connection, "excel_brand",
-            _text(product.get("brand")) or _text(existing.get("excel_brand")),
+            classification["brand"],
         )
+        if brand:
+            self._known_brands.setdefault(normalize_text(brand), brand)
         category = self._canonical_label(
             connection, "excel_category",
-            _primary_category(product) or _text(existing.get("excel_category")),
+            classification["category"],
         )
         incoming_article = _text(product.get("external_sku"))
         article = _text(existing.get("excel_article"))

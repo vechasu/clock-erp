@@ -12,6 +12,7 @@ import fcntl
 import uuid
 import click
 import requests
+from io import BytesIO
 from urllib.parse import parse_qsl, urlencode
 from app.clients.moysklad import MoySkladClient
 from app.catalog_db import CatalogDatabase
@@ -32,6 +33,10 @@ from app.services.excel_receipt_import import (
 from app.services.moysklad_catalog_mapping import (
     MoySkladCatalogMatcher,
     load_moysklad_products,
+)
+from app.services.product_classification import (
+    CATEGORIES,
+    ProductClassificationRepair,
 )
 from app.services.sales_inventory import (
     InsufficientStockError,
@@ -96,6 +101,21 @@ def sync_bitrix_products_command(mode, page_size, backup_root):
     click.echo(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
     if report["status"] != "success":
         raise click.ClickException("Synchronization completed with product errors")
+
+
+@app.cli.command("repair-product-classification")
+@click.option("--dry-run", "mode", flag_value="dry_run", default=True)
+@click.option("--apply", "mode", flag_value="apply")
+@click.option("--backup-root", type=click.Path(path_type=Path))
+def repair_product_classification_command(mode, backup_root):
+    """Repair Bitrix brands and product-type categories without stock changes."""
+    report = ProductClassificationRepair(CatalogDatabase()).run(
+        apply=mode == "apply",
+        backup_root=backup_root,
+    )
+    click.echo(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
+    if report["errors"]:
+        raise click.ClickException("Classification repair completed with errors")
 
 ORDERS_URL = "https://tictactoy.ru/api/orders.php"
 ORDER_URL = "https://tictactoy.ru/api/order.php?id="
@@ -1211,10 +1231,9 @@ def item_in_category(item, selected_category):
     )
 
 
-def get_excel_warehouse_items():
-    catalog = ExcelProductCatalog().list_products(per_page=10000)
+def build_excel_warehouse_items(products):
     items = []
-    for product in catalog["items"]:
+    for product in products:
         created_text = str(product.get("created_at") or "")
         try:
             created_at = time.mktime(time.strptime(created_text[:19], "%Y-%m-%dT%H:%M:%S"))
@@ -1258,6 +1277,32 @@ def get_excel_warehouse_items():
     return items
 
 
+def get_excel_warehouse_items(**filters):
+    filters.setdefault("per_page", 100000)
+    catalog = ExcelProductCatalog().list_products(**filters)
+    return build_excel_warehouse_items(catalog["items"])
+
+
+def merge_catalog_groups(groups, taxonomy_values):
+    merged = {}
+    for group in groups:
+        name = str(group.get("name") or "").strip()
+        if not name:
+            continue
+        merged[catalog_label_key(name)] = {
+            "name": name,
+            "count": group.get("count") or 0,
+        }
+    for value in taxonomy_values:
+        name = str(value or "").strip()
+        if name:
+            merged.setdefault(
+                catalog_label_key(name),
+                {"name": name, "count": 0},
+            )
+    return [merged[key] for key in sorted(merged)]
+
+
 @app.route("/warehouse")
 def warehouse_page():
     query = request.args.get("q", "").strip()
@@ -1269,6 +1314,15 @@ def warehouse_page():
     hide_zero = request.args.get("hide_zero", "").strip() == "1"
     sort_by = request.args.get("sort_by", "name").strip()
     sort_dir = request.args.get("sort_dir", "asc").strip()
+    try:
+        page = max(1, int(request.args.get("page", "1")))
+    except (TypeError, ValueError):
+        page = 1
+    try:
+        requested_per_page = int(request.args.get("per_page", "50"))
+    except (TypeError, ValueError):
+        requested_per_page = 50
+    per_page = requested_per_page if requested_per_page in {50, 100, 200} else 50
 
     allowed_sort_fields = {
         "name",
@@ -1301,126 +1355,62 @@ def warehouse_page():
     if created_date_from and created_date_to and created_date_from > created_date_to:
         created_date_from, created_date_to = created_date_to, created_date_from
 
-    all_items = get_excel_warehouse_items()
-    brand_groups = build_brand_groups(all_items)
-    category_groups = build_category_groups(all_items)
-    cell_groups = build_cell_groups(all_items)
-
-    items = all_items
-
-    if selected_brand:
-        items = [
-            item for item in items
-            if (item.get("brand") or "Без бренда") == selected_brand
-        ]
-
-    if selected_category:
-        items = [
-            item for item in items
-            if item_in_category(item, selected_category)
-        ]
-
-    if selected_cell:
-        if selected_cell == "Без ячейки":
-            items = [
-                item for item in items
-                if not (item.get("cell") or "").strip()
-            ]
-        else:
-            items = [
-                item for item in items
-                if (item.get("cell") or "").strip() == selected_cell
-            ]
-
-    if created_date_from or created_date_to:
-        filtered_items = []
-        for item in items:
-            created_at = float(item.get("created_at") or 0)
-            if created_at <= 0:
-                continue
-            local_created_date = time.strftime(
-                "%Y-%m-%d",
-                time.localtime(created_at),
-            )
-            if created_date_from and local_created_date < created_date_from:
-                continue
-            if created_date_to and local_created_date > created_date_to:
-                continue
-            filtered_items.append(item)
-        items = filtered_items
-
-    if sort_by == "created_at":
-        items_with_time = [
-            item
-            for item in items
-            if float(item.get("created_at") or 0) > 0
-        ]
-
-        items_without_time = [
-            item
-            for item in items
-            if float(item.get("created_at") or 0) <= 0
-        ]
-
-        items_with_time.sort(
-            key=lambda item: float(item.get("created_at") or 0),
-            reverse=sort_dir == "desc",
-        )
-
-        items = items_with_time + items_without_time
-    else:
-        sort_functions = {
-            "name": lambda item: str(
-                item.get("name") or ""
-            ).casefold(),
-            "article": lambda item: str(
-                item.get("article") or ""
-            ).casefold(),
-            "brand": lambda item: str(
-                item.get("brand") or ""
-            ).casefold(),
-            "category": lambda item: str(
-                item.get("category") or ""
-            ).casefold(),
-            "stock": lambda item: float(
-                item.get("stock") or 0
-            ),
-            "cell": lambda item: str(
-                item.get("cell") or ""
-            ).casefold(),
-        }
-
-        items = sorted(
-            items,
-            key=sort_functions[sort_by],
-            reverse=sort_dir == "desc",
-        )
-
-    stats_items = items
-
-    if query:
-        query_lower = query.casefold()
-        stats_items = [
-            item for item in items
-            if (item.get("name") or "").casefold().startswith(query_lower)
-            or (item.get("article") or "").casefold().startswith(query_lower)
-        ]
-
-    visible_positions = sum(
-        1
-        for item in stats_items
-        if not hide_zero or float(item.get("stock") or 0) > 0
+    catalog = ExcelProductCatalog().list_products(
+        query=query,
+        brand=selected_brand,
+        category=selected_category,
+        cell=selected_cell,
+        hide_zero=hide_zero,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+        page=page,
+        per_page=per_page,
+        created_from=created_date_from,
+        created_to=created_date_to,
     )
+    items = build_excel_warehouse_items(catalog["items"])
+    taxonomy = load_catalog_taxonomy()
+    brand_groups = merge_catalog_groups(
+        catalog["brand_groups"],
+        taxonomy["brands"],
+    )
+    category_groups = merge_catalog_groups(
+        catalog["category_groups"],
+        [item["name"] for item in taxonomy["categories"]] + list(CATEGORIES),
+    )
+    cell_groups = []
+    for group in catalog["cell_groups"]:
+        item_names = str(group.get("item_names") or "").split(chr(31))
+        cell_groups.append({
+            "cell": group["cell"],
+            "count": group["count"],
+            "stock": group["stock"],
+            "total_stock_display": format_stock_number(group["stock"]),
+            "items": item_names[:3],
+        })
+    visible_positions = catalog["total"]
+    total_stock = float(catalog["stats"]["total_stock"] or 0)
+    total_reserve = 0
+    total_available = total_stock
+    pages = catalog["pages"]
+    page = catalog["page"]
+    page_start = (page - 1) * per_page + 1 if catalog["total"] else 0
+    page_end = min(page * per_page, catalog["total"])
+    pagination_arguments = request.args.to_dict(flat=True)
+    pagination_arguments["per_page"] = str(per_page)
 
-    total_stock = sum(
-        float(item.get("stock") or 0) for item in stats_items
-    )
-    total_reserve = sum(
-        float(item.get("reserve") or 0) for item in stats_items
-    )
-    total_available = sum(
-        float(item.get("quantity") or 0) for item in stats_items
-    )
+    def page_url(target_page):
+        arguments = dict(pagination_arguments)
+        arguments["page"] = str(target_page)
+        return url_for("warehouse_page", **arguments)
+
+    first_page_url = page_url(1) if page > 1 else None
+    previous_page_url = page_url(page - 1) if page > 1 else None
+    next_page_url = page_url(page + 1) if page < pages else None
+    last_page_url = page_url(pages) if pages and page < pages else None
+    export_arguments = request.args.to_dict(flat=True)
+    export_arguments.pop("page", None)
+    export_arguments.pop("per_page", None)
 
     response = make_response(
         render_template(
@@ -1445,6 +1435,24 @@ def warehouse_page():
             total_stock_display=format_stock_number(total_stock),
             total_reserve=total_reserve,
             total_available=total_available,
+            page=page,
+            per_page=per_page,
+            pages=pages,
+            page_start=page_start,
+            page_end=page_end,
+            total_found=catalog["total"],
+            first_page_url=first_page_url,
+            previous_page_url=previous_page_url,
+            next_page_url=next_page_url,
+            last_page_url=last_page_url,
+            warehouse_export_xlsx_url=url_for(
+                "warehouse_export_xlsx",
+                **export_arguments
+            ),
+            warehouse_export_pdf_url=url_for(
+                "warehouse_export_pdf",
+                **export_arguments
+            ),
             stock_operations=get_catalog_stock_history(),
             bulk_ui_e2e=(
                 app.testing
@@ -1458,6 +1466,152 @@ def warehouse_page():
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
     return response
+
+
+def warehouse_export_items():
+    sort_by = (request.args.get("sort_by") or "name").strip()
+    if sort_by not in {
+        "name", "article", "brand", "category", "stock", "created_at", "cell",
+    }:
+        sort_by = "name"
+    sort_dir = (request.args.get("sort_dir") or "asc").strip()
+    if sort_dir not in {"asc", "desc"}:
+        sort_dir = "asc"
+    catalog = ExcelProductCatalog().list_products(
+        query=(request.args.get("q") or "").strip(),
+        brand=(request.args.get("brand") or "").strip(),
+        category=(request.args.get("category") or "").strip(),
+        cell=(request.args.get("cell") or "").strip(),
+        hide_zero=(request.args.get("hide_zero") or "").strip() == "1",
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+        page=1,
+        per_page=100000,
+        created_from=(request.args.get("date_from") or "").strip(),
+        created_to=(request.args.get("date_to") or "").strip(),
+    )
+    return build_excel_warehouse_items(catalog["items"])
+
+
+@app.route("/warehouse/export.xlsx")
+def warehouse_export_xlsx():
+    from openpyxl import Workbook
+
+    workbook = Workbook(write_only=True)
+    sheet = workbook.create_sheet("Товары")
+    sheet.append([
+        "Название", "Артикул", "Штрихкод", "Бренд", "Категория",
+        "Остаток", "Ячейка", "Цена", "Добавлено", "Bitrix URL",
+    ])
+    for item in warehouse_export_items():
+        sheet.append([
+            item["name"], item["article"], item["barcode"], item["brand"],
+            item["category"], item["stock"], item["cell"],
+            item["price_display"], item["created_at_display"],
+            item["moysklad_url"],
+        ])
+    output = BytesIO()
+    workbook.save(output)
+    response = Response(
+        output.getvalue(),
+        mimetype=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        ),
+    )
+    response.headers["Content-Disposition"] = (
+        'attachment; filename="warehouse-products.xlsx"'
+    )
+    return response
+
+
+@app.route("/warehouse/export.pdf")
+def warehouse_export_pdf():
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.units import mm
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    from reportlab.platypus import (
+        LongTable,
+        Paragraph,
+        SimpleDocTemplate,
+        TableStyle,
+    )
+
+    font_name = "Helvetica"
+    for candidate in (
+        PROJECT_ROOT / "app" / "static" / "fonts" / "DejaVuSans.ttf",
+        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+        Path("/usr/share/fonts/dejavu/DejaVuSans.ttf"),
+        Path("/System/Library/Fonts/Supplemental/Arial Unicode.ttf"),
+    ):
+        if candidate.exists():
+            font_name = "WarehouseUnicode"
+            if font_name not in pdfmetrics.getRegisteredFontNames():
+                pdfmetrics.registerFont(TTFont(font_name, str(candidate)))
+            break
+    styles = getSampleStyleSheet()
+    body_style = styles["BodyText"].clone("WarehouseBody")
+    body_style.fontName = font_name
+    body_style.fontSize = 6.5
+    body_style.leading = 8
+    rows = [[
+        Paragraph(value, body_style)
+        for value in (
+            "Название", "Артикул", "Бренд", "Категория",
+            "Остаток", "Ячейка", "Цена",
+        )
+    ]]
+    for item in warehouse_export_items():
+        rows.append([
+            Paragraph(str(value or "—"), body_style)
+            for value in (
+                item["name"], item["article"], item["brand"],
+                item["category"], item["stock_display"], item["cell"],
+                item["price_display"],
+            )
+        ])
+    output = BytesIO()
+    document = SimpleDocTemplate(
+        output,
+        pagesize=landscape(A4),
+        leftMargin=8 * mm,
+        rightMargin=8 * mm,
+        topMargin=8 * mm,
+        bottomMargin=8 * mm,
+    )
+    table = LongTable(
+        rows,
+        repeatRows=1,
+        colWidths=[68 * mm, 32 * mm, 31 * mm, 38 * mm, 18 * mm, 20 * mm, 26 * mm],
+    )
+    table.setStyle(TableStyle([
+        ("FONTNAME", (0, 0), (-1, -1), font_name),
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E5E7EB")),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#D1D5DB")),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 3),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+    ]))
+    document.build([table])
+    response = Response(output.getvalue(), mimetype="application/pdf")
+    response.headers["Content-Disposition"] = (
+        'attachment; filename="warehouse-products.pdf"'
+    )
+    return response
+
+
+@app.route("/warehouse/product/<int:product_id>")
+def warehouse_product_detail(product_id):
+    product = ExcelProductCatalog().get_product(product_id)
+    if product is None:
+        abort(404)
+    return jsonify({
+        "id": product["id"],
+        "gallery": product.get("gallery") or [],
+    })
 
 
 @app.route("/warehouse/product/<product_id>/thumbnail")
@@ -1641,6 +1795,26 @@ def warehouse_add_product():
 
 @app.route("/warehouse/edit", methods=["POST"])
 def warehouse_edit_product():
+    return_params = {
+        key: value
+        for key, value in parse_qsl(
+            request.form.get("return_query", "").lstrip("?"),
+            keep_blank_values=False,
+        )
+        if key in {
+            "q", "brand", "category", "cell", "date_from", "date_to",
+            "hide_zero", "sort_by", "sort_dir", "page", "per_page",
+        }
+    }
+
+    def edit_redirect(notice, message):
+        return redirect(url_for(
+            "warehouse_page",
+            notice=notice,
+            message=message,
+            **return_params
+        ))
+
     product_id = request.form.get("product_id", "").strip()
     name = request.form.get("name", "").strip()
     article = request.form.get("article", "").strip()
@@ -1651,31 +1825,19 @@ def warehouse_edit_product():
     stock_reason = request.form.get("stock_reason", "").strip()
 
     if not product_id:
-        return redirect(url_for(
-            "warehouse_page",
-            notice="error",
-            message="Не найден ID товара"
-        ))
+        return edit_redirect("error", "Не найден ID товара")
 
     if not name:
-        return redirect(url_for(
-            "warehouse_page",
-            notice="error",
-            message="Название товара обязательно"
-        ))
+        return edit_redirect("error", "Название товара обязательно")
 
     try:
         ExcelProductCatalog().update_product(
             product_id, name=name, article=article, brand=brand,
             category=category, cell=cell, stock=stock, stock_reason=stock_reason,
         )
-        return redirect(url_for(
-            "warehouse_page", notice="success", message="Карточка обновлена"
-        ))
+        return edit_redirect("success", "Карточка обновлена")
     except (TypeError, ValueError) as error:
-        return redirect(url_for(
-            "warehouse_page", notice="error", message=str(error)
-        ))
+        return edit_redirect("error", str(error))
 
     try:
         client = MoySkladClient()
@@ -1830,7 +1992,7 @@ def warehouse_bulk_edit():
         if key in {
             "q", "brand", "category", "cell",
             "date_from", "date_to", "hide_zero",
-            "sort_by", "sort_dir",
+            "sort_by", "sort_dir", "page", "per_page",
         }
     }
     return_params.update(

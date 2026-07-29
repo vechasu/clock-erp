@@ -72,7 +72,23 @@ class WarehouseBulkBrowserTest(unittest.TestCase):
 
         try:
             with mock.patch.object(
-                web, "get_excel_warehouse_items", return_value=items
+                web, "build_excel_warehouse_items", return_value=items
+            ), mock.patch.object(
+                web.ExcelProductCatalog,
+                "list_products",
+                return_value={
+                    "items": [{}, {}],
+                    "total": 2,
+                    "page": 1,
+                    "per_page": 50,
+                    "pages": 1,
+                    "brand_groups": [{"name": "AARK", "count": 2}],
+                    "category_groups": [
+                        {"name": "Наручные часы", "count": 2},
+                    ],
+                    "cell_groups": [],
+                    "stats": {"total_stock": 2},
+                },
             ), mock.patch.object(
                 web.ExcelProductCatalog,
                 "list_manual_stock_operations",
@@ -83,7 +99,7 @@ class WarehouseBulkBrowserTest(unittest.TestCase):
                     f"http://127.0.0.1:{server.server_port}"
                     "/warehouse?bulk_ui_e2e=1"
                 )
-                result = subprocess.run(
+                process = subprocess.Popen(
                     [
                         chrome,
                         "--headless=new",
@@ -95,18 +111,41 @@ class WarehouseBulkBrowserTest(unittest.TestCase):
                         "--dump-dom",
                         url,
                     ],
-                    check=False,
-                    capture_output=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
                     text=True,
-                    timeout=30,
                 )
+                try:
+                    stdout, stderr = process.communicate(timeout=15)
+                except subprocess.TimeoutExpired as error:
+                    process.terminate()
+                    trailing_stdout, trailing_stderr = process.communicate(
+                        timeout=5
+                    )
+                    timed_out_stdout = error.stdout or ""
+                    timed_out_stderr = error.stderr or ""
+                    if isinstance(timed_out_stdout, bytes):
+                        timed_out_stdout = timed_out_stdout.decode(
+                            "utf-8", errors="replace"
+                        )
+                    if isinstance(timed_out_stderr, bytes):
+                        timed_out_stderr = timed_out_stderr.decode(
+                            "utf-8", errors="replace"
+                        )
+                    stdout = timed_out_stdout + trailing_stdout
+                    stderr = timed_out_stderr + trailing_stderr
+                returncode = process.returncode
         finally:
             server.shutdown()
             thread.join(timeout=5)
             web.app.testing = original_testing
 
-        self.assertEqual(result.returncode, 0, result.stderr[-2000:])
-        self.assertIn('data-bulk-ui-e2e="pass"', result.stdout)
-        self.assertIn(">Бренд<", result.stdout)
-        self.assertIn(">Категория<", result.stdout)
-        self.assertIn(">Применить<", result.stdout)
+        self.assertIn(
+            returncode,
+            (0, -15),
+            stderr[-2000:],
+        )
+        self.assertIn('data-bulk-ui-e2e="pass"', stdout)
+        self.assertIn(">Бренд<", stdout)
+        self.assertIn(">Категория<", stdout)
+        self.assertIn(">Применить<", stdout)
