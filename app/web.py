@@ -11625,11 +11625,11 @@ def settings_page():
             min(low_stock_threshold, 999),
         )
 
-        settings = {
+        settings.update({
             "company_name": company_name or "Tictactoy",
             "erp_name": erp_name or "Vechasu ERP",
             "low_stock_threshold": low_stock_threshold,
-        }
+        })
 
         save_app_settings(settings)
 
