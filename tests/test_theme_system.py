@@ -17,7 +17,11 @@ class ThemeSystemTest(unittest.TestCase):
             self.static / "js" / "theme.js"
         ).read_text(encoding="utf-8")
 
-    def test_two_themes_and_default_are_declared(self):
+    def test_three_themes_and_classic_default_are_declared(self):
+        self.assertIn(
+            'html[data-theme="classic"]',
+            self.theme_css,
+        )
         self.assertIn(
             'html[data-theme="klok-green"]',
             self.theme_css,
@@ -27,14 +31,14 @@ class ThemeSystemTest(unittest.TestCase):
             self.theme_css,
         )
         self.assertIn(
-            'const DEFAULT_THEME = "bn0024-white"',
+            'const DEFAULT_THEME = "classic"',
             self.theme_js,
         )
         self.assertRegex(
             self.theme_js,
             re.compile(
                 r'const THEMES = Object\.freeze\(\[\s*'
-                r'"klok-green",\s*"bn0024-white"',
+                r'"classic",\s*"klok-green",\s*"bn0024-white"',
                 re.MULTILINE,
             ),
         )
@@ -81,7 +85,11 @@ class ThemeSystemTest(unittest.TestCase):
         self.assertIn('role="radiogroup"', settings)
         self.assertEqual(
             settings.count('class="theme-option"'),
-            2,
+            3,
+        )
+        self.assertIn(
+            'data-theme-option="classic"',
+            settings,
         )
         self.assertIn(
             'data-theme-option="klok-green"',
@@ -91,6 +99,7 @@ class ThemeSystemTest(unittest.TestCase):
             'data-theme-option="bn0024-white"',
             settings,
         )
+        self.assertIn("theme-preview-classic", settings)
         self.assertIn("theme-preview-klok", settings)
         self.assertIn("theme-preview-bn", settings)
 
