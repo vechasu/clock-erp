@@ -952,14 +952,18 @@
 
         /* RECEIPTS DATE FILTER SORT V1 */
         .receipt-filter-toolbar {
-            display: flex;
-            align-items: flex-end;
+            display: grid;
+            grid-template-columns:
+                minmax(0, 1fr)
+                max-content
+                max-content;
+            align-items: center;
             gap: 12px;
         }
 
         .receipt-filter-toolbar .search {
-            flex: 1 1 auto;
-            min-width: 240px;
+            width: 100%;
+            min-width: 0;
             max-width: none;
         }
 
@@ -994,11 +998,22 @@
 
         @media (max-width: 1180px) {
             .receipt-filter-toolbar {
-                flex-wrap: wrap;
+                grid-template-columns:
+                    minmax(0, 1fr)
+                    max-content;
             }
 
             .receipt-filter-toolbar .search {
-                flex-basis: 100%;
+                grid-column: 1 / -1;
+            }
+
+            .receipt-filter-toolbar .sales-date-filter {
+                grid-column: 1;
+                justify-self: end;
+            }
+
+            .receipt-report-button {
+                grid-column: 2;
             }
         }
         /* RECEIPTS DATE FILTER SORT V1 END */
@@ -1006,7 +1021,7 @@
 
         /* RECEIPTS REPORT BUTTON CSS V1 */
         .receipt-report-button {
-            flex: 1 1 auto;
+            flex: 0 0 auto;
             height: 40px;
             padding: 0 15px;
             border: 1px solid #2563eb;
