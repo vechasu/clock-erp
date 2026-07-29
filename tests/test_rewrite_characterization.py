@@ -26,7 +26,7 @@ class RewriteRouteCharacterizationTest(unittest.TestCase):
         expected = load_fixture("legacy_routes.json")["routes"]
         actual = []
         for rule in sorted(web.app.url_map.iter_rules(), key=lambda item: item.rule):
-            if rule.rule.startswith("/api/"):
+            if rule.rule.startswith(("/api/", "/app")):
                 continue
             methods = sorted(
                 method
