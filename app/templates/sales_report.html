@@ -210,6 +210,16 @@
             color: #7f1d1d;
         }
 
+        tr.is-returned td {
+            background: #fff1f2;
+            color: #7f1d1d;
+        }
+
+        tr.is-partially-returned td {
+            background: #fff7ed;
+            color: #9a3412;
+        }
+
         .money-cell {
             text-align: right;
             font-variant-numeric: tabular-nums;
@@ -351,7 +361,19 @@
             <div class="stat-value">{{ total_cancelled }}</div>
         </div>
         <div class="stat-card">
-            <div class="stat-label">Выручка</div>
+            <div class="stat-label">Продажи</div>
+            <div class="stat-value">
+                {{ gross_revenue_display }}
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Возвраты</div>
+            <div class="stat-value">
+                {{ returns_amount_display }}
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Чистая выручка</div>
             <div class="stat-value">
                 {{ total_revenue_display }}
             </div>
@@ -369,7 +391,7 @@
             </thead>
             <tbody>
                 {% for sale in sales %}
-                    <tr{% if sale.is_cancelled %} class="is-cancelled"{% endif %}>
+                    <tr{% if sale.return_status == 'returned' %} class="is-returned"{% elif sale.return_status == 'partially_returned' %} class="is-partially-returned"{% elif sale.is_cancelled %} class="is-cancelled"{% endif %}>
                         {% for column in report_columns %}
                             {% set value = sale[column.key] %}
                             <td{% if column.key in ['unit_price_display', 'delivery_cost_display'] %} class="money-cell"{% endif %}>

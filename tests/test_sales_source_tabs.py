@@ -83,6 +83,12 @@ EXPECTED_COLUMNS = {
     ],
 }
 
+RETURN_REPORT_COLUMNS = [
+    "Возвращено",
+    "Дата возврата",
+    "Причина возврата",
+]
+
 
 def warehouse_item():
     return {
@@ -873,7 +879,7 @@ class SalesSourceTabsTest(unittest.TestCase):
             parse_qs(
                 urlparse(response.headers["Location"]).query
             )["message"][0],
-            "Количество превышает доступный остаток",
+            "Недостаточно товара на складе. Доступно: 5",
         )
         save_stock_operations.assert_not_called()
 
@@ -1586,8 +1592,14 @@ class SalesSourceTabsTest(unittest.TestCase):
                         xlsx_response.status_code,
                         200,
                     )
-                    self.assertEqual(html_headers, expected)
-                    self.assertEqual(xlsx_headers, expected)
+                    self.assertEqual(
+                        html_headers,
+                        expected + RETURN_REPORT_COLUMNS,
+                    )
+                    self.assertEqual(
+                        xlsx_headers,
+                        expected + RETURN_REPORT_COLUMNS,
+                    )
 
                     if source == "amazon":
                         self.assertIn("AMZ-100", report_page)

@@ -4538,12 +4538,22 @@
                 const createdAt = operation.created_at || "";
                 const documentName = operation.moysklad_document_name || "";
                 const operationReason = operation.reason || "";
+                const saleId = operation.sale_id || "";
+                const source = operation.source || "";
+                const userName = operation.user_name || "";
+                const difference = Number(operation.diff || 0);
+                const signedDifference = `${
+                    difference > 0 ? "+" : ""
+                }${difference}`;
 
                 return `
                     <div style="padding: 10px 0; border-bottom: 1px solid #e5e7eb;">
-                        <strong>${label}: ${quantity} шт.</strong><br>
+                        <strong>${label}: ${signedDifference} шт.</strong><br>
                         <span>${before} → ${after}</span><br>
                         <span>${createdAt}</span>
+                        ${saleId ? `<br><span>Продажа №${saleId}</span>` : ""}
+                        ${source ? `<br><span>Источник: ${source}</span>` : ""}
+                        ${userName ? `<br><span>Пользователь: ${userName}</span>` : ""}
                         ${operationReason ? `<br><span>Причина: ${operationReason}</span>` : ""}
                         ${documentName ? `<br><span>МойСклад: ${documentName}</span>` : ""}
                     </div>
