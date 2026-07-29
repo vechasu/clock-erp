@@ -24,6 +24,17 @@ CONTENT_FIELDS = {
     "external_updated_at",
 }
 FULL_FIELDS = CONTENT_FIELDS | {"active"}
+PRESERVE_WHEN_INCOMING_EMPTY = {
+    "name",
+    "slug",
+    "article",
+    "barcode",
+    "brand",
+    "preview_text",
+    "detail_text",
+    "source_url",
+    "external_xml_id",
+}
 
 
 def utc_now():
@@ -252,16 +263,31 @@ class BitrixCatalogImporter:
                 return {"status": "ambiguous", "method": method, "product": None, "candidate_count": len(rows)}
 
         target_name = normalize_key(values["name"])
-        if target_name:
+        target_brand = normalize_key(values["brand"])
+        if target_name and target_brand:
             rows = connection.execute(
                 "SELECT * FROM catalog_products WHERE name IS NOT NULL AND external_source <> ?",
                 (values["external_source"],),
             ).fetchall()
-            candidates = [row for row in rows if normalize_key(row["name"]) == target_name]
+            candidates = [
+                row for row in rows
+                if normalize_key(row["name"]) == target_name
+                and normalize_key(row["brand"]) == target_brand
+            ]
             if len(candidates) == 1:
-                return {"status": "matched", "method": "exact_name", "product": candidates[0], "candidate_count": 1}
+                return {
+                    "status": "matched",
+                    "method": "brand_normalized_name",
+                    "product": candidates[0],
+                    "candidate_count": 1,
+                }
             if len(candidates) > 1:
-                return {"status": "ambiguous", "method": "exact_name", "product": None, "candidate_count": len(candidates)}
+                return {
+                    "status": "ambiguous",
+                    "method": "brand_normalized_name",
+                    "product": None,
+                    "candidate_count": len(candidates),
+                }
         return {"status": "new", "method": "not_found", "product": None, "candidate_count": 0}
 
     def _preview_item(self, connection, product, match, target_mode):
@@ -291,6 +317,8 @@ class BitrixCatalogImporter:
             new = incoming[field]
             if mode == "fill_empty" and not is_empty(old):
                 continue
+            if field in PRESERVE_WHEN_INCOMING_EMPTY and is_empty(new) and not is_empty(old):
+                continue
             if old != new:
                 changes[field] = {"old": old, "new": new}
         return changes
@@ -311,6 +339,8 @@ class BitrixCatalogImporter:
                 f"SELECT COUNT(*) FROM {table} WHERE product_id = ?", (product_id,)
             ).fetchone()[0]
             if mode == "fill_empty" and old_count > 0:
+                continue
+            if new_count == 0 and old_count > 0:
                 continue
             if old_count != new_count:
                 changes[label] = {"old_count": old_count, "new_count": new_count}
@@ -375,15 +405,27 @@ class BitrixCatalogImporter:
         return changes
 
     def _replace_relations(self, connection, product_id, product, include_prices):
-        self._replace_categories(connection, product_id, product.get("categories") or [])
-        self._replace_properties(connection, product_id, nonempty_properties(product))
-        connection.execute("DELETE FROM catalog_images WHERE product_id = ?", (product_id,))
-        self._insert_images(connection, product_id, None, product.get("images") or [])
-        connection.execute("DELETE FROM catalog_offers WHERE product_id = ?", (product_id,))
-        self._insert_offers(connection, product_id, product.get("offers") or [])
-        if include_prices:
+        categories = product.get("categories") or []
+        properties = nonempty_properties(product)
+        images = product.get("images") or []
+        offers = product.get("offers") or []
+        prices = [
+            price for price in product.get("prices") or []
+            if not price.get("is_purchase") and price.get("value") is not None
+        ]
+        if categories:
+            self._replace_categories(connection, product_id, categories)
+        if properties:
+            self._replace_properties(connection, product_id, properties)
+        if images:
+            connection.execute("DELETE FROM catalog_images WHERE product_id = ?", (product_id,))
+            self._insert_images(connection, product_id, None, images)
+        if offers:
+            connection.execute("DELETE FROM catalog_offers WHERE product_id = ?", (product_id,))
+            self._insert_offers(connection, product_id, offers)
+        if include_prices and prices:
             connection.execute("DELETE FROM catalog_prices WHERE product_id = ?", (product_id,))
-            self._insert_prices(connection, product_id, None, product.get("prices") or [])
+            self._insert_prices(connection, product_id, None, prices)
 
     def _fill_empty_relations(self, connection, product_id, product):
         specs = (
@@ -579,9 +621,13 @@ class BitrixCatalogImporter:
                 (
                     product_id, offer_id, price.get("type_id") or "",
                     price.get("type_code") or price.get("role") or "sale",
-                    price.get("type_name") or "", str(price.get("value")),
+                    price.get("type_name") or "",
+                    str(price.get("value_text") or price.get("value")),
                     price.get("currency") or "", 1 if price.get("role") == "base" else 0,
-                    str(price.get("old_value")) if price.get("old_value") is not None else None,
+                    (
+                        str(price.get("old_value_text") or price.get("old_value"))
+                        if price.get("old_value") is not None else None
+                    ),
                     price.get("old_value_source") or None, now, now,
                 ),
             )
