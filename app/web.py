@@ -3254,6 +3254,8 @@ SALES_TABLE_COLUMNS = {
         ("product_name", "Товар"),
         ("quantity_display", "Количество"),
         ("unit_price_display", "Цена"),
+        ("commission", "Комиссия"),
+        ("order_status_label", "Статус"),
     ],
     "tictactoy": [
         ("created_at", "Дата"),
@@ -3263,6 +3265,8 @@ SALES_TABLE_COLUMNS = {
         ("product_name", "Товар"),
         ("quantity_display", "Количество"),
         ("unit_price_display", "Цена продажи"),
+        ("commission", "Комиссия"),
+        ("order_status_label", "Статус"),
         ("order_number", "Номер заказа"),
         ("track_number", "Трекинг"),
         ("delivery_method", "Способ доставки"),
@@ -3282,6 +3286,8 @@ SALES_TABLE_COLUMNS = {
         ("order_number", "Номер заказа"),
         ("quantity_display", "Количество"),
         ("unit_price_display", "Цена продажи"),
+        ("commission", "Комиссия"),
+        ("order_status_label", "Статус"),
         ("note", "Примечание"),
     ],
     "amazon": [
@@ -3292,6 +3298,8 @@ SALES_TABLE_COLUMNS = {
         ("product_name", "Товар"),
         ("quantity_display", "Количество"),
         ("unit_price_display", "Цена"),
+        ("commission", "Комиссия"),
+        ("order_status_label", "Статус"),
         ("recipient_name", "ФИО получателя"),
         ("order_number", "Номер заказа"),
         ("platform", "Площадка"),
@@ -3306,7 +3314,290 @@ SALE_STATUS_LABELS = {
     "shipped": "Отправлен",
     "completed": "Завершён",
     "cancelled": "Отменён",
+    "returned": "Возврат",
 }
+
+SALE_FORM_STATUS_LABELS = {
+    "shipped": "Отправлен",
+    "returned": "Возврат",
+}
+
+SALE_COMMISSION_OPTIONS = [
+    "Оплата по Робокассе (0,9675 × 0,94)",
+    "Оплата в пункте выдачи СДЭК (0,91)",
+    "Оплата по СБП (0)",
+    "Оплата иностранной картой (0,97)",
+]
+
+SALE_PLATFORM_OPTIONS = [
+    "Amazon (US)",
+    "Amazon (CA)",
+    "Amazon (JP)",
+    "Amazon (MX)",
+]
+
+PINNED_SALE_COUNTRIES = [
+    "Америка",
+    "Япония",
+    "Канада",
+    "Мексика",
+]
+
+WORLD_COUNTRIES_RU = [
+    "Австралия",
+    "Австрия",
+    "Азербайджан",
+    "Албания",
+    "Алжир",
+    "Ангола",
+    "Андорра",
+    "Антигуа и Барбуда",
+    "Аргентина",
+    "Армения",
+    "Афганистан",
+    "Багамы",
+    "Бангладеш",
+    "Барбадос",
+    "Бахрейн",
+    "Беларусь",
+    "Белиз",
+    "Бельгия",
+    "Бенин",
+    "Болгария",
+    "Боливия",
+    "Босния и Герцеговина",
+    "Ботсвана",
+    "Бразилия",
+    "Бруней",
+    "Буркина-Фасо",
+    "Бурунди",
+    "Бутан",
+    "Вануату",
+    "Ватикан",
+    "Великобритания",
+    "Венгрия",
+    "Венесуэла",
+    "Восточный Тимор",
+    "Вьетнам",
+    "Габон",
+    "Гаити",
+    "Гайана",
+    "Гамбия",
+    "Гана",
+    "Гватемала",
+    "Гвинея",
+    "Гвинея-Бисау",
+    "Германия",
+    "Гондурас",
+    "Гренада",
+    "Греция",
+    "Грузия",
+    "Дания",
+    "Демократическая Республика Конго",
+    "Джибути",
+    "Доминика",
+    "Доминиканская Республика",
+    "Египет",
+    "Замбия",
+    "Зимбабве",
+    "Израиль",
+    "Индия",
+    "Индонезия",
+    "Иордания",
+    "Ирак",
+    "Иран",
+    "Ирландия",
+    "Исландия",
+    "Испания",
+    "Италия",
+    "Йемен",
+    "Кабо-Верде",
+    "Казахстан",
+    "Камбоджа",
+    "Камерун",
+    "Катар",
+    "Кения",
+    "Кипр",
+    "Киргизия",
+    "Кирибати",
+    "Китай",
+    "Колумбия",
+    "Коморы",
+    "Косово",
+    "Коста-Рика",
+    "Кот-д’Ивуар",
+    "Куба",
+    "Кувейт",
+    "Лаос",
+    "Латвия",
+    "Лесото",
+    "Либерия",
+    "Ливан",
+    "Ливия",
+    "Литва",
+    "Лихтенштейн",
+    "Люксембург",
+    "Маврикий",
+    "Мавритания",
+    "Мадагаскар",
+    "Малави",
+    "Малайзия",
+    "Мали",
+    "Мальдивы",
+    "Мальта",
+    "Марокко",
+    "Маршалловы Острова",
+    "Микронезия",
+    "Мозамбик",
+    "Молдова",
+    "Монако",
+    "Монголия",
+    "Мьянма",
+    "Намибия",
+    "Науру",
+    "Непал",
+    "Нигер",
+    "Нигерия",
+    "Нидерланды",
+    "Никарагуа",
+    "Новая Зеландия",
+    "Норвегия",
+    "Объединённые Арабские Эмираты",
+    "Оман",
+    "Пакистан",
+    "Палау",
+    "Палестина",
+    "Панама",
+    "Папуа — Новая Гвинея",
+    "Парагвай",
+    "Перу",
+    "Польша",
+    "Португалия",
+    "Республика Конго",
+    "Россия",
+    "Руанда",
+    "Румыния",
+    "Сальвадор",
+    "Самоа",
+    "Сан-Марино",
+    "Сан-Томе и Принсипи",
+    "Саудовская Аравия",
+    "Северная Корея",
+    "Северная Македония",
+    "Сейшельские Острова",
+    "Сенегал",
+    "Сент-Винсент и Гренадины",
+    "Сент-Китс и Невис",
+    "Сент-Люсия",
+    "Сербия",
+    "Сингапур",
+    "Сирия",
+    "Словакия",
+    "Словения",
+    "Соломоновы Острова",
+    "Сомали",
+    "Судан",
+    "Суринам",
+    "Сьерра-Леоне",
+    "Таджикистан",
+    "Таиланд",
+    "Тайвань",
+    "Танзания",
+    "Того",
+    "Тонга",
+    "Тринидад и Тобаго",
+    "Тувалу",
+    "Тунис",
+    "Туркменистан",
+    "Турция",
+    "Уганда",
+    "Узбекистан",
+    "Украина",
+    "Уругвай",
+    "Фиджи",
+    "Филиппины",
+    "Финляндия",
+    "Франция",
+    "Хорватия",
+    "Центральноафриканская Республика",
+    "Чад",
+    "Черногория",
+    "Чехия",
+    "Чили",
+    "Швейцария",
+    "Швеция",
+    "Шри-Ланка",
+    "Эквадор",
+    "Экваториальная Гвинея",
+    "Эритрея",
+    "Эсватини",
+    "Эстония",
+    "Эфиопия",
+    "Южная Африка",
+    "Южная Корея",
+    "Южный Судан",
+    "Ямайка",
+]
+
+
+def build_sale_combobox_options(values, value_labels=None):
+    value_labels = value_labels or {}
+    return [
+        {
+            "name": value_labels.get(value, value),
+            "value": value,
+            "count": "",
+        }
+        for value in values
+    ]
+
+
+def get_sale_country_options():
+    pinned_keys = {
+        country.casefold()
+        for country in PINNED_SALE_COUNTRIES
+    }
+    remaining = sorted(
+        {
+            str(country or "").strip()
+            for country in WORLD_COUNTRIES_RU
+            if (
+                str(country or "").strip()
+                and str(country or "").strip().casefold()
+                    not in pinned_keys
+            )
+        },
+        key=str.casefold,
+    )
+    return [
+        *PINNED_SALE_COUNTRIES,
+        *remaining,
+    ]
+
+
+def get_sale_platform_options(sales=None):
+    result = list(SALE_PLATFORM_OPTIONS)
+    seen = {
+        platform.casefold()
+        for platform in result
+    }
+    existing = sorted(
+        {
+            str(sale.get("platform") or "").strip()
+            for sale in (sales or []) if isinstance(sale, dict)
+            if str(sale.get("platform") or "").strip()
+        },
+        key=str.casefold,
+    )
+
+    for platform in existing:
+        key = platform.casefold()
+
+        if key not in seen:
+            seen.add(key)
+            result.append(platform)
+
+    return result
 
 
 def normalize_sale_status(value):
@@ -3980,7 +4271,11 @@ def build_sale_optional_fields(form, existing=None):
 
     existing = existing if isinstance(existing, dict) else {}
     commission_amount = parse_sale_commission(
-        form.get("commission_amount")
+        (
+            form.get("commission_amount")
+            if "commission_amount" in form
+            else existing.get("commission_amount")
+        )
     )
 
     if commission_amount is None:
@@ -3998,8 +4293,24 @@ def build_sale_optional_fields(form, existing=None):
         )
 
     order_status = normalize_sale_status(
-        form.get("order_status")
+        (
+            form.get("order_status")
+            if str(form.get("order_status") or "").strip()
+            else existing.get("order_status")
+        )
     )
+    commission = str(
+        (
+            form.get("commission")
+            if "commission" in form
+            else existing.get("commission")
+        )
+        or ""
+    ).strip()
+
+    if commission and commission not in SALE_COMMISSION_OPTIONS:
+        raise ValueError("Выберите комиссию из списка")
+
     was_cancelled = sale_is_cancelled(existing)
 
     if order_status == "cancelled":
@@ -4020,7 +4331,10 @@ def build_sale_optional_fields(form, existing=None):
             form.get("payment_method") or ""
         ).strip(),
         "commission_amount": commission_amount,
-        "commission_type": "fixed_rub",
+        "commission_type": str(
+            existing.get("commission_type") or "fixed_rub"
+        ),
+        "commission": commission,
         "order_status": order_status,
         "cancelled_at": cancelled_at,
         "sticker_number": str(
@@ -4028,7 +4342,12 @@ def build_sale_optional_fields(form, existing=None):
         ).strip(),
         "delivery_cost": delivery_cost,
         "country": str(
-            form.get("country") or ""
+            (
+                form.get("country")
+                if "country" in form
+                else existing.get("country")
+            )
+            or ""
         ).strip(),
         "delivery_address": str(
             (
@@ -5120,6 +5439,11 @@ def build_sales_report_records(warehouse_items=None):
                 or operation.get("payment_method")
                 or ""
             ),
+            "commission": str(
+                override.get("commission")
+                or operation.get("commission")
+                or ""
+            ),
             "commission_amount": (
                 parse_sale_commission(
                     override.get("commission_amount")
@@ -5282,6 +5606,9 @@ def build_sales_report_records(warehouse_items=None):
             ),
             "payment_method": str(
                 stored_sale.get("payment_method") or ""
+            ),
+            "commission": str(
+                stored_sale.get("commission") or ""
             ),
             "commission_amount": (
                 parse_sale_commission(
@@ -6261,6 +6588,11 @@ def build_legacy_sales_page():
                 or operation.get("payment_method")
                 or ""
             ),
+            "commission": str(
+                override.get("commission")
+                or operation.get("commission")
+                or ""
+            ),
             "commission_amount": (
                 parse_sale_commission(
                     override.get("commission_amount")
@@ -6362,6 +6694,7 @@ def build_legacy_sales_page():
             "recipient": stored_sale.get("recipient") or "",
             "recipient_name": stored_sale.get("recipient_name") or "",
             "payment_method": stored_sale.get("payment_method") or "",
+            "commission": stored_sale.get("commission") or "",
             "commission_amount": (
                 parse_sale_commission(
                     stored_sale.get("commission_amount")
@@ -6442,6 +6775,19 @@ def build_legacy_sales_page():
         message=(request.args.get("message") or "").strip(),
         sales_sources=get_reusable_sales_sources(),
         sale_status_labels=SALE_STATUS_LABELS,
+        sale_status_options=build_sale_combobox_options(
+            SALE_FORM_STATUS_LABELS,
+            SALE_FORM_STATUS_LABELS,
+        ),
+        sale_commission_options=build_sale_combobox_options(
+            SALE_COMMISSION_OPTIONS
+        ),
+        sale_platform_options=build_sale_combobox_options(
+            get_sale_platform_options(sales)
+        ),
+        sale_country_options=build_sale_combobox_options(
+            get_sale_country_options()
+        ),
     )
 
 
@@ -6548,6 +6894,19 @@ def sales_page():
             **report_query,
         ),
         sale_status_labels=SALE_STATUS_LABELS,
+        sale_status_options=build_sale_combobox_options(
+            SALE_FORM_STATUS_LABELS,
+            SALE_FORM_STATUS_LABELS,
+        ),
+        sale_commission_options=build_sale_combobox_options(
+            SALE_COMMISSION_OPTIONS
+        ),
+        sale_platform_options=build_sale_combobox_options(
+            get_sale_platform_options(all_sales)
+        ),
+        sale_country_options=build_sale_combobox_options(
+            get_sale_country_options()
+        ),
         preserved_filters=preserved_filters,
         notice=(request.args.get("notice") or "").strip(),
         message=(request.args.get("message") or "").strip(),

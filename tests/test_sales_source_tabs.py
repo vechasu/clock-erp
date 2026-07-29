@@ -27,6 +27,8 @@ EXPECTED_COLUMNS = {
         "Товар",
         "Количество",
         "Цена",
+        "Комиссия",
+        "Статус",
     ],
     "tictactoy": [
         "Дата",
@@ -36,6 +38,8 @@ EXPECTED_COLUMNS = {
         "Товар",
         "Количество",
         "Цена продажи",
+        "Комиссия",
+        "Статус",
         "Номер заказа",
         "Трекинг",
         "Способ доставки",
@@ -55,6 +59,8 @@ EXPECTED_COLUMNS = {
         "Номер заказа",
         "Количество",
         "Цена продажи",
+        "Комиссия",
+        "Статус",
         "Примечание",
     ],
     "amazon": [
@@ -65,6 +71,8 @@ EXPECTED_COLUMNS = {
         "Товар",
         "Количество",
         "Цена",
+        "Комиссия",
+        "Статус",
         "ФИО получателя",
         "Номер заказа",
         "Площадка",
@@ -130,6 +138,7 @@ def sale_record(source="Tictactoy", **changes):
         "sticker_number": "STICKER-100",
         "commission_amount": 0,
         "commission_display": "0 ₽",
+        "commission": "Оплата по СБП (0)",
     }
     sale.update(changes)
     return sale
@@ -209,6 +218,17 @@ class SalesSourceTabsTest(unittest.TestCase):
             )
         ]
 
+    def get_combobox_values(self, page, component_id, next_marker):
+        start = page.index(f'id="{component_id}"')
+        end = page.index(next_marker, start)
+        return [
+            html.unescape(value)
+            for value in re.findall(
+                r'data-brand="([^"]*)"',
+                page[start:end],
+            )
+        ]
+
     def test_page_has_exactly_four_source_tabs(self):
         response = self.client.get("/sales?source=all")
         page = response.get_data(as_text=True)
@@ -223,6 +243,93 @@ class SalesSourceTabsTest(unittest.TestCase):
             ["all", "tictactoy", "wildberries", "amazon"],
         )
         self.assertNotIn("Ручные продажи", page)
+
+    def test_sale_choice_fields_reuse_brand_combobox_and_keep_option_order(self):
+        self.manual_sales_path.write_text(
+            json.dumps([
+                {
+                    "id": "legacy-platform",
+                    "source": "Amazon",
+                    "platform": "Amazon.de",
+                },
+            ], ensure_ascii=False),
+            encoding="utf-8",
+        )
+        page = self.client.get(
+            "/sales?source=amazon"
+        ).get_data(as_text=True)
+
+        for component_id in (
+            "saleStatus",
+            "saleCommission",
+            "salePlatform",
+            "saleCountry",
+        ):
+            with self.subTest(component_id=component_id):
+                component_start = page.index(
+                    f'id="{component_id}"'
+                )
+                component_excerpt = page[
+                    component_start:component_start + 2400
+                ]
+                self.assertIn(
+                    "brand-combobox filter-combobox",
+                    component_excerpt,
+                )
+                self.assertIn(
+                    "brand-combobox-trigger",
+                    component_excerpt,
+                )
+                self.assertIn(
+                    "brand-combobox-search-clear",
+                    component_excerpt,
+                )
+
+        self.assertEqual(
+            self.get_combobox_values(
+                page,
+                "saleStatus",
+                'id="saleCommission"',
+            ),
+            ["shipped", "returned"],
+        )
+        self.assertEqual(
+            self.get_combobox_values(
+                page,
+                "saleCommission",
+                'data-source-fields="tictactoy"',
+            ),
+            web.SALE_COMMISSION_OPTIONS,
+        )
+        self.assertEqual(
+            self.get_combobox_values(
+                page,
+                "salePlatform",
+                'id="saleCountry"',
+            ),
+            [
+                *web.SALE_PLATFORM_OPTIONS,
+                "Amazon.de",
+            ],
+        )
+
+        countries = self.get_combobox_values(
+            page,
+            "saleCountry",
+            'id="invoice_number"',
+        )
+        self.assertEqual(
+            countries[:4],
+            ["Америка", "Япония", "Канада", "Мексика"],
+        )
+        self.assertGreaterEqual(len(countries), 195)
+        self.assertEqual(len(countries), len(set(countries)))
+        self.assertEqual(
+            countries[4:],
+            sorted(countries[4:], key=str.casefold),
+        )
+        for pinned_country in countries[:4]:
+            self.assertNotIn(pinned_country, countries[4:])
 
     def test_source_filters_exclude_unknown_from_all_without_deleting(self):
         stored = [
@@ -734,6 +841,70 @@ class SalesSourceTabsTest(unittest.TestCase):
         save_manual_sales.assert_called_once()
         save_stock_operations.assert_not_called()
 
+    def test_sale_choices_save_reload_and_render_for_both_form_statuses(self):
+        commission = web.SALE_COMMISSION_OPTIONS[0]
+
+        for index, (status, status_label) in enumerate(
+            web.SALE_FORM_STATUS_LABELS.items(),
+            start=1,
+        ):
+            with self.subTest(status=status):
+                response = self.client.post(
+                    "/sales/manual/add",
+                    data={
+                        "created_at": f"2026-07-{20 + index:02d}",
+                        "source": "Amazon",
+                        "return_source": "amazon",
+                        "product_id": PRODUCT_ID,
+                        "product_name": "Часы Test",
+                        "product_brand": "Brand",
+                        "product_category": "Коллекция",
+                        "quantity": "1",
+                        "unit_price": "1000",
+                        "commission": commission,
+                        "order_status": status,
+                        "platform": "Amazon (US)",
+                        "country": "Япония",
+                    },
+                )
+
+                self.assertEqual(response.status_code, 302)
+
+                stored = web.load_manual_sales()[-1]
+                self.assertEqual(stored["commission"], commission)
+                self.assertEqual(stored["platform"], "Amazon (US)")
+                self.assertEqual(stored["country"], "Япония")
+                self.assertEqual(stored["order_status"], status)
+                self.assertEqual(stored["commission_amount"], 0)
+
+                record = web.build_sales_report_records()[0]
+                self.assertEqual(record["commission"], commission)
+                self.assertEqual(record["platform"], "Amazon (US)")
+                self.assertEqual(record["country"], "Япония")
+                self.assertEqual(record["order_status"], status)
+                self.assertEqual(
+                    record["order_status_label"],
+                    status_label,
+                )
+                self.assertEqual(record["total_amount"], 1000)
+
+        page = self.client.get(
+            "/sales?source=amazon"
+        ).get_data(as_text=True)
+        self.assertIn(
+            f'class="col-commission"',
+            page,
+        )
+        self.assertIn(
+            f'class="col-order_status_label"',
+            page,
+        )
+        self.assertIn(commission, page)
+        self.assertIn("Amazon (US)", page)
+        self.assertIn("Япония", page)
+        self.assertIn(">Отправлен<", page)
+        self.assertIn(">Возврат<", page)
+
     def test_ajax_edit_updates_manual_sale_without_stock_write(self):
         self.manual_sales_path.write_text(
             json.dumps([
@@ -768,12 +939,13 @@ class SalesSourceTabsTest(unittest.TestCase):
                     "product_name": "Часы Test",
                     "quantity": "2",
                     "unit_price": "1250",
-                    "order_status": "completed",
+                    "order_status": "returned",
+                    "commission": web.SALE_COMMISSION_OPTIONS[1],
                     "commission_amount": "75.50",
                     "order_number": "AMZ-NEW",
                     "recipient_name": "Иван Иванов",
-                    "platform": "Amazon.de",
-                    "country": "Германия",
+                    "platform": "Amazon (CA)",
+                    "country": "Канада",
                     "invoice_number": "INV-NEW",
                     "note": "Обновлено",
                 },
@@ -794,7 +966,14 @@ class SalesSourceTabsTest(unittest.TestCase):
         self.assertEqual(stored[0]["quantity"], 2)
         self.assertEqual(stored[0]["unit_price"], 1250.0)
         self.assertEqual(stored[0]["total_amount"], 2500.0)
+        self.assertEqual(
+            stored[0]["commission"],
+            web.SALE_COMMISSION_OPTIONS[1],
+        )
         self.assertEqual(stored[0]["commission_amount"], 75.5)
+        self.assertEqual(stored[0]["order_status"], "returned")
+        self.assertEqual(stored[0]["platform"], "Amazon (CA)")
+        self.assertEqual(stored[0]["country"], "Канада")
         self.assertEqual(stored[0]["order_number"], "AMZ-NEW")
         save_stock_operations.assert_not_called()
 
@@ -1261,7 +1440,7 @@ class SalesSourceTabsTest(unittest.TestCase):
                             report_page,
                         )
                         self.assertEqual(
-                            sheet["J5"].value,
+                            sheet["L5"].value,
                             "Amazon.de",
                         )
                         self.assertNotIn(

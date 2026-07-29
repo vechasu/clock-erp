@@ -62,11 +62,12 @@
                     </button>
                 {% endif %}
                 {% for option in options %}
+                    {% set option_value = option.value|default(option.name) %}
                     <button
-                        class="brand-combobox-option{% if selected_value == option.name %} active{% endif %}"
+                        class="brand-combobox-option{% if selected_value == option_value %} active{% endif %}"
                         type="button"
                         role="option"
-                        data-brand="{{ option.name|e }}"
+                        data-brand="{{ option_value|e }}"
                         data-brand-search="{{ option.name|lower|e }}"
                     >
                         <span class="brand-combobox-option-label">
