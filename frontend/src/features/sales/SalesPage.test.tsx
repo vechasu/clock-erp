@@ -102,15 +102,28 @@ function catalogResponse() {
   );
 }
 
+function locationsResponse() {
+  return new Response(
+    JSON.stringify({
+      data: { Россия: { Москва: ['Москва'] } },
+      meta: { request_id: 'locations-test', csrf_token: 'csrf' },
+      error: null,
+    }),
+    { status: 200, headers: { 'Content-Type': 'application/json' } },
+  );
+}
+
 describe('SalesPage', () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it('renders source tabs and exposes managed return instead of delete', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockImplementation((url: string) =>
-        Promise.resolve(url.includes('/sales/catalog') ? catalogResponse() : listResponse()),
-      ),
+      vi.fn().mockImplementation((url: string) => {
+        if (url.includes('/sales/catalog')) return Promise.resolve(catalogResponse());
+        if (url.includes('/sales/locations')) return Promise.resolve(locationsResponse());
+        return Promise.resolve(listResponse());
+      }),
     );
     const user = userEvent.setup();
     render(

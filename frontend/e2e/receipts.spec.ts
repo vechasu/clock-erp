@@ -78,6 +78,10 @@ function envelope(data: unknown, meta: Record<string, unknown> = {}) {
   };
 }
 
+function visibleReceiptList(page: Page) {
+  return page.locator('.data-table-wrap:visible, .mobile-card-list:visible');
+}
+
 async function mockReceiptsApi(page: Page) {
   let receipts = [receipt()];
   await page.route('**/api/v1/receipts**', async (route) => {
@@ -171,10 +175,13 @@ test('receipts create multiple positions with validation', async ({ page }) => {
   await dialog.getByRole('button', { name: 'Провести приход' }).click();
   await expect(dialog.getByText('Выберите товар', { exact: true }).last()).toBeVisible();
 
-  const productSelects = dialog.getByRole('combobox');
-  await productSelects.nth(0).selectOption('ms-1');
+  await dialog.getByRole('combobox', { name: 'Бренд *' }).selectOption('Casio');
+  await dialog.getByRole('combobox', { name: 'Категория *' }).selectOption('Часы');
+  await dialog.getByRole('combobox', { name: 'Товар *' }).selectOption('ms-1');
   await dialog.getByRole('button', { name: '+ Добавить позицию' }).click();
-  await productSelects.nth(1).selectOption('ms-2');
+  await dialog.getByRole('combobox', { name: 'Бренд *' }).nth(1).selectOption('Vechasu');
+  await dialog.getByRole('combobox', { name: 'Категория *' }).nth(1).selectOption('Ремешки');
+  await dialog.getByRole('combobox', { name: 'Товар *' }).nth(1).selectOption('ms-2');
   const quantityInputs = dialog.getByRole('spinbutton', { name: 'Количество *' });
   await quantityInputs.nth(0).fill('2');
   await quantityInputs.nth(1).fill('3');
@@ -183,22 +190,25 @@ test('receipts create multiple positions with validation', async ({ page }) => {
   await priceInputs.nth(1).fill('500');
   await dialog.getByRole('button', { name: 'Провести приход' }).click();
   await expect(page.getByText('Приход проведён')).toBeVisible();
-  await expect(page.getByText('PR-2026-0002').first()).toBeVisible();
+  await expect(visibleReceiptList(page).getByText('PR-2026-0002').first()).toBeVisible();
 });
 
 test('single-position receipt can be edited and deleted', async ({ page }) => {
   await page.goto('/app/receipts');
-  const row = page.getByText('PR-2026-0001').first().locator('xpath=ancestor::tr');
+  const row = visibleReceiptList(page)
+    .getByText('PR-2026-0001')
+    .first()
+    .locator('xpath=ancestor::tr | ancestor::article');
   await row.getByRole('button', { name: 'Изменить' }).click();
   const dialog = page.getByRole('dialog');
   await dialog.getByRole('spinbutton', { name: 'Количество *' }).fill('4');
   await dialog.getByRole('button', { name: 'Сохранить' }).click();
   await expect(page.getByText('Приход обновлён')).toBeVisible();
 
-  await page
+  await visibleReceiptList(page)
     .getByText('PR-2026-0001')
     .first()
-    .locator('xpath=ancestor::tr')
+    .locator('xpath=ancestor::tr | ancestor::article')
     .getByRole('button', { name: 'Удалить' })
     .click();
   await expect(page.getByRole('heading', { name: 'Удалить приход?' })).toBeVisible();

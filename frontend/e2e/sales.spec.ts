@@ -72,6 +72,10 @@ function envelope(data: unknown, meta: Record<string, unknown> = {}) {
   };
 }
 
+function visibleSalesList(page: Page) {
+  return page.locator('.data-table-wrap:visible, .mobile-card-list:visible');
+}
+
 async function mockSalesApi(page: Page) {
   let sales = [
     sale(),
@@ -97,6 +101,12 @@ async function mockSalesApi(page: Page) {
     const url = new URL(request.url());
     if (url.pathname.endsWith('/sales/catalog')) {
       await route.fulfill({ json: envelope(catalog, { total: 1 }) });
+      return;
+    }
+    if (url.pathname.endsWith('/sales/locations')) {
+      await route.fulfill({
+        json: envelope({ Россия: { Москва: ['Москва'], Татарстан: ['Казань'] } }),
+      });
       return;
     }
     const returnMatch = url.pathname.match(/\/sales\/([^/]+)\/returns$/);
@@ -196,7 +206,7 @@ test('sales support source tabs, live search and validated creation', async ({ p
   await expect(page.getByRole('heading', { name: 'Продажи' })).toBeVisible();
   await page.getByPlaceholder('Заказ, товар, трек-номер, получатель…').fill('BX-1');
   await expect(page).toHaveURL(/q=BX-1/);
-  await expect(page.getByText('BX-1').first()).toBeVisible();
+  await expect(visibleSalesList(page).getByText('BX-1').first()).toBeVisible();
   await expect(page.getByText('ORDER-1')).toHaveCount(0);
 
   await page.getByRole('button', { name: '+ Новая продажа' }).click();
@@ -213,7 +223,10 @@ test('sales support source tabs, live search and validated creation', async ({ p
 
 test('sales support managed returns and automatic edit/delete', async ({ page }) => {
   await page.goto('/app/sales?source=all');
-  const managedRow = page.getByText('ORDER-1').first().locator('xpath=ancestor::tr');
+  const managedRow = visibleSalesList(page)
+    .getByText('ORDER-1')
+    .first()
+    .locator('xpath=ancestor::tr | ancestor::article');
   await managedRow.getByRole('button', { name: 'Возврат' }).click();
   let dialog = page.getByRole('dialog');
   await dialog.getByRole('spinbutton', { name: 'Количество' }).fill('1');
@@ -221,17 +234,20 @@ test('sales support managed returns and automatic edit/delete', async ({ page })
   await dialog.getByRole('button', { name: 'Оформить возврат' }).click();
   await expect(page.getByText('Возврат оформлен')).toBeVisible();
 
-  const automaticRow = page.getByText('BX-1').first().locator('xpath=ancestor::tr');
+  const automaticRow = visibleSalesList(page)
+    .getByText('BX-1')
+    .first()
+    .locator('xpath=ancestor::tr | ancestor::article');
   await automaticRow.getByRole('button', { name: 'Изменить' }).click();
   dialog = page.getByRole('dialog');
   await dialog.getByRole('textbox', { name: 'Комментарий' }).fill('Обновлено');
   await dialog.getByRole('button', { name: 'Сохранить' }).click();
   await expect(page.getByText('Изменения сохранены')).toBeVisible();
 
-  await page
+  await visibleSalesList(page)
     .getByText('BX-1')
     .first()
-    .locator('xpath=ancestor::tr')
+    .locator('xpath=ancestor::tr | ancestor::article')
     .getByRole('button', { name: 'Удалить' })
     .click();
   await page.getByRole('button', { name: 'Удалить' }).last().click();
