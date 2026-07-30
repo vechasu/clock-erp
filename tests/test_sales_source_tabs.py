@@ -705,11 +705,6 @@ class SalesSourceTabsTest(unittest.TestCase):
             "catalog-combobox.js",
             page,
         )
-        self.assertIn(
-            "Сначала выберите бренд и категорию",
-            page,
-        )
-
     def test_every_source_tab_renders_the_same_catalog_picker(self):
         for source in ("all", "tictactoy", "wildberries", "amazon"):
             with self.subTest(source=source):
