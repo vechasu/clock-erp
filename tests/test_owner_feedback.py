@@ -1517,7 +1517,7 @@ class OwnerFeedbackTest(unittest.TestCase):
         self.assertIn("overflow: hidden", sales_html)
         self.assertIn("text-overflow: ellipsis", sales_html)
 
-    def test_sales_product_and_category_text_stays_inside_cells(self):
+    def test_sales_uses_current_catalog_text_and_keeps_it_inside_cells(self):
         manual_sale = {
             "id": "manual-long-values",
             "created_at": "2026-07-22",
@@ -1550,8 +1550,10 @@ class OwnerFeedbackTest(unittest.TestCase):
 
         html = page.get_data(as_text=True)
         self.assertEqual(page.status_code, 200)
-        self.assertIn("Очень длинное название товара", html)
-        self.assertIn("Очень длинная категория Будильник", html)
+        self.assertIn("Часы Test", html)
+        self.assertIn("Коллекция", html)
+        self.assertNotIn("Очень длинное название товара", html)
+        self.assertNotIn("Очень длинная категория Будильник", html)
         self.assertIn(
             ".sales-table td.col-product .manual-view-value",
             html,
