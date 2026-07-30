@@ -1447,8 +1447,8 @@ def warehouse_page():
         created_date_from, created_date_to = created_date_to, created_date_from
 
     warehouse_active_filter_count = sum((
-        bool(selected_brand),
-        bool(selected_category),
+        bool(selected_brand_id or selected_brand),
+        bool(selected_category_id or selected_category),
         bool(selected_cell),
         bool(created_date_from or created_date_to),
     ))
@@ -1458,8 +1458,8 @@ def warehouse_page():
 
     catalog = ExcelProductCatalog().list_products(
         query=query,
-        brand=selected_brand,
-        category=selected_category,
+        brand=selected_brand if not selected_brand_id else "",
+        category=selected_category if not selected_category_id else "",
         cell=selected_cell,
         hide_zero=in_stock,
         sort_by=sort_by,
@@ -1468,6 +1468,8 @@ def warehouse_page():
         per_page=per_page,
         created_from=created_date_from,
         created_to=created_date_to,
+        brand_id=selected_brand_id or None,
+        category_id=selected_category_id or None,
     )
     catalog_items = build_excel_warehouse_items(catalog["items"])
     items = get_excel_warehouse_items(catalog=catalog)
@@ -1637,8 +1639,16 @@ def warehouse_export_items():
         sort_dir = "asc"
     catalog = ExcelProductCatalog().list_products(
         query=(request.args.get("q") or "").strip(),
-        brand=(request.args.get("brand") or "").strip(),
-        category=(request.args.get("category") or "").strip(),
+        brand=(
+            (request.args.get("brand") or "").strip()
+            if not (request.args.get("brand_id") or "").strip()
+            else ""
+        ),
+        category=(
+            (request.args.get("category") or "").strip()
+            if not (request.args.get("category_id") or "").strip()
+            else ""
+        ),
         cell=(request.args.get("cell") or "").strip(),
         hide_zero=(request.args.get("in_stock") or "").strip() == "1",
         sort_by=sort_by,
@@ -1647,6 +1657,8 @@ def warehouse_export_items():
         per_page=100000,
         created_from=(request.args.get("date_from") or "").strip(),
         created_to=(request.args.get("date_to") or "").strip(),
+        brand_id=(request.args.get("brand_id") or "").strip() or None,
+        category_id=(request.args.get("category_id") or "").strip() or None,
     )
     return build_excel_warehouse_items(catalog["items"])
 
@@ -13002,15 +13014,18 @@ def prepare_moysklad_receipt_positions(
                         position.get("product_name") or position.get("product_id")
                     )
                 )
-            created = client.create_product(
-                name=position.get("product_name") or "Товар Vechasu",
-                code=(
-                    position.get("code")
-                    or position.get("article")
-                    or "VECHASU-{}".format(position["product_id"])
-                ),
-                article=position.get("article") or None,
+            product_code = (
+                position.get("code")
+                or position.get("article")
+                or "VECHASU-{}".format(position["product_id"])
             )
+            created = client.find_product_by_code(product_code)
+            if not created:
+                created = client.create_product(
+                    name=position.get("product_name") or "Товар Vechasu",
+                    code=product_code,
+                    article=position.get("article") or None,
+                )
             remote_product_id = str((created or {}).get("id") or "").strip()
             if not remote_product_id:
                 raise ValueError("МойСклад не создал карточку товара.")

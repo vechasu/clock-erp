@@ -103,6 +103,43 @@ class WarehousePaginationTest(unittest.TestCase):
                 ") VALUES ({})".format(", ".join("?" for _ in range(27))),
                 rows,
             )
+            brand_ids = {}
+            category_ids = {}
+            for brand in ("Casio", "Omega"):
+                cursor = connection.execute(
+                    "INSERT INTO erp_brands "
+                    "(name, normalized_name, active, created_at, updated_at) "
+                    "VALUES (?, ?, 1, ?, ?)",
+                    (brand, brand.casefold(), now, now),
+                )
+                brand_ids[brand] = cursor.lastrowid
+                for category in ("Будильники", "Наручные часы"):
+                    cursor = connection.execute(
+                        "INSERT INTO erp_categories "
+                        "(brand_id, name, normalized_name, active, "
+                        "created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?)",
+                        (
+                            brand_ids[brand],
+                            category,
+                            category.casefold(),
+                            now,
+                            now,
+                        ),
+                    )
+                    category_ids[(brand, category)] = cursor.lastrowid
+                    connection.execute(
+                        "UPDATE catalog_excel_products SET "
+                        "brand_id = ?, category_id = ? "
+                        "WHERE excel_brand = ? AND excel_category = ?",
+                        (
+                            brand_ids[brand],
+                            cursor.lastrowid,
+                            brand,
+                            category,
+                        ),
+                    )
+            cls.brand_ids = brand_ids
+            cls.category_ids = category_ids
         cls.environment = mock.patch.dict(
             "os.environ",
             {"CATALOG_DATABASE_PATH": str(cls.path)},
@@ -184,6 +221,96 @@ class WarehousePaginationTest(unittest.TestCase):
         ))
         articles = [row["excel_article"] for row in combined["items"]]
         self.assertEqual(articles, sorted(articles, reverse=True))
+
+    def test_canonical_filters_combine_with_search_stock_sort_and_pagination(self):
+        cases = (
+            (
+                "/warehouse?brand_id={}&per_page=100".format(
+                    self.brand_ids["Casio"]
+                ),
+                "Casio",
+                None,
+            ),
+            (
+                "/warehouse?category=Будильники&per_page=100",
+                None,
+                "Будильники",
+            ),
+            (
+                "/warehouse?brand_id={}&category_id={}&per_page=100".format(
+                    self.brand_ids["Casio"],
+                    self.category_ids[("Casio", "Будильники")],
+                ),
+                "Casio",
+                "Будильники",
+            ),
+        )
+        for path, expected_brand, expected_category in cases:
+            with self.subTest(path=path):
+                html = self.client.get(path).get_data(as_text=True)
+                rows = re.findall(
+                    r'<tr\s+data-product-id="[^"]+".*?</tr>',
+                    html,
+                    re.DOTALL,
+                )
+                self.assertTrue(rows)
+                if expected_brand:
+                    self.assertTrue(all(
+                        (
+                            '<td data-column-key="brand">'
+                            + expected_brand
+                            + "</td>"
+                        ) in row
+                        for row in rows
+                    ))
+                if expected_category:
+                    self.assertTrue(all(
+                        (
+                            '<td data-column-key="category">'
+                            + expected_category
+                            + "</td>"
+                        ) in row
+                        for row in rows
+                    ))
+
+        combined_path = (
+            "/warehouse?q=Product&brand_id={}&category_id={}"
+            "&date_from=2026-07-29&date_to=2026-07-29"
+            "&in_stock=1&sort_by=article&sort_dir=desc"
+            "&page=2&per_page=100"
+        ).format(
+            self.brand_ids["Casio"],
+            self.category_ids[("Casio", "Будильники")],
+        )
+        combined_html = self.client.get(
+            combined_path
+        ).get_data(as_text=True)
+        combined_rows = re.findall(
+            r'<tr\s+data-product-id="[^"]+".*?</tr>',
+            combined_html,
+            re.DOTALL,
+        )
+        self.assertEqual(len(combined_rows), 100)
+        self.assertTrue(all(
+            '<td data-column-key="brand">Casio</td>' in row
+            and '<td data-column-key="category">Будильники</td>' in row
+            and float(re.search(
+                r'data-stock="([^"]+)"',
+                row,
+            ).group(1)) > 0
+            for row in combined_rows
+        ))
+        articles = [
+            re.search(
+                r'<td data-column-key="article">([^<]+)</td>',
+                row,
+            ).group(1)
+            for row in combined_rows
+        ]
+        self.assertEqual(articles, sorted(articles, reverse=True))
+        self.assertIn('class="active" aria-current="page">2</span>', combined_html)
+        self.assertIn("brand_id=", combined_html)
+        self.assertIn("category_id=", combined_html)
 
     def test_brand_filter_counts_positions_and_respects_other_filters(self):
         catalog = ExcelProductCatalog(self.database)
