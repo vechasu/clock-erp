@@ -6718,6 +6718,36 @@
     <script>
         window.addEventListener("load", function() {
             try {
+                const addBrand = document.getElementById(
+                    "addBrandCombobox"
+                );
+                const addCategory = document.getElementById(
+                    "addCategoryCombobox"
+                );
+                window.setSharedCatalogComboboxValue(
+                    addBrand,
+                    {id: 501, name: "AARK"}
+                );
+                window.setSharedCatalogComboboxValue(
+                    addCategory,
+                    {
+                        id: 502,
+                        brand_id: 501,
+                        name: "Наручные часы"
+                    }
+                );
+                const taxonomyCascadePassed = (
+                    addBrand.querySelector(
+                        ".catalog-combobox-id"
+                    ).value === "501"
+                    && addCategory.querySelector(
+                        ".catalog-combobox-id"
+                    ).value === "502"
+                    && !addCategory.querySelector(
+                        ".brand-combobox-trigger"
+                    ).disabled
+                );
+
                 document.getElementById("warehouseMoreTrigger").click();
                 document.getElementById("warehouseBulkToggle").click();
 
@@ -6763,7 +6793,8 @@
                         );
                     };
                     const passed = (
-                        isVisible(form)
+                        taxonomyCascadePassed
+                        && isVisible(form)
                         && isVisible(brand)
                         && isVisible(category)
                         && isVisible(submit)

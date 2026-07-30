@@ -734,6 +734,10 @@
     }
 
     function clearSharedCatalogOptions(combobox, emptyLabel) {
+        if (!combobox) {
+            return;
+        }
+
         window.replaceCatalogComboboxOptions(
             combobox,
             [],
