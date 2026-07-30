@@ -3,6 +3,7 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from app.catalog_db import CatalogDatabase
 from app.services.catalog_reader import CatalogReader
@@ -48,6 +49,21 @@ class CatalogDatabaseTest(unittest.TestCase):
 
     def test_creates_all_catalog_tables(self):
         self.assertEqual(set(self.database.table_names()), EXPECTED_TABLES)
+
+    def test_cached_initialization_runs_schema_checks_only_once(self):
+        database = CatalogDatabase(
+            self.database_path,
+            cache_initialization=True,
+        )
+        with mock.patch.object(
+            database,
+            "_initialize_schema",
+            wraps=database._initialize_schema,
+        ) as initialize_schema:
+            database.initialize()
+            database.initialize()
+
+        initialize_schema.assert_called_once_with()
 
     def test_external_product_identity_is_unique_but_name_and_article_are_not(self):
         product_values = (

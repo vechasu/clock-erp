@@ -1,5 +1,6 @@
 import os
 import sqlite3
+import threading
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -702,9 +703,12 @@ CREATE INDEX IF NOT EXISTS idx_catalog_stock_movements_sale
 
 
 class CatalogDatabase:
-    def __init__(self, path=None):
+    def __init__(self, path=None, cache_initialization=False):
         configured_path = path or os.getenv("CATALOG_DATABASE_PATH")
         self.path = Path(configured_path) if configured_path else DEFAULT_CATALOG_DATABASE_PATH
+        self.cache_initialization = bool(cache_initialization)
+        self._initialized = False
+        self._initialize_lock = threading.Lock()
 
     def connect(self):
         if str(self.path) != ":memory:":
@@ -716,6 +720,18 @@ class CatalogDatabase:
         return connection
 
     def initialize(self):
+        if not self.cache_initialization:
+            return self._initialize_schema()
+        if self._initialized:
+            return None
+        with self._initialize_lock:
+            if self._initialized:
+                return None
+            self._initialize_schema()
+            self._initialized = True
+        return None
+
+    def _initialize_schema(self):
         with self.connect() as connection:
             connection.executescript(SCHEMA)
             self._ensure_excel_receipt_constraints(connection)

@@ -355,6 +355,27 @@ class UnifiedCatalogApiTest(unittest.TestCase):
         self.assertEqual(self.stock(), 1)
         self.remote.upload_product_image.assert_called_once()
 
+    def test_receipt_request_initializes_shared_catalog_schema_once(self):
+        original_initialize_schema = CatalogDatabase._initialize_schema
+        initialize_calls = []
+
+        def tracked_initialize_schema(database):
+            initialize_calls.append(database)
+            return original_initialize_schema(database)
+
+        with mock.patch.object(
+            CatalogDatabase,
+            "_initialize_schema",
+            tracked_initialize_schema,
+        ):
+            response = self.multipart_receipt(
+                idempotency_key="receipt-one-catalog-initialize",
+            )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(len(initialize_calls), 1)
+        self.assertTrue(initialize_calls[0].cache_initialization)
+
     def test_multipart_receipt_saves_png_jpeg_and_comment(self):
         fixtures = (
             (
