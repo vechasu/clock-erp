@@ -1,6 +1,7 @@
 import os
 import sqlite3
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -237,6 +238,79 @@ CREATE INDEX IF NOT EXISTS idx_catalog_excel_batches_status
 CREATE INDEX IF NOT EXISTS idx_catalog_excel_batches_file_sha256
     ON catalog_excel_batches(file_sha256);
 
+CREATE TABLE IF NOT EXISTS erp_brands (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    normalized_name TEXT NOT NULL UNIQUE,
+    active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS erp_categories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    brand_id INTEGER NOT NULL REFERENCES erp_brands(id) ON DELETE RESTRICT,
+    name TEXT NOT NULL,
+    normalized_name TEXT NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (brand_id, normalized_name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_erp_categories_brand
+    ON erp_categories(brand_id, active, normalized_name);
+
+CREATE TABLE IF NOT EXISTS erp_catalog_normalization_audit (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_type TEXT NOT NULL CHECK (entity_type IN ('brand', 'category', 'product')),
+    normalized_name TEXT NOT NULL,
+    canonical_id TEXT,
+    canonical_name TEXT NOT NULL,
+    variant_name TEXT NOT NULL,
+    occurrence_count INTEGER NOT NULL DEFAULT 1,
+    resolution TEXT NOT NULL CHECK (resolution IN ('linked', 'ambiguous')),
+    details_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    UNIQUE (entity_type, normalized_name, canonical_id, variant_name)
+);
+
+CREATE TABLE IF NOT EXISTS erp_schema_migrations (
+    version TEXT PRIMARY KEY,
+    applied_at TEXT NOT NULL,
+    details_json TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE TABLE IF NOT EXISTS erp_legacy_catalog_links (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_type TEXT NOT NULL CHECK (entity_type IN ('sale', 'receipt')),
+    entity_id TEXT NOT NULL,
+    position_index INTEGER NOT NULL DEFAULT 0,
+    product_id INTEGER NOT NULL
+        REFERENCES catalog_excel_products(id) ON DELETE RESTRICT,
+    match_method TEXT NOT NULL,
+    snapshot_product_id TEXT,
+    snapshot_name TEXT,
+    created_at TEXT NOT NULL,
+    UNIQUE (entity_type, entity_id, position_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_erp_legacy_catalog_links_product
+    ON erp_legacy_catalog_links(product_id, entity_type);
+
+CREATE TABLE IF NOT EXISTS erp_legacy_catalog_ambiguities (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_type TEXT NOT NULL CHECK (entity_type IN ('sale', 'receipt')),
+    entity_id TEXT NOT NULL,
+    position_index INTEGER NOT NULL DEFAULT 0,
+    snapshot_product_id TEXT,
+    snapshot_name TEXT,
+    candidate_product_ids_json TEXT NOT NULL DEFAULT '[]',
+    resolution TEXT NOT NULL DEFAULT 'manual_review',
+    created_at TEXT NOT NULL,
+    UNIQUE (entity_type, entity_id, position_index)
+);
+
 CREATE TABLE IF NOT EXISTS catalog_excel_products (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source_key TEXT NOT NULL UNIQUE,
@@ -251,6 +325,8 @@ CREATE TABLE IF NOT EXISTS catalog_excel_products (
     article_quality TEXT NOT NULL,
     excel_brand TEXT NOT NULL,
     excel_category TEXT,
+    brand_id INTEGER REFERENCES erp_brands(id) ON DELETE RESTRICT,
+    category_id INTEGER REFERENCES erp_categories(id) ON DELETE RESTRICT,
     stock REAL NOT NULL,
     cell TEXT,
     stock_source TEXT NOT NULL DEFAULT 'excel',
@@ -263,6 +339,7 @@ CREATE TABLE IF NOT EXISTS catalog_excel_products (
     bitrix_link_cardinality TEXT NOT NULL DEFAULT 'unlinked',
     shared_bitrix_row_count INTEGER NOT NULL DEFAULT 0,
     bitrix_catalog_product_id INTEGER REFERENCES catalog_products(id) ON DELETE SET NULL,
+    moysklad_product_id TEXT,
     bitrix_external_product_id TEXT,
     bitrix_xml_id TEXT,
     bitrix_name TEXT,
@@ -463,6 +540,8 @@ CREATE TABLE IF NOT EXISTS catalog_excel_receipt_rows (
     excel_article TEXT,
     excel_brand TEXT NOT NULL,
     excel_category TEXT,
+    brand_id INTEGER REFERENCES erp_brands(id) ON DELETE RESTRICT,
+    category_id INTEGER REFERENCES erp_categories(id) ON DELETE RESTRICT,
     cell TEXT,
     quantity REAL NOT NULL CHECK (quantity >= 0),
     stock_before REAL NOT NULL,
@@ -508,6 +587,8 @@ CREATE INDEX IF NOT EXISTS idx_catalog_excel_manual_stock_product
 CREATE TABLE IF NOT EXISTS erp_sales (
     id TEXT PRIMARY KEY,
     source TEXT NOT NULL,
+    external_order_id TEXT,
+    idempotency_key TEXT UNIQUE,
     status TEXT NOT NULL DEFAULT 'completed' CHECK (
         status IN ('completed', 'partially_returned', 'returned')
     ),
@@ -528,6 +609,8 @@ CREATE TABLE IF NOT EXISTS erp_sale_items (
     sale_id TEXT NOT NULL REFERENCES erp_sales(id) ON DELETE RESTRICT,
     product_id INTEGER NOT NULL
         REFERENCES catalog_excel_products(id) ON DELETE RESTRICT,
+    brand_id INTEGER REFERENCES erp_brands(id) ON DELETE RESTRICT,
+    category_id INTEGER REFERENCES erp_categories(id) ON DELETE RESTRICT,
     quantity REAL NOT NULL CHECK (quantity > 0),
     unit_price REAL NOT NULL CHECK (unit_price >= 0),
     returned_quantity REAL NOT NULL DEFAULT 0 CHECK (
@@ -546,6 +629,42 @@ CREATE INDEX IF NOT EXISTS idx_erp_sale_items_sale
 CREATE INDEX IF NOT EXISTS idx_erp_sale_items_product
     ON erp_sale_items(product_id, created_at);
 
+CREATE TABLE IF NOT EXISTS erp_receipts (
+    id TEXT PRIMARY KEY,
+    number TEXT,
+    status TEXT NOT NULL DEFAULT 'posted' CHECK (
+        status IN ('posted', 'cancelled')
+    ),
+    receipt_date TEXT NOT NULL,
+    user_name TEXT,
+    idempotency_key TEXT UNIQUE,
+    metadata_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    cancelled_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_erp_receipts_status_date
+    ON erp_receipts(status, receipt_date);
+
+CREATE TABLE IF NOT EXISTS erp_receipt_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    receipt_id TEXT NOT NULL REFERENCES erp_receipts(id) ON DELETE RESTRICT,
+    product_id INTEGER NOT NULL
+        REFERENCES catalog_excel_products(id) ON DELETE RESTRICT,
+    brand_id INTEGER REFERENCES erp_brands(id) ON DELETE RESTRICT,
+    category_id INTEGER REFERENCES erp_categories(id) ON DELETE RESTRICT,
+    quantity REAL NOT NULL CHECK (quantity > 0),
+    purchase_price REAL NOT NULL DEFAULT 0 CHECK (purchase_price >= 0),
+    active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_erp_receipt_items_receipt
+    ON erp_receipt_items(receipt_id, id);
+CREATE INDEX IF NOT EXISTS idx_erp_receipt_items_product
+    ON erp_receipt_items(product_id, created_at);
+
 CREATE TABLE IF NOT EXISTS catalog_stock_movements (
     id TEXT PRIMARY KEY,
     product_id INTEGER NOT NULL
@@ -556,6 +675,7 @@ CREATE TABLE IF NOT EXISTS catalog_stock_movements (
             'receipt',
             'sale',
             'return',
+            'cancellation',
             'manual_adjustment'
         )
     ),
@@ -564,6 +684,10 @@ CREATE TABLE IF NOT EXISTS catalog_stock_movements (
     sale_id TEXT REFERENCES erp_sales(id) ON DELETE RESTRICT,
     sale_item_id INTEGER
         REFERENCES erp_sale_items(id) ON DELETE RESTRICT,
+    receipt_id TEXT REFERENCES erp_receipts(id) ON DELETE RESTRICT,
+    receipt_item_id INTEGER
+        REFERENCES erp_receipt_items(id) ON DELETE RESTRICT,
+    idempotency_key TEXT,
     source TEXT,
     user_name TEXT,
     comment TEXT,
@@ -596,6 +720,8 @@ class CatalogDatabase:
             connection.executescript(SCHEMA)
             self._ensure_excel_receipt_constraints(connection)
             self._ensure_excel_cardinality_columns(connection)
+            self._ensure_shared_catalog(connection)
+            self._ensure_stock_movement_constraints(connection)
 
     @staticmethod
     def _ensure_excel_receipt_constraints(connection):
@@ -761,6 +887,301 @@ class CatalogDatabase:
                         row["bitrix_catalog_product_id"],
                     ),
                 )
+
+    @staticmethod
+    def _ensure_shared_catalog(connection):
+        """Add stable taxonomy IDs and safely backfill exact normalized matches."""
+        migrations = {
+            "catalog_excel_products": (
+                ("brand_id", "INTEGER REFERENCES erp_brands(id) ON DELETE RESTRICT"),
+                ("category_id", "INTEGER REFERENCES erp_categories(id) ON DELETE RESTRICT"),
+                ("moysklad_product_id", "TEXT"),
+            ),
+            "catalog_excel_receipt_rows": (
+                ("brand_id", "INTEGER REFERENCES erp_brands(id) ON DELETE RESTRICT"),
+                ("category_id", "INTEGER REFERENCES erp_categories(id) ON DELETE RESTRICT"),
+            ),
+            "erp_sale_items": (
+                ("brand_id", "INTEGER REFERENCES erp_brands(id) ON DELETE RESTRICT"),
+                ("category_id", "INTEGER REFERENCES erp_categories(id) ON DELETE RESTRICT"),
+            ),
+            "erp_receipt_items": (
+                ("active", "INTEGER NOT NULL DEFAULT 1"),
+            ),
+            "erp_sales": (
+                ("external_order_id", "TEXT"),
+                ("idempotency_key", "TEXT"),
+            ),
+            "catalog_stock_movements": (
+                ("receipt_id", "TEXT REFERENCES erp_receipts(id) ON DELETE RESTRICT"),
+                (
+                    "receipt_item_id",
+                    "INTEGER REFERENCES erp_receipt_items(id) ON DELETE RESTRICT",
+                ),
+                ("idempotency_key", "TEXT"),
+            ),
+        }
+        for table, columns in migrations.items():
+            existing = {
+                row[1]
+                for row in connection.execute(
+                    "PRAGMA table_info({})".format(table)
+                )
+            }
+            for column, definition in columns:
+                if column not in existing:
+                    connection.execute(
+                        "ALTER TABLE {} ADD COLUMN {} {}".format(
+                            table,
+                            column,
+                            definition,
+                        )
+                    )
+
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_catalog_excel_products_brand_id "
+            "ON catalog_excel_products(brand_id, active, id)"
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_catalog_excel_products_category_id "
+            "ON catalog_excel_products(category_id, active, id)"
+        )
+        connection.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_catalog_excel_products_moysklad "
+            "ON catalog_excel_products(moysklad_product_id) "
+            "WHERE moysklad_product_id IS NOT NULL"
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_catalog_receipt_rows_taxonomy "
+            "ON catalog_excel_receipt_rows(brand_id, category_id, product_id)"
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_erp_sale_items_taxonomy "
+            "ON erp_sale_items(brand_id, category_id, product_id)"
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_erp_receipt_items_active "
+            "ON erp_receipt_items(receipt_id, active, id)"
+        )
+        connection.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_erp_sales_idempotency "
+            "ON erp_sales(idempotency_key) WHERE idempotency_key IS NOT NULL"
+        )
+        connection.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_erp_sales_source_external "
+            "ON erp_sales(source, external_order_id) "
+            "WHERE external_order_id IS NOT NULL AND trim(external_order_id) <> ''"
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_catalog_stock_movements_receipt "
+            "ON catalog_stock_movements(receipt_id, created_at)"
+        )
+        connection.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS "
+            "idx_catalog_stock_movements_idempotency "
+            "ON catalog_stock_movements(idempotency_key) "
+            "WHERE idempotency_key IS NOT NULL"
+        )
+
+        now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+        def cleaned(value):
+            return str(value or "").strip()
+
+        def normalized(value):
+            return cleaned(value).casefold()
+
+        def ensure_brand(name):
+            display_name = cleaned(name)
+            key = normalized(display_name)
+            if not key:
+                return None
+            row = connection.execute(
+                "SELECT id, name FROM erp_brands WHERE normalized_name = ?",
+                (key,),
+            ).fetchone()
+            if row is None:
+                connection.execute(
+                    "INSERT INTO erp_brands "
+                    "(name, normalized_name, active, created_at, updated_at) "
+                    "VALUES (?, ?, 1, ?, ?)",
+                    (display_name, key, now, now),
+                )
+                row = connection.execute(
+                    "SELECT id, name FROM erp_brands WHERE normalized_name = ?",
+                    (key,),
+                ).fetchone()
+            elif row["name"] != display_name:
+                connection.execute(
+                    "INSERT OR IGNORE INTO erp_catalog_normalization_audit "
+                    "(entity_type, normalized_name, canonical_id, canonical_name, "
+                    "variant_name, occurrence_count, resolution, created_at) "
+                    "VALUES ('brand', ?, ?, ?, ?, 1, 'linked', ?)",
+                    (key, str(row["id"]), row["name"], display_name, now),
+                )
+            return row
+
+        def ensure_category(brand_id, name):
+            display_name = cleaned(name)
+            key = normalized(display_name)
+            if not brand_id or not key:
+                return None
+            row = connection.execute(
+                "SELECT id, name FROM erp_categories "
+                "WHERE brand_id = ? AND normalized_name = ?",
+                (int(brand_id), key),
+            ).fetchone()
+            if row is None:
+                connection.execute(
+                    "INSERT INTO erp_categories "
+                    "(brand_id, name, normalized_name, active, created_at, updated_at) "
+                    "VALUES (?, ?, ?, 1, ?, ?)",
+                    (int(brand_id), display_name, key, now, now),
+                )
+                row = connection.execute(
+                    "SELECT id, name FROM erp_categories "
+                    "WHERE brand_id = ? AND normalized_name = ?",
+                    (int(brand_id), key),
+                ).fetchone()
+            elif row["name"] != display_name:
+                connection.execute(
+                    "INSERT OR IGNORE INTO erp_catalog_normalization_audit "
+                    "(entity_type, normalized_name, canonical_id, canonical_name, "
+                    "variant_name, occurrence_count, resolution, details_json, created_at) "
+                    "VALUES ('category', ?, ?, ?, ?, 1, 'linked', ?, ?)",
+                    (
+                        key,
+                        str(row["id"]),
+                        row["name"],
+                        display_name,
+                        '{"brand_id": %d}' % int(brand_id),
+                        now,
+                    ),
+                )
+            return row
+
+        products = connection.execute(
+            "SELECT id, excel_brand, excel_category "
+            "FROM catalog_excel_products "
+            "WHERE (trim(COALESCE(excel_brand, '')) <> '' AND brand_id IS NULL) "
+            "OR (trim(COALESCE(excel_category, '')) <> '' AND category_id IS NULL) "
+            "ORDER BY id"
+        ).fetchall()
+        for product in products:
+            brand = ensure_brand(product["excel_brand"])
+            category = ensure_category(
+                brand["id"] if brand else None,
+                product["excel_category"],
+            )
+            connection.execute(
+                "UPDATE catalog_excel_products SET "
+                "brand_id = ?, category_id = ?, excel_brand = ?, excel_category = ? "
+                "WHERE id = ?",
+                (
+                    brand["id"] if brand else None,
+                    category["id"] if category else None,
+                    brand["name"] if brand else cleaned(product["excel_brand"]),
+                    category["name"] if category else (
+                        cleaned(product["excel_category"]) or None
+                    ),
+                    product["id"],
+                ),
+            )
+
+        connection.execute(
+            "UPDATE erp_sale_items SET "
+            "brand_id = (SELECT p.brand_id FROM catalog_excel_products p "
+            "WHERE p.id = erp_sale_items.product_id), "
+            "category_id = (SELECT p.category_id FROM catalog_excel_products p "
+            "WHERE p.id = erp_sale_items.product_id) "
+            "WHERE brand_id IS NULL OR category_id IS NULL"
+        )
+        connection.execute(
+            "UPDATE catalog_excel_receipt_rows SET "
+            "brand_id = (SELECT p.brand_id FROM catalog_excel_products p "
+            "WHERE p.id = catalog_excel_receipt_rows.product_id), "
+            "category_id = (SELECT p.category_id FROM catalog_excel_products p "
+            "WHERE p.id = catalog_excel_receipt_rows.product_id) "
+            "WHERE brand_id IS NULL OR category_id IS NULL"
+        )
+
+    @staticmethod
+    def _ensure_stock_movement_constraints(connection):
+        """Allow explicit cancellation movements without losing history."""
+        table = connection.execute(
+            "SELECT sql FROM sqlite_master "
+            "WHERE type = 'table' AND name = 'catalog_stock_movements'"
+        ).fetchone()
+        if table is None or "'cancellation'" in (table["sql"] or ""):
+            return
+
+        connection.commit()
+        connection.execute("PRAGMA foreign_keys = OFF")
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(
+                "CREATE TABLE catalog_stock_movements_migrating ("
+                "id TEXT PRIMARY KEY, "
+                "product_id INTEGER NOT NULL REFERENCES "
+                "catalog_excel_products(id) ON DELETE RESTRICT, "
+                "movement_type TEXT NOT NULL CHECK (movement_type IN ("
+                "'initial_stock', 'receipt', 'sale', 'return', "
+                "'cancellation', 'manual_adjustment')), "
+                "quantity_delta REAL NOT NULL CHECK (quantity_delta != 0), "
+                "stock_after REAL NOT NULL CHECK (stock_after >= 0), "
+                "sale_id TEXT REFERENCES erp_sales(id) ON DELETE RESTRICT, "
+                "sale_item_id INTEGER REFERENCES erp_sale_items(id) "
+                "ON DELETE RESTRICT, "
+                "receipt_id TEXT REFERENCES erp_receipts(id) ON DELETE RESTRICT, "
+                "receipt_item_id INTEGER REFERENCES erp_receipt_items(id) "
+                "ON DELETE RESTRICT, "
+                "idempotency_key TEXT, source TEXT, user_name TEXT, "
+                "comment TEXT, created_at TEXT NOT NULL)"
+            )
+            connection.execute(
+                "INSERT INTO catalog_stock_movements_migrating "
+                "(id, product_id, movement_type, quantity_delta, stock_after, "
+                "sale_id, sale_item_id, receipt_id, receipt_item_id, "
+                "idempotency_key, source, user_name, comment, created_at) "
+                "SELECT id, product_id, movement_type, quantity_delta, "
+                "stock_after, sale_id, sale_item_id, receipt_id, "
+                "receipt_item_id, idempotency_key, source, user_name, "
+                "comment, created_at FROM catalog_stock_movements"
+            )
+            connection.execute("DROP TABLE catalog_stock_movements")
+            connection.execute(
+                "ALTER TABLE catalog_stock_movements_migrating "
+                "RENAME TO catalog_stock_movements"
+            )
+            connection.execute(
+                "CREATE INDEX idx_catalog_stock_movements_product "
+                "ON catalog_stock_movements(product_id, created_at)"
+            )
+            connection.execute(
+                "CREATE INDEX idx_catalog_stock_movements_sale "
+                "ON catalog_stock_movements(sale_id, created_at)"
+            )
+            connection.execute(
+                "CREATE INDEX idx_catalog_stock_movements_receipt "
+                "ON catalog_stock_movements(receipt_id, created_at)"
+            )
+            connection.execute(
+                "CREATE UNIQUE INDEX idx_catalog_stock_movements_idempotency "
+                "ON catalog_stock_movements(idempotency_key) "
+                "WHERE idempotency_key IS NOT NULL"
+            )
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.execute("PRAGMA foreign_keys = ON")
+
+        violations = connection.execute("PRAGMA foreign_key_check").fetchall()
+        if violations:
+            raise sqlite3.IntegrityError(
+                "Stock movement schema migration created foreign key violations"
+            )
 
     @contextmanager
     def transaction(self):

@@ -1,0 +1,112 @@
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
+
+import { ApiRequestError } from '../../api/client';
+import { Modal } from '../../components/Modal';
+import { createCatalogBrand, createCatalogCategory, createCatalogProduct } from './api';
+
+export interface CatalogCreationRequest {
+  kind: 'brand' | 'category' | 'product';
+  brandId?: number;
+  categoryId?: number;
+}
+
+interface CatalogCreationModalProps {
+  request: CatalogCreationRequest | null;
+  onClose: () => void;
+  onCreated: (message: string) => void;
+}
+
+export function CatalogCreationModal({ request, onClose, onCreated }: CatalogCreationModalProps) {
+  const queryClient = useQueryClient();
+  const [name, setName] = useState('');
+  const [article, setArticle] = useState('');
+
+  useEffect(() => {
+    setName('');
+    setArticle('');
+  }, [request]);
+
+  const mutation = useMutation({
+    mutationFn: async () => {
+      if (!request) throw new Error('Не выбран тип справочника');
+      if (request.kind === 'brand') return createCatalogBrand(name);
+      if (request.kind === 'category') {
+        if (!request.brandId) throw new Error('Сначала выберите бренд');
+        return createCatalogCategory(request.brandId, name);
+      }
+      if (!request.brandId || !request.categoryId) {
+        throw new Error('Сначала выберите бренд и категорию');
+      }
+      return createCatalogProduct({
+        name,
+        article,
+        brand_id: request.brandId,
+        category_id: request.categoryId,
+      });
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['catalog-options'] });
+      await queryClient.invalidateQueries({ queryKey: ['products'] });
+      onCreated(
+        request?.kind === 'brand'
+          ? 'Бренд создан'
+          : request?.kind === 'category'
+            ? 'Категория создана'
+            : 'Товар создан и доступен во всех трёх разделах',
+      );
+      onClose();
+    },
+  });
+
+  const title =
+    request?.kind === 'brand'
+      ? 'Новый бренд'
+      : request?.kind === 'category'
+        ? 'Новая категория'
+        : 'Новый товар';
+  const error =
+    mutation.error instanceof ApiRequestError
+      ? mutation.error.message
+      : mutation.error instanceof Error
+        ? mutation.error.message
+        : '';
+
+  return (
+    <Modal
+      open={request !== null}
+      title={title}
+      description="Значение сохраняется в едином справочнике Vechasu ERP."
+      onClose={onClose}
+      footer={
+        <>
+          <button className="button secondary" type="button" onClick={onClose}>
+            Отмена
+          </button>
+          <button
+            className="button primary"
+            type="button"
+            disabled={!name.trim() || mutation.isPending}
+            onClick={() => mutation.mutate()}
+          >
+            {mutation.isPending ? 'Создаём…' : 'Создать'}
+          </button>
+        </>
+      }
+    >
+      <div className="erp-form">
+        <label className="form-field span-2">
+          <span>Название *</span>
+          <input value={name} onChange={(event) => setName(event.target.value)} />
+        </label>
+        {request?.kind === 'product' ? (
+          <label className="form-field">
+            <span>Артикул</span>
+            <input value={article} onChange={(event) => setArticle(event.target.value)} />
+          </label>
+        ) : null}
+        {error ? <p className="form-error">{error}</p> : null}
+      </div>
+    </Modal>
+  );
+}

@@ -22,6 +22,7 @@ import { PageState } from '../../components/PageState';
 import { TablePagination } from '../../components/TablePagination';
 import { Toast } from '../../components/Toast';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
+import { CatalogCascade } from '../catalog/CatalogComboboxes';
 import {
   bulkUpdateProducts,
   createBrand,
@@ -71,12 +72,12 @@ export function ProductsPage() {
   const [galleryTarget, setGalleryTarget] = useState<Product | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [bulkEditorOpen, setBulkEditorOpen] = useState(false);
-  const [bulkBrand, setBulkBrand] = useState('');
-  const [bulkCategory, setBulkCategory] = useState('');
+  const [bulkBrandId, setBulkBrandId] = useState<number | null>(null);
+  const [bulkCategoryId, setBulkCategoryId] = useState<number | null>(null);
   const [bulkCell, setBulkCell] = useState('');
   const [taxonomyEditor, setTaxonomyEditor] = useState<{
     kind: 'brand' | 'category';
-    brand: string;
+    brandId: number | null;
   } | null>(null);
   const [taxonomyName, setTaxonomyName] = useState('');
   const [toast, setToast] = useState<{ message: string; kind: 'success' | 'error' } | null>(null);
@@ -136,8 +137,8 @@ export function ProductsPage() {
   const bulkMutation = useMutation({
     mutationFn: () => {
       const changes = {
-        ...(bulkBrand ? { brand: bulkBrand } : {}),
-        ...(bulkCategory ? { category: bulkCategory } : {}),
+        ...(bulkBrandId ? { brand_id: bulkBrandId } : {}),
+        ...(bulkCategoryId ? { category_id: bulkCategoryId } : {}),
         ...(bulkCell ? { cell: bulkCell } : {}),
       };
       return bulkUpdateProducts([...selectedIds], changes);
@@ -146,8 +147,8 @@ export function ProductsPage() {
       await invalidate();
       setBulkEditorOpen(false);
       setSelectedIds(new Set());
-      setBulkBrand('');
-      setBulkCategory('');
+      setBulkBrandId(null);
+      setBulkCategoryId(null);
       setBulkCell('');
       setToast({
         message: `Массово обновлено товаров: ${result.updated}`,
@@ -161,10 +162,11 @@ export function ProductsPage() {
       if (!taxonomyEditor) throw new Error('Не выбран тип справочника');
       return taxonomyEditor.kind === 'brand'
         ? createBrand(taxonomyName)
-        : createCategory(taxonomyEditor.brand, taxonomyName);
+        : createCategory(taxonomyEditor.brandId!, taxonomyName);
     },
     onSuccess: async () => {
       await invalidate();
+      await queryClient.invalidateQueries({ queryKey: ['catalog-options'] });
       setToast({
         message: taxonomyEditor?.kind === 'brand' ? 'Бренд создан' : 'Категория создана',
         kind: 'success',
@@ -180,6 +182,26 @@ export function ProductsPage() {
     if (value) next.set(key, value);
     else next.delete(key);
     if (resetPage) next.set('page', '1');
+    setSearchParams(next);
+  };
+  const setCatalogFilters = (
+    brandId: number | null,
+    categoryId: number | null,
+    productId: string,
+  ) => {
+    const next = new URLSearchParams(searchParams);
+    const values = {
+      brand_id: brandId ? String(brandId) : '',
+      category_id: categoryId ? String(categoryId) : '',
+      product_id: productId,
+    };
+    Object.entries(values).forEach(([key, value]) => {
+      if (value) next.set(key, value);
+      else next.delete(key);
+    });
+    next.delete('brand');
+    next.delete('category');
+    next.set('page', '1');
     setSearchParams(next);
   };
   const products = productsQuery.data?.products ?? [];
@@ -362,39 +384,33 @@ export function ProductsPage() {
             />
             <FilterPanel
               count={
-                ['brand', 'category', 'cell', 'date_from', 'date_to', 'in_stock'].filter((key) =>
-                  searchParams.get(key),
-                ).length
+                [
+                  'brand_id',
+                  'category_id',
+                  'product_id',
+                  'cell',
+                  'date_from',
+                  'date_to',
+                  'in_stock',
+                ].filter((key) => searchParams.get(key)).length
               }
             >
-              <label>
-                Бренд
-                <select
-                  value={searchParams.get('brand') ?? ''}
-                  onChange={(event) => setFilter('brand', event.target.value)}
-                >
-                  <option value="">Все бренды</option>
-                  {meta?.facets.brands.map((item) => (
-                    <option key={item.name} value={item.name}>
-                      {item.name} ({item.count})
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Категория
-                <select
-                  value={searchParams.get('category') ?? ''}
-                  onChange={(event) => setFilter('category', event.target.value)}
-                >
-                  <option value="">Все категории</option>
-                  {meta?.facets.categories.map((item) => (
-                    <option key={item.name} value={item.name}>
-                      {item.name} ({item.count})
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <CatalogCascade
+                brandId={Number(searchParams.get('brand_id')) || null}
+                categoryId={Number(searchParams.get('category_id')) || null}
+                productId={searchParams.get('product_id') ?? ''}
+                onBrandChange={(brandId) => setCatalogFilters(brandId, null, '')}
+                onCategoryChange={(categoryId) =>
+                  setCatalogFilters(Number(searchParams.get('brand_id')) || null, categoryId, '')
+                }
+                onProductChange={(productId) =>
+                  setCatalogFilters(
+                    Number(searchParams.get('brand_id')) || null,
+                    Number(searchParams.get('category_id')) || null,
+                    productId,
+                  )
+                }
+              />
               <label>
                 Ячейка
                 <select
@@ -586,15 +602,13 @@ export function ProductsPage() {
         <ProductForm
           id="product-editor"
           product={editor === 'new' ? null : editor}
-          brands={meta?.facets.brands.map((item) => item.name)}
-          categories={meta?.facets.categories.map((item) => item.name)}
-          onCreateBrand={() => setTaxonomyEditor({ kind: 'brand', brand: '' })}
-          onCreateCategory={(brand) => {
-            if (!brand.trim()) {
+          onCreateBrand={() => setTaxonomyEditor({ kind: 'brand', brandId: null })}
+          onCreateCategory={(brandId) => {
+            if (!brandId) {
               setToast({ message: 'Сначала укажите бренд', kind: 'error' });
               return;
             }
-            setTaxonomyEditor({ kind: 'category', brand });
+            setTaxonomyEditor({ kind: 'category', brandId });
           }}
           onSubmit={(values) => {
             if (editor) saveMutation.mutate({ product: editor, values });
@@ -620,7 +634,7 @@ export function ProductsPage() {
         title={taxonomyEditor?.kind === 'brand' ? 'Новый бренд' : 'Новая категория'}
         description={
           taxonomyEditor?.kind === 'category'
-            ? `Бренд: ${taxonomyEditor.brand}`
+            ? `Категория будет связана с брендом ID ${taxonomyEditor.brandId}.`
             : 'Значение появится в общем справочнике.'
         }
         onClose={() => setTaxonomyEditor(null)}
@@ -666,7 +680,7 @@ export function ProductsPage() {
             <button
               className="button primary"
               type="button"
-              disabled={bulkMutation.isPending || (!bulkBrand && !bulkCategory && !bulkCell)}
+              disabled={bulkMutation.isPending || (!bulkBrandId && !bulkCategoryId && !bulkCell)}
               onClick={() => bulkMutation.mutate()}
             >
               {bulkMutation.isPending ? 'Применяем…' : 'Применить'}
@@ -675,14 +689,17 @@ export function ProductsPage() {
         }
       >
         <div className="erp-form">
-          <label className="form-field">
-            <span>Бренд</span>
-            <input value={bulkBrand} onChange={(event) => setBulkBrand(event.target.value)} />
-          </label>
-          <label className="form-field">
-            <span>Категория</span>
-            <input value={bulkCategory} onChange={(event) => setBulkCategory(event.target.value)} />
-          </label>
+          <CatalogCascade
+            showProduct={false}
+            required={false}
+            brandId={bulkBrandId}
+            categoryId={bulkCategoryId}
+            onBrandChange={(brandId) => {
+              setBulkBrandId(brandId);
+              setBulkCategoryId(null);
+            }}
+            onCategoryChange={(categoryId) => setBulkCategoryId(categoryId)}
+          />
           <label className="form-field">
             <span>Ячейка</span>
             <input value={bulkCell} onChange={(event) => setBulkCell(event.target.value)} />

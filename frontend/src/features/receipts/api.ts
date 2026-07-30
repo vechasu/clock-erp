@@ -25,12 +25,29 @@ export async function fetchReceiptCatalog(query = '') {
 }
 
 export async function createReceipt(values: ReceiptFormValues) {
-  return (await apiRequest('/receipts', receiptSchema, jsonRequestInit('POST', values))).data;
+  return (
+    await apiRequest(
+      '/receipts',
+      receiptSchema,
+      jsonRequestInit('POST', {
+        ...values,
+        idempotency_key: crypto.randomUUID(),
+      }),
+    )
+  ).data;
 }
 
 export async function updateReceipt(id: string, values: ReceiptFormValues) {
-  return (await apiRequest(`/receipts/${id}`, receiptSchema, jsonRequestInit('PATCH', values)))
-    .data;
+  return (
+    await apiRequest(
+      `/receipts/${id}`,
+      receiptSchema,
+      jsonRequestInit('PATCH', {
+        ...values,
+        idempotency_key: crypto.randomUUID(),
+      }),
+    )
+  ).data;
 }
 
 export async function deleteReceipt(id: string) {

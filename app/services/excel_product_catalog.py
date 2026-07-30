@@ -20,6 +20,12 @@ from app.services.product_reconciliation import (
     normalize_text,
     text,
 )
+from app.services.shared_catalog import (
+    DuplicateCatalogValueError,
+    assign_product_taxonomy,
+    ensure_brand,
+    ensure_category,
+)
 
 
 MATCH_COLUMNS = (
@@ -227,6 +233,15 @@ def _restore_columns(connection, product_id, state, columns):
         "UPDATE catalog_excel_products SET {} WHERE id = ?".format(assignments),
         [state.get(column) for column in columns] + [int(product_id)],
     )
+    if "excel_brand" in columns or "excel_category" in columns:
+        assign_product_taxonomy(
+            connection,
+            product_id,
+            brand=state.get("excel_brand"),
+            category=state.get("excel_category"),
+            brand_id=state.get("brand_id"),
+            category_id=state.get("category_id"),
+        )
 
 
 def _refresh_link_cardinality(connection, catalog_product_ids=None):
@@ -419,6 +434,12 @@ class ExcelProductBatchService:
                     created_product = False
                     stock_before = float(product["stock"])
                     _restore_columns(connection, product_id, state, PRODUCT_MUTABLE_COLUMNS)
+                assign_product_taxonomy(
+                    connection,
+                    product_id,
+                    brand=state.get("excel_brand"),
+                    category=state.get("excel_category"),
+                )
                 self._record_change(
                     connection, batch_id, product_id, source_key, result["excel_row"],
                     "excel_row", created_product, before, state, stock_before,
@@ -663,7 +684,8 @@ class ExcelProductCatalog:
     def list_products(self, query="", brand="", category="", cell="",
                       match_status="all", hide_zero=False, sort_by="name",
                       sort_dir="asc", page=1, per_page=50,
-                      created_from="", created_to=""):
+                      created_from="", created_to="", brand_id=None,
+                      category_id=None, product_id=None):
         self.database.initialize()
         page = max(1, int(page))
         per_page = max(1, min(int(per_page), 100000))
@@ -727,6 +749,12 @@ class ExcelProductCatalog:
                 "1, length(?) + 1) = ? || '/')"
             )
             parameters.extend([category, category, category])
+        if category_id not in (None, ""):
+            where.append("p.category_id = ?")
+            parameters.append(int(category_id))
+        if product_id not in (None, ""):
+            where.append("p.id = ?")
+            parameters.append(int(product_id))
         if cell:
             if cell == "Без ячейки":
                 where.append("trim(COALESCE(p.cell, '')) = ''")
@@ -751,6 +779,9 @@ class ExcelProductCatalog:
         if brand:
             where.append("COALESCE(p.excel_brand, '') = ?")
             parameters.append(brand)
+        if brand_id not in (None, ""):
+            where.append("p.brand_id = ?")
+            parameters.append(int(brand_id))
         where_sql = " WHERE " + " AND ".join(where)
         brand_facet_where_sql = (
             " WHERE " + " AND ".join(brand_facet_where)
@@ -884,7 +915,8 @@ class ExcelProductCatalog:
         return self._prepare_product(dict(row)) if row else None
 
     def create_product(
-            self, name, article="", brand="", category="", cell="", stock=0):
+            self, name, article="", brand="", category="", cell="", stock=0,
+            brand_id=None, category_id=None, enforce_unique=False):
         name = text(name)
         if not name:
             raise ValueError("Название товара обязательно.")
@@ -897,6 +929,50 @@ class ExcelProductCatalog:
         stock = parse_initial_stock(stock)
         self.database.initialize()
         with self.database.transaction() as connection:
+            brand_row = ensure_brand(
+                connection,
+                name=brand,
+                brand_id=brand_id,
+                create=True,
+            )
+            category_row = ensure_category(
+                connection,
+                brand_row["id"] if brand_row else None,
+                name=category,
+                category_id=category_id,
+                create=True,
+            )
+            brand = brand_row["name"] if brand_row else ""
+            category = category_row["name"] if category_row else ""
+            duplicate = connection.execute(
+                "SELECT id, excel_name_raw FROM catalog_excel_products "
+                "WHERE active = 1 AND normalized_name = ? "
+                "AND COALESCE(brand_id, 0) = COALESCE(?, 0) "
+                "AND COALESCE(category_id, 0) = COALESCE(?, 0) "
+                "ORDER BY id LIMIT 1",
+                (
+                    normalize_text(name),
+                    brand_row["id"] if brand_row else None,
+                    category_row["id"] if category_row else None,
+                ),
+            ).fetchone()
+            if enforce_unique and duplicate is not None:
+                raise DuplicateCatalogValueError(
+                    "Такой товар уже существует: {} (ID {}).".format(
+                        duplicate["excel_name_raw"], duplicate["id"]
+                    ),
+                    {
+                        "id": str(duplicate["id"]),
+                        "product_id": str(duplicate["id"]),
+                        "name": duplicate["excel_name_raw"],
+                        "brand_id": (
+                            brand_row["id"] if brand_row else None
+                        ),
+                        "category_id": (
+                            category_row["id"] if category_row else None
+                        ),
+                    },
+                )
             batch = connection.execute(
                 "SELECT * FROM catalog_excel_batches WHERE status = 'active' "
                 "ORDER BY applied_at DESC LIMIT 1"
@@ -913,6 +989,7 @@ class ExcelProductCatalog:
                 "source_key", "created_batch_id", "current_batch_id", "active",
                 "raw_excel_json", "excel_row", "excel_name_raw", "normalized_name",
                 "excel_article", "article_quality", "excel_brand", "excel_category",
+                "brand_id", "category_id",
                 "stock", "cell", "stock_source", "file_sha256", "match_status",
                 "match_method", "match_confidence", "match_decision", "candidates_json",
                 "bitrix_link_cardinality", "shared_bitrix_row_count",
@@ -923,7 +1000,10 @@ class ExcelProductCatalog:
                        "brand": brand, "category": category, "cell": cell,
                        "stock": stock}),
                 excel_row, name, normalize_text(name), article or None,
-                article_quality(article), brand, category or None, stock, cell or None,
+                article_quality(article), brand, category or None,
+                brand_row["id"] if brand_row else None,
+                category_row["id"] if category_row else None,
+                stock, cell or None,
                 "manual", batch["file_sha256"], "not_found", "manual_create", 0.0,
                 "unmatched", "[]", "unlinked", 0,
             ) + tuple(enrichment.values()) + ("not_linked", now, now)
@@ -944,7 +1024,8 @@ class ExcelProductCatalog:
         return self.get_product(product_id)
 
     def update_product(self, product_id, name=None, article=None, brand=None,
-                       category=None, cell=None, stock=None, stock_reason=""):
+                       category=None, cell=None, stock=None, stock_reason="",
+                       brand_id=None, category_id=None):
         self.database.initialize()
         with self.database.transaction() as connection:
             product = connection.execute(
@@ -968,6 +1049,67 @@ class ExcelProductCatalog:
                 values["excel_brand"] = normalize_brand(brand)
             if category is not None:
                 values["excel_category"] = text(category) or None
+            brand_changed = brand is not None or brand_id not in (None, "")
+            category_changed = category is not None or category_id not in (None, "")
+            if brand_changed:
+                brand_row = ensure_brand(
+                    connection,
+                    name=values["excel_brand"],
+                    brand_id=brand_id,
+                    create=True,
+                )
+                values["brand_id"] = brand_row["id"] if brand_row else None
+                values["excel_brand"] = brand_row["name"] if brand_row else ""
+                if not category_changed:
+                    values["category_id"] = None
+                    values["excel_category"] = None
+            else:
+                brand_row = ensure_brand(
+                    connection,
+                    name=values["excel_brand"],
+                    brand_id=values.get("brand_id"),
+                    create=True,
+                )
+            if category_changed:
+                category_row = ensure_category(
+                    connection,
+                    brand_row["id"] if brand_row else None,
+                    name=values["excel_category"],
+                    category_id=category_id,
+                    create=True,
+                )
+                values["category_id"] = (
+                    category_row["id"] if category_row else None
+                )
+                values["excel_category"] = (
+                    category_row["name"] if category_row else None
+                )
+            duplicate = connection.execute(
+                "SELECT id, excel_name_raw FROM catalog_excel_products "
+                "WHERE active = 1 AND normalized_name = ? AND id <> ? "
+                "AND COALESCE(brand_id, 0) = COALESCE(?, 0) "
+                "AND COALESCE(category_id, 0) = COALESCE(?, 0) "
+                "ORDER BY id LIMIT 1",
+                (
+                    values["normalized_name"],
+                    int(product_id),
+                    values.get("brand_id"),
+                    values.get("category_id"),
+                ),
+            ).fetchone()
+            if duplicate is not None:
+                raise DuplicateCatalogValueError(
+                    "Такой товар уже существует: {} (ID {}).".format(
+                        duplicate["excel_name_raw"], duplicate["id"]
+                    ),
+                    {
+                        "id": str(duplicate["id"]),
+                        "product_id": str(duplicate["id"]),
+                        "name": duplicate["excel_name_raw"],
+                        "brand_id": values.get("brand_id"),
+                        "category_id": values.get("category_id"),
+                    },
+                )
             if cell is not None:
                 values["cell"] = text(cell) or None
             stock_before = float(values["stock"] or 0)
@@ -991,6 +1133,14 @@ class ExcelProductCatalog:
             values["raw_excel_json"] = _json(raw_excel)
             values["updated_at"] = utc_now()
             _restore_columns(connection, product_id, values, PRODUCT_MUTABLE_COLUMNS)
+            assign_product_taxonomy(
+                connection,
+                product_id,
+                brand=values["excel_brand"],
+                category=values["excel_category"],
+                brand_id=values.get("brand_id"),
+                category_id=values.get("category_id"),
+            )
             if stock is not None:
                 _record_manual_stock_adjustment(
                     connection,

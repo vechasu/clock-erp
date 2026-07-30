@@ -21,13 +21,9 @@ import { PageState } from '../../components/PageState';
 import { TablePagination } from '../../components/TablePagination';
 import { Toast } from '../../components/Toast';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
-import {
-  createReceipt,
-  deleteReceipt,
-  fetchReceiptCatalog,
-  fetchReceipts,
-  updateReceipt,
-} from './api';
+import { CatalogCascade } from '../catalog/CatalogComboboxes';
+import { CatalogCreationModal, type CatalogCreationRequest } from '../catalog/CatalogCreationModal';
+import { createReceipt, deleteReceipt, fetchReceipts, updateReceipt } from './api';
 import { ReceiptForm } from './ReceiptForm';
 import type { Receipt, ReceiptFormValues } from './schemas';
 
@@ -51,6 +47,7 @@ export function ReceiptsPage() {
   const [editor, setEditor] = useState<Receipt | 'new' | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Receipt | null>(null);
   const [toast, setToast] = useState<{ message: string; kind: 'success' | 'error' } | null>(null);
+  const [catalogCreation, setCatalogCreation] = useState<CatalogCreationRequest | null>(null);
 
   useEffect(() => {
     const current = searchParams.get('q') ?? '';
@@ -73,18 +70,14 @@ export function ReceiptsPage() {
     queryFn: () => fetchReceipts(normalizedParams),
     placeholderData: (previous) => previous,
   });
-  const catalogQuery = useQuery({
-    queryKey: ['receipt-catalog'],
-    queryFn: () => fetchReceiptCatalog(),
-    enabled: editor !== null,
-    staleTime: 60_000,
-  });
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['receipts'] });
   const saveMutation = useMutation({
     mutationFn: ({ receipt, values }: { receipt: Receipt | 'new'; values: ReceiptFormValues }) =>
       receipt === 'new' ? createReceipt(values) : updateReceipt(receipt.id, values),
     onSuccess: async (_, variables) => {
       await invalidate();
+      await queryClient.invalidateQueries({ queryKey: ['products'] });
+      await queryClient.invalidateQueries({ queryKey: ['catalog-options'] });
       setEditor(null);
       setToast({
         message: variables.receipt === 'new' ? 'Приход проведён' : 'Приход обновлён',
@@ -97,6 +90,8 @@ export function ReceiptsPage() {
     mutationFn: deleteReceipt,
     onSuccess: async () => {
       await invalidate();
+      await queryClient.invalidateQueries({ queryKey: ['products'] });
+      await queryClient.invalidateQueries({ queryKey: ['catalog-options'] });
       setDeleteTarget(null);
       setToast({ message: 'Приход удалён', kind: 'success' });
     },
@@ -108,6 +103,25 @@ export function ReceiptsPage() {
     if (value) next.set(key, value);
     else next.delete(key);
     if (resetPage) next.set('page', '1');
+    setSearchParams(next);
+  };
+  const setCatalogFilters = (
+    brandId: number | null,
+    categoryId: number | null,
+    productId: string,
+  ) => {
+    const next = new URLSearchParams(searchParams);
+    for (const [key, value] of Object.entries({
+      brand_id: brandId ? String(brandId) : '',
+      category_id: categoryId ? String(categoryId) : '',
+      product_id: productId,
+    })) {
+      if (value) next.set(key, value);
+      else next.delete(key);
+    }
+    next.delete('brand');
+    next.delete('category');
+    next.set('page', '1');
     setSearchParams(next);
   };
   const receipts = receiptsQuery.data?.receipts ?? [];
@@ -266,8 +280,8 @@ export function ReceiptsPage() {
             />
             <FilterPanel
               count={
-                ['date_from', 'date_to', 'brand', 'category', 'status'].filter((key) =>
-                  searchParams.get(key),
+                ['date_from', 'date_to', 'brand_id', 'category_id', 'product_id', 'status'].filter(
+                  (key) => searchParams.get(key),
                 ).length
               }
             >
@@ -277,30 +291,22 @@ export function ReceiptsPage() {
                 onFromChange={(value) => setFilter('date_from', value)}
                 onToChange={(value) => setFilter('date_to', value)}
               />
-              <label>
-                Бренд
-                <select
-                  value={searchParams.get('brand') ?? ''}
-                  onChange={(event) => setFilter('brand', event.target.value)}
-                >
-                  <option value="">Все бренды</option>
-                  {meta?.facets.brands.map((item) => (
-                    <option key={item}>{item}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Категория
-                <select
-                  value={searchParams.get('category') ?? ''}
-                  onChange={(event) => setFilter('category', event.target.value)}
-                >
-                  <option value="">Все категории</option>
-                  {meta?.facets.categories.map((item) => (
-                    <option key={item}>{item}</option>
-                  ))}
-                </select>
-              </label>
+              <CatalogCascade
+                brandId={Number(searchParams.get('brand_id')) || null}
+                categoryId={Number(searchParams.get('category_id')) || null}
+                productId={searchParams.get('product_id') ?? ''}
+                onBrandChange={(brandId) => setCatalogFilters(brandId, null, '')}
+                onCategoryChange={(categoryId) =>
+                  setCatalogFilters(Number(searchParams.get('brand_id')) || null, categoryId, '')
+                }
+                onProductChange={(productId) =>
+                  setCatalogFilters(
+                    Number(searchParams.get('brand_id')) || null,
+                    Number(searchParams.get('category_id')) || null,
+                    productId,
+                  )
+                }
+              />
               <label>
                 Статус
                 <select
@@ -431,7 +437,7 @@ export function ReceiptsPage() {
               className="button primary"
               type="submit"
               form="receipt-editor"
-              disabled={saveMutation.isPending || catalogQuery.isPending}
+              disabled={saveMutation.isPending}
             >
               {saveMutation.isPending
                 ? 'Сохраняем…'
@@ -442,24 +448,18 @@ export function ReceiptsPage() {
           </>
         }
       >
-        {catalogQuery.isError ? (
-          <PageState
-            kind="error"
-            title="Каталог недоступен"
-            message={errorMessage(catalogQuery.error)}
-          />
-        ) : catalogQuery.isPending ? (
-          <div className="table-loading">Загружаем каталог…</div>
-        ) : (
-          <ReceiptForm
-            id="receipt-editor"
-            receipt={editor === 'new' ? null : editor}
-            products={catalogQuery.data ?? []}
-            onSubmit={(values) => {
-              if (editor) saveMutation.mutate({ receipt: editor, values });
-            }}
-          />
-        )}
+        <ReceiptForm
+          id="receipt-editor"
+          receipt={editor === 'new' ? null : editor}
+          onSubmit={(values) => {
+            if (editor) saveMutation.mutate({ receipt: editor, values });
+          }}
+          onCreateBrand={() => setCatalogCreation({ kind: 'brand' })}
+          onCreateCategory={(brandId) => setCatalogCreation({ kind: 'category', brandId })}
+          onCreateProduct={(brandId, categoryId) =>
+            setCatalogCreation({ kind: 'product', brandId, categoryId })
+          }
+        />
       </Modal>
       <ConfirmDialog
         open={deleteTarget !== null}
@@ -470,6 +470,11 @@ export function ReceiptsPage() {
         onConfirm={() => {
           if (deleteTarget) deleteMutation.mutate(deleteTarget.id);
         }}
+      />
+      <CatalogCreationModal
+        request={catalogCreation}
+        onClose={() => setCatalogCreation(null)}
+        onCreated={(message) => setToast({ message, kind: 'success' })}
       />
       {toast ? <Toast {...toast} onClose={() => setToast(null)} /> : null}
     </AppShell>

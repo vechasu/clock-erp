@@ -42,6 +42,7 @@ readonly REMOTE_NAME="origin"
 readonly PROJECT_DIR="/opt/clock-erp"
 readonly SERVICE_NAME="clock-erp"
 readonly BACKUP_DIR="/opt/clock-erp-backups"
+SERVICE_STOPPED=0
 readonly HEALTHCHECK_URLS=(
     "http://127.0.0.1:5000/register"
     "http://127.0.0.1:5000/login"
@@ -99,6 +100,8 @@ rollback() {
                     "$SERVICE_NAME" >&2
             fi
         fi
+    elif [[ "$SERVICE_STOPPED" == "1" ]]; then
+        systemctl start "$SERVICE_NAME"
     fi
 
     exit "$exit_code"
@@ -228,7 +231,17 @@ if [[ -f instance/repair_cases.json ]]; then
         --apply
 fi
 
+if [[ -f instance/catalog.db ]]; then
+    systemctl stop "$SERVICE_NAME"
+    SERVICE_STOPPED=1
+    "$PYTHON_BIN" scripts/migrate_unified_catalog.py \
+        --database instance/catalog.db \
+        --backup-dir "$BACKUP_DIR/catalog-migrations" \
+        --apply
+fi
+
 systemctl restart "$SERVICE_NAME"
+SERVICE_STOPPED=0
 systemctl is-active --quiet "$SERVICE_NAME"
 
 for healthcheck_url in "${HEALTHCHECK_URLS[@]}"; do

@@ -28,11 +28,29 @@ export async function fetchSaleLocations() {
 }
 
 export async function createSale(values: SaleFormValues) {
-  return (await apiRequest('/sales', saleSchema, jsonRequestInit('POST', values))).data;
+  return (
+    await apiRequest(
+      '/sales',
+      saleSchema,
+      jsonRequestInit('POST', {
+        ...values,
+        idempotency_key: crypto.randomUUID(),
+      }),
+    )
+  ).data;
 }
 
 export async function updateSale(id: string, values: SaleFormValues) {
-  return (await apiRequest(`/sales/${id}`, saleSchema, jsonRequestInit('PATCH', values))).data;
+  return (
+    await apiRequest(
+      `/sales/${id}`,
+      saleSchema,
+      jsonRequestInit('PATCH', {
+        ...values,
+        idempotency_key: crypto.randomUUID(),
+      }),
+    )
+  ).data;
 }
 
 export async function deleteSale(id: string) {
@@ -50,7 +68,11 @@ export async function returnSale(id: string, quantity: number, reason: string) {
     await apiRequest(
       `/sales/${id}/returns`,
       saleSchema,
-      jsonRequestInit('POST', { quantity, reason }),
+      jsonRequestInit('POST', {
+        quantity,
+        reason,
+        idempotency_key: crypto.randomUUID(),
+      }),
     )
   ).data;
 }
