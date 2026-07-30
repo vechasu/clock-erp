@@ -134,7 +134,7 @@ class UnifiedCatalogApiTest(unittest.TestCase):
         self.assertEqual(self.stock(), 10)
         self.remote.create_product.assert_called_once()
         remote_positions = (
-            self.remote.create_stock_enter_many.call_args.kwargs["positions"]
+            self.remote.create_stock_enter_many.call_args[1]["positions"]
         )
         self.assertEqual(
             remote_positions[0]["product_id"],
@@ -349,7 +349,7 @@ class UnifiedCatalogApiTest(unittest.TestCase):
                 product_search[0]["category_id"],
             ),
             (
-                product["id"],
+                str(product["id"]),
                 brand["id"],
                 category["id"],
             ),

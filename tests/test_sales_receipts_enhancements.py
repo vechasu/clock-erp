@@ -371,11 +371,8 @@ class SalesReceiptsEnhancementsTest(unittest.TestCase):
         self.assertIn('id="receiptBrand"', page)
         self.assertIn('id="receiptCategory"', page)
         self.assertIn('id="receiptProduct"', page)
-        self.assertIn("Сначала выберите бренд", page)
-        self.assertIn(
-            "Сначала выберите бренд и категорию",
-            page,
-        )
+        self.assertIn('id="receiptCategoryTrigger"', page)
+        self.assertIn('id="receiptProductTrigger"', page)
         self.assertIn(
             'data-shared-catalog-kind="brand"',
             page,
