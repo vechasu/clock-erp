@@ -5652,7 +5652,9 @@
 
             return (
                 hasValue("brand")
+                || hasValue("brand_id")
                 || hasValue("category")
+                || hasValue("category_id")
                 || hasValue("cell")
                 || hasValue("date_from")
                 || hasValue("date_to")
@@ -5679,7 +5681,9 @@
             const url = new URL(window.location.href);
             [
                 "brand",
+                "brand_id",
                 "category",
+                "category_id",
                 "cell",
                 "date_from",
                 "date_to",

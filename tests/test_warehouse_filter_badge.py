@@ -11,21 +11,22 @@ class WarehouseFilterBadgeTest(unittest.TestCase):
     def setUp(self):
         web.app.config.update(TESTING=True)
         self.client = web.app.test_client()
+        self.list_products_mock = mock.Mock(return_value={
+            "items": [],
+            "total": 0,
+            "page": 1,
+            "per_page": 50,
+            "pages": 0,
+            "brand_groups": [],
+            "category_groups": [],
+            "cell_groups": [],
+            "stats": {"total_stock": 0},
+        })
         self.patches = [
             mock.patch.object(
                 web.ExcelProductCatalog,
                 "list_products",
-                return_value={
-                    "items": [],
-                    "total": 0,
-                    "page": 1,
-                    "per_page": 50,
-                    "pages": 0,
-                    "brand_groups": [],
-                    "category_groups": [],
-                    "cell_groups": [],
-                    "stats": {"total_stock": 0},
-                },
+                self.list_products_mock,
             ),
             mock.patch.object(
                 web,
@@ -105,6 +106,41 @@ class WarehouseFilterBadgeTest(unittest.TestCase):
                 self.assertNotIn("Фильтры1", plain_text)
                 self.assertNotIn(" hidden", self.reset_button_attributes(markup))
 
+    def test_canonical_brand_and_category_ids_are_applied_together(self):
+        with mock.patch.object(
+            web.SharedCatalog,
+            "list_brands",
+            return_value=[{
+                "id": 31,
+                "name": "A.B. Art",
+                "active": True,
+                "product_count": 71,
+            }],
+        ), mock.patch.object(
+            web.SharedCatalog,
+            "list_categories",
+            return_value=[{
+                "id": 31,
+                "brand_id": 31,
+                "name": "Наручные часы",
+                "brand_name": "A.B. Art",
+                "active": True,
+                "product_count": 71,
+            }],
+        ):
+            markup = self.render(
+                "?brand=A.B.+Art&brand_id=31"
+                "&category=Наручные+часы&category_id=31&page=7"
+            )
+
+        arguments = self.list_products_mock.call_args.kwargs
+        self.assertEqual(arguments["brand_id"], "31")
+        self.assertEqual(arguments["category_id"], "31")
+        self.assertEqual(arguments["brand"], "")
+        self.assertEqual(arguments["category"], "")
+        self.assertEqual(arguments["page"], 7)
+        self.assertEqual(self.badge_text(markup), "2")
+
     def test_date_range_counts_as_one_filter(self):
         markup = self.render(
             "?brand=Casio&category=Будильники"
@@ -176,7 +212,15 @@ class WarehouseFilterBadgeTest(unittest.TestCase):
         )
         self.assertIsNotNone(reset_function)
         reset_script = reset_function.group(1)
-        for name in ("brand", "category", "cell", "date_from", "date_to"):
+        for name in (
+            "brand",
+            "brand_id",
+            "category",
+            "category_id",
+            "cell",
+            "date_from",
+            "date_to",
+        ):
             self.assertIn(f'"{name}"', reset_script)
         for name in ("q", "sort_by", "sort_dir", "per_page", "in_stock"):
             self.assertNotIn(f'"{name}"', reset_script)

@@ -3,6 +3,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
+import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 type ReceiptSubmitApi = {
@@ -97,9 +98,33 @@ describe('legacy receipt submission', () => {
     );
   });
 
-  it('keeps one idempotency key and reopens only the next-receipt flow', () => {
+  it('handles both receipt submit buttons with one idempotency key', async () => {
     const api = loadReceiptSubmit();
     const form = receiptForm();
+    form.insertAdjacentHTML(
+      'beforeend',
+      `
+        <button type="submit" name="submit_mode" value="create_next">
+          Создать и оформить следующий приход
+        </button>
+        <button type="submit" name="submit_mode" value="close">
+          Провести приход
+        </button>
+      `,
+    );
+    const submittedModes: string[] = [];
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      submittedModes.push((event.submitter as HTMLButtonElement).value);
+    });
+    const user = userEvent.setup();
+
+    await user.click(
+      screen.getByRole('button', { name: 'Создать и оформить следующий приход' }),
+    );
+    await user.click(screen.getByRole('button', { name: 'Провести приход' }));
+
+    expect(submittedModes).toEqual(['create_next', 'close']);
     expect(api.submissionKey(form)).toBe(api.submissionKey(form));
 
     const nextUrl = api.successUrl('create_next', {

@@ -87,6 +87,7 @@ class UnifiedCatalogApiTest(unittest.TestCase):
         self.moysklad_patch = mock.patch.object(web, "MoySkladClient")
         self.moysklad_class = self.moysklad_patch.start()
         self.remote = self.moysklad_class.return_value
+        self.remote.find_product_by_code.return_value = None
         self.remote.create_product.return_value = {"id": "ms-casio-a168"}
         self.remote.create_stock_enter_many.return_value = {
             "id": "enter-1",
@@ -261,6 +262,101 @@ class UnifiedCatalogApiTest(unittest.TestCase):
         self.assertEqual(renamed.status_code, 200)
         receipt_listing = self.client.get("/api/v1/receipts").get_json()
         self.assertEqual(receipt_listing["data"][0]["brand"], "Casio Japan")
+
+    def test_unmapped_bitrix_product_is_created_in_moysklad_before_receipt(self):
+        now = "2026-07-30T12:00:00+00:00"
+        with CatalogDatabase(self.database_path).connect() as connection:
+            connection.execute(
+                "INSERT INTO catalog_products ("
+                "name, article, barcode, brand, active, external_source, "
+                "external_product_id, external_xml_id, payload_hash, "
+                "normalized_payload_json, created_at, updated_at, "
+                "first_synced_at, last_synced_at"
+                ") VALUES (?, ?, ?, ?, 1, 'bitrix', ?, ?, ?, '{}', ?, ?, ?, ?)",
+                (
+                    "Under Pressure II Orange",
+                    "under-pressure-ii-orange",
+                    "",
+                    "666 Barcelona",
+                    "743",
+                    "743",
+                    "b" * 64,
+                    now,
+                    now,
+                    now,
+                    now,
+                ),
+            )
+            bitrix_product_id = connection.execute(
+                "SELECT last_insert_rowid()"
+            ).fetchone()[0]
+
+        product = ExcelProductCatalog(
+            CatalogDatabase(self.database_path)
+        ).create_product(
+            name="Under Pressure II Orange",
+            brand="666 Barcelona",
+            category="Наручные часы",
+            stock=0,
+        )
+        with CatalogDatabase(self.database_path).connect() as connection:
+            connection.execute(
+                "UPDATE catalog_excel_products SET "
+                "source_key = 'bitrix:743', "
+                "bitrix_catalog_product_id = ?, "
+                "bitrix_external_product_id = '743' "
+                "WHERE id = ?",
+                (bitrix_product_id, product["id"]),
+            )
+
+        self.remote.create_product.return_value = {
+            "id": "ms-under-pressure-orange",
+        }
+        response = self.client.post(
+            "/api/v1/receipts",
+            json={
+                "receipt_date": "2026-07-30",
+                "note": "",
+                "idempotency_key": "receipt-bitrix-unmapped",
+                "positions": [{
+                    "product_id": str(product["id"]),
+                    "brand_id": product["brand_id"],
+                    "category_id": product["category_id"],
+                    "quantity": 55,
+                    "purchase_price": 0,
+                }],
+            },
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.remote.find_product_by_code.assert_called_once_with(
+            "VECHASU-{}".format(product["id"])
+        )
+        self.remote.create_product.assert_called_once_with(
+            name="Under Pressure II Orange",
+            code="VECHASU-{}".format(product["id"]),
+            article=None,
+        )
+        remote_positions = (
+            self.remote.create_stock_enter_many.call_args.kwargs["positions"]
+        )
+        self.assertEqual(
+            remote_positions[0]["product_id"],
+            "ms-under-pressure-orange",
+        )
+        linked = web.SharedCatalog(
+            CatalogDatabase(self.database_path)
+        ).get_product(product["id"])
+        self.assertEqual(
+            linked["moysklad_product_id"],
+            "ms-under-pressure-orange",
+        )
+        self.assertEqual(
+            ExcelProductCatalog(
+                CatalogDatabase(self.database_path)
+            ).get_product(product["id"])["stock"],
+            55,
+        )
 
     def test_product_duplicate_returns_existing_card(self):
         response = self.client.post(
