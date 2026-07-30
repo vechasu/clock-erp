@@ -87,6 +87,10 @@ rollback() {
         if [[ -n "$rollback_status" ]]; then
             printf '%s\n' \
                 'ROLLBACK_BLOCKED: server repository became dirty; no files were removed or reset' >&2
+            if [[ "$SERVICE_STOPPED" == "1" ]]; then
+                systemctl start "$SERVICE_NAME"
+                SERVICE_STOPPED=0
+            fi
         else
             printf 'Rolling back to %s...\n' "$PREVIOUS_COMMIT" >&2
             git reset --hard "$PREVIOUS_COMMIT"
