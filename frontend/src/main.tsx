@@ -8,6 +8,10 @@ import './styles/legacy-tokens.css';
 import './styles/global.css';
 
 const rootElement = document.getElementById('root');
+const basename =
+  window.location.pathname === '/app' || window.location.pathname.startsWith('/app/')
+    ? '/app'
+    : undefined;
 
 if (!rootElement) {
   throw new Error('React root element is missing');
@@ -15,7 +19,7 @@ if (!rootElement) {
 
 createRoot(rootElement).render(
   <StrictMode>
-    <BrowserRouter basename="/app">
+    <BrowserRouter basename={basename}>
       <AppProviders>
         <App />
       </AppProviders>

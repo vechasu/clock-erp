@@ -235,7 +235,7 @@ export function ReceiptsPage() {
         <PageHeader
           eyebrow="Складские документы"
           title="Приход"
-          description="Поступления товаров и синхронизация документов МоегоСклада"
+          description="Поступления товаров и единые остатки Vechasu ERP"
           actions={
             <>
               <ActionLink href="/products/receipts/new" icon="upload">
@@ -425,7 +425,7 @@ export function ReceiptsPage() {
         open={editor !== null}
         size="large"
         title={editor === 'new' ? 'Новый приход' : `Приход ${editor?.number ?? ''}`}
-        description="Документ проводится в МойСклад после серверной проверки."
+        description="После проведения остатки изменятся в единой ERP."
         onClose={() => setEditor(null)}
         footer={
           <>
@@ -459,7 +459,7 @@ export function ReceiptsPage() {
       <ConfirmDialog
         open={deleteTarget !== null}
         title="Удалить приход?"
-        message={`Документ ${deleteTarget?.number ?? ''} будет удалён в МойСклад и локальном журнале.`}
+        message={`Документ ${deleteTarget?.number ?? ''} будет удалён из ERP. Синхронизация с МойСклад выполняется только при доступной интеграции.`}
         pending={deleteMutation.isPending}
         onClose={() => setDeleteTarget(null)}
         onConfirm={() => {

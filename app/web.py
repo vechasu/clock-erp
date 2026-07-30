@@ -8160,6 +8160,9 @@ def build_legacy_sales_page():
 
 @app.route("/sales")
 def sales_page():
+    if primary_react_ui_enabled():
+        return react_application("sales")
+
     all_warehouse_items = get_warehouse_items()
     catalog_items = build_sales_catalog_items(
         get_excel_warehouse_items()
@@ -8674,6 +8677,9 @@ def receipt_catalog_create():
 
 @app.route("/receipts")
 def receipts_page():
+    if primary_react_ui_enabled():
+        return react_application("receipts")
+
     from datetime import datetime
     from flask import request
 
@@ -11214,6 +11220,9 @@ def _excel_product_external_references(product_id):
 
 @app.route("/products")
 def excel_products_page():
+    if primary_react_ui_enabled():
+        return react_application("products")
+
     target = url_for("warehouse_page")
     if request.query_string:
         target += "?" + request.query_string.decode("utf-8")
@@ -14449,6 +14458,13 @@ def api_repair_attachments(case_id):
     if not updated:
         return api_error("REPAIR_NOT_FOUND", "Ремонт не найден.", 404)
     return api_success(serialize_api_repair(find_api_repair(case_id)), 201)
+
+
+def primary_react_ui_enabled():
+    return (
+        not app.config.get("TESTING")
+        or app.config.get("TEST_PRIMARY_REACT_UI", False)
+    )
 
 
 @app.route("/app", defaults={"react_path": ""}, strict_slashes=False)
