@@ -405,7 +405,7 @@ def main():
             "unmatched_records": legacy["unmatched"],
         },
     }
-    print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
+    print(json.dumps(result, ensure_ascii=True, indent=2, sort_keys=True))
 
 
 if __name__ == "__main__":
