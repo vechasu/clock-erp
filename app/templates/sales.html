@@ -1109,7 +1109,7 @@
 </head>
 
 <body class="sales-page">
-{% from "_catalog_combobox.html" import render_catalog_combobox %}
+{% from "_catalog_combobox.html" import render_catalog_combobox, render_catalog_create_modal %}
 {% from "_filter_count.html" import render_filter_count %}
 <div class="app">
     {% include "_sidebar.html" %}
@@ -1996,6 +1996,8 @@
                 class="sale-form is-hidden"
                 method="post"
                 action="{{ url_for('manual_sale_add') }}"
+                data-shared-catalog-scope
+                data-catalog-in-stock="true"
             >
                 <input
                     type="hidden"
@@ -2057,12 +2059,16 @@
                         {{ render_catalog_combobox(
                             "saleBrand",
                             "product_brand",
-                            brand_groups,
+                            [],
                             item_label="бренд",
                             prefix_search=false,
-                            empty_label="Бренды не найдены",
+                            empty_label="Ничего не найдено",
                             component_class="filter-combobox",
-                            clear_selection_on_search_clear=true
+                            clear_selection_on_search_clear=true,
+                            action_kind="brand",
+                            action_label="Добавить новый бренд",
+                            shared_catalog_kind="brand",
+                            id_input_name="brand_id"
                         ) }}
                     </div>
 
@@ -2077,9 +2083,13 @@
                             item_label="категорию",
                             disabled=true,
                             prefix_search=false,
-                            empty_label="Категории не найдены",
+                            empty_label="Ничего не найдено",
                             component_class="filter-combobox",
-                            clear_selection_on_search_clear=true
+                            clear_selection_on_search_clear=true,
+                            action_kind="category",
+                            action_label="Добавить новую категорию",
+                            shared_catalog_kind="category",
+                            id_input_name="category_id"
                         ) }}
                     </div>
 
@@ -2092,10 +2102,13 @@
                             item_label="товар",
                             disabled=true,
                             prefix_search=false,
-                            empty_label="Товары не найдены",
+                            empty_label="Ничего не найдено",
                             component_class="filter-combobox sales-product-combobox",
                             clear_selection_on_search_clear=true,
-                            input_id="product_id"
+                            input_id="product_id",
+                            action_kind="product",
+                            action_label="Добавить новый товар",
+                            shared_catalog_kind="product"
                         ) }}
                         <div
                             id="productMeta"
@@ -2541,10 +2554,10 @@
     </div>
 </div>
 
+{{ render_catalog_create_modal() }}
+
 <script>
     const activeSalesSource = {{ active_source | tojson }};
-    const warehouseItems = {{ warehouse_items | tojson }};
-    const catalogTaxonomy = {{ catalog_taxonomy | tojson }};
     const tictactoyLocationData = (
         {{ tictactoy_location_data | tojson }}
     );
@@ -4639,196 +4652,24 @@
     const productMeta = document.getElementById(
         "productMeta"
     );
+    let sharedSelectedSaleProduct = null;
 
-    function normalizeProductSearch(value) {
-        return String(value || "")
-            .toLocaleLowerCase("ru")
-            .replaceAll("ё", "е")
-            .trim();
-    }
-
-    function productMatchesSelection(item) {
-        const brand = normalizeProductSearch(
-            saleBrandInput.value
-        );
-        const category = normalizeProductSearch(
-            saleCategoryInput.value
-        );
-
-        return (
-            Boolean(brand)
-            && Boolean(category)
-            && normalizeProductSearch(item.brand) === brand
-            && normalizeProductSearch(item.category) === category
-        );
-    }
-
-    function clearSelectedProduct() {
-        window.setBrandComboboxValue(
-            saleProductCombobox,
-            "",
+    function resetProductFilters() {
+        sharedSelectedSaleProduct = null;
+        window.restoreSharedCatalogCascade(
+            manualSaleForm,
+            {
+                brandId: "",
+                brandLabel: "",
+                categoryId: "",
+                categoryLabel: "",
+                productId: "",
+                productLabel: "",
+            }
         );
         productNameInput.value = "";
         productMeta.textContent =
             "Баркод, артикул и остаток появятся после выбора товара.";
-    }
-
-    function refreshCategoryOptions() {
-        const brand = normalizeProductSearch(
-            saleBrandInput.value
-        );
-        const brandProducts = warehouseItems.filter(
-            (item) =>
-                brand
-                && normalizeProductSearch(item.brand) === brand
-        );
-        const categories = new Map();
-
-        brandProducts.forEach((item) => {
-            const category = String(item.category || "").trim();
-            const key = normalizeProductSearch(category);
-
-            if (!key) {
-                return;
-            }
-
-            const current = categories.get(key);
-            categories.set(key, {
-                value: current ? current.value : category,
-                count: (current ? current.count : 0) + 1,
-            });
-        });
-        (catalogTaxonomy.categories || [])
-            .filter((item) => {
-                return (
-                    normalizeProductSearch(item.brand)
-                    === brand
-                );
-            })
-            .forEach((item) => {
-                const category = String(item.name || "").trim();
-                const key = normalizeProductSearch(category);
-
-                if (key && !categories.has(key)) {
-                    categories.set(key, {
-                        value: category,
-                        count: 0,
-                    });
-                }
-            });
-
-        const categoryOptions = Array.from(
-            categories.values()
-        ).sort((first, second) =>
-            first.value.localeCompare(
-                second.value,
-                "ru",
-                {numeric: true, sensitivity: "base"},
-            )
-        ).map((category) => ({
-            value: category.value,
-            label: category.value,
-            count: category.count,
-        }));
-
-        window.replaceCatalogComboboxOptions(
-            saleCategoryCombobox,
-            categoryOptions,
-            "Категории не найдены",
-        );
-        window.setCatalogComboboxDisabled(
-            saleCategoryCombobox,
-            !brand,
-            brand
-                ? "Выберите категорию"
-                : "Сначала выберите бренд",
-        );
-    }
-
-    function refreshProductOptions() {
-        const products = warehouseItems
-            .filter(productMatchesSelection)
-            .slice()
-            .sort((first, second) =>
-                String(first.name || "").localeCompare(
-                    String(second.name || ""),
-                    "ru",
-                    {numeric: true, sensitivity: "base"},
-                )
-                || String(first.article || "").localeCompare(
-                    String(second.article || ""),
-                    "ru",
-                    {numeric: true, sensitivity: "base"},
-                )
-                || String(first.barcode || "").localeCompare(
-                    String(second.barcode || ""),
-                    "ru",
-                    {numeric: true, sensitivity: "base"},
-                )
-            );
-        const options = products.map((item) => ({
-            value: String(item.id || ""),
-            label: item.name || "Товар без названия",
-            searchText: [
-                item.name,
-                item.article,
-                item.barcode,
-            ].filter(Boolean).join(" "),
-            meta: [
-                item.article
-                    ? "Артикул: " + item.article
-                    : "",
-                item.barcode
-                    ? "Баркод: " + item.barcode
-                    : "",
-            ].filter(Boolean).join(" · "),
-            count: "Остаток: " + item.stock_display,
-        }));
-
-        window.replaceCatalogComboboxOptions(
-            saleProductCombobox,
-            options,
-            "Товары не найдены",
-        );
-        window.setCatalogComboboxDisabled(
-            saleProductCombobox,
-            !saleBrandInput.value || !saleCategoryInput.value,
-            saleBrandInput.value && saleCategoryInput.value
-                ? "Выберите товар"
-                : "Сначала выберите бренд и категорию",
-        );
-    }
-
-    function resetProductFilters() {
-        window.setBrandComboboxValue(
-            saleBrandCombobox,
-            "",
-        );
-        window.setBrandComboboxValue(
-            saleCategoryCombobox,
-            "",
-        );
-        window.replaceCatalogComboboxOptions(
-            saleCategoryCombobox,
-            [],
-            "Категории не найдены",
-        );
-        window.setCatalogComboboxDisabled(
-            saleCategoryCombobox,
-            true,
-            "Сначала выберите бренд",
-        );
-        window.replaceCatalogComboboxOptions(
-            saleProductCombobox,
-            [],
-            "Товары не найдены",
-        );
-        window.setCatalogComboboxDisabled(
-            saleProductCombobox,
-            true,
-            "Сначала выберите бренд и категорию",
-        );
-        clearSelectedProduct();
     }
 
     function resetSaleChoiceFields() {
@@ -4984,51 +4825,36 @@
         () => refreshTictactoyCities(),
     );
 
-    saleBrandCombobox.addEventListener(
-        "catalog-combobox:change",
-        () => {
-            window.setBrandComboboxValue(
-                saleCategoryCombobox,
-                "",
-            );
-            clearSelectedProduct();
-            refreshCategoryOptions();
-            refreshProductOptions();
-        },
+    manualSaleForm.addEventListener(
+            "shared-catalog:selected",
+            (event) => {
+                if (event.detail?.kind !== "product") {
+                    return;
+                }
+
+                const item = event.detail.item;
+                sharedSelectedSaleProduct = item;
+                productNameInput.value = item.name || "";
+                productMeta.textContent = [
+                    "Баркод: " + (item.barcode || "—"),
+                    "Артикул: " + (item.article || "—"),
+                    "Остаток: " + (item.stock_display ?? item.stock ?? 0),
+                ].join(" · ");
+            },
     );
-
-    saleCategoryCombobox.addEventListener(
-        "catalog-combobox:change",
-        () => {
-            clearSelectedProduct();
-            refreshProductOptions();
-        },
-    );
-
-    saleProductCombobox.addEventListener(
-        "catalog-combobox:change",
-        () => {
-            const item = warehouseItems.find(
-                (candidate) =>
-                    String(candidate.id || "")
-                    === String(productIdInput.value || "")
-            );
-
-            if (!item || !productMatchesSelection(item)) {
-                productIdInput.value = "";
-                productNameInput.value = "";
-                productMeta.textContent =
-                    "Баркод, артикул и остаток появятся после выбора товара.";
-                return;
-            }
-
-            productNameInput.value = item.name || "";
-            productMeta.textContent = [
-                "Баркод: " + (item.barcode || "—"),
-                "Артикул: " + (item.article || "—"),
-                "Остаток: " + item.stock_display,
-            ].join(" · ");
-        },
+    manualSaleForm.addEventListener(
+            "catalog-combobox:change",
+            (event) => {
+                if (
+                    event.target === saleBrandCombobox
+                    || event.target === saleCategoryCombobox
+                ) {
+                    sharedSelectedSaleProduct = null;
+                    productNameInput.value = "";
+                    productMeta.textContent =
+                        "Баркод, артикул и остаток появятся после выбора товара.";
+                }
+            },
     );
 
     resetProductFilters();
@@ -5061,19 +4887,16 @@
         modalDescription.textContent =
             "Проверьте данные и сохраните изменения.";
 
-        window.setBrandComboboxValue(
-            saleBrandCombobox,
-            sale.brand || "",
-        );
-        refreshCategoryOptions();
-        window.setBrandComboboxValue(
-            saleCategoryCombobox,
-            sale.category || "",
-        );
-        refreshProductOptions();
-        window.setBrandComboboxValue(
-            saleProductCombobox,
-            sale.product_id || "",
+        window.restoreSharedCatalogCascade(
+            manualSaleForm,
+            {
+                brandId: sale.brand_id || "",
+                brandLabel: sale.brand || "",
+                categoryId: sale.category_id || "",
+                categoryLabel: sale.category || "",
+                productId: sale.product_id || "",
+                productLabel: sale.product_name || "",
+            }
         );
         const editableStatus = ["shipped", "returned"].includes(
             sale.order_status
@@ -5207,11 +5030,7 @@
     manualSaleForm.addEventListener("submit", async (event) => {
         const isEditing =
             manualSaleForm.dataset.editing === "1";
-        const selectedProduct = warehouseItems.find(
-            (item) =>
-                String(item.id || "")
-                === String(productIdInput.value || "")
-        );
+        const selectedProduct = sharedSelectedSaleProduct;
         const keepsOriginalProduct = (
             isEditing
             && editingSale
@@ -5222,7 +5041,6 @@
         if (
             (
                 !selectedProduct
-                || !productMatchesSelection(selectedProduct)
             )
             && !keepsOriginalProduct
         ) {
@@ -5321,7 +5139,7 @@
 </script>
 {% if config.TESTING and request.args.get("sales_catalog_picker_e2e") == "1" %}
 <script>
-    window.addEventListener("load", () => {
+    window.addEventListener("load", async () => {
         try {
             const root = document.documentElement;
             const form = document.getElementById("manualSaleForm");
@@ -5353,7 +5171,7 @@
 
                 option.click();
             };
-            const searchWithKeyboard = (combobox, query) => {
+            const searchWithKeyboard = async (combobox, query) => {
                 combobox.querySelector(
                     ".brand-combobox-trigger"
                 ).click();
@@ -5364,6 +5182,11 @@
                 search.dispatchEvent(
                     new Event("input", {bubbles: true})
                 );
+                if (combobox.dataset.sharedCatalogKind) {
+                    await new Promise((resolve) =>
+                        window.setTimeout(resolve, 350)
+                    );
+                }
                 search.dispatchEvent(
                     new KeyboardEvent(
                         "keydown",
@@ -5460,7 +5283,7 @@
                 "Оплата по Робокассе (0,9675 × 0,94)"
             );
             chooseOption(platform, "Amazon (US)");
-            searchWithKeyboard(country, "яПО");
+            await searchWithKeyboard(country, "яПО");
 
             if (
                 status.querySelector(".brand-combobox-hidden").value
@@ -5573,7 +5396,7 @@
                 throw new Error("location-region-dependency");
             }
 
-            searchWithKeyboard(tictactoyCity, "минск");
+            await searchWithKeyboard(tictactoyCity, "минск");
 
             if (
                 tictactoyCity.querySelector(
@@ -5625,7 +5448,7 @@
                 throw new Error("initial-disabled");
             }
 
-            searchWithKeyboard(brand, "lph");
+            await searchWithKeyboard(brand, "lph");
 
             if (
                 brandInput.value !== "Alpha"
@@ -5636,7 +5459,7 @@
                 throw new Error("brand-search");
             }
 
-            searchWithKeyboard(category, "ужск");
+            await searchWithKeyboard(category, "ужск");
 
             if (
                 categoryInput.value !== "Часы/Мужские"
@@ -5647,10 +5470,10 @@
                 throw new Error("category-search");
             }
 
-            searchWithKeyboard(product, "BAR-ONE");
+            await searchWithKeyboard(product, "ARTICLE-ONE");
 
             if (
-                productInput.value !== "catalog-one"
+                !/^\d+$/.test(productInput.value)
                 || document.getElementById("product_name").value
                     !== "Alpha One"
                 || !document.getElementById("productMeta")
@@ -5677,6 +5500,9 @@
             product.querySelector(
                 "[data-brand-search-clear]"
             ).click();
+            await new Promise((resolve) =>
+                window.setTimeout(resolve, 350)
+            );
 
             if (
                 Array.from(
@@ -5688,19 +5514,40 @@
                 throw new Error("product-clear");
             }
 
-            chooseOption(product, "catalog-one");
-            chooseOption(category, "Ремни");
+            const alphaOneOption = Array.from(
+                product.querySelectorAll(
+                    ".brand-combobox-option"
+                )
+            ).find((option) => {
+                try {
+                    return JSON.parse(
+                        option.dataset.catalogItem || "{}"
+                    ).name === "Alpha One";
+                } catch (error) {
+                    return false;
+                }
+            });
+
+            if (!alphaOneOption) {
+                throw new Error("missing-alpha-one");
+            }
+
+            alphaOneOption.click();
+            await searchWithKeyboard(category, "Ремни");
 
             if (
                 productInput.value
                 || product.querySelectorAll(
                     ".brand-combobox-option"
-                ).length !== 1
+                ).length !== 0
+                || product.querySelector(
+                    ".brand-combobox-trigger"
+                ).disabled
             ) {
                 throw new Error("category-reset");
             }
 
-            chooseOption(brand, "Beta");
+            await searchWithKeyboard(brand, "Beta");
 
             if (
                 categoryInput.value

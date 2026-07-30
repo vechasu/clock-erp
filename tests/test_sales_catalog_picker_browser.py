@@ -11,6 +11,11 @@ from unittest import mock
 from werkzeug.serving import make_server
 
 from app import web
+from app.catalog_db import CatalogDatabase
+from app.services.excel_product_catalog import (
+    ExcelProductBatchService,
+    ExcelProductCatalog,
+)
 
 
 def catalog_item(
@@ -79,53 +84,93 @@ class SalesCatalogPickerBrowserTest(unittest.TestCase):
                 "Часы/Мужские",
             ),
         ]
-        server = make_server("127.0.0.1", 0, web.app)
-        thread = threading.Thread(
-            target=server.serve_forever,
-            daemon=True,
-        )
+        with tempfile.TemporaryDirectory() as data_root:
+            database_path = Path(data_root) / "catalog.db"
+            database = CatalogDatabase(database_path)
+            ExcelProductBatchService(database).apply(
+                [{
+                    "excel_row": 2,
+                    "excel_name": "Служебная карточка",
+                    "excel_brand": "Служебный бренд",
+                    "excel_article": "SEED",
+                    "article_quality": "code_like",
+                    "category": "Служебная категория",
+                    "stock": 0.0,
+                    "stock_valid": True,
+                    "cell": "A-1",
+                    "product_id": None,
+                    "match_status": "not_found",
+                    "match_method": "test",
+                    "confidence": 0,
+                    "alternatives": [],
+                }],
+                "d" * 64,
+                "sales-browser.xlsx",
+            )
+            catalog = ExcelProductCatalog(database)
+            for item in items:
+                catalog.create_product(
+                    name=item["name"],
+                    article=item["article"],
+                    brand=item["brand"],
+                    category=item["category"],
+                    stock=item["stock"],
+                )
 
-        try:
-            with mock.patch.object(
-                web,
-                "build_sales_report_records",
-                return_value=[],
-            ), mock.patch.object(
-                web,
-                "get_warehouse_items",
-                return_value=[],
-            ), mock.patch.object(
-                web,
-                "get_excel_warehouse_items",
-                return_value=items,
-            ), tempfile.TemporaryDirectory() as profile:
-                thread.start()
-                url = (
-                    f"http://127.0.0.1:{server.server_port}"
-                    "/sales?source=all"
-                    "&sales_catalog_picker_e2e=1"
-                )
-                result = subprocess.run(
-                    [
-                        chrome,
-                        "--headless=new",
-                        "--no-sandbox",
-                        "--disable-gpu",
-                        "--disable-dev-shm-usage",
-                        f"--user-data-dir={profile}",
-                        f"--window-size={width},{height}",
-                        "--virtual-time-budget=5000",
-                        "--dump-dom",
-                        url,
-                    ],
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                    timeout=30,
-                )
-        finally:
-            server.shutdown()
-            thread.join(timeout=5)
+            server = make_server("127.0.0.1", 0, web.app)
+            thread = threading.Thread(
+                target=server.serve_forever,
+                daemon=True,
+            )
+
+            try:
+                with mock.patch.dict(
+                    "os.environ",
+                    {
+                        "CATALOG_DATABASE_PATH": str(
+                            database_path
+                        )
+                    },
+                ), mock.patch.object(
+                    web,
+                    "build_sales_report_records",
+                    return_value=[],
+                ), mock.patch.object(
+                    web,
+                    "get_warehouse_items",
+                    return_value=[],
+                ), mock.patch.object(
+                    web,
+                    "get_excel_warehouse_items",
+                    return_value=items,
+                ), tempfile.TemporaryDirectory() as profile:
+                    thread.start()
+                    url = (
+                        f"http://127.0.0.1:{server.server_port}"
+                        "/sales?source=all"
+                        "&sales_catalog_picker_e2e=1"
+                    )
+                    result = subprocess.run(
+                        [
+                            chrome,
+                            "--headless=new",
+                            "--no-sandbox",
+                            "--disable-gpu",
+                            "--disable-dev-shm-usage",
+                            f"--user-data-dir={profile}",
+                            f"--window-size={width},{height}",
+                            "--virtual-time-budget=7000",
+                            "--dump-dom",
+                            url,
+                        ],
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                        timeout=30,
+                    )
+            finally:
+                server.shutdown()
+                thread.join(timeout=5)
 
         self.assertEqual(result.returncode, 0, result.stderr[-2000:])
         self.assertIn(

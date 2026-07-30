@@ -376,16 +376,24 @@ class SalesReceiptsEnhancementsTest(unittest.TestCase):
             "Сначала выберите бренд и категорию",
             page,
         )
-        self.assertIn("receiptCategoriesForBrand", page)
-        self.assertIn("receiptProductsForSelection", page)
         self.assertIn(
-            'brandCombobox?.addEventListener(',
+            'data-shared-catalog-kind="brand"',
             page,
         )
         self.assertIn(
-            'categoryCombobox?.addEventListener(',
+            'data-shared-catalog-kind="category"',
             page,
         )
+        self.assertIn(
+            'data-shared-catalog-kind="product"',
+            page,
+        )
+        self.assertIn(
+            "/static/js/catalog-combobox.js",
+            page,
+        )
+        self.assertNotIn("receiptProductsForSelection", page)
+        self.assertNotIn("receiptCategoriesForBrand", page)
         self.assertIn("Добавить новый бренд", page)
         self.assertIn("Добавить новую категорию", page)
         self.assertIn("Добавить новый товар", page)
