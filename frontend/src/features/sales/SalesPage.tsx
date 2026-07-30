@@ -24,7 +24,6 @@ import { TablePagination } from '../../components/TablePagination';
 import { Toast } from '../../components/Toast';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { CatalogCascade } from '../catalog/CatalogComboboxes';
-import { CatalogCreationModal, type CatalogCreationRequest } from '../catalog/CatalogCreationModal';
 import {
   createSale,
   deleteSale,
@@ -69,7 +68,6 @@ export function SalesPage() {
   const [returnTarget, setReturnTarget] = useState<Sale | null>(null);
   const [returnQuantity, setReturnQuantity] = useState('1');
   const [returnReason, setReturnReason] = useState('');
-  const [catalogCreation, setCatalogCreation] = useState<CatalogCreationRequest | null>(null);
   const [toast, setToast] = useState<{ message: string; kind: 'success' | 'error' } | null>(null);
 
   useEffect(() => {
@@ -391,6 +389,7 @@ export function SalesPage() {
                 </select>
               </label>
               <CatalogCascade
+                required={false}
                 brandId={Number(searchParams.get('brand_id')) || null}
                 categoryId={Number(searchParams.get('category_id')) || null}
                 productId={searchParams.get('product_id') ?? ''}
@@ -563,11 +562,7 @@ export function SalesPage() {
             onSubmit={(values) => {
               if (editor) saveMutation.mutate({ sale: editor, values });
             }}
-            onCreateBrand={() => setCatalogCreation({ kind: 'brand' })}
-            onCreateCategory={(brandId) => setCatalogCreation({ kind: 'category', brandId })}
-            onCreateProduct={(brandId, categoryId) =>
-              setCatalogCreation({ kind: 'product', brandId, categoryId })
-            }
+            onCatalogCreated={(message) => setToast({ message, kind: 'success' })}
           />
         )}
       </Modal>
@@ -635,11 +630,6 @@ export function SalesPage() {
         onConfirm={() => {
           if (deleteTarget) deleteMutation.mutate(deleteTarget.id);
         }}
-      />
-      <CatalogCreationModal
-        request={catalogCreation}
-        onClose={() => setCatalogCreation(null)}
-        onCreated={(message) => setToast({ message, kind: 'success' })}
       />
       {toast ? <Toast {...toast} onClose={() => setToast(null)} /> : null}
     </AppShell>

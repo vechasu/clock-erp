@@ -1,4 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
+import { useEffect } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 
 import { ImageUploader } from '../../components/ImageUploader';
@@ -14,11 +15,8 @@ import {
 interface ReceiptFormProps {
   id: string;
   receipt?: Receipt | null;
-  products?: unknown[];
   onSubmit: (values: ReceiptFormValues) => void;
-  onCreateBrand?: () => void;
-  onCreateCategory?: (brandId: number) => void;
-  onCreateProduct?: (brandId: number, categoryId: number) => void;
+  onCatalogCreated?: (message: string) => void;
 }
 
 function defaults(receipt?: Receipt | null): ReceiptFormInput {
@@ -50,17 +48,11 @@ function defaults(receipt?: Receipt | null): ReceiptFormInput {
   };
 }
 
-export function ReceiptForm({
-  id,
-  receipt,
-  onSubmit,
-  onCreateBrand,
-  onCreateCategory,
-  onCreateProduct,
-}: ReceiptFormProps) {
+export function ReceiptForm({ id, receipt, onSubmit, onCatalogCreated }: ReceiptFormProps) {
   const {
     control,
     register,
+    reset,
     setValue,
     watch,
     handleSubmit,
@@ -75,6 +67,10 @@ export function ReceiptForm({
     (sum, position) => sum + Number(position.quantity || 0) * Number(position.purchase_price || 0),
     0,
   );
+
+  useEffect(() => {
+    reset(defaults(receipt));
+  }, [receipt, reset]);
 
   return (
     <form className="receipt-form" id={id} onSubmit={handleSubmit(onSubmit)}>
@@ -129,6 +125,7 @@ export function ReceiptForm({
             <fieldset className="receipt-position" key={field.id}>
               <legend>Позиция {index + 1}</legend>
               <CatalogCascade
+                allowCreate
                 brandId={selectedBrandId}
                 categoryId={selectedCategoryId}
                 productId={selectedProductId}
@@ -194,9 +191,7 @@ export function ReceiptForm({
                     shouldValidate: true,
                   })
                 }
-                onCreateProduct={onCreateProduct}
-                onCreateBrand={onCreateBrand}
-                onCreateCategory={onCreateCategory}
+                onCatalogCreated={onCatalogCreated}
                 errors={{
                   brand: errors.positions?.[index]?.brand_id?.message,
                   category: errors.positions?.[index]?.category_id?.message,

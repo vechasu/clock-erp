@@ -4,6 +4,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { SearchableSelect } from '../../components/Controls';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { fetchCatalogOptions } from './api';
+import {
+  CatalogCreationModal,
+  type CatalogCreatedEntity,
+  type CatalogCreationRequest,
+} from './CatalogCreationModal';
 import type { CatalogBrand, CatalogCategory, CatalogProduct } from './schemas';
 
 interface EntityComboboxProps<T> {
@@ -47,7 +52,7 @@ function EntityCombobox<T>({
           options.find((option) => optionValue(option) === nextValue),
         )
       }
-      emptyLabel="Связанных значений не найдено"
+      emptyLabel="Ничего не найдено"
     />
   );
 }
@@ -76,9 +81,8 @@ interface CatalogCascadeProps {
   initialBrand?: CatalogBrand | null;
   initialCategory?: CatalogCategory | null;
   initialProduct?: CatalogProduct | null;
-  onCreateBrand?: () => void;
-  onCreateCategory?: (brandId: number) => void;
-  onCreateProduct?: (brandId: number, categoryId: number) => void;
+  allowCreate?: boolean;
+  onCatalogCreated?: (message: string) => void;
 }
 
 export function CatalogCascade({
@@ -97,13 +101,16 @@ export function CatalogCascade({
   initialBrand,
   initialCategory,
   initialProduct,
-  onCreateBrand,
-  onCreateCategory,
-  onCreateProduct,
+  allowCreate = false,
+  onCatalogCreated,
 }: CatalogCascadeProps) {
   const [brandQuery, setBrandQuery] = useState('');
   const [categoryQuery, setCategoryQuery] = useState('');
   const [productQuery, setProductQuery] = useState('');
+  const [creationRequest, setCreationRequest] = useState<CatalogCreationRequest | null>(null);
+  const [createdBrand, setCreatedBrand] = useState<CatalogBrand | null>(null);
+  const [createdCategory, setCreatedCategory] = useState<CatalogCategory | null>(null);
+  const [createdProduct, setCreatedProduct] = useState<CatalogProduct | null>(null);
   const debouncedBrandQuery = useDebouncedValue(brandQuery, 180);
   const debouncedCategoryQuery = useDebouncedValue(categoryQuery, 180);
   const debouncedProductQuery = useDebouncedValue(productQuery, 180);
@@ -111,9 +118,14 @@ export function CatalogCascade({
   useEffect(() => {
     setCategoryQuery('');
     setProductQuery('');
+    setCreatedCategory(null);
+    setCreatedProduct(null);
   }, [brandId]);
 
-  useEffect(() => setProductQuery(''), [categoryId]);
+  useEffect(() => {
+    setProductQuery('');
+    setCreatedProduct(null);
+  }, [categoryId]);
 
   const brandsQuery = useQuery({
     queryKey: ['catalog-options', 'brand', debouncedBrandQuery],
@@ -148,99 +160,132 @@ export function CatalogCascade({
 
   const brands = useMemo(() => {
     const items = brandsQuery.data ?? [];
-    return initialBrand && !items.some((item) => item.id === initialBrand.id)
-      ? [initialBrand, ...items]
-      : items;
-  }, [brandsQuery.data, initialBrand]);
+    const pinned = createdBrand?.id === brandId ? createdBrand : initialBrand;
+    return pinned && !items.some((item) => item.id === pinned.id) ? [pinned, ...items] : items;
+  }, [brandId, brandsQuery.data, createdBrand, initialBrand]);
   const categories = useMemo(() => {
     const items = categoriesQuery.data ?? [];
-    return initialCategory &&
-      initialCategory.brand_id === brandId &&
-      !items.some((item) => item.id === initialCategory.id)
-      ? [initialCategory, ...items]
+    const pinned = createdCategory?.id === categoryId ? createdCategory : initialCategory;
+    return pinned && pinned.brand_id === brandId && !items.some((item) => item.id === pinned.id)
+      ? [pinned, ...items]
       : items;
-  }, [brandId, categoriesQuery.data, initialCategory]);
+  }, [brandId, categoriesQuery.data, categoryId, createdCategory, initialCategory]);
   const products = useMemo(() => {
     const items = productsQuery.data ?? [];
-    return initialProduct &&
-      initialProduct.brand_id === brandId &&
-      initialProduct.category_id === categoryId &&
-      !items.some((item) => item.id === initialProduct.id)
-      ? [initialProduct, ...items]
+    const pinned = createdProduct?.id === productId ? createdProduct : initialProduct;
+    return pinned &&
+      pinned.brand_id === brandId &&
+      pinned.category_id === categoryId &&
+      !items.some((item) => item.id === pinned.id)
+      ? [pinned, ...items]
       : items;
-  }, [brandId, categoryId, initialProduct, productsQuery.data]);
+  }, [brandId, categoryId, createdProduct, initialProduct, productId, productsQuery.data]);
+
+  const selectCreatedEntity = (created: CatalogCreatedEntity, message: string) => {
+    if (created.kind === 'brand') {
+      setCreatedBrand(created.value);
+      onBrandChange(created.value.id, created.value);
+    } else if (created.kind === 'category') {
+      setCreatedCategory(created.value);
+      onCategoryChange(created.value.id, created.value);
+    } else {
+      setCreatedProduct(created.value);
+      onProductChange?.(created.value.id, created.value);
+    }
+    onCatalogCreated?.(message);
+  };
 
   return (
     <>
-      <BrandCombobox
-        label="Бренд"
-        required={required}
-        placeholder="Найдите бренд"
-        value={brandId ? String(brandId) : ''}
-        options={brands}
-        optionValue={(option) => String(option.id)}
-        optionLabel={(option) => option.name}
-        onQueryChange={setBrandQuery}
-        loading={brandsQuery.isFetching}
-        disabled={disabled}
-        error={errors?.brand}
-        onChange={(value, option) => {
-          onBrandChange(value ? Number(value) : null, option);
-        }}
-        createAction={
-          onCreateBrand ? { label: '+ Добавить новый бренд', onClick: onCreateBrand } : undefined
-        }
-      />
-      <CategoryCombobox
-        label="Категория"
-        required={required}
-        placeholder={brandId ? 'Найдите категорию' : 'Сначала выберите бренд'}
-        value={categoryId ? String(categoryId) : ''}
-        options={categories}
-        optionValue={(option) => String(option.id)}
-        optionLabel={(option) => option.name}
-        onQueryChange={setCategoryQuery}
-        loading={categoriesQuery.isFetching}
-        disabled={disabled || !brandId}
-        error={errors?.category}
-        onChange={(value, option) => {
-          onCategoryChange(value ? Number(value) : null, option);
-        }}
-        createAction={
-          onCreateCategory && brandId
-            ? {
-                label: '+ Добавить новую категорию',
-                onClick: () => onCreateCategory(brandId),
-              }
-            : undefined
-        }
-      />
-      {showProduct ? (
-        <ProductCombobox
-          label="Товар"
+      <div
+        className={`catalog-cascade${showProduct ? '' : ' is-taxonomy-only'}`}
+        data-testid="catalog-cascade"
+      >
+        <BrandCombobox
+          label="Бренд"
           required={required}
-          placeholder={categoryId ? 'Найдите товар' : 'Сначала выберите категорию'}
-          value={productId}
-          options={products}
-          optionValue={(option) => option.id}
-          optionLabel={(option) =>
-            `${option.name} · ${option.article || 'без артикула'} · остаток ${option.stock_display}`
-          }
-          onQueryChange={setProductQuery}
-          loading={productsQuery.isFetching}
-          disabled={disabled || productDisabled || !categoryId}
-          error={errors?.product}
-          onChange={(value, option) => onProductChange?.(value, option)}
+          placeholder="Найдите бренд"
+          value={brandId ? String(brandId) : ''}
+          options={brands}
+          optionValue={(option) => String(option.id)}
+          optionLabel={(option) => option.name}
+          onQueryChange={setBrandQuery}
+          loading={brandsQuery.isFetching}
+          disabled={disabled}
+          error={errors?.brand}
+          onChange={(value, option) => {
+            onBrandChange(value ? Number(value) : null, option);
+          }}
           createAction={
-            onCreateProduct && brandId && categoryId
+            allowCreate
               ? {
-                  label: '+ Добавить новый товар',
-                  onClick: () => onCreateProduct(brandId, categoryId),
+                  label: '+ Добавить новый бренд',
+                  onClick: () => setCreationRequest({ kind: 'brand' }),
                 }
               : undefined
           }
         />
-      ) : null}
+        <CategoryCombobox
+          label="Категория"
+          required={required}
+          placeholder={brandId ? 'Найдите категорию' : 'Сначала выберите бренд'}
+          value={categoryId ? String(categoryId) : ''}
+          options={categories}
+          optionValue={(option) => String(option.id)}
+          optionLabel={(option) => option.name}
+          onQueryChange={setCategoryQuery}
+          loading={categoriesQuery.isFetching}
+          disabled={disabled || !brandId}
+          error={errors?.category}
+          onChange={(value, option) => {
+            onCategoryChange(value ? Number(value) : null, option);
+          }}
+          createAction={
+            allowCreate && brandId
+              ? {
+                  label: '+ Добавить новую категорию',
+                  onClick: () => setCreationRequest({ kind: 'category', brandId }),
+                }
+              : undefined
+          }
+        />
+        {showProduct ? (
+          <ProductCombobox
+            label="Товар"
+            required={required}
+            placeholder={categoryId ? 'Найдите товар' : 'Сначала выберите категорию'}
+            value={productId}
+            options={products}
+            optionValue={(option) => option.id}
+            optionLabel={(option) =>
+              `${option.name} · ${option.article || 'без артикула'} · остаток ${option.stock_display}`
+            }
+            onQueryChange={setProductQuery}
+            loading={productsQuery.isFetching}
+            disabled={disabled || productDisabled || !categoryId}
+            error={errors?.product}
+            onChange={(value, option) => onProductChange?.(value, option)}
+            createAction={
+              allowCreate && brandId && categoryId
+                ? {
+                    label: '+ Добавить новый товар',
+                    onClick: () =>
+                      setCreationRequest({
+                        kind: 'product',
+                        brandId,
+                        categoryId,
+                      }),
+                  }
+                : undefined
+            }
+          />
+        ) : null}
+      </div>
+      <CatalogCreationModal
+        request={creationRequest}
+        onClose={() => setCreationRequest(null)}
+        onCreated={selectCreatedEntity}
+      />
     </>
   );
 }

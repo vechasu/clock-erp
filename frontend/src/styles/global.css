@@ -1114,6 +1114,23 @@ textarea:focus-visible {
   gap: 17px;
 }
 
+.catalog-cascade {
+  min-width: 0;
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 15px;
+  align-items: start;
+}
+
+.catalog-cascade.is-taxonomy-only {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.catalog-cascade > .form-field {
+  min-width: 0;
+}
+
 .receipt-form {
   display: grid;
   gap: 22px;
@@ -1188,10 +1205,11 @@ textarea:focus-visible {
 
 .receipt-position {
   position: relative;
+  width: calc(100% + 32px);
   display: grid;
-  grid-template-columns: 140px 160px minmax(220px, 1fr) 105px 125px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
-  margin: 0;
+  margin: 0 -16px;
   padding: 15px;
   border: 1px solid var(--theme-border);
   border-radius: 12px;
@@ -1634,6 +1652,11 @@ textarea:focus-visible {
     grid-template-columns: 1fr;
   }
 
+  .catalog-cascade,
+  .catalog-cascade.is-taxonomy-only {
+    grid-template-columns: 1fr;
+  }
+
   .receipt-positions-header {
     align-items: stretch;
     flex-direction: column;
@@ -1645,10 +1668,6 @@ textarea:focus-visible {
 
   .receipt-position {
     grid-template-columns: 1fr 1fr;
-  }
-
-  .receipt-product-field {
-    grid-column: 1 / -1;
   }
 
   .form-field.span-2 {
@@ -3284,10 +3303,6 @@ input[type='number']::-webkit-outer-spin-button {
 
   .receipt-position {
     grid-template-columns: 1fr;
-  }
-
-  .receipt-product-field {
-    grid-column: auto;
   }
 
   .repair-detail-grid {

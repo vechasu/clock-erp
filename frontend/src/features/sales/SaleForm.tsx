@@ -1,4 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
+import { useEffect } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 
 import { SearchableSelect } from '../../components/Controls';
@@ -14,12 +15,9 @@ import {
 interface SaleFormProps {
   id: string;
   sale?: Sale | null;
-  products?: unknown[];
   locations: SaleLocations;
   onSubmit: (values: SaleFormValues) => void;
-  onCreateBrand?: () => void;
-  onCreateCategory?: (brandId: number) => void;
-  onCreateProduct?: (brandId: number, categoryId: number) => void;
+  onCatalogCreated?: (message: string) => void;
 }
 
 function defaults(sale?: Sale | null): SaleFormInput {
@@ -53,18 +51,11 @@ function defaults(sale?: Sale | null): SaleFormInput {
   };
 }
 
-export function SaleForm({
-  id,
-  sale,
-  locations,
-  onSubmit,
-  onCreateBrand,
-  onCreateCategory,
-  onCreateProduct,
-}: SaleFormProps) {
+export function SaleForm({ id, sale, locations, onSubmit, onCatalogCreated }: SaleFormProps) {
   const {
     control,
     register,
+    reset,
     setValue,
     watch,
     handleSubmit,
@@ -80,12 +71,17 @@ export function SaleForm({
   const region = watch('region');
   const quantityLocked = Boolean(sale?.inventory_managed);
 
+  useEffect(() => {
+    reset(defaults(sale));
+  }, [reset, sale]);
+
   return (
     <form className="sale-form" id={id} onSubmit={handleSubmit(onSubmit)}>
       <section>
         <h3>1. Товар</h3>
         <div className="erp-form">
           <CatalogCascade
+            allowCreate
             brandId={brandId}
             categoryId={categoryId}
             productId={productId}
@@ -151,9 +147,7 @@ export function SaleForm({
               setValue('product_id', nextProductId, { shouldValidate: true });
               setValue('product_name', product?.name ?? sale?.product_name ?? '');
             }}
-            onCreateProduct={onCreateProduct}
-            onCreateBrand={onCreateBrand}
-            onCreateCategory={onCreateCategory}
+            onCatalogCreated={onCatalogCreated}
             errors={{
               brand: errors.brand_id?.message,
               category: errors.category_id?.message,

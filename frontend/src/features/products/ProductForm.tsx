@@ -13,11 +13,8 @@ import {
 interface ProductFormProps {
   id: string;
   product?: Product | null;
-  brands?: string[];
-  categories?: string[];
   onSubmit: (values: ProductFormValues) => void;
-  onCreateBrand: () => void;
-  onCreateCategory: (brandId: number) => void;
+  onCatalogCreated?: (message: string) => void;
 }
 
 function valuesFromProduct(product?: Product | null): ProductFormValues {
@@ -34,13 +31,7 @@ function valuesFromProduct(product?: Product | null): ProductFormValues {
   };
 }
 
-export function ProductForm({
-  id,
-  product,
-  onSubmit,
-  onCreateBrand,
-  onCreateCategory,
-}: ProductFormProps) {
+export function ProductForm({ id, product, onSubmit, onCatalogCreated }: ProductFormProps) {
   const {
     register,
     handleSubmit,
@@ -76,6 +67,7 @@ export function ProductForm({
       </label>
       <CatalogCascade
         showProduct={false}
+        allowCreate
         brandId={currentBrandId}
         categoryId={currentCategoryId}
         initialBrand={
@@ -110,8 +102,7 @@ export function ProductForm({
           setValue('category_id', categoryId, { shouldValidate: true });
           setValue('category', category?.name ?? '');
         }}
-        onCreateBrand={onCreateBrand}
-        onCreateCategory={onCreateCategory}
+        onCatalogCreated={onCatalogCreated}
       />
       <label className="form-field">
         <span>Остаток</span>

@@ -70,10 +70,24 @@ export async function createCatalogProduct(values: {
   brand_id: number;
   category_id: number;
 }) {
-  return (
+  const created = (
     await apiRequest(
       '/products',
-      z.object({ id: z.number().int().positive() }).passthrough(),
+      z
+        .object({
+          id: z.union([z.string(), z.number()]),
+          name: z.string(),
+          article: z.string(),
+          barcode: z.string(),
+          brand_id: z.number().int().positive(),
+          category_id: z.number().int().positive(),
+          brand: z.string(),
+          category: z.string(),
+          cell: z.string(),
+          stock: z.number(),
+          stock_display: z.string(),
+        })
+        .passthrough(),
       jsonRequestInit('POST', {
         ...values,
         brand: '',
@@ -83,4 +97,11 @@ export async function createCatalogProduct(values: {
       }),
     )
   ).data;
+  const id = String(created.id);
+  return catalogProductSchema.parse({
+    ...created,
+    id,
+    product_id: id,
+    active: true,
+  });
 }

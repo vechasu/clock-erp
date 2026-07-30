@@ -43,24 +43,6 @@ export const receiptSchema = z.object({
 
 export const receiptListSchema = z.array(receiptSchema);
 
-export const receiptCatalogProductSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  article: z.string(),
-  code: z.string(),
-  brand: z.string(),
-  category: z.string(),
-  brand_id: z.number().int().positive().nullable().default(null),
-  category_id: z.number().int().positive().nullable().default(null),
-  cell: z.string(),
-  stock: z.number(),
-  stock_display: z.string(),
-  thumbnail_url: z.string(),
-  has_images: z.boolean(),
-});
-
-export const receiptCatalogSchema = z.array(receiptCatalogProductSchema);
-
 export const receiptFormSchema = z.object({
   receipt_date: z.string().date('Укажите корректную дату'),
   note: z.string().trim(),
@@ -106,7 +88,6 @@ export const receiptsMetaSchema = z.object({
 });
 
 export type Receipt = z.infer<typeof receiptSchema>;
-export type ReceiptCatalogProduct = z.infer<typeof receiptCatalogProductSchema>;
 export type ReceiptFormInput = z.input<typeof receiptFormSchema>;
 export type ReceiptFormValues = z.output<typeof receiptFormSchema>;
 export type ReceiptsMeta = z.infer<typeof receiptsMetaSchema>;

@@ -2,7 +2,6 @@ import { z } from 'zod';
 
 import { apiRequest, jsonRequestInit } from '../../api/client';
 import {
-  receiptCatalogSchema,
   receiptListSchema,
   receiptSchema,
   receiptsMetaSchema,
@@ -16,12 +15,6 @@ export async function fetchReceipts(searchParams: URLSearchParams) {
     receipts: envelope.data,
     meta: receiptsMetaSchema.parse(envelope.meta),
   };
-}
-
-export async function fetchReceiptCatalog(query = '') {
-  const params = new URLSearchParams({ limit: '200' });
-  if (query) params.set('q', query);
-  return (await apiRequest(`/receipts/catalog?${params}`, receiptCatalogSchema)).data;
 }
 
 export async function createReceipt(values: ReceiptFormValues) {
