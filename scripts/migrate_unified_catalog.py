@@ -10,7 +10,7 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-MIGRATION_VERSION = "unified_catalog_v1"
+MIGRATION_VERSION = "unified_catalog_v2_legacy_products"
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -18,6 +18,9 @@ if str(PROJECT_ROOT) not in sys.path:
 from app.catalog_db import (  # noqa: E402
     CatalogDatabase,
     DEFAULT_CATALOG_DATABASE_PATH,
+)
+from app.services.excel_product_catalog import (  # noqa: E402
+    ExcelProductCatalog,
 )
 from app.services.shared_catalog import SharedCatalog  # noqa: E402
 
@@ -137,7 +140,8 @@ def audit_legacy_links(database_path, instance_dir):
         rows = connection.execute(
             "SELECT p.id, p.excel_name_raw AS name, "
             "COALESCE(b.name, p.excel_brand, '') AS brand, "
-            "COALESCE(c.name, p.excel_category, '') AS category "
+            "COALESCE(c.name, p.excel_category, '') AS category, "
+            "COALESCE(p.moysklad_product_id, '') AS moysklad_product_id "
             "FROM catalog_excel_products p "
             "LEFT JOIN erp_brands b ON b.id = p.brand_id "
             "LEFT JOIN erp_categories c ON c.id = p.category_id"
@@ -175,22 +179,30 @@ def audit_legacy_links(database_path, instance_dir):
         if raw_product_id in products_by_id:
             candidates = [products_by_id[raw_product_id]]
         else:
-            method = "exact_normalized_snapshot"
-            name = normalized(
-                record.get("product_name") or record.get("name")
-            )
-            brand = normalized(record.get("brand"))
-            category = normalized(record.get("category"))
             candidates = [
                 product
                 for product in products
-                if normalized(product["name"]) == name
-                and (not brand or normalized(product["brand"]) == brand)
-                and (
-                    not category
-                    or normalized(product["category"]) == category
-                )
+                if raw_product_id
+                and product["moysklad_product_id"] == raw_product_id
             ]
+            method = "exact_moysklad_id"
+            if not candidates:
+                method = "exact_normalized_snapshot"
+                name = normalized(
+                    record.get("product_name") or record.get("name")
+                )
+                brand = normalized(record.get("brand"))
+                category = normalized(record.get("category"))
+                candidates = [
+                    product
+                    for product in products
+                    if normalized(product["name"]) == name
+                    and (not brand or normalized(product["brand"]) == brand)
+                    and (
+                        not category
+                        or normalized(product["category"]) == category
+                    )
+                ]
         item = {
             "entity_type": entity_type,
             "entity_id": entity_id,
@@ -199,6 +211,10 @@ def audit_legacy_links(database_path, instance_dir):
             "snapshot_name": str(
                 record.get("product_name") or record.get("name") or ""
             ),
+            "snapshot_article": str(record.get("article") or ""),
+            "snapshot_brand": str(record.get("brand") or ""),
+            "snapshot_category": str(record.get("category") or ""),
+            "snapshot_cell": str(record.get("cell") or ""),
             "candidate_product_ids": [
                 str(candidate["id"]) for candidate in candidates
             ],
@@ -214,6 +230,95 @@ def audit_legacy_links(database_path, instance_dir):
         else:
             report["unmatched"].append(item)
     return report
+
+
+def materialize_unmatched_legacy_products(database_path, audit):
+    groups = {}
+    skipped = []
+    for item in audit["unmatched"]:
+        name = str(item.get("snapshot_name") or "").strip()
+        brand = str(item.get("snapshot_brand") or "").strip()
+        category = str(item.get("snapshot_category") or "").strip()
+        if not name or not brand or not category:
+            skipped.append({
+                **item,
+                "reason": "missing_name_brand_or_category",
+            })
+            continue
+        source_id = str(item.get("snapshot_product_id") or "").strip()
+        key = (
+            ("source_id", source_id)
+            if source_id
+            else (
+                "snapshot",
+                normalized(name),
+                normalized(brand),
+                normalized(category),
+            )
+        )
+        groups.setdefault(key, []).append(item)
+
+    products = ExcelProductCatalog(CatalogDatabase(database_path))
+    catalog = SharedCatalog(CatalogDatabase(database_path))
+    created = []
+    for key, items in groups.items():
+        fingerprints = {
+            (
+                normalized(item.get("snapshot_name")),
+                normalized(item.get("snapshot_brand")),
+                normalized(item.get("snapshot_category")),
+            )
+            for item in items
+        }
+        if len(fingerprints) != 1:
+            skipped.extend({
+                **item,
+                "reason": "conflicting_snapshots_for_source_id",
+            } for item in items)
+            continue
+        sample = items[0]
+        try:
+            product = products.create_product(
+                name=sample["snapshot_name"],
+                article=sample.get("snapshot_article") or "",
+                brand=sample["snapshot_brand"],
+                category=sample["snapshot_category"],
+                cell=sample.get("snapshot_cell") or "",
+                stock=0,
+                enforce_unique=False,
+            )
+            source_id = str(
+                sample.get("snapshot_product_id") or ""
+            ).strip()
+            if (
+                source_id
+                and not source_id.isdigit()
+                and any(
+                    item["entity_type"] == "receipt"
+                    for item in items
+                )
+            ):
+                product = catalog.set_moysklad_product_id(
+                    product["id"],
+                    source_id,
+                )
+        except ValueError as error:
+            skipped.extend({
+                **item,
+                "reason": str(error),
+            } for item in items)
+            continue
+        created.append({
+            "product_id": str(product["id"]),
+            "name": product["name"],
+            "brand_id": product["brand_id"],
+            "category_id": product["category_id"],
+            "source_id": str(
+                sample.get("snapshot_product_id") or ""
+            ),
+            "legacy_records": len(items),
+        })
+    return {"created": created, "skipped": skipped}
 
 
 def persist_legacy_audit(database_path, audit):
@@ -294,6 +399,21 @@ def persist_legacy_audit(database_path, audit):
     }
 
 
+def reconcile_legacy_records(database_path, instance_dir):
+    initial = audit_legacy_links(database_path, instance_dir)
+    materialized = materialize_unmatched_legacy_products(
+        database_path,
+        initial,
+    )
+    final = audit_legacy_links(database_path, instance_dir)
+    persisted = persist_legacy_audit(database_path, final)
+    return {
+        "audit": final,
+        "persisted": persisted,
+        "materialized": materialized,
+    }
+
+
 def migration_applied(path):
     with sqlite3.connect(str(path)) as connection:
         if not table_exists(connection, "erp_schema_migrations"):
@@ -304,16 +424,32 @@ def migration_applied(path):
         ).fetchone() is not None
 
 
-def migrate(path):
+def migrate(path, instance_dir=None):
     before = database_snapshot(path)
     database = CatalogDatabase(path)
     database.initialize()
     audit = SharedCatalog(database).duplicate_audit()
+    reconciliation = (
+        reconcile_legacy_records(path, instance_dir)
+        if instance_dir is not None
+        else {
+            "audit": {"matched": [], "ambiguous": [], "unmatched": []},
+            "persisted": {"linked": 0, "ambiguous": 0, "unmatched": 0},
+            "materialized": {"created": [], "skipped": []},
+        }
+    )
     after = database_snapshot(path)
-    if before["products"] != after["products"]:
-        raise RuntimeError("Миграция изменила количество карточек товаров.")
+    expected_products = (
+        before["products"]
+        + len(reconciliation["materialized"]["created"])
+    )
+    if after["products"] != expected_products:
+        raise RuntimeError(
+            "Миграция создала неожиданное количество карточек товаров."
+        )
     if abs(before["stock_total"] - after["stock_total"]) > 0.000001:
         raise RuntimeError("Миграция изменила суммарный остаток.")
+    audit["legacy_reconciliation"] = reconciliation
     with database.transaction() as connection:
         connection.execute(
             "INSERT OR REPLACE INTO erp_schema_migrations "
@@ -327,6 +463,9 @@ def migrate(path):
                         "after": after,
                         "ambiguous_products": len(
                             audit["ambiguous_products"]
+                        ),
+                        "materialized_legacy_products": len(
+                            reconciliation["materialized"]["created"]
                         ),
                     },
                     ensure_ascii=False,
@@ -361,21 +500,36 @@ def main():
     if not database_path.exists():
         raise SystemExit("База каталога не найдена: {}".format(database_path))
 
-    backup_path = None
-    already_applied = migration_applied(database_path)
-    if arguments.apply and already_applied:
-        before = after = database_snapshot(database_path)
-        audit = SharedCatalog(CatalogDatabase(database_path)).duplicate_audit()
-        legacy = audit_legacy_links(database_path, instance_dir)
-        persisted = persist_legacy_audit(database_path, legacy)
-    elif arguments.apply:
-        backup_path = backup_database(
+    backup_path = (
+        backup_database(
             database_path,
             arguments.backup_dir.resolve(),
         )
-        before, after, audit = migrate(database_path)
-        legacy = audit_legacy_links(database_path, instance_dir)
-        persisted = persist_legacy_audit(database_path, legacy)
+        if arguments.apply
+        else None
+    )
+    already_applied = migration_applied(database_path)
+    if arguments.apply and already_applied:
+        before = database_snapshot(database_path)
+        audit = SharedCatalog(CatalogDatabase(database_path)).duplicate_audit()
+        reconciliation = reconcile_legacy_records(
+            database_path,
+            instance_dir,
+        )
+        after = database_snapshot(database_path)
+        expected_products = (
+            before["products"]
+            + len(reconciliation["materialized"]["created"])
+        )
+        if after["products"] != expected_products:
+            raise RuntimeError(
+                "Миграция создала неожиданное количество карточек товаров."
+            )
+        if abs(before["stock_total"] - after["stock_total"]) > 0.000001:
+            raise RuntimeError("Миграция изменила суммарный остаток.")
+    elif arguments.apply:
+        before, after, audit = migrate(database_path, instance_dir)
+        reconciliation = audit["legacy_reconciliation"]
     else:
         with tempfile.TemporaryDirectory() as temp_directory:
             dry_run_path = Path(temp_directory) / database_path.name
@@ -386,9 +540,8 @@ def main():
                 )
             )
             generated_backup.replace(dry_run_path)
-            before, after, audit = migrate(dry_run_path)
-            legacy = audit_legacy_links(dry_run_path, instance_dir)
-            persisted = persist_legacy_audit(dry_run_path, legacy)
+            before, after, audit = migrate(dry_run_path, instance_dir)
+            reconciliation = audit["legacy_reconciliation"]
     result = {
         "version": MIGRATION_VERSION,
         "mode": "apply" if arguments.apply else "dry-run",
@@ -400,10 +553,11 @@ def main():
         "ambiguous_products": audit["ambiguous_products"],
         "potential_brand_aliases": audit["potential_brand_aliases"],
         "legacy_links": {
-            "persisted": persisted,
-            "ambiguous_records": legacy["ambiguous"],
-            "unmatched_records": legacy["unmatched"],
+            "persisted": reconciliation["persisted"],
+            "ambiguous_records": reconciliation["audit"]["ambiguous"],
+            "unmatched_records": reconciliation["audit"]["unmatched"],
         },
+        "legacy_products": reconciliation["materialized"],
     }
     print(json.dumps(result, ensure_ascii=True, indent=2, sort_keys=True))
 

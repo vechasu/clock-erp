@@ -446,6 +446,52 @@ class UnifiedCatalogInventoryTest(unittest.TestCase):
             "moysklad-a168",
         )
 
+    def test_unmatched_legacy_receipt_is_materialized_with_shared_ids(self):
+        instance_dir = Path(self.temp.name)
+        (instance_dir / "receipts.json").write_text(
+            json.dumps([{
+                "id": "orphan-receipt",
+                "positions": [{
+                    "product_id": "moysklad-orphan",
+                    "product_name": "Legacy Test",
+                    "article": "LEGACY-1",
+                    "brand": "Legacy Brand",
+                    "category": "Legacy Category",
+                    "cell": "L-1",
+                    "quantity": 1,
+                }],
+            }]),
+            encoding="utf-8",
+        )
+
+        before, after, audit = migrate(
+            Path(self.database.path),
+            instance_dir,
+        )
+        reconciliation = audit["legacy_reconciliation"]
+        created = reconciliation["materialized"]["created"]
+
+        self.assertEqual(len(created), 1)
+        self.assertEqual(after["products"], before["products"] + 1)
+        self.assertEqual(after["stock_total"], before["stock_total"])
+        self.assertEqual(reconciliation["persisted"]["linked"], 1)
+        self.assertEqual(reconciliation["persisted"]["unmatched"], 0)
+
+        product = self.catalog.get_product(created[0]["product_id"])
+        self.assertEqual(product["name"], "Legacy Test")
+        self.assertEqual(product["brand"], "Legacy Brand")
+        self.assertEqual(product["category"], "Legacy Category")
+        self.assertEqual(product["moysklad_product_id"], "moysklad-orphan")
+        self.assertIsInstance(product["brand_id"], int)
+        self.assertIsInstance(product["category_id"], int)
+        self.assertEqual(
+            self.catalog.legacy_links(
+                "receipt",
+                ["orphan-receipt"],
+            )[("orphan-receipt", 0)],
+            product["id"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
