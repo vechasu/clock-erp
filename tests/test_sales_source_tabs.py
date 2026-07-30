@@ -775,13 +775,13 @@ class SalesSourceTabsTest(unittest.TestCase):
             web,
             "get_excel_warehouse_items",
             return_value=[first, second],
-        ):
+        ) as legacy_catalog:
             page = self.client.get("/sales").get_data(as_text=True)
 
-        self.assertIn("Alpha", page)
-        self.assertIn("Zulu", page)
-        self.assertIn('"id": "catalog-1"', page)
-        self.assertIn('"id": "catalog-2"', page)
+        legacy_catalog.assert_not_called()
+        self.assertNotIn('"id": "catalog-1"', page)
+        self.assertNotIn('"id": "catalog-2"', page)
+        self.assertIn("catalog-combobox.js", page)
 
     def test_add_rejects_unknown_or_incompatible_catalog_product(self):
         base_data = {

@@ -8265,9 +8265,6 @@ def build_legacy_sales_page():
 @app.route("/sales")
 def sales_page():
     all_warehouse_items = get_warehouse_items()
-    catalog_items = build_sales_catalog_items(
-        get_excel_warehouse_items()
-    )
     all_sales = build_sales_report_records(
         warehouse_items=all_warehouse_items
     )
@@ -8352,9 +8349,6 @@ def sales_page():
             else SALES_SOURCE_LABELS[active_source]
         ),
         sales_columns=get_sales_columns(active_source),
-        warehouse_items=catalog_items,
-        brand_groups=build_brand_groups(catalog_items),
-        catalog_taxonomy=load_catalog_taxonomy(),
         total_sales=len(active_sales),
         total_cancelled=len(sales) - len(active_sales),
         total_orders=len(unique_orders),
