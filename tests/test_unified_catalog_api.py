@@ -1,5 +1,8 @@
+import base64
+import json
 import tempfile
 import unittest
+from io import BytesIO
 from pathlib import Path
 from unittest import mock
 
@@ -95,6 +98,8 @@ class UnifiedCatalogApiTest(unittest.TestCase):
             "meta": {"uuidHref": "https://example.test/enter-1"},
         }
         self.remote.delete_stock_enter.return_value = True
+        self.remote.product_has_images.return_value = False
+        self.remote.upload_product_image.return_value = True
 
     def tearDown(self):
         self.moysklad_patch.stop()
@@ -123,6 +128,37 @@ class UnifiedCatalogApiTest(unittest.TestCase):
                 "purchase_price": 500,
             }],
         }
+
+    def multipart_receipt(
+            self,
+            quantity=1,
+            note="",
+            image=None,
+            filename="watch.png",
+            mimetype="image/png",
+            idempotency_key="receipt-multipart-once",
+            submit_mode="close"):
+        data = {
+            "receipt_date": "2026-07-30",
+            "note": note,
+            "submit_mode": submit_mode,
+            "positions": json.dumps([{
+                "product_id": str(self.product["id"]),
+                "quantity": quantity,
+            }]),
+        }
+        if image is not None:
+            data["product_image"] = (
+                BytesIO(image),
+                filename,
+                mimetype,
+            )
+        return self.client.post(
+            "/api/v1/receipts",
+            data=data,
+            content_type="multipart/form-data",
+            headers={"Idempotency-Key": idempotency_key},
+        )
 
     def test_full_api_flow_uses_one_card_and_one_stock_ledger(self):
         receipt_response = self.client.post(
@@ -244,6 +280,214 @@ class UnifiedCatalogApiTest(unittest.TestCase):
             payload["fields"]["existing"]["id"],
             str(self.product["id"]),
         )
+
+    def test_multipart_receipt_without_photo_updates_stock_and_history(self):
+        response = self.multipart_receipt(
+            quantity=1,
+            note="",
+            idempotency_key="receipt-no-photo",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        receipt = response.get_json()["data"]
+        self.assertEqual(receipt["note"], "")
+        self.assertEqual(self.stock(), 1)
+        self.assertEqual(len(web.load_receipts()), 1)
+        movements = self.client.get(
+            "/api/v1/products/{}/movements".format(self.product["id"])
+        ).get_json()["data"]
+        self.assertTrue(
+            any(
+                item.get("receipt_id") == receipt["id"]
+                and item["diff"] == 1
+                for item in movements
+            )
+        )
+        self.remote.upload_product_image.assert_not_called()
+
+    def test_previous_data_url_photo_payload_remains_accepted(self):
+        payload = self.receipt_payload(quantity=1)
+        payload["idempotency_key"] = "receipt-data-url"
+        payload["product_image"] = {
+            "name": "watch.png",
+            "data_url": (
+                "data:image/png;base64,"
+                + base64.b64encode(
+                    b"\x89PNG\r\n\x1a\nlegacy-data-url"
+                ).decode("ascii")
+            ),
+        }
+
+        response = self.client.post(
+            "/api/v1/receipts",
+            json=payload,
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(self.stock(), 1)
+        self.remote.upload_product_image.assert_called_once()
+
+    def test_multipart_receipt_saves_png_jpeg_and_comment(self):
+        fixtures = (
+            (
+                b"\x89PNG\r\n\x1a\n" + b"png-data",
+                "watch.png",
+                "image/png",
+            ),
+            (
+                b"\xff\xd8\xff" + b"jpeg-data",
+                "watch.jpg",
+                "image/jpeg",
+            ),
+        )
+
+        for index, (content, filename, mimetype) in enumerate(fixtures):
+            response = self.multipart_receipt(
+                quantity=2,
+                note="Фото и комментарий {}".format(index),
+                image=content,
+                filename=filename,
+                mimetype=mimetype,
+                idempotency_key="receipt-photo-{}".format(index),
+            )
+            self.assertEqual(response.status_code, 201)
+            payload = response.get_json()
+            self.assertEqual(
+                payload["data"]["note"],
+                "Фото и комментарий {}".format(index),
+            )
+            self.assertEqual(
+                payload["meta"]["image_message"],
+                "Фото товара добавлено.",
+            )
+
+        self.assertEqual(self.stock(), 4)
+        self.assertEqual(
+            [call.args[1] for call in self.remote.upload_product_image.call_args_list],
+            ["watch.png", "watch.jpg"],
+        )
+        self.assertTrue(
+            self.remote.upload_product_image.call_args_list[0].args[2]
+            .startswith(b"\x89PNG\r\n\x1a\n")
+        )
+        self.assertTrue(
+            self.remote.upload_product_image.call_args_list[1].args[2]
+            .startswith(b"\xff\xd8\xff")
+        )
+
+    def test_create_next_mode_is_idempotent_and_does_not_double_stock(self):
+        first = self.multipart_receipt(
+            quantity=3,
+            note="Следующий приход",
+            image=b"\x89PNG\r\n\x1a\nnext",
+            idempotency_key="receipt-create-next",
+            submit_mode="create_next",
+        )
+        repeated = self.multipart_receipt(
+            quantity=3,
+            note="Следующий приход",
+            image=b"\x89PNG\r\n\x1a\nnext",
+            idempotency_key="receipt-create-next",
+            submit_mode="create_next",
+        )
+
+        self.assertEqual(first.status_code, 201)
+        self.assertEqual(repeated.status_code, 200)
+        self.assertEqual(
+            first.get_json()["data"]["id"],
+            repeated.get_json()["data"]["id"],
+        )
+        self.assertEqual(self.stock(), 3)
+        self.remote.create_stock_enter_many.assert_called_once()
+        self.remote.upload_product_image.assert_called_once()
+        self.assertEqual(len(web.load_receipts()), 1)
+
+    def test_invalid_multipart_inputs_leave_no_partial_receipt(self):
+        response = self.multipart_receipt(
+            quantity=2,
+            note="Недопустимый файл",
+            image=b"not-an-image",
+            filename="watch.txt",
+            mimetype="text/plain",
+            idempotency_key="receipt-invalid-image",
+        )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(
+            response.get_json()["message"],
+            "Недопустимый формат изображения. Поддерживаются JPEG и PNG.",
+        )
+        oversized = self.multipart_receipt(
+            quantity=2,
+            image=(
+                b"\x89PNG\r\n\x1a\n"
+                + b"x" * web.PRODUCT_IMAGE_MAX_BYTES
+            ),
+            idempotency_key="receipt-oversized-image",
+        )
+        missing_quantity = self.multipart_receipt(
+            quantity=0,
+            idempotency_key="receipt-missing-quantity",
+        )
+
+        self.assertEqual(oversized.status_code, 422)
+        self.assertEqual(
+            oversized.get_json()["message"],
+            "Файл слишком большой. Максимальный размер — 3 МБ.",
+        )
+        self.assertEqual(missing_quantity.status_code, 422)
+        self.assertIn(
+            "Количество",
+            missing_quantity.get_json()["message"],
+        )
+        self.assertEqual(self.stock(), 0)
+        self.assertEqual(web.load_receipts(), [])
+        self.remote.create_stock_enter_many.assert_not_called()
+
+    def test_local_persistence_failure_rolls_back_stock_files_and_remote(self):
+        with mock.patch.object(
+            web,
+            "save_stock_operations",
+            side_effect=[RuntimeError("forced persistence failure"), None],
+        ):
+            response = self.multipart_receipt(
+                quantity=5,
+                note="Транзакционный тест",
+                idempotency_key="receipt-persistence-failure",
+            )
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(
+            response.get_json()["code"],
+            "RECEIPT_PERSISTENCE_FAILED",
+        )
+        self.assertEqual(self.stock(), 0)
+        self.assertEqual(web.load_receipts(), [])
+        self.assertEqual(web.load_stock_operations(), [])
+        self.assertIsNone(
+            web.ReceiptInventory().get_receipt_by_idempotency(
+                "receipt-persistence-failure"
+            )
+        )
+        self.remote.delete_stock_enter.assert_called_once_with("enter-1")
+
+    def test_image_upload_failure_rolls_back_before_local_persistence(self):
+        self.remote.upload_product_image.return_value = False
+        response = self.multipart_receipt(
+            quantity=2,
+            note="Ошибка фото",
+            image=b"\x89PNG\r\n\x1a\nbroken-remote",
+            idempotency_key="receipt-image-failure",
+        )
+
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(
+            response.get_json()["code"],
+            "PRODUCT_IMAGE_UPLOAD_FAILED",
+        )
+        self.assertEqual(self.stock(), 0)
+        self.assertEqual(web.load_receipts(), [])
+        self.remote.delete_stock_enter.assert_called_once_with("enter-1")
 
     def test_products_sales_and_receipts_use_the_same_catalog_ids(self):
         query = (

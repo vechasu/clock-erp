@@ -72,6 +72,15 @@
             border: 1px solid #fca5a5;
         }
 
+        .receipt-submit-message {
+            display: none;
+            margin: 14px 0 0;
+        }
+
+        .receipt-submit-message.is-visible {
+            display: block;
+        }
+
         .stats {
             display: grid;
             grid-template-columns:
@@ -1399,6 +1408,9 @@
         src="{{ url_for('static', filename='js/catalog-combobox.js') }}"
     ></script>
     <script
+        src="{{ url_for('static', filename='js/receipt-submit.js') }}"
+    ></script>
+    <script
         src="{{ url_for('static', filename='js/period-picker.js') }}"
     ></script>
 </head>
@@ -2318,6 +2330,13 @@
                     </div>
                 </div>
                 <!-- SIMPLE RECEIPT FORM V1 END -->
+
+                <div
+                    id="receiptSubmitMessage"
+                    class="notice receipt-submit-message{% if message and open_receipt_modal %} is-visible {% if notice == 'error' %}notice-error{% else %}notice-success{% endif %}{% endif %}"
+                    role="{% if notice == 'error' %}alert{% else %}status{% endif %}"
+                    aria-live="polite"
+                >{% if message and open_receipt_modal %}{{ message }}{% endif %}</div>
 
                 <div class="modal-actions">
                     <!-- RECEIPT CREATE NEXT V2 -->
@@ -3998,52 +4017,57 @@
         });
     // RECEIPT ROW ACTIONS SCRIPT V1 END
 
-    async function receiptImagePayload(file) {
-        if (!file) {
-            return null;
-        }
-
-        const dataUrl = await new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.addEventListener("load", () => resolve(reader.result));
-            reader.addEventListener("error", () => reject(reader.error));
-            reader.readAsDataURL(file);
-        });
-
-        return {
-            name: file.name,
-            data_url: dataUrl,
-        };
+    function setReceiptSubmitting(form, submitting) {
+        form.dataset.submitting = submitting ? "true" : "";
+        form.querySelectorAll('button[type="submit"]')
+            .forEach((button) => {
+                button.disabled = submitting;
+            });
     }
 
-    async function submitSharedReceipt(form, endpoint, method, payload) {
-        const csrfToken = form.querySelector(
-            'input[name="csrf_token"]'
-        )?.value || "";
-        const response = await fetch(endpoint, {
-            method,
-            headers: {
-                "Content-Type": "application/json",
-                "X-CSRF-Token": csrfToken,
-                "Idempotency-Key": (
-                    window.crypto?.randomUUID?.()
-                    || String(Date.now())
-                ),
-            },
-            body: JSON.stringify(payload),
-        });
-        const result = await response.json();
-
-        if (!response.ok || result.error) {
-            throw new Error(
-                result.error?.message
-                || "Не удалось сохранить приход"
+    function showReceiptSubmitMessage(form, message, state) {
+        let target = form.querySelector(
+            ".receipt-submit-message"
+        );
+        if (!target) {
+            target = document.createElement("div");
+            target.className = (
+                "notice receipt-submit-message"
             );
+            target.setAttribute("aria-live", "polite");
+            form.appendChild(target);
         }
+        target.textContent = message || "";
+        target.setAttribute(
+            "role",
+            state === "error" ? "alert" : "status"
+        );
+        target.classList.toggle(
+            "notice-error",
+            state === "error"
+        );
+        target.classList.toggle(
+            "notice-success",
+            state === "success"
+        );
+        target.classList.toggle(
+            "is-visible",
+            Boolean(message)
+        );
+    }
 
-        window.location.href = (
-            "/receipts?notice=success&message="
-            + encodeURIComponent("Приход сохранён в единой ERP")
+    async function submitSharedReceipt(
+        form,
+        endpoint,
+        method,
+        payload
+    ) {
+        return window.VechasuReceiptSubmit.request(
+            form,
+            endpoint,
+            method,
+            payload,
+            window.VechasuReceiptSubmit.submissionKey(form)
         );
     }
 
@@ -4060,40 +4084,42 @@
         }
 
         event.preventDefault();
-        const submitButton = event.submitter;
-        if (submitButton) {
-            submitButton.disabled = true;
+        if (receiptForm.dataset.submitting === "true") {
+            return;
         }
+        const submitButton = event.submitter;
+        const submitMode = (
+            submitButton?.value === "create_next"
+                ? "create_next"
+                : "close"
+        );
+        setReceiptSubmitting(receiptForm, true);
+        showReceiptSubmitMessage(receiptForm, "", "");
 
         try {
-            const image = await receiptImagePayload(
-                receiptProductImage?.files?.[0]
-            );
-            await submitSharedReceipt(
+            const result = await submitSharedReceipt(
                 receiptForm,
                 "/api/v1/receipts",
                 "POST",
-                {
-                    receipt_date: receiptForm.querySelector(
-                        '[name="receipt_date"]'
-                    )?.value,
-                    note: receiptForm.querySelector(
-                        '[name="note"]'
-                    )?.value || "",
-                    positions: [{
-                        product_id: productId,
-                        quantity: receiptForm.querySelector(
-                            '[name="quantity"]'
-                        )?.value,
-                    }],
-                    product_image: image,
-                }
+                window.VechasuReceiptSubmit.buildCreatePayload(
+                    receiptForm,
+                    productId
+                )
+            );
+            window.location.href = (
+                window.VechasuReceiptSubmit.successUrl(
+                    submitMode,
+                    result
+                )
             );
         } catch (error) {
-            alert(error.message);
-            if (submitButton) {
-                submitButton.disabled = false;
-            }
+            showReceiptSubmitMessage(
+                receiptForm,
+                error?.message
+                    || "Ошибка сервера при сохранении прихода.",
+                "error"
+            );
+            setReceiptSubmitting(receiptForm, false);
         }
     });
 
@@ -4111,10 +4137,11 @@
                 }
 
                 event.preventDefault();
-                const submitButton = event.submitter;
-                if (submitButton) {
-                    submitButton.disabled = true;
+                if (form.dataset.submitting === "true") {
+                    return;
                 }
+                setReceiptSubmitting(form, true);
+                showReceiptSubmitMessage(form, "", "");
 
                 try {
                     await submitSharedReceipt(
@@ -4139,11 +4166,20 @@
                             )?.value,
                         }
                     );
+                    window.location.href = (
+                        "/receipts?notice=success&message="
+                        + encodeURIComponent(
+                            "Изменения прихода сохранены."
+                        )
+                    );
                 } catch (error) {
-                    alert(error.message);
-                    if (submitButton) {
-                        submitButton.disabled = false;
-                    }
+                    showReceiptSubmitMessage(
+                        form,
+                        error?.message
+                            || "Ошибка сервера при сохранении прихода.",
+                        "error"
+                    );
+                    setReceiptSubmitting(form, false);
                 }
             });
         });
