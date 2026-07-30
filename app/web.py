@@ -12609,8 +12609,9 @@ def api_catalog_duplicates():
 def serialize_api_receipt(
         receipt,
         catalog_lookup=None,
-        legacy_links=None):
-    catalog = SharedCatalog()
+        legacy_links=None,
+        shared_catalog=None):
+    catalog = shared_catalog or SharedCatalog()
     receipt_id = str(receipt.get("id") or "")
     if legacy_links is None:
         legacy_links = catalog.legacy_links("receipt", [receipt_id])
@@ -12817,7 +12818,9 @@ def receipt_api_catalog_items(
         brand_id=None,
         category_id=None,
         limit=100,
-        allow_legacy=False):
+        allow_legacy=False,
+        shared_catalog=None):
+    shared_catalog = shared_catalog or SharedCatalog()
     shared_items = [
         {
             **item,
@@ -12825,7 +12828,7 @@ def receipt_api_catalog_items(
             "thumbnail_url": "",
             "has_images": False,
         }
-        for item in SharedCatalog().list_products(
+        for item in shared_catalog.list_products(
             query=query,
             brand_id=brand_id,
             category_id=category_id,
@@ -12871,14 +12874,17 @@ def validate_api_receipt_date(value):
     return normalized
 
 
-def build_api_receipt_positions(payload_positions, catalog):
+def build_api_receipt_positions(
+        payload_positions,
+        catalog,
+        shared_catalog=None):
     if not isinstance(payload_positions, list) or not payload_positions:
         raise ValueError("Добавьте хотя бы один товар.")
     catalog_by_id = {
         str(item.get("id") or ""): item
         for item in catalog
     }
-    shared_products = SharedCatalog().products_by_ids(
+    shared_products = (shared_catalog or SharedCatalog()).products_by_ids(
         [
             item.get("product_id")
             for item in payload_positions
@@ -12979,7 +12985,10 @@ def build_api_receipt_positions(payload_positions, catalog):
     return positions
 
 
-def prepare_moysklad_receipt_positions(positions, client):
+def prepare_moysklad_receipt_positions(
+        positions,
+        client,
+        shared_catalog=None):
     remote_positions = []
     for position in positions:
         remote_product_id = str(
@@ -13005,7 +13014,7 @@ def prepare_moysklad_receipt_positions(positions, client):
             remote_product_id = str((created or {}).get("id") or "").strip()
             if not remote_product_id:
                 raise ValueError("МойСклад не создал карточку товара.")
-            SharedCatalog().set_moysklad_product_id(
+            (shared_catalog or SharedCatalog()).set_moysklad_product_id(
                 position["product_id"],
                 remote_product_id,
             )
@@ -13156,7 +13165,8 @@ def persist_api_receipt(
         receipts,
         request_idempotency_key,
         created_at,
-        reason):
+        reason,
+        receipt_inventory=None):
     receipts_before = copy.deepcopy(receipts)
     operations_before = load_stock_operations()
     receipts_after = [
@@ -13185,7 +13195,7 @@ def persist_api_receipt(
 
     try:
         if receipt.get("inventory_managed"):
-            ReceiptInventory().create_receipt(
+            (receipt_inventory or ReceiptInventory()).create_receipt(
                 receipt,
                 positions,
                 idempotency_key=(
@@ -13266,6 +13276,9 @@ def api_receipts_catalog():
 def api_receipts_collection():
     if request.method == "POST":
         require_csrf_when_authenticated()
+        receipt_database = CatalogDatabase(cache_initialization=True)
+        receipt_catalog = SharedCatalog(receipt_database)
+        receipt_inventory = ReceiptInventory(receipt_database)
         try:
             payload, product_image = api_receipt_request_payload()
             request_idempotency_key = str(
@@ -13282,7 +13295,9 @@ def api_receipts_collection():
                 receipt_api_catalog_items(
                     force=True,
                     allow_legacy=not request.path.startswith("/api/v1/"),
+                    shared_catalog=receipt_catalog,
                 ),
+                shared_catalog=receipt_catalog,
             )
         except ValueError as error:
             return api_error("RECEIPT_VALIDATION_FAILED", str(error), 422)
@@ -13290,7 +13305,7 @@ def api_receipts_collection():
         receipts = load_receipts()
         if request_idempotency_key:
             existing_ledger_receipt = (
-                ReceiptInventory().get_receipt_by_idempotency(
+                receipt_inventory.get_receipt_by_idempotency(
                     request_idempotency_key
                 )
             )
@@ -13306,7 +13321,10 @@ def api_receipts_collection():
                 ):
                     receipts.insert(0, existing_receipt)
                     save_receipts(receipts)
-                return api_success(serialize_api_receipt(existing_receipt))
+                return api_success(serialize_api_receipt(
+                    existing_receipt,
+                    shared_catalog=receipt_catalog,
+                ))
         receipt_id = str(uuid.uuid4())
         receipt_number = generate_receipt_number(receipts)
         first_position = positions[0]
@@ -13322,6 +13340,7 @@ def api_receipts_collection():
             remote_positions = prepare_moysklad_receipt_positions(
                 positions,
                 moysklad_client,
+                shared_catalog=receipt_catalog,
             )
         except Exception:
             app.logger.exception("Receipt API failed to create MoySklad document")
@@ -13425,7 +13444,7 @@ def api_receipts_collection():
                 (document.get("meta") or {}).get("uuidHref") or ""
             ),
         }
-        managed_product_ids = SharedCatalog().products_by_ids(
+        managed_product_ids = receipt_catalog.products_by_ids(
             [position["product_id"] for position in positions],
             include_archived=False,
         )
@@ -13465,6 +13484,7 @@ def api_receipts_collection():
                 request_idempotency_key,
                 created_at,
                 reason,
+                receipt_inventory=receipt_inventory,
             )
         except Exception:
             app.logger.exception("Receipt API local persistence failed")
@@ -13477,7 +13497,10 @@ def api_receipts_collection():
         WAREHOUSE_CACHE["items"] = []
         WAREHOUSE_CACHE["loaded_at"] = 0
         return api_success(
-            serialize_api_receipt(receipt),
+            serialize_api_receipt(
+                receipt,
+                shared_catalog=receipt_catalog,
+            ),
             201,
             image_message=image_message,
         )
