@@ -25,8 +25,6 @@ import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { CatalogCascade } from '../catalog/CatalogComboboxes';
 import {
   bulkUpdateProducts,
-  createBrand,
-  createCategory,
   createProduct,
   deleteProduct,
   fetchProducts,
@@ -75,11 +73,6 @@ export function ProductsPage() {
   const [bulkBrandId, setBulkBrandId] = useState<number | null>(null);
   const [bulkCategoryId, setBulkCategoryId] = useState<number | null>(null);
   const [bulkCell, setBulkCell] = useState('');
-  const [taxonomyEditor, setTaxonomyEditor] = useState<{
-    kind: 'brand' | 'category';
-    brandId: number | null;
-  } | null>(null);
-  const [taxonomyName, setTaxonomyName] = useState('');
   const [toast, setToast] = useState<{ message: string; kind: 'success' | 'error' } | null>(null);
 
   useEffect(() => {
@@ -157,26 +150,6 @@ export function ProductsPage() {
     },
     onError: (error) => setToast({ message: errorMessage(error), kind: 'error' }),
   });
-  const taxonomyMutation = useMutation({
-    mutationFn: () => {
-      if (!taxonomyEditor) throw new Error('Не выбран тип справочника');
-      return taxonomyEditor.kind === 'brand'
-        ? createBrand(taxonomyName)
-        : createCategory(taxonomyEditor.brandId!, taxonomyName);
-    },
-    onSuccess: async () => {
-      await invalidate();
-      await queryClient.invalidateQueries({ queryKey: ['catalog-options'] });
-      setToast({
-        message: taxonomyEditor?.kind === 'brand' ? 'Бренд создан' : 'Категория создана',
-        kind: 'success',
-      });
-      setTaxonomyEditor(null);
-      setTaxonomyName('');
-    },
-    onError: (error) => setToast({ message: errorMessage(error), kind: 'error' }),
-  });
-
   const setFilter = (key: string, value: string, resetPage = true) => {
     const next = new URLSearchParams(searchParams);
     if (value) next.set(key, value);
@@ -396,6 +369,7 @@ export function ProductsPage() {
               }
             >
               <CatalogCascade
+                required={false}
                 brandId={Number(searchParams.get('brand_id')) || null}
                 categoryId={Number(searchParams.get('category_id')) || null}
                 productId={searchParams.get('product_id') ?? ''}
@@ -602,14 +576,7 @@ export function ProductsPage() {
         <ProductForm
           id="product-editor"
           product={editor === 'new' ? null : editor}
-          onCreateBrand={() => setTaxonomyEditor({ kind: 'brand', brandId: null })}
-          onCreateCategory={(brandId) => {
-            if (!brandId) {
-              setToast({ message: 'Сначала укажите бренд', kind: 'error' });
-              return;
-            }
-            setTaxonomyEditor({ kind: 'category', brandId });
-          }}
+          onCatalogCreated={(message) => setToast({ message, kind: 'success' })}
           onSubmit={(values) => {
             if (editor) saveMutation.mutate({ product: editor, values });
           }}
@@ -629,40 +596,6 @@ export function ProductsPage() {
           if (deleteTarget) deleteMutation.mutate(deleteTarget.id);
         }}
       />
-      <Modal
-        open={taxonomyEditor !== null}
-        title={taxonomyEditor?.kind === 'brand' ? 'Новый бренд' : 'Новая категория'}
-        description={
-          taxonomyEditor?.kind === 'category'
-            ? `Категория будет связана с брендом ID ${taxonomyEditor.brandId}.`
-            : 'Значение появится в общем справочнике.'
-        }
-        onClose={() => setTaxonomyEditor(null)}
-        footer={
-          <>
-            <button
-              className="button secondary"
-              type="button"
-              onClick={() => setTaxonomyEditor(null)}
-            >
-              Отмена
-            </button>
-            <button
-              className="button primary"
-              type="button"
-              disabled={!taxonomyName.trim() || taxonomyMutation.isPending}
-              onClick={() => taxonomyMutation.mutate()}
-            >
-              Создать
-            </button>
-          </>
-        }
-      >
-        <label className="form-field">
-          <span>Название</span>
-          <input value={taxonomyName} onChange={(event) => setTaxonomyName(event.target.value)} />
-        </label>
-      </Modal>
       <Modal
         open={bulkEditorOpen}
         title={`Изменить выбранные товары (${selectedIds.size})`}

@@ -1,9 +1,11 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { createPortal } from 'react-dom';
 import { useEffect, useState } from 'react';
 
 import { ApiRequestError } from '../../api/client';
 import { Modal } from '../../components/Modal';
 import { createCatalogBrand, createCatalogCategory, createCatalogProduct } from './api';
+import type { CatalogBrand, CatalogCategory, CatalogProduct } from './schemas';
 
 export interface CatalogCreationRequest {
   kind: 'brand' | 'category' | 'product';
@@ -11,10 +13,15 @@ export interface CatalogCreationRequest {
   categoryId?: number;
 }
 
+export type CatalogCreatedEntity =
+  | { kind: 'brand'; value: CatalogBrand }
+  | { kind: 'category'; value: CatalogCategory }
+  | { kind: 'product'; value: CatalogProduct };
+
 interface CatalogCreationModalProps {
   request: CatalogCreationRequest | null;
   onClose: () => void;
-  onCreated: (message: string) => void;
+  onCreated: (created: CatalogCreatedEntity, message: string) => void;
 }
 
 export function CatalogCreationModal({ request, onClose, onCreated }: CatalogCreationModalProps) {
@@ -30,28 +37,37 @@ export function CatalogCreationModal({ request, onClose, onCreated }: CatalogCre
   const mutation = useMutation({
     mutationFn: async () => {
       if (!request) throw new Error('Не выбран тип справочника');
-      if (request.kind === 'brand') return createCatalogBrand(name);
+      if (request.kind === 'brand') {
+        return { kind: 'brand' as const, value: await createCatalogBrand(name) };
+      }
       if (request.kind === 'category') {
         if (!request.brandId) throw new Error('Сначала выберите бренд');
-        return createCatalogCategory(request.brandId, name);
+        return {
+          kind: 'category' as const,
+          value: await createCatalogCategory(request.brandId, name),
+        };
       }
       if (!request.brandId || !request.categoryId) {
         throw new Error('Сначала выберите бренд и категорию');
       }
-      return createCatalogProduct({
-        name,
-        article,
-        brand_id: request.brandId,
-        category_id: request.categoryId,
-      });
+      return {
+        kind: 'product' as const,
+        value: await createCatalogProduct({
+          name,
+          article,
+          brand_id: request.brandId,
+          category_id: request.categoryId,
+        }),
+      };
     },
-    onSuccess: async () => {
+    onSuccess: async (created) => {
       await queryClient.invalidateQueries({ queryKey: ['catalog-options'] });
       await queryClient.invalidateQueries({ queryKey: ['products'] });
       onCreated(
-        request?.kind === 'brand'
+        created,
+        created.kind === 'brand'
           ? 'Бренд создан'
-          : request?.kind === 'category'
+          : created.kind === 'category'
             ? 'Категория создана'
             : 'Товар создан и доступен во всех трёх разделах',
       );
@@ -72,9 +88,11 @@ export function CatalogCreationModal({ request, onClose, onCreated }: CatalogCre
         ? mutation.error.message
         : '';
 
-  return (
+  if (!request || typeof document === 'undefined') return null;
+
+  return createPortal(
     <Modal
-      open={request !== null}
+      open
       title={title}
       description="Значение сохраняется в едином справочнике Vechasu ERP."
       onClose={onClose}
@@ -107,6 +125,7 @@ export function CatalogCreationModal({ request, onClose, onCreated }: CatalogCre
         ) : null}
         {error ? <p className="form-error">{error}</p> : null}
       </div>
-    </Modal>
+    </Modal>,
+    document.body,
   );
 }

@@ -22,7 +22,6 @@ import { TablePagination } from '../../components/TablePagination';
 import { Toast } from '../../components/Toast';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { CatalogCascade } from '../catalog/CatalogComboboxes';
-import { CatalogCreationModal, type CatalogCreationRequest } from '../catalog/CatalogCreationModal';
 import { createReceipt, deleteReceipt, fetchReceipts, updateReceipt } from './api';
 import { ReceiptForm } from './ReceiptForm';
 import type { Receipt, ReceiptFormValues } from './schemas';
@@ -47,7 +46,6 @@ export function ReceiptsPage() {
   const [editor, setEditor] = useState<Receipt | 'new' | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Receipt | null>(null);
   const [toast, setToast] = useState<{ message: string; kind: 'success' | 'error' } | null>(null);
-  const [catalogCreation, setCatalogCreation] = useState<CatalogCreationRequest | null>(null);
 
   useEffect(() => {
     const current = searchParams.get('q') ?? '';
@@ -292,6 +290,7 @@ export function ReceiptsPage() {
                 onToChange={(value) => setFilter('date_to', value)}
               />
               <CatalogCascade
+                required={false}
                 brandId={Number(searchParams.get('brand_id')) || null}
                 categoryId={Number(searchParams.get('category_id')) || null}
                 productId={searchParams.get('product_id') ?? ''}
@@ -454,11 +453,7 @@ export function ReceiptsPage() {
           onSubmit={(values) => {
             if (editor) saveMutation.mutate({ receipt: editor, values });
           }}
-          onCreateBrand={() => setCatalogCreation({ kind: 'brand' })}
-          onCreateCategory={(brandId) => setCatalogCreation({ kind: 'category', brandId })}
-          onCreateProduct={(brandId, categoryId) =>
-            setCatalogCreation({ kind: 'product', brandId, categoryId })
-          }
+          onCatalogCreated={(message) => setToast({ message, kind: 'success' })}
         />
       </Modal>
       <ConfirmDialog
@@ -470,11 +465,6 @@ export function ReceiptsPage() {
         onConfirm={() => {
           if (deleteTarget) deleteMutation.mutate(deleteTarget.id);
         }}
-      />
-      <CatalogCreationModal
-        request={catalogCreation}
-        onClose={() => setCatalogCreation(null)}
-        onCreated={(message) => setToast({ message, kind: 'success' })}
       />
       {toast ? <Toast {...toast} onClose={() => setToast(null)} /> : null}
     </AppShell>

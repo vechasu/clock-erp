@@ -245,6 +245,52 @@ class UnifiedCatalogApiTest(unittest.TestCase):
             str(self.product["id"]),
         )
 
+    def test_products_sales_and_receipts_use_the_same_catalog_ids(self):
+        query = (
+            "?brand_id={}&category_id={}&q=A168"
+            .format(self.product["brand_id"], self.product["category_id"])
+        )
+        shared = self.client.get(
+            "/api/v1/catalog/options?type=product&limit=50&"
+            + query.lstrip("?")
+        )
+        receipt = self.client.get(
+            "/api/v1/receipts/catalog?limit=50&" + query.lstrip("?")
+        )
+
+        self.assertEqual(shared.status_code, 200)
+        self.assertEqual(receipt.status_code, 200)
+        shared_product = shared.get_json()["data"][0]
+        receipt_product = receipt.get_json()["data"][0]
+        self.assertEqual(
+            (
+                shared_product["id"],
+                shared_product["brand_id"],
+                shared_product["category_id"],
+            ),
+            (
+                receipt_product["id"],
+                receipt_product["brand_id"],
+                receipt_product["category_id"],
+            ),
+        )
+        self.assertEqual(shared_product["id"], str(self.product["id"]))
+
+        with mock.patch.object(
+            web,
+            "get_warehouse_items",
+            return_value=[{
+                "id": "receipt-only",
+                "name": "Отдельный товар прихода",
+                "brand": "Локальный бренд",
+                "category": "Локальная категория",
+            }],
+        ):
+            isolated = self.client.get(
+                "/api/v1/receipts/catalog?q=receipt-only"
+            ).get_json()
+        self.assertEqual(isolated["data"], [])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -12699,23 +12699,24 @@ def receipt_api_catalog_items(
         query="",
         brand_id=None,
         category_id=None,
-        limit=100):
-    shared_items = SharedCatalog().list_products(
-        query=query,
-        brand_id=brand_id,
-        category_id=category_id,
-        limit=limit,
-    )
-    if shared_items:
-        return [
-            {
-                **item,
-                "code": item["barcode"] or item["article"],
-                "thumbnail_url": "",
-                "has_images": False,
-            }
-            for item in shared_items
-        ]
+        limit=100,
+        allow_legacy=False):
+    shared_items = [
+        {
+            **item,
+            "code": item["barcode"] or item["article"],
+            "thumbnail_url": "",
+            "has_images": False,
+        }
+        for item in SharedCatalog().list_products(
+            query=query,
+            brand_id=brand_id,
+            category_id=category_id,
+            limit=limit,
+        )
+    ]
+    if shared_items or not allow_legacy:
+        return shared_items
     return [
         {
             "id": str(item.get("id") or ""),
@@ -12940,14 +12941,13 @@ def api_receipts_catalog():
     query = (request.args.get("q") or "").strip()
     brand = (request.args.get("brand") or "").strip()
     category = (request.args.get("category") or "").strip()
-    brand_id = (request.args.get("brand_id") or "").strip()
-    category_id = (request.args.get("category_id") or "").strip()
     product_id = (request.args.get("product_id") or "").strip()
     items = receipt_api_catalog_items(
         query=query,
         brand_id=request.args.get("brand_id"),
         category_id=request.args.get("category_id"),
         limit=api_positive_int(request.args.get("limit"), 50, 100),
+        allow_legacy=not request.path.startswith("/api/v1/"),
     )
     if query:
         items = [
@@ -12961,6 +12961,8 @@ def api_receipts_catalog():
         items = [item for item in items if item["brand"] == brand]
     if category:
         items = [item for item in items if item["category"] == category]
+    if product_id:
+        items = [item for item in items if item["id"] == product_id]
     limit = api_positive_int(request.args.get("limit"), 50, 100)
     return api_success(items[:limit], total=len(items))
 
@@ -12984,7 +12986,10 @@ def api_receipts_collection():
             product_image = decode_api_product_image(payload.get("product_image"))
             positions = build_api_receipt_positions(
                 payload.get("positions") or payload.get("items"),
-                receipt_api_catalog_items(force=True),
+                receipt_api_catalog_items(
+                    force=True,
+                    allow_legacy=not request.path.startswith("/api/v1/"),
+                ),
             )
         except ValueError as error:
             return api_error("RECEIPT_VALIDATION_FAILED", str(error), 422)
@@ -13359,7 +13364,10 @@ def api_receipt_resource(receipt_id):
             }]
         positions = build_api_receipt_positions(
             requested_positions,
-            receipt_api_catalog_items(force=True),
+            receipt_api_catalog_items(
+                force=True,
+                allow_legacy=not request.path.startswith("/api/v1/"),
+            ),
         )
         if len(positions) != 1:
             raise ValueError("Редактировать можно только одну позицию.")
