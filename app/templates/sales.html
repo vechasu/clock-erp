@@ -5492,8 +5492,16 @@
             productSearch.dispatchEvent(
                 new Event("input", {bubbles: true})
             );
+            await new Promise((resolve) =>
+                window.setTimeout(resolve, 350)
+            );
 
-            if (productInput.value) {
+            if (
+                productInput.value
+                || product.querySelector(
+                    "[data-brand-search-clear]"
+                ).hidden
+            ) {
                 throw new Error("product-search-reset");
             }
 

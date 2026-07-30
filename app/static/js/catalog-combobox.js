@@ -837,6 +837,7 @@
                 options,
                 "Ничего не найдено"
             );
+            window.filterBrandList(query, combobox);
             return items;
         } catch (error) {
             if (error.name === "AbortError") {
