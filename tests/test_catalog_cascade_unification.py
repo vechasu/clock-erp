@@ -10,76 +10,112 @@ class CatalogCascadeUnificationTest(unittest.TestCase):
     def source(self, relative_path):
         return (self.root / relative_path).read_text(encoding="utf-8")
 
-    def test_all_three_sections_use_the_same_catalog_cascade(self):
-        component_import = (
-            "import { CatalogCascade } from "
-            "'../catalog/CatalogComboboxes';"
+    def test_visible_sections_use_one_physical_combobox_component(self):
+        macro = self.source("app/templates/_catalog_combobox.html")
+        shared_script = self.source(
+            "app/static/js/catalog-combobox.js"
         )
+
+        self.assertEqual(
+            macro.count("{% macro render_catalog_combobox"),
+            1,
+        )
+        self.assertEqual(
+            macro.count("{% macro render_catalog_create_modal"),
+            1,
+        )
+        self.assertEqual(
+            shared_script.count(
+                "(function initializeSharedCatalogCascades()"
+            ),
+            1,
+        )
+        self.assertEqual(
+            shared_script.count(
+                '"/api/v1/catalog/options?"'
+            ),
+            1,
+        )
+
         for page in (
-            "frontend/src/features/products/ProductsPage.tsx",
-            "frontend/src/features/sales/SalesPage.tsx",
-            "frontend/src/features/receipts/ReceiptsPage.tsx",
+            "app/templates/warehouse.html",
+            "app/templates/sales.html",
+            "app/templates/receipts.html",
         ):
             source = self.source(page)
-            self.assertIn(component_import, source)
-            self.assertIn("<CatalogCascade", source)
-
-        for form in (
-            "frontend/src/features/products/ProductForm.tsx",
-            "frontend/src/features/sales/SaleForm.tsx",
-            "frontend/src/features/receipts/ReceiptForm.tsx",
-        ):
-            source = self.source(form)
-            self.assertIn(component_import, source)
-            self.assertIn("<CatalogCascade", source)
-
-    def test_receipts_have_no_frontend_local_catalog(self):
-        receipt_frontend = "\n".join(
-            self.source(path)
-            for path in (
-                "frontend/src/features/receipts/api.ts",
-                "frontend/src/features/receipts/schemas.ts",
-                "frontend/src/features/receipts/ReceiptsPage.tsx",
-                "frontend/src/features/receipts/ReceiptForm.tsx",
-            )
-        )
-        self.assertNotIn("fetchReceiptCatalog", receipt_frontend)
-        self.assertNotIn("receiptCatalogSchema", receipt_frontend)
-        self.assertNotIn("/receipts/catalog", receipt_frontend)
-        self.assertIn("allowCreate", self.source(
-            "frontend/src/features/receipts/ReceiptForm.tsx"
-        ))
-
-    def test_shared_component_owns_layout_and_creation(self):
-        component = self.source(
-            "frontend/src/features/catalog/CatalogComboboxes.tsx"
-        )
-        styles = self.source("frontend/src/styles/global.css")
-        self.assertEqual(component.count("function EntityCombobox"), 1)
-        self.assertIn("CatalogCreationModal", component)
-        self.assertIn('data-testid="catalog-cascade"', component)
-        self.assertIn(".catalog-cascade {", styles)
-        self.assertIn(
-            "grid-template-columns: repeat(3, minmax(0, 1fr));",
-            styles,
-        )
-
-    def test_visible_section_routes_render_the_shared_react_application(self):
-        web = self.source("app/web.py")
-        for route, section in (
-            ('@app.route("/products")', "products"),
-            ('@app.route("/sales")', "sales"),
-            ('@app.route("/receipts")', "receipts"),
-        ):
-            route_source = web.split(route, 1)[1].split("@app.route(", 1)[0]
             self.assertIn(
-                f'return react_application("{section}")',
-                route_source,
+                'filename=\'js/catalog-combobox.js\'',
+                source,
+            )
+            self.assertIn("render_catalog_combobox(", source)
+            self.assertIn("data-shared-catalog-scope", source)
+            self.assertIn('shared_catalog_kind="brand"', source)
+            self.assertIn('shared_catalog_kind="category"', source)
+
+        for page in (
+            "app/templates/sales.html",
+            "app/templates/receipts.html",
+        ):
+            self.assertIn(
+                'shared_catalog_kind="product"',
+                self.source(page),
             )
 
-        main = self.source("frontend/src/main.tsx")
-        self.assertIn("window.location.pathname.startsWith('/app/')", main)
-        self.assertIn("<BrowserRouter basename={basename}>", main)
+    def test_receipts_and_sales_have_no_local_catalog_arrays(self):
+        for page in (
+            "app/templates/sales.html",
+            "app/templates/receipts.html",
+        ):
+            source = self.source(page)
+            self.assertNotIn("receiptProducts", source)
+            self.assertNotIn("receiptCatalogCategories", source)
+            self.assertNotIn("const warehouseItems", source)
+            self.assertIn(
+                "window.restoreSharedCatalogCascade",
+                source,
+            )
+
+    def test_shared_component_owns_search_cascade_and_creation(self):
+        component = self.source(
+            "app/static/js/catalog-combobox.js"
+        )
+        styles = self.source(
+            "app/static/css/catalog-combobox.css"
+        )
+        macro = self.source(
+            "app/templates/_catalog_combobox.html"
+        )
+
+        self.assertIn("window.queueSharedCatalogSearch", component)
+        self.assertIn("window.loadSharedCatalogOptions", component)
+        self.assertIn("const searchTimers = new WeakMap()", component)
+        self.assertIn("const requestControllers = new WeakMap()", component)
+        self.assertIn("resetCascadeAfter", component)
+        self.assertIn("shared-catalog:selected", component)
+        self.assertIn("Загрузка…", component)
+        self.assertIn("Ничего не найдено", component)
+        self.assertIn("ArrowDown", component)
+        self.assertIn("ArrowUp", component)
+        self.assertIn("data-catalog-create-action", macro)
+        self.assertIn(".catalog-create-modal", styles)
+
+    def test_visible_section_routes_keep_the_approved_legacy_interface(self):
+        web = self.source("app/web.py")
+        products_route = web.split('@app.route("/products")', 1)[1].split(
+            "@app.route(", 1
+        )[0]
+        sales_route = web.split('@app.route("/sales")', 1)[1].split(
+            "@app.route(", 1
+        )[0]
+        receipts_route = web.split('@app.route("/receipts")', 1)[1].split(
+            "@app.route(", 1
+        )[0]
+        self.assertIn('url_for("warehouse_page")', products_route)
+        self.assertIn('render_template(\n        "sales.html"', sales_route)
+        self.assertIn('render_template(\n        "receipts.html"', receipts_route)
+        self.assertNotIn("react_application(", products_route)
+        self.assertNotIn("react_application(", sales_route)
+        self.assertNotIn("react_application(", receipts_route)
 
     def test_receipts_describe_erp_as_the_stock_system(self):
         react_page = self.source(
@@ -90,8 +126,12 @@ class CatalogCascadeUnificationTest(unittest.TestCase):
         self.assertNotIn(stale_text, react_page)
         self.assertNotIn(stale_text, legacy_page)
         self.assertIn(
-            "После проведения остатки изменятся в единой ERP.",
+            "После проведения остатки изменятся в единой ERP",
             react_page,
+        )
+        self.assertIn(
+            "После проведения остатки изменятся в единой ERP",
+            legacy_page,
         )
 
 

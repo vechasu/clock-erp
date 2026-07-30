@@ -1,8 +1,13 @@
-{% macro render_catalog_combobox(component_id, input_name, options, selected_value="", include_all=false, item_label="значение", all_label="Все", disabled=false, prefix_search=true, empty_label="Ничего не найдено", component_class="", clear_selection_on_search_clear=false, input_id="", search_enabled=true, form_id="", action_kind="", action_label="", all_count=none) %}
+{% macro render_catalog_combobox(component_id, input_name, options, selected_value="", include_all=false, item_label="значение", all_label="Все", disabled=false, prefix_search=true, empty_label="Ничего не найдено", component_class="", clear_selection_on_search_clear=false, input_id="", search_enabled=true, form_id="", action_kind="", action_label="", all_count=none, shared_catalog_kind="", selected_id="", id_input_name="", selected_label="") %}
     <div
         id="{{ component_id }}"
         class="brand-combobox{% if component_class %} {{ component_class }}{% endif %}"
         data-brand-combobox
+        {% if shared_catalog_kind %}
+            data-shared-catalog-kind="{{ shared_catalog_kind }}"
+            data-shared-catalog-selected-id="{{ selected_id }}"
+            data-shared-catalog-selected-label="{{ selected_label or selected_value }}"
+        {% endif %}
         data-prefix-search="{{ 'true' if prefix_search else 'false' }}"
         data-search-enabled="{{ 'true' if search_enabled else 'false' }}"
         data-clear-selection-on-search-clear="{{ 'true' if clear_selection_on_search_clear else 'false' }}"
@@ -17,6 +22,16 @@
             {% if form_id %}form="{{ form_id }}"{% endif %}
             {% if disabled %}disabled{% endif %}
         >
+        {% if id_input_name %}
+            <input
+                class="catalog-combobox-id"
+                type="hidden"
+                name="{{ id_input_name }}"
+                value="{{ selected_id }}"
+                {% if form_id %}form="{{ form_id }}"{% endif %}
+                {% if disabled %}disabled{% endif %}
+            >
+        {% endif %}
         <button
             id="{{ component_id }}Trigger"
             class="brand-combobox-trigger"
@@ -27,7 +42,7 @@
             {% if disabled %}disabled{% endif %}
         >
             <span class="brand-combobox-value">
-                {{ selected_value or (all_label if include_all else "Выберите " ~ item_label) }}
+                {{ selected_label or selected_value or (all_label if include_all else "Выберите " ~ item_label) }}
             </span>
             <span class="brand-combobox-arrow">▾</span>
         </button>
@@ -96,6 +111,81 @@
                     ＋ {{ action_label }}
                 </button>
             {% endif %}
+        </div>
+    </div>
+{% endmacro %}
+
+{% macro render_catalog_create_modal() %}
+    <div
+        class="catalog-create-modal"
+        data-shared-catalog-create-modal
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="sharedCatalogCreateTitle"
+        hidden
+    >
+        <div class="catalog-create-dialog">
+            <div class="catalog-create-header">
+                <div>
+                    <h2 id="sharedCatalogCreateTitle" data-catalog-create-title>
+                        Новое значение
+                    </h2>
+                    <p data-catalog-create-description>
+                        Значение сохранится в едином справочнике Vechasu ERP.
+                    </p>
+                </div>
+                <button
+                    class="catalog-create-close"
+                    type="button"
+                    data-catalog-create-close
+                    aria-label="Закрыть"
+                >×</button>
+            </div>
+            <form class="catalog-create-body" data-catalog-create-form>
+                <label class="catalog-create-field">
+                    <span>Название *</span>
+                    <input
+                        type="text"
+                        maxlength="255"
+                        autocomplete="off"
+                        data-catalog-create-name
+                        required
+                    >
+                </label>
+                <label
+                    class="catalog-create-field"
+                    data-catalog-create-article-field
+                    hidden
+                >
+                    <span>Артикул</span>
+                    <input
+                        type="text"
+                        maxlength="255"
+                        autocomplete="off"
+                        data-catalog-create-article
+                    >
+                </label>
+                <p
+                    class="catalog-create-error"
+                    data-catalog-create-error
+                    role="alert"
+                ></p>
+                <div class="catalog-create-actions">
+                    <button
+                        type="button"
+                        data-catalog-create-cancel
+                    >
+                        Отмена
+                    </button>
+                    <button
+                        class="catalog-create-submit"
+                        type="submit"
+                        data-catalog-create-submit
+                    >
+                        Создать
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 {% endmacro %}

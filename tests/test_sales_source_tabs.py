@@ -680,21 +680,23 @@ class SalesSourceTabsTest(unittest.TestCase):
             page.index('id="created_at"'),
         )
         self.assertIn(
-            "function refreshCategoryOptions",
+            'data-shared-catalog-kind="brand"',
             page,
         )
         self.assertIn(
-            "function productMatchesSelection",
+            'data-shared-catalog-kind="category"',
             page,
         )
         self.assertIn(
-            "clearSelectedProduct();",
+            'data-shared-catalog-kind="product"',
             page,
         )
         self.assertIn(
-            "refreshProductOptions();",
+            'data-shared-catalog-scope',
             page,
         )
+        self.assertNotIn("function refreshCategoryOptions", page)
+        self.assertNotIn("function productMatchesSelection", page)
         self.assertIn(
             "catalog-combobox.css",
             page,
@@ -703,19 +705,6 @@ class SalesSourceTabsTest(unittest.TestCase):
             "catalog-combobox.js",
             page,
         )
-        self.assertIn(
-            "Сначала выберите бренд и категорию",
-            page,
-        )
-        self.assertIn(
-            "item.article",
-            page,
-        )
-        self.assertIn(
-            "item.barcode",
-            page,
-        )
-
     def test_every_source_tab_renders_the_same_catalog_picker(self):
         for source in ("all", "tictactoy", "wildberries", "amazon"):
             with self.subTest(source=source):
@@ -786,13 +775,13 @@ class SalesSourceTabsTest(unittest.TestCase):
             web,
             "get_excel_warehouse_items",
             return_value=[first, second],
-        ):
+        ) as legacy_catalog:
             page = self.client.get("/sales").get_data(as_text=True)
 
-        self.assertIn("Alpha", page)
-        self.assertIn("Zulu", page)
-        self.assertIn('"id": "catalog-1"', page)
-        self.assertIn('"id": "catalog-2"', page)
+        legacy_catalog.assert_not_called()
+        self.assertNotIn('"id": "catalog-1"', page)
+        self.assertNotIn('"id": "catalog-2"', page)
+        self.assertIn("catalog-combobox.js", page)
 
     def test_add_rejects_unknown_or_incompatible_catalog_product(self):
         base_data = {

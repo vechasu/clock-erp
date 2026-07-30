@@ -134,7 +134,7 @@ class UnifiedCatalogApiTest(unittest.TestCase):
         self.assertEqual(self.stock(), 10)
         self.remote.create_product.assert_called_once()
         remote_positions = (
-            self.remote.create_stock_enter_many.call_args.kwargs["positions"]
+            self.remote.create_stock_enter_many.call_args[1]["positions"]
         )
         self.assertEqual(
             remote_positions[0]["product_id"],
@@ -291,21 +291,131 @@ class UnifiedCatalogApiTest(unittest.TestCase):
             ).get_json()
         self.assertEqual(isolated["data"], [])
 
-    def test_visible_sections_serve_the_same_react_entrypoint(self):
-        web.app.config["TEST_PRIMARY_REACT_UI"] = True
-        responses = [
-            self.client.get(path)
-            for path in ("/products", "/sales", "/receipts")
-        ]
-
-        for response in responses:
-            self.assertEqual(response.status_code, 200)
-            self.assertIn(b'<div id="root"></div>', response.data)
-
-        self.assertEqual(
-            {response.data for response in responses},
-            {responses[0].data},
+    def test_new_catalog_values_are_immediately_searchable_in_all_sections(self):
+        brand_response = self.client.post(
+            "/api/v1/brands",
+            json={"name": "Orient"},
         )
+        self.assertEqual(brand_response.status_code, 201)
+        brand = brand_response.get_json()["data"]
+
+        category_response = self.client.post(
+            "/api/v1/categories",
+            json={
+                "name": "Механические часы",
+                "brand_id": brand["id"],
+            },
+        )
+        self.assertEqual(category_response.status_code, 201)
+        category = category_response.get_json()["data"]
+
+        product_response = self.client.post(
+            "/api/v1/products",
+            json={
+                "name": "Orient Bambino",
+                "article": "FAC00009N0",
+                "brand_id": brand["id"],
+                "category_id": category["id"],
+                "stock": 0,
+            },
+        )
+        self.assertEqual(product_response.status_code, 201)
+        product = product_response.get_json()["data"]
+
+        brand_search = self.client.get(
+            "/api/v1/catalog/options?type=brand&q=O"
+        ).get_json()["data"]
+        category_search = self.client.get(
+            "/api/v1/catalog/options?type=category&q=М&brand_id={}"
+            .format(brand["id"])
+        ).get_json()["data"]
+        product_search = self.client.get(
+            "/api/v1/catalog/options?type=product&q=O"
+            "&brand_id={}&category_id={}".format(
+                brand["id"],
+                category["id"],
+            )
+        ).get_json()["data"]
+
+        self.assertIn(brand["id"], [item["id"] for item in brand_search])
+        self.assertEqual(
+            [item["id"] for item in category_search],
+            [category["id"]],
+        )
+        self.assertEqual(
+            (
+                product_search[0]["id"],
+                product_search[0]["brand_id"],
+                product_search[0]["category_id"],
+            ),
+            (
+                str(product["id"]),
+                brand["id"],
+                category["id"],
+            ),
+        )
+        self.assertEqual(
+            self.client.get(
+                "/api/v1/catalog/options?type=category"
+                "&brand_id={}".format(self.product["brand_id"])
+            ).status_code,
+            200,
+        )
+        incompatible = self.client.get(
+            "/api/v1/catalog/options?type=product"
+            "&brand_id={}&category_id={}".format(
+                self.product["brand_id"],
+                category["id"],
+            )
+        ).get_json()["data"]
+        self.assertEqual(incompatible, [])
+
+    def test_visible_sections_keep_the_approved_legacy_entrypoints(self):
+        products = self.client.get("/products")
+        sales = self.client.get("/sales")
+        receipts = self.client.get("/receipts")
+
+        self.assertEqual(products.status_code, 302)
+        self.assertIn("/warehouse", products.headers["Location"])
+        self.assertEqual(sales.status_code, 200)
+        self.assertIn(b'class="sales-page"', sales.data)
+        self.assertEqual(receipts.status_code, 200)
+        self.assertIn(b'class="receipts-page"', receipts.data)
+        self.assertNotIn(b'<div id="root"></div>', sales.data)
+        self.assertNotIn(b'<div id="root"></div>', receipts.data)
+        for response in (sales, receipts):
+            self.assertIn(
+                b"/static/js/catalog-combobox.js",
+                response.data,
+            )
+            self.assertIn(
+                b'data-shared-catalog-kind="brand"',
+                response.data,
+            )
+            self.assertIn(
+                b'data-shared-catalog-kind="category"',
+                response.data,
+            )
+            self.assertIn(
+                b'data-shared-catalog-kind="product"',
+                response.data,
+            )
+
+        warehouse = self.client.get("/warehouse?open_add=1")
+        self.assertEqual(warehouse.status_code, 200)
+        self.assertIn(b'class="warehouse-page"', warehouse.data)
+        self.assertIn(
+            b'data-shared-catalog-kind="brand"',
+            warehouse.data,
+        )
+        self.assertIn(
+            b'data-shared-catalog-kind="category"',
+            warehouse.data,
+        )
+
+        repair = self.client.get("/repair")
+        self.assertEqual(repair.status_code, 200)
+        self.assertNotIn(b'<div id="root"></div>', repair.data)
 
 
 if __name__ == "__main__":

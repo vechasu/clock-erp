@@ -1369,6 +1369,34 @@ def warehouse_page():
     query = request.args.get("q", "").strip()
     selected_category = request.args.get("category", "").strip()
     selected_brand = request.args.get("brand", "").strip()
+    selected_brand_id = request.args.get("brand_id", "").strip()
+    selected_category_id = request.args.get("category_id", "").strip()
+    shared_catalog = SharedCatalog()
+    if selected_brand_id:
+        selected_brand_match = next(
+            (
+                item
+                for item in shared_catalog.list_brands(limit=200)
+                if str(item.get("id") or "") == selected_brand_id
+            ),
+            None,
+        )
+        if selected_brand_match:
+            selected_brand = selected_brand_match["name"]
+    if selected_category_id:
+        selected_category_match = next(
+            (
+                item
+                for item in shared_catalog.list_categories(
+                    brand_id=selected_brand_id or None,
+                    limit=200,
+                )
+                if str(item.get("id") or "") == selected_category_id
+            ),
+            None,
+        )
+        if selected_category_match:
+            selected_category = selected_category_match["name"]
     selected_cell = request.args.get("cell", "").strip()
     created_date_from = request.args.get("date_from", "").strip()
     created_date_to = request.args.get("date_to", "").strip()
@@ -1542,6 +1570,8 @@ def warehouse_page():
             query=query,
             selected_category=selected_category,
             selected_brand=selected_brand,
+            selected_category_id=selected_category_id,
+            selected_brand_id=selected_brand_id,
             selected_cell=selected_cell,
             created_date_from=created_date_from,
             created_date_to=created_date_to,
@@ -1871,6 +1901,8 @@ def warehouse_add_product():
     article = request.form.get("article", "").strip()
     brand = request.form.get("brand", "").strip()
     category = request.form.get("category", "").strip()
+    brand_id = request.form.get("brand_id", "").strip() or None
+    category_id = request.form.get("category_id", "").strip() or None
     cell = request.form.get("cell", "").strip()
     stock_raw = request.form.get("stock", "").strip()
     request_id = request.form.get("request_id", "").strip()
@@ -1909,6 +1941,8 @@ def warehouse_add_product():
             category=category,
             cell=cell,
             stock=stock,
+            brand_id=brand_id,
+            category_id=category_id,
         )
         return redirect(url_for(
             "warehouse_page", notice="success", message="Товар добавлен"
@@ -1928,7 +1962,8 @@ def warehouse_edit_product():
             keep_blank_values=False,
         )
         if key in {
-            "q", "brand", "category", "cell", "date_from", "date_to",
+            "q", "brand", "brand_id", "category", "category_id",
+            "cell", "date_from", "date_to",
             "in_stock", "sort_by", "sort_dir", "page", "per_page",
         }
     }
@@ -1946,6 +1981,8 @@ def warehouse_edit_product():
     article = request.form.get("article", "").strip()
     brand = request.form.get("brand", "").strip()
     category = request.form.get("category", "").strip()
+    brand_id = request.form.get("brand_id", "").strip() or None
+    category_id = request.form.get("category_id", "").strip() or None
     cell = request.form.get("cell", "").strip()
     stock = request.form.get("stock", "").strip()
     stock_reason = request.form.get("stock_reason", "").strip()
@@ -1960,6 +1997,7 @@ def warehouse_edit_product():
         ExcelProductCatalog().update_product(
             product_id, name=name, article=article, brand=brand,
             category=category, cell=cell, stock=stock, stock_reason=stock_reason,
+            brand_id=brand_id, category_id=category_id,
         )
         return edit_redirect("success", "Карточка обновлена")
     except (TypeError, ValueError) as error:
@@ -5100,6 +5138,21 @@ def resolve_sale_product_metadata(
     fallback_category="",
     fallback_barcode="",
 ):
+    shared_product = SharedCatalog().get_product(product_id)
+    if shared_product is not None:
+        return {
+            "product_name": shared_product.get("name") or "",
+            "brand": shared_product.get("brand") or "",
+            "category": shared_product.get("category") or "",
+            "barcode": (
+                shared_product.get("barcode")
+                or shared_product.get("article")
+                or ""
+            ),
+            "brand_id": shared_product.get("brand_id"),
+            "category_id": shared_product.get("category_id"),
+        }
+
     try:
         lookup = build_sales_product_metadata_lookup(
             get_warehouse_items()
@@ -5110,6 +5163,8 @@ def resolve_sale_product_metadata(
             "brand": str(fallback_brand or "").strip(),
             "category": str(fallback_category or "").strip(),
             "barcode": str(fallback_barcode or "").strip(),
+            "brand_id": None,
+            "category_id": None,
         }
 
     product_id = str(product_id or "").strip()
@@ -5127,6 +5182,8 @@ def resolve_sale_product_metadata(
         "brand": str(fallback_brand or "").strip(),
         "category": str(fallback_category or "").strip(),
         "barcode": str(fallback_barcode or "").strip(),
+        "brand_id": None,
+        "category_id": None,
     }
 
 
@@ -5167,6 +5224,8 @@ def build_sales_catalog_items(items):
             ).strip(),
             "brand": brand,
             "category": category,
+            "brand_id": item.get("brand_id"),
+            "category_id": item.get("category_id"),
             "stock": stock,
             "stock_display": (
                 item.get("stock_display")
@@ -5192,6 +5251,21 @@ def get_sale_catalog_product(product_id, items=None):
 
     if not product_id:
         return None
+
+    shared_product = SharedCatalog().get_product(product_id)
+    if (
+        shared_product is not None
+        and float(shared_product.get("stock") or 0) > 0
+    ):
+        return {
+            **shared_product,
+            "id": str(shared_product["id"]),
+            "barcode": (
+                shared_product.get("barcode")
+                or shared_product.get("article")
+                or ""
+            ),
+        }
 
     catalog_items = build_sales_catalog_items(
         get_excel_warehouse_items()
@@ -5535,6 +5609,12 @@ def manual_sale_add():
     selected_category = str(
         request.form.get("product_category") or ""
     ).strip()
+    selected_brand_id = str(
+        request.form.get("brand_id") or ""
+    ).strip()
+    selected_category_id = str(
+        request.form.get("category_id") or ""
+    ).strip()
 
     if not selected_brand:
         return redirect_to_sales(
@@ -5566,6 +5646,26 @@ def manual_sale_add():
             notice="error",
         )
 
+    if (
+        selected_brand_id
+        and str(catalog_product.get("brand_id") or "")
+        != selected_brand_id
+    ):
+        return redirect_to_sales(
+            "Выбранный товар не относится к указанному бренду",
+            notice="error",
+        )
+
+    if (
+        selected_category_id
+        and str(catalog_product.get("category_id") or "")
+        != selected_category_id
+    ):
+        return redirect_to_sales(
+            "Выбранный товар не относится к указанной категории",
+            notice="error",
+        )
+
     if quantity > catalog_product["stock"]:
         return redirect_to_sales(
             "Недостаточно товара на складе. Доступно: {}".format(
@@ -5586,6 +5686,8 @@ def manual_sale_add():
         "barcode": catalog_product["barcode"],
         "brand": catalog_product["brand"],
         "category": catalog_product["category"],
+        "brand_id": catalog_product.get("brand_id"),
+        "category_id": catalog_product.get("category_id"),
         "quantity": quantity,
         "unit_price": unit_price,
         "total_amount": total_amount,
@@ -5815,6 +5917,8 @@ def manual_sale_update():
         sale["barcode"] = product_metadata.get("barcode") or ""
         sale["brand"] = product_metadata.get("brand") or ""
         sale["category"] = product_metadata.get("category") or ""
+        sale["brand_id"] = product_metadata.get("brand_id")
+        sale["category_id"] = product_metadata.get("category_id")
         sale["quantity"] = quantity
         sale["unit_price"] = unit_price
         sale["total_amount"] = total_amount
@@ -8160,13 +8264,7 @@ def build_legacy_sales_page():
 
 @app.route("/sales")
 def sales_page():
-    if primary_react_ui_enabled():
-        return react_application("sales")
-
     all_warehouse_items = get_warehouse_items()
-    catalog_items = build_sales_catalog_items(
-        get_excel_warehouse_items()
-    )
     all_sales = build_sales_report_records(
         warehouse_items=all_warehouse_items
     )
@@ -8251,9 +8349,6 @@ def sales_page():
             else SALES_SOURCE_LABELS[active_source]
         ),
         sales_columns=get_sales_columns(active_source),
-        warehouse_items=catalog_items,
-        brand_groups=build_brand_groups(catalog_items),
-        catalog_taxonomy=load_catalog_taxonomy(),
         total_sales=len(active_sales),
         total_cancelled=len(sales) - len(active_sales),
         total_orders=len(unique_orders),
@@ -8677,42 +8772,42 @@ def receipt_catalog_create():
 
 @app.route("/receipts")
 def receipts_page():
-    if primary_react_ui_enabled():
-        return react_application("receipts")
-
     from datetime import datetime
     from flask import request
 
-    receipts = load_receipts()
-
-    all_warehouse_items = get_warehouse_items()
-
-    warehouse_items = [
+    stored_receipts = load_receipts()
+    receipt_legacy_links = SharedCatalog().legacy_links(
+        "receipt",
+        [receipt.get("id") for receipt in stored_receipts],
+    )
+    receipt_product_ids = {
+        str(position.get("product_id"))
+        for receipt in stored_receipts
+        for position in (receipt.get("positions") or [])
+        if isinstance(position, dict) and position.get("product_id")
+    }
+    receipt_product_ids.update(
+        str(receipt.get("product_id"))
+        for receipt in stored_receipts
+        if receipt.get("product_id")
+    )
+    receipt_product_ids.update(receipt_legacy_links.values())
+    receipt_catalog_lookup = SharedCatalog().products_by_ids(
+        receipt_product_ids,
+        include_archived=True,
+    )
+    receipts = [
         {
-            "id": item.get("id") or "",
-            "name": item.get("name") or "",
-            "article": item.get("article") or "",
-            "code": item.get("code") or "",
-            # === SIMPLE RECEIPT FORM V1 ===
-            "brand": (
-                item.get("brand")
-                or item.get("manufacturer")
-                or ""
+            **receipt,
+            **serialize_api_receipt(
+                receipt,
+                catalog_lookup=receipt_catalog_lookup,
+                legacy_links=receipt_legacy_links,
             ),
-            "category": item.get("category") or "",
-            # === SIMPLE RECEIPT FORM V1 END ===
-            "cell": item.get("cell") or "",
-            "stock": item.get("stock") or 0,
-            "stock_display": item.get("stock_display") or "0",
-            "has_images": bool(item.get("has_images")),
-            "thumbnail_url": item.get("thumbnail_url") or "",
         }
-        for item in all_warehouse_items
+        for receipt in stored_receipts
     ]
 
-    receipt_catalog = build_receipt_catalog_context(
-        warehouse_items
-    )
     date_from = (
         request.args.get("date_from") or ""
     ).strip()
@@ -8730,9 +8825,6 @@ def receipts_page():
     return render_template(
         "receipts.html",
         receipts=receipts,
-        warehouse_items=warehouse_items,
-        receipt_brand_options=receipt_catalog["brands"],
-        receipt_catalog_categories=receipt_catalog["categories"],
         receipt_date_from=date_from,
         receipt_date_to=date_to,
         today=datetime.now().strftime("%Y-%m-%d"),
@@ -11220,9 +11312,6 @@ def _excel_product_external_references(product_id):
 
 @app.route("/products")
 def excel_products_page():
-    if primary_react_ui_enabled():
-        return react_application("products")
-
     target = url_for("warehouse_page")
     if request.query_string:
         target += "?" + request.query_string.decode("utf-8")
@@ -12794,7 +12883,7 @@ def build_api_receipt_positions(payload_positions, catalog):
         if product is None:
             raise ValueError("Товар в позиции {} не найден в каталоге.".format(index))
         quantity = parse_receipt_number(requested.get("quantity"), -1)
-        purchase_price = parse_receipt_number(requested.get("purchase_price"), -1)
+        purchase_price = parse_receipt_number(requested.get("purchase_price"), 0)
         if quantity <= 0:
             raise ValueError(
                 "Количество в позиции {} должно быть больше нуля.".format(index)
@@ -14458,13 +14547,6 @@ def api_repair_attachments(case_id):
     if not updated:
         return api_error("REPAIR_NOT_FOUND", "Ремонт не найден.", 404)
     return api_success(serialize_api_repair(find_api_repair(case_id)), 201)
-
-
-def primary_react_ui_enabled():
-    return (
-        not app.config.get("TESTING")
-        or app.config.get("TEST_PRIMARY_REACT_UI", False)
-    )
 
 
 @app.route("/app", defaults={"react_path": ""}, strict_slashes=False)
