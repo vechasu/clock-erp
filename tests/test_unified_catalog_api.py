@@ -292,6 +292,7 @@ class UnifiedCatalogApiTest(unittest.TestCase):
         self.assertEqual(isolated["data"], [])
 
     def test_visible_sections_serve_the_same_react_entrypoint(self):
+        web.app.config["TEST_PRIMARY_REACT_UI"] = True
         responses = [
             self.client.get(path)
             for path in ("/products", "/sales", "/receipts")
