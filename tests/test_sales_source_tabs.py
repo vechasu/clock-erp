@@ -680,21 +680,23 @@ class SalesSourceTabsTest(unittest.TestCase):
             page.index('id="created_at"'),
         )
         self.assertIn(
-            "function refreshCategoryOptions",
+            'data-shared-catalog-kind="brand"',
             page,
         )
         self.assertIn(
-            "function productMatchesSelection",
+            'data-shared-catalog-kind="category"',
             page,
         )
         self.assertIn(
-            "clearSelectedProduct();",
+            'data-shared-catalog-kind="product"',
             page,
         )
         self.assertIn(
-            "refreshProductOptions();",
+            'data-catalog-cascade',
             page,
         )
+        self.assertNotIn("function refreshCategoryOptions", page)
+        self.assertNotIn("function productMatchesSelection", page)
         self.assertIn(
             "catalog-combobox.css",
             page,
@@ -705,14 +707,6 @@ class SalesSourceTabsTest(unittest.TestCase):
         )
         self.assertIn(
             "Сначала выберите бренд и категорию",
-            page,
-        )
-        self.assertIn(
-            "item.article",
-            page,
-        )
-        self.assertIn(
-            "item.barcode",
             page,
         )
 

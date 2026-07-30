@@ -4624,7 +4624,7 @@
             {{ render_catalog_combobox(
                 "filterBrandCombobox",
                 "brand",
-                [],
+                filter_brand_groups,
                 selected_brand,
                 true,
                 "бренд",
@@ -4645,7 +4645,7 @@
             {{ render_catalog_combobox(
                 "filterCategoryCombobox",
                 "category",
-                [],
+                category_groups,
                 selected_category,
                 true,
                 "категорию",
@@ -4831,7 +4831,7 @@
                     {{ render_catalog_combobox(
                         "editBrandCombobox",
                         "brand",
-                        [],
+                        brand_groups,
                         item_label="бренд",
                         action_kind="brand",
                         action_label="Добавить новый бренд",
@@ -4848,7 +4848,7 @@
                     {{ render_catalog_combobox(
                         "editCategoryCombobox",
                         "category",
-                        [],
+                        category_groups,
                         item_label="категорию",
                         disabled=true,
                         action_kind="category",
