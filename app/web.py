@@ -17,6 +17,7 @@ import uuid
 import click
 import requests
 from io import BytesIO
+from functools import wraps
 from urllib.parse import parse_qsl, urlencode
 from app.clients.moysklad import MoySkladClient
 from app.catalog_db import CatalogDatabase
@@ -2316,10 +2317,18 @@ def save_stock_operations(operations):
     import json
 
     path = get_stock_operations_path()
-    path.write_text(
-        json.dumps(operations, ensure_ascii=False, indent=2),
-        encoding="utf-8"
+    temporary_path = path.with_name(
+        "{}.{}.tmp".format(path.name, uuid.uuid4().hex)
     )
+    try:
+        temporary_path.write_text(
+            json.dumps(operations, ensure_ascii=False, indent=2),
+            encoding="utf-8"
+        )
+        temporary_path.replace(path)
+    finally:
+        if temporary_path.exists():
+            temporary_path.unlink()
 
 
 def add_stock_operation(operation):
@@ -8405,10 +8414,19 @@ def load_receipts():
 
 
 def save_receipts(receipts):
-    get_receipts_path().write_text(
-        json.dumps(receipts, ensure_ascii=False, indent=2),
-        encoding="utf-8",
+    path = get_receipts_path()
+    temporary_path = path.with_name(
+        "{}.{}.tmp".format(path.name, uuid.uuid4().hex)
     )
+    try:
+        temporary_path.write_text(
+            json.dumps(receipts, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        temporary_path.replace(path)
+    finally:
+        if temporary_path.exists():
+            temporary_path.unlink()
 
 
 def parse_receipt_number(value, default=0):
@@ -9667,11 +9685,11 @@ def read_product_image_upload(uploaded_file):
     )
 
     if not content:
-        raise ValueError("Выбранный файл изображения пуст")
+        raise ValueError("Выбранный файл изображения пуст.")
 
     if len(content) > PRODUCT_IMAGE_MAX_BYTES:
         raise ValueError(
-            "Изображение слишком большое. Максимальный размер — 3 МБ"
+            "Файл слишком большой. Максимальный размер — 3 МБ."
         )
 
     if content.startswith(b"\xff\xd8\xff"):
@@ -9682,14 +9700,14 @@ def read_product_image_upload(uploaded_file):
         allowed_mimetypes = {"image/png"}
     else:
         raise ValueError(
-            "Поддерживаются только изображения JPEG и PNG"
+            "Недопустимый формат изображения. Поддерживаются JPEG и PNG."
         )
 
     mimetype = str(uploaded_file.mimetype or "").lower()
 
     if mimetype and mimetype not in allowed_mimetypes:
         raise ValueError(
-            "Тип файла не соответствует содержимому изображения"
+            "Недопустимый формат изображения. Поддерживаются JPEG и PNG."
         )
 
     safe_name = secure_filename(uploaded_file.filename)
@@ -13003,23 +13021,31 @@ def decode_api_product_image(payload):
         return None
     if not isinstance(payload, dict):
         raise ValueError("Изображение передано некорректно.")
-    encoded = str(payload.get("base64") or "")
+    encoded = str(
+        payload.get("base64")
+        or payload.get("data_url")
+        or ""
+    )
     if encoded.startswith("data:") and "," in encoded:
         encoded = encoded.split(",", 1)[1]
     try:
         content = base64.b64decode(encoded, validate=True)
     except (ValueError, binascii.Error):
-        raise ValueError("Изображение передано некорректно.")
+        raise ValueError(
+            "Недопустимый формат изображения. Поддерживаются JPEG и PNG."
+        )
     if not content:
         raise ValueError("Выбранный файл изображения пуст.")
     if len(content) > PRODUCT_IMAGE_MAX_BYTES:
-        raise ValueError("Изображение слишком большое. Максимальный размер — 3 МБ.")
+        raise ValueError("Файл слишком большой. Максимальный размер — 3 МБ.")
     if content.startswith(b"\xff\xd8\xff"):
         extension = ".jpg"
     elif content.startswith(b"\x89PNG\r\n\x1a\n"):
         extension = ".png"
     else:
-        raise ValueError("Поддерживаются только изображения JPEG и PNG.")
+        raise ValueError(
+            "Недопустимый формат изображения. Поддерживаются JPEG и PNG."
+        )
     raw_name = Path(str(payload.get("name") or "product")).name
     stem = raw_name.rsplit(".", 1)[0] or "product"
     safe_stem = "".join(
@@ -13031,6 +13057,174 @@ def decode_api_product_image(payload):
         "filename": (safe_stem + extension)[:255],
         "content": content,
     }
+
+
+def api_receipt_request_payload():
+    if request.is_json:
+        payload = api_json_payload()
+        return payload, decode_api_product_image(payload.get("product_image"))
+
+    if request.mimetype != "multipart/form-data":
+        raise ValueError(
+            "Ожидается JSON или multipart/form-data."
+        )
+
+    payload = request.form.to_dict(flat=True)
+    raw_positions = str(request.form.get("positions") or "").strip()
+    if raw_positions:
+        try:
+            positions = json.loads(raw_positions)
+        except (TypeError, ValueError):
+            raise ValueError("Позиции прихода переданы некорректно.")
+    else:
+        product_ids = request.form.getlist("product_id")
+        quantities = request.form.getlist("quantity")
+        purchase_prices = request.form.getlist("purchase_price")
+        positions = []
+        for index, product_id in enumerate(product_ids):
+            positions.append({
+                "product_id": product_id,
+                "brand_id": request.form.get("brand_id"),
+                "category_id": request.form.get("category_id"),
+                "quantity": (
+                    quantities[index]
+                    if index < len(quantities)
+                    else ""
+                ),
+                "purchase_price": (
+                    purchase_prices[index]
+                    if index < len(purchase_prices)
+                    else 0
+                ),
+            })
+    payload["positions"] = positions
+    return payload, read_product_image_upload(
+        request.files.get("product_image")
+    )
+
+
+def serialize_receipt_creates(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if request.method != "POST":
+            return view(*args, **kwargs)
+
+        lock_path = get_receipts_path().with_name(
+            ".receipts-api.lock"
+        )
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        with lock_path.open("a+", encoding="utf-8") as lock_file:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            try:
+                return view(*args, **kwargs)
+            finally:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+    return wrapped
+
+
+def build_api_receipt_stock_operation(receipt, position, created_at, reason):
+    return {
+        "id": str(uuid.uuid4()),
+        "created_at": created_at,
+        "product_id": position["product_id"],
+        "product_name": position["product_name"],
+        "type": "enter",
+        "label": "Приход",
+        "quantity": position["quantity"],
+        "stock_before": position["stock_before"],
+        "stock_after": position["stock_after"],
+        "diff": position["quantity"],
+        "source": "Приход",
+        "reason": reason,
+        "status": "success",
+        "receipt_id": receipt["id"],
+        "receipt_number": receipt["number"],
+        "brand": position["brand"],
+        "category": position["category"],
+        "purchase_price": position["purchase_price"],
+        "moysklad_document_id": receipt["moysklad_document_id"],
+        "moysklad_document_name": receipt["moysklad_document_name"],
+        "moysklad_document_url": receipt["moysklad_document_url"],
+    }
+
+
+def persist_api_receipt(
+        receipt,
+        positions,
+        receipts,
+        request_idempotency_key,
+        created_at,
+        reason):
+    receipts_before = copy.deepcopy(receipts)
+    operations_before = load_stock_operations()
+    receipts_after = [
+        receipt,
+        *[
+            item
+            for item in receipts
+            if str(item.get("id") or "") != receipt["id"]
+        ],
+    ]
+    new_operations = [
+        build_api_receipt_stock_operation(
+            receipt,
+            position,
+            created_at,
+            reason,
+        )
+        for position in positions
+    ]
+
+    def persist_files(_connection=None):
+        save_receipts(receipts_after)
+        save_stock_operations(
+            (new_operations + operations_before)[:1000]
+        )
+
+    try:
+        if receipt.get("inventory_managed"):
+            ReceiptInventory().create_receipt(
+                receipt,
+                positions,
+                idempotency_key=(
+                    request_idempotency_key
+                    or receipt["id"]
+                ),
+                user_name=current_sales_user_name(),
+                failure_hook=persist_files,
+            )
+        else:
+            persist_files()
+    except Exception:
+        try:
+            save_receipts(receipts_before)
+            save_stock_operations(operations_before)
+        except Exception:
+            app.logger.exception(
+                "Receipt API failed to restore local files after rollback"
+            )
+        raise
+
+
+def rollback_remote_receipt(client, document):
+    document_id = str((document or {}).get("id") or "").strip()
+    if not document_id:
+        return True
+    try:
+        if client.delete_stock_enter(document_id):
+            return True
+    except Exception:
+        app.logger.exception(
+            "Receipt API failed to roll back MoySklad document %s",
+            document_id,
+        )
+        return False
+    app.logger.error(
+        "Receipt API could not roll back MoySklad document %s",
+        document_id,
+    )
+    return False
 
 
 @app.route("/api/receipts/catalog", methods=["GET"])
@@ -13067,11 +13261,12 @@ def api_receipts_catalog():
 
 @app.route("/api/receipts", methods=["GET", "POST"])
 @app.route("/api/v1/receipts", methods=["GET", "POST"])
+@serialize_receipt_creates
 def api_receipts_collection():
     if request.method == "POST":
         require_csrf_when_authenticated()
         try:
-            payload = api_json_payload()
+            payload, product_image = api_receipt_request_payload()
             request_idempotency_key = str(
                 request.headers.get("Idempotency-Key")
                 or payload.get("idempotency_key")
@@ -13081,7 +13276,6 @@ def api_receipts_collection():
                 payload.get("receipt_date") or payload.get("date")
             )
             note = str(payload.get("note") or "").strip()
-            product_image = decode_api_product_image(payload.get("product_image"))
             positions = build_api_receipt_positions(
                 payload.get("positions") or payload.get("items"),
                 receipt_api_catalog_items(
@@ -13135,9 +13329,13 @@ def api_receipts_collection():
             )
             if not document:
                 raise ValueError("МойСклад не создал документ прихода.")
-        except Exception as error:
+        except Exception:
             app.logger.exception("Receipt API failed to create MoySklad document")
-            return api_error("REMOTE_DOCUMENT_CONFLICT", str(error), 502)
+            return api_error(
+                "REMOTE_DOCUMENT_CONFLICT",
+                "Ошибка сервера при сохранении прихода.",
+                502,
+            )
 
         created_at = datetime.now().strftime("%Y-%m-%d %H:%M")
         receipt = {
@@ -13177,50 +13375,6 @@ def api_receipts_collection():
             for position in positions
         )
         receipt["inventory_managed"] = inventory_managed
-        try:
-            if inventory_managed:
-                ReceiptInventory().create_receipt(
-                    receipt,
-                    positions,
-                    idempotency_key=(
-                        request_idempotency_key
-                        or receipt_id
-                    ),
-                    user_name=current_sales_user_name(),
-                )
-            receipts.insert(0, receipt)
-            save_receipts(receipts)
-            for position in positions:
-                add_stock_operation({
-                    "id": str(uuid.uuid4()),
-                    "created_at": created_at,
-                    "product_id": position["product_id"],
-                    "product_name": position["product_name"],
-                    "type": "enter",
-                    "label": "Приход",
-                    "quantity": position["quantity"],
-                    "stock_before": position["stock_before"],
-                    "stock_after": position["stock_after"],
-                    "diff": position["quantity"],
-                    "source": "Приход",
-                    "reason": reason,
-                    "status": "success",
-                    "receipt_id": receipt_id,
-                    "receipt_number": receipt_number,
-                    "brand": position["brand"],
-                    "category": position["category"],
-                    "purchase_price": position["purchase_price"],
-                    "moysklad_document_id": receipt["moysklad_document_id"],
-                    "moysklad_document_name": receipt["moysklad_document_name"],
-                    "moysklad_document_url": receipt["moysklad_document_url"],
-                })
-        except Exception:
-            app.logger.exception("Receipt API local persistence failed")
-            return api_error(
-                "RECONCILIATION_REQUIRED",
-                "Документ создан в МойСклад, но локальная запись не сохранена.",
-                500,
-            )
         image_message = ""
         if product_image and len(positions) == 1:
             try:
@@ -13228,10 +13382,11 @@ def api_receipts_collection():
                     positions[0].get("moysklad_product_id")
                     or positions[0]["product_id"]
                 )
-                image_client = MoySkladClient()
-                if image_client.product_has_images(image_product_id):
-                    image_message = "У товара уже есть фото — дубликат не создавался."
-                elif not image_client.upload_product_image(
+                if moysklad_client.product_has_images(image_product_id):
+                    image_message = (
+                        "У товара уже есть фото — дубликат не создавался."
+                    )
+                elif not moysklad_client.upload_product_image(
                     image_product_id,
                     product_image["filename"],
                     product_image["content"],
@@ -13239,9 +13394,31 @@ def api_receipts_collection():
                     raise ValueError("МойСклад не сохранил изображение.")
                 else:
                     image_message = "Фото товара добавлено."
-            except Exception as error:
+            except Exception:
                 app.logger.exception("Receipt API product image upload failed")
-                image_message = "Приход проведён, но фото не добавлено: {}".format(error)
+                rollback_remote_receipt(moysklad_client, document)
+                return api_error(
+                    "PRODUCT_IMAGE_UPLOAD_FAILED",
+                    "Ошибка сервера при сохранении фотографии товара.",
+                    502,
+                )
+        try:
+            persist_api_receipt(
+                receipt,
+                positions,
+                receipts,
+                request_idempotency_key,
+                created_at,
+                reason,
+            )
+        except Exception:
+            app.logger.exception("Receipt API local persistence failed")
+            rollback_remote_receipt(moysklad_client, document)
+            return api_error(
+                "RECEIPT_PERSISTENCE_FAILED",
+                "Ошибка сервера при сохранении прихода.",
+                500,
+            )
         WAREHOUSE_CACHE["items"] = []
         WAREHOUSE_CACHE["loaded_at"] = 0
         return api_success(

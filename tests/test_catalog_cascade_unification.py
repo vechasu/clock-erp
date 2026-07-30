@@ -134,6 +134,27 @@ class CatalogCascadeUnificationTest(unittest.TestCase):
             legacy_page,
         )
 
+    def test_receipt_form_uses_multipart_and_inline_api_feedback(self):
+        page = self.source("app/templates/receipts.html")
+        submit_script = self.source(
+            "app/static/js/receipt-submit.js"
+        )
+
+        self.assertIn(
+            "filename='js/receipt-submit.js'",
+            page,
+        )
+        self.assertIn(
+            "VechasuReceiptSubmit.buildCreatePayload",
+            page,
+        )
+        self.assertNotIn("alert(", page)
+        self.assertNotIn("receiptImagePayload", page)
+        self.assertIn("new global.FormData(form)", submit_script)
+        self.assertNotIn('"Content-Type": "application/json"', submit_script)
+        self.assertIn("payload.message", submit_script)
+        self.assertIn('query.set("open_receipt_modal", "1")', submit_script)
+
 
 if __name__ == "__main__":
     unittest.main()
