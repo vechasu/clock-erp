@@ -947,9 +947,12 @@ class CatalogDatabase:
             "ON catalog_excel_products(category_id, active, id)"
         )
         connection.execute(
+            "UPDATE catalog_excel_products SET moysklad_product_id = NULL "
+            "WHERE trim(COALESCE(moysklad_product_id, '')) = ''"
+        )
+        connection.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_catalog_excel_products_moysklad "
-            "ON catalog_excel_products(moysklad_product_id) "
-            "WHERE moysklad_product_id IS NOT NULL"
+            "ON catalog_excel_products(moysklad_product_id)"
         )
         connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_catalog_receipt_rows_taxonomy "
@@ -964,23 +967,33 @@ class CatalogDatabase:
             "ON erp_receipt_items(receipt_id, active, id)"
         )
         connection.execute(
+            "UPDATE erp_sales SET idempotency_key = NULL "
+            "WHERE trim(COALESCE(idempotency_key, '')) = ''"
+        )
+        connection.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_erp_sales_idempotency "
-            "ON erp_sales(idempotency_key) WHERE idempotency_key IS NOT NULL"
+            "ON erp_sales(idempotency_key)"
+        )
+        connection.execute(
+            "UPDATE erp_sales SET external_order_id = NULL "
+            "WHERE trim(COALESCE(external_order_id, '')) = ''"
         )
         connection.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_erp_sales_source_external "
-            "ON erp_sales(source, external_order_id) "
-            "WHERE external_order_id IS NOT NULL AND trim(external_order_id) <> ''"
+            "ON erp_sales(source, external_order_id)"
         )
         connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_catalog_stock_movements_receipt "
             "ON catalog_stock_movements(receipt_id, created_at)"
         )
         connection.execute(
+            "UPDATE catalog_stock_movements SET idempotency_key = NULL "
+            "WHERE trim(COALESCE(idempotency_key, '')) = ''"
+        )
+        connection.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS "
             "idx_catalog_stock_movements_idempotency "
-            "ON catalog_stock_movements(idempotency_key) "
-            "WHERE idempotency_key IS NOT NULL"
+            "ON catalog_stock_movements(idempotency_key)"
         )
 
         now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
@@ -1167,8 +1180,7 @@ class CatalogDatabase:
             )
             connection.execute(
                 "CREATE UNIQUE INDEX idx_catalog_stock_movements_idempotency "
-                "ON catalog_stock_movements(idempotency_key) "
-                "WHERE idempotency_key IS NOT NULL"
+                "ON catalog_stock_movements(idempotency_key)"
             )
             connection.commit()
         except Exception:

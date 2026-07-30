@@ -4,6 +4,7 @@
 import argparse
 import json
 import sqlite3
+import subprocess
 import sys
 import tempfile
 from datetime import datetime, timezone
@@ -86,8 +87,28 @@ def backup_database(source, backup_dir):
         stamp,
     )
     with sqlite3.connect(str(source)) as source_connection:
-        with sqlite3.connect(str(target)) as target_connection:
-            source_connection.backup(target_connection)
+        backup_method = getattr(source_connection, "backup", None)
+        if backup_method is not None:
+            with sqlite3.connect(str(target)) as target_connection:
+                backup_method(target_connection)
+        else:
+            escaped_target = str(target).replace("'", "''")
+            completed = subprocess.run(
+                [
+                    "sqlite3",
+                    str(source),
+                    ".backup '{}'".format(escaped_target),
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True,
+            )
+            if completed.returncode != 0:
+                raise RuntimeError(
+                    "Не удалось создать SQLite backup: {}".format(
+                        completed.stderr.strip() or "неизвестная ошибка"
+                    )
+                )
     with sqlite3.connect(str(target)) as connection:
         check = connection.execute("PRAGMA quick_check").fetchone()[0]
     if check != "ok":
@@ -201,15 +222,10 @@ def persist_legacy_audit(database_path, audit):
     with database.transaction() as connection:
         for item in audit["matched"]:
             connection.execute(
-                "INSERT INTO erp_legacy_catalog_links "
+                "INSERT OR REPLACE INTO erp_legacy_catalog_links "
                 "(entity_type, entity_id, position_index, product_id, "
                 "match_method, snapshot_product_id, snapshot_name, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
-                "ON CONFLICT(entity_type, entity_id, position_index) DO UPDATE SET "
-                "product_id = excluded.product_id, "
-                "match_method = excluded.match_method, "
-                "snapshot_product_id = excluded.snapshot_product_id, "
-                "snapshot_name = excluded.snapshot_name",
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     item["entity_type"],
                     item["entity_id"],
@@ -257,14 +273,10 @@ def persist_legacy_audit(database_path, audit):
                     )
         for item in audit["ambiguous"]:
             connection.execute(
-                "INSERT INTO erp_legacy_catalog_ambiguities "
+                "INSERT OR REPLACE INTO erp_legacy_catalog_ambiguities "
                 "(entity_type, entity_id, position_index, snapshot_product_id, "
                 "snapshot_name, candidate_product_ids_json, resolution, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, 'manual_review', ?) "
-                "ON CONFLICT(entity_type, entity_id, position_index) DO UPDATE SET "
-                "snapshot_product_id = excluded.snapshot_product_id, "
-                "snapshot_name = excluded.snapshot_name, "
-                "candidate_product_ids_json = excluded.candidate_product_ids_json",
+                "VALUES (?, ?, ?, ?, ?, ?, 'manual_review', ?)",
                 (
                     item["entity_type"],
                     item["entity_id"],
@@ -367,9 +379,13 @@ def main():
     else:
         with tempfile.TemporaryDirectory() as temp_directory:
             dry_run_path = Path(temp_directory) / database_path.name
-            with sqlite3.connect(str(database_path)) as source:
-                with sqlite3.connect(str(dry_run_path)) as target:
-                    source.backup(target)
+            backup_database(database_path, dry_run_path.parent)
+            generated_backup = next(
+                dry_run_path.parent.glob(
+                    "catalog-before-{}-*.db".format(MIGRATION_VERSION)
+                )
+            )
+            generated_backup.replace(dry_run_path)
             before, after, audit = migrate(dry_run_path)
             legacy = audit_legacy_links(dry_run_path, instance_dir)
             persisted = persist_legacy_audit(dry_run_path, legacy)
