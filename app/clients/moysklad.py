@@ -1,4 +1,5 @@
 import base64
+from concurrent.futures import ThreadPoolExecutor
 
 import requests
 from app.config import MOYSKLAD_TOKEN
@@ -418,8 +419,15 @@ class MoySkladClient:
         reason=None,
         moment=None,
     ):
-        organization = self.get_default_organization()
-        store = self.get_default_store()
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            organization_future = executor.submit(
+                self.get_default_organization
+            )
+            store_future = executor.submit(
+                self.get_default_store
+            )
+            organization = organization_future.result()
+            store = store_future.result()
 
         if not organization:
             raise ValueError(
