@@ -76,6 +76,13 @@ interface SearchableSelectProps {
   required?: boolean;
   error?: string;
   hint?: string;
+  loading?: boolean;
+  emptyLabel?: string;
+  onQueryChange?: (query: string) => void;
+  createAction?: {
+    label: string;
+    onClick: () => void;
+  };
 }
 
 export function SearchableSelect({
@@ -88,6 +95,10 @@ export function SearchableSelect({
   required = false,
   error,
   hint,
+  loading = false,
+  emptyLabel = 'Ничего не найдено',
+  onQueryChange,
+  createAction,
 }: SearchableSelectProps) {
   const id = useId();
   const listboxId = `${id}-listbox`;
@@ -152,6 +163,7 @@ export function SearchableSelect({
           onFocus={() => setOpen(true)}
           onChange={(event) => {
             setQuery(event.target.value);
+            onQueryChange?.(event.target.value);
             setActiveIndex(0);
             setOpen(true);
             if (value) onChange('');
@@ -178,6 +190,7 @@ export function SearchableSelect({
             onClick={() => {
               onChange('');
               setQuery('');
+              onQueryChange?.('');
               inputRef.current?.focus();
             }}
             aria-label={`Очистить поле «${label}»`}
@@ -191,7 +204,7 @@ export function SearchableSelect({
       {open && !disabled ? (
         <div className="searchable-select-popover">
           <div className="searchable-select-count" aria-live="polite">
-            Найдено: {visibleOptions.length}
+            {loading ? 'Загрузка…' : `Найдено: ${visibleOptions.length}`}
             {options.length > 100 && visibleOptions.length === 100 ? ' (показаны первые 100)' : ''}
           </div>
           <ul id={listboxId} role="listbox">
@@ -217,10 +230,23 @@ export function SearchableSelect({
             ))}
             {!visibleOptions.length ? (
               <li className="is-empty" role="option" aria-disabled="true" aria-selected="false">
-                Ничего не найдено
+                {loading ? 'Загружаем значения…' : emptyLabel}
               </li>
             ) : null}
           </ul>
+          {createAction ? (
+            <button
+              className="searchable-select-create"
+              type="button"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => {
+                setOpen(false);
+                createAction.onClick();
+              }}
+            >
+              {createAction.label}
+            </button>
+          ) : null}
         </div>
       ) : null}
       {hint && !error ? <small className="field-hint">{hint}</small> : null}

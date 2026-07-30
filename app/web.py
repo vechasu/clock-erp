@@ -49,6 +49,14 @@ from app.services.sales_inventory import (
     SalesInventory,
     SalesInventoryError,
 )
+from app.services.receipt_inventory import (
+    ReceiptInventory,
+)
+from app.services.shared_catalog import (
+    CatalogReferenceError,
+    DuplicateCatalogValueError,
+    SharedCatalog,
+)
 from app.services.repair_cases import (
     LEGACY_STATUS_MAP,
     REPAIR_CHANNEL_LABELS,
@@ -1286,8 +1294,11 @@ def build_excel_warehouse_items(products):
             "name": product.get("excel_name_raw") or "",
             "article": product.get("excel_article") or "",
             "barcode": product.get("bitrix_barcode") or "",
+            "moysklad_product_id": product.get("moysklad_product_id") or "",
             "brand": product.get("excel_brand") or "",
             "category": product.get("excel_category") or "",
+            "brand_id": product.get("brand_id"),
+            "category_id": product.get("category_id"),
             "cell": product.get("cell") or "",
             "cell_source": "excel" if product.get("cell") else "",
             "cell_source_label": "Excel" if product.get("cell") else "",
@@ -4154,6 +4165,30 @@ def load_manual_sales():
             legacy_sales = []
 
     try:
+        legacy_links = SharedCatalog().legacy_links(
+            "sale",
+            [
+                sale.get("id")
+                for sale in legacy_sales
+                if isinstance(sale, dict)
+            ],
+        )
+    except Exception:
+        app.logger.exception("Failed to load legacy sale catalog links")
+        legacy_links = {}
+    for sale in legacy_sales:
+        if not isinstance(sale, dict):
+            continue
+        linked_product_id = legacy_links.get(
+            (str(sale.get("id") or ""), 0)
+        )
+        if linked_product_id:
+            sale["legacy_product_id"] = str(
+                sale.get("product_id") or ""
+            )
+            sale["product_id"] = linked_product_id
+
+    try:
         managed_sales = SalesInventory().list_sales()
     except Exception:
         app.logger.exception("Failed to load transactional sales")
@@ -6337,6 +6372,8 @@ def build_sales_product_metadata_lookup(items):
             ).strip(),
             "brand": str(item.get("brand") or "").strip(),
             "category": str(item.get("category") or "").strip(),
+            "brand_id": item.get("brand_id"),
+            "category_id": item.get("category_id"),
         }
 
         if product_id:
@@ -6360,6 +6397,8 @@ def get_sales_product_metadata(lookup, product_id, product_name):
             "barcode": "",
             "brand": "",
             "category": "",
+            "brand_id": None,
+            "category_id": None,
         }
     )
 
@@ -6465,38 +6504,36 @@ def build_sales_report_records(warehouse_items=None):
                 operation.get("product_id") or ""
             ),
             "product_name": str(
-                override.get(
-                    "product_name",
-                    operation.get("product_name") or "",
-                )
+                product_metadata.get("product_name")
+                or override.get("product_name")
+                or operation.get("product_name")
                 or ""
             ),
             "barcode": str(
-                override.get(
-                    "barcode",
-                    operation.get("barcode")
-                    or product_metadata.get("barcode")
-                    or "",
-                )
+                product_metadata.get("barcode")
+                or override.get("barcode")
+                or operation.get("barcode")
                 or ""
             ),
             "brand": str(
-                override.get(
-                    "brand",
-                    operation.get("brand")
-                    or product_metadata.get("brand")
-                    or "",
-                )
+                product_metadata.get("brand")
+                or override.get("brand")
+                or operation.get("brand")
                 or ""
             ),
             "category": str(
-                override.get(
-                    "category",
-                    operation.get("category")
-                    or product_metadata.get("category")
-                    or "",
-                )
+                product_metadata.get("category")
+                or override.get("category")
+                or operation.get("category")
                 or ""
+            ),
+            "brand_id": (
+                product_metadata.get("brand_id")
+                or operation.get("brand_id")
+            ),
+            "category_id": (
+                product_metadata.get("category_id")
+                or operation.get("category_id")
             ),
             "quantity_value": quantity_number,
             "quantity_display": format_stock_number(
@@ -6729,22 +6766,32 @@ def build_sales_report_records(warehouse_items=None):
                 stored_sale.get("product_id") or ""
             ),
             "product_name": str(
-                stored_sale.get("product_name") or ""
+                product_metadata.get("product_name")
+                or stored_sale.get("product_name")
+                or ""
             ),
             "barcode": str(
-                stored_sale.get("barcode")
-                or product_metadata.get("barcode")
+                product_metadata.get("barcode")
+                or stored_sale.get("barcode")
                 or ""
             ),
             "brand": str(
-                stored_sale.get("brand")
-                or product_metadata.get("brand")
+                product_metadata.get("brand")
+                or stored_sale.get("brand")
                 or ""
             ),
             "category": str(
-                stored_sale.get("category")
-                or product_metadata.get("category")
+                product_metadata.get("category")
+                or stored_sale.get("category")
                 or ""
+            ),
+            "brand_id": (
+                stored_sale.get("brand_id")
+                or product_metadata.get("brand_id")
+            ),
+            "category_id": (
+                stored_sale.get("category_id")
+                or product_metadata.get("category_id")
             ),
             "quantity_value": quantity_number,
             "quantity_display": format_stock_number(
@@ -12042,8 +12089,18 @@ def api_products_collection():
                 article=payload.get("article", ""),
                 brand=payload.get("brand", ""),
                 category=payload.get("category", ""),
+                brand_id=payload.get("brand_id"),
+                category_id=payload.get("category_id"),
                 cell=payload.get("cell", ""),
                 stock=payload.get("stock", 0),
+                enforce_unique=True,
+            )
+        except DuplicateCatalogValueError as error:
+            return api_error(
+                "PRODUCT_ALREADY_EXISTS",
+                str(error),
+                409,
+                {"existing": error.existing},
             )
         except ValueError as error:
             return api_error(
@@ -12082,6 +12139,9 @@ def api_products_collection():
         per_page=page_size,
         created_from=(request.args.get("date_from") or "").strip(),
         created_to=(request.args.get("date_to") or "").strip(),
+        brand_id=request.args.get("brand_id"),
+        category_id=request.args.get("category_id"),
+        product_id=request.args.get("product_id"),
     )
     return api_success(
         [serialize_api_product(item) for item in listing["items"]],
@@ -12114,7 +12174,9 @@ def api_products_bulk_update():
             raise ValueError("За один раз можно изменить не больше 200 товаров.")
         if not isinstance(changes, dict) or not changes:
             raise ValueError("Не выбраны поля для изменения.")
-        allowed_fields = {"brand", "category", "cell"}
+        allowed_fields = {
+            "brand", "category", "brand_id", "category_id", "cell",
+        }
         unknown_fields = set(changes) - allowed_fields
         if unknown_fields:
             raise ValueError("Переданы неизвестные поля массового изменения.")
@@ -12177,7 +12239,8 @@ def api_product_resource(product_id):
     try:
         payload = api_json_payload()
         allowed_fields = {
-            "name", "article", "brand", "category", "cell", "stock", "stock_reason",
+            "name", "article", "brand", "category", "brand_id", "category_id",
+            "cell", "stock", "stock_reason",
         }
         unknown_fields = set(payload) - allowed_fields
         if unknown_fields:
@@ -12194,60 +12257,67 @@ def api_product_resource(product_id):
                 422,
             )
         updated = catalog_service.update_product(product_id, **payload)
+    except DuplicateCatalogValueError as error:
+        return api_error(
+            "PRODUCT_ALREADY_EXISTS",
+            str(error),
+            409,
+            {"existing": error.existing},
+        )
     except ValueError as error:
         return api_error("PRODUCT_VALIDATION_FAILED", str(error), 422)
     return api_success(serialize_api_product(updated))
 
 
-def api_catalog_values(kind):
-    listing = ExcelProductCatalog().list_products(page=1, per_page=1)
-    taxonomy = load_catalog_taxonomy()
-    if kind == "brand":
-        counts = {
-            catalog_label_key(item["name"]): item["count"]
-            for item in listing["brand_groups"]
-        }
-        values = {
-            catalog_label_key(value): value
-            for value in taxonomy["brands"]
-        }
-        for value in listing["brands"]:
-            values.setdefault(catalog_label_key(value), value)
-        return [
-            {"name": values[key], "count": counts.get(key, 0)}
-            for key in sorted(values, key=lambda item: values[item].casefold())
-        ]
+@app.route("/api/products/<int:product_id>/movements", methods=["GET"])
+@app.route("/api/v1/products/<int:product_id>/movements", methods=["GET"])
+def api_product_movements(product_id):
+    product = SharedCatalog().get_product(
+        product_id,
+        include_archived=True,
+    )
+    if product is None:
+        return api_error("PRODUCT_NOT_FOUND", "Товар не найден.", 404)
+    limit = api_positive_int(request.args.get("limit"), 100, 500)
+    movements = get_catalog_stock_history(
+        product_id=product_id,
+        limit=limit,
+    )
+    return api_success(movements, total=len(movements), limit=limit)
 
-    counts = {
-        catalog_label_key(item["name"]): item["count"]
-        for item in listing["category_groups"]
-    }
-    values = {}
-    for item in taxonomy["categories"]:
-        key = (
-            catalog_label_key(item["brand"]),
-            catalog_label_key(item["name"]),
-        )
-        values[key] = {
-            "name": item["name"],
-            "brand": item["brand"],
-        }
-    for value in listing["categories"]:
-        key = ("", catalog_label_key(value))
-        values.setdefault(key, {"name": value, "brand": ""})
-    return [
+
+def api_catalog_values(kind):
+    catalog = SharedCatalog()
+    if kind == "brand":
+        return [
+            {**item, "count": item["product_count"]}
+            for item in catalog.list_brands(
+                query=request.args.get("q") or "",
+                limit=api_positive_int(request.args.get("limit"), 100, 200),
+            )
+        ]
+    values = [
         {
-            **values[key],
-            "count": counts.get(key[1], 0),
+            **item,
+            "brand": item["brand_name"],
+            "count": item["product_count"],
         }
-        for key in sorted(
-            values,
-            key=lambda item: (
-                values[item]["brand"].casefold(),
-                values[item]["name"].casefold(),
-            ),
+        for item in catalog.list_categories(
+            brand_id=request.args.get("brand_id"),
+            query=request.args.get("q") or "",
+            limit=api_positive_int(request.args.get("limit"), 100, 200),
         )
     ]
+    if not request.path.startswith("/api/v1/"):
+        return [
+            {
+                "brand": item["brand"],
+                "name": item["name"],
+                "count": item["count"],
+            }
+            for item in values
+        ]
+    return values
 
 
 @app.route("/api/brands", methods=["GET", "POST"])
@@ -12259,19 +12329,19 @@ def api_brands_collection():
             payload = api_json_payload()
         except ValueError as error:
             return api_error("BRAND_VALIDATION_FAILED", str(error), 400)
-        name = normalize_catalog_label(payload.get("name"))
-        if not name:
+        try:
+            created = SharedCatalog().create_brand(payload.get("name"))
+        except DuplicateCatalogValueError as error:
             return api_error(
-                "BRAND_VALIDATION_FAILED",
-                "Название бренда обязательно.",
-                422,
+                "BRAND_ALREADY_EXISTS",
+                str(error),
+                409,
+                {"existing": error.existing},
             )
-        existing = api_catalog_values("brand")
-        if any(catalog_label_key(item["name"]) == catalog_label_key(name) for item in existing):
-            return api_error("BRAND_ALREADY_EXISTS", "Такой бренд уже существует.", 409)
-        remember_catalog_classification(name)
-        created = {"name": name, "count": 0}
-        return api_success(created, 201)
+        except ValueError as error:
+            return api_error("BRAND_VALIDATION_FAILED", str(error), 422)
+        remember_catalog_classification(created["name"])
+        return api_success({**created, "count": created["product_count"]}, 201)
     return api_success(api_catalog_values("brand"))
 
 
@@ -12284,59 +12354,283 @@ def api_categories_collection():
             payload = api_json_payload()
         except ValueError as error:
             return api_error("CATEGORY_VALIDATION_FAILED", str(error), 400)
-        name = normalize_catalog_label(payload.get("name"))
-        brand = normalize_catalog_label(payload.get("brand"))
-        if not name or not brand:
-            return api_error(
-                "CATEGORY_VALIDATION_FAILED",
-                "Бренд и название категории обязательны.",
-                422,
+        brand_id = payload.get("brand_id")
+        brand_name = normalize_catalog_label(payload.get("brand"))
+        if brand_id in (None, "") and brand_name:
+            brand = next(
+                (
+                    item
+                    for item in SharedCatalog().list_brands(
+                        query=brand_name,
+                        limit=200,
+                    )
+                    if catalog_label_key(item["name"])
+                    == catalog_label_key(brand_name)
+                ),
+                None,
             )
-        existing = api_catalog_values("category")
-        if any(
-            catalog_label_key(item["name"]) == catalog_label_key(name)
-            and catalog_label_key(item["brand"]) == catalog_label_key(brand)
-            for item in existing
-        ):
+            brand_id = brand["id"] if brand else None
+        try:
+            created = SharedCatalog().create_category(
+                brand_id,
+                payload.get("name"),
+            )
+        except DuplicateCatalogValueError as error:
             return api_error(
                 "CATEGORY_ALREADY_EXISTS",
-                "Такая категория уже существует у выбранного бренда.",
+                str(error),
                 409,
+                {"existing": error.existing},
             )
-        remember_catalog_classification(brand, name)
-        created = {"name": name, "brand": brand, "count": 0}
-        return api_success(created, 201)
+        except (CatalogReferenceError, ValueError) as error:
+            return api_error("CATEGORY_VALIDATION_FAILED", str(error), 422)
+        remember_catalog_classification(
+            created["brand_name"],
+            created["name"],
+        )
+        return api_success(
+            {
+                **created,
+                "brand": created["brand_name"],
+                "count": created["product_count"],
+            },
+            201,
+        )
     return api_success(api_catalog_values("category"))
 
 
-def serialize_api_receipt(receipt):
-    positions = [
-        {
-            "product_id": str(position.get("product_id") or ""),
-            "product_name": str(position.get("product_name") or ""),
-            "article": str(position.get("article") or ""),
-            "code": str(position.get("code") or ""),
-            "brand": str(position.get("brand") or ""),
-            "category": str(position.get("category") or ""),
-            "cell": str(position.get("cell") or ""),
+@app.route("/api/brands/<int:brand_id>", methods=["PATCH", "DELETE"])
+@app.route("/api/v1/brands/<int:brand_id>", methods=["PATCH", "DELETE"])
+def api_brand_resource(brand_id):
+    require_csrf_when_authenticated()
+    catalog = SharedCatalog()
+    try:
+        if request.method == "DELETE":
+            catalog.archive_brand(brand_id)
+            return api_success({"id": brand_id, "archived": True})
+        payload = api_json_payload()
+        updated = catalog.rename_brand(brand_id, payload.get("name"))
+    except DuplicateCatalogValueError as error:
+        return api_error(
+            "BRAND_ALREADY_EXISTS",
+            str(error),
+            409,
+            {"existing": error.existing},
+        )
+    except (CatalogReferenceError, ValueError) as error:
+        return api_error("BRAND_VALIDATION_FAILED", str(error), 422)
+    return api_success({**updated, "count": updated["product_count"]})
+
+
+@app.route("/api/categories/<int:category_id>", methods=["PATCH", "DELETE"])
+@app.route("/api/v1/categories/<int:category_id>", methods=["PATCH", "DELETE"])
+def api_category_resource(category_id):
+    require_csrf_when_authenticated()
+    catalog = SharedCatalog()
+    try:
+        if request.method == "DELETE":
+            catalog.archive_category(category_id)
+            return api_success({"id": category_id, "archived": True})
+        payload = api_json_payload()
+        updated = catalog.rename_category(category_id, payload.get("name"))
+    except DuplicateCatalogValueError as error:
+        return api_error(
+            "CATEGORY_ALREADY_EXISTS",
+            str(error),
+            409,
+            {"existing": error.existing},
+        )
+    except (CatalogReferenceError, ValueError) as error:
+        return api_error("CATEGORY_VALIDATION_FAILED", str(error), 422)
+    return api_success({**updated, "count": updated["product_count"]})
+
+
+@app.route("/api/catalog/options", methods=["GET"])
+@app.route("/api/v1/catalog/options", methods=["GET"])
+def api_catalog_options():
+    catalog = SharedCatalog()
+    kind = (request.args.get("type") or "product").strip()
+    query = request.args.get("q") or ""
+    limit = api_positive_int(request.args.get("limit"), 50, 100)
+    try:
+        if kind == "brand":
+            items = catalog.list_brands(query=query, limit=limit)
+        elif kind == "category":
+            items = catalog.list_categories(
+                brand_id=request.args.get("brand_id"),
+                query=query,
+                limit=limit,
+            )
+        elif kind == "product":
+            items = catalog.list_products(
+                brand_id=request.args.get("brand_id"),
+                category_id=request.args.get("category_id"),
+                query=query,
+                limit=limit,
+                in_stock=(
+                    (request.args.get("in_stock") or "").strip().lower()
+                    in {"1", "true", "yes"}
+                ),
+            )
+        else:
+            return api_error(
+                "CATALOG_OPTION_TYPE_INVALID",
+                "Неизвестный тип справочника.",
+                422,
+            )
+    except (TypeError, ValueError) as error:
+        return api_error("CATALOG_FILTER_INVALID", str(error), 422)
+    return api_success(items, total=len(items), limit=limit)
+
+
+@app.route("/api/catalog/duplicates", methods=["GET"])
+@app.route("/api/v1/catalog/duplicates", methods=["GET"])
+def api_catalog_duplicates():
+    return api_success(SharedCatalog().duplicate_audit())
+
+
+def serialize_api_receipt(
+        receipt,
+        catalog_lookup=None,
+        legacy_links=None):
+    catalog = SharedCatalog()
+    receipt_id = str(receipt.get("id") or "")
+    if legacy_links is None:
+        legacy_links = catalog.legacy_links("receipt", [receipt_id])
+    if catalog_lookup is None:
+        product_ids = [
+            legacy_links.get(
+                (receipt_id, index),
+                position.get("product_id"),
+            )
+            for index, position in enumerate(receipt.get("positions") or [])
+            if isinstance(position, dict) and position.get("product_id")
+        ]
+        if receipt.get("product_id"):
+            product_ids.append(
+                legacy_links.get(
+                    (receipt_id, 0),
+                    receipt.get("product_id"),
+                )
+            )
+        catalog_lookup = catalog.products_by_ids(
+            product_ids,
+            include_archived=True,
+        )
+
+    def current_product(position, position_index):
+        product_id = str(
+            legacy_links.get(
+                (receipt_id, position_index),
+                position.get("product_id"),
+            )
+            or ""
+        )
+        if not product_id:
+            return None, ""
+        return catalog_lookup.get(product_id), product_id
+
+    positions = []
+    for position_index, position in enumerate(receipt.get("positions") or []):
+        if not isinstance(position, dict):
+            continue
+        product, linked_product_id = current_product(
+            position,
+            position_index,
+        )
+        positions.append({
+            "product_id": (
+                linked_product_id
+                or str(position.get("product_id") or "")
+            ),
+            "brand_id": (
+                product.get("brand_id")
+                if product
+                else (
+                    int(position["brand_id"])
+                    if position.get("brand_id") not in (None, "")
+                    else None
+                )
+            ),
+            "category_id": (
+                product.get("category_id")
+                if product
+                else (
+                    int(position["category_id"])
+                    if position.get("category_id") not in (None, "")
+                    else None
+                )
+            ),
+            "product_name": str(
+                product.get("name") if product else position.get("product_name") or ""
+            ),
+            "article": str(
+                product.get("article") if product else position.get("article") or ""
+            ),
+            "code": str(
+                (
+                    product.get("barcode")
+                    or product.get("article")
+                    or position.get("code")
+                    or ""
+                )
+                if product
+                else position.get("code") or ""
+            ),
+            "brand": str(
+                product.get("brand") if product else position.get("brand") or ""
+            ),
+            "category": str(
+                product.get("category")
+                if product
+                else position.get("category") or ""
+            ),
+            "cell": str(
+                product.get("cell") if product else position.get("cell") or ""
+            ),
             "quantity": parse_receipt_number(position.get("quantity")),
             "purchase_price": parse_receipt_number(position.get("purchase_price")),
             "line_total": parse_receipt_number(position.get("line_total")),
             "stock_before": parse_receipt_number(position.get("stock_before")),
             "stock_after": parse_receipt_number(position.get("stock_after")),
-        }
-        for position in (receipt.get("positions") or [])
-        if isinstance(position, dict)
-    ]
+        })
     if not positions and receipt.get("product_id"):
+        linked_product_id = str(
+            legacy_links.get(
+                (receipt_id, 0),
+                receipt.get("product_id"),
+            )
+            or ""
+        )
+        product = catalog_lookup.get(linked_product_id)
         positions = [{
-            "product_id": str(receipt.get("product_id") or ""),
-            "product_name": str(receipt.get("product_name") or ""),
-            "article": "",
-            "code": "",
-            "brand": str(receipt.get("brand") or ""),
-            "category": str(receipt.get("category") or ""),
-            "cell": "",
+            "product_id": linked_product_id,
+            "brand_id": (
+                product.get("brand_id") if product else receipt.get("brand_id")
+            ),
+            "category_id": (
+                product.get("category_id")
+                if product
+                else receipt.get("category_id")
+            ),
+            "product_name": str(
+                product.get("name") if product else receipt.get("product_name") or ""
+            ),
+            "article": str(product.get("article") if product else ""),
+            "code": str(
+                (product.get("barcode") or product.get("article") or "")
+                if product
+                else ""
+            ),
+            "brand": str(
+                product.get("brand") if product else receipt.get("brand") or ""
+            ),
+            "category": str(
+                product.get("category")
+                if product
+                else receipt.get("category") or ""
+            ),
+            "cell": str(product.get("cell") if product else ""),
             "quantity": parse_receipt_number(receipt.get("quantity")),
             "purchase_price": parse_receipt_number(receipt.get("purchase_price")),
             "line_total": round(
@@ -12356,13 +12650,34 @@ def serialize_api_receipt(receipt):
             or receipt.get("created_at")
             or ""
         )[:10],
-        "brand": str(receipt.get("brand") or ""),
-        "category": str(receipt.get("category") or ""),
-        "product_id": str(receipt.get("product_id") or ""),
-        "product_name": str(receipt.get("product_name") or ""),
+        "brand": str(
+            positions[0]["brand"] if positions else receipt.get("brand") or ""
+        ),
+        "category": str(
+            positions[0]["category"] if positions else receipt.get("category") or ""
+        ),
+        "brand_id": (
+            int(receipt["brand_id"])
+            if receipt.get("brand_id") not in (None, "")
+            else (positions[0]["brand_id"] if positions else None)
+        ),
+        "category_id": (
+            int(receipt["category_id"])
+            if receipt.get("category_id") not in (None, "")
+            else (positions[0]["category_id"] if positions else None)
+        ),
+        "product_id": str(
+            positions[0]["product_id"] if positions else receipt.get("product_id") or ""
+        ),
+        "product_name": str(
+            positions[0]["product_name"]
+            if positions
+            else receipt.get("product_name") or ""
+        ),
         "note": str(receipt.get("note") or ""),
         "status": str(receipt.get("status") or "posted"),
         "status_label": str(receipt.get("status_label") or "Проведён"),
+        "inventory_managed": bool(receipt.get("inventory_managed")),
         "positions": positions,
         "positions_count": len(positions),
         "total_quantity": parse_receipt_number(
@@ -12379,7 +12694,28 @@ def serialize_api_receipt(receipt):
     }
 
 
-def receipt_api_catalog_items(force=False):
+def receipt_api_catalog_items(
+        force=False,
+        query="",
+        brand_id=None,
+        category_id=None,
+        limit=100):
+    shared_items = SharedCatalog().list_products(
+        query=query,
+        brand_id=brand_id,
+        category_id=category_id,
+        limit=limit,
+    )
+    if shared_items:
+        return [
+            {
+                **item,
+                "code": item["barcode"] or item["article"],
+                "thumbnail_url": "",
+                "has_images": False,
+            }
+            for item in shared_items
+        ]
     return [
         {
             "id": str(item.get("id") or ""),
@@ -12392,6 +12728,8 @@ def receipt_api_catalog_items(force=False):
                 or ""
             ),
             "category": str(item.get("category") or ""),
+            "brand_id": item.get("brand_id"),
+            "category_id": item.get("category_id"),
             "cell": str(item.get("cell") or ""),
             "stock": parse_receipt_number(item.get("stock")),
             "stock_display": str(
@@ -12403,7 +12741,7 @@ def receipt_api_catalog_items(force=False):
         }
         for item in get_warehouse_items(force=force)
         if isinstance(item, dict) and item.get("id")
-    ]
+    ][:max(1, min(int(limit), 200))]
 
 
 def validate_api_receipt_date(value):
@@ -12422,12 +12760,27 @@ def build_api_receipt_positions(payload_positions, catalog):
         str(item.get("id") or ""): item
         for item in catalog
     }
+    shared_products = SharedCatalog().products_by_ids(
+        [
+            item.get("product_id")
+            for item in payload_positions
+            if isinstance(item, dict)
+        ],
+        include_archived=False,
+    )
     positions = []
     for index, requested in enumerate(payload_positions, start=1):
         if not isinstance(requested, dict):
             raise ValueError("Позиция {} заполнена некорректно.".format(index))
         product_id = str(requested.get("product_id") or "").strip()
-        product = catalog_by_id.get(product_id)
+        product = shared_products.get(product_id)
+        if product is not None:
+            product = {
+                **product,
+                "code": product["barcode"] or product["article"],
+            }
+        else:
+            product = catalog_by_id.get(product_id)
         if product is None:
             raise ValueError("Товар в позиции {} не найден в каталоге.".format(index))
         quantity = parse_receipt_number(requested.get("quantity"), -1)
@@ -12442,6 +12795,24 @@ def build_api_receipt_positions(payload_positions, catalog):
             )
         requested_brand = normalize_catalog_label(requested.get("brand"))
         requested_category = normalize_catalog_label(requested.get("category"))
+        requested_brand_id = requested.get("brand_id")
+        requested_category_id = requested.get("category_id")
+        if (
+            requested_brand_id not in (None, "")
+            and product.get("brand_id") not in (None, "")
+            and int(requested_brand_id) != int(product["brand_id"])
+        ):
+            raise ValueError(
+                "Товар в позиции {} не относится к выбранному бренду.".format(index)
+            )
+        if (
+            requested_category_id not in (None, "")
+            and product.get("category_id") not in (None, "")
+            and int(requested_category_id) != int(product["category_id"])
+        ):
+            raise ValueError(
+                "Товар в позиции {} не относится к выбранной категории.".format(index)
+            )
         if (
             requested_brand
             and catalog_label_key(requested_brand)
@@ -12462,7 +12833,21 @@ def build_api_receipt_positions(payload_positions, catalog):
         positions.append({
             "brand": product.get("brand") or "",
             "category": product.get("category") or "",
+            "brand_id": product.get("brand_id"),
+            "category_id": product.get("category_id"),
             "product_id": product_id,
+            "moysklad_product_id": (
+                product.get("moysklad_product_id")
+                or (
+                    product_id
+                    if product.get("brand_id") in (None, "")
+                    and product.get("category_id") in (None, "")
+                    else ""
+                )
+            ),
+            "can_create_moysklad": bool(
+                product.get("can_create_moysklad")
+            ),
             "product_name": product.get("name") or "",
             "article": product.get("article") or "",
             "code": product.get("code") or "",
@@ -12474,6 +12859,44 @@ def build_api_receipt_positions(payload_positions, catalog):
             "stock_after": stock_before + quantity,
         })
     return positions
+
+
+def prepare_moysklad_receipt_positions(positions, client):
+    remote_positions = []
+    for position in positions:
+        remote_product_id = str(
+            position.get("moysklad_product_id") or ""
+        ).strip()
+        if not remote_product_id:
+            if not position.get("can_create_moysklad"):
+                raise ValueError(
+                    "Товар «{}» не сопоставлен с МойСклад. "
+                    "Сначала подтвердите связь товара.".format(
+                        position.get("product_name") or position.get("product_id")
+                    )
+                )
+            created = client.create_product(
+                name=position.get("product_name") or "Товар Vechasu",
+                code=(
+                    position.get("code")
+                    or position.get("article")
+                    or "VECHASU-{}".format(position["product_id"])
+                ),
+                article=position.get("article") or None,
+            )
+            remote_product_id = str((created or {}).get("id") or "").strip()
+            if not remote_product_id:
+                raise ValueError("МойСклад не создал карточку товара.")
+            SharedCatalog().set_moysklad_product_id(
+                position["product_id"],
+                remote_product_id,
+            )
+            position["moysklad_product_id"] = remote_product_id
+        remote_positions.append({
+            **position,
+            "product_id": remote_product_id,
+        })
+    return remote_positions
 
 
 def decode_api_product_image(payload):
@@ -12514,14 +12937,22 @@ def decode_api_product_image(payload):
 @app.route("/api/receipts/catalog", methods=["GET"])
 @app.route("/api/v1/receipts/catalog", methods=["GET"])
 def api_receipts_catalog():
-    query = (request.args.get("q") or "").strip().casefold()
+    query = (request.args.get("q") or "").strip()
     brand = (request.args.get("brand") or "").strip()
     category = (request.args.get("category") or "").strip()
-    items = receipt_api_catalog_items()
+    brand_id = (request.args.get("brand_id") or "").strip()
+    category_id = (request.args.get("category_id") or "").strip()
+    product_id = (request.args.get("product_id") or "").strip()
+    items = receipt_api_catalog_items(
+        query=query,
+        brand_id=request.args.get("brand_id"),
+        category_id=request.args.get("category_id"),
+        limit=api_positive_int(request.args.get("limit"), 50, 100),
+    )
     if query:
         items = [
             item for item in items
-            if query in " ".join([
+            if query.casefold() in " ".join([
                 item["name"], item["article"], item["code"],
                 item["brand"], item["category"],
             ]).casefold()
@@ -12530,7 +12961,7 @@ def api_receipts_catalog():
         items = [item for item in items if item["brand"] == brand]
     if category:
         items = [item for item in items if item["category"] == category]
-    limit = api_positive_int(request.args.get("limit"), 100, 200)
+    limit = api_positive_int(request.args.get("limit"), 50, 100)
     return api_success(items[:limit], total=len(items))
 
 
@@ -12541,6 +12972,11 @@ def api_receipts_collection():
         require_csrf_when_authenticated()
         try:
             payload = api_json_payload()
+            request_idempotency_key = str(
+                request.headers.get("Idempotency-Key")
+                or payload.get("idempotency_key")
+                or ""
+            ).strip()
             receipt_date = validate_api_receipt_date(
                 payload.get("receipt_date") or payload.get("date")
             )
@@ -12554,6 +12990,25 @@ def api_receipts_collection():
             return api_error("RECEIPT_VALIDATION_FAILED", str(error), 422)
 
         receipts = load_receipts()
+        if request_idempotency_key:
+            existing_ledger_receipt = (
+                ReceiptInventory().get_receipt_by_idempotency(
+                    request_idempotency_key
+                )
+            )
+            if existing_ledger_receipt is not None:
+                existing_receipt = dict(
+                    existing_ledger_receipt.get("metadata") or {}
+                )
+                existing_receipt["inventory_managed"] = True
+                if not any(
+                    str(item.get("id") or "")
+                    == str(existing_receipt.get("id") or "")
+                    for item in receipts
+                ):
+                    receipts.insert(0, existing_receipt)
+                    save_receipts(receipts)
+                return api_success(serialize_api_receipt(existing_receipt))
         receipt_id = str(uuid.uuid4())
         receipt_number = generate_receipt_number(receipts)
         first_position = positions[0]
@@ -12565,8 +13020,13 @@ def api_receipts_collection():
             reason_parts.append("Комментарий: {}".format(note))
         reason = ". ".join(reason_parts)
         try:
-            document = MoySkladClient().create_stock_enter_many(
-                positions=positions,
+            moysklad_client = MoySkladClient()
+            remote_positions = prepare_moysklad_receipt_positions(
+                positions,
+                moysklad_client,
+            )
+            document = moysklad_client.create_stock_enter_many(
+                positions=remote_positions,
                 reason=reason,
                 moment=receipt_date,
             )
@@ -12584,6 +13044,8 @@ def api_receipts_collection():
             "receipt_date": receipt_date,
             "brand": first_position["brand"],
             "category": first_position["category"],
+            "brand_id": first_position.get("brand_id"),
+            "category_id": first_position.get("category_id"),
             "product_id": first_position["product_id"],
             "product_name": first_position["product_name"],
             "quantity": first_position["quantity"],
@@ -12603,7 +13065,26 @@ def api_receipts_collection():
                 (document.get("meta") or {}).get("uuidHref") or ""
             ),
         }
+        managed_product_ids = SharedCatalog().products_by_ids(
+            [position["product_id"] for position in positions],
+            include_archived=False,
+        )
+        inventory_managed = all(
+            position["product_id"] in managed_product_ids
+            for position in positions
+        )
+        receipt["inventory_managed"] = inventory_managed
         try:
+            if inventory_managed:
+                ReceiptInventory().create_receipt(
+                    receipt,
+                    positions,
+                    idempotency_key=(
+                        request_idempotency_key
+                        or receipt_id
+                    ),
+                    user_name=current_sales_user_name(),
+                )
             receipts.insert(0, receipt)
             save_receipts(receipts)
             for position in positions:
@@ -12640,7 +13121,10 @@ def api_receipts_collection():
         image_message = ""
         if product_image and len(positions) == 1:
             try:
-                image_product_id = positions[0]["product_id"]
+                image_product_id = (
+                    positions[0].get("moysklad_product_id")
+                    or positions[0]["product_id"]
+                )
                 image_client = MoySkladClient()
                 if image_client.product_has_images(image_product_id):
                     image_message = "У товара уже есть фото — дубликат не создавался."
@@ -12663,13 +13147,44 @@ def api_receipts_collection():
             image_message=image_message,
         )
 
-    receipts = [serialize_api_receipt(item) for item in load_receipts()]
+    stored_receipts = load_receipts()
+    receipt_product_ids = {
+        str(position.get("product_id"))
+        for receipt in stored_receipts
+        for position in (receipt.get("positions") or [])
+        if isinstance(position, dict) and position.get("product_id")
+    }
+    receipt_product_ids.update(
+        str(receipt.get("product_id"))
+        for receipt in stored_receipts
+        if receipt.get("product_id")
+    )
+    receipt_legacy_links = SharedCatalog().legacy_links(
+        "receipt",
+        [receipt.get("id") for receipt in stored_receipts],
+    )
+    receipt_product_ids.update(receipt_legacy_links.values())
+    catalog_lookup = SharedCatalog().products_by_ids(
+        receipt_product_ids,
+        include_archived=True,
+    )
+    receipts = [
+        serialize_api_receipt(
+            item,
+            catalog_lookup=catalog_lookup,
+            legacy_links=receipt_legacy_links,
+        )
+        for item in stored_receipts
+    ]
     query = (request.args.get("q") or "").strip().casefold()
     date_from = (request.args.get("date_from") or "").strip()
     date_to = (request.args.get("date_to") or "").strip()
     status = (request.args.get("status") or "").strip()
     brand = (request.args.get("brand") or "").strip()
     category = (request.args.get("category") or "").strip()
+    brand_id = (request.args.get("brand_id") or "").strip()
+    category_id = (request.args.get("category_id") or "").strip()
+    product_id = (request.args.get("product_id") or "").strip()
     if query:
         receipts = [
             item for item in receipts
@@ -12689,6 +13204,33 @@ def api_receipts_collection():
         receipts = [item for item in receipts if item["brand"] == brand]
     if category:
         receipts = [item for item in receipts if item["category"] == category]
+    if brand_id:
+        receipts = [
+            item for item in receipts
+            if str(item.get("brand_id") or "") == brand_id
+            or any(
+                str(position.get("brand_id") or "") == brand_id
+                for position in item["positions"]
+            )
+        ]
+    if category_id:
+        receipts = [
+            item for item in receipts
+            if str(item.get("category_id") or "") == category_id
+            or any(
+                str(position.get("category_id") or "") == category_id
+                for position in item["positions"]
+            )
+        ]
+    if product_id:
+        receipts = [
+            item for item in receipts
+            if str(item.get("product_id") or "") == product_id
+            or any(
+                str(position.get("product_id") or "") == product_id
+                for position in item["positions"]
+            )
+        ]
     sort_by = (request.args.get("sort_by") or "receipt_date").strip()
     sort_dir = (request.args.get("sort_dir") or "desc").strip()
     allowed_sort = {
@@ -12755,8 +13297,19 @@ def api_receipt_resource(receipt_id):
         )
     if request.method == "DELETE":
         try:
+            if receipt.get("inventory_managed"):
+                ReceiptInventory().can_cancel(receipt_id)
             if not MoySkladClient().delete_stock_enter(document_id):
                 raise ValueError("МойСклад не удалил приход.")
+            if receipt.get("inventory_managed"):
+                ReceiptInventory().cancel_receipt(
+                    receipt_id,
+                    idempotency_key=(
+                        request.headers.get("Idempotency-Key")
+                        or "receipt-delete:{}".format(receipt_id)
+                    ),
+                    user_name=current_sales_user_name(),
+                )
             save_receipts([
                 item for item in receipts
                 if str(item.get("id") or "") != str(receipt_id)
@@ -12819,9 +13372,14 @@ def api_receipt_resource(receipt_id):
         "Комментарий: {}".format(note) if note else "",
     ]))
     try:
-        document = MoySkladClient().update_stock_enter_many(
+        moysklad_client = MoySkladClient()
+        remote_positions = prepare_moysklad_receipt_positions(
+            positions,
+            moysklad_client,
+        )
+        document = moysklad_client.update_stock_enter_many(
             document_id=document_id,
-            positions=positions,
+            positions=remote_positions,
             reason=reason,
             moment=receipt_date,
         )
@@ -12831,6 +13389,8 @@ def api_receipt_resource(receipt_id):
             "receipt_date": receipt_date,
             "brand": position["brand"],
             "category": position["category"],
+            "brand_id": position.get("brand_id"),
+            "category_id": position.get("category_id"),
             "product_id": position["product_id"],
             "product_name": position["product_name"],
             "quantity": position["quantity"],
@@ -12849,6 +13409,17 @@ def api_receipt_resource(receipt_id):
                 or receipt.get("moysklad_document_url")
             ),
         })
+        if receipt.get("inventory_managed"):
+            ReceiptInventory().update_receipt(
+                receipt_id,
+                receipt,
+                positions,
+                idempotency_key=(
+                    request.headers.get("Idempotency-Key")
+                    or payload.get("idempotency_key")
+                ),
+                user_name=current_sales_user_name(),
+            )
         save_receipts(receipts)
         operations = load_stock_operations()
         for operation in operations:
@@ -12859,6 +13430,8 @@ def api_receipt_resource(receipt_id):
                 "product_name": position["product_name"],
                 "brand": position["brand"],
                 "category": position["category"],
+                "brand_id": position.get("brand_id"),
+                "category_id": position.get("category_id"),
                 "quantity": position["quantity"],
                 "diff": position["quantity"],
                 "stock_after": (
@@ -12900,6 +13473,16 @@ def serialize_api_sale(sale):
         "barcode": str(sale.get("barcode") or ""),
         "brand": str(sale.get("brand") or ""),
         "category": str(sale.get("category") or ""),
+        "brand_id": (
+            int(sale["brand_id"])
+            if sale.get("brand_id") not in (None, "")
+            else None
+        ),
+        "category_id": (
+            int(sale["category_id"])
+            if sale.get("category_id") not in (None, "")
+            else None
+        ),
         "quantity": float(sale.get("quantity_value") or 0),
         "quantity_display": str(sale.get("quantity_display") or ""),
         "net_quantity": float(sale.get("net_quantity_value") or 0),
@@ -12951,8 +13534,19 @@ def serialize_api_sale(sale):
 
 
 def api_sales_records():
+    referenced_product_ids = [
+        item.get("product_id")
+        for item in load_stock_operations() + load_manual_sales()
+        if isinstance(item, dict) and item.get("product_id")
+    ]
+    linked_products = list(
+        SharedCatalog().products_by_ids(
+            referenced_product_ids,
+            include_archived=True,
+        ).values()
+    )
     return build_sales_report_records(
-        warehouse_items=get_excel_warehouse_items()
+        warehouse_items=linked_products
     )
 
 
@@ -12967,7 +13561,7 @@ def find_api_sale(sale_id):
 
 
 def api_sale_catalog_items():
-    return build_sales_catalog_items(get_excel_warehouse_items())
+    return SharedCatalog().list_products(limit=100, in_stock=True)
 
 
 def normalize_api_sale_payload(payload, existing=None, require_catalog=False):
@@ -12982,10 +13576,7 @@ def normalize_api_sale_payload(payload, existing=None, require_catalog=False):
         or existing.get("product_id")
         or ""
     ).strip()
-    product = get_sale_catalog_product(
-        product_id,
-        items=api_sale_catalog_items(),
-    )
+    product = SharedCatalog().get_product(product_id)
     if require_catalog and product is None:
         raise ValueError("Выберите товар из каталога.")
     product_name = str(
@@ -13061,6 +13652,16 @@ def normalize_api_sale_payload(payload, existing=None, require_catalog=False):
             or existing.get("category")
             or ""
         ),
+        "brand_id": (
+            (product or {}).get("brand_id")
+            or payload.get("brand_id")
+            or existing.get("brand_id")
+        ),
+        "category_id": (
+            (product or {}).get("category_id")
+            or payload.get("category_id")
+            or existing.get("category_id")
+        ),
         "quantity": quantity,
         "unit_price": unit_price,
         "total_amount": calculate_sale_amount(unit_price, quantity),
@@ -13083,18 +13684,15 @@ def normalize_api_sale_payload(payload, existing=None, require_catalog=False):
 @app.route("/api/sales/catalog", methods=["GET"])
 @app.route("/api/v1/sales/catalog", methods=["GET"])
 def api_sales_catalog():
-    query = (request.args.get("q") or "").strip().casefold()
-    items = api_sale_catalog_items()
-    if query:
-        items = [
-            item for item in items
-            if query in " ".join([
-                item["name"], item["article"], item["barcode"],
-                item["brand"], item["category"],
-            ]).casefold()
-        ]
-    limit = api_positive_int(request.args.get("limit"), 100, 200)
-    return api_success(items[:limit], total=len(items))
+    limit = api_positive_int(request.args.get("limit"), 50, 100)
+    items = SharedCatalog().list_products(
+        query=request.args.get("q") or "",
+        brand_id=request.args.get("brand_id"),
+        category_id=request.args.get("category_id"),
+        limit=limit,
+        in_stock=True,
+    )
+    return api_success(items, total=len(items), limit=limit)
 
 
 @app.route("/api/sales/sources", methods=["GET"])
@@ -13132,6 +13730,11 @@ def api_sales_collection():
                 quantity=sale["quantity"],
                 unit_price=sale["unit_price"],
                 user_name=current_sales_user_name(),
+                idempotency_key=(
+                    request.headers.get("Idempotency-Key")
+                    or payload.get("idempotency_key")
+                ),
+                enforce_external_unique=True,
             )
         except InsufficientStockError as error:
             return api_error("INSUFFICIENT_STOCK", str(error), 409)
@@ -13168,6 +13771,13 @@ def api_sales_collection():
     brand = (request.args.get("brand") or "").strip()
     category = (request.args.get("category") or "").strip()
     product = (request.args.get("product") or "").strip()
+    brand_id = (request.args.get("brand_id") or "").strip()
+    category_id = (request.args.get("category_id") or "").strip()
+    product_id = (
+        request.args.get("product_id")
+        or request.args.get("product")
+        or ""
+    ).strip()
     if query:
         sales = [
             item for item in sales
@@ -13192,6 +13802,21 @@ def api_sales_collection():
         sales = [item for item in sales if item.get("category") == category]
     if product:
         sales = [item for item in sales if item.get("product_id") == product]
+    if brand_id:
+        sales = [
+            item for item in sales
+            if str(item.get("brand_id") or "") == brand_id
+        ]
+    if category_id:
+        sales = [
+            item for item in sales
+            if str(item.get("category_id") or "") == category_id
+        ]
+    if product_id:
+        sales = [
+            item for item in sales
+            if str(item.get("product_id") or "") == product_id
+        ]
     sort_by = (request.args.get("sort_by") or "created_at").strip()
     sort_dir = (request.args.get("sort_dir") or "desc").strip()
     allowed_sort = {
@@ -13269,6 +13894,30 @@ def api_sale_resource(sale_id):
     require_csrf_when_authenticated()
     if request.method == "DELETE":
         if record.get("sale_type") == "manual":
+            if record.get("inventory_managed"):
+                if not request.path.startswith("/api/v1/"):
+                    return api_error(
+                        "SALE_NOT_EDITABLE",
+                        "Проведённую продажу удалить нельзя. Используйте возврат.",
+                        409,
+                    )
+                try:
+                    SalesInventory().cancel_sale(
+                        sale_id,
+                        reason="Удаление или отмена продажи",
+                        user_name=current_sales_user_name(),
+                        idempotency_key=(
+                            request.headers.get("Idempotency-Key")
+                            or "sale-delete:{}".format(sale_id)
+                        ),
+                    )
+                except (SalesInventoryError, ReturnConflictError) as error:
+                    return api_error("SALE_NOT_EDITABLE", str(error), 409)
+                return api_success({
+                    "id": str(sale_id),
+                    "deleted": True,
+                    "stock_restored": True,
+                })
             sales = load_manual_sales()
             stored = next(
                 (
@@ -13279,12 +13928,6 @@ def api_sale_resource(sale_id):
             )
             if stored is None:
                 return api_error("SALE_NOT_FOUND", "Продажа не найдена.", 404)
-            if stored.get("inventory_managed"):
-                return api_error(
-                    "SALE_NOT_EDITABLE",
-                    "Проведённую продажу удалить нельзя. Используйте возврат.",
-                    409,
-                )
             stored["deleted_at"] = datetime.now().strftime("%Y-%m-%d %H:%M")
             save_manual_sales(sales)
         elif record.get("sale_type") == "automatic":
@@ -13322,19 +13965,19 @@ def api_sale_resource(sale_id):
                     "Товар проведённой продажи изменить нельзя.",
                     409,
                 )
-            if abs(float(normalized["quantity"]) - float(stored.get("quantity") or 0)) > 0.000001:
-                return api_error(
-                    "SALE_NOT_EDITABLE",
-                    "Количество проведённой продажи изменить нельзя.",
-                    409,
-                )
             normalized["inventory_managed"] = True
             normalized["automatic_stock_applied"] = True
             try:
-                SalesInventory().update_metadata(
+                SalesInventory().update_sale(
                     sale_id,
                     normalized,
-                    normalized["unit_price"],
+                    quantity=normalized["quantity"],
+                    unit_price=normalized["unit_price"],
+                    user_name=current_sales_user_name(),
+                    idempotency_key=(
+                        request.headers.get("Idempotency-Key")
+                        or payload.get("idempotency_key")
+                    ),
                 )
             except SalesInventoryError as error:
                 return api_error("SALE_NOT_EDITABLE", str(error), 409)
@@ -13366,6 +14009,10 @@ def api_sale_return(sale_id):
             quantity=payload.get("quantity"),
             reason=str(payload.get("reason") or "").strip(),
             user_name=current_sales_user_name(),
+            idempotency_key=(
+                request.headers.get("Idempotency-Key")
+                or payload.get("idempotency_key")
+            ),
         )
     except ReturnConflictError as error:
         return api_error("RETURN_EXCEEDS_SOLD", str(error), 409)

@@ -2301,6 +2301,19 @@ input[type='number']::-webkit-outer-spin-button {
   cursor: default;
 }
 
+.searchable-select-create {
+  width: calc(100% - 10px);
+  min-height: 38px;
+  margin: 0 5px 5px;
+  border: 1px dashed var(--theme-primary);
+  border-radius: var(--radius-xs);
+  background: var(--theme-primary-soft);
+  color: var(--theme-primary-active);
+  cursor: pointer;
+  font-weight: 700;
+  text-align: left;
+}
+
 .bulk-toolbar {
   min-height: 50px;
   padding: 9px 14px;

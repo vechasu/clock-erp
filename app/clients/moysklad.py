@@ -757,25 +757,4 @@ class MoySkladClient:
                 }
             ]
 
-        response = requests.post(
-            f"{self.BASE_URL}/entity/product",
-            headers=self.headers,
-            json=payload,
-            timeout=8,
-        )
-
-        print("Status:", response.status_code)
-
-        if response.status_code >= 400:
-            print("Error:", response.text)
-            return None
-
-        product = response.json()
-
-        print("Product created:")
-        print("Name:", product.get("name"))
-        print("Code:", product.get("code"))
-        print("Article:", product.get("article", "no article"))
-        print("ID:", product.get("id"))
-
-        return product
+        return self.post("/entity/product", payload)

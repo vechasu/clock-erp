@@ -1,13 +1,12 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Controller, useFieldArray, useForm } from 'react-hook-form';
+import { useFieldArray, useForm } from 'react-hook-form';
 
 import { ImageUploader } from '../../components/ImageUploader';
-import { SearchableSelect } from '../../components/Controls';
 import { Icon } from '../../components/Icons';
+import { CatalogCascade } from '../catalog/CatalogComboboxes';
 import {
   receiptFormSchema,
   type Receipt,
-  type ReceiptCatalogProduct,
   type ReceiptFormInput,
   type ReceiptFormValues,
 } from './schemas';
@@ -15,8 +14,11 @@ import {
 interface ReceiptFormProps {
   id: string;
   receipt?: Receipt | null;
-  products: ReceiptCatalogProduct[];
+  products?: unknown[];
   onSubmit: (values: ReceiptFormValues) => void;
+  onCreateBrand?: () => void;
+  onCreateCategory?: (brandId: number) => void;
+  onCreateProduct?: (brandId: number, categoryId: number) => void;
 }
 
 function defaults(receipt?: Receipt | null): ReceiptFormInput {
@@ -28,15 +30,34 @@ function defaults(receipt?: Receipt | null): ReceiptFormInput {
           product_id: position.product_id,
           brand: position.brand,
           category: position.category,
+          brand_id: (position.brand_id ?? null) as unknown as number,
+          category_id: (position.category_id ?? null) as unknown as number,
           quantity: position.quantity,
           purchase_price: position.purchase_price,
         }))
-      : [{ brand: '', category: '', product_id: '', quantity: 1, purchase_price: 0 }],
+      : [
+          {
+            brand: '',
+            category: '',
+            brand_id: null as unknown as number,
+            category_id: null as unknown as number,
+            product_id: '',
+            quantity: 1,
+            purchase_price: 0,
+          },
+        ],
     product_image: null,
   };
 }
 
-export function ReceiptForm({ id, receipt, products, onSubmit }: ReceiptFormProps) {
+export function ReceiptForm({
+  id,
+  receipt,
+  onSubmit,
+  onCreateBrand,
+  onCreateCategory,
+  onCreateProduct,
+}: ReceiptFormProps) {
   const {
     control,
     register,
@@ -85,6 +106,8 @@ export function ReceiptForm({ id, receipt, products, onSubmit }: ReceiptFormProp
                 append({
                   brand: '',
                   category: '',
+                  brand_id: null as unknown as number,
+                  category_id: null as unknown as number,
                   product_id: '',
                   quantity: 1,
                   purchase_price: 0,
@@ -98,97 +121,88 @@ export function ReceiptForm({ id, receipt, products, onSubmit }: ReceiptFormProp
       </div>
       <div className="receipt-positions">
         {fields.map((field, index) => {
-          const selectedBrand = watchedPositions[index]?.brand ?? '';
-          const selectedCategory = watchedPositions[index]?.category ?? '';
-          const brands = [...new Set(products.map((product) => product.brand).filter(Boolean))];
-          const categories = [
-            ...new Set(
-              products
-                .filter((product) => product.brand === selectedBrand)
-                .map((product) => product.category)
-                .filter(Boolean),
-            ),
-          ];
-          const visibleProducts = products.filter(
-            (product) => product.brand === selectedBrand && product.category === selectedCategory,
-          );
-          const selected = products.find(
-            (product) => product.id === watchedPositions[index]?.product_id,
-          );
+          const selectedBrandId = watchedPositions[index]?.brand_id ?? null;
+          const selectedCategoryId = watchedPositions[index]?.category_id ?? null;
+          const selectedProductId = watchedPositions[index]?.product_id ?? '';
+          const existingPosition = receipt?.positions[index];
           return (
             <fieldset className="receipt-position" key={field.id}>
               <legend>Позиция {index + 1}</legend>
-              <Controller
-                control={control}
-                name={`positions.${index}.brand`}
-                render={({ field: controlledField }) => (
-                  <SearchableSelect
-                    label="Бренд"
-                    required
-                    placeholder="Найдите бренд"
-                    options={brands.map((brand) => ({ value: brand, label: brand }))}
-                    value={controlledField.value}
-                    onChange={(value) => {
-                      controlledField.onChange(value);
-                      setValue(`positions.${index}.category`, '');
-                      setValue(`positions.${index}.product_id`, '');
-                    }}
-                    error={errors.positions?.[index]?.brand?.message}
-                  />
-                )}
-              />
-              <Controller
-                control={control}
-                name={`positions.${index}.category`}
-                render={({ field: controlledField }) => (
-                  <SearchableSelect
-                    label="Категория"
-                    required
-                    placeholder={selectedBrand ? 'Найдите категорию' : 'Сначала выберите бренд'}
-                    options={categories.map((category) => ({
-                      value: category,
-                      label: category,
-                    }))}
-                    value={controlledField.value}
-                    onChange={(value) => {
-                      controlledField.onChange(value);
-                      setValue(`positions.${index}.product_id`, '');
-                    }}
-                    disabled={!selectedBrand}
-                    error={errors.positions?.[index]?.category?.message}
-                  />
-                )}
-              />
-              <div className="receipt-product-field">
-                <Controller
-                  control={control}
-                  name={`positions.${index}.product_id`}
-                  render={({ field: controlledField }) => (
-                    <SearchableSelect
-                      label="Товар"
-                      required
-                      placeholder={
-                        selectedCategory ? 'Найдите товар' : 'Сначала выберите категорию'
+              <CatalogCascade
+                brandId={selectedBrandId}
+                categoryId={selectedCategoryId}
+                productId={selectedProductId}
+                initialBrand={
+                  existingPosition?.brand_id
+                    ? {
+                        id: existingPosition.brand_id,
+                        name: existingPosition.brand,
+                        active: true,
+                        product_count: 1,
                       }
-                      options={visibleProducts.map((product) => ({
-                        value: product.id,
-                        label: `${product.name} · остаток ${product.stock_display}`,
-                      }))}
-                      value={controlledField.value}
-                      onChange={controlledField.onChange}
-                      disabled={!selectedCategory}
-                      error={errors.positions?.[index]?.product_id?.message}
-                    />
-                  )}
-                />
-                {selected ? (
-                  <em>
-                    {[selected.article, selected.category, selected.cell]
-                      .filter(Boolean)
-                      .join(' · ')}
-                  </em>
-                ) : null}
-              </div>
+                    : null
+                }
+                initialCategory={
+                  existingPosition?.category_id && existingPosition.brand_id
+                    ? {
+                        id: existingPosition.category_id,
+                        brand_id: existingPosition.brand_id,
+                        name: existingPosition.category,
+                        brand_name: existingPosition.brand,
+                        active: true,
+                        product_count: 1,
+                      }
+                    : null
+                }
+                initialProduct={
+                  existingPosition?.brand_id && existingPosition.category_id
+                    ? {
+                        id: existingPosition.product_id,
+                        product_id: existingPosition.product_id,
+                        name: existingPosition.product_name,
+                        article: existingPosition.article,
+                        barcode: existingPosition.code,
+                        brand_id: existingPosition.brand_id,
+                        category_id: existingPosition.category_id,
+                        brand: existingPosition.brand,
+                        category: existingPosition.category,
+                        cell: existingPosition.cell,
+                        stock: existingPosition.stock_after,
+                        stock_display: String(existingPosition.stock_after),
+                        active: true,
+                      }
+                    : null
+                }
+                onBrandChange={(brandId, brand) => {
+                  setValue(`positions.${index}.brand_id`, brandId as number, {
+                    shouldValidate: true,
+                  });
+                  setValue(`positions.${index}.brand`, brand?.name ?? '');
+                  setValue(`positions.${index}.category_id`, null as unknown as number);
+                  setValue(`positions.${index}.category`, '');
+                  setValue(`positions.${index}.product_id`, '');
+                }}
+                onCategoryChange={(categoryId, category) => {
+                  setValue(`positions.${index}.category_id`, categoryId as number, {
+                    shouldValidate: true,
+                  });
+                  setValue(`positions.${index}.category`, category?.name ?? '');
+                  setValue(`positions.${index}.product_id`, '');
+                }}
+                onProductChange={(productId) =>
+                  setValue(`positions.${index}.product_id`, productId, {
+                    shouldValidate: true,
+                  })
+                }
+                onCreateProduct={onCreateProduct}
+                onCreateBrand={onCreateBrand}
+                onCreateCategory={onCreateCategory}
+                errors={{
+                  brand: errors.positions?.[index]?.brand_id?.message,
+                  category: errors.positions?.[index]?.category_id?.message,
+                  product: errors.positions?.[index]?.product_id?.message,
+                }}
+              />
               <label className="form-field">
                 <span>Количество *</span>
                 <input

@@ -23,10 +23,11 @@ import { PageState } from '../../components/PageState';
 import { TablePagination } from '../../components/TablePagination';
 import { Toast } from '../../components/Toast';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
+import { CatalogCascade } from '../catalog/CatalogComboboxes';
+import { CatalogCreationModal, type CatalogCreationRequest } from '../catalog/CatalogCreationModal';
 import {
   createSale,
   deleteSale,
-  fetchSaleCatalog,
   fetchSaleLocations,
   fetchSales,
   returnSale,
@@ -68,6 +69,7 @@ export function SalesPage() {
   const [returnTarget, setReturnTarget] = useState<Sale | null>(null);
   const [returnQuantity, setReturnQuantity] = useState('1');
   const [returnReason, setReturnReason] = useState('');
+  const [catalogCreation, setCatalogCreation] = useState<CatalogCreationRequest | null>(null);
   const [toast, setToast] = useState<{ message: string; kind: 'success' | 'error' } | null>(null);
 
   useEffect(() => {
@@ -92,12 +94,6 @@ export function SalesPage() {
     queryFn: () => fetchSales(normalizedParams),
     placeholderData: (previous) => previous,
   });
-  const catalogQuery = useQuery({
-    queryKey: ['sale-catalog'],
-    queryFn: fetchSaleCatalog,
-    enabled: editor !== null,
-    staleTime: 60_000,
-  });
   const locationsQuery = useQuery({
     queryKey: ['sale-locations'],
     queryFn: fetchSaleLocations,
@@ -110,6 +106,8 @@ export function SalesPage() {
       sale === 'new' ? createSale(values) : updateSale(sale.id, values),
     onSuccess: async (_, variables) => {
       await invalidate();
+      await queryClient.invalidateQueries({ queryKey: ['products'] });
+      await queryClient.invalidateQueries({ queryKey: ['catalog-options'] });
       setEditor(null);
       setToast({
         message: variables.sale === 'new' ? 'Продажа добавлена' : 'Изменения сохранены',
@@ -122,6 +120,8 @@ export function SalesPage() {
     mutationFn: deleteSale,
     onSuccess: async () => {
       await invalidate();
+      await queryClient.invalidateQueries({ queryKey: ['products'] });
+      await queryClient.invalidateQueries({ queryKey: ['catalog-options'] });
       setDeleteTarget(null);
       setToast({ message: 'Продажа удалена', kind: 'success' });
     },
@@ -132,6 +132,8 @@ export function SalesPage() {
       returnSale(id, quantity, reason),
     onSuccess: async () => {
       await invalidate();
+      await queryClient.invalidateQueries({ queryKey: ['products'] });
+      await queryClient.invalidateQueries({ queryKey: ['catalog-options'] });
       setReturnTarget(null);
       setReturnQuantity('1');
       setReturnReason('');
@@ -145,6 +147,25 @@ export function SalesPage() {
     if (value) next.set(key, value);
     else next.delete(key);
     if (resetPage) next.set('page', '1');
+    setSearchParams(next);
+  };
+  const setCatalogFilters = (
+    brandId: number | null,
+    categoryId: number | null,
+    productId: string,
+  ) => {
+    const next = new URLSearchParams(searchParams);
+    for (const [key, value] of Object.entries({
+      brand_id: brandId ? String(brandId) : '',
+      category_id: categoryId ? String(categoryId) : '',
+      product_id: productId,
+    })) {
+      if (value) next.set(key, value);
+      else next.delete(key);
+    }
+    next.delete('brand');
+    next.delete('category');
+    next.set('page', '1');
     setSearchParams(next);
   };
   const sales = salesQuery.data?.sales ?? [];
@@ -255,16 +276,14 @@ export function SalesPage() {
                 Возврат
               </button>
             ) : null}
-            {!row.original.inventory_managed ? (
-              <button
-                className="danger-link"
-                type="button"
-                title="Удалить продажу"
-                onClick={() => setDeleteTarget(row.original)}
-              >
-                Удалить
-              </button>
-            ) : null}
+            <button
+              className="danger-link"
+              type="button"
+              title={row.original.inventory_managed ? 'Отменить продажу' : 'Удалить продажу'}
+              onClick={() => setDeleteTarget(row.original)}
+            >
+              {row.original.inventory_managed ? 'Отменить' : 'Удалить'}
+            </button>
           </div>
         ),
       },
@@ -329,9 +348,15 @@ export function SalesPage() {
             />
             <FilterPanel
               count={
-                ['date_from', 'date_to', 'sale_type', 'status', 'brand', 'category'].filter((key) =>
-                  searchParams.get(key),
-                ).length
+                [
+                  'date_from',
+                  'date_to',
+                  'sale_type',
+                  'status',
+                  'brand_id',
+                  'category_id',
+                  'product_id',
+                ].filter((key) => searchParams.get(key)).length
               }
             >
               <DateRangePicker
@@ -365,30 +390,22 @@ export function SalesPage() {
                   <option value="returned">Возвращён</option>
                 </select>
               </label>
-              <label>
-                Бренд
-                <select
-                  value={searchParams.get('brand') ?? ''}
-                  onChange={(event) => setFilter('brand', event.target.value)}
-                >
-                  <option value="">Все бренды</option>
-                  {meta?.facets.brands.map((item) => (
-                    <option key={item}>{item}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Категория
-                <select
-                  value={searchParams.get('category') ?? ''}
-                  onChange={(event) => setFilter('category', event.target.value)}
-                >
-                  <option value="">Все категории</option>
-                  {meta?.facets.categories.map((item) => (
-                    <option key={item}>{item}</option>
-                  ))}
-                </select>
-              </label>
+              <CatalogCascade
+                brandId={Number(searchParams.get('brand_id')) || null}
+                categoryId={Number(searchParams.get('category_id')) || null}
+                productId={searchParams.get('product_id') ?? ''}
+                onBrandChange={(brandId) => setCatalogFilters(brandId, null, '')}
+                onCategoryChange={(categoryId) =>
+                  setCatalogFilters(Number(searchParams.get('brand_id')) || null, categoryId, '')
+                }
+                onProductChange={(productId) =>
+                  setCatalogFilters(
+                    Number(searchParams.get('brand_id')) || null,
+                    Number(searchParams.get('category_id')) || null,
+                    productId,
+                  )
+                }
+              />
               <button
                 className="button secondary"
                 type="button"
@@ -478,15 +495,13 @@ export function SalesPage() {
                           Возврат
                         </button>
                       ) : null}
-                      {!sale.inventory_managed ? (
-                        <button
-                          className="danger-link"
-                          type="button"
-                          onClick={() => setDeleteTarget(sale)}
-                        >
-                          Удалить
-                        </button>
-                      ) : null}
+                      <button
+                        className="danger-link"
+                        type="button"
+                        onClick={() => setDeleteTarget(sale)}
+                      >
+                        {sale.inventory_managed ? 'Отменить' : 'Удалить'}
+                      </button>
                     </div>
                   </article>
                 )}
@@ -512,7 +527,7 @@ export function SalesPage() {
         title={editor === 'new' ? 'Новая продажа' : 'Редактирование продажи'}
         description={
           editor !== 'new' && editor?.inventory_managed
-            ? 'Товар и количество проведённой продажи защищены. Для изменения остатка оформите возврат.'
+            ? 'Товар защищён; изменение количества корректирует остаток только на разницу.'
             : 'Данные проверяются на сервере перед сохранением.'
         }
         onClose={() => setEditor(null)}
@@ -525,30 +540,34 @@ export function SalesPage() {
               className="button primary"
               type="submit"
               form="sale-editor"
-              disabled={saveMutation.isPending || catalogQuery.isPending}
+              disabled={saveMutation.isPending || locationsQuery.isPending}
             >
               {saveMutation.isPending ? 'Сохраняем…' : 'Сохранить'}
             </button>
           </>
         }
       >
-        {catalogQuery.isError || locationsQuery.isError ? (
+        {locationsQuery.isError ? (
           <PageState
             kind="error"
             title="Справочники недоступны"
-            message={errorMessage(catalogQuery.error || locationsQuery.error)}
+            message={errorMessage(locationsQuery.error)}
           />
-        ) : catalogQuery.isPending || locationsQuery.isPending ? (
+        ) : locationsQuery.isPending ? (
           <div className="table-loading">Загружаем каталог…</div>
         ) : (
           <SaleForm
             id="sale-editor"
             sale={editor === 'new' ? null : editor}
-            products={catalogQuery.data ?? []}
             locations={locationsQuery.data ?? {}}
             onSubmit={(values) => {
               if (editor) saveMutation.mutate({ sale: editor, values });
             }}
+            onCreateBrand={() => setCatalogCreation({ kind: 'brand' })}
+            onCreateCategory={(brandId) => setCatalogCreation({ kind: 'category', brandId })}
+            onCreateProduct={(brandId, categoryId) =>
+              setCatalogCreation({ kind: 'product', brandId, categoryId })
+            }
           />
         )}
       </Modal>
@@ -605,13 +624,22 @@ export function SalesPage() {
       </Modal>
       <ConfirmDialog
         open={deleteTarget !== null}
-        title="Удалить продажу?"
-        message="Запись будет скрыта из списка. Проведённые продажи удаляются только через возврат."
+        title={deleteTarget?.inventory_managed ? 'Отменить продажу?' : 'Удалить продажу?'}
+        message={
+          deleteTarget?.inventory_managed
+            ? 'Несписанное количество вернётся в единый остаток, история сохранится.'
+            : 'Запись будет скрыта из списка.'
+        }
         pending={deleteMutation.isPending}
         onClose={() => setDeleteTarget(null)}
         onConfirm={() => {
           if (deleteTarget) deleteMutation.mutate(deleteTarget.id);
         }}
+      />
+      <CatalogCreationModal
+        request={catalogCreation}
+        onClose={() => setCatalogCreation(null)}
+        onCreated={(message) => setToast({ message, kind: 'success' })}
       />
       {toast ? <Toast {...toast} onClose={() => setToast(null)} /> : null}
     </AppShell>

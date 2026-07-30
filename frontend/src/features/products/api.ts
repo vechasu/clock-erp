@@ -37,7 +37,7 @@ export async function deleteProduct(id: number) {
 
 export async function bulkUpdateProducts(
   ids: number[],
-  changes: Partial<Pick<ProductFormValues, 'brand' | 'category' | 'cell'>>,
+  changes: Partial<Pick<ProductFormValues, 'brand_id' | 'category_id' | 'cell'>>,
 ) {
   return (
     await apiRequest(
@@ -62,12 +62,18 @@ export async function createBrand(name: string) {
   ).data;
 }
 
-export async function createCategory(brand: string, name: string) {
+export async function createCategory(brandId: number, name: string) {
   return (
     await apiRequest(
       '/categories',
-      z.object({ brand: z.string(), name: z.string(), count: z.number() }),
-      jsonRequestInit('POST', { brand, name }),
+      z.object({
+        id: z.number(),
+        brand_id: z.number(),
+        brand: z.string(),
+        name: z.string(),
+        count: z.number(),
+      }),
+      jsonRequestInit('POST', { brand_id: brandId, name }),
     )
   ).data;
 }

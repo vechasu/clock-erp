@@ -1,8 +1,8 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect } from 'react';
-import { Controller, useForm } from 'react-hook-form';
+import { useForm } from 'react-hook-form';
 
-import { SearchableSelect } from '../../components/Controls';
+import { CatalogCascade } from '../catalog/CatalogComboboxes';
 import {
   productFormSchema,
   type Product,
@@ -13,11 +13,11 @@ import {
 interface ProductFormProps {
   id: string;
   product?: Product | null;
-  onSubmit: (values: ProductFormValues) => void;
-  onCreateBrand: () => void;
-  onCreateCategory: (brand: string) => void;
   brands?: string[];
   categories?: string[];
+  onSubmit: (values: ProductFormValues) => void;
+  onCreateBrand: () => void;
+  onCreateCategory: (brandId: number) => void;
 }
 
 function valuesFromProduct(product?: Product | null): ProductFormValues {
@@ -26,6 +26,8 @@ function valuesFromProduct(product?: Product | null): ProductFormValues {
     article: product?.article ?? '',
     brand: product?.brand ?? '',
     category: product?.category ?? '',
+    brand_id: product?.brand_id ?? null,
+    category_id: product?.category_id ?? null,
     cell: product?.cell ?? '',
     stock: product?.stock ?? 0,
     stock_reason: '',
@@ -38,21 +40,20 @@ export function ProductForm({
   onSubmit,
   onCreateBrand,
   onCreateCategory,
-  brands = [],
-  categories = [],
 }: ProductFormProps) {
   const {
     register,
-    control,
     handleSubmit,
     reset,
+    setValue,
     watch,
     formState: { errors },
   } = useForm<ProductFormInput, unknown, ProductFormValues>({
     resolver: zodResolver(productFormSchema),
     defaultValues: valuesFromProduct(product),
   });
-  const currentBrand = watch('brand');
+  const currentBrandId = watch('brand_id');
+  const currentCategoryId = watch('category_id');
 
   useEffect(() => {
     reset(valuesFromProduct(product));
@@ -73,53 +74,45 @@ export function ProductForm({
         <span>Ячейка</span>
         <input {...register('cell')} placeholder="A-01-02" />
       </label>
-      <div className="form-field">
-        <span className="field-label-with-action">
-          Бренд
-          <button type="button" onClick={onCreateBrand}>
-            Новый бренд
-          </button>
-        </span>
-        <Controller
-          control={control}
-          name="brand"
-          render={({ field }) => (
-            <SearchableSelect
-              label="Выберите или найдите бренд"
-              placeholder="Например, Casio"
-              options={[...new Set([field.value, ...brands].filter(Boolean))].map((brand) => ({
-                value: brand,
-                label: brand,
-              }))}
-              value={field.value}
-              onChange={field.onChange}
-            />
-          )}
-        />
-      </div>
-      <div className="form-field">
-        <span className="field-label-with-action">
-          Категория
-          <button type="button" onClick={() => onCreateCategory(currentBrand)}>
-            Новая категория
-          </button>
-        </span>
-        <Controller
-          control={control}
-          name="category"
-          render={({ field }) => (
-            <SearchableSelect
-              label="Выберите или найдите категорию"
-              placeholder="Например, Спортивные часы"
-              options={[...new Set([field.value, ...categories].filter(Boolean))].map(
-                (category) => ({ value: category, label: category }),
-              )}
-              value={field.value}
-              onChange={field.onChange}
-            />
-          )}
-        />
-      </div>
+      <CatalogCascade
+        showProduct={false}
+        brandId={currentBrandId}
+        categoryId={currentCategoryId}
+        initialBrand={
+          product?.brand_id
+            ? {
+                id: product.brand_id,
+                name: product.brand,
+                active: true,
+                product_count: 1,
+              }
+            : null
+        }
+        initialCategory={
+          product?.category_id && product.brand_id
+            ? {
+                id: product.category_id,
+                brand_id: product.brand_id,
+                name: product.category,
+                brand_name: product.brand,
+                active: true,
+                product_count: 1,
+              }
+            : null
+        }
+        onBrandChange={(brandId, brand) => {
+          setValue('brand_id', brandId, { shouldValidate: true });
+          setValue('brand', brand?.name ?? '');
+          setValue('category_id', null);
+          setValue('category', '');
+        }}
+        onCategoryChange={(categoryId, category) => {
+          setValue('category_id', categoryId, { shouldValidate: true });
+          setValue('category', category?.name ?? '');
+        }}
+        onCreateBrand={onCreateBrand}
+        onCreateCategory={onCreateCategory}
+      />
       <label className="form-field">
         <span>Остаток</span>
         <input {...register('stock')} type="number" min="0" step="1" />

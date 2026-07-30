@@ -2,10 +2,10 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Controller, useForm } from 'react-hook-form';
 
 import { SearchableSelect } from '../../components/Controls';
+import { CatalogCascade } from '../catalog/CatalogComboboxes';
 import {
   saleFormSchema,
   type Sale,
-  type SaleCatalogProduct,
   type SaleFormInput,
   type SaleFormValues,
   type SaleLocations,
@@ -14,9 +14,12 @@ import {
 interface SaleFormProps {
   id: string;
   sale?: Sale | null;
-  products: SaleCatalogProduct[];
+  products?: unknown[];
   locations: SaleLocations;
   onSubmit: (values: SaleFormValues) => void;
+  onCreateBrand?: () => void;
+  onCreateCategory?: (brandId: number) => void;
+  onCreateProduct?: (brandId: number, categoryId: number) => void;
 }
 
 function defaults(sale?: Sale | null): SaleFormInput {
@@ -25,6 +28,8 @@ function defaults(sale?: Sale | null): SaleFormInput {
     source: sale?.source || 'Tictactoy',
     product_id: sale?.product_id || '',
     product_name: sale?.product_name || '',
+    brand_id: sale?.brand_id ?? (null as unknown as number),
+    category_id: sale?.category_id ?? (null as unknown as number),
     quantity: sale?.quantity || 1,
     unit_price: sale?.unit_price || 1,
     order_number: sale?.order_number || '',
@@ -48,7 +53,15 @@ function defaults(sale?: Sale | null): SaleFormInput {
   };
 }
 
-export function SaleForm({ id, sale, products, locations, onSubmit }: SaleFormProps) {
+export function SaleForm({
+  id,
+  sale,
+  locations,
+  onSubmit,
+  onCreateBrand,
+  onCreateCategory,
+  onCreateProduct,
+}: SaleFormProps) {
   const {
     control,
     register,
@@ -61,9 +74,10 @@ export function SaleForm({ id, sale, products, locations, onSubmit }: SaleFormPr
     defaultValues: defaults(sale),
   });
   const productId = watch('product_id');
+  const brandId = watch('brand_id');
+  const categoryId = watch('category_id');
   const country = watch('country');
   const region = watch('region');
-  const selected = products.find((product) => product.id === productId);
   const quantityLocked = Boolean(sale?.inventory_managed);
 
   return (
@@ -71,45 +85,82 @@ export function SaleForm({ id, sale, products, locations, onSubmit }: SaleFormPr
       <section>
         <h3>1. Товар</h3>
         <div className="erp-form">
-          <Controller
-            control={control}
-            name="product_id"
-            render={({ field }) => (
-              <div className="form-field span-2">
-                <SearchableSelect
-                  label="Товар"
-                  required
-                  placeholder="Название, артикул или бренд"
-                  options={[
-                    ...products.map((product) => ({
-                      value: product.id,
-                      label: `${product.name} · ${product.brand} · доступно ${product.stock_display}`,
-                      disabled: product.stock <= 0 && product.id !== sale?.product_id,
-                    })),
-                    ...(sale && !products.some((product) => product.id === sale.product_id)
-                      ? [{ value: sale.product_id, label: sale.product_name }]
-                      : []),
-                  ]}
-                  value={field.value}
-                  onChange={(value) => {
-                    field.onChange(value);
-                    const product = products.find((item) => item.id === value);
-                    setValue('product_name', product?.name ?? sale?.product_name ?? '');
-                  }}
-                  disabled={quantityLocked}
-                  error={errors.product_id?.message}
-                  hint={
-                    selected
-                      ? [selected.article, selected.brand, selected.category]
-                          .filter(Boolean)
-                          .join(' · ')
-                      : undefined
+          <CatalogCascade
+            brandId={brandId}
+            categoryId={categoryId}
+            productId={productId}
+            inStock={!sale}
+            disabled={quantityLocked}
+            initialBrand={
+              sale?.brand_id
+                ? {
+                    id: sale.brand_id,
+                    name: sale.brand,
+                    active: true,
+                    product_count: 1,
                   }
-                />
-                <input type="hidden" {...register('product_name')} />
-              </div>
-            )}
+                : null
+            }
+            initialCategory={
+              sale?.category_id && sale.brand_id
+                ? {
+                    id: sale.category_id,
+                    brand_id: sale.brand_id,
+                    name: sale.category,
+                    brand_name: sale.brand,
+                    active: true,
+                    product_count: 1,
+                  }
+                : null
+            }
+            initialProduct={
+              sale?.brand_id && sale.category_id
+                ? {
+                    id: sale.product_id,
+                    product_id: sale.product_id,
+                    name: sale.product_name,
+                    article: '',
+                    barcode: sale.barcode,
+                    brand_id: sale.brand_id,
+                    category_id: sale.category_id,
+                    brand: sale.brand,
+                    category: sale.category,
+                    cell: '',
+                    stock: 0,
+                    stock_display: '—',
+                    active: true,
+                  }
+                : null
+            }
+            onBrandChange={(nextBrandId) => {
+              setValue('brand_id', nextBrandId as number, {
+                shouldValidate: true,
+              });
+              setValue('category_id', null as unknown as number);
+              setValue('product_id', '');
+              setValue('product_name', '');
+            }}
+            onCategoryChange={(nextCategoryId) => {
+              setValue('category_id', nextCategoryId as number, {
+                shouldValidate: true,
+              });
+              setValue('product_id', '');
+              setValue('product_name', '');
+            }}
+            onProductChange={(nextProductId, product) => {
+              setValue('product_id', nextProductId, { shouldValidate: true });
+              setValue('product_name', product?.name ?? sale?.product_name ?? '');
+            }}
+            onCreateProduct={onCreateProduct}
+            onCreateBrand={onCreateBrand}
+            onCreateCategory={onCreateCategory}
+            errors={{
+              brand: errors.brand_id?.message,
+              category: errors.category_id?.message,
+              product: errors.product_id?.message,
+            }}
           />
+          <input type="hidden" {...register('product_name')} />
         </div>
       </section>
       <section>
@@ -140,13 +191,7 @@ export function SaleForm({ id, sale, products, locations, onSubmit }: SaleFormPr
           />
           <label className="form-field">
             <span>Количество *</span>
-            <input
-              type="number"
-              min="1"
-              max="25"
-              {...register('quantity')}
-              readOnly={quantityLocked}
-            />
+            <input type="number" min="1" max="25" {...register('quantity')} />
             {errors.quantity ? <small>{errors.quantity.message}</small> : null}
           </label>
           <label className="form-field">
