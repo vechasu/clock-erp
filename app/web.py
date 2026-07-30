@@ -17,6 +17,7 @@ import uuid
 import click
 import requests
 from io import BytesIO
+from concurrent.futures import ThreadPoolExecutor
 from functools import wraps
 from urllib.parse import parse_qsl, urlencode
 from app.clients.moysklad import MoySkladClient
@@ -13322,15 +13323,73 @@ def api_receipts_collection():
                 positions,
                 moysklad_client,
             )
-            document = moysklad_client.create_stock_enter_many(
-                positions=remote_positions,
-                reason=reason,
-                moment=receipt_date,
-            )
-            if not document:
-                raise ValueError("МойСклад не создал документ прихода.")
         except Exception:
             app.logger.exception("Receipt API failed to create MoySklad document")
+            return api_error(
+                "REMOTE_DOCUMENT_CONFLICT",
+                "Ошибка сервера при сохранении прихода.",
+                502,
+            )
+        document = None
+        image_has_images = False
+        image_product_id = ""
+        if product_image and len(positions) == 1:
+            image_product_id = (
+                positions[0].get("moysklad_product_id")
+                or positions[0]["product_id"]
+            )
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                document_future = executor.submit(
+                    moysklad_client.create_stock_enter_many,
+                    positions=remote_positions,
+                    reason=reason,
+                    moment=receipt_date,
+                )
+                image_check_future = executor.submit(
+                    moysklad_client.product_has_images,
+                    image_product_id,
+                )
+                try:
+                    document = document_future.result()
+                except Exception:
+                    app.logger.exception(
+                        "Receipt API failed to create MoySklad document"
+                    )
+                    return api_error(
+                        "REMOTE_DOCUMENT_CONFLICT",
+                        "Ошибка сервера при сохранении прихода.",
+                        502,
+                    )
+                try:
+                    image_has_images = image_check_future.result()
+                except Exception:
+                    app.logger.exception(
+                        "Receipt API failed to inspect product images"
+                    )
+                    rollback_remote_receipt(moysklad_client, document)
+                    return api_error(
+                        "PRODUCT_IMAGE_UPLOAD_FAILED",
+                        "Ошибка сервера при сохранении фотографии товара.",
+                        502,
+                    )
+        else:
+            try:
+                document = moysklad_client.create_stock_enter_many(
+                    positions=remote_positions,
+                    reason=reason,
+                    moment=receipt_date,
+                )
+            except Exception:
+                app.logger.exception(
+                    "Receipt API failed to create MoySklad document"
+                )
+                return api_error(
+                    "REMOTE_DOCUMENT_CONFLICT",
+                    "Ошибка сервера при сохранении прихода.",
+                    502,
+                )
+        if not document:
+            app.logger.error("MoySklad returned an empty receipt document")
             return api_error(
                 "REMOTE_DOCUMENT_CONFLICT",
                 "Ошибка сервера при сохранении прихода.",
@@ -13378,11 +13437,7 @@ def api_receipts_collection():
         image_message = ""
         if product_image and len(positions) == 1:
             try:
-                image_product_id = (
-                    positions[0].get("moysklad_product_id")
-                    or positions[0]["product_id"]
-                )
-                if moysklad_client.product_has_images(image_product_id):
+                if image_has_images:
                     image_message = (
                         "У товара уже есть фото — дубликат не создавался."
                     )

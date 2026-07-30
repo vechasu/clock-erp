@@ -1,6 +1,7 @@
 import base64
 import json
 import tempfile
+import threading
 import unittest
 from io import BytesIO
 from pathlib import Path
@@ -321,6 +322,33 @@ class UnifiedCatalogApiTest(unittest.TestCase):
         response = self.client.post(
             "/api/v1/receipts",
             json=payload,
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(self.stock(), 1)
+        self.remote.upload_product_image.assert_called_once()
+
+    def test_document_creation_and_image_check_start_in_parallel(self):
+        barrier = threading.Barrier(2)
+        document = {
+            "id": "enter-parallel",
+            "name": "ПР-PARALLEL",
+            "meta": {"uuidHref": "https://example.test/enter-parallel"},
+        }
+
+        def create_document(**_kwargs):
+            barrier.wait(timeout=2)
+            return document
+
+        def inspect_images(_product_id):
+            barrier.wait(timeout=2)
+            return False
+
+        self.remote.create_stock_enter_many.side_effect = create_document
+        self.remote.product_has_images.side_effect = inspect_images
+        response = self.multipart_receipt(
+            image=b"\x89PNG\r\n\x1a\nparallel",
+            idempotency_key="receipt-parallel-remote",
         )
 
         self.assertEqual(response.status_code, 201)
