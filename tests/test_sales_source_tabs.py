@@ -692,7 +692,7 @@ class SalesSourceTabsTest(unittest.TestCase):
             page,
         )
         self.assertIn(
-            'data-catalog-cascade',
+            'data-shared-catalog-scope',
             page,
         )
         self.assertNotIn("function refreshCategoryOptions", page)
