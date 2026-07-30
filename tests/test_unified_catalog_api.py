@@ -291,6 +291,21 @@ class UnifiedCatalogApiTest(unittest.TestCase):
             ).get_json()
         self.assertEqual(isolated["data"], [])
 
+    def test_visible_sections_serve_the_same_react_entrypoint(self):
+        responses = [
+            self.client.get(path)
+            for path in ("/products", "/sales", "/receipts")
+        ]
+
+        for response in responses:
+            self.assertEqual(response.status_code, 200)
+            self.assertIn(b'<div id="root"></div>', response.data)
+
+        self.assertEqual(
+            {response.data for response in responses},
+            {responses[0].data},
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -8160,6 +8160,8 @@ def build_legacy_sales_page():
 
 @app.route("/sales")
 def sales_page():
+    return react_application("sales")
+
     all_warehouse_items = get_warehouse_items()
     catalog_items = build_sales_catalog_items(
         get_excel_warehouse_items()
@@ -8674,6 +8676,8 @@ def receipt_catalog_create():
 
 @app.route("/receipts")
 def receipts_page():
+    return react_application("receipts")
+
     from datetime import datetime
     from flask import request
 
@@ -11214,10 +11218,7 @@ def _excel_product_external_references(product_id):
 
 @app.route("/products")
 def excel_products_page():
-    target = url_for("warehouse_page")
-    if request.query_string:
-        target += "?" + request.query_string.decode("utf-8")
-    return redirect(target)
+    return react_application("products")
 
     match_status = (request.args.get("match_status") or "all").strip()
     allowed_statuses = {

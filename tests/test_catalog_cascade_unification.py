@@ -64,6 +64,36 @@ class CatalogCascadeUnificationTest(unittest.TestCase):
             styles,
         )
 
+    def test_visible_section_routes_render_the_shared_react_application(self):
+        web = self.source("app/web.py")
+        for route, section in (
+            ('@app.route("/products")', "products"),
+            ('@app.route("/sales")', "sales"),
+            ('@app.route("/receipts")', "receipts"),
+        ):
+            route_source = web.split(route, 1)[1].split("@app.route(", 1)[0]
+            self.assertIn(
+                f'return react_application("{section}")',
+                route_source,
+            )
+
+        main = self.source("frontend/src/main.tsx")
+        self.assertIn("window.location.pathname.startsWith('/app/')", main)
+        self.assertIn("<BrowserRouter basename={basename}>", main)
+
+    def test_receipts_describe_erp_as_the_stock_system(self):
+        react_page = self.source(
+            "frontend/src/features/receipts/ReceiptsPage.tsx"
+        )
+        legacy_page = self.source("app/templates/receipts.html")
+        stale_text = "После проведения остатки увеличатся в МойСклад"
+        self.assertNotIn(stale_text, react_page)
+        self.assertNotIn(stale_text, legacy_page)
+        self.assertIn(
+            "После проведения остатки изменятся в единой ERP.",
+            react_page,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
