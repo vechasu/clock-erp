@@ -12889,7 +12889,7 @@ def build_api_receipt_positions(payload_positions, catalog):
         if product is None:
             raise ValueError("Товар в позиции {} не найден в каталоге.".format(index))
         quantity = parse_receipt_number(requested.get("quantity"), -1)
-        purchase_price = parse_receipt_number(requested.get("purchase_price"), -1)
+        purchase_price = parse_receipt_number(requested.get("purchase_price"), 0)
         if quantity <= 0:
             raise ValueError(
                 "Количество в позиции {} должно быть больше нуля.".format(index)
