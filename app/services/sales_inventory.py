@@ -47,7 +47,7 @@ def positive_number(value, label):
 
 class SalesInventory:
     def __init__(self, database=None):
-        self.database = database or CatalogDatabase()
+        self.database = database or CatalogDatabase(cache_initialization=True)
 
     def initialize(self):
         self.database.initialize()

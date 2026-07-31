@@ -58,6 +58,31 @@ def sale_record(index):
     }
 
 
+def receipt_record(index):
+    return {
+        "id": "receipt-{:06d}".format(index),
+        "number": "PR-2026-{:06d}".format(index),
+        "created_at": "2026-07-{:02d} 12:00".format((index % 28) + 1),
+        "receipt_date": "2026-07-{:02d}".format((index % 28) + 1),
+        "brand": "Бренд {:02d}".format(index % 20),
+        "category": "Категория {:02d}".format(index % 40),
+        "brand_id": (index % 20) + 1,
+        "category_id": (index % 40) + 1,
+        "product_id": str(index % 10000),
+        "product_name": "Товар {:05d}".format(index % 10000),
+        "note": "Большой набор",
+        "status": "posted",
+        "status_label": "Проведён",
+        "positions": [],
+        "positions_count": 1,
+        "total_quantity": 1,
+        "total_amount": 500,
+        "moysklad_document_id": "",
+        "moysklad_document_name": "",
+        "moysklad_document_url": "",
+    }
+
+
 class Stage2LargeDatasetsTest(unittest.TestCase):
     def setUp(self):
         self.original_config = dict(web.app.config)
@@ -85,13 +110,15 @@ class Stage2LargeDatasetsTest(unittest.TestCase):
         )
         started = time.perf_counter()
         response = self.client.get(
-            "/api/products?page=200&page_size=50&sort_by=name&sort_dir=asc"
+            "/api/v1/products?page=200&page_size=50"
+            "&sort_by=name&sort_dir=asc"
         )
         elapsed = time.perf_counter() - started
         payload = response.get_json()
         self.assertEqual(response.status_code, 200)
         self.assertEqual(payload["meta"]["total"], 10000)
         self.assertEqual(len(payload["data"]), 50)
+        self.assertLess(len(response.data), 150000)
         self.assertLess(elapsed, 5.0)
 
     def test_sales_api_pages_one_hundred_thousand_rows(self):
@@ -107,6 +134,22 @@ class Stage2LargeDatasetsTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(payload["meta"]["total"], 100000)
         self.assertEqual(len(payload["data"]), 50)
+        self.assertLess(elapsed, 5.0)
+
+    def test_receipts_api_pages_twenty_thousand_rows(self):
+        records = [receipt_record(index) for index in range(20000)]
+        with mock.patch.object(web, "api_receipt_records", return_value=records):
+            started = time.perf_counter()
+            response = self.client.get(
+                "/api/v1/receipts?page=400&page_size=50"
+                "&sort=receipt_date&order=desc"
+            )
+            elapsed = time.perf_counter() - started
+        payload = response.get_json()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(payload["meta"]["total"], 20000)
+        self.assertEqual(len(payload["data"]), 50)
+        self.assertLess(len(response.data), 100000)
         self.assertLess(elapsed, 5.0)
 
 

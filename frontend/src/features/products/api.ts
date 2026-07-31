@@ -7,9 +7,11 @@ import {
   type ProductFormValues,
 } from './schemas';
 
-export async function fetchProducts(searchParams: URLSearchParams) {
+export async function fetchProducts(searchParams: URLSearchParams, signal?: AbortSignal) {
   const query = searchParams.toString();
-  const envelope = await apiRequest(`/products${query ? `?${query}` : ''}`, productListSchema);
+  const envelope = await apiRequest(`/products${query ? `?${query}` : ''}`, productListSchema, {
+    signal,
+  });
   return {
     products: envelope.data,
     meta: productsMetaSchema.parse(envelope.meta),

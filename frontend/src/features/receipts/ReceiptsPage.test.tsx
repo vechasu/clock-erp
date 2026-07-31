@@ -118,19 +118,18 @@ describe('ReceiptsPage', () => {
   afterEach(() => vi.unstubAllGlobals());
 
   function mockApi() {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockImplementation((input: RequestInfo | URL) => {
-        const url = new URL(String(input), 'https://erp.test');
-        return Promise.resolve(
-          url.pathname.includes('/catalog/options') ? catalogResponse(url) : listResponse(),
-        );
-      }),
-    );
+    const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+      const url = new URL(String(input), 'https://erp.test');
+      return Promise.resolve(
+        url.pathname.includes('/catalog/options') ? catalogResponse(url) : listResponse(),
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    return fetchMock;
   }
 
   it('renders receipt totals and opens a multi-position form', async () => {
-    mockApi();
+    const fetchMock = mockApi();
     const user = userEvent.setup();
     render(
       <MemoryRouter initialEntries={['/receipts']}>
@@ -142,6 +141,10 @@ describe('ReceiptsPage', () => {
 
     expect((await screen.findAllByText('PR-2026-0001')).length).toBeGreaterThan(0);
     expect(screen.getAllByText('10 000 ₽').length).toBeGreaterThan(0);
+    expect(
+      fetchMock,
+      JSON.stringify(fetchMock.mock.calls.map(([input]) => String(input))),
+    ).toHaveBeenCalledTimes(1);
     await user.click(screen.getByRole('button', { name: 'Новый приход' }));
     expect(await screen.findByRole('heading', { name: 'Новый приход' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '+ Добавить позицию' })).toBeInTheDocument();
@@ -254,8 +257,7 @@ describe('ReceiptsPage', () => {
     expect(
       requests.some(
         (request) =>
-          request.method === 'DELETE' &&
-          request.url.includes(`/api/v1/receipts/${receipt.id}`),
+          request.method === 'DELETE' && request.url.includes(`/api/v1/receipts/${receipt.id}`),
       ),
     ).toBe(true);
   });

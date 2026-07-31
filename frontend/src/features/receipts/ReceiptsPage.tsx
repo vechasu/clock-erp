@@ -63,35 +63,52 @@ export function ReceiptsPage() {
     if (!next.has('page_size')) next.set('page_size', '50');
     return next;
   }, [searchParams]);
+  const normalizedQuery = normalizedParams.toString();
   const receiptsQuery = useQuery({
-    queryKey: ['receipts', normalizedParams.toString()],
-    queryFn: () => fetchReceipts(normalizedParams),
+    queryKey: ['receipts', normalizedQuery],
+    queryFn: ({ signal }) => fetchReceipts(normalizedParams, signal),
     placeholderData: (previous) => previous,
   });
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['receipts'] });
   const saveMutation = useMutation({
     mutationFn: ({ receipt, values }: { receipt: Receipt | 'new'; values: ReceiptFormValues }) =>
       receipt === 'new' ? createReceipt(values) : updateReceipt(receipt.id, values),
-    onSuccess: async (_, variables) => {
-      await invalidate();
-      await queryClient.invalidateQueries({ queryKey: ['products'] });
-      await queryClient.invalidateQueries({ queryKey: ['catalog-options'] });
+    onSuccess: (saved, variables) => {
+      queryClient.setQueryData<Awaited<ReturnType<typeof fetchReceipts>>>(
+        ['receipts', normalizedQuery],
+        (current) =>
+          current && variables.receipt !== 'new'
+            ? {
+                ...current,
+                receipts: current.receipts.map((receipt) =>
+                  receipt.id === saved.id ? saved : receipt,
+                ),
+              }
+            : current,
+      );
       setEditor(null);
       setToast({
         message: variables.receipt === 'new' ? 'Приход проведён' : 'Приход обновлён',
         kind: 'success',
       });
+      void Promise.all([
+        invalidate(),
+        queryClient.invalidateQueries({ queryKey: ['products'] }),
+        queryClient.invalidateQueries({ queryKey: ['catalog-options'] }),
+      ]);
     },
     onError: (error) => setToast({ message: errorMessage(error), kind: 'error' }),
   });
   const deleteMutation = useMutation({
     mutationFn: deleteReceipt,
-    onSuccess: async () => {
-      await invalidate();
-      await queryClient.invalidateQueries({ queryKey: ['products'] });
-      await queryClient.invalidateQueries({ queryKey: ['catalog-options'] });
+    onSuccess: () => {
       setDeleteTarget(null);
       setToast({ message: 'Приход отменён', kind: 'success' });
+      void Promise.all([
+        invalidate(),
+        queryClient.invalidateQueries({ queryKey: ['products'] }),
+        queryClient.invalidateQueries({ queryKey: ['catalog-options'] }),
+      ]);
     },
     onError: (error) => setToast({ message: errorMessage(error), kind: 'error' }),
   });
@@ -204,15 +221,13 @@ export function ReceiptsPage() {
           <div className="row-actions">
             <button
               type="button"
-              disabled={
-                row.original.positions_count !== 1 || row.original.status !== 'posted'
-              }
+              disabled={row.original.positions_count !== 1 || row.original.status !== 'posted'}
               title={
                 row.original.status !== 'posted'
                   ? 'Отменённый приход нельзя изменить'
                   : row.original.positions_count !== 1
-                  ? 'Редактирование доступно только для одной позиции'
-                  : undefined
+                    ? 'Редактирование доступно только для одной позиции'
+                    : undefined
               }
               onClick={() => setEditor(row.original)}
             >
@@ -282,6 +297,7 @@ export function ReceiptsPage() {
               placeholder="Номер, товар, бренд, комментарий…"
             />
             <FilterPanel
+              lazy
               count={
                 ['date_from', 'date_to', 'brand_id', 'category_id', 'product_id', 'status'].filter(
                   (key) => searchParams.get(key),
@@ -429,6 +445,7 @@ export function ReceiptsPage() {
 
       <Modal
         open={editor !== null}
+        lazy
         size="large"
         title={editor === 'new' ? 'Новый приход' : `Приход ${editor?.number ?? ''}`}
         description="После проведения остатки изменятся в единой ERP."

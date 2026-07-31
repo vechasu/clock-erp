@@ -112,8 +112,15 @@ class Stage2ReceiptsApiTest(unittest.TestCase):
         self.assertEqual(listing.status_code, 200)
         payload = listing.get_json()
         self.assertEqual(payload["meta"]["total"], 1)
+        self.assertEqual(payload["meta"]["total_pages"], 1)
         self.assertEqual(payload["meta"]["totals"]["quantity"], 2)
         self.assertEqual(payload["data"][0]["number"], receipt["number"])
+
+        aliases = self.client.get(
+            "/api/v1/receipts?search=casio&date_from=2026-07-01"
+            "&sort=total_amount&order=desc&page_size=1"
+        ).get_json()
+        self.assertEqual(aliases["meta"]["total"], 1)
 
         catalog = self.client.get("/api/receipts/catalog?q=strap").get_json()
         self.assertEqual(catalog["meta"]["total"], 1)
@@ -205,6 +212,21 @@ class Stage2ReceiptsApiTest(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.get_json()["code"], "RECEIPT_NOT_EDITABLE")
+
+    def test_unchanged_receipts_are_serialized_once_for_repeated_pages(self):
+        self.create_receipt()
+        web._cached_api_receipt_records.cache_clear()
+        with mock.patch.object(
+            web,
+            "load_receipts",
+            wraps=web.load_receipts,
+        ) as load_receipts:
+            first = self.client.get("/api/v1/receipts?page=1&page_size=1")
+            second = self.client.get("/api/v1/receipts?page=2&page_size=1")
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        load_receipts.assert_called_once_with()
 
 
 if __name__ == "__main__":

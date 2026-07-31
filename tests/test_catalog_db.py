@@ -65,6 +65,30 @@ class CatalogDatabaseTest(unittest.TestCase):
 
         initialize_schema.assert_called_once_with()
 
+    def test_cached_initialization_is_reused_by_service_instances(self):
+        original_initialize_schema = CatalogDatabase._initialize_schema
+        initialize_calls = []
+
+        def tracked_initialize_schema(database):
+            initialize_calls.append(database)
+            return original_initialize_schema(database)
+
+        with mock.patch.object(
+            CatalogDatabase,
+            "_initialize_schema",
+            tracked_initialize_schema,
+        ):
+            CatalogDatabase(
+                self.database_path,
+                cache_initialization=True,
+            ).initialize()
+            CatalogDatabase(
+                self.database_path,
+                cache_initialization=True,
+            ).initialize()
+
+        self.assertEqual(len(initialize_calls), 1)
+
     def test_external_product_identity_is_unique_but_name_and_article_are_not(self):
         product_values = (
             "Watch", "watch", "SKU", "Brand", "bitrix", "same-name",

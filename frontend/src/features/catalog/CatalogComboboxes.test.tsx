@@ -146,6 +146,42 @@ describe('CatalogCascade', () => {
     expect(await screen.findByRole('option', { name: 'Ничего не найдено' })).toBeInTheDocument();
   });
 
+  it('aborts an obsolete server search before applying a newer query', async () => {
+    let obsoleteSignal: AbortSignal | undefined;
+    const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input), 'https://erp.test');
+      const query = url.searchParams.get('q') ?? '';
+      if (query === 'Z') {
+        obsoleteSignal = init?.signal ?? undefined;
+        return new Promise<Response>((_resolve, reject) => {
+          obsoleteSignal?.addEventListener('abort', () => {
+            reject(new DOMException('Aborted', 'AbortError'));
+          });
+        });
+      }
+      return Promise.resolve(envelope([]));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    render(
+      <AppProviders>
+        <Harness />
+      </AppProviders>,
+    );
+
+    const brand = screen.getByRole('combobox', { name: 'Бренд *' });
+    await user.type(brand, 'Z');
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some(([input]) => String(input).includes('q=Z'))).toBe(true),
+    );
+    await user.type(brand, 'x');
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some(([input]) => String(input).includes('q=Zx'))).toBe(true),
+    );
+
+    expect(obsoleteSignal?.aborted).toBe(true);
+  });
+
   it('exposes the same sorted IDs and interaction in products, sales and receipts', async () => {
     vi.stubGlobal(
       'fetch',

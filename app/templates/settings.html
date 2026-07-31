@@ -9,6 +9,7 @@
     >
 
     <title>Настройки</title>
+    <script defer src="{{ url_for('static', filename='js/settings.js') }}"></script>
 
     <style>
         * {
@@ -335,12 +336,12 @@
         
 
         {% if message %}
-            <div class="notice notice-{{ notice or 'success' }}">
+            <div id="settingsNotice" class="notice notice-{{ notice or 'success' }}" role="status">
                 {{ message }}
             </div>
         {% endif %}
 
-        <form class="settings-card" method="post">
+        <form id="settingsForm" class="settings-card" method="post">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <section class="settings-section">
                 <h2>Оформление</h2>
@@ -554,7 +555,8 @@
                             >
                         {% else %}
                             <form
-                                class="navigation-item"
+                                class="navigation-item js-navigation-toggle"
+                                data-navigation-key="{{ item.key }}"
                                 method="post"
                                 action="{{ url_for('navigation_toggle', key=item.key) }}"
                             >

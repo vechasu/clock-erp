@@ -75,8 +75,10 @@
             <a
                 class="sidebar-link{% if item.active %} active{% endif %}"
                 href="{{ item.href }}"
+                data-navigation-key="{{ item.key }}"
                 aria-label="{{ item.label }}"
                 data-tooltip="{{ item.label }}"
+                {% if not item.enabled %}hidden{% endif %}
                 {% if item.active %}aria-current="page"{% endif %}
             >
                 <span class="sidebar-icon">
@@ -170,6 +172,8 @@
             <a
                 class="mobile-erp-nav-item{% if item.active %} active{% endif %}"
                 href="{{ item.mobile_href or item.href }}"
+                data-navigation-key="{{ item.key }}"
+                {% if not item.enabled %}hidden{% endif %}
                 {% if item.active %}aria-current="page"{% endif %}
             >
                 <span class="mobile-erp-nav-icon">
@@ -212,6 +216,8 @@
             <a
                 class="mobile-erp-more-link{% if item.active %} active{% endif %}"
                 href="{{ item.mobile_href or item.href }}"
+                data-navigation-key="{{ item.key }}"
+                {% if not item.enabled %}hidden{% endif %}
                 {% if item.active %}aria-current="page"{% endif %}
             >
                 <span class="sidebar-icon">

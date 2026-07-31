@@ -10,6 +10,7 @@ interface ModalProps extends PropsWithChildren {
   footer?: ReactNode;
   size?: 'medium' | 'large';
   closeLabel?: string;
+  lazy?: boolean;
 }
 
 export function Modal({
@@ -21,6 +22,7 @@ export function Modal({
   children,
   size = 'medium',
   closeLabel = 'Закрыть',
+  lazy = false,
 }: ModalProps) {
   const titleId = useId();
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -41,6 +43,8 @@ export function Modal({
       document.body.style.overflow = previousOverflow;
     };
   }, [open]);
+
+  if (lazy && !open) return null;
 
   return (
     <dialog

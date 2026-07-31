@@ -723,12 +723,25 @@ CREATE INDEX IF NOT EXISTS idx_catalog_stock_movements_sale
 
 
 class CatalogDatabase:
+    _schema_cache = {}
+    _schema_cache_lock = threading.Lock()
+
     def __init__(self, path=None, cache_initialization=False):
         configured_path = path or os.getenv("CATALOG_DATABASE_PATH")
         self.path = Path(configured_path) if configured_path else DEFAULT_CATALOG_DATABASE_PATH
         self.cache_initialization = bool(cache_initialization)
         self._initialized = False
         self._initialize_lock = threading.Lock()
+
+    def _schema_cache_identity(self):
+        if str(self.path) == ":memory:":
+            return None
+        try:
+            resolved = self.path.resolve()
+            stat = resolved.stat()
+        except OSError:
+            return None
+        return (str(resolved), stat.st_dev, stat.st_ino)
 
     def connect(self):
         if str(self.path) != ":memory:":
@@ -747,8 +760,25 @@ class CatalogDatabase:
         with self._initialize_lock:
             if self._initialized:
                 return None
-            self._initialize_schema()
-            self._initialized = True
+            cache_path = (
+                str(self.path.resolve())
+                if str(self.path) != ":memory:"
+                else None
+            )
+            with self._schema_cache_lock:
+                identity = self._schema_cache_identity()
+                if (
+                    cache_path is not None
+                    and identity is not None
+                    and self._schema_cache.get(cache_path) == identity
+                ):
+                    self._initialized = True
+                    return None
+                self._initialize_schema()
+                identity = self._schema_cache_identity()
+                if cache_path is not None and identity is not None:
+                    self._schema_cache[cache_path] = identity
+                self._initialized = True
         return None
 
     def _initialize_schema(self):

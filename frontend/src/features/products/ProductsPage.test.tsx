@@ -62,10 +62,8 @@ describe('ProductsPage', () => {
   });
 
   it('renders server data and opens the validated product editor', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockImplementation(() => Promise.resolve(response())),
-    );
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(response()));
+    vi.stubGlobal('fetch', fetchMock);
     const user = userEvent.setup();
     render(
       <MemoryRouter initialEntries={['/products']}>
@@ -82,6 +80,10 @@ describe('ProductsPage', () => {
         .getAllByRole('link', { name: 'Товары' })
         .some((link) => link.classList.contains('is-active')),
     ).toBe(true);
+    expect(
+      fetchMock,
+      JSON.stringify(fetchMock.mock.calls.map(([input]) => String(input))),
+    ).toHaveBeenCalledTimes(1);
 
     await user.click(screen.getByRole('button', { name: 'Добавить товар' }));
     expect(screen.getByRole('heading', { name: 'Новый товар' })).toBeInTheDocument();

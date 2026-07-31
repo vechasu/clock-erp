@@ -16,18 +16,22 @@ interface CatalogOptionFilters {
 export async function fetchCatalogOptions(
   kind: 'brand',
   filters?: CatalogOptionFilters,
+  signal?: AbortSignal,
 ): Promise<z.infer<typeof catalogBrandSchema>[]>;
 export async function fetchCatalogOptions(
   kind: 'category',
   filters?: CatalogOptionFilters,
+  signal?: AbortSignal,
 ): Promise<z.infer<typeof catalogCategorySchema>[]>;
 export async function fetchCatalogOptions(
   kind: 'product',
   filters?: CatalogOptionFilters,
+  signal?: AbortSignal,
 ): Promise<z.infer<typeof catalogProductSchema>[]>;
 export async function fetchCatalogOptions(
   kind: CatalogOptionKind,
   filters: CatalogOptionFilters = {},
+  signal?: AbortSignal,
 ): Promise<
   | z.infer<typeof catalogBrandSchema>[]
   | z.infer<typeof catalogCategorySchema>[]
@@ -42,12 +46,16 @@ export async function fetchCatalogOptions(
   if (filters.categoryId) params.set('category_id', String(filters.categoryId));
   if (filters.inStock) params.set('in_stock', '1');
   if (kind === 'brand') {
-    return (await apiRequest(`/catalog/options?${params}`, z.array(catalogBrandSchema))).data;
+    return (await apiRequest(`/catalog/options?${params}`, z.array(catalogBrandSchema), { signal }))
+      .data;
   }
   if (kind === 'category') {
-    return (await apiRequest(`/catalog/options?${params}`, z.array(catalogCategorySchema))).data;
+    return (
+      await apiRequest(`/catalog/options?${params}`, z.array(catalogCategorySchema), { signal })
+    ).data;
   }
-  return (await apiRequest(`/catalog/options?${params}`, z.array(catalogProductSchema))).data;
+  return (await apiRequest(`/catalog/options?${params}`, z.array(catalogProductSchema), { signal }))
+    .data;
 }
 
 export async function createCatalogBrand(name: string) {

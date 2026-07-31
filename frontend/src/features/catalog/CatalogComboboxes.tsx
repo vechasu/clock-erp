@@ -111,9 +111,9 @@ export function CatalogCascade({
   const [createdBrand, setCreatedBrand] = useState<CatalogBrand | null>(null);
   const [createdCategory, setCreatedCategory] = useState<CatalogCategory | null>(null);
   const [createdProduct, setCreatedProduct] = useState<CatalogProduct | null>(null);
-  const debouncedBrandQuery = useDebouncedValue(brandQuery, 180);
-  const debouncedCategoryQuery = useDebouncedValue(categoryQuery, 180);
-  const debouncedProductQuery = useDebouncedValue(productQuery, 180);
+  const debouncedBrandQuery = useDebouncedValue(brandQuery, 250);
+  const debouncedCategoryQuery = useDebouncedValue(categoryQuery, 250);
+  const debouncedProductQuery = useDebouncedValue(productQuery, 250);
 
   useEffect(() => {
     setCategoryQuery('');
@@ -129,31 +129,43 @@ export function CatalogCascade({
 
   const brandsQuery = useQuery({
     queryKey: ['catalog-options', 'brand', debouncedBrandQuery],
-    queryFn: () =>
-      fetchCatalogOptions('brand', {
-        query: debouncedBrandQuery,
-      }),
-    staleTime: 60_000,
+    queryFn: ({ signal }) =>
+      fetchCatalogOptions(
+        'brand',
+        {
+          query: debouncedBrandQuery,
+        },
+        signal,
+      ),
+    staleTime: 5 * 60_000,
   });
   const categoriesQuery = useQuery({
     queryKey: ['catalog-options', 'category', brandId, debouncedCategoryQuery],
-    queryFn: () =>
-      fetchCatalogOptions('category', {
-        brandId,
-        query: debouncedCategoryQuery,
-      }),
+    queryFn: ({ signal }) =>
+      fetchCatalogOptions(
+        'category',
+        {
+          brandId,
+          query: debouncedCategoryQuery,
+        },
+        signal,
+      ),
     enabled: Boolean(brandId),
-    staleTime: 60_000,
+    staleTime: 2 * 60_000,
   });
   const productsQuery = useQuery({
     queryKey: ['catalog-options', 'product', brandId, categoryId, debouncedProductQuery, inStock],
-    queryFn: () =>
-      fetchCatalogOptions('product', {
-        brandId,
-        categoryId,
-        query: debouncedProductQuery,
-        inStock,
-      }),
+    queryFn: ({ signal }) =>
+      fetchCatalogOptions(
+        'product',
+        {
+          brandId,
+          categoryId,
+          query: debouncedProductQuery,
+          inStock,
+        },
+        signal,
+      ),
     enabled: showProduct && Boolean(brandId && categoryId),
     staleTime: 30_000,
   });
