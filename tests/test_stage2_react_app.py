@@ -1,5 +1,6 @@
 import re
 import unittest
+from urllib.parse import urlsplit
 
 from app import web
 
@@ -49,7 +50,7 @@ class Stage2ReactAppTest(unittest.TestCase):
         response = self.client.get("/warehouse")
         try:
             self.assertEqual(response.status_code, 302)
-            self.assertEqual(response.location, "http://localhost/app/products")
+            self.assertEqual(response.location, "/app/products")
         finally:
             response.close()
 
@@ -59,10 +60,49 @@ class Stage2ReactAppTest(unittest.TestCase):
             self.assertEqual(response.status_code, 302)
             self.assertEqual(
                 response.location,
-                "http://localhost/app/products?q=chrono&hide_zero=1&per_page=100",
+                "/app/products?q=chrono&hide_zero=1&per_page=100",
             )
         finally:
             response.close()
+
+    def test_warehouse_route_preserves_encoded_query(self):
+        response = self.client.get(
+            "/warehouse?q=Product%20%2B%20Test&brand=Скоро&hide_zero=1"
+        )
+        try:
+            self.assertEqual(response.status_code, 302)
+            parsed = urlsplit(response.location)
+            self.assertEqual(parsed.path, "/app/products")
+            query = dict(
+                pair.split("=", 1)
+                for pair in parsed.query.split("&")
+                if pair
+            )
+            self.assertEqual(query.get("q"), "Product%20%2B%20Test")
+            self.assertEqual(query.get("brand"), "%D0%A1%D0%BA%D0%BE%D1%80%D0%BE")
+            self.assertEqual(query.get("hide_zero"), "1")
+        finally:
+            response.close()
+
+    def test_products_route_redirects_to_warehouse(self):
+        response = self.client.get("/products?in_stock=1&per_page=100")
+        try:
+            self.assertEqual(response.status_code, 302)
+            self.assertEqual(response.location, "/warehouse?in_stock=1&per_page=100")
+        finally:
+            response.close()
+
+    def test_warehouse_route_redirects_to_react_products_without_loop(self):
+        first = self.client.get("/warehouse?in_stock=1")
+        second = self.client.get(first.location)
+        try:
+            self.assertEqual(first.status_code, 302)
+            self.assertEqual(first.location, "/app/products?in_stock=1")
+            self.assertEqual(second.status_code, 200)
+            self.assertIn('<div id="root">', second.get_data(as_text=True))
+        finally:
+            first.close()
+            second.close()
 
 
 if __name__ == "__main__":
