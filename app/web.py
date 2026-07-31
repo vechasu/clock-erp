@@ -4474,12 +4474,19 @@ SALES_TABLE_COLUMNS = {
 }
 
 SALE_STATUS_LABELS = {
-    "processing": "В обработке",
     "shipped": "Отправлен",
-    "completed": "Завершён",
     "cancelled": "Отменён",
     "partially_returned": "Частичный возврат",
     "returned": "Возврат",
+}
+
+SALE_STATUS_ALIAS_MAP = {
+    "processing": "shipped",
+    "completed": "shipped",
+    "sent": "shipped",
+    "завершён": "shipped",
+    "завершен": "shipped",
+    "выполнен": "shipped",
 }
 
 SALE_FORM_STATUS_LABELS = {
@@ -4776,8 +4783,13 @@ def get_sale_platform_options(sales=None):
 
 
 def normalize_sale_status(value):
-    status = str(value or "completed").strip().lower()
-    return status if status in SALE_STATUS_LABELS else "completed"
+    status = str(value or "").strip().lower()
+    status = SALE_STATUS_ALIAS_MAP.get(status, status)
+    return status if status in SALE_STATUS_LABELS else "shipped"
+
+
+def normalize_sale_status_filter(value):
+    return normalize_sale_status(value)
 
 
 def sale_is_cancelled(sale):
@@ -4909,6 +4921,42 @@ def get_russian_region_cities():
     return get_tictactoy_location_catalog().get("Россия", {})
 
 
+RUSSIAN_REGION_PRIORITIES = ("Москва", "Санкт-Петербург")
+
+
+def _sort_tictactoy_region_names(country, region_names):
+    normalized = [
+        region
+        for region in region_names
+        if isinstance(region, str)
+    ]
+    unique_regions = []
+    seen = set()
+    for region in normalized:
+        if region not in seen:
+            seen.add(region)
+            unique_regions.append(region)
+
+    if country != "Россия":
+        return sorted(unique_regions, key=str.casefold)
+
+    priority_set = set(RUSSIAN_REGION_PRIORITIES)
+    head = [
+        region
+        for region in RUSSIAN_REGION_PRIORITIES
+        if region in unique_regions
+    ]
+    tail = sorted(
+        (
+            region
+            for region in unique_regions
+            if region not in priority_set
+        ),
+        key=str.casefold,
+    )
+    return [*head, *tail]
+
+
 def get_tictactoy_location_catalog():
     try:
         payload = json.loads(
@@ -4928,14 +4976,34 @@ def get_tictactoy_location_catalog():
             for country in TICTACTOY_SALE_COUNTRIES
         }
 
-    return {
-        country: (
-            countries.get(country)
-            if isinstance(countries.get(country), dict)
-            else {}
+    normalized = {}
+    for country in TICTACTOY_SALE_COUNTRIES:
+        regions = countries.get(country)
+        if not isinstance(regions, dict):
+            normalized[country] = {}
+            continue
+
+        ordered_region_names = _sort_tictactoy_region_names(
+            country,
+            regions.keys(),
         )
-        for country in TICTACTOY_SALE_COUNTRIES
-    }
+        normalized_regions = {}
+        for region in ordered_region_names:
+            cities = regions.get(region, [])
+            if not isinstance(cities, list):
+                cities = [cities] if isinstance(cities, str) else []
+            city_seen = set()
+            normalized_cities = []
+            for city in cities:
+                if not isinstance(city, str) or city in city_seen:
+                    continue
+                city_seen.add(city)
+                normalized_cities.append(city)
+            normalized_regions[region] = normalized_cities
+
+        normalized[country] = normalized_regions
+
+    return normalized
 
 
 def parse_manual_sale_quantity(value):
@@ -5981,7 +6049,9 @@ def manual_sale_update():
         sale.update(optional_fields)
 
         if sale.get("inventory_managed"):
-            sale["order_status"] = sale.get("status") or "completed"
+            sale["order_status"] = normalize_sale_status(
+                optional_fields.get("order_status")
+            )
             try:
                 SalesInventory().update_metadata(
                     sale_id,
@@ -7147,7 +7217,13 @@ def get_sales_report_filters():
             filters["date_from"],
         )
 
-    if filters["order_status"] not in SALE_STATUS_LABELS:
+    filters["order_status"] = normalize_sale_status_filter(
+        filters["order_status"]
+    )
+    if (
+        filters["order_status"]
+        and filters["order_status"] not in SALE_STATUS_LABELS
+    ):
         filters["order_status"] = ""
 
     return filters

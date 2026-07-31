@@ -57,7 +57,7 @@ class SalesCatalogPickerBrowserTest(unittest.TestCase):
             None,
         )
 
-    def run_browser_check(self, chrome, width, height):
+    def run_browser_check(self, chrome, width, height, *, region_check=False):
         items = [
             catalog_item(
                 "catalog-one",
@@ -145,10 +145,16 @@ class SalesCatalogPickerBrowserTest(unittest.TestCase):
                     return_value=items,
                 ), tempfile.TemporaryDirectory() as profile:
                     thread.start()
+                    flags = ["sales_catalog_picker_e2e=1"]
+                    if region_check:
+                        flags.append(
+                            "sales_tictactoy_regions_e2e=1"
+                        )
                     url = (
                         f"http://127.0.0.1:{server.server_port}"
                         "/sales?source=all"
-                        "&sales_catalog_picker_e2e=1"
+                        "&"
+                        + "&".join(flags)
                     )
                     result = subprocess.run(
                         [
@@ -178,6 +184,12 @@ class SalesCatalogPickerBrowserTest(unittest.TestCase):
             result.stdout,
             result.stdout[-2000:],
         )
+        if region_check:
+            self.assertIn(
+                'data-sales-tictactoy-regions-e2e="pass"',
+                result.stdout,
+                result.stdout[-2000:],
+            )
 
     def test_catalog_picker_on_desktop_and_mobile(self):
         if sys.platform == "darwin":
@@ -205,6 +217,30 @@ class SalesCatalogPickerBrowserTest(unittest.TestCase):
                         width,
                         height,
                     )
+        finally:
+            web.app.testing = original_testing
+
+    def test_tictactoy_regions_order_and_search_in_create_and_edit_forms(self):
+        if sys.platform == "darwin":
+            self.skipTest(
+                "macOS Chrome does not reliably exit after --dump-dom"
+            )
+
+        chrome = self.find_chrome()
+
+        if not chrome:
+            self.skipTest("Chrome/Chromium is unavailable")
+
+        original_testing = web.app.testing
+        web.app.testing = True
+
+        try:
+            self.run_browser_check(
+                chrome,
+                1280,
+                900,
+                region_check=True,
+            )
         finally:
             web.app.testing = original_testing
 
