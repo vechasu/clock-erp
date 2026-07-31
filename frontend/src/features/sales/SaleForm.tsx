@@ -20,6 +20,29 @@ interface SaleFormProps {
   onCatalogCreated?: (message: string) => void;
 }
 
+const RUSSIAN_REGION_PRIORITIES = [
+  "Москва",
+  "Санкт-Петербург",
+];
+
+function getOrderedRegions(country: string, locations: SaleLocations) {
+  const rawRegions = Object.keys(locations[country] ?? {});
+  const uniqueRegions = [...new Set(rawRegions)];
+  if (country !== "Россия") {
+    return uniqueRegions;
+  }
+
+  const prioritySet = new Set(RUSSIAN_REGION_PRIORITIES);
+  const head = RUSSIAN_REGION_PRIORITIES.filter(
+    (region) => uniqueRegions.includes(region),
+  );
+  const tail = uniqueRegions
+    .filter((region) => !prioritySet.has(region))
+    .sort((a, b) => a.localeCompare(b, "ru", { sensitivity: "base" }));
+
+  return [...head, ...tail];
+}
+
 function defaults(sale?: Sale | null): SaleFormInput {
   return {
     created_at: sale?.created_at.slice(0, 10) || new Date().toISOString().slice(0, 10),
@@ -277,7 +300,7 @@ export function SaleForm({ id, sale, locations, onSubmit, onCatalogCreated }: Sa
               <SearchableSelect
                 label="Регион"
                 placeholder={country ? 'Найдите регион' : 'Сначала выберите страну'}
-                options={Object.keys(locations[country] ?? {}).map((value) => ({
+                options={getOrderedRegions(country, locations).map((value) => ({
                   value,
                   label: value,
                 }))}
