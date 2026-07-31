@@ -4179,7 +4179,6 @@ SALES_TABLE_COLUMNS = {
         ("order_status_label", "Статус"),
         ("order_number", "Номер заказа"),
         ("track_number", "Трекинг"),
-        ("delivery_method", "Способ доставки"),
         ("delivery_cost_display", "Стоимость доставки"),
         ("country", "Страна"),
         ("region", "Регион"),
@@ -5495,12 +5494,6 @@ def manual_sale_add():
         "track_number": (
             request.form.get("track_number") or ""
         ).strip(),
-        "delivery_method": normalize_manual_delivery_method(
-            request.form.get("delivery_method"),
-            request.form.get(
-                "custom_delivery_method"
-            ),
-        ),
         "region": location_fields["region"],
         "city": location_fields["city"],
         "note": (
@@ -5726,16 +5719,6 @@ def manual_sale_update():
         sale["track_number"] = (
             request.form.get("track_number") or ""
         ).strip()
-        sale["delivery_method"] = (
-            normalize_manual_delivery_method(
-                request.form.get(
-                    "delivery_method"
-                ),
-                request.form.get(
-                    "custom_delivery_method"
-                ),
-            )
-        )
         sale["region"] = location_fields["region"]
         sale["city"] = location_fields["city"]
         sale["note"] = (
@@ -6088,12 +6071,6 @@ def automatic_sale_update():
         "track_number": (
             request.form.get("track_number") or ""
         ).strip(),
-        "delivery_method": normalize_manual_delivery_method(
-            request.form.get("delivery_method"),
-            request.form.get(
-                "custom_delivery_method"
-            ),
-        ),
         "region": location_fields["region"],
         "city": location_fields["city"],
         "note": (
@@ -13834,7 +13811,7 @@ def api_receipt_resource(receipt_id):
 
 
 API_SALE_TEXT_FIELDS = (
-    "order_number", "track_number", "delivery_method", "region", "city", "note",
+    "order_number", "track_number", "region", "city", "note",
     "recipient", "recipient_name", "payment_method", "commission", "country",
     "delivery_address", "platform", "invoice_number", "sticker_number",
 )

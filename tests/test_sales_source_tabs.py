@@ -43,7 +43,6 @@ EXPECTED_COLUMNS = {
         "Статус",
         "Номер заказа",
         "Трекинг",
-        "Способ доставки",
         "Стоимость доставки",
         "Страна",
         "Регион",
@@ -368,6 +367,8 @@ class SalesSourceTabsTest(unittest.TestCase):
         ]
         self.assertNotIn('name="payment_method"', tictactoy_fields)
         self.assertNotIn("Способ оплаты", tictactoy_fields)
+        self.assertNotIn('name="delivery_method"', tictactoy_fields)
+        self.assertNotIn("Способ доставки", tictactoy_fields)
         self.assertNotIn('name="delivery_address"', amazon_fields)
         self.assertNotIn("Адрес доставки", amazon_fields)
 
@@ -1281,7 +1282,6 @@ class SalesSourceTabsTest(unittest.TestCase):
                 "unit_price": "1200",
                 "order_number": "ORDER-1",
                 "track_number": "TRACK-1",
-                "delivery_method": "СДЭК",
                 "delivery_cost": "350,50",
                 "country": "Россия",
                 "region": "Москва",
@@ -1297,6 +1297,10 @@ class SalesSourceTabsTest(unittest.TestCase):
         self.assertEqual(sale["region"], "Москва")
         self.assertEqual(sale["city"], "Москва")
         self.assertEqual(sale["payment_method"], "")
+        self.assertTrue(
+            "delivery_method" not in sale
+            or sale["delivery_method"] == ""
+        )
         self.assertEqual(sale["note"], "Tictactoy note")
 
     def test_tictactoy_location_edit_restores_and_validates_hierarchy(self):
