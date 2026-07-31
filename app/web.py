@@ -7310,7 +7310,7 @@ def filter_sales_report_records(sales, filters):
 
         if (
             filters.get("order_status")
-            and sale.get("order_status")
+            and normalize_sale_status(sale.get("order_status"))
             != filters["order_status"]
         ):
             continue
