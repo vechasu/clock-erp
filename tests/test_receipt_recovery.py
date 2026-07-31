@@ -145,11 +145,23 @@ class ReceiptRecoveryTest(unittest.TestCase):
             self.database,
             self.instance_dir,
         ).inspect("PR-2026-0001")
+        output = StringIO()
+        with redirect_stdout(output):
+            recovery_main([
+                "--receipt-number",
+                "PR-2026-0001",
+                "--database",
+                str(self.database_path),
+                "--instance-dir",
+                str(self.instance_dir),
+                "--dry-run",
+            ])
 
         self.assertEqual(report["source"], "legacy_json")
         self.assertEqual(report["mode"], "dry-run")
         self.assertFalse(report["positions"][0]["product_exists"])
         self.assertEqual(self.stock(), before)
+        output.getvalue().encode("ascii")
 
 
 if __name__ == "__main__":
