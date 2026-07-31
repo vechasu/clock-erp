@@ -4089,12 +4089,6 @@
             });
 
             salesTable.style.width = totalWidth + 78 + "px";
-            salesTable.style.setProperty(
-                "--sales-sticky-date-width",
-                view.hidden.includes("created_at")
-                    ? "0px"
-                    : view.widths.created_at + "px",
-            );
             updateEmptyRows();
         }
 
@@ -5795,10 +5789,12 @@
             tableWrap.scrollLeft = 240;
             const tableWrapBounds =
                 tableWrap.getBoundingClientRect();
-            const stickyDateBounds = getHeaders()[0]
+            const firstHeaderBounds = getHeaders()[0]
                 .getBoundingClientRect();
-            const stickyOrderBounds = getHeaders()[1]
-                .getBoundingClientRect();
+            const scrollCompensation = Math.round(
+                (firstHeaderBounds.left - tableWrapBounds.left)
+                + tableWrap.scrollLeft,
+            );
             const toolbar = document.querySelector(
                 ".sales-data-toolbar"
             );
@@ -5921,14 +5917,7 @@
                         && ["auto", "scroll"].includes(
                             getComputedStyle(tableWrap).overflowX
                         )
-                        && Math.abs(
-                            stickyDateBounds.left
-                            - tableWrapBounds.left
-                        ) <= 1
-                        && Math.abs(
-                            stickyOrderBounds.left
-                            - stickyDateBounds.right
-                        ) <= 1
+                        && Math.abs(scrollCompensation) <= 1
                     )
                     : (
                         document.querySelector(
@@ -5956,6 +5945,7 @@
                             getHeaders()[0]
                                 .getBoundingClientRect().width
                         ),
+                        scrollCompensation,
                         otherSettingsMatch:
                             localStorage.getItem(otherSettingsKey)
                                 === otherSettings,
@@ -5966,16 +5956,6 @@
                         tableWidth: [
                             tableWrap.scrollWidth,
                             tableWrap.clientWidth,
-                        ],
-                        sticky: [
-                            Math.round(
-                                stickyDateBounds.left
-                                - tableWrapBounds.left
-                            ),
-                            Math.round(
-                                stickyOrderBounds.left
-                                - stickyDateBounds.right
-                            ),
                         ],
                         toolbarWidth: [
                             toolbar.scrollWidth,
