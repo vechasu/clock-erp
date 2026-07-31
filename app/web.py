@@ -13661,6 +13661,12 @@ def api_receipt_resource(receipt_id):
     if request.method == "GET":
         return api_success(serialize_api_receipt(receipt))
     require_csrf_when_authenticated()
+    if request.method == "DELETE" and receipt.get("status") == "cancelled":
+        return api_success({
+            "id": str(receipt_id),
+            "deleted": False,
+            "cancelled": True,
+        })
     document_id = str(receipt.get("moysklad_document_id") or "").strip()
     if not document_id:
         return api_error(
@@ -13683,20 +13689,22 @@ def api_receipt_resource(receipt_id):
                     ),
                     user_name=current_sales_user_name(),
                 )
-            save_receipts([
-                item for item in receipts
-                if str(item.get("id") or "") != str(receipt_id)
-            ])
-            save_stock_operations([
-                operation for operation in load_stock_operations()
-                if str(operation.get("receipt_id") or "") != str(receipt_id)
-            ])
+            receipt["status"] = "cancelled"
+            receipt["status_label"] = "Отменён"
+            receipt["cancelled_at"] = datetime.now().strftime(
+                "%Y-%m-%d %H:%M"
+            )
+            save_receipts(receipts)
         except Exception as error:
             app.logger.exception("Receipt API delete failed")
             return api_error("REMOTE_DOCUMENT_CONFLICT", str(error), 502)
         WAREHOUSE_CACHE["items"] = []
         WAREHOUSE_CACHE["loaded_at"] = 0
-        return api_success({"id": str(receipt_id), "deleted": True})
+        return api_success({
+            "id": str(receipt_id),
+            "deleted": False,
+            "cancelled": True,
+        })
 
     if len(receipt.get("positions") or []) != 1:
         return api_error(

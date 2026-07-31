@@ -50,6 +50,7 @@ class ReceiptInventory:
         idempotency_key="",
         user_name="",
         failure_hook=None,
+        tenant_id="default",
     ):
         receipt_id = str(receipt.get("id") or "").strip()
         if not receipt_id:
@@ -57,94 +58,158 @@ class ReceiptInventory:
         prepared = self._prepare_positions(positions)
         now = utc_now()
         idempotency_key = str(idempotency_key or "").strip() or None
+        tenant_id = self._tenant_id(tenant_id)
+        self.database.initialize()
+        with self.database.transaction() as connection:
+            existing = connection.execute(
+                "SELECT id, status FROM erp_receipts WHERE id = ? "
+                "OR (? IS NOT NULL AND tenant_id = ? AND idempotency_key = ?) "
+                "LIMIT 1",
+                (
+                    receipt_id,
+                    idempotency_key,
+                    tenant_id,
+                    idempotency_key,
+                ),
+            ).fetchone()
+            if existing is not None:
+                if existing["status"] != "draft":
+                    return self._receipt_payload(connection, existing["id"])
+                receipt_id = existing["id"]
+            else:
+                self._insert_draft(
+                    connection,
+                    receipt,
+                    prepared,
+                    receipt_id=receipt_id,
+                    idempotency_key=idempotency_key,
+                    user_name=user_name,
+                    tenant_id=tenant_id,
+                    now=now,
+                )
+            self._post_draft(
+                connection,
+                receipt_id,
+                user_name=user_name,
+                failure_hook=failure_hook,
+                now=now,
+            )
+        return self.get_receipt(receipt_id)
+
+    def create_draft(
+        self,
+        receipt,
+        positions,
+        idempotency_key="",
+        user_name="",
+        tenant_id="default",
+    ):
+        """Persist editable receipt lines without changing stock."""
+        receipt_id = str(receipt.get("id") or "").strip()
+        if not receipt_id:
+            raise ReceiptInventoryError("У прихода отсутствует ID.")
+        prepared = self._prepare_positions(positions)
+        idempotency_key = str(idempotency_key or "").strip() or None
+        tenant_id = self._tenant_id(tenant_id)
+        now = utc_now()
         self.database.initialize()
         with self.database.transaction() as connection:
             existing = connection.execute(
                 "SELECT id FROM erp_receipts WHERE id = ? "
-                "OR (? IS NOT NULL AND idempotency_key = ?) LIMIT 1",
-                (receipt_id, idempotency_key, idempotency_key),
+                "OR (? IS NOT NULL AND tenant_id = ? AND idempotency_key = ?) "
+                "LIMIT 1",
+                (
+                    receipt_id,
+                    idempotency_key,
+                    tenant_id,
+                    idempotency_key,
+                ),
             ).fetchone()
             if existing is not None:
                 return self._receipt_payload(connection, existing["id"])
+            self._insert_draft(
+                connection,
+                receipt,
+                prepared,
+                receipt_id=receipt_id,
+                idempotency_key=idempotency_key,
+                user_name=user_name,
+                tenant_id=tenant_id,
+                now=now,
+            )
+        return self.get_receipt(receipt_id)
 
+    def update_draft(
+        self,
+        receipt_id,
+        receipt,
+        positions,
+        user_name="",
+    ):
+        """Replace draft lines while keeping stock and movement history untouched."""
+        receipt_id = str(receipt_id or "").strip()
+        prepared = self._prepare_positions(positions)
+        now = utc_now()
+        self.database.initialize()
+        with self.database.transaction() as connection:
+            current = connection.execute(
+                "SELECT * FROM erp_receipts WHERE id = ?",
+                (receipt_id,),
+            ).fetchone()
+            if current is None:
+                raise ReceiptInventoryError("Черновик прихода не найден.")
+            if current["status"] != "draft":
+                raise ReceiptInventoryError(
+                    "Проведённый приход изменяется только через корректировку."
+                )
             products = self._load_products(connection, prepared)
             connection.execute(
-                "INSERT INTO erp_receipts "
-                "(id, number, status, receipt_date, user_name, idempotency_key, "
-                "metadata_json, created_at, updated_at) "
-                "VALUES (?, ?, 'posted', ?, ?, ?, ?, ?, ?)",
+                "UPDATE erp_receipt_items SET active = 0 "
+                "WHERE receipt_id = ? AND active = 1",
+                (receipt_id,),
+            )
+            self._insert_items(
+                connection,
+                receipt_id,
+                prepared,
+                products,
+                now,
+            )
+            connection.execute(
+                "UPDATE erp_receipts SET number = ?, receipt_date = ?, "
+                "user_name = ?, metadata_json = ?, updated_at = ? WHERE id = ?",
                 (
-                    receipt_id,
-                    str(receipt.get("number") or "") or None,
+                    str(receipt.get("number") or current["number"] or "") or None,
                     str(
                         receipt.get("receipt_date")
-                        or receipt.get("created_at")
-                        or now
+                        or current["receipt_date"]
                     )[:10],
-                    str(user_name or "") or None,
-                    idempotency_key,
+                    str(user_name or current["user_name"] or "") or None,
                     json.dumps(receipt, ensure_ascii=False, sort_keys=True),
                     now,
-                    now,
+                    receipt_id,
                 ),
             )
-            for index, position in enumerate(prepared):
-                product = products[position["product_id"]]
-                stock_before = float(product["stock"] or 0)
-                stock_after = stock_before + position["quantity"]
-                connection.execute(
-                    "UPDATE catalog_excel_products SET stock = ?, "
-                    "stock_source = 'receipt', updated_at = ? WHERE id = ?",
-                    (stock_after, now, position["product_id"]),
-                )
-                connection.execute(
-                    "INSERT INTO erp_receipt_items "
-                    "(receipt_id, product_id, brand_id, category_id, quantity, "
-                    "purchase_price, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        receipt_id,
-                        position["product_id"],
-                        product["brand_id"],
-                        product["category_id"],
-                        position["quantity"],
-                        position["purchase_price"],
-                        now,
-                    ),
-                )
-                item_id = connection.execute(
-                    "SELECT last_insert_rowid()"
-                ).fetchone()[0]
-                connection.execute(
-                    "INSERT INTO catalog_stock_movements "
-                    "(id, product_id, movement_type, quantity_delta, stock_after, "
-                    "receipt_id, receipt_item_id, idempotency_key, source, "
-                    "user_name, comment, created_at) "
-                    "VALUES (?, ?, 'receipt', ?, ?, ?, ?, ?, 'Приход', ?, ?, ?)",
-                    (
-                        str(uuid.uuid4()),
-                        position["product_id"],
-                        position["quantity"],
-                        stock_after,
-                        receipt_id,
-                        item_id,
-                        (
-                            "{}:{}".format(idempotency_key, index)
-                            if idempotency_key
-                            else None
-                        ),
-                        str(user_name or "") or None,
-                        "Приход №{}".format(
-                            receipt.get("number") or receipt_id
-                        ),
-                        now,
-                    ),
-                )
-                products[position["product_id"]] = {
-                    **dict(product),
-                    "stock": stock_after,
-                }
-            if failure_hook:
-                failure_hook(connection)
+        return self.get_receipt(receipt_id)
+
+    def post_receipt(
+        self,
+        receipt_id,
+        user_name="",
+        failure_hook=None,
+    ):
+        """Post a saved draft once; repeated calls are stock-neutral."""
+        receipt_id = str(receipt_id or "").strip()
+        now = utc_now()
+        self.database.initialize()
+        with self.database.transaction() as connection:
+            self._post_draft(
+                connection,
+                receipt_id,
+                user_name=user_name,
+                failure_hook=failure_hook,
+                now=now,
+            )
         return self.get_receipt(receipt_id)
 
     def update_receipt(
@@ -169,7 +234,9 @@ class ReceiptInventory:
             if current is None:
                 raise ReceiptInventoryError("Приход не найден в локальном журнале.")
             if current["status"] != "posted":
-                raise ReceiptInventoryError("Отменённый приход нельзя изменить.")
+                raise ReceiptInventoryError(
+                    "Изменять остаток можно только у проведённого прихода."
+                )
             if idempotency_key:
                 repeated = connection.execute(
                     "SELECT 1 FROM catalog_stock_movements "
@@ -248,15 +315,18 @@ class ReceiptInventory:
                 )
                 connection.execute(
                     "INSERT INTO catalog_stock_movements "
-                    "(id, product_id, movement_type, quantity_delta, stock_after, "
-                    "receipt_id, receipt_item_id, idempotency_key, source, "
-                    "user_name, comment, created_at) "
-                    "VALUES (?, ?, 'manual_adjustment', ?, ?, ?, ?, ?, "
-                    "'Приход', ?, ?, ?)",
+                    "(id, product_id, movement_type, quantity_delta, stock_before, "
+                    "stock_after, receipt_id, receipt_item_id, idempotency_key, "
+                    "tenant_id, source_type, source_id, source_line_id, "
+                    "operation_kind, source_number, source, user_name, comment, "
+                    "created_at) "
+                    "VALUES (?, ?, 'manual_adjustment', ?, ?, ?, ?, ?, ?, ?, "
+                    "'receipt', ?, ?, 'adjust', ?, 'Приход', ?, ?, ?)",
                     (
                         str(uuid.uuid4()),
                         product_id,
                         delta,
+                        stock_before,
                         stock_after,
                         receipt_id,
                         new_item_ids.get(product_id),
@@ -265,6 +335,12 @@ class ReceiptInventory:
                             if idempotency_key
                             else None
                         ),
+                        current["tenant_id"],
+                        receipt_id,
+                        str(new_item_ids.get(product_id) or "product:{}".format(
+                            product_id
+                        )),
+                        str(receipt.get("number") or current["number"] or receipt_id),
                         str(user_name or "") or None,
                         "Корректировка прихода №{}".format(
                             receipt.get("number") or receipt_id
@@ -365,14 +441,17 @@ class ReceiptInventory:
                 )
                 connection.execute(
                     "INSERT INTO catalog_stock_movements "
-                    "(id, product_id, movement_type, quantity_delta, stock_after, "
-                    "receipt_id, idempotency_key, source, user_name, comment, created_at) "
-                    "VALUES (?, ?, 'cancellation', ?, ?, ?, ?, "
-                    "'Приход', ?, ?, ?)",
+                    "(id, product_id, movement_type, quantity_delta, stock_before, "
+                    "stock_after, receipt_id, idempotency_key, tenant_id, "
+                    "source_type, source_id, source_line_id, operation_kind, "
+                    "source_number, source, user_name, comment, created_at) "
+                    "VALUES (?, ?, 'cancellation', ?, ?, ?, ?, ?, ?, "
+                    "'receipt', ?, ?, 'cancel', ?, 'Приход', ?, ?, ?)",
                     (
                         str(uuid.uuid4()),
                         product_id,
                         -quantity,
+                        stock_before,
                         stock_after,
                         receipt_id,
                         (
@@ -380,6 +459,10 @@ class ReceiptInventory:
                             if idempotency_key
                             else None
                         ),
+                        receipt["tenant_id"],
+                        receipt_id,
+                        "product:{}".format(product_id),
+                        str(receipt["number"] or receipt_id),
                         str(user_name or "") or None,
                         "Отмена прихода №{}".format(
                             receipt["number"] or receipt_id
@@ -425,21 +508,180 @@ class ReceiptInventory:
     def exists(self, receipt_id):
         return self.get_receipt(receipt_id) is not None
 
-    def get_receipt_by_idempotency(self, idempotency_key):
+    def get_receipt_by_idempotency(self, idempotency_key, tenant_id="default"):
         idempotency_key = str(idempotency_key or "").strip()
         if not idempotency_key:
             return None
+        tenant_id = self._tenant_id(tenant_id)
         self.database.initialize()
         with self.database.connect() as connection:
             row = connection.execute(
-                "SELECT id FROM erp_receipts WHERE idempotency_key = ?",
-                (idempotency_key,),
+                "SELECT id FROM erp_receipts "
+                "WHERE tenant_id = ? AND idempotency_key = ?",
+                (tenant_id, idempotency_key),
             ).fetchone()
             return (
                 self._receipt_payload(connection, row["id"])
                 if row is not None
                 else None
             )
+
+    @staticmethod
+    def _tenant_id(value):
+        tenant_id = str(value or "").strip()
+        if not tenant_id:
+            raise ReceiptInventoryError("Укажите компанию для прихода.")
+        return tenant_id
+
+    @classmethod
+    def _insert_draft(
+        cls,
+        connection,
+        receipt,
+        prepared,
+        receipt_id,
+        idempotency_key,
+        user_name,
+        tenant_id,
+        now,
+    ):
+        products = cls._load_products(connection, prepared)
+        connection.execute(
+            "INSERT INTO erp_receipts "
+            "(id, tenant_id, number, status, receipt_date, user_name, "
+            "idempotency_key, metadata_json, created_at, updated_at) "
+            "VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?)",
+            (
+                receipt_id,
+                tenant_id,
+                str(receipt.get("number") or "") or None,
+                str(
+                    receipt.get("receipt_date")
+                    or receipt.get("created_at")
+                    or now
+                )[:10],
+                str(user_name or "") or None,
+                idempotency_key,
+                json.dumps(receipt, ensure_ascii=False, sort_keys=True),
+                now,
+                now,
+            ),
+        )
+        cls._insert_items(
+            connection,
+            receipt_id,
+            prepared,
+            products,
+            now,
+        )
+
+    @staticmethod
+    def _insert_items(connection, receipt_id, prepared, products, now):
+        for position in prepared:
+            product = products[position["product_id"]]
+            connection.execute(
+                "INSERT INTO erp_receipt_items "
+                "(receipt_id, product_id, brand_id, category_id, quantity, "
+                "purchase_price, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    receipt_id,
+                    position["product_id"],
+                    product["brand_id"],
+                    product["category_id"],
+                    position["quantity"],
+                    position["purchase_price"],
+                    now,
+                ),
+            )
+
+    @classmethod
+    def _post_draft(
+        cls,
+        connection,
+        receipt_id,
+        user_name,
+        failure_hook,
+        now,
+    ):
+        receipt = connection.execute(
+            "SELECT * FROM erp_receipts WHERE id = ?",
+            (receipt_id,),
+        ).fetchone()
+        if receipt is None:
+            raise ReceiptInventoryError("Приход не найден в локальном журнале.")
+        if receipt["status"] == "posted":
+            return
+        if receipt["status"] == "cancelled":
+            raise ReceiptInventoryError("Отменённый приход нельзя провести повторно.")
+        items = connection.execute(
+            "SELECT * FROM erp_receipt_items "
+            "WHERE receipt_id = ? AND active = 1 ORDER BY id",
+            (receipt_id,),
+        ).fetchall()
+        if not items:
+            raise ReceiptInventoryError("Добавьте хотя бы один товар.")
+        products = cls._load_products(
+            connection,
+            [{"product_id": item["product_id"]} for item in items],
+        )
+        for item in items:
+            product_id = int(item["product_id"])
+            product = products[product_id]
+            stock_before = float(product["stock"] or 0)
+            quantity = float(item["quantity"])
+            stock_after = stock_before + quantity
+            connection.execute(
+                "UPDATE catalog_excel_products SET stock = ?, "
+                "stock_source = 'receipt', updated_at = ? "
+                "WHERE id = ? AND active = 1",
+                (stock_after, now, product_id),
+            )
+            connection.execute(
+                "INSERT INTO catalog_stock_movements "
+                "(id, product_id, movement_type, quantity_delta, stock_before, "
+                "stock_after, receipt_id, receipt_item_id, idempotency_key, "
+                "tenant_id, source_type, source_id, source_line_id, "
+                "operation_kind, source_number, source, user_name, comment, "
+                "created_at) "
+                "VALUES (?, ?, 'receipt', ?, ?, ?, ?, ?, ?, ?, 'receipt', ?, ?, "
+                "'post', ?, 'Приход', ?, ?, ?)",
+                (
+                    str(uuid.uuid4()),
+                    product_id,
+                    quantity,
+                    stock_before,
+                    stock_after,
+                    receipt_id,
+                    item["id"],
+                    "receipt-post:{}:{}:{}".format(
+                        receipt["tenant_id"],
+                        receipt_id,
+                        item["id"],
+                    ),
+                    receipt["tenant_id"],
+                    receipt_id,
+                    str(item["id"]),
+                    str(receipt["number"] or receipt_id),
+                    str(user_name or receipt["user_name"] or "") or None,
+                    "Приход №{}".format(receipt["number"] or receipt_id),
+                    now,
+                ),
+            )
+            products[product_id] = {
+                **dict(product),
+                "stock": stock_after,
+            }
+        if failure_hook:
+            failure_hook(connection)
+        connection.execute(
+            "UPDATE erp_receipts SET status = 'posted', user_name = ?, "
+            "updated_at = ? WHERE id = ? AND status = 'draft'",
+            (
+                str(user_name or receipt["user_name"] or "") or None,
+                now,
+                receipt_id,
+            ),
+        )
 
     @staticmethod
     def _prepare_positions(positions):

@@ -81,6 +81,7 @@ interface ConfirmDialogProps {
   title: string;
   message: string;
   confirmLabel?: string;
+  pendingLabel?: string;
   pending?: boolean;
   onConfirm: () => void;
   onClose: () => void;
@@ -91,6 +92,7 @@ export function ConfirmDialog({
   title,
   message,
   confirmLabel = 'Удалить',
+  pendingLabel = 'Удаляем…',
   pending,
   onConfirm,
   onClose,
@@ -107,7 +109,7 @@ export function ConfirmDialog({
             Отмена
           </button>
           <button className="button danger" type="button" onClick={onConfirm} disabled={pending}>
-            {pending ? 'Удаляем…' : confirmLabel}
+            {pending ? pendingLabel : confirmLabel}
           </button>
         </>
       }

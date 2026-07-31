@@ -137,13 +137,14 @@ class Stage2ReceiptsApiTest(unittest.TestCase):
         self.assertEqual(updated.get_json()["data"]["total_quantity"], 4)
         self.remote.update_stock_enter_many.assert_called_once()
 
-        deleted = self.client.delete("/api/receipts/{}".format(receipt_id))
-        self.assertEqual(deleted.status_code, 200)
+        cancelled = self.client.delete("/api/receipts/{}".format(receipt_id))
+        self.assertEqual(cancelled.status_code, 200)
+        self.assertFalse(cancelled.get_json()["data"]["deleted"])
+        self.assertTrue(cancelled.get_json()["data"]["cancelled"])
         self.remote.delete_stock_enter.assert_called_once_with("enter-1")
-        self.assertEqual(
-            self.client.get("/api/receipts").get_json()["meta"]["total"],
-            0,
-        )
+        listing = self.client.get("/api/receipts").get_json()
+        self.assertEqual(listing["meta"]["total"], 1)
+        self.assertEqual(listing["data"][0]["status"], "cancelled")
 
     def test_validation_conflict_and_remote_failure_are_structured(self):
         invalid = self.client.post(

@@ -635,6 +635,7 @@ class SalesInventory:
     def list_movements(self, product_id=None, limit=5000):
         if not self.exists():
             return []
+        self.initialize()
         query = (
             "SELECT m.*, s.source AS sale_source "
             "FROM catalog_stock_movements m "
@@ -671,9 +672,15 @@ class SalesInventory:
                 "quantity": abs(delta),
                 "diff": delta,
                 "stock_after": float(row["stock_after"]),
-                "stock_before": float(row["stock_after"]) - delta,
+                "stock_before": (
+                    float(row["stock_before"])
+                    if row["stock_before"] is not None
+                    else float(row["stock_after"]) - delta
+                ),
                 "sale_id": row["sale_id"] or "",
                 "receipt_id": row["receipt_id"] or "",
+                "receipt_item_id": row["receipt_item_id"] or "",
+                "receipt_number": row["source_number"] or "",
                 "source": row["sale_source"] or row["source"] or "",
                 "user_name": row["user_name"] or "",
                 "reason": row["comment"] or "",

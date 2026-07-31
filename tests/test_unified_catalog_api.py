@@ -263,6 +263,27 @@ class UnifiedCatalogApiTest(unittest.TestCase):
         receipt_listing = self.client.get("/api/v1/receipts").get_json()
         self.assertEqual(receipt_listing["data"][0]["brand"], "Casio Japan")
 
+        cancelled_receipt = self.client.delete(
+            "/api/v1/receipts/{}".format(receipt["id"])
+        )
+        self.assertEqual(cancelled_receipt.status_code, 200)
+        self.assertFalse(cancelled_receipt.get_json()["data"]["deleted"])
+        self.assertEqual(self.stock(), 0)
+        receipt_listing = self.client.get("/api/v1/receipts").get_json()
+        self.assertEqual(receipt_listing["meta"]["total"], 1)
+        self.assertEqual(receipt_listing["data"][0]["status"], "cancelled")
+        receipt_movements = self.client.get(
+            "/api/v1/products/{}/movements".format(self.product["id"])
+        ).get_json()["data"]
+        self.assertTrue(
+            any(
+                item["type"] == "cancellation"
+                and item.get("receipt_id") == receipt["id"]
+                and item["diff"] == -6
+                for item in receipt_movements
+            )
+        )
+
     def test_unmapped_bitrix_product_is_created_in_moysklad_before_receipt(self):
         now = "2026-07-30T12:00:00+00:00"
         with CatalogDatabase(self.database_path).connect() as connection:

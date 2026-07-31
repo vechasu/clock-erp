@@ -91,7 +91,7 @@ export function ReceiptsPage() {
       await queryClient.invalidateQueries({ queryKey: ['products'] });
       await queryClient.invalidateQueries({ queryKey: ['catalog-options'] });
       setDeleteTarget(null);
-      setToast({ message: 'Приход удалён', kind: 'success' });
+      setToast({ message: 'Приход отменён', kind: 'success' });
     },
     onError: (error) => setToast({ message: errorMessage(error), kind: 'error' }),
   });
@@ -204,9 +204,13 @@ export function ReceiptsPage() {
           <div className="row-actions">
             <button
               type="button"
-              disabled={row.original.positions_count !== 1}
+              disabled={
+                row.original.positions_count !== 1 || row.original.status !== 'posted'
+              }
               title={
-                row.original.positions_count !== 1
+                row.original.status !== 'posted'
+                  ? 'Отменённый приход нельзя изменить'
+                  : row.original.positions_count !== 1
                   ? 'Редактирование доступно только для одной позиции'
                   : undefined
               }
@@ -217,10 +221,11 @@ export function ReceiptsPage() {
             <button
               className="danger-link"
               type="button"
+              disabled={row.original.status !== 'posted'}
               onClick={() => setDeleteTarget(row.original)}
-              title="Удалить приход"
+              title="Отменить приход"
             >
-              Удалить
+              Отменить
             </button>
           </div>
         ),
@@ -390,7 +395,7 @@ export function ReceiptsPage() {
                     <div className="row-actions">
                       <button
                         type="button"
-                        disabled={receipt.positions_count !== 1}
+                        disabled={receipt.positions_count !== 1 || receipt.status !== 'posted'}
                         onClick={() => setEditor(receipt)}
                       >
                         Изменить
@@ -398,9 +403,10 @@ export function ReceiptsPage() {
                       <button
                         className="danger-link"
                         type="button"
+                        disabled={receipt.status !== 'posted'}
                         onClick={() => setDeleteTarget(receipt)}
                       >
-                        Удалить
+                        Отменить
                       </button>
                     </div>
                   </article>
@@ -458,8 +464,10 @@ export function ReceiptsPage() {
       </Modal>
       <ConfirmDialog
         open={deleteTarget !== null}
-        title="Удалить приход?"
-        message={`Документ ${deleteTarget?.number ?? ''} будет удалён из ERP. Синхронизация с МойСклад выполняется только при доступной интеграции.`}
+        title="Отменить приход?"
+        message={`Для документа ${deleteTarget?.number ?? ''} будет создано обратное движение. История прихода сохранится.`}
+        confirmLabel="Отменить приход"
+        pendingLabel="Отменяем…"
         pending={deleteMutation.isPending}
         onClose={() => setDeleteTarget(null)}
         onConfirm={() => {

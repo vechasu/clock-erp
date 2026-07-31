@@ -632,13 +632,14 @@ CREATE INDEX IF NOT EXISTS idx_erp_sale_items_product
 
 CREATE TABLE IF NOT EXISTS erp_receipts (
     id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL DEFAULT 'default',
     number TEXT,
-    status TEXT NOT NULL DEFAULT 'posted' CHECK (
-        status IN ('posted', 'cancelled')
+    status TEXT NOT NULL DEFAULT 'draft' CHECK (
+        status IN ('draft', 'posted', 'cancelled')
     ),
     receipt_date TEXT NOT NULL,
     user_name TEXT,
-    idempotency_key TEXT UNIQUE,
+    idempotency_key TEXT,
     metadata_json TEXT NOT NULL DEFAULT '{}',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
@@ -666,6 +667,18 @@ CREATE INDEX IF NOT EXISTS idx_erp_receipt_items_receipt
 CREATE INDEX IF NOT EXISTS idx_erp_receipt_items_product
     ON erp_receipt_items(product_id, created_at);
 
+CREATE TABLE IF NOT EXISTS erp_receipt_recovery_audit (
+    id TEXT PRIMARY KEY,
+    receipt_id TEXT,
+    receipt_number TEXT NOT NULL,
+    mode TEXT NOT NULL CHECK (mode IN ('apply')),
+    result_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_erp_receipt_recovery_audit_receipt
+    ON erp_receipt_recovery_audit(receipt_number, created_at);
+
 CREATE TABLE IF NOT EXISTS catalog_stock_movements (
     id TEXT PRIMARY KEY,
     product_id INTEGER NOT NULL
@@ -681,6 +694,7 @@ CREATE TABLE IF NOT EXISTS catalog_stock_movements (
         )
     ),
     quantity_delta REAL NOT NULL CHECK (quantity_delta != 0),
+    stock_before REAL,
     stock_after REAL NOT NULL CHECK (stock_after >= 0),
     sale_id TEXT REFERENCES erp_sales(id) ON DELETE RESTRICT,
     sale_item_id INTEGER
@@ -689,6 +703,12 @@ CREATE TABLE IF NOT EXISTS catalog_stock_movements (
     receipt_item_id INTEGER
         REFERENCES erp_receipt_items(id) ON DELETE RESTRICT,
     idempotency_key TEXT,
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    source_type TEXT,
+    source_id TEXT,
+    source_line_id TEXT,
+    operation_kind TEXT,
+    source_number TEXT,
     source TEXT,
     user_name TEXT,
     comment TEXT,
@@ -736,6 +756,7 @@ class CatalogDatabase:
             connection.executescript(SCHEMA)
             self._ensure_excel_receipt_constraints(connection)
             self._ensure_excel_cardinality_columns(connection)
+            self._ensure_receipt_constraints(connection)
             self._ensure_shared_catalog(connection)
             self._ensure_stock_movement_constraints(connection)
 
@@ -905,6 +926,89 @@ class CatalogDatabase:
                 )
 
     @staticmethod
+    def _ensure_receipt_constraints(connection):
+        """Add drafts and tenant-scoped receipt idempotency without data loss."""
+        table = connection.execute(
+            "SELECT sql FROM sqlite_master "
+            "WHERE type = 'table' AND name = 'erp_receipts'"
+        ).fetchone()
+        if table is None:
+            return
+        table_sql = " ".join((table["sql"] or "").lower().split())
+        columns = {
+            row[1] for row in connection.execute(
+                "PRAGMA table_info(erp_receipts)"
+            )
+        }
+        migrate = (
+            "tenant_id" not in columns
+            or "'draft'" not in table_sql
+            or "idempotency_key text unique" in table_sql
+        )
+        if migrate:
+            connection.commit()
+            connection.execute("PRAGMA foreign_keys = OFF")
+            try:
+                connection.execute("BEGIN IMMEDIATE")
+                connection.execute(
+                    "CREATE TABLE erp_receipts_migrating ("
+                    "id TEXT PRIMARY KEY, "
+                    "tenant_id TEXT NOT NULL DEFAULT 'default', "
+                    "number TEXT, "
+                    "status TEXT NOT NULL DEFAULT 'draft' CHECK ("
+                    "status IN ('draft', 'posted', 'cancelled')), "
+                    "receipt_date TEXT NOT NULL, user_name TEXT, "
+                    "idempotency_key TEXT, "
+                    "metadata_json TEXT NOT NULL DEFAULT '{}', "
+                    "created_at TEXT NOT NULL, updated_at TEXT NOT NULL, "
+                    "cancelled_at TEXT)"
+                )
+                tenant_expression = (
+                    "COALESCE(NULLIF(trim(tenant_id), ''), 'default')"
+                    if "tenant_id" in columns
+                    else "'default'"
+                )
+                connection.execute(
+                    "INSERT INTO erp_receipts_migrating "
+                    "(id, tenant_id, number, status, receipt_date, user_name, "
+                    "idempotency_key, metadata_json, created_at, updated_at, "
+                    "cancelled_at) "
+                    "SELECT id, {}, number, status, receipt_date, user_name, "
+                    "idempotency_key, metadata_json, created_at, updated_at, "
+                    "cancelled_at FROM erp_receipts".format(tenant_expression)
+                )
+                connection.execute("DROP TABLE erp_receipts")
+                connection.execute(
+                    "ALTER TABLE erp_receipts_migrating "
+                    "RENAME TO erp_receipts"
+                )
+                connection.commit()
+            except Exception:
+                connection.rollback()
+                raise
+            finally:
+                connection.execute("PRAGMA foreign_keys = ON")
+
+            violations = connection.execute(
+                "PRAGMA foreign_key_check"
+            ).fetchall()
+            if violations:
+                raise sqlite3.IntegrityError(
+                    "Receipt schema migration created foreign key violations"
+                )
+
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_erp_receipts_status_date "
+            "ON erp_receipts(status, receipt_date)"
+        )
+        connection.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS "
+            "idx_erp_receipts_tenant_idempotency "
+            "ON erp_receipts(tenant_id, idempotency_key) "
+            "WHERE idempotency_key IS NOT NULL"
+        )
+
+    @staticmethod
     def _ensure_shared_catalog(connection):
         """Add stable taxonomy IDs and safely backfill exact normalized matches."""
         migrations = {
@@ -935,6 +1039,13 @@ class CatalogDatabase:
                     "INTEGER REFERENCES erp_receipt_items(id) ON DELETE RESTRICT",
                 ),
                 ("idempotency_key", "TEXT"),
+                ("stock_before", "REAL"),
+                ("tenant_id", "TEXT NOT NULL DEFAULT 'default'"),
+                ("source_type", "TEXT"),
+                ("source_id", "TEXT"),
+                ("source_line_id", "TEXT"),
+                ("operation_kind", "TEXT"),
+                ("source_number", "TEXT"),
             ),
         }
         for table, columns in migrations.items():
@@ -1010,6 +1121,44 @@ class CatalogDatabase:
             "CREATE UNIQUE INDEX IF NOT EXISTS "
             "idx_catalog_stock_movements_idempotency "
             "ON catalog_stock_movements(idempotency_key)"
+        )
+        connection.execute(
+            "UPDATE catalog_stock_movements "
+            "SET stock_before = stock_after - quantity_delta "
+            "WHERE stock_before IS NULL"
+        )
+        connection.execute(
+            "UPDATE catalog_stock_movements SET "
+            "tenant_id = COALESCE(("
+            "SELECT r.tenant_id FROM erp_receipts r "
+            "WHERE r.id = catalog_stock_movements.receipt_id"
+            "), 'default'), "
+            "source_type = 'receipt', "
+            "source_id = receipt_id, "
+            "source_line_id = CASE "
+            "WHEN receipt_item_id IS NOT NULL THEN CAST(receipt_item_id AS TEXT) "
+            "ELSE 'product:' || CAST(product_id AS TEXT) END, "
+            "operation_kind = CASE movement_type "
+            "WHEN 'receipt' THEN 'post' "
+            "WHEN 'cancellation' THEN 'cancel' "
+            "WHEN 'manual_adjustment' THEN 'adjust' END, "
+            "source_number = COALESCE(("
+            "SELECT r.number FROM erp_receipts r "
+            "WHERE r.id = catalog_stock_movements.receipt_id"
+            "), source_number) "
+            "WHERE receipt_id IS NOT NULL "
+            "AND movement_type IN ('receipt', 'cancellation', 'manual_adjustment') "
+            "AND source_type IS NULL"
+        )
+        connection.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS "
+            "idx_catalog_stock_movements_operation "
+            "ON catalog_stock_movements("
+            "tenant_id, source_type, source_id, source_line_id, operation_kind"
+            ") WHERE source_type IS NOT NULL "
+            "AND source_id IS NOT NULL "
+            "AND source_line_id IS NOT NULL "
+            "AND operation_kind IS NOT NULL"
         )
 
         now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
@@ -1157,6 +1306,7 @@ class CatalogDatabase:
                 "'initial_stock', 'receipt', 'sale', 'return', "
                 "'cancellation', 'manual_adjustment')), "
                 "quantity_delta REAL NOT NULL CHECK (quantity_delta != 0), "
+                "stock_before REAL, "
                 "stock_after REAL NOT NULL CHECK (stock_after >= 0), "
                 "sale_id TEXT REFERENCES erp_sales(id) ON DELETE RESTRICT, "
                 "sale_item_id INTEGER REFERENCES erp_sale_items(id) "
@@ -1164,18 +1314,27 @@ class CatalogDatabase:
                 "receipt_id TEXT REFERENCES erp_receipts(id) ON DELETE RESTRICT, "
                 "receipt_item_id INTEGER REFERENCES erp_receipt_items(id) "
                 "ON DELETE RESTRICT, "
-                "idempotency_key TEXT, source TEXT, user_name TEXT, "
+                "idempotency_key TEXT, "
+                "tenant_id TEXT NOT NULL DEFAULT 'default', "
+                "source_type TEXT, source_id TEXT, source_line_id TEXT, "
+                "operation_kind TEXT, source_number TEXT, "
+                "source TEXT, user_name TEXT, "
                 "comment TEXT, created_at TEXT NOT NULL)"
             )
             connection.execute(
                 "INSERT INTO catalog_stock_movements_migrating "
-                "(id, product_id, movement_type, quantity_delta, stock_after, "
+                "(id, product_id, movement_type, quantity_delta, stock_before, "
+                "stock_after, "
                 "sale_id, sale_item_id, receipt_id, receipt_item_id, "
-                "idempotency_key, source, user_name, comment, created_at) "
+                "idempotency_key, tenant_id, source_type, source_id, "
+                "source_line_id, operation_kind, source_number, source, "
+                "user_name, comment, created_at) "
                 "SELECT id, product_id, movement_type, quantity_delta, "
-                "stock_after, sale_id, sale_item_id, receipt_id, "
-                "receipt_item_id, idempotency_key, source, user_name, "
-                "comment, created_at FROM catalog_stock_movements"
+                "stock_before, stock_after, sale_id, sale_item_id, receipt_id, "
+                "receipt_item_id, idempotency_key, tenant_id, source_type, "
+                "source_id, source_line_id, operation_kind, source_number, "
+                "source, user_name, comment, created_at "
+                "FROM catalog_stock_movements"
             )
             connection.execute("DROP TABLE catalog_stock_movements")
             connection.execute(
@@ -1197,6 +1356,15 @@ class CatalogDatabase:
             connection.execute(
                 "CREATE UNIQUE INDEX idx_catalog_stock_movements_idempotency "
                 "ON catalog_stock_movements(idempotency_key)"
+            )
+            connection.execute(
+                "CREATE UNIQUE INDEX idx_catalog_stock_movements_operation "
+                "ON catalog_stock_movements("
+                "tenant_id, source_type, source_id, source_line_id, operation_kind"
+                ") WHERE source_type IS NOT NULL "
+                "AND source_id IS NOT NULL "
+                "AND source_line_id IS NOT NULL "
+                "AND operation_kind IS NOT NULL"
             )
             connection.commit()
         except Exception:
