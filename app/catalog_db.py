@@ -1004,8 +1004,7 @@ class CatalogDatabase:
         connection.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS "
             "idx_erp_receipts_tenant_idempotency "
-            "ON erp_receipts(tenant_id, idempotency_key) "
-            "WHERE idempotency_key IS NOT NULL"
+            "ON erp_receipts(tenant_id, idempotency_key)"
         )
 
     @staticmethod
@@ -1155,10 +1154,7 @@ class CatalogDatabase:
             "idx_catalog_stock_movements_operation "
             "ON catalog_stock_movements("
             "tenant_id, source_type, source_id, source_line_id, operation_kind"
-            ") WHERE source_type IS NOT NULL "
-            "AND source_id IS NOT NULL "
-            "AND source_line_id IS NOT NULL "
-            "AND operation_kind IS NOT NULL"
+            ")"
         )
 
         now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
@@ -1361,10 +1357,7 @@ class CatalogDatabase:
                 "CREATE UNIQUE INDEX idx_catalog_stock_movements_operation "
                 "ON catalog_stock_movements("
                 "tenant_id, source_type, source_id, source_line_id, operation_kind"
-                ") WHERE source_type IS NOT NULL "
-                "AND source_id IS NOT NULL "
-                "AND source_line_id IS NOT NULL "
-                "AND operation_kind IS NOT NULL"
+                ")"
             )
             connection.commit()
         except Exception:
