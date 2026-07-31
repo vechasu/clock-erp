@@ -10,7 +10,7 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-MIGRATION_VERSION = "unified_catalog_v2_legacy_products"
+MIGRATION_VERSION = "unified_catalog_v3_receipt_inventory"
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))

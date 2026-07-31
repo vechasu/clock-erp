@@ -38,6 +38,11 @@ MATCH_COLUMNS = (
     "bitrix_properties_json", "bitrix_active",
 )
 
+VISIBLE_PRODUCT_SQL = (
+    "(p.source_key LIKE 'bitrix:%' "
+    "OR (b.status = 'active' AND p.current_batch_id = b.id))"
+)
+
 PRODUCT_MUTABLE_COLUMNS = (
     "current_batch_id", "active", "raw_excel_json", "excel_row",
     "excel_name_raw", "normalized_name", "excel_article", "article_quality",
@@ -374,7 +379,7 @@ class ExcelProductBatchService:
             for product in active_products:
                 if (
                     product["source_key"] in incoming_keys
-                    or product["stock_source"] == "bitrix_catalog"
+                    or str(product["source_key"]).startswith("bitrix:")
                 ):
                     continue
                 before = _snapshot(product)
@@ -402,7 +407,7 @@ class ExcelProductBatchService:
                 ):
                     linked_cards = connection.execute(
                         "SELECT * FROM catalog_excel_products "
-                        "WHERE active = 1 AND stock_source = 'bitrix_catalog' "
+                        "WHERE active = 1 AND source_key LIKE 'bitrix:%' "
                         "AND bitrix_catalog_product_id = ? ORDER BY id",
                         (int(result["product_id"]),),
                     ).fetchall()
@@ -702,10 +707,7 @@ class ExcelProductCatalog:
         }
         sort_by = sort_by if sort_by in allowed_sort_fields else "name"
         sort_dir = sort_dir if sort_dir in {"asc", "desc"} else "asc"
-        visible_cards_sql = (
-            "(p.stock_source = 'bitrix_catalog' "
-            "OR (b.status = 'active' AND p.current_batch_id = b.id))"
-        )
+        visible_cards_sql = VISIBLE_PRODUCT_SQL
         where = ["p.active = 1", visible_cards_sql]
         parameters = []
         if query:
@@ -908,8 +910,7 @@ class ExcelProductCatalog:
                 "LEFT JOIN catalog_products cp "
                 "ON cp.id = p.bitrix_catalog_product_id "
                 "WHERE p.id = ? AND p.active = 1 AND "
-                "(p.stock_source = 'bitrix_catalog' "
-                "OR (b.status = 'active' AND p.current_batch_id = b.id))",
+                + VISIBLE_PRODUCT_SQL,
                 (int(product_id),),
             ).fetchone()
         return self._prepare_product(dict(row)) if row else None

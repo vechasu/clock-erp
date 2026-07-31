@@ -210,4 +210,53 @@ describe('ReceiptsPage', () => {
       ).toBe(true),
     );
   });
+
+  it('cancels a posted receipt while keeping the history workflow visible', async () => {
+    const requests: Array<{ url: string; method: string }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(String(input), 'https://erp.test');
+        const method = init?.method ?? 'GET';
+        requests.push({ url: url.toString(), method });
+        if (method === 'DELETE') {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                data: { id: receipt.id, deleted: false, cancelled: true },
+                meta: { request_id: 'cancel-test', csrf_token: 'csrf' },
+                error: null,
+              }),
+              { status: 200, headers: { 'Content-Type': 'application/json' } },
+            ),
+          );
+        }
+        return Promise.resolve(
+          url.pathname.includes('/catalog/options') ? catalogResponse(url) : listResponse(),
+        );
+      }),
+    );
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={['/receipts']}>
+        <AppProviders>
+          <ReceiptsPage />
+        </AppProviders>
+      </MemoryRouter>,
+    );
+
+    await screen.findAllByText('PR-2026-0001');
+    await user.click(screen.getAllByRole('button', { name: 'Отменить' })[0]);
+    expect(screen.getByRole('heading', { name: 'Отменить приход?' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Отменить приход' }));
+
+    expect(await screen.findByText('Приход отменён')).toBeInTheDocument();
+    expect(
+      requests.some(
+        (request) =>
+          request.method === 'DELETE' &&
+          request.url.includes(`/api/v1/receipts/${receipt.id}`),
+      ),
+    ).toBe(true);
+  });
 });

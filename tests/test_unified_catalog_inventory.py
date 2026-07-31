@@ -1,10 +1,15 @@
 import json
+import sqlite3
 import tempfile
 import unittest
+import uuid
 from pathlib import Path
 
 from app.catalog_db import CatalogDatabase
-from app.services.excel_product_catalog import ExcelProductCatalog
+from app.services.excel_product_catalog import (
+    ExcelProductBatchService,
+    ExcelProductCatalog,
+)
 from app.services.receipt_inventory import ReceiptInventory
 from app.services.sales_inventory import SalesInventory
 from app.services.shared_catalog import (
@@ -221,6 +226,309 @@ class UnifiedCatalogInventoryTest(unittest.TestCase):
             any(item["receipt_id"] == "receipt-1" for item in movements)
         )
 
+    def test_draft_keeps_new_shared_product_at_zero_until_posting(self):
+        product = self.create_product(
+            name="Draft New Product",
+            brand="Draft Brand",
+            category="Draft Category",
+        )
+        draft = self.receipts.create_draft(
+            {
+                "id": "draft-receipt",
+                "number": "DRAFT-1",
+                "receipt_date": "2026-07-31",
+            },
+            [{
+                "product_id": product["id"],
+                "quantity": 4,
+                "purchase_price": 10,
+            }],
+            user_name="company-a-user",
+            tenant_id="company-a",
+        )
+
+        self.assertEqual(draft["status"], "draft")
+        self.assertEqual(self.stock(product["id"]), 0)
+        sale_options = self.catalog.list_products(
+            brand_id=product["brand_id"],
+            category_id=product["category_id"],
+        )
+        self.assertEqual(
+            [item["id"] for item in sale_options],
+            [str(product["id"])],
+        )
+
+        updated = self.receipts.update_draft(
+            draft["id"],
+            {
+                "id": draft["id"],
+                "number": "DRAFT-1",
+                "receipt_date": "2026-07-31",
+            },
+            [{
+                "product_id": product["id"],
+                "quantity": 5,
+                "purchase_price": 10,
+            }],
+            user_name="company-a-user",
+        )
+        self.assertEqual(updated["items"][0]["quantity"], 5)
+        self.assertEqual(self.stock(product["id"]), 0)
+
+    def test_posting_sets_status_last_and_writes_one_movement_per_line(self):
+        first = self.create_product(name="Receipt Line One")
+        second = self.create_product(name="Receipt Line Two")
+        draft = self.receipts.create_draft(
+            {
+                "id": "multi-line-receipt",
+                "number": "PR-MULTI",
+                "receipt_date": "2026-07-31",
+            },
+            [
+                {
+                    "product_id": first["id"],
+                    "quantity": 2,
+                    "purchase_price": 1,
+                },
+                {
+                    "product_id": second["id"],
+                    "quantity": 3,
+                    "purchase_price": 1,
+                },
+            ],
+        )
+        observed_status = []
+
+        def observe_status(connection):
+            observed_status.append(
+                connection.execute(
+                    "SELECT status FROM erp_receipts WHERE id = ?",
+                    (draft["id"],),
+                ).fetchone()["status"]
+            )
+
+        posted = self.receipts.post_receipt(
+            draft["id"],
+            user_name="poster",
+            failure_hook=observe_status,
+        )
+        repeated = self.receipts.post_receipt(draft["id"], user_name="poster")
+
+        self.assertEqual(observed_status, ["draft"])
+        self.assertEqual(posted["status"], "posted")
+        self.assertEqual(repeated["status"], "posted")
+        self.assertEqual(self.stock(first["id"]), 2)
+        self.assertEqual(self.stock(second["id"]), 3)
+        with self.database.connect() as connection:
+            movements = connection.execute(
+                "SELECT * FROM catalog_stock_movements "
+                "WHERE receipt_id = ? ORDER BY receipt_item_id",
+                (draft["id"],),
+            ).fetchall()
+        self.assertEqual(len(movements), 2)
+        self.assertEqual(
+            [row["source_line_id"] for row in movements],
+            [str(item["id"]) for item in posted["items"]],
+        )
+        self.assertTrue(all(row["operation_kind"] == "post" for row in movements))
+        self.assertTrue(all(row["stock_before"] == 0 for row in movements))
+        self.assertTrue(all(row["source_number"] == "PR-MULTI" for row in movements))
+
+    def test_receipt_post_does_not_duplicate_existing_product(self):
+        product = self.create_product(name="Existing Shared Product")
+        with self.database.connect() as connection:
+            before = connection.execute(
+                "SELECT COUNT(*) FROM catalog_excel_products"
+            ).fetchone()[0]
+        self.receipts.create_receipt(
+            {
+                "id": "existing-product-receipt",
+                "number": "PR-EXISTING",
+                "receipt_date": "2026-07-31",
+            },
+            [{
+                "product_id": product["id"],
+                "quantity": 1,
+                "purchase_price": 1,
+            }],
+        )
+        with self.database.connect() as connection:
+            after = connection.execute(
+                "SELECT COUNT(*) FROM catalog_excel_products"
+            ).fetchone()[0]
+        self.assertEqual(after, before)
+        self.assertEqual(self.stock(product["id"]), 1)
+
+    def test_receipt_operation_uniqueness_is_tenant_scoped(self):
+        product = self.create_product(name="Tenant Product")
+        statement = (
+            "INSERT INTO catalog_stock_movements "
+            "(id, product_id, movement_type, quantity_delta, stock_before, "
+            "stock_after, tenant_id, source_type, source_id, source_line_id, "
+            "operation_kind, created_at) "
+            "VALUES (?, ?, 'manual_adjustment', 1, 0, 1, ?, "
+            "'receipt', 'same-source', 'same-line', 'post', ?)"
+        )
+        with self.database.transaction() as connection:
+            connection.execute(
+                statement,
+                (
+                    str(uuid.uuid4()),
+                    product["id"],
+                    "company-a",
+                    "2026-07-31T10:00:00+00:00",
+                ),
+            )
+            connection.execute(
+                statement,
+                (
+                    str(uuid.uuid4()),
+                    product["id"],
+                    "company-b",
+                    "2026-07-31T10:00:01+00:00",
+                ),
+            )
+            with self.assertRaises(sqlite3.IntegrityError):
+                connection.execute(
+                    statement,
+                    (
+                        str(uuid.uuid4()),
+                        product["id"],
+                        "company-a",
+                        "2026-07-31T10:00:02+00:00",
+                    ),
+                )
+
+    def test_pr_2026_0002_bitrix_card_stays_visible_after_receipt(self):
+        product = self.create_product(
+            name="a.b.art Vintage Edge Brown",
+            brand="A.B. Art",
+            category="Очки",
+        )
+        with self.database.transaction() as connection:
+            connection.execute(
+                "INSERT INTO catalog_excel_batches ("
+                "id, file_sha256, source_filename, row_count, total_stock, "
+                "positive_rows, zero_rows, status, created_at, applied_at"
+                ") VALUES ('bitrix-synthetic', 'bitrix-synthetic-sha', "
+                "'bitrix-sync', 0, 0, 0, 0, 'superseded', ?, ?)",
+                ("2026-07-31T08:00:00+00:00", "2026-07-31T08:00:00+00:00"),
+            )
+            connection.execute(
+                "UPDATE catalog_excel_products SET "
+                "source_key = 'bitrix:243444', "
+                "current_batch_id = 'bitrix-synthetic', "
+                "stock_source = 'bitrix_catalog' WHERE id = ?",
+                (product["id"],),
+            )
+
+        self.receipts.create_receipt(
+            {
+                "id": "production-pr-2026-0002",
+                "number": "PR-2026-0002",
+                "receipt_date": "2026-07-31",
+            },
+            [{
+                "product_id": product["id"],
+                "quantity": 29,
+                "purchase_price": 0,
+            }],
+            idempotency_key="production-pr-2026-0002",
+        )
+
+        result = self.products.list_products(
+            query="Vintage Edge Brown",
+            hide_zero=True,
+            sort_by="stock",
+            sort_dir="desc",
+        )
+        self.assertEqual(result["total"], 1)
+        self.assertEqual(result["items"][0]["id"], product["id"])
+        self.assertEqual(result["items"][0]["stock"], 29)
+        self.assertEqual(self.products.get_product(product["id"])["stock"], 29)
+
+        ExcelProductBatchService(self.database).apply(
+            [{
+                "excel_row": 2,
+                "excel_name": "Unrelated Excel Product",
+                "excel_brand": "Other",
+                "excel_article": "OTHER-1",
+                "article_quality": "code_like",
+                "category": "Other",
+                "stock": 1,
+                "stock_valid": True,
+                "cell": "A-1",
+                "product_id": None,
+                "match_status": "not_found",
+                "match_method": "test",
+                "confidence": 0,
+                "alternatives": [],
+            }],
+            "f" * 64,
+            "later.xlsx",
+        )
+        preserved = self.catalog.get_product(
+            product["id"],
+            include_archived=True,
+        )
+        self.assertTrue(preserved["active"])
+        self.assertEqual(preserved["stock"], 29)
+
+    def test_posted_edit_uses_delta_and_cancel_keeps_reverse_history(self):
+        product = self.create_product(name="Editable Receipt Product")
+        receipt = {
+            "id": "editable-receipt",
+            "number": "PR-EDIT",
+            "receipt_date": "2026-07-31",
+        }
+        self.receipts.create_receipt(
+            receipt,
+            [{
+                "product_id": product["id"],
+                "quantity": 5,
+                "purchase_price": 1,
+            }],
+        )
+        self.receipts.update_receipt(
+            receipt["id"],
+            receipt,
+            [{
+                "product_id": product["id"],
+                "quantity": 7,
+                "purchase_price": 1,
+            }],
+            idempotency_key="edit-delta-once",
+        )
+        self.assertEqual(self.stock(product["id"]), 7)
+
+        cancelled = self.receipts.cancel_receipt(
+            receipt["id"],
+            idempotency_key="cancel-once",
+        )
+        repeated = self.receipts.cancel_receipt(
+            receipt["id"],
+            idempotency_key="cancel-once",
+        )
+        self.assertEqual(cancelled["status"], "cancelled")
+        self.assertEqual(repeated["status"], "cancelled")
+        self.assertEqual(self.stock(product["id"]), 0)
+        with self.database.connect() as connection:
+            movements = connection.execute(
+                "SELECT movement_type, quantity_delta, operation_kind "
+                "FROM catalog_stock_movements WHERE receipt_id = ? "
+                "ORDER BY created_at, rowid",
+                (receipt["id"],),
+            ).fetchall()
+        self.assertEqual(
+            [row["movement_type"] for row in movements],
+            ["receipt", "manual_adjustment", "cancellation"],
+        )
+        self.assertEqual(
+            [row["quantity_delta"] for row in movements],
+            [5, 2, -7],
+        )
+        self.assertEqual(movements[-1]["operation_kind"], "cancel")
+
     def test_return_and_failures_change_stock_only_once_and_rollback(self):
         product = self.create_product(stock=3)
         sale_payload = {
@@ -402,6 +710,68 @@ class UnifiedCatalogInventoryTest(unittest.TestCase):
         self.assertIn("'cancellation'", migrated_sql)
         self.assertEqual(migrated_count, original_count)
         self.assertEqual(self.stock(product["id"]), 1)
+
+    def test_legacy_receipt_schema_is_migrated_without_losing_history(self):
+        product = self.create_product(name="Legacy Schema Product")
+        receipt = self.receipts.create_receipt(
+            {
+                "id": "legacy-schema-receipt",
+                "number": "PR-LEGACY-SCHEMA",
+                "receipt_date": "2026-07-30",
+            },
+            [{
+                "product_id": product["id"],
+                "quantity": 2,
+                "purchase_price": 1,
+            }],
+            idempotency_key="legacy-schema-once",
+        )
+        with self.database.connect() as connection:
+            connection.commit()
+            connection.execute("PRAGMA foreign_keys = OFF")
+            connection.execute(
+                "CREATE TABLE erp_receipts_old ("
+                "id TEXT PRIMARY KEY, number TEXT, "
+                "status TEXT NOT NULL DEFAULT 'posted' CHECK ("
+                "status IN ('posted', 'cancelled')), "
+                "receipt_date TEXT NOT NULL, user_name TEXT, "
+                "idempotency_key TEXT UNIQUE, "
+                "metadata_json TEXT NOT NULL DEFAULT '{}', "
+                "created_at TEXT NOT NULL, updated_at TEXT NOT NULL, "
+                "cancelled_at TEXT)"
+            )
+            connection.execute(
+                "INSERT INTO erp_receipts_old "
+                "(id, number, status, receipt_date, user_name, idempotency_key, "
+                "metadata_json, created_at, updated_at, cancelled_at) "
+                "SELECT id, number, status, receipt_date, user_name, "
+                "idempotency_key, metadata_json, created_at, updated_at, "
+                "cancelled_at FROM erp_receipts"
+            )
+            connection.execute("DROP TABLE erp_receipts")
+            connection.execute(
+                "ALTER TABLE erp_receipts_old RENAME TO erp_receipts"
+            )
+            connection.commit()
+            connection.execute("PRAGMA foreign_keys = ON")
+
+        self.database.initialize()
+
+        restored = self.receipts.get_receipt(receipt["id"])
+        self.assertEqual(restored["status"], "posted")
+        self.assertEqual(restored["tenant_id"], "default")
+        self.assertEqual(restored["items"][0]["product_id"], product["id"])
+        self.assertEqual(self.stock(product["id"]), 2)
+        with self.database.connect() as connection:
+            receipt_sql = connection.execute(
+                "SELECT sql FROM sqlite_master "
+                "WHERE type = 'table' AND name = 'erp_receipts'"
+            ).fetchone()[0]
+            violations = connection.execute(
+                "PRAGMA foreign_key_check"
+            ).fetchall()
+        self.assertIn("'draft'", receipt_sql)
+        self.assertEqual(violations, [])
 
     def test_exact_legacy_links_are_persisted_without_merging_cards(self):
         product = self.create_product()
