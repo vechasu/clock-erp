@@ -2073,28 +2073,6 @@ select.erp-control {
     font-size: 12px;
 }
 
-.sales-table.erp-data-table .col-created_at,
-.sales-table.erp-data-table .col-order_number {
-    position: sticky;
-    z-index: 2;
-    background-clip: padding-box;
-}
-
-.sales-table.erp-data-table .col-created_at {
-    left: 0;
-}
-
-.sales-table.erp-data-table .col-order_number {
-    left: var(--sales-sticky-date-width, 108px);
-    box-shadow: 1px 0 0 #d9e0e8, 8px 0 15px -14px #334155;
-}
-
-.sales-table.erp-data-table thead .col-created_at,
-.sales-table.erp-data-table thead .col-order_number {
-    z-index: 6;
-    background: #f3f6f9;
-}
-
 @media (max-width: 1100px) {
     .sales-page-header {
         align-items: flex-start;
