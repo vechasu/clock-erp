@@ -11147,64 +11147,6 @@ def excel_products_page():
         target += "?" + request.query_string.decode("utf-8")
     return redirect(target)
 
-    match_status = (request.args.get("match_status") or "all").strip()
-    allowed_statuses = {
-        "all", "requires_mapping", "exact", "high_confidence", "ambiguous",
-        "not_found", "manual_match", "not_in_bitrix",
-    }
-    if match_status not in allowed_statuses:
-        match_status = "all"
-    filters = {
-        "query": (request.args.get("q") or "").strip(),
-        "brand": (request.args.get("brand") or "").strip(),
-        "category": (request.args.get("category") or "").strip(),
-        "cell": (request.args.get("cell") or "").strip(),
-        "match_status": match_status,
-        "hide_zero": (request.args.get("hide_zero") or "").strip() == "1",
-        "sort_by": (request.args.get("sort_by") or "name").strip(),
-        "sort_dir": (request.args.get("sort_dir") or "asc").strip(),
-    }
-    catalog = ExcelProductCatalog().list_products(
-        query=filters["query"],
-        brand=filters["brand"],
-        category=filters["category"],
-        cell=filters["cell"],
-        match_status=filters["match_status"],
-        hide_zero=filters["hide_zero"],
-        sort_by=filters["sort_by"],
-        sort_dir=filters["sort_dir"],
-        page=_positive_int(request.args.get("page"), 1, 1000000),
-        per_page=_positive_int(request.args.get("per_page"), 50, 100),
-    )
-    base_arguments = request.args.to_dict(flat=True)
-    base_arguments.pop("_partial", None)
-    current_arguments = dict(base_arguments)
-    base_arguments.pop("page", None)
-    current_products_url = url_for("excel_products_page")
-    if current_arguments:
-        current_products_url += "?" + urlencode(current_arguments)
-    previous_url = next_url = None
-    if catalog["page"] > 1:
-        previous_url = url_for("excel_products_page") + "?" + urlencode(
-            dict(base_arguments, page=catalog["page"] - 1)
-        )
-    if catalog["page"] < catalog["pages"]:
-        next_url = url_for("excel_products_page") + "?" + urlencode(
-            dict(base_arguments, page=catalog["page"] + 1)
-        )
-    template_name = (
-        "_excel_products_results.html"
-        if request.args.get("_partial") == "1"
-        else "excel_products.html"
-    )
-    return render_template(
-        template_name, catalog=catalog, filters=filters,
-        match_labels=EXCEL_MATCH_LABELS, previous_url=previous_url,
-        next_url=next_url,
-        category_tree=build_excel_category_tree(catalog["category_groups"]),
-        current_products_url=current_products_url,
-    )
-
 
 @app.route("/products/receipts/new")
 def excel_receipt_new():
