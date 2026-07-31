@@ -4073,12 +4073,6 @@
             });
 
             salesTable.style.width = totalWidth + 78 + "px";
-            salesTable.style.setProperty(
-                "--sales-sticky-date-width",
-                view.hidden.includes("created_at")
-                    ? "0px"
-                    : view.widths.created_at + "px",
-            );
             updateEmptyRows();
         }
 
@@ -4577,21 +4571,6 @@
                 showSaleForm(button.dataset.saleSource);
             });
         });
-
-    manualSaleModal.addEventListener("click", (event) => {
-        if (event.target === manualSaleModal) {
-            closeManualSaleModalWindow();
-        }
-    });
-
-    document.addEventListener("keydown", (event) => {
-        if (
-            event.key === "Escape"
-            && manualSaleModal.classList.contains("is-open")
-        ) {
-            closeManualSaleModalWindow();
-        }
-    });
 
     const productNameInput = document.getElementById(
         "product_name"
@@ -5572,6 +5551,116 @@
     });
 </script>
 {% endif %}
+{% if config.TESTING and request.args.get("sales_modal_e2e") == "1" %}
+<script>
+    window.addEventListener("load", async () => {
+        const root = document.documentElement;
+
+        try {
+            const openButton = document.getElementById(
+                "openManualSaleModal"
+            );
+            const modal = document.getElementById(
+                "manualSaleModal"
+            );
+            const closeButton = document.getElementById(
+                "closeManualSaleModal"
+            );
+            const form = document.getElementById(
+                "manualSaleForm"
+            );
+            if (!openButton || !modal || !closeButton || !form) {
+                throw new Error("missing-elements");
+            }
+
+            const sourceChoiceButton = modal.querySelector(
+                '[data-sale-source="wildberries"]'
+            );
+            const dateInput = form.querySelector(
+                '[name="created_at"]'
+            );
+            const quantityInput = form.querySelector(
+                '[name="quantity"]'
+            );
+            if (!sourceChoiceButton || !dateInput || !quantityInput) {
+                throw new Error("missing-fields");
+            }
+
+            openButton.click();
+            await new Promise((resolve) =>
+                window.setTimeout(resolve, 220)
+            );
+            sourceChoiceButton.click();
+            await new Promise((resolve) =>
+                window.setTimeout(resolve, 120)
+            );
+
+            if (!modal.classList.contains("is-open")) {
+                throw new Error("modal-not-open");
+            }
+
+            const expectedDate = "2026-01-01";
+            dateInput.value = expectedDate;
+            quantityInput.value = "3";
+
+            modal.dispatchEvent(
+                new MouseEvent("click", {
+                    bubbles: true,
+                    cancelable: true,
+                    view: window,
+                    button: 0,
+                })
+            );
+            await new Promise((resolve) =>
+                window.setTimeout(resolve, 150)
+            );
+
+            if (!modal.classList.contains("is-open")) {
+                throw new Error("overlay-closed");
+            }
+            if (
+                dateInput.value !== expectedDate
+                || quantityInput.value !== "3"
+            ) {
+                throw new Error("values-lost-after-overlay");
+            }
+
+            document.dispatchEvent(
+                new KeyboardEvent("keydown", {
+                    key: "Escape",
+                    bubbles: true,
+                })
+            );
+            await new Promise((resolve) =>
+                window.setTimeout(resolve, 150)
+            );
+
+            if (!modal.classList.contains("is-open")) {
+                throw new Error("escape-closed");
+            }
+            if (
+                dateInput.value !== expectedDate
+                || quantityInput.value !== "3"
+            ) {
+                throw new Error("values-lost-after-escape");
+            }
+
+            closeButton.click();
+            await new Promise((resolve) =>
+                window.setTimeout(resolve, 140)
+            );
+            if (modal.classList.contains("is-open")) {
+                throw new Error("close-button-not-works");
+            }
+
+            root.dataset.salesModalE2e = "pass";
+        } catch (error) {
+            root.dataset.salesModalE2e =
+                "fail-" + error.message;
+        }
+    });
+</script>
+{% endif %}
 {% if config.TESTING and request.args.get("sales_columns_e2e") == "1" %}
 <script>
     window.addEventListener("load", () => {
@@ -5778,10 +5867,12 @@
             tableWrap.scrollLeft = 240;
             const tableWrapBounds =
                 tableWrap.getBoundingClientRect();
-            const stickyDateBounds = getHeaders()[0]
+            const firstHeaderBounds = getHeaders()[0]
                 .getBoundingClientRect();
-            const stickyOrderBounds = getHeaders()[1]
-                .getBoundingClientRect();
+            const scrollCompensation = Math.round(
+                (firstHeaderBounds.left - tableWrapBounds.left)
+                + tableWrap.scrollLeft,
+            );
             const toolbar = document.querySelector(
                 ".sales-data-toolbar"
             );
@@ -5904,14 +5995,7 @@
                         && ["auto", "scroll"].includes(
                             getComputedStyle(tableWrap).overflowX
                         )
-                        && Math.abs(
-                            stickyDateBounds.left
-                            - tableWrapBounds.left
-                        ) <= 1
-                        && Math.abs(
-                            stickyOrderBounds.left
-                            - stickyDateBounds.right
-                        ) <= 1
+                        && Math.abs(scrollCompensation) <= 1
                     )
                     : (
                         document.querySelector(
@@ -5939,6 +6023,7 @@
                             getHeaders()[0]
                                 .getBoundingClientRect().width
                         ),
+                        scrollCompensation,
                         otherSettingsMatch:
                             localStorage.getItem(otherSettingsKey)
                                 === otherSettings,
@@ -5949,16 +6034,6 @@
                         tableWidth: [
                             tableWrap.scrollWidth,
                             tableWrap.clientWidth,
-                        ],
-                        sticky: [
-                            Math.round(
-                                stickyDateBounds.left
-                                - tableWrapBounds.left
-                            ),
-                            Math.round(
-                                stickyOrderBounds.left
-                                - stickyDateBounds.right
-                            ),
                         ],
                         toolbarWidth: [
                             toolbar.scrollWidth,

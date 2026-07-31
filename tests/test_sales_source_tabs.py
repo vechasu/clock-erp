@@ -1684,7 +1684,7 @@ class SalesSourceTabsTest(unittest.TestCase):
             '"created_at",\n            "order_number",',
             page,
         )
-        self.assertIn(
+        self.assertNotIn(
             '"--sales-sticky-date-width"',
             page,
         )
