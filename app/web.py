@@ -7217,13 +7217,13 @@ def get_sales_report_filters():
             filters["date_from"],
         )
 
-    filters["order_status"] = normalize_sale_status_filter(
-        filters["order_status"]
-    )
-    if (
-        filters["order_status"]
-        and filters["order_status"] not in SALE_STATUS_LABELS
-    ):
+    if filters["order_status"]:
+        filters["order_status"] = normalize_sale_status_filter(
+            filters["order_status"]
+        )
+        if filters["order_status"] not in SALE_STATUS_LABELS:
+            filters["order_status"] = ""
+    else:
         filters["order_status"] = ""
 
     return filters
