@@ -45,6 +45,25 @@ class Stage2ReactAppTest(unittest.TestCase):
         finally:
             response.close()
 
+    def test_warehouse_route_redirects_to_react_products(self):
+        response = self.client.get("/warehouse")
+        try:
+            self.assertEqual(response.status_code, 302)
+            self.assertEqual(response.location, "http://localhost/app/products")
+        finally:
+            response.close()
+
+    def test_warehouse_route_keeps_query_string(self):
+        response = self.client.get("/warehouse?q=chrono&hide_zero=1&per_page=100")
+        try:
+            self.assertEqual(response.status_code, 302)
+            self.assertEqual(
+                response.location,
+                "http://localhost/app/products?q=chrono&hide_zero=1&per_page=100",
+            )
+        finally:
+            response.close()
+
 
 if __name__ == "__main__":
     unittest.main()
