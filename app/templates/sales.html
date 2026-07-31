@@ -4674,6 +4674,26 @@
         }));
     }
 
+    function getOrderedTictactoyRegions(country, regions) {
+        const normalized = Array.from(new Set(regions || []));
+        if (country !== "Россия") {
+            return normalized;
+        }
+
+        const priorities = ["Москва", "Санкт-Петербург"];
+        const prioritySet = new Set(priorities);
+        const head = priorities.filter((region) =>
+            normalized.includes(region)
+        );
+        const tail = normalized
+            .filter((region) => !prioritySet.has(region))
+            .sort((a, b) =>
+                a.localeCompare(b, "ru", {sensitivity: "base"})
+            );
+
+        return [...head, ...tail];
+    }
+
     function resetLocationSearch(combobox) {
         const search = combobox.querySelector(
             ".brand-combobox-search"
@@ -4744,8 +4764,11 @@
         const country = tictactoyCountryCombobox.querySelector(
             ".brand-combobox-hidden"
         ).value;
-        const regions = Object.keys(
-            tictactoyLocationData[country] || {}
+        const regions = getOrderedTictactoyRegions(
+            country,
+            Object.keys(
+                tictactoyLocationData[country] || {}
+            )
         );
 
         replaceLocationOptions(
@@ -5320,6 +5343,133 @@
             const tictactoyCity = document.getElementById(
                 "tictactoyCity"
             );
+            const regionPriorityCheck = (
+                new URLSearchParams(window.location.search)
+                    .get("sales_tictactoy_regions_e2e")
+                    === "1"
+            );
+            const getVisibleTictactoyRegionValues = () => (
+                Array.from(
+                    tictactoyRegion.querySelectorAll(
+                        ".brand-combobox-option"
+                    )
+                )
+                    .filter((option) => !option.hidden)
+                    .map((option) => option.dataset.brand)
+                    .filter((value) => !!value)
+            );
+
+            const checkTictactoyRegionOrderInModal = async () => {
+                chooseOption(tictactoyCountry, "Россия");
+                tictactoyRegion.querySelector(
+                    ".brand-combobox-trigger"
+                ).click();
+                await new Promise((resolve) =>
+                    window.setTimeout(resolve, 120)
+                );
+
+                const regions = getVisibleTictactoyRegionValues();
+                if (regions[0] !== "Москва") {
+                    throw new Error("region-priority-first");
+                }
+                if (regions[1] !== "Санкт-Петербург") {
+                    throw new Error("region-priority-second");
+                }
+
+                const tail = regions.slice(2);
+                const sortedTail = [...tail].sort((a, b) =>
+                    a.localeCompare(b, "ru", {sensitivity: "base"})
+                );
+                if (
+                    new Set(regions).size !== regions.length
+                    || tail.some(
+                        (region, index) =>
+                            region !== sortedTail[index]
+                    )
+                ) {
+                    throw new Error("region-order");
+                }
+
+                const regionSearch = tictactoyRegion.querySelector(
+                    ".brand-combobox-search"
+                );
+                regionSearch.value = "Ста";
+                regionSearch.dispatchEvent(
+                    new Event("input", {bubbles: true})
+                );
+                await new Promise((resolve) =>
+                    window.setTimeout(resolve, 220)
+                );
+
+                const filtered = getVisibleTictactoyRegionValues();
+                const normalizedFilter = window.normalizeComboboxSearchValue(
+                    "Ста"
+                );
+                if (
+                    filtered.length === 0
+                    || filtered.includes("Москва")
+                    || filtered.includes("Санкт-Петербург")
+                    || filtered.some((region) => !window
+                        .normalizeComboboxSearchValue(region)
+                        .includes(normalizedFilter))
+                ) {
+                    throw new Error("region-search-filter");
+                }
+
+                const regionSearchClear = tictactoyRegion.querySelector(
+                    "[data-brand-search-clear]"
+                );
+                if (!regionSearchClear || regionSearchClear.hidden) {
+                    throw new Error("region-search-clear-hidden");
+                }
+
+                regionSearchClear.click();
+                await new Promise((resolve) =>
+                    window.setTimeout(resolve, 150)
+                );
+                const cleared = getVisibleTictactoyRegionValues();
+                if (
+                    cleared[0] !== "Москва"
+                    || cleared[1] !== "Санкт-Петербург"
+                    || cleared.length !== regions.length
+                ) {
+                    throw new Error("region-search-clear");
+                }
+
+                const editButton = document.createElement("button");
+                editButton.type = "button";
+                editButton.dataset.sale = JSON.stringify({
+                    source_key: "tictactoy",
+                    source: "Tictactoy",
+                    is_manual: true,
+                    id: "edit-tictactoy-region-e2e",
+                    country: "Россия",
+                    region: "Москва",
+                    city: "Москва",
+                });
+                document.body.appendChild(editButton);
+                window.openSaleEditor(editButton);
+                await new Promise((resolve) =>
+                    window.setTimeout(resolve, 120)
+                );
+
+                tictactoyRegion.querySelector(
+                    ".brand-combobox-trigger"
+                ).click();
+                await new Promise((resolve) =>
+                    window.setTimeout(resolve, 120)
+                );
+                const editRegions = getVisibleTictactoyRegionValues();
+
+                if (
+                    editRegions[0] !== "Москва"
+                    || editRegions[1] !== "Санкт-Петербург"
+                    || new Set(editRegions).size
+                        !== editRegions.length
+                ) {
+                    throw new Error("region-edit-order");
+                }
+            };
 
             document.querySelector(
                 '[data-sale-source="tictactoy"]'
@@ -5333,6 +5483,10 @@
                 || form.elements.delivery_address
             ) {
                 throw new Error("removed-source-fields");
+            }
+
+            if (regionPriorityCheck) {
+                await checkTictactoyRegionOrderInModal();
             }
 
             chooseOption(tictactoyCountry, "Беларусь");
@@ -5543,6 +5697,9 @@
             }
 
             root.dataset.salesCatalogPickerE2e = "pass";
+            if (regionPriorityCheck) {
+                root.dataset.salesTictactoyRegionsE2e = "pass";
+            }
         } catch (error) {
             document.documentElement.dataset
                 .salesCatalogPickerE2e =
