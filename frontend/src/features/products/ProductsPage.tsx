@@ -37,12 +37,91 @@ function errorMessage(error: unknown) {
   return error instanceof ApiRequestError ? error.message : 'Не удалось выполнить запрос';
 }
 
+export const LOW_STOCK_THRESHOLD = 3;
+
+const productCollator = new Intl.Collator('ru', { numeric: true, sensitivity: 'base' });
+
+function productMatchesQuery(product: Product, params: URLSearchParams) {
+  const query = (params.get('q') ?? '').trim().toLocaleLowerCase('ru');
+  const queryFields = [
+    product.name,
+    product.article,
+    product.barcode,
+    product.brand,
+    product.category,
+    product.cell,
+  ]
+    .join('\u001f')
+    .toLocaleLowerCase('ru');
+  const cell = params.get('cell') ?? '';
+  const productDate = product.created_at
+    ? new Date(product.created_at * 1000).toISOString().slice(0, 10)
+    : '';
+  return (
+    (!query || queryFields.includes(query)) &&
+    (!params.get('brand_id') || product.brand_id === Number(params.get('brand_id'))) &&
+    (!params.get('category_id') || product.category_id === Number(params.get('category_id'))) &&
+    (!params.get('product_id') || product.id === Number(params.get('product_id'))) &&
+    (!cell || (cell === 'Без ячейки' ? !product.cell.trim() : product.cell === cell)) &&
+    (params.get('in_stock') !== '1' || product.stock > 0) &&
+    (!params.get('date_from') || productDate >= String(params.get('date_from'))) &&
+    (!params.get('date_to') || productDate <= String(params.get('date_to')))
+  );
+}
+
+function productSortValue(product: Product, sortBy: string) {
+  if (sortBy === 'stock' || sortBy === 'created_at') return product[sortBy];
+  if (sortBy === 'price') {
+    return Number(product.price_display.replace(/[^\d,.-]/g, '').replace(',', '.')) || 0;
+  }
+  if (sortBy === 'match_status') return product.match_status;
+  if (sortBy === 'article' || sortBy === 'brand' || sortBy === 'category' || sortBy === 'cell') {
+    return product[sortBy];
+  }
+  return product.name;
+}
+
+function sortProducts(products: Product[], sortBy: string, sortDir: string) {
+  const direction = sortDir === 'desc' ? -1 : 1;
+  return products.sort((left, right) => {
+    const leftValue = productSortValue(left, sortBy);
+    const rightValue = productSortValue(right, sortBy);
+    const comparison =
+      typeof leftValue === 'number' && typeof rightValue === 'number'
+        ? leftValue - rightValue
+        : productCollator.compare(String(leftValue), String(rightValue));
+    return comparison ? comparison * direction : left.id - right.id;
+  });
+}
+
 function ProductImage({ product }: { product: Product }) {
-  return product.thumbnail_url ? (
-    <img className="product-thumbnail" src={product.thumbnail_url} alt="" loading="lazy" />
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [product.thumbnail_url]);
+  return product.thumbnail_url && !failed ? (
+    <img
+      className="product-thumbnail"
+      src={product.thumbnail_url}
+      alt={`Фото ${product.name}`}
+      loading="lazy"
+      onError={() => setFailed(true)}
+    />
   ) : (
-    <span className="product-thumbnail placeholder" aria-hidden="true">
+    <span className="product-thumbnail placeholder" title="Фото отсутствует" aria-hidden="true">
       <Icon name="package" />
+    </span>
+  );
+}
+
+function ProductStock({ product, suffix = '' }: { product: Product; suffix?: string }) {
+  const state =
+    product.stock === 0 ? ' is-empty' : product.stock <= LOW_STOCK_THRESHOLD ? ' is-low' : '';
+  return (
+    <span
+      className={`stock-value${state}`}
+      title={state === ' is-low' ? 'Заканчивается' : undefined}
+    >
+      {product.stock_display}
+      {suffix}
     </span>
   );
 }
@@ -107,27 +186,72 @@ export function ProductsPage() {
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['products'] });
   const saveMutation = useMutation({
-    mutationFn: ({ product, values }: { product: Product | 'new'; values: ProductFormValues }) =>
-      product === 'new' ? createProduct(values) : updateProduct(product.id, values),
+    mutationFn: ({
+      product,
+      values,
+      image,
+    }: {
+      product: Product | 'new';
+      values: ProductFormValues;
+      image: File | null;
+    }) => (product === 'new' ? createProduct(values, image) : updateProduct(product.id, values)),
     onSuccess: (saved, variables) => {
       queryClient.setQueryData<Awaited<ReturnType<typeof fetchProducts>>>(
         ['products', normalizedQuery],
-        (current) =>
-          current && variables.product !== 'new'
-            ? {
-                ...current,
-                products: current.products.map((product) =>
-                  product.id === saved.id ? saved : product,
-                ),
-              }
-            : current,
+        (current) => {
+          if (!current) return current;
+          if (variables.product !== 'new') {
+            return {
+              ...current,
+              products: current.products.map((product) =>
+                product.id === saved.id ? saved : product,
+              ),
+            };
+          }
+          if (!productMatchesQuery(saved, normalizedParams)) return current;
+          const isPositive = saved.stock > 0;
+          const updatedTotal = current.meta.total + 1;
+          const products =
+            current.meta.page === 1
+              ? sortProducts(
+                  [saved, ...current.products.filter((product) => product.id !== saved.id)],
+                  current.meta.sort_by,
+                  current.meta.sort_dir,
+                ).slice(0, current.meta.page_size)
+              : current.products;
+          return {
+            ...current,
+            products,
+            meta: {
+              ...current.meta,
+              total: updatedTotal,
+              pages: Math.ceil(updatedTotal / current.meta.page_size),
+              stats: {
+                ...current.meta.stats,
+                positions: current.meta.stats.positions + 1,
+                total_stock: current.meta.stats.total_stock + saved.stock,
+                positive_positions:
+                  (current.meta.stats.positive_positions ?? 0) + (isPositive ? 1 : 0),
+                zero_positions: (current.meta.stats.zero_positions ?? 0) + (isPositive ? 0 : 1),
+              },
+            },
+          };
+        },
       );
       setEditor(null);
       setToast({
         message: variables.product === 'new' ? 'Товар добавлен' : 'Карточка обновлена',
         kind: 'success',
       });
-      void invalidate();
+      if (variables.product === 'new') {
+        void queryClient.invalidateQueries({
+          queryKey: ['products'],
+          predicate: (query) => query.queryKey[1] !== normalizedQuery,
+          refetchType: 'none',
+        });
+      } else {
+        void invalidate();
+      }
       void queryClient.invalidateQueries({ queryKey: ['catalog-options'] });
     },
     onError: (error) => setToast({ message: errorMessage(error), kind: 'error' }),
@@ -298,14 +422,10 @@ export function ProductsPage() {
       {
         id: 'stock',
         accessorKey: 'stock',
-        header: 'Остаток',
+        header: 'Остаток ↕',
         size: 110,
-        meta: { align: 'center' },
-        cell: ({ row }) => (
-          <span className={`stock-badge${row.original.stock > 0 ? ' is-positive' : ''}`}>
-            {row.original.stock_display}
-          </span>
-        ),
+        meta: { align: 'center', hideSortDirection: true },
+        cell: ({ row }) => <ProductStock product={row.original} />,
       },
       { id: 'cell', accessorKey: 'cell', header: 'Ячейка', size: 110 },
       {
@@ -375,7 +495,7 @@ export function ProductsPage() {
           loading={productsQuery.isPending}
           items={[
             { label: 'Позиций', value: meta?.total ?? '—', tone: 'info' },
-            { label: 'Общий остаток', value: meta?.stats.total_stock ?? '—' },
+            { label: 'Остаток, единиц', value: meta?.stats.total_stock ?? '—' },
             {
               label: 'В наличии',
               value: meta?.stats.positive_positions ?? '—',
@@ -395,15 +515,9 @@ export function ProductsPage() {
             <FilterPanel
               lazy
               count={
-                [
-                  'brand_id',
-                  'category_id',
-                  'product_id',
-                  'cell',
-                  'date_from',
-                  'date_to',
-                  'in_stock',
-                ].filter((key) => searchParams.get(key)).length
+                ['brand_id', 'category_id', 'product_id', 'cell', 'date_from', 'date_to'].filter(
+                  (key) => searchParams.get(key),
+                ).length
               }
             >
               <CatalogCascade
@@ -443,14 +557,6 @@ export function ProductsPage() {
                 onFromChange={(value) => setFilter('date_from', value)}
                 onToChange={(value) => setFilter('date_to', value)}
               />
-              <label className="checkbox-field">
-                <input
-                  type="checkbox"
-                  checked={searchParams.get('in_stock') === '1'}
-                  onChange={(event) => setFilter('in_stock', event.target.checked ? '1' : '')}
-                />
-                Только в наличии
-              </label>
               <button
                 className="button secondary"
                 type="button"
@@ -462,6 +568,14 @@ export function ProductsPage() {
                 Сбросить
               </button>
             </FilterPanel>
+            <label className="toolbar-switch">
+              <input
+                type="checkbox"
+                checked={searchParams.get('in_stock') === '1'}
+                onChange={(event) => setFilter('in_stock', event.target.checked ? '1' : '')}
+              />
+              <span>Скрыть нулевые</span>
+            </label>
           </Toolbar>
           <div className="bulk-toolbar">
             <label>
@@ -549,9 +663,7 @@ export function ProductsPage() {
                       <strong>{product.name}</strong>
                       <small>{[product.brand, product.category].filter(Boolean).join(' · ')}</small>
                       <p>
-                        <span className={`stock-badge${product.stock > 0 ? ' is-positive' : ''}`}>
-                          {product.stock_display} шт.
-                        </span>
+                        <ProductStock product={product} suffix=" шт." />
                         {product.cell ? <span>Ячейка {product.cell}</span> : null}
                       </p>
                       <div className="row-actions">
@@ -593,31 +705,35 @@ export function ProductsPage() {
       <Modal
         open={editor !== null}
         lazy
+        size={editor === 'new' ? 'wide' : 'medium'}
         title={editor === 'new' ? 'Новый товар' : 'Редактирование товара'}
         description="Данные сохраняются в едином каталоге Vechasu ERP."
         onClose={() => setEditor(null)}
         footer={
-          <>
-            <button className="button secondary" type="button" onClick={() => setEditor(null)}>
-              Отмена
-            </button>
-            <button
-              className="button primary"
-              type="submit"
-              form="product-editor"
-              disabled={saveMutation.isPending}
-            >
-              {saveMutation.isPending ? 'Сохраняем…' : 'Сохранить'}
-            </button>
-          </>
+          editor === 'new' ? undefined : (
+            <>
+              <button className="button secondary" type="button" onClick={() => setEditor(null)}>
+                Отмена
+              </button>
+              <button
+                className="button primary"
+                type="submit"
+                form="product-editor"
+                disabled={saveMutation.isPending}
+              >
+                {saveMutation.isPending ? 'Сохраняем…' : 'Сохранить'}
+              </button>
+            </>
+          )
         }
       >
         <ProductForm
           id="product-editor"
           product={editor === 'new' ? null : editor}
+          pending={saveMutation.isPending}
           onCatalogCreated={(message) => setToast({ message, kind: 'success' })}
-          onSubmit={(values) => {
-            if (editor) saveMutation.mutate({ product: editor, values });
+          onSubmit={(values, image) => {
+            if (editor) saveMutation.mutate({ product: editor, values, image });
           }}
         />
       </Modal>

@@ -2999,6 +2999,253 @@ input[type='number']::-webkit-outer-spin-button {
   font-size: 12px;
 }
 
+.erp-modal.is-wide {
+  width: min(1180px, calc(100% - 32px));
+}
+
+.product-create-card {
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--theme-border);
+  border-radius: var(--theme-card-radius);
+  background: var(--theme-surface-muted);
+  box-shadow: var(--theme-shadow-xs);
+}
+
+.product-create-primary {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 72px minmax(260px, 1.8fr) minmax(130px, 0.75fr) minmax(330px, 2fr);
+  align-items: start;
+  gap: var(--space-3);
+}
+
+.product-create-primary > *,
+.product-create-taxonomy,
+.product-create-taxonomy .catalog-cascade {
+  min-width: 0;
+}
+
+.product-create-taxonomy .catalog-cascade {
+  grid-column: auto;
+  gap: var(--space-3);
+}
+
+.product-create-secondary {
+  display: grid;
+  grid-template-columns: minmax(180px, 220px) minmax(210px, 280px) auto;
+  align-items: end;
+  justify-content: start;
+  gap: var(--space-3);
+}
+
+.product-create-submit {
+  width: auto;
+  min-width: 116px;
+  justify-self: start;
+}
+
+.file-upload.is-image-compact {
+  min-width: 72px;
+}
+
+.file-upload-compact-dropzone,
+.file-upload-compact-preview {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  border-radius: var(--radius-md);
+}
+
+.file-upload-compact-dropzone {
+  display: grid;
+  place-items: center;
+  border: 1px dashed var(--theme-border-strong);
+  background: var(--theme-surface);
+  color: var(--theme-primary);
+  cursor: pointer;
+}
+
+.file-upload-compact-dropzone:hover,
+.file-upload-compact-dropzone.is-dragging {
+  border-color: var(--theme-primary);
+  background: var(--theme-primary-soft);
+}
+
+.file-upload-compact-dropzone:focus-visible,
+.file-upload-compact-preview > button:first-child:focus-visible {
+  outline: 3px solid var(--theme-focus-ring);
+  outline-offset: 2px;
+}
+
+.file-upload-compact-dropzone svg {
+  width: 22px;
+  height: 22px;
+}
+
+.file-upload-compact-preview > button:first-child {
+  width: 72px;
+  height: 72px;
+  display: block;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--theme-border);
+  border-radius: var(--radius-md);
+  background: var(--theme-surface);
+  cursor: pointer;
+}
+
+.file-upload-compact-preview img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.file-upload-compact-remove {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  width: 25px;
+  height: 25px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 2px solid var(--theme-surface-muted);
+  border-radius: 50%;
+  background: var(--theme-danger);
+  color: var(--theme-primary-text);
+  cursor: pointer;
+}
+
+.file-upload-compact-remove svg {
+  width: 13px;
+  height: 13px;
+}
+
+.stock-stepper {
+  min-height: var(--theme-control-height);
+  display: grid;
+  grid-template-columns: 40px minmax(54px, 1fr) 40px;
+  overflow: hidden;
+  border: 1px solid var(--theme-border-strong);
+  border-radius: var(--theme-control-radius);
+  background: var(--theme-surface);
+}
+
+.stock-stepper:focus-within {
+  border-color: var(--theme-focus);
+  box-shadow: 0 0 0 3px var(--theme-focus-ring);
+}
+
+.stock-stepper button {
+  min-width: 40px;
+  border: 0;
+  background: var(--theme-surface-muted);
+  color: var(--theme-text);
+  cursor: pointer;
+  font-size: 18px;
+  font-weight: 650;
+}
+
+.stock-stepper button:hover:not(:disabled) {
+  background: var(--theme-surface-hover);
+  color: var(--theme-primary);
+}
+
+.stock-stepper button:disabled {
+  color: var(--theme-text-subtle);
+  cursor: not-allowed;
+}
+
+.form-field .stock-stepper input {
+  min-height: calc(var(--theme-control-height) - 2px);
+  padding: 0 4px;
+  border: 0;
+  border-right: 1px solid var(--theme-border);
+  border-left: 1px solid var(--theme-border);
+  border-radius: 0;
+  background: var(--theme-surface);
+  box-shadow: none;
+  text-align: center;
+  appearance: textfield;
+}
+
+.form-field .stock-stepper input:focus {
+  border-color: var(--theme-border);
+  box-shadow: none;
+}
+
+.form-field .stock-stepper input::-webkit-inner-spin-button,
+.form-field .stock-stepper input::-webkit-outer-spin-button {
+  margin: 0;
+  appearance: none;
+}
+
+.toolbar-switch {
+  min-height: var(--theme-control-height);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border: 1px solid var(--theme-border-strong);
+  border-radius: var(--theme-control-radius);
+  background: var(--theme-surface);
+  box-shadow: var(--theme-shadow-xs);
+  color: var(--theme-text);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.toolbar-switch:hover {
+  border-color: var(--theme-primary);
+  background: var(--theme-surface-hover);
+}
+
+.toolbar-switch:focus-within {
+  border-color: var(--theme-focus);
+  box-shadow: 0 0 0 3px var(--theme-focus-ring);
+}
+
+.toolbar-switch input {
+  width: 17px;
+  height: 17px;
+  margin: 0;
+  accent-color: var(--theme-primary);
+}
+
+.stock-value {
+  color: var(--theme-text);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.stock-value.is-empty {
+  color: var(--theme-danger);
+}
+
+.stock-value.is-low {
+  color: var(--theme-warning);
+  cursor: help;
+}
+
+.mobile-product-card {
+  background: var(--theme-surface);
+}
+
+@media (max-width: 1100px) {
+  .product-create-primary {
+    grid-template-columns: 72px minmax(0, 1.6fr) minmax(150px, 0.8fr);
+  }
+
+  .product-create-taxonomy {
+    grid-column: 1 / -1;
+  }
+}
+
 @media (max-width: 1024px) {
   .erp-shell:not(.is-sidebar-collapsed) {
     grid-template-columns: var(--sidebar-collapsed-width) minmax(0, 1fr);
@@ -3204,6 +3451,36 @@ input[type='number']::-webkit-outer-spin-button {
   .erp-page {
     width: min(100% - 24px, 680px);
     padding: 20px 0 30px;
+  }
+
+  .product-create-card {
+    padding: var(--space-3);
+  }
+
+  .product-create-primary {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+
+  .product-create-name,
+  .product-create-article {
+    grid-column: 2;
+  }
+
+  .product-create-taxonomy {
+    grid-column: 1 / -1;
+  }
+
+  .product-create-secondary {
+    grid-template-columns: 1fr;
+  }
+
+  .product-create-submit {
+    width: auto;
+  }
+
+  .toolbar-switch {
+    width: 100%;
+    justify-content: center;
   }
 
   .page-header {
