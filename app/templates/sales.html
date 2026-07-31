@@ -4588,21 +4588,6 @@
             });
         });
 
-    manualSaleModal.addEventListener("click", (event) => {
-        if (event.target === manualSaleModal) {
-            closeManualSaleModalWindow();
-        }
-    });
-
-    document.addEventListener("keydown", (event) => {
-        if (
-            event.key === "Escape"
-            && manualSaleModal.classList.contains("is-open")
-        ) {
-            closeManualSaleModalWindow();
-        }
-    });
-
     const productNameInput = document.getElementById(
         "product_name"
     );
@@ -5578,6 +5563,116 @@
         } catch (error) {
             document.documentElement.dataset
                 .salesCatalogPickerE2e =
+                "fail-" + error.message;
+        }
+    });
+</script>
+{% endif %}
+{% if config.TESTING and request.args.get("sales_modal_e2e") == "1" %}
+<script>
+    window.addEventListener("load", async () => {
+        const root = document.documentElement;
+
+        try {
+            const openButton = document.getElementById(
+                "openManualSaleModal"
+            );
+            const modal = document.getElementById(
+                "manualSaleModal"
+            );
+            const closeButton = document.getElementById(
+                "closeManualSaleModal"
+            );
+            const form = document.getElementById(
+                "manualSaleForm"
+            );
+            if (!openButton || !modal || !closeButton || !form) {
+                throw new Error("missing-elements");
+            }
+
+            const sourceChoiceButton = modal.querySelector(
+                '[data-sale-source="wildberries"]'
+            );
+            const dateInput = form.querySelector(
+                '[name="created_at"]'
+            );
+            const quantityInput = form.querySelector(
+                '[name="quantity"]'
+            );
+            if (!sourceChoiceButton || !dateInput || !quantityInput) {
+                throw new Error("missing-fields");
+            }
+
+            openButton.click();
+            await new Promise((resolve) =>
+                window.setTimeout(resolve, 220)
+            );
+            sourceChoiceButton.click();
+            await new Promise((resolve) =>
+                window.setTimeout(resolve, 120)
+            );
+
+            if (!modal.classList.contains("is-open")) {
+                throw new Error("modal-not-open");
+            }
+
+            const expectedDate = "2026-01-01";
+            dateInput.value = expectedDate;
+            quantityInput.value = "3";
+
+            modal.dispatchEvent(
+                new MouseEvent("click", {
+                    bubbles: true,
+                    cancelable: true,
+                    view: window,
+                    button: 0,
+                })
+            );
+            await new Promise((resolve) =>
+                window.setTimeout(resolve, 150)
+            );
+
+            if (!modal.classList.contains("is-open")) {
+                throw new Error("overlay-closed");
+            }
+            if (
+                dateInput.value !== expectedDate
+                || quantityInput.value !== "3"
+            ) {
+                throw new Error("values-lost-after-overlay");
+            }
+
+            document.dispatchEvent(
+                new KeyboardEvent("keydown", {
+                    key: "Escape",
+                    bubbles: true,
+                })
+            );
+            await new Promise((resolve) =>
+                window.setTimeout(resolve, 150)
+            );
+
+            if (!modal.classList.contains("is-open")) {
+                throw new Error("escape-closed");
+            }
+            if (
+                dateInput.value !== expectedDate
+                || quantityInput.value !== "3"
+            ) {
+                throw new Error("values-lost-after-escape");
+            }
+
+            closeButton.click();
+            await new Promise((resolve) =>
+                window.setTimeout(resolve, 140)
+            );
+            if (modal.classList.contains("is-open")) {
+                throw new Error("close-button-not-works");
+            }
+
+            root.dataset.salesModalE2e = "pass";
+        } catch (error) {
+            root.dataset.salesModalE2e =
                 "fail-" + error.message;
         }
     });
