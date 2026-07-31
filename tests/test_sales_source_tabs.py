@@ -395,10 +395,22 @@ class SalesSourceTabsTest(unittest.TestCase):
                     len(regions),
                     len(set(regions)),
                 )
-                self.assertEqual(
-                    list(regions),
-                    sorted(regions, key=str.casefold),
-                )
+                region_names = list(regions)
+                if country == "Россия":
+                    self.assertEqual(region_names[0], "Москва")
+                    self.assertEqual(
+                        region_names[1],
+                        "Санкт-Петербург",
+                    )
+                    self.assertEqual(
+                        region_names[2:],
+                        sorted(region_names[2:], key=str.casefold),
+                    )
+                else:
+                    self.assertEqual(
+                        region_names,
+                        sorted(region_names, key=str.casefold),
+                    )
 
                 for cities in regions.values():
                     self.assertEqual(
