@@ -46,14 +46,14 @@ def main(argv=None):
     if not args.apply:
         result = recovery.inspect(args.receipt_number)
         result["mode"] = "dry-run"
-        print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
+        print(json.dumps(result, ensure_ascii=True, indent=2, sort_keys=True))
         return 0
 
     backup = backup_database(args.database, args.backup_dir)
     database.initialize()
     result = recovery.apply(args.receipt_number)
     result["backup"] = str(backup)
-    print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
+    print(json.dumps(result, ensure_ascii=True, indent=2, sort_keys=True))
     return 0
 
 
