@@ -87,9 +87,10 @@ export function SalesPage() {
     if (!next.has('page_size')) next.set('page_size', '50');
     return next;
   }, [searchParams]);
+  const normalizedQuery = normalizedParams.toString();
   const salesQuery = useQuery({
-    queryKey: ['sales', normalizedParams.toString()],
-    queryFn: () => fetchSales(normalizedParams),
+    queryKey: ['sales', normalizedQuery],
+    queryFn: ({ signal }) => fetchSales(normalizedParams, signal),
     placeholderData: (previous) => previous,
   });
   const locationsQuery = useQuery({
@@ -102,40 +103,66 @@ export function SalesPage() {
   const saveMutation = useMutation({
     mutationFn: ({ sale, values }: { sale: Sale | 'new'; values: SaleFormValues }) =>
       sale === 'new' ? createSale(values) : updateSale(sale.id, values),
-    onSuccess: async (_, variables) => {
-      await invalidate();
-      await queryClient.invalidateQueries({ queryKey: ['products'] });
-      await queryClient.invalidateQueries({ queryKey: ['catalog-options'] });
+    onSuccess: (saved, variables) => {
+      queryClient.setQueryData<Awaited<ReturnType<typeof fetchSales>>>(
+        ['sales', normalizedQuery],
+        (current) =>
+          current && variables.sale !== 'new'
+            ? {
+                ...current,
+                sales: current.sales.map((sale) => (sale.id === saved.id ? saved : sale)),
+              }
+            : current,
+      );
       setEditor(null);
       setToast({
         message: variables.sale === 'new' ? 'Продажа добавлена' : 'Изменения сохранены',
         kind: 'success',
       });
+      void Promise.all([
+        invalidate(),
+        queryClient.invalidateQueries({ queryKey: ['products'] }),
+        queryClient.invalidateQueries({ queryKey: ['catalog-options'] }),
+      ]);
     },
     onError: (error) => setToast({ message: errorMessage(error), kind: 'error' }),
   });
   const deleteMutation = useMutation({
     mutationFn: deleteSale,
-    onSuccess: async () => {
-      await invalidate();
-      await queryClient.invalidateQueries({ queryKey: ['products'] });
-      await queryClient.invalidateQueries({ queryKey: ['catalog-options'] });
+    onSuccess: () => {
       setDeleteTarget(null);
       setToast({ message: 'Продажа удалена', kind: 'success' });
+      void Promise.all([
+        invalidate(),
+        queryClient.invalidateQueries({ queryKey: ['products'] }),
+        queryClient.invalidateQueries({ queryKey: ['catalog-options'] }),
+      ]);
     },
     onError: (error) => setToast({ message: errorMessage(error), kind: 'error' }),
   });
   const returnMutation = useMutation({
     mutationFn: ({ id, quantity, reason }: { id: string; quantity: number; reason: string }) =>
       returnSale(id, quantity, reason),
-    onSuccess: async () => {
-      await invalidate();
-      await queryClient.invalidateQueries({ queryKey: ['products'] });
-      await queryClient.invalidateQueries({ queryKey: ['catalog-options'] });
+    onSuccess: (saved) => {
+      queryClient.setQueryData<Awaited<ReturnType<typeof fetchSales>>>(
+        ['sales', normalizedQuery],
+        (current) =>
+          current
+            ? {
+                ...current,
+                sales: current.sales.map((sale) => (sale.id === saved.id ? saved : sale)),
+              }
+            : current,
+      );
       setReturnTarget(null);
       setReturnQuantity('1');
       setReturnReason('');
       setToast({ message: 'Возврат оформлен', kind: 'success' });
+      void Promise.all([
+        invalidate(),
+        queryClient.invalidateQueries({ queryKey: ['products'] }),
+        queryClient.invalidateQueries({ queryKey: ['catalog-options'] }),
+      ]);
     },
     onError: (error) => setToast({ message: errorMessage(error), kind: 'error' }),
   });
@@ -345,6 +372,7 @@ export function SalesPage() {
               placeholder="Заказ, товар, трек-номер, получатель…"
             />
             <FilterPanel
+              lazy
               count={
                 [
                   'date_from',
@@ -522,6 +550,7 @@ export function SalesPage() {
 
       <Modal
         open={editor !== null}
+        lazy
         size="large"
         title={editor === 'new' ? 'Новая продажа' : 'Редактирование продажи'}
         description={
@@ -568,6 +597,7 @@ export function SalesPage() {
       </Modal>
       <Modal
         open={returnTarget !== null}
+        lazy
         title="Оформить возврат"
         description={`Продажа ${returnTarget?.order_number || returnTarget?.id || ''}`}
         onClose={() => setReturnTarget(null)}

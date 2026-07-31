@@ -195,7 +195,7 @@ def assign_product_taxonomy(
 
 class SharedCatalog:
     def __init__(self, database=None):
-        self.database = database or CatalogDatabase()
+        self.database = database or CatalogDatabase(cache_initialization=True)
 
     def list_brands(self, query="", limit=50, include_archived=False):
         self.database.initialize()
@@ -327,22 +327,26 @@ class SharedCatalog:
         if not ids:
             return {}
         self.database.initialize()
-        placeholders = ", ".join("?" for _ in ids)
+        result = {}
         with self.database.connect() as connection:
-            rows = connection.execute(
-                "SELECT entity_id, position_index, product_id "
-                "FROM erp_legacy_catalog_links "
-                "WHERE entity_type = ? AND entity_id IN ({})".format(
-                    placeholders
-                ),
-                [entity_type] + ids,
-            ).fetchall()
-        return {
-            (row["entity_id"], int(row["position_index"])): str(
-                row["product_id"]
-            )
-            for row in rows
-        }
+            for offset in range(0, len(ids), 500):
+                chunk = ids[offset:offset + 500]
+                placeholders = ", ".join("?" for _ in chunk)
+                rows = connection.execute(
+                    "SELECT entity_id, position_index, product_id "
+                    "FROM erp_legacy_catalog_links "
+                    "WHERE entity_type = ? AND entity_id IN ({})".format(
+                        placeholders
+                    ),
+                    [entity_type] + chunk,
+                ).fetchall()
+                result.update({
+                    (row["entity_id"], int(row["position_index"])): str(
+                        row["product_id"]
+                    )
+                    for row in rows
+                })
+        return result
 
     def get_product(self, product_id, include_archived=False):
         self.database.initialize()
@@ -388,36 +392,43 @@ class SharedCatalog:
         if not ids:
             return {}
         self.database.initialize()
-        placeholders = ", ".join("?" for _ in ids)
         active_sql = "" if include_archived else " AND p.active = 1"
+        products = {}
         with self.database.connect() as connection:
-            rows = connection.execute(
-                "SELECT p.id, p.excel_name_raw AS name, "
-                "COALESCE(p.excel_article, '') AS article, "
-                "COALESCE(cp.barcode, '') AS barcode, "
-                "COALESCE(p.moysklad_product_id, mm.moysklad_product_id, '') "
-                "AS moysklad_product_id, "
-                "CASE WHEN COALESCE("
-                "p.moysklad_product_id, mm.moysklad_product_id, '') = '' "
-                "THEN 1 ELSE 0 END AS can_create_moysklad, "
-                "p.brand_id, p.category_id, "
-                "COALESCE(b.name, '') AS brand, "
-                "COALESCE(c.name, '') AS category, "
-                "COALESCE(p.cell, '') AS cell, p.stock, p.active "
-                "FROM catalog_excel_products p "
-                "LEFT JOIN erp_brands b ON b.id = p.brand_id "
-                "LEFT JOIN erp_categories c ON c.id = p.category_id "
-                "LEFT JOIN catalog_products cp "
-                "ON cp.id = p.bitrix_catalog_product_id "
-                "LEFT JOIN catalog_moysklad_mappings mm "
-                "ON mm.product_id = cp.id AND mm.confirmed = 1 "
-                "WHERE p.id IN ({}){}".format(placeholders, active_sql),
-                ids,
-            ).fetchall()
-        return {
-            str(row["id"]): self._product(row)
-            for row in rows
-        }
+            for offset in range(0, len(ids), 500):
+                chunk = ids[offset:offset + 500]
+                placeholders = ", ".join("?" for _ in chunk)
+                rows = connection.execute(
+                    "SELECT p.id, p.excel_name_raw AS name, "
+                    "COALESCE(p.excel_article, '') AS article, "
+                    "COALESCE(cp.barcode, '') AS barcode, "
+                    "COALESCE(p.moysklad_product_id, mm.moysklad_product_id, '') "
+                    "AS moysklad_product_id, "
+                    "CASE WHEN COALESCE("
+                    "p.moysklad_product_id, mm.moysklad_product_id, '') = '' "
+                    "THEN 1 ELSE 0 END AS can_create_moysklad, "
+                    "p.brand_id, p.category_id, "
+                    "COALESCE(b.name, '') AS brand, "
+                    "COALESCE(c.name, '') AS category, "
+                    "COALESCE(p.cell, '') AS cell, p.stock, p.active "
+                    "FROM catalog_excel_products p "
+                    "LEFT JOIN erp_brands b ON b.id = p.brand_id "
+                    "LEFT JOIN erp_categories c ON c.id = p.category_id "
+                    "LEFT JOIN catalog_products cp "
+                    "ON cp.id = p.bitrix_catalog_product_id "
+                    "LEFT JOIN catalog_moysklad_mappings mm "
+                    "ON mm.product_id = cp.id AND mm.confirmed = 1 "
+                    "WHERE p.id IN ({}){}".format(
+                        placeholders,
+                        active_sql,
+                    ),
+                    chunk,
+                ).fetchall()
+                products.update({
+                    str(row["id"]): self._product(row)
+                    for row in rows
+                })
+        return products
 
     def create_brand(self, name):
         name = display_name(name)

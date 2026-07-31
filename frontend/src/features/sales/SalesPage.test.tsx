@@ -117,14 +117,12 @@ describe('SalesPage', () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it('renders source tabs and exposes managed return instead of delete', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockImplementation((url: string) => {
-        if (url.includes('/sales/catalog')) return Promise.resolve(catalogResponse());
-        if (url.includes('/sales/locations')) return Promise.resolve(locationsResponse());
-        return Promise.resolve(listResponse());
-      }),
-    );
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/sales/catalog')) return Promise.resolve(catalogResponse());
+      if (url.includes('/sales/locations')) return Promise.resolve(locationsResponse());
+      return Promise.resolve(listResponse());
+    });
+    vi.stubGlobal('fetch', fetchMock);
     const user = userEvent.setup();
     render(
       <MemoryRouter initialEntries={['/sales?source=all']}>
@@ -137,6 +135,7 @@ describe('SalesPage', () => {
     expect((await screen.findAllByText('ORDER-1')).length).toBeGreaterThan(0);
     expect(screen.getByRole('tab', { name: 'Tictactoy' })).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Возврат' }).length).toBeGreaterThan(0);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
 
     await user.click(screen.getAllByRole('button', { name: 'Возврат' })[0]);
     expect(screen.getByRole('heading', { name: 'Оформить возврат' })).toBeInTheDocument();

@@ -82,7 +82,19 @@ class Stage2ProductsApiTest(unittest.TestCase):
             (1, 1, 1, 1),
         )
         self.assertIn("facets", payload["meta"])
+        self.assertEqual(payload["meta"]["total_pages"], 1)
+        self.assertIn("item_names", payload["meta"]["facets"]["cells"][0])
         self.assertTrue(payload["meta"]["csrf_token"])
+
+        aliases = self.client.get(
+            "/api/v1/products?search=strap&brand=Alpha&sort=stock"
+            "&order=desc&page=1&page_size=1"
+        ).get_json()
+        self.assertEqual(aliases["data"][0]["name"], "Alpha Strap")
+        self.assertNotIn(
+            "item_names",
+            aliases["meta"]["facets"]["cells"][0],
+        )
 
     def test_create_patch_get_and_delete_product(self):
         created = self.client.post(

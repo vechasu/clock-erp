@@ -113,8 +113,15 @@ class Stage2SalesApiTest(unittest.TestCase):
             "&sort_by=total_amount&sort_dir=desc&page_size=1"
         ).get_json()
         self.assertEqual(listing["meta"]["total"], 1)
+        self.assertEqual(listing["meta"]["total_pages"], 1)
         self.assertEqual(listing["meta"]["totals"]["revenue"], 2000)
         self.assertEqual(listing["data"][0]["note"], "API sale")
+
+        aliases = self.client.get(
+            "/api/v1/sales?search=order-1&source=tictactoy"
+            "&sort=total_amount&order=desc&page_size=1"
+        ).get_json()
+        self.assertEqual(aliases["meta"]["total"], 1)
 
         updated = self.client.patch(
             "/api/sales/{}".format(sale["id"]),
@@ -218,6 +225,20 @@ class Stage2SalesApiTest(unittest.TestCase):
             self.client.get("/api/sales?source=all").get_json()["meta"]["total"],
             0,
         )
+
+    def test_unchanged_sales_sources_are_built_once_for_repeated_pages(self):
+        web._cached_api_sales_records.cache_clear()
+        with mock.patch.object(
+            web,
+            "load_manual_sales",
+            wraps=web.load_manual_sales,
+        ) as load_manual_sales:
+            first = self.client.get("/api/v1/sales?page=1&page_size=1")
+            second = self.client.get("/api/v1/sales?page=2&page_size=1")
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        load_manual_sales.assert_called_once_with()
 
 
 if __name__ == "__main__":

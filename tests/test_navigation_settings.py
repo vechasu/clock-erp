@@ -83,6 +83,25 @@ class NavigationSettingsTest(unittest.TestCase):
         self.assertFalse(saved["orders"]["enabled"])
         self.assertEqual(saved["orders"]["position"], 11)
 
+    def test_orders_toggle_supports_inline_json_without_page_reload(self):
+        self.seed_navigation()
+
+        response = self.client.post(
+            "/settings/navigation/orders/toggle",
+            headers={"Accept": "application/json"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.get_json()["data"],
+            {
+                "key": "orders",
+                "label": "Заказы",
+                "enabled": False,
+            },
+        )
+        self.assertFalse(self.read_navigation()["orders"]["enabled"])
+
     def test_orders_toggle_preserves_other_navigation_items(self):
         before = self.seed_navigation(
             sales={"enabled": False, "position": 23},
@@ -195,6 +214,37 @@ class NavigationSettingsTest(unittest.TestCase):
             {"enabled": True},
         )
         self.assertEqual(saved["company_name"], "После изменения")
+
+    def test_settings_api_saves_only_changed_fields_without_reload(self):
+        self.app_settings_path.write_text(
+            json.dumps(
+                {
+                    "company_name": "Tictactoy",
+                    "erp_name": "Vechasu ERP",
+                    "low_stock_threshold": 3,
+                    "future_user_setting": {"enabled": True},
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        response = self.client.patch(
+            "/api/v1/settings",
+            json={"low_stock_threshold": 7},
+        )
+        saved = json.loads(
+            self.app_settings_path.read_text(encoding="utf-8")
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.get_json()["meta"]["changed_fields"],
+            ["low_stock_threshold"],
+        )
+        self.assertEqual(saved["low_stock_threshold"], 7)
+        self.assertEqual(saved["future_user_setting"], {"enabled": True})
 
     def test_disabled_primary_item_is_absent_from_shared_navigation(self):
         self.seed_navigation(

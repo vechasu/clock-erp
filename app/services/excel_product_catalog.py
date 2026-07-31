@@ -684,13 +684,14 @@ class ExcelProductCatalog:
     """Read the active Excel assortment and manage local Bitrix links."""
 
     def __init__(self, database=None):
-        self.database = database or CatalogDatabase()
+        self.database = database or CatalogDatabase(cache_initialization=True)
 
     def list_products(self, query="", brand="", category="", cell="",
                       match_status="all", hide_zero=False, sort_by="name",
                       sort_dir="asc", page=1, per_page=50,
                       created_from="", created_to="", brand_id=None,
-                      category_id=None, product_id=None):
+                      category_id=None, product_id=None,
+                      include_cell_item_names=True):
         self.database.initialize()
         page = max(1, int(page))
         per_page = max(1, min(int(per_page), 100000))
@@ -867,12 +868,17 @@ class ExcelProductCatalog:
                 "AND trim(COALESCE(p.excel_category, '')) <> '' "
                 "GROUP BY name ORDER BY name"
             ).fetchall()]
+            cell_item_names_sql = (
+                ", GROUP_CONCAT(p.excel_name_raw, char(31)) AS item_names "
+                if include_cell_item_names
+                else ""
+            )
             cell_groups = [dict(row) for row in connection.execute(
                 "SELECT CASE WHEN trim(COALESCE(p.cell, '')) = '' THEN 'Без ячейки' "
                 "ELSE trim(p.cell) END AS cell, COUNT(*) AS count, "
-                "COALESCE(SUM(p.stock), 0) AS stock, "
-                "GROUP_CONCAT(p.excel_name_raw, char(31)) AS item_names "
-                "FROM catalog_excel_products p "
+                "COALESCE(SUM(p.stock), 0) AS stock "
+                + cell_item_names_sql
+                + "FROM catalog_excel_products p "
                 "JOIN catalog_excel_batches b ON b.id = p.current_batch_id "
                 "WHERE p.active = 1 AND " + visible_cards_sql + " "
                 "GROUP BY CASE WHEN trim(COALESCE(p.cell, '')) = '' "

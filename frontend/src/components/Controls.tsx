@@ -287,15 +287,25 @@ export function DateRangePicker({ from, to, onFromChange, onToChange }: DateRang
   );
 }
 
-export function FilterPanel({ children, count = 0 }: PropsWithChildren<{ count?: number }>) {
+export function FilterPanel({
+  children,
+  count = 0,
+  lazy = false,
+}: PropsWithChildren<{ count?: number; lazy?: boolean }>) {
+  const [openedOnce, setOpenedOnce] = useState(count > 0);
   return (
-    <details className="filter-panel">
+    <details
+      className="filter-panel"
+      onToggle={(event) => {
+        if (event.currentTarget.open) setOpenedOnce(true);
+      }}
+    >
       <summary>
         <Icon name="filter" />
         Фильтры
         {count ? <span className="filter-count">{count}</span> : null}
       </summary>
-      <div className="filter-grid">{children}</div>
+      {!lazy || openedOnce || count > 0 ? <div className="filter-grid">{children}</div> : null}
     </details>
   );
 }

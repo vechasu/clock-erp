@@ -10,9 +10,11 @@ import {
   type SaleFormValues,
 } from './schemas';
 
-export async function fetchSales(searchParams: URLSearchParams) {
+export async function fetchSales(searchParams: URLSearchParams, signal?: AbortSignal) {
   const query = searchParams.toString();
-  const envelope = await apiRequest(`/sales${query ? `?${query}` : ''}`, saleListSchema);
+  const envelope = await apiRequest(`/sales${query ? `?${query}` : ''}`, saleListSchema, {
+    signal,
+  });
   return {
     sales: envelope.data,
     meta: salesMetaSchema.parse(envelope.meta),

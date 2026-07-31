@@ -41,7 +41,7 @@ def nonnegative_number(value, label):
 
 class ReceiptInventory:
     def __init__(self, database=None):
-        self.database = database or CatalogDatabase()
+        self.database = database or CatalogDatabase(cache_initialization=True)
 
     def create_receipt(
         self,

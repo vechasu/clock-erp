@@ -18,7 +18,7 @@ import click
 import requests
 from io import BytesIO
 from concurrent.futures import ThreadPoolExecutor
-from functools import wraps
+from functools import lru_cache, wraps
 from urllib.parse import parse_qsl, urlencode
 from app.clients.moysklad import MoySkladClient
 from app.catalog_db import CatalogDatabase
@@ -171,6 +171,26 @@ WAREHOUSE_CACHE = {
 }
 
 WAREHOUSE_CACHE_SECONDS = 300
+
+
+def file_cache_signature(path):
+    """Return a stable, tenant-safe fingerprint for a local data file."""
+    path = Path(path)
+    try:
+        stat = path.stat()
+    except OSError:
+        return (str(path.resolve()), 0, 0, 0, 0)
+    return (
+        str(path.resolve()),
+        stat.st_dev,
+        stat.st_ino,
+        stat.st_mtime_ns,
+        stat.st_size,
+    )
+
+
+def catalog_cache_signature():
+    return file_cache_signature(CatalogDatabase().path)
 
 
 WAREHOUSE_ADD_REQUESTS_PATH = (
@@ -2339,6 +2359,7 @@ def save_stock_operations(operations):
             encoding="utf-8"
         )
         temporary_path.replace(path)
+        _cached_api_sales_records.cache_clear()
     finally:
         if temporary_path.exists():
             temporary_path.unlink()
@@ -4280,6 +4301,7 @@ def save_manual_sales(sales):
         encoding="utf-8",
     )
     temporary_path.replace(path)
+    _cached_api_sales_records.cache_clear()
 
 
 def current_sales_user_name():
@@ -4330,6 +4352,7 @@ def save_automatic_sales_overrides(overrides):
     )
 
     temporary_path.replace(path)
+    _cached_api_sales_records.cache_clear()
 
 
 DEFAULT_SALES_SOURCES = [
@@ -6529,10 +6552,26 @@ def get_sales_product_metadata(lookup, product_id, product_name):
     )
 
 
-def build_sales_report_records(warehouse_items=None):
-    operations = load_stock_operations()
-    stored_manual_sales = load_manual_sales()
-    automatic_overrides = load_automatic_sales_overrides()
+def build_sales_report_records(
+        warehouse_items=None,
+        operations=None,
+        stored_manual_sales=None,
+        automatic_overrides=None):
+    operations = (
+        load_stock_operations()
+        if operations is None
+        else operations
+    )
+    stored_manual_sales = (
+        load_manual_sales()
+        if stored_manual_sales is None
+        else stored_manual_sales
+    )
+    automatic_overrides = (
+        load_automatic_sales_overrides()
+        if automatic_overrides is None
+        else automatic_overrides
+    )
     all_warehouse_items = (
         get_warehouse_items()
         if warehouse_items is None
@@ -8437,6 +8476,7 @@ def save_receipts(receipts):
             encoding="utf-8",
         )
         temporary_path.replace(path)
+        _cached_api_receipt_records.cache_clear()
     finally:
         if temporary_path.exists():
             temporary_path.unlink()
@@ -11835,9 +11875,10 @@ def get_default_navigation_settings():
     }
 
 
-def load_navigation_settings():
+@lru_cache(maxsize=16)
+def _load_navigation_settings_cached(signature):
     settings = get_default_navigation_settings()
-    path = get_navigation_settings_path()
+    path = Path(signature[0])
 
     if not path.exists():
         return settings
@@ -11888,6 +11929,12 @@ def load_navigation_settings():
     return settings
 
 
+def load_navigation_settings():
+    return copy.deepcopy(_load_navigation_settings_cached(
+        file_cache_signature(get_navigation_settings_path())
+    ))
+
+
 def save_navigation_settings(settings):
     path = get_navigation_settings_path()
     normalized_settings = get_default_navigation_settings()
@@ -11925,6 +11972,7 @@ def save_navigation_settings(settings):
     )
 
     temporary_path.replace(path)
+    _load_navigation_settings_cached.cache_clear()
 
 
 def get_active_navigation_key(current_path):
@@ -12012,9 +12060,10 @@ def get_app_settings_path():
     return path
 
 
-def load_app_settings():
+@lru_cache(maxsize=16)
+def _load_app_settings_cached(signature):
     settings = DEFAULT_APP_SETTINGS.copy()
-    path = get_app_settings_path()
+    path = Path(signature[0])
 
     if not path.exists():
         return settings
@@ -12030,12 +12079,19 @@ def load_app_settings():
     return settings
 
 
+def load_app_settings():
+    return copy.deepcopy(_load_app_settings_cached(
+        file_cache_signature(get_app_settings_path())
+    ))
+
+
 def save_app_settings(settings):
     path = get_app_settings_path()
     path.write_text(
         json.dumps(settings, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+    _load_app_settings_cached.cache_clear()
 
 
 @app.route("/settings", methods=["GET", "POST"])
@@ -12083,10 +12139,70 @@ def settings_page():
         navigation_items=get_navigation_items(
             include_disabled=True
         ),
+        sidebar_navigation_items=get_navigation_items(
+            include_disabled=True
+        ),
         notice=(request.args.get("notice") or "").strip(),
         message=(request.args.get("message") or "").strip(),
         **settings_invitation_context(),
     )
+
+
+@app.route("/api/v1/settings", methods=["GET", "PATCH"])
+def api_settings_resource():
+    settings = load_app_settings()
+    if request.method == "GET":
+        return api_success(settings)
+
+    require_csrf_when_authenticated()
+    try:
+        payload = api_json_payload()
+    except ValueError as error:
+        return api_error("SETTINGS_VALIDATION_FAILED", str(error), 400)
+    allowed_fields = {
+        "company_name",
+        "erp_name",
+        "low_stock_threshold",
+    }
+    unknown_fields = set(payload) - allowed_fields
+    if unknown_fields:
+        return api_error(
+            "SETTINGS_VALIDATION_FAILED",
+            "Переданы неизвестные настройки.",
+            422,
+            {"fields": sorted(unknown_fields)},
+        )
+
+    changes = {}
+    if "company_name" in payload:
+        changes["company_name"] = (
+            str(payload.get("company_name") or "").strip()
+            or "Tictactoy"
+        )
+    if "erp_name" in payload:
+        changes["erp_name"] = (
+            str(payload.get("erp_name") or "").strip()
+            or "Vechasu ERP"
+        )
+    if "low_stock_threshold" in payload:
+        try:
+            threshold = int(payload.get("low_stock_threshold") or 0)
+        except (TypeError, ValueError):
+            return api_error(
+                "SETTINGS_VALIDATION_FAILED",
+                "Минимальный остаток должен быть целым числом.",
+                422,
+            )
+        changes["low_stock_threshold"] = max(0, min(threshold, 999))
+
+    changed_fields = [
+        key for key, value in changes.items()
+        if settings.get(key) != value
+    ]
+    if changed_fields:
+        settings.update({key: changes[key] for key in changed_fields})
+        save_app_settings(settings)
+    return api_success(settings, changed_fields=changed_fields)
 
 
 @app.route(
@@ -12128,6 +12244,12 @@ def navigation_toggle(key):
     save_navigation_settings(navigation_settings)
 
     state = "включён" if enabled else "отключён"
+    if "application/json" in request.headers.get("Accept", ""):
+        return api_success({
+            "key": key,
+            "label": definition["label"],
+            "enabled": enabled,
+        })
 
     return redirect(
         url_for(
@@ -12240,7 +12362,11 @@ def api_products_collection():
         return api_success(serialize_api_product(product), 201)
 
     sort_by = (request.args.get("sort_by") or request.args.get("sort") or "name").strip()
-    sort_dir = (request.args.get("sort_dir") or "asc").strip().lower()
+    sort_dir = (
+        request.args.get("sort_dir")
+        or request.args.get("order")
+        or "asc"
+    ).strip().lower()
     if sort_by.startswith("-"):
         sort_by = sort_by[1:]
         sort_dir = "desc"
@@ -12251,7 +12377,12 @@ def api_products_collection():
         200,
     )
     listing = catalog_service.list_products(
-        query=(request.args.get("q") or request.args.get("query") or "").strip(),
+        query=(
+            request.args.get("q")
+            or request.args.get("query")
+            or request.args.get("search")
+            or ""
+        ).strip(),
         brand=(request.args.get("brand") or "").strip(),
         category=(request.args.get("category") or "").strip(),
         cell=(request.args.get("cell") or "").strip(),
@@ -12271,6 +12402,7 @@ def api_products_collection():
         brand_id=request.args.get("brand_id"),
         category_id=request.args.get("category_id"),
         product_id=request.args.get("product_id"),
+        include_cell_item_names=not request.path.startswith("/api/v1/"),
     )
     return api_success(
         [serialize_api_product(item) for item in listing["items"]],
@@ -12278,6 +12410,7 @@ def api_products_collection():
         page_size=listing["per_page"],
         total=listing["total"],
         pages=listing["pages"],
+        total_pages=listing["pages"],
         stats=listing["stats"],
         facets={
             "brands": listing["brand_groups"],
@@ -13253,6 +13386,49 @@ def rollback_remote_receipt(client, document):
     return False
 
 
+@lru_cache(maxsize=8)
+def _cached_api_receipt_records(receipts_signature, database_signature):
+    del receipts_signature, database_signature
+    stored_receipts = load_receipts()
+    receipt_product_ids = {
+        str(position.get("product_id"))
+        for receipt in stored_receipts
+        for position in (receipt.get("positions") or [])
+        if isinstance(position, dict) and position.get("product_id")
+    }
+    receipt_product_ids.update(
+        str(receipt.get("product_id"))
+        for receipt in stored_receipts
+        if receipt.get("product_id")
+    )
+    catalog = SharedCatalog()
+    receipt_legacy_links = catalog.legacy_links(
+        "receipt",
+        [receipt.get("id") for receipt in stored_receipts],
+    )
+    receipt_product_ids.update(receipt_legacy_links.values())
+    catalog_lookup = catalog.products_by_ids(
+        receipt_product_ids,
+        include_archived=True,
+    )
+    return tuple(
+        serialize_api_receipt(
+            item,
+            catalog_lookup=catalog_lookup,
+            legacy_links=receipt_legacy_links,
+            shared_catalog=catalog,
+        )
+        for item in stored_receipts
+    )
+
+
+def api_receipt_records():
+    return _cached_api_receipt_records(
+        file_cache_signature(get_receipts_path()),
+        catalog_cache_signature(),
+    )
+
+
 @app.route("/api/receipts/catalog", methods=["GET"])
 @app.route("/api/v1/receipts/catalog", methods=["GET"])
 def api_receipts_catalog():
@@ -13520,36 +13696,12 @@ def api_receipts_collection():
             image_message=image_message,
         )
 
-    stored_receipts = load_receipts()
-    receipt_product_ids = {
-        str(position.get("product_id"))
-        for receipt in stored_receipts
-        for position in (receipt.get("positions") or [])
-        if isinstance(position, dict) and position.get("product_id")
-    }
-    receipt_product_ids.update(
-        str(receipt.get("product_id"))
-        for receipt in stored_receipts
-        if receipt.get("product_id")
-    )
-    receipt_legacy_links = SharedCatalog().legacy_links(
-        "receipt",
-        [receipt.get("id") for receipt in stored_receipts],
-    )
-    receipt_product_ids.update(receipt_legacy_links.values())
-    catalog_lookup = SharedCatalog().products_by_ids(
-        receipt_product_ids,
-        include_archived=True,
-    )
-    receipts = [
-        serialize_api_receipt(
-            item,
-            catalog_lookup=catalog_lookup,
-            legacy_links=receipt_legacy_links,
-        )
-        for item in stored_receipts
-    ]
-    query = (request.args.get("q") or "").strip().casefold()
+    receipts = list(api_receipt_records())
+    query = (
+        request.args.get("q")
+        or request.args.get("search")
+        or ""
+    ).strip().casefold()
     date_from = (request.args.get("date_from") or "").strip()
     date_to = (request.args.get("date_to") or "").strip()
     status = (request.args.get("status") or "").strip()
@@ -13604,8 +13756,16 @@ def api_receipts_collection():
                 for position in item["positions"]
             )
         ]
-    sort_by = (request.args.get("sort_by") or "receipt_date").strip()
-    sort_dir = (request.args.get("sort_dir") or "desc").strip()
+    sort_by = (
+        request.args.get("sort_by")
+        or request.args.get("sort")
+        or "receipt_date"
+    ).strip()
+    sort_dir = (
+        request.args.get("sort_dir")
+        or request.args.get("order")
+        or "desc"
+    ).strip()
     allowed_sort = {
         "receipt_date", "number", "total_quantity", "total_amount", "created_at",
     }
@@ -13629,6 +13789,7 @@ def api_receipts_collection():
         page_size=page_size,
         total=total,
         pages=pages,
+        total_pages=pages,
         totals={
             "quantity": sum(item["total_quantity"] for item in receipts),
             "amount": round(sum(item["total_amount"] for item in receipts), 2),
@@ -13917,10 +14078,24 @@ def serialize_api_sale(sale):
     }
 
 
-def api_sales_records():
+@lru_cache(maxsize=8)
+def _cached_api_sales_records(
+        manual_sales_signature,
+        stock_operations_signature,
+        overrides_signature,
+        database_signature):
+    del (
+        manual_sales_signature,
+        stock_operations_signature,
+        overrides_signature,
+        database_signature,
+    )
+    operations = load_stock_operations()
+    manual_sales = load_manual_sales()
+    automatic_overrides = load_automatic_sales_overrides()
     referenced_product_ids = [
         item.get("product_id")
-        for item in load_stock_operations() + load_manual_sales()
+        for item in operations + manual_sales
         if isinstance(item, dict) and item.get("product_id")
     ]
     linked_products = list(
@@ -13929,8 +14104,20 @@ def api_sales_records():
             include_archived=True,
         ).values()
     )
-    return build_sales_report_records(
-        warehouse_items=linked_products
+    return tuple(build_sales_report_records(
+        warehouse_items=linked_products,
+        operations=operations,
+        stored_manual_sales=manual_sales,
+        automatic_overrides=automatic_overrides,
+    ))
+
+
+def api_sales_records():
+    return _cached_api_sales_records(
+        file_cache_signature(get_manual_sales_path()),
+        file_cache_signature(get_stock_operations_path()),
+        file_cache_signature(get_automatic_sales_overrides_path()),
+        catalog_cache_signature(),
     )
 
 
@@ -14144,10 +14331,14 @@ def api_sales_collection():
             201,
         )
 
-    sales = api_sales_records()
+    sales = list(api_sales_records())
     source = get_active_sales_source(request.args.get("source"))
     sales = filter_sales_by_source(sales, source)
-    query = (request.args.get("q") or "").strip().casefold()
+    query = (
+        request.args.get("q")
+        or request.args.get("search")
+        or ""
+    ).strip().casefold()
     date_from = (request.args.get("date_from") or "").strip()
     date_to = (request.args.get("date_to") or "").strip()
     status = (request.args.get("status") or "").strip()
@@ -14201,8 +14392,16 @@ def api_sales_collection():
             item for item in sales
             if str(item.get("product_id") or "") == product_id
         ]
-    sort_by = (request.args.get("sort_by") or "created_at").strip()
-    sort_dir = (request.args.get("sort_dir") or "desc").strip()
+    sort_by = (
+        request.args.get("sort_by")
+        or request.args.get("sort")
+        or "created_at"
+    ).strip()
+    sort_dir = (
+        request.args.get("sort_dir")
+        or request.args.get("order")
+        or "desc"
+    ).strip()
     allowed_sort = {
         "created_at", "order_number", "product_name", "quantity_value",
         "total_amount", "source", "order_status",
@@ -14237,6 +14436,7 @@ def api_sales_collection():
         page_size=page_size,
         total=total,
         pages=pages,
+        total_pages=pages,
         totals={
             "active": len(active),
             "cancelled": total - len(active),

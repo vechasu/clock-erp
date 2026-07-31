@@ -97,10 +97,11 @@ export function ProductsPage() {
     if (!next.has('page_size')) next.set('page_size', '50');
     return next;
   }, [searchParams]);
+  const normalizedQuery = normalizedParams.toString();
 
   const productsQuery = useQuery({
-    queryKey: ['products', normalizedParams.toString()],
-    queryFn: () => fetchProducts(normalizedParams),
+    queryKey: ['products', normalizedQuery],
+    queryFn: ({ signal }) => fetchProducts(normalizedParams, signal),
     placeholderData: (previous) => previous,
   });
 
@@ -108,22 +109,46 @@ export function ProductsPage() {
   const saveMutation = useMutation({
     mutationFn: ({ product, values }: { product: Product | 'new'; values: ProductFormValues }) =>
       product === 'new' ? createProduct(values) : updateProduct(product.id, values),
-    onSuccess: async (_, variables) => {
-      await invalidate();
+    onSuccess: (saved, variables) => {
+      queryClient.setQueryData<Awaited<ReturnType<typeof fetchProducts>>>(
+        ['products', normalizedQuery],
+        (current) =>
+          current && variables.product !== 'new'
+            ? {
+                ...current,
+                products: current.products.map((product) =>
+                  product.id === saved.id ? saved : product,
+                ),
+              }
+            : current,
+      );
       setEditor(null);
       setToast({
         message: variables.product === 'new' ? 'Товар добавлен' : 'Карточка обновлена',
         kind: 'success',
       });
+      void invalidate();
+      void queryClient.invalidateQueries({ queryKey: ['catalog-options'] });
     },
     onError: (error) => setToast({ message: errorMessage(error), kind: 'error' }),
   });
   const deleteMutation = useMutation({
     mutationFn: deleteProduct,
-    onSuccess: async () => {
-      await invalidate();
+    onSuccess: (_, productId) => {
+      queryClient.setQueryData<Awaited<ReturnType<typeof fetchProducts>>>(
+        ['products', normalizedQuery],
+        (current) =>
+          current
+            ? {
+                ...current,
+                products: current.products.filter((product) => product.id !== productId),
+              }
+            : current,
+      );
       setDeleteTarget(null);
       setToast({ message: 'Товар удалён', kind: 'success' });
+      void invalidate();
+      void queryClient.invalidateQueries({ queryKey: ['catalog-options'] });
     },
     onError: (error) => setToast({ message: errorMessage(error), kind: 'error' }),
   });
@@ -136,8 +161,18 @@ export function ProductsPage() {
       };
       return bulkUpdateProducts([...selectedIds], changes);
     },
-    onSuccess: async (result) => {
-      await invalidate();
+    onSuccess: (result) => {
+      const updated = new Map(result.items.map((product) => [product.id, product]));
+      queryClient.setQueryData<Awaited<ReturnType<typeof fetchProducts>>>(
+        ['products', normalizedQuery],
+        (current) =>
+          current
+            ? {
+                ...current,
+                products: current.products.map((product) => updated.get(product.id) ?? product),
+              }
+            : current,
+      );
       setBulkEditorOpen(false);
       setSelectedIds(new Set());
       setBulkBrandId(null);
@@ -147,6 +182,8 @@ export function ProductsPage() {
         message: `Массово обновлено товаров: ${result.updated}`,
         kind: result.errors.length ? 'error' : 'success',
       });
+      void invalidate();
+      void queryClient.invalidateQueries({ queryKey: ['catalog-options'] });
     },
     onError: (error) => setToast({ message: errorMessage(error), kind: 'error' }),
   });
@@ -356,6 +393,7 @@ export function ProductsPage() {
               placeholder="Название, артикул, штрихкод, ячейка…"
             />
             <FilterPanel
+              lazy
               count={
                 [
                   'brand_id',
@@ -554,6 +592,7 @@ export function ProductsPage() {
 
       <Modal
         open={editor !== null}
+        lazy
         title={editor === 'new' ? 'Новый товар' : 'Редактирование товара'}
         description="Данные сохраняются в едином каталоге Vechasu ERP."
         onClose={() => setEditor(null)}
@@ -598,6 +637,7 @@ export function ProductsPage() {
       />
       <Modal
         open={bulkEditorOpen}
+        lazy
         title={`Изменить выбранные товары (${selectedIds.size})`}
         description="Заполненные поля будут применены ко всем выбранным карточкам."
         onClose={() => setBulkEditorOpen(false)}
@@ -641,6 +681,7 @@ export function ProductsPage() {
       </Modal>
       <Modal
         open={galleryTarget !== null}
+        lazy
         title={galleryTarget?.name ?? 'Изображения товара'}
         description="Основное и дополнительные изображения карточки"
         onClose={() => setGalleryTarget(null)}

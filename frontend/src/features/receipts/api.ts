@@ -8,9 +8,11 @@ import {
   type ReceiptFormValues,
 } from './schemas';
 
-export async function fetchReceipts(searchParams: URLSearchParams) {
+export async function fetchReceipts(searchParams: URLSearchParams, signal?: AbortSignal) {
   const query = searchParams.toString();
-  const envelope = await apiRequest(`/receipts${query ? `?${query}` : ''}`, receiptListSchema);
+  const envelope = await apiRequest(`/receipts${query ? `?${query}` : ''}`, receiptListSchema, {
+    signal,
+  });
   return {
     receipts: envelope.data,
     meta: receiptsMetaSchema.parse(envelope.meta),
