@@ -169,6 +169,37 @@ class Stage2SalesApiTest(unittest.TestCase):
         self.assertEqual(invalid.status_code, 422)
         self.assertEqual(invalid.get_json()["code"], "SALE_VALIDATION_FAILED")
 
+    def test_tictactoy_api_creation_ignores_delivery_method_field(self):
+        response = self.client.post(
+            "/api/sales",
+            json={
+                "created_at": "2026-07-30",
+                "source": "Tictactoy",
+                "product_id": str(self.product["id"]),
+                "quantity": 1,
+                "unit_price": 900,
+                "order_number": "ORDER-2",
+                "delivery_method": "СДЭК",
+                "note": "Legacy field payload",
+            },
+        )
+        self.assertEqual(response.status_code, 201)
+        sale = response.get_json()["data"]
+        self.assertEqual(sale["order_number"], "ORDER-2")
+        self.assertEqual(sale["note"], "Legacy field payload")
+        self.assertEqual(self.stock(), 4)
+
+        listing = self.client.get(
+            "/api/v1/sales?q=order-2&source=tictactoy"
+            "&page_size=1"
+        ).get_json()
+        self.assertEqual(listing["meta"]["total"], 1)
+        self.assertEqual(
+            listing["data"][0]["note"],
+            "Legacy field payload",
+        )
+        self.assertFalse(listing["data"][0].get("delivery_method"))
+
     def test_location_catalog_is_available_for_cascading_selects(self):
         with mock.patch.object(
             web,
