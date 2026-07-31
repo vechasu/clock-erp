@@ -2341,14 +2341,6 @@
                 <div class="modal-actions">
                     <!-- RECEIPT CREATE NEXT V2 -->
                     <button
-                        class="button button-secondary"
-                        type="button"
-                        onclick="closeReceiptModal()"
-                    >
-                        Отмена
-                    </button>
-
-                    <button
                         class="button button-next-receipt"
                         type="submit"
                         name="submit_mode"
@@ -3920,12 +3912,6 @@
         }
     );
 
-    receiptModal.addEventListener("click", (event) => {
-        if (event.target === receiptModal) {
-            closeReceiptModal();
-        }
-    });
-
     document.addEventListener("keydown", (event) => {
         if (event.key === "Escape") {
             if (
@@ -3935,10 +3921,7 @@
                 )
             ) {
                 closeReceiptImportModal();
-                return;
             }
-
-            closeReceiptModal();
         }
     });
 
@@ -4224,6 +4207,112 @@
     }
     // RECEIPTS REPORT BUTTON SCRIPT V1 END
 </script>
+
+{% if config.TESTING and request.args.get("receipts_modal_e2e") == "1" %}
+<script>
+    window.addEventListener("load", async () => {
+        const root = document.documentElement;
+
+        try {
+            const openButton = document.querySelector(
+                'button[onclick="openReceiptModal()"]'
+            );
+            const modal = document.getElementById("receiptModal");
+            const closeButton = modal
+                ?.querySelector(".modal-close");
+            const form = document.getElementById(
+                "receiptForm"
+            );
+            if (!openButton || !modal || !closeButton || !form) {
+                throw new Error("missing-elements");
+            }
+
+            const fields = [
+                "receipt_date",
+                "receipt_quantity",
+                "note",
+            ].map((id) => form.querySelector("#" + id));
+            if (fields.some((field) => !field)) {
+                throw new Error("missing-fields");
+            }
+            const [dateInput, quantityInput, noteInput] =
+                fields;
+
+            openButton.click();
+            await new Promise((resolve) =>
+                window.setTimeout(resolve, 220)
+            );
+
+            if (!modal.classList.contains("is-open")) {
+                throw new Error("modal-not-open");
+            }
+
+            const expectedDate = "2026-01-01";
+            dateInput.value = expectedDate;
+            quantityInput.value = "7";
+            noteInput.value = "E2E note";
+
+            modal.dispatchEvent(
+                new MouseEvent("click", {
+                    bubbles: true,
+                    cancelable: true,
+                    view: window,
+                    button: 0,
+                })
+            );
+            await new Promise((resolve) =>
+                window.setTimeout(resolve, 150)
+            );
+
+            if (!modal.classList.contains("is-open")) {
+                throw new Error("overlay-closed");
+            }
+            if (
+                dateInput.value !== expectedDate
+                || quantityInput.value !== "7"
+                || noteInput.value !== "E2E note"
+            ) {
+                throw new Error("values-lost-after-overlay");
+            }
+
+            document.dispatchEvent(
+                new KeyboardEvent("keydown", {
+                    key: "Escape",
+                    bubbles: true,
+                })
+            );
+            await new Promise((resolve) =>
+                window.setTimeout(resolve, 150)
+            );
+
+            if (!modal.classList.contains("is-open")) {
+                throw new Error("escape-closed");
+            }
+            if (
+                dateInput.value !== expectedDate
+                || quantityInput.value !== "7"
+                || noteInput.value !== "E2E note"
+            ) {
+                throw new Error("values-lost-after-escape");
+            }
+
+            closeButton.click();
+            await new Promise((resolve) =>
+                window.setTimeout(resolve, 140)
+            );
+
+            if (modal.classList.contains("is-open")) {
+                throw new Error("close-button-not-works");
+            }
+
+            root.dataset.receiptsModalE2e = "pass";
+        } catch (error) {
+            root.dataset.receiptsModalE2e =
+                "fail-" + error.message;
+        }
+    });
+</script>
+{% endif %}
 
 </body>
 </html>
