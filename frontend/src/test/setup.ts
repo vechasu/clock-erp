@@ -14,6 +14,14 @@ if (!HTMLDialogElement.prototype.close) {
   };
 }
 
+if (!URL.createObjectURL) {
+  URL.createObjectURL = () => 'blob:vechasu-test-preview';
+}
+
+if (!URL.revokeObjectURL) {
+  URL.revokeObjectURL = () => undefined;
+}
+
 afterEach(() => {
   cleanup();
 });

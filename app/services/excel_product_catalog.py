@@ -923,7 +923,8 @@ class ExcelProductCatalog:
 
     def create_product(
             self, name, article="", brand="", category="", cell="", stock=0,
-            brand_id=None, category_id=None, enforce_unique=False):
+            brand_id=None, category_id=None, enforce_unique=False,
+            moysklad_product_id=None):
         name = text(name)
         if not name:
             raise ValueError("Название товара обязательно.")
@@ -934,6 +935,7 @@ class ExcelProductCatalog:
         category = text(category)
         cell = text(cell)
         stock = parse_initial_stock(stock)
+        moysklad_product_id = text(moysklad_product_id) or None
         self.database.initialize()
         with self.database.transaction() as connection:
             brand_row = ensure_brand(
@@ -1000,7 +1002,10 @@ class ExcelProductCatalog:
                 "stock", "cell", "stock_source", "file_sha256", "match_status",
                 "match_method", "match_confidence", "match_decision", "candidates_json",
                 "bitrix_link_cardinality", "shared_bitrix_row_count",
-            ) + tuple(enrichment) + ("moysklad_sync_status", "created_at", "updated_at")
+            ) + tuple(enrichment) + (
+                "moysklad_product_id", "moysklad_sync_status",
+                "created_at", "updated_at",
+            )
             values = (
                 source_key, batch["id"], batch["id"], 1,
                 _json({"source": "manual", "name": name, "article": article,
@@ -1013,7 +1018,12 @@ class ExcelProductCatalog:
                 stock, cell or None,
                 "manual", batch["file_sha256"], "not_found", "manual_create", 0.0,
                 "unmatched", "[]", "unlinked", 0,
-            ) + tuple(enrichment.values()) + ("not_linked", now, now)
+            ) + tuple(enrichment.values()) + (
+                moysklad_product_id,
+                "linked" if moysklad_product_id else "not_linked",
+                now,
+                now,
+            )
             connection.execute(
                 "INSERT INTO catalog_excel_products ({}) VALUES ({})".format(
                     ", ".join(columns), ", ".join("?" for _ in columns)

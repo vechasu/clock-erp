@@ -1333,6 +1333,13 @@ def build_excel_warehouse_items(products):
             "thumbnail_url": (
                 product.get("bitrix_thumbnail_url")
                 or product.get("bitrix_primary_image_url")
+                or (
+                    "/warehouse/product/{}/thumbnail".format(
+                        product.get("moysklad_product_id")
+                    )
+                    if product.get("moysklad_product_id")
+                    else ""
+                )
                 or ""
             ),
             "gallery": product.get("gallery") or [],
@@ -9727,7 +9734,7 @@ def receipts_import_preview():
 PRODUCT_IMAGE_MAX_BYTES = 3 * 1024 * 1024
 
 
-def read_product_image_upload(uploaded_file):
+def read_product_image_upload(uploaded_file, allow_webp=False):
     from werkzeug.utils import secure_filename
 
     if not uploaded_file or not uploaded_file.filename:
@@ -9751,17 +9758,23 @@ def read_product_image_upload(uploaded_file):
     elif content.startswith(b"\x89PNG\r\n\x1a\n"):
         extension = ".png"
         allowed_mimetypes = {"image/png"}
+    elif (
+        allow_webp
+        and len(content) >= 12
+        and content.startswith(b"RIFF")
+        and content[8:12] == b"WEBP"
+    ):
+        extension = ".webp"
+        allowed_mimetypes = {"image/webp"}
     else:
-        raise ValueError(
-            "Недопустимый формат изображения. Поддерживаются JPEG и PNG."
-        )
+        supported = "JPEG, PNG и WEBP" if allow_webp else "JPEG и PNG"
+        raise ValueError("Недопустимый формат изображения. Поддерживаются {}.".format(supported))
 
     mimetype = str(uploaded_file.mimetype or "").lower()
 
     if mimetype and mimetype not in allowed_mimetypes:
-        raise ValueError(
-            "Недопустимый формат изображения. Поддерживаются JPEG и PNG."
-        )
+        supported = "JPEG, PNG и WEBP" if allow_webp else "JPEG и PNG"
+        raise ValueError("Недопустимый формат изображения. Поддерживаются {}.".format(supported))
 
     safe_name = secure_filename(uploaded_file.filename)
     name_without_extension = safe_name.rsplit(".", 1)[0]
@@ -12327,16 +12340,73 @@ def serialize_api_product(product):
     }
 
 
+def api_product_request_payload():
+    if request.mimetype == "multipart/form-data":
+        payload = {
+            key: request.form.get(key)
+            for key in (
+                "name", "article", "brand", "category", "brand_id",
+                "category_id", "cell", "stock", "stock_reason",
+            )
+        }
+        for key in ("brand_id", "category_id"):
+            if payload.get(key) in (None, ""):
+                payload[key] = None
+        return payload, read_product_image_upload(
+            request.files.get("product_image"),
+            allow_webp=True,
+        )
+    return api_json_payload(), None
+
+
+def rollback_remote_product(client, product):
+    product_id = str((product or {}).get("id") or "").strip()
+    if not product_id:
+        return True
+    try:
+        result = client.archive_product(product_id)
+    except Exception:
+        app.logger.exception(
+            "Products API failed to roll back MoySklad product %s",
+            product_id,
+        )
+        return False
+    if result:
+        return True
+    app.logger.error(
+        "Products API could not roll back MoySklad product %s",
+        product_id,
+    )
+    return False
+
+
 @app.route("/api/products", methods=["GET", "POST"])
 @app.route("/api/v1/products", methods=["GET", "POST"])
 def api_products_collection():
     catalog_service = ExcelProductCatalog()
     if request.method == "POST":
         require_csrf_when_authenticated()
+        remote_client = None
+        remote_product = None
+        product_image = None
         try:
-            payload = api_json_payload()
+            payload, product_image = api_product_request_payload()
+            name = str(payload.get("name") or "").strip()
+            if not name:
+                raise ValueError("Название товара обязательно.")
+            parse_initial_stock(payload.get("stock", 0))
+            if product_image:
+                remote_client = MoySkladClient()
+                remote_product = remote_client.create_product(
+                    name=name,
+                    code="VECHASU-{}".format(uuid.uuid4().hex.upper()),
+                    article=(str(payload.get("article") or "").strip() or None),
+                    image=product_image,
+                )
+                if not str((remote_product or {}).get("id") or "").strip():
+                    raise RuntimeError("МойСклад не создал карточку с фотографией.")
             product = catalog_service.create_product(
-                name=payload.get("name"),
+                name=name,
                 article=payload.get("article", ""),
                 brand=payload.get("brand", ""),
                 category=payload.get("category", ""),
@@ -12345,8 +12415,13 @@ def api_products_collection():
                 cell=payload.get("cell", ""),
                 stock=payload.get("stock", 0),
                 enforce_unique=True,
+                moysklad_product_id=(
+                    remote_product.get("id") if remote_product else None
+                ),
             )
         except DuplicateCatalogValueError as error:
+            if remote_client and remote_product:
+                rollback_remote_product(remote_client, remote_product)
             return api_error(
                 "PRODUCT_ALREADY_EXISTS",
                 str(error),
@@ -12354,11 +12429,28 @@ def api_products_collection():
                 {"existing": error.existing},
             )
         except ValueError as error:
+            if remote_client and remote_product:
+                rollback_remote_product(remote_client, remote_product)
             return api_error(
                 "PRODUCT_VALIDATION_FAILED",
                 str(error),
                 422,
             )
+        except Exception:
+            if remote_client and remote_product:
+                rollback_remote_product(remote_client, remote_product)
+            if product_image is None:
+                raise
+            app.logger.exception(
+                "Products API failed to create product with image"
+            )
+            return api_error(
+                "PRODUCT_IMAGE_UPLOAD_FAILED",
+                "Не удалось сохранить фотографию товара. Товар не создан.",
+                502,
+            )
+        WAREHOUSE_CACHE["items"] = []
+        WAREHOUSE_CACHE["loaded_at"] = 0
         return api_success(serialize_api_product(product), 201)
 
     sort_by = (request.args.get("sort_by") or request.args.get("sort") or "name").strip()

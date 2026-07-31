@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from io import BytesIO
 from pathlib import Path
 from unittest import mock
 
@@ -132,6 +133,151 @@ class Stage2ProductsApiTest(unittest.TestCase):
             self.client.get("/api/products/{}".format(product_id)).status_code,
             404,
         )
+
+    def test_create_product_with_photo_uses_existing_moysklad_storage(self):
+        remote_id = "11111111-2222-4333-8444-555555555555"
+        with mock.patch.object(web, "MoySkladClient") as client_class:
+            remote = client_class.return_value
+            remote.create_product.return_value = {"id": remote_id}
+            response = self.client.post(
+                "/api/v1/products",
+                data={
+                    "name": "Gamma Photo Watch",
+                    "article": "PHOTO-1",
+                    "brand": "Gamma",
+                    "category": "Часы",
+                    "cell": "P-1",
+                    "stock": "6",
+                    "product_image": (
+                        BytesIO(b"\x89PNG\r\n\x1a\nproduct-photo"),
+                        "watch.png",
+                        "image/png",
+                    ),
+                },
+                content_type="multipart/form-data",
+            )
+
+        self.assertEqual(response.status_code, 201)
+        product = response.get_json()["data"]
+        self.assertEqual(product["stock"], 6)
+        self.assertEqual(product["moysklad_product_id"], remote_id)
+        self.assertEqual(
+            product["thumbnail_url"],
+            "/warehouse/product/{}/thumbnail".format(remote_id),
+        )
+        create_kwargs = remote.create_product.call_args.kwargs
+        self.assertEqual(create_kwargs["image"]["filename"], "watch.png")
+        self.assertTrue(create_kwargs["image"]["content"].startswith(b"\x89PNG"))
+
+    def test_create_product_without_photo_keeps_local_creation_path(self):
+        with mock.patch.object(web, "MoySkladClient") as client_class:
+            response = self.client.post(
+                "/api/v1/products",
+                data={
+                    "name": "Local Product",
+                    "article": "LOCAL-1",
+                    "stock": "0",
+                },
+                content_type="multipart/form-data",
+            )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.get_json()["data"]["thumbnail_url"], "")
+        client_class.assert_not_called()
+
+    def test_invalid_product_photo_does_not_create_product(self):
+        before = self.client.get("/api/v1/products?page_size=50").get_json()["meta"]["total"]
+        with mock.patch.object(web, "MoySkladClient") as client_class:
+            response = self.client.post(
+                "/api/v1/products",
+                data={
+                    "name": "Invalid Photo Product",
+                    "stock": "0",
+                    "product_image": (
+                        BytesIO(b"not-an-image"),
+                        "spoof.jpg",
+                        "image/jpeg",
+                    ),
+                },
+                content_type="multipart/form-data",
+            )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.get_json()["code"], "PRODUCT_VALIDATION_FAILED")
+        client_class.assert_not_called()
+        after = self.client.get("/api/v1/products?page_size=50").get_json()["meta"]["total"]
+        self.assertEqual(after, before)
+
+    def test_remote_photo_failure_does_not_leave_local_product(self):
+        before = self.client.get("/api/v1/products?page_size=50").get_json()["meta"]["total"]
+        with mock.patch.object(web, "MoySkladClient") as client_class:
+            client_class.return_value.create_product.return_value = None
+            response = self.client.post(
+                "/api/v1/products",
+                data={
+                    "name": "Remote Failure Product",
+                    "stock": "0",
+                    "product_image": (
+                        BytesIO(b"RIFF\x10\x00\x00\x00WEBPvp8 "),
+                        "watch.webp",
+                        "image/webp",
+                    ),
+                },
+                content_type="multipart/form-data",
+            )
+
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(response.get_json()["code"], "PRODUCT_IMAGE_UPLOAD_FAILED")
+        after = self.client.get("/api/v1/products?page_size=50").get_json()["meta"]["total"]
+        self.assertEqual(after, before)
+
+    def test_local_create_failure_rolls_back_remote_photo_product(self):
+        duplicate_name = "Duplicate Photo Product"
+        initial = self.client.post(
+            "/api/v1/products",
+            json={"name": duplicate_name, "article": "DUP-1", "stock": 0},
+        )
+        self.assertEqual(initial.status_code, 201)
+        before = self.client.get("/api/v1/products?page_size=50").get_json()["meta"]["total"]
+
+        remote_id = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+        with mock.patch.object(web, "MoySkladClient") as client_class:
+            remote = client_class.return_value
+            remote.create_product.return_value = {"id": remote_id}
+            remote.archive_product.return_value = True
+            response = self.client.post(
+                "/api/v1/products",
+                data={
+                    "name": duplicate_name,
+                    "article": "DUP-1",
+                    "stock": "0",
+                    "product_image": (
+                        BytesIO(b"\x89PNG\r\n\x1a\nduplicate-photo"),
+                        "duplicate.png",
+                        "image/png",
+                    ),
+                },
+                content_type="multipart/form-data",
+            )
+
+        self.assertEqual(response.status_code, 409)
+        remote.archive_product.assert_called_once_with(remote_id)
+        after = self.client.get("/api/v1/products?page_size=50").get_json()["meta"]["total"]
+        self.assertEqual(after, before)
+
+    def test_initial_stock_requires_a_nonnegative_integer(self):
+        created = self.client.post(
+            "/api/v1/products",
+            json={"name": "Initial Stock Product", "stock": 7},
+        )
+        self.assertEqual(created.status_code, 201)
+        self.assertEqual(created.get_json()["data"]["stock"], 7)
+
+        invalid = self.client.post(
+            "/api/v1/products",
+            json={"name": "Fractional Stock Product", "stock": 1.5},
+        )
+        self.assertEqual(invalid.status_code, 422)
 
     def test_validation_and_taxonomy_endpoints(self):
         invalid = self.client.post(

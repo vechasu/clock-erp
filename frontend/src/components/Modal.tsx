@@ -8,7 +8,7 @@ interface ModalProps extends PropsWithChildren {
   description?: string;
   onClose: () => void;
   footer?: ReactNode;
-  size?: 'medium' | 'large';
+  size?: 'medium' | 'large' | 'wide';
   closeLabel?: string;
   lazy?: boolean;
 }

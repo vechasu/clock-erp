@@ -1,4 +1,4 @@
-import { apiRequest, jsonRequestInit } from '../../api/client';
+import { apiRequest, formDataRequestInit, jsonRequestInit } from '../../api/client';
 import { z } from 'zod';
 import {
   productListSchema,
@@ -18,8 +18,13 @@ export async function fetchProducts(searchParams: URLSearchParams, signal?: Abor
   };
 }
 
-export async function createProduct(values: ProductFormValues) {
-  return (await apiRequest('/products', productSchema, jsonRequestInit('POST', values))).data;
+export async function createProduct(values: ProductFormValues, image: File | null = null) {
+  const payload = new FormData();
+  for (const [key, value] of Object.entries(values)) {
+    payload.append(key, value === null ? '' : String(value));
+  }
+  if (image) payload.append('product_image', image, image.name);
+  return (await apiRequest('/products', productSchema, formDataRequestInit('POST', payload))).data;
 }
 
 export async function updateProduct(id: number, values: ProductFormValues) {

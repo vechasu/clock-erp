@@ -168,10 +168,15 @@ export function DataTable<TData>({
                         disabled={!header.column.getCanSort()}
                       >
                         {flexRender(header.column.columnDef.header, header.getContext())}
-                        {{
-                          asc: ' ↑',
-                          desc: ' ↓',
-                        }[header.column.getIsSorted() as string] ?? ''}
+                        {(
+                          header.column.columnDef.meta as
+                            { hideSortDirection?: boolean } | undefined
+                        )?.hideSortDirection
+                          ? ''
+                          : ({
+                              asc: ' ↑',
+                              desc: ' ↓',
+                            }[header.column.getIsSorted() as string] ?? '')}
                       </button>
                     )}
                     {header.column.getCanResize() ? (

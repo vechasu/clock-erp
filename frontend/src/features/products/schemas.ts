@@ -33,7 +33,10 @@ export const productFormSchema = z.object({
   brand_id: z.number().int().positive().nullable(),
   category_id: z.number().int().positive().nullable(),
   cell: z.string().trim(),
-  stock: z.coerce.number().min(0, 'Остаток не может быть отрицательным'),
+  stock: z.coerce
+    .number()
+    .int('Остаток должен быть целым числом')
+    .min(0, 'Остаток не может быть отрицательным'),
   stock_reason: z.string().trim(),
 });
 
