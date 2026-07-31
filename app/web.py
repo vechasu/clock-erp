@@ -4474,19 +4474,21 @@ SALES_TABLE_COLUMNS = {
 }
 
 SALE_STATUS_LABELS = {
+    "processing": "В обработке",
     "shipped": "Отправлен",
+    "completed": "Завершён",
     "cancelled": "Отменён",
     "partially_returned": "Частичный возврат",
     "returned": "Возврат",
 }
 
 SALE_STATUS_ALIAS_MAP = {
-    "processing": "shipped",
-    "completed": "shipped",
+    "completed": "completed",
+    "processing": "processing",
     "sent": "shipped",
-    "завершён": "shipped",
-    "завершен": "shipped",
-    "выполнен": "shipped",
+    "завершён": "completed",
+    "завершен": "completed",
+    "выполнен": "completed",
 }
 
 SALE_FORM_STATUS_LABELS = {
@@ -4783,9 +4785,9 @@ def get_sale_platform_options(sales=None):
 
 
 def normalize_sale_status(value):
-    status = str(value or "").strip().lower()
+    status = str(value or "completed").strip().lower()
     status = SALE_STATUS_ALIAS_MAP.get(status, status)
-    return status if status in SALE_STATUS_LABELS else "shipped"
+    return status if status in SALE_STATUS_LABELS else "completed"
 
 
 def normalize_sale_status_filter(value):
