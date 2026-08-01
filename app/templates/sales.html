@@ -1648,8 +1648,9 @@
                                                     {{ value or "—" }}
                                                 </span>
                                             {% elif column.key == "created_at" and value|length >= 10 %}
-                                                <span>
+                                                <span class="sale-date-cell">
                                                     {{ value[8:10] }}.{{ value[5:7] }}.{{ value[:4] }}
+                                                    {% if value|length >= 16 %}<small>{{ value[11:16] }}</small>{% endif %}
                                                 </span>
                                             {% elif column.key == "product_name" %}
                                                 <span
@@ -1725,8 +1726,8 @@
                                                     title="Возврат оформлен"
                                                     aria-label="Возврат оформлен"
                                                 >✓</span>
-                                            {% else %}
-                                                <button
+                                            {% endif %}
+                                            <button
                                                     class="sales-row-action sales-row-delete"
                                                     type="button"
                                                     title="Удалить продажу"
@@ -1752,7 +1753,6 @@
                                                         <path d="M14 11v6"></path>
                                                     </svg>
                                                 </button>
-                                            {% endif %}
                                         </div>
                                     </td>
                                 </tr>
@@ -1799,6 +1799,7 @@
                                 <div class="sales-mobile-date">
                                     {% if sale.created_at|length >= 10 %}
                                         {{ sale.created_at[8:10] }}.{{ sale.created_at[5:7] }}.{{ sale.created_at[:4] }}
+                                        {% if sale.created_at|length >= 16 %} · {{ sale.created_at[11:16] }}{% endif %}
                                     {% else %}
                                         {{ sale.created_at or "—" }}
                                     {% endif %}
@@ -2123,7 +2124,7 @@
                         <input
                             id="created_at"
                             class="control"
-                            type="date"
+                            type="datetime-local"
                             name="created_at"
                             required
                         >
@@ -2173,26 +2174,20 @@
                         ) }}
                     </div>
 
-                    <div class="field">
-                        <label for="saleCommissionTrigger">
-                            Комиссия
-                        </label>
-                        {{ render_catalog_combobox(
-                            "saleCommission",
-                            "commission",
-                            sale_commission_options,
-                            item_label="комиссию",
-                            prefix_search=false,
-                            empty_label="Варианты комиссии не найдены",
-                            component_class="filter-combobox",
-                            clear_selection_on_search_clear=true
-                        ) }}
-                    </div>
-
                     <div
                         class="source-specific-fields"
                         data-source-fields="tictactoy"
                     >
+                        <div class="field">
+                            <label for="saleCommissionTrigger">Комиссия</label>
+                            {{ render_catalog_combobox(
+                                "saleCommission", "commission", sale_commission_options,
+                                item_label="комиссию", prefix_search=false,
+                                empty_label="Варианты комиссии не найдены",
+                                component_class="filter-combobox",
+                                clear_selection_on_search_clear=true
+                            ) }}
+                        </div>
                         <div class="field">
                             <label for="order_number">
                                 Номер заказа
@@ -2207,7 +2202,7 @@
 
                         <div class="field">
                             <label for="track_number">
-                                Номер отправления
+                                Трекинг
                             </label>
                             <input
                                 id="track_number"
@@ -2397,7 +2392,7 @@
 
                         <div class="field">
                             <label for="invoice_number">
-                                Номер накладной
+                                Трекинг
                             </label>
                             <input
                                 id="invoice_number"
@@ -4529,7 +4524,7 @@
         document.getElementById("created_at").value =
             new Date(today.getTime() - offset)
                 .toISOString()
-                .slice(0, 10);
+                .slice(0, 16);
     }
 
     function openManualSaleModalWindow() {
@@ -4919,7 +4914,7 @@
         productNameInput.value = sale.product_name || "";
 
         const fieldValues = {
-            created_at: String(sale.created_at || "").slice(0, 10),
+            created_at: String(sale.created_at || "").replace(" ", "T").slice(0, 16),
             quantity: sale.quantity_value || 1,
             unit_price: sale.unit_price || "",
             order_number: sale.order_number || "",
@@ -4991,7 +4986,15 @@
                     body: data,
                 },
             );
-            const result = await response.json();
+            const responseText = await response.text();
+            let result;
+            try {
+                result = JSON.parse(responseText);
+            } catch (_error) {
+                throw new Error(
+                    "Сервер вернул некорректный ответ. Повторите запрос."
+                );
+            }
 
             if (!response.ok || !result.ok) {
                 throw new Error(
@@ -5061,7 +5064,15 @@
                     body: new FormData(manualSaleForm),
                 },
             );
-            const result = await response.json();
+            const responseText = await response.text();
+            let result;
+            try {
+                result = JSON.parse(responseText);
+            } catch (_error) {
+                throw new Error(
+                    "Сервер вернул некорректный ответ. Повторите запрос."
+                );
+            }
 
             if (!response.ok || !result.ok) {
                 throw new Error(
@@ -5220,7 +5231,7 @@
 
             if (
                 countryValues.slice(0, 4).join(",")
-                !== "Америка,Япония,Канада,Мексика"
+                !== "США,Япония,Канада,Мексика"
                 || new Set(countryValues).size !== countryValues.length
                 || countryValues.length < 195
             ) {
@@ -5756,7 +5767,7 @@
                 throw new Error("modal-not-open");
             }
 
-            const expectedDate = "2026-01-01";
+            const expectedDate = "2026-01-01T10:30";
             dateInput.value = expectedDate;
             quantityInput.value = "3";
 

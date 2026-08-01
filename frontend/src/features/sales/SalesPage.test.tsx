@@ -11,7 +11,7 @@ const sale = {
   sale_type_label: 'Ручная',
   is_manual: true,
   inventory_managed: true,
-  created_at: '2026-07-30',
+  created_at: '2026-07-30T14:35',
   source: 'Tictactoy',
   source_key: 'tictactoy',
   order_number: 'ORDER-1',
@@ -144,5 +144,32 @@ describe('SalesPage', () => {
     await user.click(screen.getByRole('button', { name: 'Отмена' }));
     await user.click(screen.getByRole('button', { name: 'Новая продажа' }));
     expect(await screen.findByRole('heading', { name: 'Новая продажа' })).toBeInTheDocument();
+  });
+
+  it('shows sale time and removes a confirmed managed sale immediately', async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (init?.method === 'DELETE') {
+        return Promise.resolve(new Response(JSON.stringify({
+          data: { id: sale.id, deleted: true },
+          meta: { request_id: 'delete-test', csrf_token: 'csrf' },
+          error: null,
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+      }
+      return Promise.resolve(listResponse());
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={['/sales?source=all']}>
+        <AppProviders><SalesPage /></AppProviders>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('14:35')).toBeInTheDocument();
+    await user.click(screen.getAllByRole('button', { name: 'Отменить' })[0]);
+    expect(screen.getByText(/Casio G-Shock, 2 шт., Tictactoy/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Удалить' }));
+    expect(await screen.findByText('Продажа удалена')).toBeInTheDocument();
+    expect(screen.queryAllByText('ORDER-1')).toHaveLength(0);
   });
 });
