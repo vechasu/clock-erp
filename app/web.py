@@ -1395,264 +1395,10 @@ def format_active_filter_label(count):
 
 @app.route("/warehouse")
 def warehouse_page():
-    query = request.args.get("q", "").strip()
-    selected_category = request.args.get("category", "").strip()
-    selected_brand = request.args.get("brand", "").strip()
-    selected_brand_id = request.args.get("brand_id", "").strip()
-    selected_category_id = request.args.get("category_id", "").strip()
-    shared_catalog = SharedCatalog()
-    if selected_brand_id:
-        selected_brand_match = next(
-            (
-                item
-                for item in shared_catalog.list_brands(limit=200)
-                if str(item.get("id") or "") == selected_brand_id
-            ),
-            None,
-        )
-        if selected_brand_match:
-            selected_brand = selected_brand_match["name"]
-    if selected_category_id:
-        selected_category_match = next(
-            (
-                item
-                for item in shared_catalog.list_categories(
-                    brand_id=selected_brand_id or None,
-                    limit=200,
-                )
-                if str(item.get("id") or "") == selected_category_id
-            ),
-            None,
-        )
-        if selected_category_match:
-            selected_category = selected_category_match["name"]
-    selected_cell = request.args.get("cell", "").strip()
-    created_date_from = request.args.get("date_from", "").strip()
-    created_date_to = request.args.get("date_to", "").strip()
-    in_stock = request.args.get("in_stock", "").strip() == "1"
-    sort_by = request.args.get("sort_by", "name").strip()
-    sort_dir = request.args.get("sort_dir", "asc").strip()
-    try:
-        page = max(1, int(request.args.get("page", "1")))
-    except (TypeError, ValueError):
-        page = 1
-    try:
-        requested_per_page = int(request.args.get("per_page", "50"))
-    except (TypeError, ValueError):
-        requested_per_page = 50
-    per_page = requested_per_page if requested_per_page in {50, 100, 200} else 50
-
-    allowed_sort_fields = {
-        "name",
-        "article",
-        "brand",
-        "category",
-        "stock",
-        "created_at",
-        "cell",
-    }
-
-    if sort_by not in allowed_sort_fields:
-        sort_by = "name"
-
-    if sort_dir not in {"asc", "desc"}:
-        sort_dir = "asc"
-
-    for value_name, value in (
-        ("created_date_from", created_date_from),
-        ("created_date_to", created_date_to),
-    ):
-        try:
-            time.strptime(value, "%Y-%m-%d")
-        except (TypeError, ValueError):
-            if value_name == "created_date_from":
-                created_date_from = ""
-            else:
-                created_date_to = ""
-
-    if created_date_from and created_date_to and created_date_from > created_date_to:
-        created_date_from, created_date_to = created_date_to, created_date_from
-
-    warehouse_active_filter_count = sum((
-        bool(selected_brand_id or selected_brand),
-        bool(selected_category_id or selected_category),
-        bool(selected_cell),
-        bool(created_date_from or created_date_to),
-    ))
-    warehouse_active_filter_label = format_active_filter_label(
-        warehouse_active_filter_count
-    )
-
-    catalog = ExcelProductCatalog().list_products(
-        query=query,
-        brand=selected_brand if not selected_brand_id else "",
-        category=selected_category if not selected_category_id else "",
-        cell=selected_cell,
-        hide_zero=in_stock,
-        sort_by=sort_by,
-        sort_dir=sort_dir,
-        page=page,
-        per_page=per_page,
-        created_from=created_date_from,
-        created_to=created_date_to,
-        brand_id=selected_brand_id or None,
-        category_id=selected_category_id or None,
-    )
-    catalog_items = build_excel_warehouse_items(catalog["items"])
-    items = get_excel_warehouse_items(catalog=catalog)
-    if items != catalog_items and (created_date_from or created_date_to):
-        filtered_items = []
-        for item in items:
-            try:
-                created_date = time.strftime(
-                    "%Y-%m-%d",
-                    time.localtime(float(item.get("created_at") or 0)),
-                )
-            except (TypeError, ValueError, OverflowError, OSError):
-                created_date = ""
-            if created_date_from and created_date < created_date_from:
-                continue
-            if created_date_to and created_date > created_date_to:
-                continue
-            filtered_items.append(item)
-        items = filtered_items
-    taxonomy = load_catalog_taxonomy()
-    filter_brand_groups = merge_catalog_groups(
-        catalog["brand_groups"],
-        [],
-    )
-    brand_groups = merge_catalog_groups(
-        filter_brand_groups + build_brand_groups(items),
-        [
-            brand
-            for brand in (
-                normalize_brand(value)
-                for value in taxonomy["brands"]
-            )
-            if brand
-        ],
-    )
-    category_groups = merge_catalog_groups(
-        catalog["category_groups"] + build_category_groups(items),
-        [item["name"] for item in taxonomy["categories"]] + list(CATEGORIES),
-    )
-    cell_groups = []
-    for group in catalog["cell_groups"]:
-        item_names = str(group.get("item_names") or "").split(chr(31))
-        cell_groups.append({
-            "cell": group["cell"],
-            "count": group["count"],
-            "stock": group["stock"],
-            "total_stock_display": format_stock_number(group["stock"]),
-            "items": item_names[:3],
-        })
-    visible_positions = catalog["total"]
-    total_stock = float(catalog["stats"]["total_stock"] or 0)
-    total_reserve = 0
-    total_available = total_stock
-    pages = catalog["pages"]
-    page = catalog["page"]
-    page_start = (page - 1) * per_page + 1 if catalog["total"] else 0
-    page_end = min(page * per_page, catalog["total"])
-    pagination_arguments = request.args.to_dict(flat=True)
-    pagination_arguments["per_page"] = str(per_page)
-
-    def page_url(target_page):
-        arguments = dict(pagination_arguments)
-        arguments["page"] = str(target_page)
-        return url_for("warehouse_page", **arguments)
-
-    previous_page_url = page_url(page - 1) if page > 1 else None
-    next_page_url = page_url(page + 1) if page < pages else None
-    pagination_page_count = pages or 1
-    pagination_page_numbers = {
-        1,
-        pagination_page_count,
-        max(1, page - 1),
-        page,
-        min(pagination_page_count, page + 1),
-    }
-    if page <= 3:
-        pagination_page_numbers.update(
-            range(1, min(3, pagination_page_count) + 1)
-        )
-    if page >= pagination_page_count - 2:
-        pagination_page_numbers.update(
-            range(max(1, pagination_page_count - 2), pagination_page_count + 1)
-        )
-    pagination_items = []
-    previous_number = None
-    for page_number in sorted(pagination_page_numbers):
-        if previous_number is not None and page_number - previous_number > 1:
-            pagination_items.append(None)
-        pagination_items.append({
-            "number": page_number,
-            "url": page_url(page_number),
-        })
-        previous_number = page_number
-    export_arguments = request.args.to_dict(flat=True)
-    export_arguments.pop("page", None)
-    export_arguments.pop("per_page", None)
-
-    response = make_response(
-        render_template(
-            "warehouse.html",
-            items=items,
-            query=query,
-            selected_category=selected_category,
-            selected_brand=selected_brand,
-            selected_category_id=selected_category_id,
-            selected_brand_id=selected_brand_id,
-            selected_cell=selected_cell,
-            created_date_from=created_date_from,
-            created_date_to=created_date_to,
-            in_stock=in_stock,
-            warehouse_active_filter_count=warehouse_active_filter_count,
-            warehouse_active_filter_label=warehouse_active_filter_label,
-            open_add=request.args.get("open_add") == "1",
-            sort_by=sort_by,
-            sort_dir=sort_dir,
-            add_request_id=uuid.uuid4().hex,
-            visible_positions=visible_positions,
-            brand_groups=brand_groups,
-            filter_brand_groups=filter_brand_groups,
-            brand_all_count=catalog.get("brand_all_count", catalog["total"]),
-            category_groups=category_groups,
-            cell_groups=cell_groups,
-            total_stock=total_stock,
-            total_stock_display=format_stock_number(total_stock),
-            total_reserve=total_reserve,
-            total_available=total_available,
-            page=page,
-            per_page=per_page,
-            pages=pages,
-            page_start=page_start,
-            page_end=page_end,
-            total_found=catalog["total"],
-            previous_page_url=previous_page_url,
-            next_page_url=next_page_url,
-            pagination_items=pagination_items,
-            warehouse_export_xlsx_url=url_for(
-                "warehouse_export_xlsx",
-                **export_arguments
-            ),
-            warehouse_export_pdf_url=url_for(
-                "warehouse_export_pdf",
-                **export_arguments
-            ),
-            stock_operations=get_catalog_stock_history(),
-            bulk_ui_e2e=(
-                app.testing
-                and request.args.get("bulk_ui_e2e") == "1"
-            ),
-        )
-    )
-    response.headers["Cache-Control"] = (
-        "no-store, no-cache, must-revalidate, max-age=0"
-    )
-    response.headers["Pragma"] = "no-cache"
-    response.headers["Expires"] = "0"
-    return response
+    target = url_for("react_application", react_path="products")
+    if request.query_string:
+        target += "?" + request.query_string.decode("utf-8")
+    return redirect(target)
 
 
 def warehouse_export_items():
@@ -11495,64 +11241,6 @@ def excel_products_page():
         target += "?" + request.query_string.decode("utf-8")
     return redirect(target)
 
-    match_status = (request.args.get("match_status") or "all").strip()
-    allowed_statuses = {
-        "all", "requires_mapping", "exact", "high_confidence", "ambiguous",
-        "not_found", "manual_match", "not_in_bitrix",
-    }
-    if match_status not in allowed_statuses:
-        match_status = "all"
-    filters = {
-        "query": (request.args.get("q") or "").strip(),
-        "brand": (request.args.get("brand") or "").strip(),
-        "category": (request.args.get("category") or "").strip(),
-        "cell": (request.args.get("cell") or "").strip(),
-        "match_status": match_status,
-        "hide_zero": (request.args.get("hide_zero") or "").strip() == "1",
-        "sort_by": (request.args.get("sort_by") or "name").strip(),
-        "sort_dir": (request.args.get("sort_dir") or "asc").strip(),
-    }
-    catalog = ExcelProductCatalog().list_products(
-        query=filters["query"],
-        brand=filters["brand"],
-        category=filters["category"],
-        cell=filters["cell"],
-        match_status=filters["match_status"],
-        hide_zero=filters["hide_zero"],
-        sort_by=filters["sort_by"],
-        sort_dir=filters["sort_dir"],
-        page=_positive_int(request.args.get("page"), 1, 1000000),
-        per_page=_positive_int(request.args.get("per_page"), 50, 100),
-    )
-    base_arguments = request.args.to_dict(flat=True)
-    base_arguments.pop("_partial", None)
-    current_arguments = dict(base_arguments)
-    base_arguments.pop("page", None)
-    current_products_url = url_for("excel_products_page")
-    if current_arguments:
-        current_products_url += "?" + urlencode(current_arguments)
-    previous_url = next_url = None
-    if catalog["page"] > 1:
-        previous_url = url_for("excel_products_page") + "?" + urlencode(
-            dict(base_arguments, page=catalog["page"] - 1)
-        )
-    if catalog["page"] < catalog["pages"]:
-        next_url = url_for("excel_products_page") + "?" + urlencode(
-            dict(base_arguments, page=catalog["page"] + 1)
-        )
-    template_name = (
-        "_excel_products_results.html"
-        if request.args.get("_partial") == "1"
-        else "excel_products.html"
-    )
-    return render_template(
-        template_name, catalog=catalog, filters=filters,
-        match_labels=EXCEL_MATCH_LABELS, previous_url=previous_url,
-        next_url=next_url,
-        category_tree=build_excel_category_tree(catalog["category_groups"]),
-        current_products_url=current_products_url,
-    )
-
 
 @app.route("/products/receipts/new")
 def excel_receipt_new():
@@ -12591,20 +12279,20 @@ def api_products_collection():
         include_cell_item_names=not request.path.startswith("/api/v1/"),
     )
     return api_success(
-        [serialize_api_product(item) for item in listing["items"]],
-        page=listing["page"],
-        page_size=listing["per_page"],
-        total=listing["total"],
-        pages=listing["pages"],
-        total_pages=listing["pages"],
-        stats=listing["stats"],
+        [serialize_api_product(item) for item in listing.get("items", [])],
+        page=listing.get("page", page),
+        page_size=listing.get("per_page", page_size),
+        total=listing.get("total", 0),
+        pages=listing.get("pages", 0),
+        total_pages=listing.get("pages", 0),
+        stats=listing.get("stats", {}),
         facets={
-            "brands": listing["brand_groups"],
-            "categories": listing["category_groups"],
-            "cells": listing["cell_groups"],
+            "brands": listing.get("brand_groups", []),
+            "categories": listing.get("category_groups", []),
+            "cells": listing.get("cell_groups", []),
         },
-        sort_by=listing["sort_by"],
-        sort_dir=listing["sort_dir"],
+        sort_by=listing.get("sort_by", sort_by),
+        sort_dir=listing.get("sort_dir", sort_dir),
     )
 
 

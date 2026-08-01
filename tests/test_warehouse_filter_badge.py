@@ -1,8 +1,7 @@
-import html
-import re
 import unittest
 from urllib.parse import parse_qs, urlsplit
 from unittest import mock
+from pathlib import Path
 
 from app import web
 
@@ -42,69 +41,25 @@ class WarehouseFilterBadgeTest(unittest.TestCase):
         for patch in reversed(self.patches):
             patch.stop()
 
-    def render(self, query=""):
-        response = self.client.get("/warehouse" + query)
+    def api_request(self, query=""):
+        self.list_products_mock.reset_mock()
+        response = self.client.get("/api/v1/products" + query)
         self.assertEqual(response.status_code, 200)
-        return response.get_data(as_text=True)
+        payload = response.get_json()
+        self.assertIsNone(payload["error"])
+        return self.list_products_mock.call_args.kwargs
 
-    def filter_button(self, markup):
-        match = re.search(
-            r'<button\s+id="warehouseFilterTrigger"(?P<attrs>.*?)>'
-            r'(?P<body>.*?)</button>',
-            markup,
-            re.DOTALL,
+    def test_warehouse_redirect_preserves_all_filter_state(self):
+        query = (
+            "?q=часы&brand_id=31&category_id=47&cell=A-01"
+            "&date_from=2026-07-01&date_to=2026-07-29"
+            "&sort_by=stock&sort_dir=desc&page=2&per_page=100&in_stock=1"
         )
-        self.assertIsNotNone(match)
-        return match.group("attrs"), match.group("body")
-
-    def badge_text(self, markup):
-        _, button_body = self.filter_button(markup)
-        match = re.search(
-            r'class="erp-filter-count"[^>]*>\s*([^<]+?)\s*</span>',
-            button_body,
-            re.DOTALL,
-        )
-        return match.group(1).strip() if match else None
-
-    def reset_button_attributes(self, markup):
-        match = re.search(
-            r'<button\s+id="warehouseFilterReset"(?P<attrs>.*?)>',
-            markup,
-            re.DOTALL,
-        )
-        self.assertIsNotNone(match)
-        return match.group("attrs")
-
-    def test_badge_is_hidden_without_panel_filters(self):
-        markup = self.render()
-        attributes, button_body = self.filter_button(markup)
-
-        self.assertIsNone(self.badge_text(markup))
-        self.assertNotIn(" is-active", attributes)
-        self.assertIn("Открыть фильтры товаров", attributes)
-        self.assertIn(" hidden", self.reset_button_attributes(markup))
-        self.assertIn("erp-filter-icon-slot", button_body)
-        self.assertIn("erp-filter-label", button_body)
-
-    def test_brand_category_and_combination_counts(self):
-        cases = (
-            ("?brand=Casio", "1"),
-            ("?category=Будильники", "1"),
-            ("?brand=Casio&category=Будильники", "2"),
-        )
-
-        for query, expected in cases:
-            with self.subTest(query=query):
-                markup = self.render(query)
-                attributes, button_body = self.filter_button(markup)
-                plain_text = " ".join(
-                    re.sub(r"<[^>]+>", " ", button_body).split()
-                )
-
-                self.assertEqual(self.badge_text(markup), expected)
-                self.assertIn(" is-active", attributes)
-                self.assertNotIn("Фильтры1", plain_text)
-                self.assertNotIn(" hidden", self.reset_button_attributes(markup))
+        response = self.client.get("/warehouse" + query)
+        self.assertEqual(response.status_code, 302)
+        location = urlsplit(response.headers["Location"])
+        self.assertEqual(location.path, "/app/products")
+        self.assertEqual(parse_qs(location.query), parse_qs(query[1:]))
 
     def test_canonical_brand_and_category_ids_are_applied_together(self):
         with mock.patch.object(
@@ -128,102 +83,46 @@ class WarehouseFilterBadgeTest(unittest.TestCase):
                 "product_count": 71,
             }],
         ):
-            markup = self.render(
+            arguments = self.api_request(
                 "?brand=A.B.+Art&brand_id=31"
                 "&category=Наручные+часы&category_id=31&page=7"
             )
 
-        arguments = self.list_products_mock.call_args.kwargs
         self.assertEqual(arguments["brand_id"], "31")
         self.assertEqual(arguments["category_id"], "31")
-        self.assertEqual(arguments["brand"], "")
-        self.assertEqual(arguments["category"], "")
+        self.assertEqual(arguments["brand"], "A.B. Art")
+        self.assertEqual(arguments["category"], "Наручные часы")
         self.assertEqual(arguments["page"], 7)
-        self.assertEqual(self.badge_text(markup), "2")
+        self.assertEqual(arguments["per_page"], 50)
 
-    def test_date_range_counts_as_one_filter(self):
-        markup = self.render(
-            "?brand=Casio&category=Будильники"
-            "&date_from=2026-07-01&date_to=2026-07-29"
+    def test_api_maps_search_sort_stock_date_and_pagination(self):
+        arguments = self.api_request(
+            "?q=часы&cell=A-01&date_from=2026-07-01&date_to=2026-07-29"
+            "&sort_by=stock&sort_dir=desc&page=2&per_page=100&in_stock=1"
         )
+        self.assertEqual(arguments["query"], "часы")
+        self.assertEqual(arguments["cell"], "A-01")
+        self.assertEqual(arguments["created_from"], "2026-07-01")
+        self.assertEqual(arguments["created_to"], "2026-07-29")
+        self.assertEqual(arguments["sort_by"], "stock")
+        self.assertEqual(arguments["sort_dir"], "desc")
+        self.assertEqual(arguments["page"], 2)
+        self.assertEqual(arguments["per_page"], 100)
+        self.assertTrue(arguments["hide_zero"])
 
-        self.assertEqual(self.badge_text(markup), "3")
-        attributes, _ = self.filter_button(markup)
-        self.assertIn('title="Активно 3 фильтра"', attributes)
+    def test_react_filter_badge_counts_only_panel_filters(self):
+        source = (
+            Path(web.PROJECT_ROOT)
+            / "frontend/src/features/products/ProductsPage.tsx"
+        ).read_text(encoding="utf-8")
         self.assertIn(
-            'aria-label="Фильтры. Активно 3 фильтра"',
-            attributes,
+            "['brand_id', 'category_id', 'product_id', 'cell', 'date_from', 'date_to']",
+            source,
         )
-
-    def test_search_sort_and_stock_toggle_do_not_increase_count(self):
-        excluded_only = (
-            "?q=часы",
-            "?sort_by=stock&sort_dir=desc",
-            "?in_stock=1",
-            "?q=часы&sort_by=stock&sort_dir=desc&in_stock=1",
+        self.assertNotIn(
+            "['q', 'sort_by', 'sort_dir', 'in_stock']",
+            source,
         )
-
-        for query in excluded_only:
-            with self.subTest(query=query):
-                markup = self.render(query)
-                self.assertIsNone(self.badge_text(markup))
-                self.assertIn(
-                    " hidden",
-                    self.reset_button_attributes(markup),
-                )
-
-        markup = self.render(
-            "?brand=Casio&q=часы&sort_by=stock"
-            "&sort_dir=desc&in_stock=1"
-        )
-        self.assertEqual(self.badge_text(markup), "1")
-
-    def test_reset_clears_panel_filters_and_preserves_other_controls(self):
-        markup = self.render(
-            "?q=часы&brand=Casio&category=Будильники&cell=A-01"
-            "&date_from=2026-07-01&date_to=2026-07-29"
-            "&sort_by=stock&sort_dir=desc&per_page=100&in_stock=1"
-        )
-        link_match = re.search(
-            r'class="category-link"\s+href="([^"]+)"',
-            markup,
-            re.DOTALL,
-        )
-        self.assertIsNotNone(link_match)
-        reset_url = html.unescape(link_match.group(1))
-        reset_params = parse_qs(urlsplit(reset_url).query)
-
-        self.assertEqual(reset_params["q"], ["часы"])
-        self.assertEqual(reset_params["sort_by"], ["stock"])
-        self.assertEqual(reset_params["sort_dir"], ["desc"])
-        self.assertEqual(reset_params["per_page"], ["100"])
-        self.assertEqual(reset_params["in_stock"], ["1"])
-        for name in ("brand", "category", "cell", "date_from", "date_to"):
-            self.assertNotIn(name, reset_params)
-
-        reset_markup = self.client.get(reset_url).get_data(as_text=True)
-        self.assertIsNone(self.badge_text(reset_markup))
-        self.assertIn(" hidden", self.reset_button_attributes(reset_markup))
-
-        reset_function = re.search(
-            r"function resetWarehouseTableFilters\(\) \{(.*?)\n        \}",
-            markup,
-            re.DOTALL,
-        )
-        self.assertIsNotNone(reset_function)
-        reset_script = reset_function.group(1)
-        for name in (
-            "brand",
-            "brand_id",
-            "category",
-            "category_id",
-            "cell",
-            "date_from",
-            "date_to",
-        ):
-            self.assertIn(f'"{name}"', reset_script)
-        for name in ("q", "sort_by", "sort_dir", "per_page", "in_stock"):
-            self.assertNotIn(f'"{name}"', reset_script)
 
     def test_badge_caps_values_above_nine(self):
         with web.app.app_context():
@@ -251,18 +150,17 @@ class WarehouseFilterBadgeTest(unittest.TestCase):
                     label,
                 )
 
-    def test_reload_restores_count_from_url(self):
+    def test_reload_preserves_filter_query_for_react_router(self):
         query = (
-            "?brand=Casio&category=Будильники&cell=A-01"
+            "?brand_id=31&category_id=47&cell=A-01"
             "&date_from=2026-07-01&date_to=2026-07-29"
             "&q=часы&sort_by=stock&sort_dir=desc"
             "&page=2&per_page=100&in_stock=1"
         )
-
-        first_markup = self.render(query)
-        reloaded_markup = self.render(query)
-
-        self.assertEqual(self.badge_text(first_markup), "4")
-        self.assertEqual(self.badge_text(reloaded_markup), "4")
-        attributes, _ = self.filter_button(reloaded_markup)
-        self.assertIn("Активно 4 фильтра", attributes)
+        first = self.client.get("/warehouse" + query)
+        reloaded = self.client.get("/warehouse" + query)
+        self.assertEqual(first.headers["Location"], reloaded.headers["Location"])
+        self.assertEqual(
+            parse_qs(urlsplit(reloaded.headers["Location"]).query),
+            parse_qs(query[1:]),
+        )

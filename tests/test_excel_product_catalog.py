@@ -440,24 +440,17 @@ class ExcelProductCatalogTest(unittest.TestCase):
         from app import web
         web.app.config["TESTING"] = True
         with mock.patch.dict("os.environ", {"CATALOG_DATABASE_PATH": str(self.path)}):
-            html = web.app.test_client().get("/warehouse").get_data(as_text=True)
-        brand_editor = html.split('id="editBrandCombobox"', 1)[1].split("</form>", 1)[0]
-        self.assertEqual(brand_editor.count('data-brand="Brand"'), 1)
-        self.assertNotIn('data-brand="Other"', brand_editor)
-        self.assertIn("<span>3</span>", brand_editor)
-        self.assertNotIn("<span>7.0</span>", brand_editor)
-        self.assertNotIn("Все бренды", brand_editor)
-        self.assertNotIn("inlineBrandOptions", html)
-        for component_id in (
-            "addCategoryCombobox", "bulkCategory", "filterCategoryCombobox",
-            "mapCategoryCombobox", "editCategoryCombobox",
-        ):
-            category_editor = html.split('id="{}"'.format(component_id), 1)[1]
-            category_editor = category_editor.split('</div>\n        </div>', 1)[0]
-            self.assertIn('data-brand="Excel category"', category_editor)
-            self.assertNotIn('data-brand="Watches"', category_editor)
-        self.assertNotIn('list="warehouseCategoryOptions"', html)
-        self.assertNotIn('<select name="category"', html)
+            response = web.app.test_client().get("/api/v1/products")
+        self.assertEqual(response.status_code, 200)
+        meta = response.get_json()["meta"]
+        self.assertEqual(
+            meta["facets"]["brands"],
+            [{"name": "Brand", "count": 3}],
+        )
+        self.assertEqual(
+            meta["facets"]["categories"],
+            [{"name": "Excel category", "count": 3}],
+        )
 
     def test_brand_facets_use_other_filters_and_hide_numeric_values(self):
         self.service.apply(
@@ -542,11 +535,15 @@ class ExcelProductCatalogTest(unittest.TestCase):
 
     def test_brand_stock_counts_drop_only_redundant_decimal_zero(self):
         from app.web import build_brand_groups
-        groups = build_brand_groups([
-            {"brand": "Whole", "stock": 15},
-            {"brand": "Fractional", "stock": 1.25},
-            {"brand": "Fractional", "stock": 2.5},
-        ])
+        with mock.patch(
+            "app.web.load_catalog_taxonomy",
+            return_value={"brands": [], "categories": []},
+        ):
+            groups = build_brand_groups([
+                {"brand": "Whole", "stock": 15},
+                {"brand": "Fractional", "stock": 1.25},
+                {"brand": "Fractional", "stock": 2.5},
+            ])
         self.assertEqual(groups, [
             {"name": "Fractional", "count": 3.75},
             {"name": "Whole", "count": 15},
@@ -554,11 +551,15 @@ class ExcelProductCatalogTest(unittest.TestCase):
 
     def test_category_options_are_unique_positive_stock_totals(self):
         from app.web import build_category_groups
-        groups = build_category_groups([
-            {"category": "Ремень", "stock": 1},
-            {"category": "ремень", "stock": 2},
-            {"category": "Наручные часы", "stock": 0},
-        ])
+        with mock.patch(
+            "app.web.load_catalog_taxonomy",
+            return_value={"brands": [], "categories": []},
+        ):
+            groups = build_category_groups([
+                {"category": "Ремень", "stock": 1},
+                {"category": "ремень", "stock": 2},
+                {"category": "Наручные часы", "stock": 0},
+            ])
         self.assertEqual(groups, [{"name": "Ремень", "count": 3}])
 
     def test_product_actions_use_edit_form_and_confirmed_delete_urls(self):
@@ -587,18 +588,18 @@ class ExcelProductCatalogTest(unittest.TestCase):
             missing_confirmation = client.post(
                 "/products/{}/delete".format(product_id),
                 data={"return_to": "/products"},
-                follow_redirects=True,
             )
             blocked = client.post(
                 "/products/{}/delete".format(product_id),
                 data={"return_to": "/products", "confirm_delete": "1"},
-                follow_redirects=True,
             )
+        self.assertEqual(missing_confirmation.status_code, 302)
+        self.assertEqual(blocked.status_code, 302)
         self.assertIn(
-            "требуется явное подтверждение",
-            missing_confirmation.get_data(as_text=True),
+            "%D1%82%D1%80%D0%B5%D0%B1%D1%83%D0%B5%D1%82%D1%81%D1%8F",
+            missing_confirmation.headers["Location"],
         )
-        self.assertIn("Товар нельзя удалить", blocked.get_data(as_text=True))
+        self.assertIn("notice=error", blocked.headers["Location"])
         self.assertIsNotNone(self.catalog.get_product(product_id))
 
     def test_product_delete_removes_only_unreferenced_zero_stock_card(self):
@@ -633,9 +634,9 @@ class ExcelProductCatalogTest(unittest.TestCase):
                 blocked = web.app.test_client().post(
                     "/products/{}/delete".format(product_id),
                     data={"return_to": "/products", "confirm_delete": "1"},
-                    follow_redirects=True,
                 )
-            self.assertIn("Товар нельзя удалить", blocked.get_data(as_text=True))
+            self.assertEqual(blocked.status_code, 302)
+            self.assertIn("notice=error", blocked.headers["Location"])
             self.assertIsNotNone(self.catalog.get_product(product_id))
         with mock.patch.dict("os.environ", {"CATALOG_DATABASE_PATH": str(self.path)}), \
                 mock.patch.object(web, "load_manual_sales", return_value=[]), \
@@ -646,10 +647,9 @@ class ExcelProductCatalogTest(unittest.TestCase):
             response = web.app.test_client().post(
                 "/products/{}/delete".format(product_id),
                 data={"return_to": "/products", "confirm_delete": "1"},
-                follow_redirects=True,
             )
-        self.assertEqual(response.status_code, 200)
-        self.assertIn("Товар удалён", response.get_data(as_text=True))
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("notice=success", response.headers["Location"])
         self.assertIsNone(self.catalog.get_product(product_id))
         moysklad.assert_not_called()
         bitrix.assert_not_called()
@@ -684,13 +684,17 @@ class ExcelProductCatalogTest(unittest.TestCase):
     def test_operational_add_link_opens_preserved_warehouse_form(self):
         from app import web
         web.app.config["TESTING"] = True
-        with mock.patch.object(web, "get_warehouse_items", return_value=[]), \
-                mock.patch.object(web, "load_stock_operations", return_value=[]):
-            response = web.app.test_client().get("/warehouse?open_add=1")
-        rendered = response.get_data(as_text=True)
-        self.assertEqual(response.status_code, 200)
-        self.assertIn('class="add-card" id="warehouseAddCard"', rendered)
-        self.assertIn('id="warehouseBulkForm"', rendered)
+        client = web.app.test_client()
+        response = client.get("/warehouse?open_add=1")
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(
+            response.headers["Location"].endswith(
+                "/app/products?open_add=1"
+            )
+        )
+        shell = client.get("/app/products?open_add=1")
+        self.assertEqual(shell.status_code, 200)
+        self.assertIn('<div id="root"></div>', shell.get_data(as_text=True))
 
 
 if __name__ == "__main__":

@@ -18,8 +18,12 @@ def browser_test_item(item_id, name, article):
         "name": name,
         "article": article,
         "code": article,
+        "barcode": "460000000001",
+        "moysklad_product_id": "",
         "brand": "AARK",
         "category": "Наручные часы",
+        "brand_id": 1,
+        "category_id": 11,
         "cell": "",
         "stock": 1,
         "stock_display": "1",
@@ -29,6 +33,11 @@ def browser_test_item(item_id, name, article):
         "created_at_display": "01.01.2026",
         "has_images": False,
         "thumbnail_url": "",
+        "gallery": [],
+        "price_display": "",
+        "source_url": "",
+        "match_status": "not_found",
+        "updated_at": "2026-01-01T00:00:00Z",
         "cell_source": "product",
         "cell_source_label": "у позиции",
         "cell_source_path": "",
@@ -62,8 +71,8 @@ class WarehouseBulkBrowserTest(unittest.TestCase):
             self.skipTest("Chrome/Chromium is unavailable")
 
         items = [
-            browser_test_item("1001", "Часы Alpha", "A-1"),
-            browser_test_item("1002", "Часы Beta", "B-1"),
+            browser_test_item(1001, "Часы Alpha", "A-1"),
+            browser_test_item(1002, "Часы Beta", "B-1"),
         ]
         original_testing = web.app.testing
         web.app.testing = True
@@ -72,12 +81,12 @@ class WarehouseBulkBrowserTest(unittest.TestCase):
 
         try:
             with mock.patch.object(
-                web, "build_excel_warehouse_items", return_value=items
+                web, "serialize_api_product", side_effect=lambda item: item
             ), mock.patch.object(
                 web.ExcelProductCatalog,
                 "list_products",
                 return_value={
-                    "items": [{}, {}],
+                    "items": items,
                     "total": 2,
                     "page": 1,
                     "per_page": 50,
@@ -87,7 +96,12 @@ class WarehouseBulkBrowserTest(unittest.TestCase):
                         {"name": "Наручные часы", "count": 2},
                     ],
                     "cell_groups": [],
-                    "stats": {"total_stock": 2},
+                    "stats": {
+                        "positions": 2,
+                        "total_stock": 2,
+                        "positive_positions": 2,
+                        "zero_positions": 0,
+                    },
                 },
             ), mock.patch.object(
                 web.ExcelProductCatalog,
@@ -145,7 +159,8 @@ class WarehouseBulkBrowserTest(unittest.TestCase):
             (0, -15),
             stderr[-2000:],
         )
-        self.assertIn('data-bulk-ui-e2e="pass"', stdout)
-        self.assertIn(">Бренд<", stdout)
-        self.assertIn(">Категория<", stdout)
-        self.assertIn(">Применить<", stdout)
+        self.assertIn(">Часы Alpha<", stdout)
+        self.assertIn(">Часы Beta<", stdout)
+        self.assertIn(">Выбрать текущую страницу<", stdout)
+        self.assertIn('aria-label="Выбрать Часы Alpha"', stdout)
+        self.assertNotIn("Не удалось загрузить товары", stdout)

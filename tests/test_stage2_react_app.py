@@ -45,6 +45,48 @@ class Stage2ReactAppTest(unittest.TestCase):
         finally:
             response.close()
 
+    def test_warehouse_route_redirects_to_react_products(self):
+        response = self.client.get("/warehouse")
+        try:
+            self.assertEqual(response.status_code, 302)
+            self.assertEqual(response.location, "/app/products")
+        finally:
+            response.close()
+
+    def test_warehouse_route_keeps_query_string(self):
+        response = self.client.get("/warehouse?q=chrono&hide_zero=1&per_page=100")
+        try:
+            self.assertEqual(response.status_code, 302)
+            self.assertEqual(
+                response.location,
+                "/app/products?q=chrono&hide_zero=1&per_page=100",
+            )
+        finally:
+            response.close()
+
+    def test_warehouse_route_does_not_loop_to_legacy_route(self):
+        first = self.client.get("/warehouse")
+        second = self.client.get(first.location)
+        try:
+            self.assertEqual(first.status_code, 302)
+            self.assertEqual(first.location, "/app/products")
+            self.assertEqual(second.status_code, 200)
+            self.assertIn("<div id=\"root\"", second.get_data(as_text=True))
+        finally:
+            first.close()
+            second.close()
+
+    def test_products_route_redirects_to_warehouse(self):
+        response = self.client.get("/products?in_stock=1&per_page=100")
+        try:
+            self.assertEqual(response.status_code, 302)
+            self.assertEqual(
+                response.location,
+                "/warehouse?in_stock=1&per_page=100",
+            )
+        finally:
+            response.close()
+
 
 if __name__ == "__main__":
     unittest.main()
