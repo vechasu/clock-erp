@@ -12240,20 +12240,20 @@ def api_products_collection():
         include_cell_item_names=not request.path.startswith("/api/v1/"),
     )
     return api_success(
-        [serialize_api_product(item) for item in listing["items"]],
-        page=listing["page"],
-        page_size=listing["per_page"],
-        total=listing["total"],
-        pages=listing["pages"],
-        total_pages=listing["pages"],
-        stats=listing["stats"],
+        [serialize_api_product(item) for item in listing.get("items", [])],
+        page=listing.get("page", page),
+        page_size=listing.get("per_page", page_size),
+        total=listing.get("total", 0),
+        pages=listing.get("pages", 0),
+        total_pages=listing.get("pages", 0),
+        stats=listing.get("stats", {}),
         facets={
-            "brands": listing["brand_groups"],
-            "categories": listing["category_groups"],
-            "cells": listing["cell_groups"],
+            "brands": listing.get("brand_groups", []),
+            "categories": listing.get("category_groups", []),
+            "cells": listing.get("cell_groups", []),
         },
-        sort_by=listing["sort_by"],
-        sort_dir=listing["sort_dir"],
+        sort_by=listing.get("sort_by", sort_by),
+        sort_dir=listing.get("sort_dir", sort_dir),
     )
 
 

@@ -252,4 +252,27 @@ describe('ProductsPage', () => {
     expect(screen.getByRole('button', { name: 'Добавить' })).toBeDisabled();
     expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(0);
   });
+
+  it('selects a product and opens the React bulk editor', async () => {
+    const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/catalog/options')) return Promise.resolve(catalogResponse(url));
+      return Promise.resolve(response([product]));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    renderProducts('/products?test=bulk-editor');
+
+    expect((await screen.findAllByText('Casio G-Shock')).length).toBeGreaterThan(0);
+    await user.click(screen.getAllByRole('checkbox', { name: 'Выбрать Casio G-Shock' })[0]);
+    expect(screen.getByRole('status')).toHaveTextContent('Выбрано: 1');
+
+    await user.click(screen.getByRole('button', { name: 'Изменить выбранные' }));
+    expect(
+      screen.getByRole('heading', { name: 'Изменить выбранные товары (1)' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Бренд' })).toBeEnabled();
+    expect(screen.getByRole('combobox', { name: 'Категория' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Применить' })).toBeDisabled();
+  });
 });

@@ -90,15 +90,21 @@ class WarehouseInitialStockTest(unittest.TestCase):
     def test_rejects_empty_negative_fractional_and_nonnumeric_stock(self):
         for stock in ("", "-1", "1.5", "abc"):
             with self.subTest(stock=stock):
-                response = self.add_product("Invalid {}".format(stock), stock)
-                self.assertEqual(response.status_code, 302)
-                page = self.client.get(response.headers["Location"])
-                html = page.get_data(as_text=True)
-                self.assertEqual(page.status_code, 200)
-                self.assertIn('id="addStockError"', html)
-                self.assertIn(
+                response = self.client.post(
+                    "/api/v1/products",
+                    json={
+                        "name": "Invalid {}".format(stock),
+                        "article": "INVALID-{}".format(stock),
+                        "brand": "Test",
+                        "category": "Часы",
+                        "cell": "A-01",
+                        "stock": stock,
+                    },
+                )
+                self.assertEqual(response.status_code, 422)
+                self.assertEqual(
+                    response.get_json()["message"],
                     "Начальный остаток должен быть целым числом от 0 и выше.",
-                    html,
                 )
 
         self.assertEqual(self.catalog.list_products()["total"], 0)
@@ -107,13 +113,13 @@ class WarehouseInitialStockTest(unittest.TestCase):
         response = self.add_product("Reload Stock", "7")
         self.assertEqual(response.status_code, 302)
 
-        page = self.client.get("/warehouse?q=Reload%20Stock")
-        html = page.get_data(as_text=True)
-        compact_html = "".join(html.split())
+        page = self.client.get("/api/v1/products?q=Reload%20Stock")
         self.assertEqual(page.status_code, 200)
-        self.assertIn("Reload Stock", html)
-        self.assertIn('data-stock="7.0"', html)
-        self.assertIn(">7</td>", compact_html)
+        products = page.get_json()["data"]
+        self.assertEqual(len(products), 1)
+        self.assertEqual(products[0]["name"], "Reload Stock")
+        self.assertEqual(products[0]["stock"], 7)
+        self.assertEqual(products[0]["stock_display"], "7")
 
 
 if __name__ == "__main__":

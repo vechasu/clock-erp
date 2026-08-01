@@ -1,9 +1,9 @@
 import io
-import re
 import tempfile
 import time
 import unittest
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 from unittest import mock
 
 from openpyxl import load_workbook
@@ -153,36 +153,30 @@ class WarehousePaginationTest(unittest.TestCase):
         cls.environment.stop()
         cls.temp.cleanup()
 
-    def test_default_and_selectable_page_sizes(self):
-        response = self.client.get("/warehouse")
-        html = response.get_data(as_text=True)
+    def api_listing(self, query=""):
+        response = self.client.get("/api/v1/products" + query)
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(html.count('data-product-id="'), 50)
-        self.assertIn(
-            'id="warehouseResultStart">1</span>–<span '
-            'id="warehouseResultEnd">50</span>',
-            html,
+        payload = response.get_json()
+        self.assertIsNone(payload["error"])
+        return payload["data"], payload["meta"]
+
+    def test_default_and_selectable_page_sizes(self):
+        products, meta = self.api_listing()
+        self.assertEqual(len(products), 50)
+        self.assertEqual(
+            (meta["page"], meta["page_size"], meta["total"], meta["pages"]),
+            (1, 50, self.PRODUCT_COUNT, 100),
         )
-        self.assertIn('id="warehouseResultTotal">5 000</span>', html)
-        self.assertIn('class="active" aria-current="page">1</span>', html)
-        self.assertIn('aria-label="Страница 2"', html)
-        self.assertIn('aria-label="Страница 100"', html)
-        self.assertNotIn('aria-label="Первая страница"', html)
-        self.assertNotIn('aria-label="Последняя страница"', html)
-        self.assertEqual(html.count('id="warehousePageSize"'), 1)
-        self.assertIn('loading="lazy"', html)
-        self.assertIn('decoding="async"', html)
-        self.assertNotIn('data-gallery="', html)
+        self.assertTrue(all("thumbnail_url" in item for item in products))
+        self.assertTrue(all("gallery" in item for item in products))
 
         for per_page in (100, 200):
             with self.subTest(per_page=per_page):
-                html = self.client.get(
-                    "/warehouse?per_page={}".format(per_page)
-                ).get_data(as_text=True)
-                self.assertEqual(
-                    html.count('data-product-id="'),
-                    per_page,
+                products, meta = self.api_listing(
+                    "?per_page={}".format(per_page)
                 )
+                self.assertEqual(len(products), per_page)
+                self.assertEqual(meta["page_size"], per_page)
 
     def test_server_search_filters_sort_and_combination(self):
         catalog = ExcelProductCatalog(self.database)
@@ -225,19 +219,19 @@ class WarehousePaginationTest(unittest.TestCase):
     def test_canonical_filters_combine_with_search_stock_sort_and_pagination(self):
         cases = (
             (
-                "/warehouse?brand_id={}&per_page=100".format(
+                "?brand_id={}&per_page=100".format(
                     self.brand_ids["Casio"]
                 ),
                 "Casio",
                 None,
             ),
             (
-                "/warehouse?category=Будильники&per_page=100",
+                "?category=Будильники&per_page=100",
                 None,
                 "Будильники",
             ),
             (
-                "/warehouse?brand_id={}&category_id={}&per_page=100".format(
+                "?brand_id={}&category_id={}&per_page=100".format(
                     self.brand_ids["Casio"],
                     self.category_ids[("Casio", "Будильники")],
                 ),
@@ -247,34 +241,21 @@ class WarehousePaginationTest(unittest.TestCase):
         )
         for path, expected_brand, expected_category in cases:
             with self.subTest(path=path):
-                html = self.client.get(path).get_data(as_text=True)
-                rows = re.findall(
-                    r'<tr\s+data-product-id="[^"]+".*?</tr>',
-                    html,
-                    re.DOTALL,
-                )
+                rows, _meta = self.api_listing(path)
                 self.assertTrue(rows)
                 if expected_brand:
                     self.assertTrue(all(
-                        (
-                            '<td data-column-key="brand">'
-                            + expected_brand
-                            + "</td>"
-                        ) in row
+                        row["brand"] == expected_brand
                         for row in rows
                     ))
                 if expected_category:
                     self.assertTrue(all(
-                        (
-                            '<td data-column-key="category">'
-                            + expected_category
-                            + "</td>"
-                        ) in row
+                        row["category"] == expected_category
                         for row in rows
                     ))
 
         combined_path = (
-            "/warehouse?q=Product&brand_id={}&category_id={}"
+            "?q=Product&brand_id={}&category_id={}"
             "&date_from=2026-07-29&date_to=2026-07-29"
             "&in_stock=1&sort_by=article&sort_dir=desc"
             "&page=2&per_page=100"
@@ -282,35 +263,19 @@ class WarehousePaginationTest(unittest.TestCase):
             self.brand_ids["Casio"],
             self.category_ids[("Casio", "Будильники")],
         )
-        combined_html = self.client.get(
-            combined_path
-        ).get_data(as_text=True)
-        combined_rows = re.findall(
-            r'<tr\s+data-product-id="[^"]+".*?</tr>',
-            combined_html,
-            re.DOTALL,
-        )
+        combined_rows, meta = self.api_listing(combined_path)
         self.assertEqual(len(combined_rows), 100)
         self.assertTrue(all(
-            '<td data-column-key="brand">Casio</td>' in row
-            and '<td data-column-key="category">Будильники</td>' in row
-            and float(re.search(
-                r'data-stock="([^"]+)"',
-                row,
-            ).group(1)) > 0
+            row["brand"] == "Casio"
+            and row["category"] == "Будильники"
+            and row["stock"] > 0
             for row in combined_rows
         ))
-        articles = [
-            re.search(
-                r'<td data-column-key="article">([^<]+)</td>',
-                row,
-            ).group(1)
-            for row in combined_rows
-        ]
+        articles = [row["article"] for row in combined_rows]
         self.assertEqual(articles, sorted(articles, reverse=True))
-        self.assertIn('class="active" aria-current="page">2</span>', combined_html)
-        self.assertIn("brand_id=", combined_html)
-        self.assertIn("category_id=", combined_html)
+        self.assertEqual(meta["page"], 2)
+        self.assertEqual(meta["sort_by"], "article")
+        self.assertEqual(meta["sort_dir"], "desc")
 
     def test_brand_filter_counts_positions_and_respects_other_filters(self):
         catalog = ExcelProductCatalog(self.database)
@@ -339,262 +304,118 @@ class WarehousePaginationTest(unittest.TestCase):
         self.assertEqual(selected["brand_all_count"], self.PRODUCT_COUNT)
         self.assertEqual(selected["brand_groups"], listing["brand_groups"])
 
-        html = self.client.get("/warehouse").get_data(as_text=True)
-        brand_filter = html.split(
-            'id="filterBrandCombobox"',
-            1,
-        )[1].split(
-            '<div class="category-cell-form-title"',
-            1,
-        )[0]
-        self.assertIn("Все бренды", brand_filter)
-        self.assertIn("<span>5000</span>", brand_filter)
-        self.assertEqual(brand_filter.count("<span>2500</span>"), 2)
+        _products, meta = self.api_listing()
+        self.assertEqual(meta["facets"]["brands"], listing["brand_groups"])
 
     def test_pagination_state_is_kept_in_urls(self):
-        html = self.client.get(
+        query = (
             "/warehouse?q=Product&brand=Omega&sort_by=article"
             "&sort_dir=desc&page=2&per_page=100"
-        ).get_data(as_text=True)
-        self.assertIn(
-            'id="warehouseResultStart">101</span>–<span '
-            'id="warehouseResultEnd">200</span>',
-            html,
         )
-        self.assertIn('class="active" aria-current="page">2</span>', html)
-        self.assertIn('aria-label="Страница 25"', html)
-        self.assertIn("q=Product", html)
-        self.assertIn("brand=Omega", html)
-        self.assertIn("per_page=100", html)
+        redirect = self.client.get(query)
+        self.assertEqual(redirect.status_code, 302)
+        self.assertEqual(
+            parse_qs(urlsplit(redirect.headers["Location"]).query),
+            parse_qs(urlsplit(query).query),
+        )
+        products, meta = self.api_listing(query.replace("/warehouse", "", 1))
+        self.assertEqual(len(products), 100)
+        self.assertEqual((meta["page"], meta["page_size"], meta["pages"]), (2, 100, 25))
 
     def test_first_and_last_pages_use_compact_numbered_pagination(self):
-        first_html = self.client.get("/warehouse").get_data(as_text=True)
-        self.assertNotIn(
-            'href="#" aria-label="Предыдущая страница"',
-            first_html,
-        )
-        self.assertIn('aria-label="Следующая страница"', first_html)
-
-        last_html = self.client.get(
-            "/warehouse?page=100"
-        ).get_data(as_text=True)
-        self.assertIn(
-            'id="warehouseResultStart">4951</span>–<span '
-            'id="warehouseResultEnd">5000</span>',
-            last_html,
-        )
-        self.assertIn(
-            'class="active" aria-current="page">100</span>',
-            last_html,
-        )
-        self.assertIn('aria-label="Предыдущая страница"', last_html)
-        self.assertNotIn(
-            'href="#" aria-label="Следующая страница"',
-            last_html,
-        )
+        first, first_meta = self.api_listing()
+        last, last_meta = self.api_listing("?page=100")
+        self.assertEqual((first_meta["page"], len(first)), (1, 50))
+        self.assertEqual((last_meta["page"], last_meta["pages"], len(last)), (100, 100, 50))
+        self.assertEqual(last[0]["name"], "Product 4950")
 
     def test_zero_stock_filter_and_icon_actions_use_shared_components(self):
-        html = self.client.get(
-            "/warehouse?in_stock=1"
-        ).get_data(as_text=True)
-        self.assertRegex(
-            html,
-            r'id="warehouseInStockToggle"[^>]*\schecked',
-        )
-
-        stock_header = re.search(
-            r'<th data-column-key="stock">(.*?)</th>',
-            html,
-            re.DOTALL,
-        )
-        self.assertIsNotNone(stock_header)
-        stock_header_markup = stock_header.group(1)
-        self.assertIn("Остаток", stock_header_markup)
-        self.assertIn('role="switch"', stock_header_markup)
-        self.assertIn('aria-checked="true"', stock_header_markup)
-        self.assertIn(
-            'aria-label="Показать товары с нулевым остатком"',
-            stock_header_markup,
-        )
-        self.assertIn(
-            'title="Показать товары с нулевым остатком"',
-            stock_header_markup,
-        )
-        self.assertNotIn("Скрыть нулевые остатки", html)
-
-        actions_cell = re.search(
-            r'<td data-column-key="actions">(.*?)</td>',
-            html,
-            re.DOTALL,
-        )
-        self.assertIsNotNone(actions_cell)
-        action_markup = actions_cell.group(1)
-        self.assertIn("erp-table-action-view", action_markup)
-        self.assertIn("erp-table-action-delete", action_markup)
-        self.assertIn('title="Открыть карточку"', action_markup)
-        self.assertIn('aria-label="Удалить товар"', action_markup)
-        self.assertNotIn(">Карточка<", action_markup)
-        self.assertNotIn(">Удалить<", action_markup)
+        products, meta = self.api_listing("?in_stock=1")
+        self.assertTrue(products)
+        self.assertTrue(all(item["stock"] > 0 for item in products))
+        self.assertEqual(meta["stats"]["zero_positions"], 0)
+        source = (
+            Path(web.PROJECT_ROOT)
+            / "frontend/src/features/products/ProductsPage.tsx"
+        ).read_text(encoding="utf-8")
+        self.assertIn("header: 'Остаток ↕'", source)
+        self.assertIn("<span>Скрыть нулевые</span>", source)
+        self.assertIn("export const LOW_STOCK_THRESHOLD = 3", source)
+        self.assertIn("title={state === ' is-low' ? 'Заканчивается'", source)
+        self.assertIn('title="Удалить товар"', source)
 
     def test_in_stock_filter_hides_and_restores_zero_stock(self):
-        all_html = self.client.get(
-            "/warehouse?per_page=100"
-        ).get_data(as_text=True)
-        positive_html = self.client.get(
-            "/warehouse?in_stock=1&per_page=100"
-        ).get_data(as_text=True)
-        restored_html = self.client.get(
-            "/warehouse?per_page=100"
-        ).get_data(as_text=True)
-
-        stock_pattern = (
-            r'<tr\s+data-product-id="[^"]+"\s+'
-            r'data-stock="([^"]+)"'
+        all_products, all_meta = self.api_listing("?per_page=100")
+        positive_products, positive_meta = self.api_listing(
+            "?in_stock=1&per_page=100"
         )
-        all_stocks = [
-            float(value)
-            for value in re.findall(stock_pattern, all_html)
-        ]
-        positive_stocks = [
-            float(value)
-            for value in re.findall(stock_pattern, positive_html)
-        ]
-        restored_stocks = [
-            float(value)
-            for value in re.findall(stock_pattern, restored_html)
-        ]
+        restored_products, restored_meta = self.api_listing("?per_page=100")
+        all_stocks = [item["stock"] for item in all_products]
+        positive_stocks = [item["stock"] for item in positive_products]
+        restored_stocks = [item["stock"] for item in restored_products]
 
         self.assertIn(0, all_stocks)
         self.assertTrue(positive_stocks)
         self.assertTrue(all(stock > 0 for stock in positive_stocks))
         self.assertIn(0, restored_stocks)
-        self.assertIn(
-            'id="visiblePositionsCount" class="stat-value erp-stat-value">'
-            "2500</div>",
-            positive_html,
-        )
-        self.assertIn(
-            'id="totalStockCount" class="stat-value erp-stat-value">'
-            "2500</div>",
-            positive_html,
-        )
-        self.assertIn(
-            'id="visiblePositionsCount" class="stat-value erp-stat-value">'
-            "5000</div>",
-            restored_html,
-        )
+        self.assertEqual(positive_meta["stats"]["positions"], 2500)
+        self.assertEqual(positive_meta["stats"]["total_stock"], 2500)
+        self.assertEqual(all_meta["stats"]["positions"], 5000)
+        self.assertEqual(restored_meta["stats"]["positions"], 5000)
 
     def test_in_stock_combines_with_search_brand_category_and_date(self):
         cases = (
-            "/warehouse?q=Product%20000&in_stock=1&per_page=100",
-            "/warehouse?brand=Casio&in_stock=1&per_page=100",
-            "/warehouse?category=Будильники&in_stock=1&per_page=100",
+            "?q=Product%20000&in_stock=1&per_page=100",
+            "?brand=Casio&in_stock=1&per_page=100",
+            "?category=Будильники&in_stock=1&per_page=100",
             (
-                "/warehouse?brand=Casio&category=Будильники"
+                "?brand=Casio&category=Будильники"
                 "&in_stock=1&per_page=100"
             ),
             (
-                "/warehouse?date_from=2026-07-29&date_to=2026-07-29"
+                "?date_from=2026-07-29&date_to=2026-07-29"
                 "&in_stock=1&per_page=100"
             ),
-        )
-        stock_pattern = (
-            r'<tr\s+data-product-id="[^"]+"\s+'
-            r'data-stock="([^"]+)"'
         )
         for path in cases:
             with self.subTest(path=path):
-                html = self.client.get(path).get_data(as_text=True)
-                stocks = [
-                    float(value)
-                    for value in re.findall(stock_pattern, html)
-                ]
+                products, _meta = self.api_listing(path)
+                stocks = [item["stock"] for item in products]
                 self.assertTrue(stocks)
                 self.assertTrue(all(stock > 0 for stock in stocks))
-                self.assertRegex(
-                    html,
-                    r'id="warehouseInStockToggle"[^>]*\schecked',
-                )
 
     def test_in_stock_keeps_sort_pagination_and_page_size_state(self):
-        html = self.client.get(
-            "/warehouse?in_stock=1&sort_by=stock&sort_dir=desc"
+        products, meta = self.api_listing(
+            "?in_stock=1&sort_by=stock&sort_dir=desc"
             "&page=2&per_page=100"
-        ).get_data(as_text=True)
-        stocks = [
-            float(value)
-            for value in re.findall(
-                r'<tr\s+data-product-id="[^"]+"\s+'
-                r'data-stock="([^"]+)"',
-                html,
-            )
-        ]
+        )
+        stocks = [item["stock"] for item in products]
 
         self.assertEqual(len(stocks), 100)
         self.assertTrue(all(stock > 0 for stock in stocks))
-        self.assertIn(
-            'id="warehouseResultStart">101</span>–<span '
-            'id="warehouseResultEnd">200</span>',
-            html,
-        )
-        self.assertIn("in_stock=1", html)
-        self.assertIn("sort_by=stock", html)
-        self.assertIn("sort_dir=desc", html)
-        self.assertIn("per_page=100", html)
-        self.assertIn(
-            '<option value="100" selected>100</option>',
-            html,
-        )
-        self.assertIn('aria-checked="true"', html)
-        self.assertIn("↓", html)
+        self.assertEqual((meta["page"], meta["page_size"]), (2, 100))
+        self.assertEqual((meta["sort_by"], meta["sort_dir"]), ("stock", "desc"))
+        self.assertEqual(stocks, sorted(stocks, reverse=True))
 
     def test_in_stock_markup_keeps_toggle_and_sort_handlers_separate(self):
-        html = self.client.get(
+        path = (
             "/warehouse?brand=1&category=Будильники&q=Product"
             "&date_from=2026-07-29&date_to=2026-07-29"
             "&sort_by=stock&sort_dir=desc&page=2&per_page=100"
-        ).get_data(as_text=True)
-        template = (
-            Path(web.app.root_path)
-            / web.app.template_folder
-            / "warehouse.html"
+        )
+        redirect = self.client.get(path)
+        self.assertEqual(redirect.status_code, 302)
+        self.assertEqual(
+            parse_qs(urlsplit(redirect.headers["Location"]).query),
+            parse_qs(urlsplit(path).query),
+        )
+        source = (
+            Path(web.PROJECT_ROOT)
+            / "frontend/src/features/products/ProductsPage.tsx"
         ).read_text(encoding="utf-8")
-
-        self.assertIn('name="brand" value="1"', html)
-        self.assertIn('id="warehouseInStockToggle"', html)
-        self.assertIn('aria-checked="false"', html)
-        self.assertIn('data-sort-field="stock"', template)
-        self.assertIn(
-            'onclick="sortWarehouseTable(this.dataset.sortField)"',
-            template,
-        )
-        self.assertIn(
-            'onchange="toggleWarehouseInStock(event, this)"',
-            template,
-        )
-        self.assertIn('onclick="event.stopPropagation()"', template)
-        self.assertIn(
-            'url.searchParams.set("in_stock", "1");',
-            template,
-        )
-        self.assertIn(
-            'url.searchParams.delete("in_stock");',
-            template,
-        )
-        self.assertIn(
-            'url.searchParams.delete("page");',
-            template,
-        )
-        toggle_handler = template.split(
-            "function toggleWarehouseInStock", 1
-        )[1].split("document.addEventListener", 1)[0]
-        self.assertNotIn('searchParams.set("brand"', toggle_handler)
-        self.assertNotIn('searchParams.delete("brand"', toggle_handler)
-        sort_handler = template.split(
-            "function sortWarehouseTable", 1
-        )[1].split("initializeWarehouseTableView", 1)[0]
-        self.assertNotIn('searchParams.set("in_stock"', sort_handler)
-        self.assertNotIn('searchParams.delete("in_stock"', sort_handler)
+        self.assertIn("setFilter('in_stock'", source)
+        self.assertIn("updated.set('sort_by'", source)
+        self.assertIn("updated.set('sort_dir'", source)
 
     def test_query_count_is_constant_and_response_is_bounded(self):
         catalog = ExcelProductCatalog(self.database)
@@ -617,7 +438,7 @@ class WarehousePaginationTest(unittest.TestCase):
 
         self.assertEqual(select_count(50), select_count(200))
         started = time.perf_counter()
-        response = self.client.get("/warehouse")
+        response = self.client.get("/api/v1/products")
         elapsed = time.perf_counter() - started
         self.assertLess(len(response.data), 2_000_000)
         self.assertLess(elapsed, 1.5)
