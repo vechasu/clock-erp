@@ -8,6 +8,7 @@ import { ReceiptsPage } from './ReceiptsPage';
 const receipt = {
   id: 'receipt-1',
   number: 'PR-2026-0001',
+  document_number: 'PR-2026-0001',
   created_at: '2026-07-30 12:00',
   receipt_date: '2026-07-30',
   brand: 'Casio',
@@ -17,6 +18,7 @@ const receipt = {
   product_id: 'ms-1',
   product_name: 'Casio G-Shock',
   note: 'Поставка',
+  comment: 'Поставка',
   status: 'posted',
   status_label: 'Проведён',
   positions: [
@@ -148,7 +150,7 @@ describe('ReceiptsPage', () => {
     await user.click(screen.getByRole('button', { name: 'Новый приход' }));
     expect(await screen.findByRole('heading', { name: 'Новый приход' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '+ Добавить позицию' })).toBeInTheDocument();
-    expect(screen.getByText('Выбрать JPEG или PNG')).toBeInTheDocument();
+    expect(screen.queryByText('Выбрать JPEG или PNG')).not.toBeInTheDocument();
   });
 
   it('restores the selected shared IDs when editing a receipt', async () => {
@@ -169,7 +171,7 @@ describe('ReceiptsPage', () => {
       expect(screen.getByRole('combobox', { name: 'Бренд *' })).toHaveValue('Casio');
       expect(screen.getByRole('combobox', { name: 'Категория *' })).toHaveValue('Часы');
       expect(screen.getByRole('combobox', { name: 'Товар *' })).toHaveValue(
-        'Casio G-Shock · GA-2100 · остаток 3',
+        'Casio G-Shock',
       );
     });
   });

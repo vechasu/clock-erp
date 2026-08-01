@@ -8336,6 +8336,11 @@ def parse_receipt_number(value, default=0):
         return default
 
 
+def receipt_quantity_value(value, default=0):
+    number = parse_receipt_number(value, default)
+    return int(number) if float(number).is_integer() else number
+
+
 def generate_receipt_number(receipts):
     from datetime import datetime
 
@@ -8748,6 +8753,21 @@ def receipts_page():
         today=datetime.now().strftime("%Y-%m-%d"),
         total_receipts=len(receipts),
         total_quantity=format_stock_number(total_quantity),
+        receipt_filter_brands=sorted({
+            str(receipt.get("brand") or "").strip()
+            for receipt in receipts
+            if str(receipt.get("brand") or "").strip()
+        }),
+        receipt_filter_categories=sorted({
+            str(receipt.get("category") or "").strip()
+            for receipt in receipts
+            if str(receipt.get("category") or "").strip()
+        }),
+        receipt_filter_products=sorted({
+            str(receipt.get("product_name") or "").strip()
+            for receipt in receipts
+            if str(receipt.get("product_name") or "").strip()
+        }),
         notice=(request.args.get("notice") or "").strip(),
         message=(request.args.get("message") or "").strip(),
         open_receipt_modal=(
@@ -8776,19 +8796,64 @@ def receipts_report():
     if date_from and date_to and date_from > date_to:
         date_from, date_to = date_to, date_from
 
+    query = (request.args.get("q") or "").strip().casefold()
+    document_number = (
+        request.args.get("document_number") or ""
+    ).strip().casefold()
+    comment = (request.args.get("comment") or "").strip().casefold()
+    status = (request.args.get("status") or "").strip()
+    status_label = (request.args.get("status_label") or "").strip()
+    brand = (request.args.get("brand") or "").strip()
+    category = (request.args.get("category") or "").strip()
+    product_name = (request.args.get("product_name") or "").strip()
+    brand_id = (request.args.get("brand_id") or "").strip()
+    category_id = (request.args.get("category_id") or "").strip()
+    product_id = (request.args.get("product_id") or "").strip()
     receipts = []
 
-    for receipt in load_receipts():
-        receipt_date = str(
-            receipt.get("receipt_date")
-            or receipt.get("created_at")
-            or ""
-        )[:10]
+    for receipt in api_receipt_records():
+        receipt = dict(receipt)
+        receipt_date = receipt["receipt_date"]
 
         if date_from and receipt_date < date_from:
             continue
 
         if date_to and receipt_date > date_to:
+            continue
+
+        if query and query not in " ".join([
+            receipt["document_number"], receipt["comment"],
+            receipt["product_name"], receipt["brand"], receipt["category"],
+        ]).casefold():
+            continue
+        if document_number and document_number not in receipt["document_number"].casefold():
+            continue
+        if comment and comment not in receipt["comment"].casefold():
+            continue
+        if status and receipt["status"] != status:
+            continue
+        if status_label and receipt["status_label"] != status_label:
+            continue
+        if brand and receipt["brand"] != brand:
+            continue
+        if category and receipt["category"] != category:
+            continue
+        if product_name and receipt["product_name"] != product_name:
+            continue
+        if brand_id and not any(
+            str(position.get("brand_id") or "") == brand_id
+            for position in receipt["positions"]
+        ):
+            continue
+        if category_id and not any(
+            str(position.get("category_id") or "") == category_id
+            for position in receipt["positions"]
+        ):
+            continue
+        if product_id and not any(
+            str(position.get("product_id") or "") == product_id
+            for position in receipt["positions"]
+        ):
             continue
 
         receipts.append(receipt)
@@ -10543,6 +10608,13 @@ def receipt_update():
             message="Приход не найден",
         ))
 
+    if receipt.get("status") == "cancelled":
+        return redirect(url_for(
+            "receipts_page",
+            notice="success",
+            message="Приход уже отменён; остаток не изменён повторно",
+        ))
+
     positions = receipt.get("positions") or []
 
     if len(positions) != 1:
@@ -10821,6 +10893,13 @@ def receipt_delete():
             message="Приход не найден",
         ))
 
+    if receipt.get("status") == "cancelled":
+        return redirect(url_for(
+            "receipts_page",
+            notice="success",
+            message="Приход уже отменён; остаток не изменён повторно",
+        ))
+
     document_id = str(
         receipt.get("moysklad_document_id") or ""
     ).strip()
@@ -10838,6 +10917,9 @@ def receipt_delete():
     try:
         client = MoySkladClient()
 
+        if receipt.get("inventory_managed"):
+            ReceiptInventory().can_cancel(receipt_id)
+
         deleted = client.delete_stock_enter(
             document_id
         )
@@ -10847,25 +10929,18 @@ def receipt_delete():
                 "МойСклад не удалил приход"
             )
 
-        receipts = [
-            item
-            for item in receipts
-            if str(item.get("id") or "")
-            != receipt_id
-        ]
-
-        save_receipts(receipts)
-
-        operations = [
-            operation
-            for operation in load_stock_operations()
-            if str(
-                operation.get("receipt_id") or ""
+        if receipt.get("inventory_managed"):
+            ReceiptInventory().cancel_receipt(
+                receipt_id,
+                idempotency_key="receipt-delete:{}".format(receipt_id),
+                user_name=current_sales_user_name(),
+                reason="Отмена через интерфейс ERP",
             )
-            != receipt_id
-        ]
 
-        save_stock_operations(operations)
+        receipt["status"] = "cancelled"
+        receipt["status_label"] = "Отменён"
+        receipt["cancelled_at"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+        save_receipts(receipts)
 
         WAREHOUSE_CACHE["items"] = []
         WAREHOUSE_CACHE["loaded_at"] = 0
@@ -10876,7 +10951,7 @@ def receipt_delete():
             message=(
                 "Приход "
 
-                + " удалён"
+                + " отменён; обратное движение сохранено"
             ),
         ))
 
@@ -12138,7 +12213,8 @@ def api_product_request_payload():
             request.files.get("product_image"),
             allow_webp=True,
         )
-    return api_json_payload(), None
+    payload = api_json_payload()
+    return payload, decode_api_product_image(payload.get("product_image"))
 
 
 def rollback_remote_product(client, product):
@@ -12725,7 +12801,7 @@ def serialize_api_receipt(
             "cell": str(
                 product.get("cell") if product else position.get("cell") or ""
             ),
-            "quantity": parse_receipt_number(position.get("quantity")),
+            "quantity": receipt_quantity_value(position.get("quantity")),
             "purchase_price": parse_receipt_number(position.get("purchase_price")),
             "line_total": parse_receipt_number(position.get("line_total")),
             "stock_before": parse_receipt_number(position.get("stock_before")),
@@ -12768,7 +12844,7 @@ def serialize_api_receipt(
                 else receipt.get("category") or ""
             ),
             "cell": str(product.get("cell") if product else ""),
-            "quantity": parse_receipt_number(receipt.get("quantity")),
+            "quantity": receipt_quantity_value(receipt.get("quantity")),
             "purchase_price": parse_receipt_number(receipt.get("purchase_price")),
             "line_total": round(
                 parse_receipt_number(receipt.get("quantity"))
@@ -12781,6 +12857,7 @@ def serialize_api_receipt(
     return {
         "id": str(receipt.get("id") or ""),
         "number": str(receipt.get("number") or ""),
+        "document_number": str(receipt.get("number") or ""),
         "created_at": str(receipt.get("created_at") or ""),
         "receipt_date": str(
             receipt.get("receipt_date")
@@ -12812,12 +12889,13 @@ def serialize_api_receipt(
             else receipt.get("product_name") or ""
         ),
         "note": str(receipt.get("note") or ""),
+        "comment": str(receipt.get("note") or ""),
         "status": str(receipt.get("status") or "posted"),
         "status_label": str(receipt.get("status_label") or "Проведён"),
         "inventory_managed": bool(receipt.get("inventory_managed")),
         "positions": positions,
         "positions_count": len(positions),
-        "total_quantity": parse_receipt_number(
+        "total_quantity": receipt_quantity_value(
             receipt.get("total_quantity"),
             sum(item["quantity"] for item in positions),
         ),
@@ -12926,12 +13004,28 @@ def build_api_receipt_positions(
             product = catalog_by_id.get(product_id)
         if product is None:
             raise ValueError("Товар в позиции {} не найден в каталоге.".format(index))
-        quantity = parse_receipt_number(requested.get("quantity"), -1)
-        purchase_price = parse_receipt_number(requested.get("purchase_price"), 0)
-        if quantity <= 0:
+        raw_quantity = requested.get("quantity")
+        if isinstance(raw_quantity, bool) or raw_quantity in (None, ""):
             raise ValueError(
-                "Количество в позиции {} должно быть больше нуля.".format(index)
+                "Количество в позиции {} должно быть целым положительным числом.".format(
+                    index
+                )
             )
+        if isinstance(raw_quantity, str) and "," in raw_quantity:
+            raise ValueError(
+                "Количество в позиции {} должно быть целым положительным числом.".format(
+                    index
+                )
+            )
+        quantity = parse_receipt_number(raw_quantity, -1)
+        purchase_price = parse_receipt_number(requested.get("purchase_price"), 0)
+        if quantity <= 0 or not float(quantity).is_integer():
+            raise ValueError(
+                "Количество в позиции {} должно быть целым положительным числом.".format(
+                    index
+                )
+            )
+        quantity = int(quantity)
         if purchase_price < 0:
             raise ValueError(
                 "Цена закупки в позиции {} не может быть отрицательной.".format(index)
@@ -13346,6 +13440,11 @@ def api_receipts_collection():
         receipt_inventory = ReceiptInventory(receipt_database)
         try:
             payload, product_image = api_receipt_request_payload()
+            if product_image:
+                raise ValueError(
+                    "Фото существующего товара нельзя менять через приход. "
+                    "Добавьте фото при создании товара или в его карточке."
+                )
             request_idempotency_key = str(
                 request.headers.get("Idempotency-Key")
                 or payload.get("idempotency_key")
@@ -13354,7 +13453,20 @@ def api_receipts_collection():
             receipt_date = validate_api_receipt_date(
                 payload.get("receipt_date") or payload.get("date")
             )
-            note = str(payload.get("note") or "").strip()
+            note = str(
+                payload.get("comment")
+                if "comment" in payload
+                else payload.get("note") or ""
+            ).strip()
+            requested_document_number = str(
+                payload.get("document_number")
+                or payload.get("number")
+                or ""
+            ).strip()
+            if len(requested_document_number) > 120:
+                raise ValueError("Номер документа не должен превышать 120 символов.")
+            if len(note) > 2000:
+                raise ValueError("Комментарий не должен превышать 2000 символов.")
             positions = build_api_receipt_positions(
                 payload.get("positions") or payload.get("items"),
                 receipt_api_catalog_items(
@@ -13391,7 +13503,7 @@ def api_receipts_collection():
                     shared_catalog=receipt_catalog,
                 ))
         receipt_id = str(uuid.uuid4())
-        receipt_number = generate_receipt_number(receipts)
+        receipt_number = requested_document_number or generate_receipt_number(receipts)
         first_position = positions[0]
         reason_parts = [
             "Vechasu ERP: приход {}".format(receipt_number),
@@ -13579,6 +13691,8 @@ def api_receipts_collection():
     date_from = (request.args.get("date_from") or "").strip()
     date_to = (request.args.get("date_to") or "").strip()
     status = (request.args.get("status") or "").strip()
+    document_number = (request.args.get("document_number") or "").strip().casefold()
+    comment = (request.args.get("comment") or "").strip().casefold()
     brand = (request.args.get("brand") or "").strip()
     category = (request.args.get("category") or "").strip()
     brand_id = (request.args.get("brand_id") or "").strip()
@@ -13599,6 +13713,16 @@ def api_receipts_collection():
         receipts = [item for item in receipts if item["receipt_date"] <= date_to]
     if status:
         receipts = [item for item in receipts if item["status"] == status]
+    if document_number:
+        receipts = [
+            item for item in receipts
+            if document_number in item["document_number"].casefold()
+        ]
+    if comment:
+        receipts = [
+            item for item in receipts
+            if comment in item["comment"].casefold()
+        ]
     if brand:
         receipts = [item for item in receipts if item["brand"] == brand]
     if category:
@@ -13641,7 +13765,8 @@ def api_receipts_collection():
         or "desc"
     ).strip()
     allowed_sort = {
-        "receipt_date", "number", "total_quantity", "total_amount", "created_at",
+        "receipt_date", "number", "document_number", "total_quantity",
+        "total_amount", "created_at",
     }
     if sort_by not in allowed_sort:
         sort_by = "receipt_date"
@@ -13723,6 +13848,7 @@ def api_receipt_resource(receipt_id):
                         or "receipt-delete:{}".format(receipt_id)
                     ),
                     user_name=current_sales_user_name(),
+                    reason="Отмена через интерфейс ERP",
                 )
             receipt["status"] = "cancelled"
             receipt["status_label"] = "Отменён"
@@ -13755,10 +13881,25 @@ def api_receipt_resource(receipt_id):
             or receipt.get("receipt_date")
         )
         note = str(
-            payload.get("note")
+            payload.get("comment")
+            if "comment" in payload
+            else payload.get("note")
             if "note" in payload
             else receipt.get("note") or ""
         ).strip()
+        document_number = str(
+            payload.get("document_number")
+            if "document_number" in payload
+            else payload.get("number")
+            if "number" in payload
+            else receipt.get("number") or ""
+        ).strip()
+        if not document_number:
+            raise ValueError("Укажите номер документа.")
+        if len(document_number) > 120:
+            raise ValueError("Номер документа не должен превышать 120 символов.")
+        if len(note) > 2000:
+            raise ValueError("Комментарий не должен превышать 2000 символов.")
         requested_positions = payload.get("positions") or payload.get("items")
         if not requested_positions:
             old = (receipt.get("positions") or [])[0]
@@ -13782,11 +13923,17 @@ def api_receipt_resource(receipt_id):
         )
         if len(positions) != 1:
             raise ValueError("Редактировать можно только одну позицию.")
+        old_product_id = str((receipt.get("positions") or [])[0].get("product_id") or "")
+        if str(positions[0]["product_id"]) != old_product_id:
+            raise ValueError(
+                "Товар проведённого прихода изменить нельзя. "
+                "Отмените приход и создайте новый."
+            )
     except ValueError as error:
         return api_error("RECEIPT_VALIDATION_FAILED", str(error), 422)
     position = positions[0]
     reason = ". ".join(filter(None, [
-        "Vechasu ERP: приход {}".format(receipt.get("number") or ""),
+        "Vechasu ERP: приход {}".format(document_number),
         "Товар: {}".format(position["product_name"]),
         "Комментарий: {}".format(note) if note else "",
     ]))
@@ -13805,6 +13952,7 @@ def api_receipt_resource(receipt_id):
         if not document:
             raise ValueError("МойСклад не обновил приход.")
         receipt.update({
+            "number": document_number,
             "receipt_date": receipt_date,
             "brand": position["brand"],
             "category": position["category"],

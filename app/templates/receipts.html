@@ -672,6 +672,10 @@
             display: none !important;
         }
 
+        .receipt-row .receipt-edit-control[hidden] {
+            display: none !important;
+        }
+
         .receipt-row.is-editing {
             background: #eff6ff;
         }
@@ -683,6 +687,12 @@
         .receipt-row.is-editing
         .receipt-view-value {
             display: none !important;
+        }
+
+        .receipt-row.is-editing
+        td.receipt-immutable
+        .receipt-view-value {
+            display: block !important;
         }
 
         .receipt-row.is-editing
@@ -1469,6 +1479,31 @@
                 oninput="filterReceipts()"
             >
 
+            <input class="search" id="receiptDocumentFilter" type="search"
+                placeholder="Номер документа" oninput="filterReceipts()">
+            <input class="search" id="receiptCommentFilter" type="search"
+                placeholder="Комментарий" oninput="filterReceipts()">
+            <select class="control" id="receiptBrandFilter" onchange="filterReceipts()">
+                <option value="">Все бренды</option>
+                {% for value in receipt_filter_brands %}<option value="{{ value }}">{{ value }}</option>{% endfor %}
+            </select>
+            <select class="control" id="receiptCategoryFilter" onchange="filterReceipts()">
+                <option value="">Все категории</option>
+                {% for value in receipt_filter_categories %}<option value="{{ value }}">{{ value }}</option>{% endfor %}
+            </select>
+            <select class="control" id="receiptProductFilter" onchange="filterReceipts()">
+                <option value="">Все товары</option>
+                {% for value in receipt_filter_products %}<option value="{{ value }}">{{ value }}</option>{% endfor %}
+            </select>
+            <select class="control" id="receiptStatusFilter" onchange="filterReceipts()">
+                <option value="">Все статусы</option>
+                <option value="Проведён">Проведён</option>
+                <option value="Отменён">Отменён</option>
+            </select>
+            <button class="button button-secondary" type="button" onclick="resetReceiptFilters()">
+                Сбросить фильтры
+            </button>
+
             <label
                 class="mobile-erp-only mobile-erp-sort receipt-mobile-sort"
                 for="receiptMobileSort"
@@ -1648,6 +1683,10 @@
                                     </button>
                                 </th>
 
+                                <th class="col-comment">
+                                    Комментарий
+                                </th>
+
                                 <th class="col-supplier">
                                     <button
                                         class="receipt-sort-button"
@@ -1755,6 +1794,7 @@
                                     )|lower }}"
                                     data-date="{{ receipt.receipt_date or receipt.created_at or '' }}"
                                     data-document="{{ receipt.number or '' }}"
+                                    data-comment="{{ receipt.note or '' }}"
                                     data-brand="{{ receipt.brand or receipt.supplier or '' }}"
                                     data-brand-id="{{ receipt.brand_id or (receipt_position.brand_id if receipt_position else '') }}"
                                     data-category="{{ receipt.category or receipt.invoice_number or '' }}"
@@ -1792,13 +1832,23 @@
                                             <div class="document-number">
                                                 {{ receipt.number }}
                                             </div>
-
-                                            {% if receipt.note %}
-                                                <div class="secondary-text">
-                                                    {{ receipt.note }}
-                                                </div>
-                                            {% endif %}
                                         </div>
+
+                                        <input
+                                            class="receipt-table-control receipt-edit-control"
+                                            type="text"
+                                            name="document_number"
+                                            value="{{ receipt.number }}"
+                                            form="{{ edit_form_id }}"
+                                            maxlength="120"
+                                            required
+                                        >
+                                    </td>
+
+                                    <td class="col-comment">
+                                        <span class="receipt-view-value">
+                                            {{ receipt.note or "—" }}
+                                        </span>
 
                                         <textarea
                                             class="receipt-table-control receipt-edit-control receipt-note-input"
@@ -1808,7 +1858,7 @@
                                         >{{ receipt.note }}</textarea>
                                     </td>
 
-                                    <td class="col-brand">
+                                    <td class="col-brand receipt-immutable">
                                         <span class="receipt-view-value supplier-name">
                                             {{ receipt.brand or receipt.supplier or "—" }}
                                         </span>
@@ -1816,6 +1866,7 @@
                                         <div
                                             class="receipt-edit-control"
                                             data-receipt-catalog-field="brand"
+                                            hidden
                                         >
                                             {{ render_catalog_combobox(
                                                 "receiptEditBrand" ~ loop.index,
@@ -1837,7 +1888,7 @@
                                         </div>
                                     </td>
 
-                                    <td class="col-category">
+                                    <td class="col-category receipt-immutable">
                                         <span class="receipt-view-value">
                                             {{ receipt.category or receipt.invoice_number or "—" }}
                                         </span>
@@ -1845,6 +1896,7 @@
                                         <div
                                             class="receipt-edit-control"
                                             data-receipt-catalog-field="category"
+                                            hidden
                                         >
                                             {{ render_catalog_combobox(
                                                 "receiptEditCategory" ~ loop.index,
@@ -1866,7 +1918,7 @@
                                         </div>
                                     </td>
 
-                                    <td class="col-products">
+                                    <td class="col-products receipt-immutable">
                                         <!-- RECEIPT PRODUCT NAME ONLY V1 -->
                                         <div class="receipt-view-value receipt-product-name-only">
                                             {{ receipt_product_name or "—" }}
@@ -1875,6 +1927,7 @@
                                         <div
                                             class="receipt-edit-control"
                                             data-receipt-catalog-field="product"
+                                            hidden
                                         >
                                             {{ render_catalog_combobox(
                                                 "receiptEditProduct" ~ loop.index,
@@ -1905,11 +1958,11 @@
                                         <input
                                             class="receipt-table-control receipt-edit-control receipt-number-input"
                                             type="number"
-                                            inputmode="decimal"
+                                            inputmode="numeric"
                                             name="quantity"
                                             value="{{ receipt_quantity }}"
-                                            min="0.01"
-                                            step="0.01"
+                                            min="1"
+                                            step="1"
                                             form="{{ edit_form_id }}"
                                             required
                                         >
@@ -2011,7 +2064,7 @@
                                             <form
                                                 method="post"
                                                 action="/receipts/delete"
-                                                onsubmit="return confirm('Удалить этот приход? Остаток будет отменён в единой ERP, а связанный документ синхронизации — удалён.');"
+                                                onsubmit="return confirm('Отменить этот приход? Остаток будет возвращён обратным движением, а история документа сохранится.');"
                                             >
                                                 <input
                                                     type="hidden"
@@ -2022,8 +2075,9 @@
                                                 <button
                                                     class="receipt-action-button receipt-delete-button"
                                                     type="submit"
-                                                    title="Удалить приход"
-                                                    aria-label="Удалить приход"
+                                                    title="Отменить приход"
+                                                    aria-label="Отменить приход"
+                                                    {% if receipt.status == 'cancelled' %}disabled{% endif %}
                                                 >
                                                     <svg
                                                         viewBox="0 0 24 24"
@@ -2179,6 +2233,22 @@
                         >
                     </div>
 
+                    <div class="field">
+                        <label for="document_number">
+                            Номер документа *
+                        </label>
+
+                        <input
+                            class="control"
+                            id="document_number"
+                            name="document_number"
+                            type="text"
+                            maxlength="120"
+                            placeholder="Например, ПР-2026-001"
+                            required
+                        >
+                    </div>
+
                     <div
                         class="field"
                         data-receipt-catalog-field="brand"
@@ -2267,7 +2337,7 @@
                             id="receipt_quantity"
                             name="quantity"
                             type="number"
-                            inputmode="decimal"
+                            inputmode="numeric"
                             min="1"
                             step="1"
                             value="1"
@@ -2278,6 +2348,7 @@
                     <div
                         id="receiptImageField"
                         class="field field-wide"
+                        hidden
                     >
                         <label for="receipt_product_image">
                             Фото товара
@@ -3685,6 +3756,16 @@
                 "receiptSearch"
             ).value || ""
         ).trim().toLowerCase();
+        const documentQuery = (
+            document.getElementById("receiptDocumentFilter")?.value || ""
+        ).trim().toLowerCase();
+        const commentQuery = (
+            document.getElementById("receiptCommentFilter")?.value || ""
+        ).trim().toLowerCase();
+        const brand = document.getElementById("receiptBrandFilter")?.value || "";
+        const category = document.getElementById("receiptCategoryFilter")?.value || "";
+        const product = document.getElementById("receiptProductFilter")?.value || "";
+        const status = document.getElementById("receiptStatusFilter")?.value || "";
 
         const dateFrom = (
             document.getElementById(
@@ -3710,6 +3791,14 @@
 
             const matchesSearch =
                 searchText.includes(query);
+            const matchesDocument = !documentQuery
+                || (row.dataset.document || "").toLowerCase().includes(documentQuery);
+            const matchesComment = !commentQuery
+                || (row.dataset.comment || "").toLowerCase().includes(commentQuery);
+            const matchesBrand = !brand || row.dataset.brand === brand;
+            const matchesCategory = !category || row.dataset.category === category;
+            const matchesProduct = !product || row.dataset.product === product;
+            const matchesStatus = !status || row.dataset.status === status;
 
             const matchesDateFrom =
                 !dateFrom
@@ -3721,6 +3810,12 @@
 
             const isVisible =
                 matchesSearch
+                && matchesDocument
+                && matchesComment
+                && matchesBrand
+                && matchesCategory
+                && matchesProduct
+                && matchesStatus
                 && matchesDateFrom
                 && matchesDateTo;
 
@@ -3769,6 +3864,20 @@
         }
 
         window.history.replaceState({}, "", url);
+    }
+
+    function resetReceiptFilters() {
+        [
+            "receiptSearch", "receiptDocumentFilter", "receiptCommentFilter",
+            "receiptBrandFilter", "receiptCategoryFilter", "receiptProductFilter",
+            "receiptStatusFilter",
+        ].forEach((id) => {
+            const control = document.getElementById(id);
+            if (control) control.value = "";
+        });
+        document.getElementById("receiptDateFrom").value = "";
+        document.getElementById("receiptDateTo").value = "";
+        filterReceipts();
     }
 
     document.getElementById("receiptMobileSort")
@@ -4137,10 +4246,13 @@
                             ),
                         "PATCH",
                         {
+                            document_number: row.querySelector(
+                                '[name="document_number"]'
+                            )?.value,
                             receipt_date: row.querySelector(
                                 '[name="receipt_date"]'
                             )?.value,
-                            note: row.querySelector(
+                            comment: row.querySelector(
                                 '[name="note"]'
                             )?.value || "",
                             product_id: productId,
@@ -4198,6 +4310,19 @@
                 dateTo.value
             );
         }
+
+        [
+            ["q", "receiptSearch"],
+            ["document_number", "receiptDocumentFilter"],
+            ["comment", "receiptCommentFilter"],
+            ["brand", "receiptBrandFilter"],
+            ["category", "receiptCategoryFilter"],
+            ["product_name", "receiptProductFilter"],
+            ["status_label", "receiptStatusFilter"],
+        ].forEach(([key, id]) => {
+            const value = document.getElementById(id)?.value || "";
+            if (value) params.set(key, value);
+        });
 
         const query = params.toString();
 

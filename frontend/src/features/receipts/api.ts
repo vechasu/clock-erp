@@ -26,6 +26,8 @@ export async function createReceipt(values: ReceiptFormValues) {
       receiptSchema,
       jsonRequestInit('POST', {
         ...values,
+        number: values.document_number,
+        note: values.comment,
         idempotency_key: crypto.randomUUID(),
       }),
     )
@@ -39,6 +41,8 @@ export async function updateReceipt(id: string, values: ReceiptFormValues) {
       receiptSchema,
       jsonRequestInit('PATCH', {
         ...values,
+        number: values.document_number,
+        note: values.comment,
         idempotency_key: crypto.randomUUID(),
       }),
     )

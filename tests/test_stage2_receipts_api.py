@@ -126,21 +126,27 @@ class Stage2ReceiptsApiTest(unittest.TestCase):
         self.assertEqual(catalog["meta"]["total"], 1)
         self.assertEqual(catalog["data"][0]["id"], "ms-2")
 
-    def test_patch_and_delete_preserve_remote_first_workflow(self):
+    def test_patch_keeps_product_identity_and_delete_preserves_history(self):
         receipt_id = self.create_receipt().get_json()["data"]["id"]
+        rejected = self.client.patch(
+            "/api/receipts/{}".format(receipt_id),
+            json={"product_id": "ms-2", "quantity": 4},
+        )
+        self.assertEqual(rejected.status_code, 422)
+        self.remote.update_stock_enter_many.assert_not_called()
         updated = self.client.patch(
             "/api/receipts/{}".format(receipt_id),
             json={
                 "receipt_date": "2026-07-31",
                 "note": "Уточнено",
-                "product_id": "ms-2",
-                "brand": "Vechasu",
-                "category": "Ремешки",
+                "product_id": "ms-1",
+                "brand": "Casio",
+                "category": "Часы",
                 "quantity": 4,
             },
         )
         self.assertEqual(updated.status_code, 200)
-        self.assertEqual(updated.get_json()["data"]["product_name"], "Ремешок")
+        self.assertEqual(updated.get_json()["data"]["product_name"], "Casio G-Shock")
         self.assertEqual(updated.get_json()["data"]["total_quantity"], 4)
         self.remote.update_stock_enter_many.assert_called_once()
 

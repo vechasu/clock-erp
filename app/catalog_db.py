@@ -634,6 +634,7 @@ CREATE TABLE IF NOT EXISTS erp_receipts (
     id TEXT PRIMARY KEY,
     tenant_id TEXT NOT NULL DEFAULT 'default',
     number TEXT,
+    comment TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'draft' CHECK (
         status IN ('draft', 'posted', 'cancelled')
     ),
@@ -643,7 +644,9 @@ CREATE TABLE IF NOT EXISTS erp_receipts (
     metadata_json TEXT NOT NULL DEFAULT '{}',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    cancelled_at TEXT
+    cancelled_at TEXT,
+    cancelled_by TEXT,
+    cancellation_reason TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_erp_receipts_status_date
@@ -1056,6 +1059,11 @@ class CatalogDatabase:
             ),
             "erp_receipt_items": (
                 ("active", "INTEGER NOT NULL DEFAULT 1"),
+            ),
+            "erp_receipts": (
+                ("comment", "TEXT NOT NULL DEFAULT ''"),
+                ("cancelled_by", "TEXT"),
+                ("cancellation_reason", "TEXT"),
             ),
             "erp_sales": (
                 ("external_order_id", "TEXT"),

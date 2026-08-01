@@ -106,12 +106,12 @@ describe('CatalogCascade', () => {
     await user.click(screen.getByRole('combobox', { name: 'Товар *' }));
     await user.click(
       await screen.findByRole('option', {
-        name: /Casio A168 · A168 · остаток 3/,
+        name: /Casio A168/,
       }),
     );
 
     expect(screen.getByRole('combobox', { name: 'Товар *' })).toHaveValue(
-      'Casio A168 · A168 · остаток 3',
+      'Casio A168',
     );
     await user.click(screen.getByRole('button', { name: 'Очистить поле «Бренд»' }));
     await waitFor(() => {
@@ -258,10 +258,10 @@ describe('CatalogCascade', () => {
       await user.click(product);
       await user.click(
         await within(section).findByRole('option', {
-          name: 'Casio A168 · A168 · остаток 3',
+          name: /Casio A168/,
         }),
       );
-      expect(product).toHaveValue('Casio A168 · A168 · остаток 3');
+      expect(product).toHaveValue('Casio A168');
     }
   });
 
@@ -344,7 +344,7 @@ describe('CatalogCascade', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Создать' }));
     await waitFor(() =>
       expect(screen.getByRole('combobox', { name: 'Товар *' })).toHaveValue(
-        'Ремешок Classic · STRAP-700 · остаток 0',
+        'Ремешок Classic',
       ),
     );
 

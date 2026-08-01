@@ -244,6 +244,7 @@ class UnifiedCatalogApiTest(unittest.TestCase):
         self.assertTrue(
             any(item.get("sale_id") == sale["id"] for item in movement_rows)
         )
+
         self.assertTrue(
             any(
                 item.get("receipt_id") == receipt["id"]
@@ -282,6 +283,58 @@ class UnifiedCatalogApiTest(unittest.TestCase):
                 and item["diff"] == -6
                 for item in receipt_movements
             )
+        )
+
+    def test_receipt_requires_positive_integer_quantity(self):
+        for index, quantity in enumerate((1.5, "1,5", 0, -1, "text")):
+            with self.subTest(quantity=quantity):
+                payload = self.receipt_payload(quantity=quantity)
+                payload["idempotency_key"] = "invalid-quantity-{}".format(index)
+                response = self.client.post("/api/v1/receipts", json=payload)
+                self.assertEqual(response.status_code, 422)
+                self.assertIn("целым положительным", response.get_json()["message"])
+        valid = self.receipt_payload(quantity=1.0)
+        valid["idempotency_key"] = "whole-float-quantity"
+        response = self.client.post("/api/v1/receipts", json=valid)
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.get_json()["data"]["total_quantity"], 1)
+
+    def test_document_number_and_comment_are_independent_and_filterable(self):
+        payload = self.receipt_payload(quantity=2)
+        payload.update({
+            "document_number": "DOC-ORIGINAL",
+            "comment": "Первая поставка",
+            "idempotency_key": "receipt-document-fields",
+        })
+        created = self.client.post("/api/v1/receipts", json=payload)
+        self.assertEqual(created.status_code, 201)
+        receipt = created.get_json()["data"]
+        self.assertEqual(
+            (receipt["document_number"], receipt["comment"]),
+            ("DOC-ORIGINAL", "Первая поставка"),
+        )
+        filtered = self.client.get(
+            "/api/v1/receipts?document_number=original&comment=первая"
+        ).get_json()
+        self.assertEqual(filtered["meta"]["total"], 1)
+
+        changed = self.receipt_payload(quantity=2)
+        changed.update({
+            "document_number": "DOC-CHANGED",
+            "comment": "Комментарий изменён",
+            "idempotency_key": "receipt-document-fields-update",
+        })
+        updated = self.client.patch(
+            "/api/v1/receipts/{}".format(receipt["id"]),
+            json=changed,
+        )
+        self.assertEqual(updated.status_code, 200)
+        self.assertEqual(
+            (
+                updated.get_json()["data"]["document_number"],
+                updated.get_json()["data"]["comment"],
+            ),
+            ("DOC-CHANGED", "Комментарий изменён"),
         )
 
     def test_unmapped_bitrix_product_is_created_in_moysklad_before_receipt(self):
@@ -423,7 +476,7 @@ class UnifiedCatalogApiTest(unittest.TestCase):
         )
         self.remote.upload_product_image.assert_not_called()
 
-    def test_previous_data_url_photo_payload_remains_accepted(self):
+    def test_receipt_api_rejects_photo_for_existing_product(self):
         payload = self.receipt_payload(quantity=1)
         payload["idempotency_key"] = "receipt-data-url"
         payload["product_image"] = {
@@ -441,36 +494,21 @@ class UnifiedCatalogApiTest(unittest.TestCase):
             json=payload,
         )
 
-        self.assertEqual(response.status_code, 201)
-        self.assertEqual(self.stock(), 1)
-        self.remote.upload_product_image.assert_called_once()
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(self.stock(), 0)
+        self.assertIn("Фото существующего товара", response.get_json()["message"])
+        self.remote.upload_product_image.assert_not_called()
 
-    def test_document_creation_and_image_check_start_in_parallel(self):
-        barrier = threading.Barrier(2)
-        document = {
-            "id": "enter-parallel",
-            "name": "ПР-PARALLEL",
-            "meta": {"uuidHref": "https://example.test/enter-parallel"},
-        }
-
-        def create_document(**_kwargs):
-            barrier.wait(timeout=2)
-            return document
-
-        def inspect_images(_product_id):
-            barrier.wait(timeout=2)
-            return False
-
-        self.remote.create_stock_enter_many.side_effect = create_document
-        self.remote.product_has_images.side_effect = inspect_images
+    def test_photo_rejection_happens_before_remote_document_creation(self):
         response = self.multipart_receipt(
             image=b"\x89PNG\r\n\x1a\nparallel",
             idempotency_key="receipt-parallel-remote",
         )
 
-        self.assertEqual(response.status_code, 201)
-        self.assertEqual(self.stock(), 1)
-        self.remote.upload_product_image.assert_called_once()
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(self.stock(), 0)
+        self.remote.create_stock_enter_many.assert_not_called()
+        self.remote.upload_product_image.assert_not_called()
 
     def test_receipt_request_initializes_shared_catalog_schema_once(self):
         original_initialize_schema = CatalogDatabase._initialize_schema
@@ -493,7 +531,7 @@ class UnifiedCatalogApiTest(unittest.TestCase):
         self.assertEqual(len(initialize_calls), 1)
         self.assertTrue(initialize_calls[0].cache_initialization)
 
-    def test_multipart_receipt_saves_png_jpeg_and_comment(self):
+    def test_multipart_receipt_rejects_png_and_jpeg_for_existing_product(self):
         fixtures = (
             (
                 b"\x89PNG\r\n\x1a\n" + b"png-data",
@@ -516,43 +554,21 @@ class UnifiedCatalogApiTest(unittest.TestCase):
                 mimetype=mimetype,
                 idempotency_key="receipt-photo-{}".format(index),
             )
-            self.assertEqual(response.status_code, 201)
-            payload = response.get_json()
-            self.assertEqual(
-                payload["data"]["note"],
-                "Фото и комментарий {}".format(index),
-            )
-            self.assertEqual(
-                payload["meta"]["image_message"],
-                "Фото товара добавлено.",
-            )
+            self.assertEqual(response.status_code, 422)
 
-        self.assertEqual(self.stock(), 4)
-        self.assertEqual(
-            [call.args[1] for call in self.remote.upload_product_image.call_args_list],
-            ["watch.png", "watch.jpg"],
-        )
-        self.assertTrue(
-            self.remote.upload_product_image.call_args_list[0].args[2]
-            .startswith(b"\x89PNG\r\n\x1a\n")
-        )
-        self.assertTrue(
-            self.remote.upload_product_image.call_args_list[1].args[2]
-            .startswith(b"\xff\xd8\xff")
-        )
+        self.assertEqual(self.stock(), 0)
+        self.remote.upload_product_image.assert_not_called()
 
     def test_create_next_mode_is_idempotent_and_does_not_double_stock(self):
         first = self.multipart_receipt(
             quantity=3,
             note="Следующий приход",
-            image=b"\x89PNG\r\n\x1a\nnext",
             idempotency_key="receipt-create-next",
             submit_mode="create_next",
         )
         repeated = self.multipart_receipt(
             quantity=3,
             note="Следующий приход",
-            image=b"\x89PNG\r\n\x1a\nnext",
             idempotency_key="receipt-create-next",
             submit_mode="create_next",
         )
@@ -565,7 +581,7 @@ class UnifiedCatalogApiTest(unittest.TestCase):
         )
         self.assertEqual(self.stock(), 3)
         self.remote.create_stock_enter_many.assert_called_once()
-        self.remote.upload_product_image.assert_called_once()
+        self.remote.upload_product_image.assert_not_called()
         self.assertEqual(len(web.load_receipts()), 1)
 
     def test_invalid_multipart_inputs_leave_no_partial_receipt(self):
@@ -637,7 +653,7 @@ class UnifiedCatalogApiTest(unittest.TestCase):
         )
         self.remote.delete_stock_enter.assert_called_once_with("enter-1")
 
-    def test_image_upload_failure_rolls_back_before_local_persistence(self):
+    def test_image_upload_attempt_is_rejected_before_local_persistence(self):
         self.remote.upload_product_image.return_value = False
         response = self.multipart_receipt(
             quantity=2,
@@ -646,14 +662,14 @@ class UnifiedCatalogApiTest(unittest.TestCase):
             idempotency_key="receipt-image-failure",
         )
 
-        self.assertEqual(response.status_code, 502)
+        self.assertEqual(response.status_code, 422)
         self.assertEqual(
             response.get_json()["code"],
-            "PRODUCT_IMAGE_UPLOAD_FAILED",
+            "RECEIPT_VALIDATION_FAILED",
         )
         self.assertEqual(self.stock(), 0)
         self.assertEqual(web.load_receipts(), [])
-        self.remote.delete_stock_enter.assert_called_once_with("enter-1")
+        self.remote.delete_stock_enter.assert_not_called()
 
     def test_products_sales_and_receipts_use_the_same_catalog_ids(self):
         query = (

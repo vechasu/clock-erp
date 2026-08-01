@@ -20,6 +20,7 @@ export const receiptPositionSchema = z.object({
 export const receiptSchema = z.object({
   id: z.string(),
   number: z.string(),
+  document_number: z.string(),
   created_at: z.string(),
   receipt_date: z.string(),
   brand: z.string(),
@@ -29,6 +30,7 @@ export const receiptSchema = z.object({
   product_id: z.string(),
   product_name: z.string(),
   note: z.string(),
+  comment: z.string(),
   status: z.string(),
   status_label: z.string(),
   inventory_managed: z.boolean().default(false),
@@ -44,8 +46,9 @@ export const receiptSchema = z.object({
 export const receiptListSchema = z.array(receiptSchema);
 
 export const receiptFormSchema = z.object({
+  document_number: z.string().trim().min(1, 'Укажите номер документа').max(120),
   receipt_date: z.string().date('Укажите корректную дату'),
-  note: z.string().trim(),
+  comment: z.string().trim().max(2000, 'Комментарий не должен превышать 2000 символов'),
   positions: z
     .array(
       z.object({
@@ -54,18 +57,14 @@ export const receiptFormSchema = z.object({
         brand_id: z.number().int().positive('Выберите бренд'),
         category_id: z.number().int().positive('Выберите категорию'),
         product_id: z.string().min(1, 'Выберите товар'),
-        quantity: z.coerce.number().positive('Количество должно быть больше нуля'),
+        quantity: z.coerce
+          .number()
+          .int('Количество должно быть целым числом')
+          .positive('Количество должно быть больше нуля'),
         purchase_price: z.coerce.number().min(0, 'Цена не может быть отрицательной'),
       }),
     )
     .min(1, 'Добавьте хотя бы один товар'),
-  product_image: z
-    .object({
-      name: z.string(),
-      type: z.string(),
-      base64: z.string(),
-    })
-    .nullable(),
 });
 
 export const receiptsMetaSchema = z.object({

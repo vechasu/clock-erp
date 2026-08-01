@@ -35,7 +35,7 @@ function formatMoney(value: number) {
 }
 
 function formatQuantity(value: number) {
-  return value.toLocaleString('ru-RU', { maximumFractionDigits: 2 });
+  return value.toLocaleString('ru-RU', { maximumFractionDigits: 0 });
 }
 
 export function ReceiptsPage() {
@@ -162,11 +162,21 @@ export function ReceiptsPage() {
         ),
       },
       {
-        id: 'number',
-        accessorKey: 'number',
-        header: 'Номер',
+        id: 'document_number',
+        accessorKey: 'document_number',
+        header: 'Документ',
         size: 150,
-        cell: ({ row }) => <strong className="document-number">{row.original.number}</strong>,
+        cell: ({ row }) => (
+          <strong className="document-number">{row.original.document_number}</strong>
+        ),
+      },
+      {
+        id: 'comment',
+        accessorKey: 'comment',
+        header: 'Комментарий',
+        enableSorting: false,
+        size: 220,
+        cell: ({ row }) => row.original.comment || '—',
       },
       {
         id: 'product_name',
@@ -208,7 +218,12 @@ export function ReceiptsPage() {
         enableSorting: false,
         size: 120,
         meta: { align: 'center' },
-        cell: ({ row }) => <StatusBadge label={row.original.status_label} tone="success" />,
+        cell: ({ row }) => (
+          <StatusBadge
+            label={row.original.status_label}
+            tone={row.original.status === 'cancelled' ? 'neutral' : 'success'}
+          />
+        ),
       },
       {
         id: 'actions',
@@ -261,7 +276,10 @@ export function ReceiptsPage() {
               <ActionLink href="/products/receipts/new" icon="upload">
                 Импорт Excel
               </ActionLink>
-              <ActionLink href="/receipts/report" icon="download">
+              <ActionLink
+                href={`/receipts/report${normalizedQuery ? `?${normalizedQuery}` : ''}`}
+                icon="download"
+              >
                 Отчёт
               </ActionLink>
               <Button tone="primary" icon="plus" onClick={() => setEditor('new')}>
@@ -299,9 +317,16 @@ export function ReceiptsPage() {
             <FilterPanel
               lazy
               count={
-                ['date_from', 'date_to', 'brand_id', 'category_id', 'product_id', 'status'].filter(
-                  (key) => searchParams.get(key),
-                ).length
+                [
+                  'date_from',
+                  'date_to',
+                  'document_number',
+                  'comment',
+                  'brand_id',
+                  'category_id',
+                  'product_id',
+                  'status',
+                ].filter((key) => searchParams.get(key)).length
               }
             >
               <DateRangePicker
@@ -309,6 +334,18 @@ export function ReceiptsPage() {
                 to={searchParams.get('date_to') ?? ''}
                 onFromChange={(value) => setFilter('date_from', value)}
                 onToChange={(value) => setFilter('date_to', value)}
+              />
+              <LiveSearch
+                label="Номер документа"
+                value={searchParams.get('document_number') ?? ''}
+                onChange={(value) => setFilter('document_number', value)}
+                placeholder="Номер документа"
+              />
+              <LiveSearch
+                label="Комментарий"
+                value={searchParams.get('comment') ?? ''}
+                onChange={(value) => setFilter('comment', value)}
+                placeholder="Комментарий"
               />
               <CatalogCascade
                 required={false}
