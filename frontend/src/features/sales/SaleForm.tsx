@@ -25,6 +25,22 @@ const RUSSIAN_REGION_PRIORITIES = [
   "Санкт-Петербург",
 ];
 
+const AMAZON_COUNTRY_PRIORITIES = ['США', 'Япония', 'Канада', 'Мексика'];
+
+function localDateTimeValue(value?: string) {
+  if (value) return value.replace(' ', 'T').slice(0, 16);
+  const now = new Date(Date.now() - new Date().getTimezoneOffset() * 60_000);
+  return now.toISOString().slice(0, 16);
+}
+
+function normalizeAmazonCountry(value: string) {
+  return ['америка', 'usa', 'us', 'united states', 'united states of america'].includes(
+    value.trim().toLocaleLowerCase('ru-RU'),
+  )
+    ? 'США'
+    : value;
+}
+
 function getOrderedRegions(country: string, locations: SaleLocations) {
   const rawRegions = Object.keys(locations[country] ?? {});
   const uniqueRegions = [...new Set(rawRegions)];
@@ -45,7 +61,7 @@ function getOrderedRegions(country: string, locations: SaleLocations) {
 
 function defaults(sale?: Sale | null): SaleFormInput {
   return {
-    created_at: sale?.created_at.slice(0, 10) || new Date().toISOString().slice(0, 10),
+    created_at: localDateTimeValue(sale?.created_at),
     source: sale?.source || 'Tictactoy',
     product_id: sale?.product_id || '',
     product_name: sale?.product_name || '',
@@ -58,7 +74,7 @@ function defaults(sale?: Sale | null): SaleFormInput {
     track_number: sale?.track_number || '',
     delivery_method: sale?.delivery_method || '',
     delivery_cost: sale?.delivery_cost || 0,
-    country: sale?.country || '',
+    country: sale?.source_key === 'amazon' ? normalizeAmazonCountry(sale.country) : sale?.country || '',
     region: sale?.region || '',
     city: sale?.city || '',
     delivery_address: sale?.delivery_address || '',
@@ -92,7 +108,19 @@ export function SaleForm({ id, sale, locations, onSubmit, onCatalogCreated }: Sa
   const categoryId = watch('category_id');
   const country = watch('country');
   const region = watch('region');
-  const quantityLocked = Boolean(sale?.inventory_managed);
+  const source = watch('source');
+  const sourceKey = source.toLocaleLowerCase('ru-RU');
+  const isTictactoy = sourceKey === 'tictactoy';
+  const isWildberries = sourceKey === 'wildberries';
+  const isAmazon = sourceKey === 'amazon';
+  const countryOptions = isAmazon
+    ? [
+        ...AMAZON_COUNTRY_PRIORITIES,
+        ...Object.keys(locations)
+          .filter((value) => !AMAZON_COUNTRY_PRIORITIES.includes(normalizeAmazonCountry(value)))
+          .sort((a, b) => a.localeCompare(b, 'ru')),
+      ]
+    : Object.keys(locations);
 
   useEffect(() => {
     reset(defaults(sale));
@@ -108,8 +136,7 @@ export function SaleForm({ id, sale, locations, onSubmit, onCatalogCreated }: Sa
             brandId={brandId}
             categoryId={categoryId}
             productId={productId}
-            inStock={!sale}
-            disabled={quantityLocked}
+            inStock
             initialBrand={
               sale?.brand_id
                 ? {
@@ -185,7 +212,7 @@ export function SaleForm({ id, sale, locations, onSubmit, onCatalogCreated }: Sa
         <div className="erp-form">
           <label className="form-field">
             <span>Дата продажи *</span>
-            <input type="date" {...register('created_at')} />
+            <input type="datetime-local" {...register('created_at')} />
             {errors.created_at ? <small>{errors.created_at.message}</small> : null}
           </label>
           <Controller
@@ -225,12 +252,14 @@ export function SaleForm({ id, sale, locations, onSubmit, onCatalogCreated }: Sa
             <select {...register('order_status')}>
               <option value="completed">Выполнен</option>
               <option value="processing">В работе</option>
+              <option value="shipped">Отправлен</option>
+              <option value="returned">Возврат</option>
               <option value="cancelled">Отменён</option>
             </select>
           </label>
         </div>
       </section>
-      <section>
+      {isTictactoy ? <section>
         <h3>3. Оплата и комиссия</h3>
         <div className="erp-form">
           <label className="form-field">
@@ -242,23 +271,15 @@ export function SaleForm({ id, sale, locations, onSubmit, onCatalogCreated }: Sa
             <input type="number" min="0" step="0.01" {...register('commission_amount')} />
           </label>
           <input type="hidden" {...register('commission')} />
-          <label className="form-field">
-            <span>Платформа</span>
-            <input {...register('platform')} />
-          </label>
-          <label className="form-field">
-            <span>Номер стикера</span>
-            <input {...register('sticker_number')} />
-          </label>
         </div>
-      </section>
+      </section> : null}
       <section>
         <h3>4. Доставка</h3>
         <div className="erp-form">
-          <label className="form-field">
-            <span>Трек-номер</span>
+          {isTictactoy ? <label className="form-field">
+            <span>Трекинг</span>
             <input {...register('track_number')} />
-          </label>
+          </label> : null}
           <label className="form-field">
             <span>Способ доставки</span>
             <input {...register('delivery_method')} />
@@ -267,10 +288,18 @@ export function SaleForm({ id, sale, locations, onSubmit, onCatalogCreated }: Sa
             <span>Стоимость доставки</span>
             <input type="number" min="0" step="0.01" {...register('delivery_cost')} />
           </label>
-          <label className="form-field">
-            <span>Номер накладной</span>
+          {isAmazon ? <label className="form-field">
+            <span>Трекинг</span>
             <input {...register('invoice_number')} />
-          </label>
+          </label> : null}
+          {isWildberries ? <label className="form-field">
+            <span>Номер стикера</span>
+            <input {...register('sticker_number')} />
+          </label> : null}
+          {isAmazon ? <label className="form-field">
+            <span>Платформа</span>
+            <input {...register('platform')} />
+          </label> : null}
         </div>
       </section>
       <section>
@@ -283,10 +312,10 @@ export function SaleForm({ id, sale, locations, onSubmit, onCatalogCreated }: Sa
               <SearchableSelect
                 label="Страна"
                 placeholder="Найдите страну"
-                options={Object.keys(locations).map((value) => ({ value, label: value }))}
+                options={countryOptions.map((value) => ({ value, label: value }))}
                 value={field.value}
                 onChange={(value) => {
-                  field.onChange(value);
+                  field.onChange(isAmazon ? normalizeAmazonCountry(value) : value);
                   setValue('region', '');
                   setValue('city', '');
                 }}

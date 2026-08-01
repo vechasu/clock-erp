@@ -45,10 +45,10 @@ class SalesInventoryTest(unittest.TestCase):
     def tearDown(self):
         self.temp_directory.cleanup()
 
-    def create_product(self, stock=3):
+    def create_product(self, stock=3, name="Часы Test", article="ARTICLE-1"):
         return self.catalog.create_product(
-            name="Часы Test",
-            article="ARTICLE-1",
+            name=name,
+            article=article,
             brand="Brand",
             category="Коллекция",
             stock=stock,
@@ -157,6 +157,88 @@ class SalesInventoryTest(unittest.TestCase):
             movements_before,
         )
         self.assertEqual(updated["note"], "Обновлённое примечание")
+
+    def test_update_quantity_uses_stock_delta_and_rolls_back(self):
+        product = self.create_product(stock=5)
+        sale = self.inventory.create_sale(
+            self.payload(product), product["id"], 1, 1000,
+        )
+        payload = {**sale, "quantity": 3}
+
+        updated = self.inventory.update_sale(
+            "sale-1", payload, 3, 1000, idempotency_key="update-1",
+        )
+        self.assertEqual(updated["quantity"], 3)
+        self.assertEqual(self.stock(product["id"]), 2)
+
+        def fail(_connection):
+            raise RuntimeError("forced rollback")
+
+        with self.assertRaises(RuntimeError):
+            self.inventory.update_sale(
+                "sale-1", {**updated, "quantity": 4}, 4, 1000,
+                idempotency_key="update-2", failure_hook=fail,
+            )
+        self.assertEqual(self.stock(product["id"]), 2)
+        self.assertEqual(self.inventory.get_sale("sale-1")["quantity"], 3)
+
+    def test_update_replaces_product_and_status_changes_stock(self):
+        old_product = self.create_product(stock=4)
+        new_product = self.create_product(
+            stock=5, name="Часы New", article="ARTICLE-2",
+        )
+        sale = self.inventory.create_sale(
+            self.payload(old_product), old_product["id"], 2, 1000,
+        )
+        replacement = {
+            **sale,
+            "product_id": str(new_product["id"]),
+            "order_status": "completed",
+        }
+
+        updated = self.inventory.update_sale(
+            "sale-1", replacement, 3, 1000, idempotency_key="replace-1",
+        )
+        self.assertEqual(updated["product_id"], str(new_product["id"]))
+        self.assertEqual(self.stock(old_product["id"]), 4)
+        self.assertEqual(self.stock(new_product["id"]), 2)
+
+        returned = self.inventory.update_sale(
+            "sale-1", {**updated, "order_status": "returned"}, 3, 1000,
+            idempotency_key="status-returned",
+        )
+        self.assertEqual(returned["status"], "returned")
+        self.assertEqual(self.stock(new_product["id"]), 5)
+
+        shipped = self.inventory.update_sale(
+            "sale-1", {**returned, "order_status": "shipped"}, 3, 1000,
+            idempotency_key="status-shipped",
+        )
+        self.assertEqual(shipped["order_status"], "shipped")
+        self.assertEqual(self.stock(new_product["id"]), 2)
+
+    def test_delete_restores_stock_once_and_hides_sale(self):
+        product = self.create_product(stock=3)
+        self.inventory.create_sale(
+            self.payload(product), product["id"], 2, 1000,
+        )
+
+        first = self.inventory.delete_sale(
+            "sale-1", idempotency_key="sale-delete:sale-1",
+        )
+        second = self.inventory.delete_sale(
+            "sale-1", idempotency_key="sale-delete:sale-1",
+        )
+
+        self.assertTrue(first["deleted_at"])
+        self.assertEqual(second["deleted_at"], first["deleted_at"])
+        self.assertEqual(self.stock(product["id"]), 3)
+        self.assertEqual(self.inventory.list_sales(), [])
+        cancellations = [
+            movement for movement in self.inventory.list_movements(product["id"])
+            if movement["type"] == "cancellation"
+        ]
+        self.assertEqual(len(cancellations), 1)
 
     def test_partial_and_full_return_restore_stock_once(self):
         product = self.create_product(stock=4)

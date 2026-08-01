@@ -41,8 +41,8 @@ export const saleSchema = z.object({
   recipient: z.string(),
   recipient_name: z.string(),
   payment_method: z.string(),
-  commission: z.string(),
-  commission_amount: z.number(),
+  commission: z.string().default(''),
+  commission_amount: z.number().default(0),
   country: z.string(),
   delivery_address: z.string(),
   platform: z.string(),
@@ -69,7 +69,10 @@ export const saleCatalogSchema = z.array(saleCatalogProductSchema);
 export const saleLocationsSchema = z.record(z.string(), z.record(z.string(), z.array(z.string())));
 
 export const saleFormSchema = z.object({
-  created_at: z.string().date('Укажите корректную дату'),
+  created_at: z.string().refine(
+    (value) => /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2})?$/.test(value),
+    'Укажите корректные дату и время',
+  ),
   source: z.string().trim().min(1, 'Выберите источник'),
   product_id: z.string().min(1, 'Выберите товар'),
   product_name: z.string(),
