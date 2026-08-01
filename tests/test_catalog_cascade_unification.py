@@ -110,6 +110,15 @@ class CatalogCascadeUnificationTest(unittest.TestCase):
         self.assertIn("payload.product_image = await readProductImage()", component)
         self.assertIn("file.size > 3 * 1024 * 1024", component)
 
+    def test_receipt_edit_keeps_catalog_fields_immutable(self):
+        receipts = self.source("app/templates/receipts.html")
+
+        self.assertIn(
+            ".receipt-row.is-editing\n"
+            "        .receipt-edit-control[hidden] {",
+            receipts,
+        )
+
     def test_visible_section_routes_keep_the_approved_legacy_interface(self):
         web = self.source("app/web.py")
         products_route = web.split('@app.route("/products")', 1)[1].split(
