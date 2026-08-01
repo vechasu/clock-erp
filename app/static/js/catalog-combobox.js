@@ -1082,6 +1082,12 @@
         const articleInput = modal.querySelector(
             "[data-catalog-create-article]"
         );
+        const imageField = modal.querySelector(
+            "[data-catalog-create-image-field]"
+        );
+        const imageInput = modal.querySelector(
+            "[data-catalog-create-image]"
+        );
         const errorElement = modal.querySelector(
             "[data-catalog-create-error]"
         );
@@ -1089,6 +1095,36 @@
             "[data-catalog-create-submit]"
         );
         let active = null;
+
+        function readProductImage() {
+            const file = imageInput?.files?.[0];
+
+            if (!file) {
+                return Promise.resolve(null);
+            }
+            if (!["image/jpeg", "image/png"].includes(file.type)) {
+                return Promise.reject(new Error(
+                    "Поддерживаются только JPEG и PNG"
+                ));
+            }
+            if (file.size > 3 * 1024 * 1024) {
+                return Promise.reject(new Error(
+                    "Файл слишком большой. Максимальный размер — 3 МБ"
+                ));
+            }
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve({
+                    name: file.name,
+                    type: file.type,
+                    base64: String(reader.result || ""),
+                });
+                reader.onerror = () => reject(new Error(
+                    "Не удалось прочитать изображение"
+                ));
+                reader.readAsDataURL(file);
+            });
+        }
 
         function closeModal() {
             modal.hidden = true;
@@ -1126,8 +1162,10 @@
             description.textContent =
                 "Значение сохранится в едином справочнике Vechasu ERP.";
             articleField.hidden = kind !== "product";
+            imageField.hidden = kind !== "product";
             nameInput.value = "";
             articleInput.value = "";
+            imageInput.value = "";
             errorElement.textContent = "";
             modal.hidden = false;
             window.setBrandDropdownOpen(combobox, false);
@@ -1179,6 +1217,9 @@
             errorElement.textContent = "";
 
             try {
+                if (active.kind === "product") {
+                    payload.product_image = await readProductImage();
+                }
                 const response = await fetch(paths[active.kind], {
                     method: "POST",
                     credentials: "same-origin",
