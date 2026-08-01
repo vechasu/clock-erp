@@ -37,6 +37,10 @@ export function LiveSearch({ label, placeholder, value, onChange }: LiveSearchPr
 export interface EntityOption {
   value: string;
   label: string;
+  inputLabel?: string;
+  description?: string;
+  meta?: string;
+  searchText?: string;
   disabled?: boolean;
 }
 
@@ -105,13 +109,13 @@ export function SearchableSelect({
   const rootRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const selected = options.find((option) => option.value === value);
-  const [query, setQuery] = useState(selected?.label ?? '');
+  const [query, setQuery] = useState(selected?.inputLabel ?? selected?.label ?? '');
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
 
   useEffect(() => {
-    setQuery(selected?.label ?? '');
-  }, [selected?.label]);
+    setQuery(selected?.inputLabel ?? selected?.label ?? '');
+  }, [selected?.inputLabel, selected?.label]);
 
   useEffect(() => {
     const close = (event: PointerEvent) => {
@@ -123,16 +127,23 @@ export function SearchableSelect({
 
   const visibleOptions = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase('ru-RU');
-    if (!normalized || selected?.label === query) return options.slice(0, 100);
+    if (!normalized || selected?.inputLabel === query || selected?.label === query) {
+      return options.slice(0, 100);
+    }
     return options
-      .filter((option) => option.label.toLocaleLowerCase('ru-RU').includes(normalized))
+      .filter((option) =>
+        option.label.toLocaleLowerCase('ru-RU').includes(normalized) ||
+        (option.searchText ?? [option.description, option.meta].filter(Boolean).join(' '))
+          .toLocaleLowerCase('ru-RU')
+          .includes(normalized),
+      )
       .slice(0, 100);
-  }, [options, query, selected?.label]);
+  }, [options, query, selected?.inputLabel, selected?.label]);
 
   const choose = (option: EntityOption) => {
     if (option.disabled) return;
     onChange(option.value);
-    setQuery(option.label);
+    setQuery(option.inputLabel ?? option.label);
     setOpen(false);
     inputRef.current?.focus();
   };
@@ -224,7 +235,11 @@ export function SearchableSelect({
                 }}
                 onMouseEnter={() => setActiveIndex(index)}
               >
-                <span title={option.label}>{option.label}</span>
+                <span className="searchable-select-option" title={option.label}>
+                  <strong>{option.label}</strong>
+                  {option.description ? <small>{option.description}</small> : null}
+                </span>
+                {option.meta ? <span className="searchable-select-meta">{option.meta}</span> : null}
                 {option.value === value ? <Icon name="check" /> : null}
               </li>
             ))}

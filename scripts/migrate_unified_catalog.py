@@ -10,7 +10,7 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-MIGRATION_VERSION = "unified_catalog_v3_receipt_inventory"
+MIGRATION_VERSION = "unified_catalog_v4_receipt_document_fields"
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -428,7 +428,31 @@ def migrate(path, instance_dir=None):
     before = database_snapshot(path)
     database = CatalogDatabase(path)
     database.initialize()
+    backfilled_receipt_comments = 0
+    with database.transaction() as connection:
+        rows = connection.execute(
+            "SELECT id, metadata_json FROM erp_receipts "
+            "WHERE trim(COALESCE(comment, '')) = ''"
+        ).fetchall()
+        for row in rows:
+            try:
+                metadata = json.loads(row["metadata_json"] or "{}")
+            except (TypeError, ValueError):
+                continue
+            comment = str(
+                metadata.get("comment")
+                if "comment" in metadata
+                else metadata.get("note") or ""
+            ).strip()
+            if not comment:
+                continue
+            connection.execute(
+                "UPDATE erp_receipts SET comment = ? WHERE id = ?",
+                (comment, row["id"]),
+            )
+            backfilled_receipt_comments += 1
     audit = SharedCatalog(database).duplicate_audit()
+    audit["backfilled_receipt_comments"] = backfilled_receipt_comments
     reconciliation = (
         reconcile_legacy_records(path, instance_dir)
         if instance_dir is not None
@@ -467,6 +491,7 @@ def migrate(path, instance_dir=None):
                         "materialized_legacy_products": len(
                             reconciliation["materialized"]["created"]
                         ),
+                        "backfilled_receipt_comments": backfilled_receipt_comments,
                     },
                     ensure_ascii=False,
                     sort_keys=True,

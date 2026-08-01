@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useEffect, useState } from 'react';
 
 import { ApiRequestError } from '../../api/client';
+import { ImageUploader, type EncodedImage } from '../../components/ImageUploader';
 import { Modal } from '../../components/Modal';
 import { createCatalogBrand, createCatalogCategory, createCatalogProduct } from './api';
 import type { CatalogBrand, CatalogCategory, CatalogProduct } from './schemas';
@@ -28,10 +29,12 @@ export function CatalogCreationModal({ request, onClose, onCreated }: CatalogCre
   const queryClient = useQueryClient();
   const [name, setName] = useState('');
   const [article, setArticle] = useState('');
+  const [productImage, setProductImage] = useState<EncodedImage | null>(null);
 
   useEffect(() => {
     setName('');
     setArticle('');
+    setProductImage(null);
   }, [request]);
 
   const mutation = useMutation({
@@ -57,6 +60,7 @@ export function CatalogCreationModal({ request, onClose, onCreated }: CatalogCre
           article,
           brand_id: request.brandId,
           category_id: request.categoryId,
+          product_image: productImage,
         }),
       };
     },
@@ -118,10 +122,13 @@ export function CatalogCreationModal({ request, onClose, onCreated }: CatalogCre
           <input value={name} onChange={(event) => setName(event.target.value)} />
         </label>
         {request?.kind === 'product' ? (
-          <label className="form-field">
-            <span>Артикул</span>
-            <input value={article} onChange={(event) => setArticle(event.target.value)} />
-          </label>
+          <>
+            <label className="form-field">
+              <span>Артикул</span>
+              <input value={article} onChange={(event) => setArticle(event.target.value)} />
+            </label>
+            <ImageUploader label="Фото нового товара" onChange={setProductImage} />
+          </>
         ) : null}
         {error ? <p className="form-error">{error}</p> : null}
       </div>

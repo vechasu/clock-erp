@@ -2,7 +2,6 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 
-import { ImageUploader } from '../../components/ImageUploader';
 import { Icon } from '../../components/Icons';
 import { CatalogCascade } from '../catalog/CatalogComboboxes';
 import {
@@ -21,8 +20,9 @@ interface ReceiptFormProps {
 
 function defaults(receipt?: Receipt | null): ReceiptFormInput {
   return {
+    document_number: receipt?.document_number ?? receipt?.number ?? '',
     receipt_date: receipt?.receipt_date ?? new Date().toISOString().slice(0, 10),
-    note: receipt?.note ?? '',
+    comment: receipt?.comment ?? receipt?.note ?? '',
     positions: receipt?.positions.length
       ? receipt.positions.map((position) => ({
           product_id: position.product_id,
@@ -44,7 +44,6 @@ function defaults(receipt?: Receipt | null): ReceiptFormInput {
             purchase_price: 0,
           },
         ],
-    product_image: null,
   };
 }
 
@@ -76,13 +75,18 @@ export function ReceiptForm({ id, receipt, onSubmit, onCatalogCreated }: Receipt
     <form className="receipt-form" id={id} onSubmit={handleSubmit(onSubmit)}>
       <div className="erp-form">
         <label className="form-field">
+          <span>Номер документа *</span>
+          <input {...register('document_number')} placeholder="Например, ПР-2026-001" />
+          {errors.document_number ? <small>{errors.document_number.message}</small> : null}
+        </label>
+        <label className="form-field">
           <span>Дата прихода *</span>
           <input type="date" {...register('receipt_date')} />
           {errors.receipt_date ? <small>{errors.receipt_date.message}</small> : null}
         </label>
         <label className="form-field">
           <span>Комментарий</span>
-          <input {...register('note')} placeholder="Необязательное примечание" />
+          <input {...register('comment')} placeholder="Необязательное примечание" />
         </label>
       </div>
       <div className="receipt-positions-header">
@@ -125,7 +129,8 @@ export function ReceiptForm({ id, receipt, onSubmit, onCatalogCreated }: Receipt
             <fieldset className="receipt-position" key={field.id}>
               <legend>Позиция {index + 1}</legend>
               <CatalogCascade
-                allowCreate
+                allowCreate={!receipt}
+                disabled={Boolean(receipt)}
                 brandId={selectedBrandId}
                 categoryId={selectedCategoryId}
                 productId={selectedProductId}
@@ -202,8 +207,9 @@ export function ReceiptForm({ id, receipt, onSubmit, onCatalogCreated }: Receipt
                 <span>Количество *</span>
                 <input
                   type="number"
-                  min="0.01"
-                  step="0.01"
+                  min="1"
+                  step="1"
+                  inputMode="numeric"
                   {...register(`positions.${index}.quantity`)}
                 />
                 {errors.positions?.[index]?.quantity ? (
@@ -236,11 +242,6 @@ export function ReceiptForm({ id, receipt, onSubmit, onCatalogCreated }: Receipt
           );
         })}
       </div>
-      {!receipt && fields.length === 1 ? (
-        <ImageUploader
-          onChange={(image) => setValue('product_image', image, { shouldDirty: true })}
-        />
-      ) : null}
       <div className="receipt-form-total">
         <span>Итого</span>
         <strong>{total.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} ₽</strong>

@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 
 import { SearchableSelect } from '../../components/Controls';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
-import { fetchCatalogOptions } from './api';
+import { createCatalogCategory, fetchCatalogOptions } from './api';
 import {
   CatalogCreationModal,
   type CatalogCreatedEntity,
@@ -16,6 +16,12 @@ interface EntityComboboxProps<T> {
   options: T[];
   optionValue: (option: T) => string;
   optionLabel: (option: T) => string;
+  optionDetails?: (option: T) => {
+    inputLabel?: string;
+    description?: string;
+    meta?: string;
+    searchText?: string;
+  };
   label: string;
   placeholder: string;
   disabled?: boolean;
@@ -35,6 +41,7 @@ function EntityCombobox<T>({
   options,
   optionValue,
   optionLabel,
+  optionDetails,
   onChange,
   ...props
 }: EntityComboboxProps<T>) {
@@ -45,6 +52,7 @@ function EntityCombobox<T>({
       options={options.map((option) => ({
         value: optionValue(option),
         label: optionLabel(option),
+        ...optionDetails?.(option),
       }))}
       onChange={(nextValue) =>
         onChange(
@@ -111,6 +119,7 @@ export function CatalogCascade({
   const [createdBrand, setCreatedBrand] = useState<CatalogBrand | null>(null);
   const [createdCategory, setCreatedCategory] = useState<CatalogCategory | null>(null);
   const [createdProduct, setCreatedProduct] = useState<CatalogProduct | null>(null);
+  const [categoryLinkError, setCategoryLinkError] = useState('');
   const debouncedBrandQuery = useDebouncedValue(brandQuery, 250);
   const debouncedCategoryQuery = useDebouncedValue(categoryQuery, 250);
   const debouncedProductQuery = useDebouncedValue(productQuery, 250);
@@ -120,6 +129,7 @@ export function CatalogCascade({
     setProductQuery('');
     setCreatedCategory(null);
     setCreatedProduct(null);
+    setCategoryLinkError('');
   }, [brandId]);
 
   useEffect(() => {
@@ -153,6 +163,20 @@ export function CatalogCascade({
     enabled: Boolean(brandId),
     staleTime: 2 * 60_000,
   });
+  const globalCategoriesQuery = useQuery({
+    queryKey: ['catalog-options', 'category-global', debouncedCategoryQuery],
+    queryFn: ({ signal }) =>
+      fetchCatalogOptions(
+        'category',
+        {
+          query: debouncedCategoryQuery,
+          limit: 100,
+        },
+        signal,
+      ),
+    enabled: allowCreate && Boolean(brandId),
+    staleTime: 2 * 60_000,
+  });
   const productsQuery = useQuery({
     queryKey: ['catalog-options', 'product', brandId, categoryId, debouncedProductQuery, inStock],
     queryFn: ({ signal }) =>
@@ -177,11 +201,26 @@ export function CatalogCascade({
   }, [brandId, brandsQuery.data, createdBrand, initialBrand]);
   const categories = useMemo(() => {
     const items = categoriesQuery.data ?? [];
+    const linkedNames = new Set(items.map((item) => item.name.trim().toLocaleLowerCase('ru-RU')));
+    const globalTemplates = (globalCategoriesQuery.data ?? []).filter((item) => {
+      const key = item.name.trim().toLocaleLowerCase('ru-RU');
+      if (linkedNames.has(key)) return false;
+      linkedNames.add(key);
+      return true;
+    });
+    const available = [...items, ...globalTemplates];
     const pinned = createdCategory?.id === categoryId ? createdCategory : initialCategory;
-    return pinned && pinned.brand_id === brandId && !items.some((item) => item.id === pinned.id)
-      ? [pinned, ...items]
-      : items;
-  }, [brandId, categoriesQuery.data, categoryId, createdCategory, initialCategory]);
+    return pinned && pinned.brand_id === brandId && !available.some((item) => item.id === pinned.id)
+      ? [pinned, ...available]
+      : available;
+  }, [
+    brandId,
+    categoriesQuery.data,
+    categoryId,
+    createdCategory,
+    globalCategoriesQuery.data,
+    initialCategory,
+  ]);
   const products = useMemo(() => {
     const items = productsQuery.data ?? [];
     const pinned = createdProduct?.id === productId ? createdProduct : initialProduct;
@@ -246,11 +285,38 @@ export function CatalogCascade({
           optionValue={(option) => String(option.id)}
           optionLabel={(option) => option.name}
           onQueryChange={setCategoryQuery}
-          loading={categoriesQuery.isFetching}
+          loading={categoriesQuery.isFetching || globalCategoriesQuery.isFetching}
           disabled={disabled || !brandId}
-          error={errors?.category}
+          error={categoryLinkError || errors?.category}
           onChange={(value, option) => {
-            onCategoryChange(value ? Number(value) : null, option);
+            if (!value || !option || option.brand_id === brandId) {
+              setCategoryLinkError('');
+              onCategoryChange(value ? Number(value) : null, option);
+              return;
+            }
+            if (!brandId) return;
+            void createCatalogCategory(brandId, option.name)
+              .then((created) => {
+                setCategoryLinkError('');
+                setCreatedCategory(created);
+                onCategoryChange(created.id, created);
+                onCatalogCreated?.('Категория связана с новым брендом');
+              })
+              .catch(async () => {
+                const refreshed = await categoriesQuery.refetch();
+                const linked = refreshed.data?.find(
+                  (item) =>
+                    item.name.trim().toLocaleLowerCase('ru-RU') ===
+                    option.name.trim().toLocaleLowerCase('ru-RU'),
+                );
+                if (linked) {
+                  setCategoryLinkError('');
+                  setCreatedCategory(linked);
+                  onCategoryChange(linked.id, linked);
+                } else {
+                  setCategoryLinkError('Не удалось связать категорию с брендом');
+                }
+              });
           }}
           createAction={
             allowCreate && brandId
@@ -269,9 +335,13 @@ export function CatalogCascade({
             value={productId}
             options={products}
             optionValue={(option) => option.id}
-            optionLabel={(option) =>
-              `${option.name} · ${option.article || 'без артикула'} · остаток ${option.stock_display}`
-            }
+            optionLabel={(option) => option.name}
+            optionDetails={(option) => ({
+              inputLabel: option.name,
+              description: `Артикул: ${option.article || '—'}`,
+              meta: `Остаток: ${option.stock_display}`,
+              searchText: [option.name, option.article, option.barcode].filter(Boolean).join(' '),
+            })}
             onQueryChange={setProductQuery}
             loading={productsQuery.isFetching}
             disabled={disabled || productDisabled || !categoryId}

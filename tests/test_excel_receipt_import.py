@@ -160,7 +160,7 @@ class ExcelReceiptImportTest(unittest.TestCase):
         sheet = workbook.active
         sheet.title = "Импорт"
         sheet.append(["Название", "Бренд", "Остаток"])
-        sheet.append([0.5381944444444444, "28th of MAY", 0])
+        sheet.append([0.5381944444444444, "28th of MAY", 1])
         sheet["A2"].number_format = "hh:mm"
         target = BytesIO()
         workbook.save(target)
@@ -168,7 +168,7 @@ class ExcelReceiptImportTest(unittest.TestCase):
 
         draft = self.service.preview(target.getvalue(), "excel-time.xlsx")
         row = draft["rows"][0]
-        self.assertEqual((draft["status"], draft["zero_rows"]), ("ready", 1))
+        self.assertEqual((draft["status"], draft["positive_rows"]), ("ready", 1))
         self.assertEqual(row["data"]["excel_name"], "12:55")
         self.assertEqual(row["data"]["excel_name_number_format"], "hh:mm")
         self.assertEqual(row["data"]["excel_name_normalization"], "excel_time")
@@ -182,14 +182,14 @@ class ExcelReceiptImportTest(unittest.TestCase):
         for excel_row in range(2156, 2252):
             sheet.cell(excel_row, 1, str((excel_row - 2000) / 1440))
             sheet.cell(excel_row, 3, "28th of MAY")
-            sheet.cell(excel_row, 5, 0)
+            sheet.cell(excel_row, 5, 1)
         target = BytesIO()
         workbook.save(target)
         workbook.close()
 
         draft = self.service.preview(target.getvalue(), "legacy-times.xlsx")
         self.assertEqual(
-            (draft["status"], draft["valid_rows"], draft["zero_rows"], draft["error_rows"]),
+            (draft["status"], draft["valid_rows"], draft["positive_rows"], draft["error_rows"]),
             ("ready", 96, 96, 0),
         )
         self.assertEqual([row["excel_row"] for row in draft["rows"]], list(range(2156, 2252)))
@@ -203,12 +203,12 @@ class ExcelReceiptImportTest(unittest.TestCase):
         draft = self.service.preview(
             workbook_bytes(
                 ["Название", "Артикул", "Бренд", "Остаток"],
-                [["1925.0", "PJT-7650", "Projects", 0]],
+                [["1925.0", "PJT-7650", "Projects", 1]],
             ),
             "integer-name.xlsx",
         )
         row = draft["rows"][0]
-        self.assertEqual((draft["status"], draft["zero_rows"]), ("ready", 1))
+        self.assertEqual((draft["status"], draft["positive_rows"]), ("ready", 1))
         self.assertEqual(row["data"]["excel_name"], "1925")
         self.assertEqual(row["data"]["excel_name_raw"], "1925.0")
         self.assertEqual(row["data"]["excel_name_normalization"], "numeric_text")
@@ -227,7 +227,7 @@ class ExcelReceiptImportTest(unittest.TestCase):
     def test_28th_of_may_is_preserved_as_a_real_brand(self):
         data = workbook_bytes(
             ["Название", "Бренд", "Остаток"],
-            [["0.034027777777777775", "28th of MAY", 0]],
+            [["0.034027777777777775", "28th of MAY", 1]],
         )
         draft = self.service.preview(data, "date-brand.xlsx")
         row = draft["rows"][0]
@@ -235,29 +235,18 @@ class ExcelReceiptImportTest(unittest.TestCase):
         self.assertEqual(row["data"]["excel_brand"], "28th of MAY")
         self.assertEqual(row["data"]["excel_name"], "00:49")
 
-    def test_zero_quantity_creates_card_without_stock_operation(self):
+    def test_zero_quantity_blocks_the_entire_receipt(self):
         data = workbook_bytes(
             ["Название", "Бренд", "Количество"],
             [["Zero card", "Brand", 0], ["Live card", "Brand", 4]],
         )
         draft = self.service.preview(data, "zero.xlsx")
-        self.assertEqual((draft["status"], draft["zero_rows"], draft["valid_rows"]), (
-            "ready", 1, 2,
+        self.assertEqual((draft["status"], draft["error_rows"], draft["valid_rows"]), (
+            "blocked", 1, 1,
         ))
-        receipt = self.service.post(draft["id"])
-        self.assertEqual(
-            (receipt["row_count"], receipt["total_quantity"], receipt["operation_rows"]),
-            (2, 4, 1),
-        )
-        with self.database.connect() as connection:
-            products = [tuple(row) for row in connection.execute(
-                "SELECT excel_name_raw, stock FROM catalog_excel_products ORDER BY id"
-            ).fetchall()]
-            receipt_rows = connection.execute(
-                "SELECT COUNT(*) FROM catalog_excel_receipt_rows"
-            ).fetchone()[0]
-        self.assertEqual(products, [("Zero card", 0), ("Live card", 4)])
-        self.assertEqual(receipt_rows, 2)
+        with self.assertRaises(ExcelDraftBlockedError):
+            self.service.post(draft["id"])
+        self.assertEqual(self.catalog_totals(), (0, 0, 0, 0))
 
     def test_explicit_post_creates_one_receipt_and_is_idempotent(self):
         draft = self.service.preview(self.valid_file(), "receipt.xlsx")
@@ -319,7 +308,7 @@ class ExcelReceiptImportTest(unittest.TestCase):
     def test_stale_unposted_draft_is_reparsed_by_current_parser(self):
         data = workbook_bytes(
             ["Название", "Артикул", "Бренд", "Остаток"],
-            [["1925.0", "PJT-7650", "Projects", 0]],
+            [["1925.0", "PJT-7650", "Projects", 1]],
         )
         draft = self.service.preview(data, "stale.xlsx")
         with self.database.transaction() as connection:
@@ -336,10 +325,10 @@ class ExcelReceiptImportTest(unittest.TestCase):
         self.assertEqual(
             (
                 refreshed["parser_version"], refreshed["status"],
-                refreshed["valid_rows"], refreshed["zero_rows"],
+                refreshed["valid_rows"], refreshed["positive_rows"],
                 refreshed["error_rows"],
             ),
-            (3, "ready", 1, 1, 0),
+            (4, "ready", 1, 1, 0),
         )
         self.assertEqual(refreshed["rows"][0]["data"]["excel_name"], "1925")
         self.assertEqual(self.catalog_totals(), (0, 0, 0, 0))
@@ -372,7 +361,7 @@ class ExcelReceiptImportTest(unittest.TestCase):
              ("receipt-{}".format(draft["file_sha256"][:20]), "active")],
         )
 
-    def test_full_3313_row_receipt_creates_zero_cards_without_operations(self):
+    def test_full_receipt_with_zero_rows_is_rejected_atomically(self):
         rows = []
         for index in range(2477):
             rows.append([
@@ -397,38 +386,11 @@ class ExcelReceiptImportTest(unittest.TestCase):
                 draft["zero_rows"], draft["positive_rows"],
                 draft["total_quantity"], draft["error_rows"],
             ),
-            ("ready", 3313, 3313, 2477, 836, 1912, 0),
+            ("blocked", 3313, 836, 0, 836, 1912, 2477),
         )
-
-        first = self.service.post(draft["id"])
-        second = self.service.post(draft["id"])
-
-        self.assertFalse(first["already_posted"])
-        self.assertTrue(second["already_posted"])
-        self.assertEqual(first["id"], second["id"])
-        self.assertEqual(
-            (first["row_count"], first["operation_rows"], first["total_quantity"]),
-            (3313, 836, 1912),
-        )
-        with self.database.connect() as connection:
-            counts = (
-                connection.execute(
-                    "SELECT COUNT(*) FROM catalog_excel_products"
-                ).fetchone()[0],
-                connection.execute(
-                    "SELECT COALESCE(SUM(stock), 0) FROM catalog_excel_products"
-                ).fetchone()[0],
-                connection.execute(
-                    "SELECT COUNT(*) FROM catalog_excel_receipt_rows"
-                ).fetchone()[0],
-                connection.execute(
-                    "SELECT COUNT(*) FROM catalog_excel_receipt_operations"
-                ).fetchone()[0],
-                connection.execute(
-                    "SELECT COUNT(*) FROM catalog_excel_products WHERE stock = 0"
-                ).fetchone()[0],
-            )
-        self.assertEqual(counts, (3313, 1912, 3313, 836, 2477))
+        with self.assertRaises(ExcelDraftBlockedError):
+            self.service.post(draft["id"])
+        self.assertEqual(self.catalog_totals(), before)
 
     def test_canonical_stylesheet_path_is_served_once(self):
         from app import web

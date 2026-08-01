@@ -27,6 +27,30 @@ def positive_number(value, label):
     return number
 
 
+def positive_integer(value, label):
+    if isinstance(value, bool) or value in (None, ""):
+        raise ReceiptInventoryError(
+            "{} должно быть целым положительным числом.".format(label)
+        )
+    if isinstance(value, str):
+        raw = value.strip()
+        if not raw or "," in raw:
+            raise ReceiptInventoryError(
+                "{} должно быть целым положительным числом.".format(label)
+            )
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        raise ReceiptInventoryError(
+            "{} должно быть целым положительным числом.".format(label)
+        )
+    if not math.isfinite(number) or number <= 0 or not number.is_integer():
+        raise ReceiptInventoryError(
+            "{} должно быть целым положительным числом.".format(label)
+        )
+    return int(number)
+
+
 def nonnegative_number(value, label):
     try:
         number = float(value or 0)
@@ -176,10 +200,17 @@ class ReceiptInventory:
                 now,
             )
             connection.execute(
-                "UPDATE erp_receipts SET number = ?, receipt_date = ?, "
+                "UPDATE erp_receipts SET number = ?, comment = ?, receipt_date = ?, "
                 "user_name = ?, metadata_json = ?, updated_at = ? WHERE id = ?",
                 (
                     str(receipt.get("number") or current["number"] or "") or None,
+                    str(
+                        receipt.get("comment")
+                        if "comment" in receipt
+                        else receipt.get("note")
+                        if "note" in receipt
+                        else current["comment"] or ""
+                    ),
                     str(
                         receipt.get("receipt_date")
                         or current["receipt_date"]
@@ -251,6 +282,15 @@ class ReceiptInventory:
                 "WHERE receipt_id = ? AND active = 1",
                 (receipt_id,),
             ).fetchall()
+            old_product_ids = {int(row["product_id"]) for row in old_rows}
+            new_product_ids = {
+                int(position["product_id"]) for position in prepared
+            }
+            if new_product_ids != old_product_ids:
+                raise ReceiptInventoryError(
+                    "Товар проведённого прихода изменить нельзя. "
+                    "Отмените приход и создайте новый."
+                )
             old_totals = defaultdict(float)
             for row in old_rows:
                 old_totals[int(row["product_id"])] += float(row["quantity"])
@@ -349,9 +389,23 @@ class ReceiptInventory:
                     ),
                 )
             connection.execute(
-                "UPDATE erp_receipts SET receipt_date = ?, metadata_json = ?, "
+                "UPDATE erp_receipts SET number = ?, comment = ?, receipt_date = ?, "
+                "metadata_json = ?, "
                 "updated_at = ? WHERE id = ?",
                 (
+                    str(
+                        receipt.get("document_number")
+                        or receipt.get("number")
+                        or current["number"]
+                        or ""
+                    ).strip() or None,
+                    str(
+                        receipt.get("comment")
+                        if "comment" in receipt
+                        else receipt.get("note")
+                        if "note" in receipt
+                        else current["comment"] or ""
+                    ),
                     str(
                         receipt.get("receipt_date")
                         or current["receipt_date"]
@@ -399,6 +453,7 @@ class ReceiptInventory:
         idempotency_key="",
         user_name="",
         failure_hook=None,
+        reason="",
     ):
         receipt_id = str(receipt_id or "").strip()
         now = utc_now()
@@ -472,8 +527,15 @@ class ReceiptInventory:
                 )
             connection.execute(
                 "UPDATE erp_receipts SET status = 'cancelled', "
-                "cancelled_at = ?, updated_at = ? WHERE id = ?",
-                (now, now, receipt_id),
+                "cancelled_at = ?, cancelled_by = ?, cancellation_reason = ?, "
+                "updated_at = ? WHERE id = ?",
+                (
+                    now,
+                    str(user_name or "") or None,
+                    str(reason or "").strip() or None,
+                    now,
+                    receipt_id,
+                ),
             )
             if failure_hook:
                 failure_hook(connection)
@@ -548,13 +610,18 @@ class ReceiptInventory:
         products = cls._load_products(connection, prepared)
         connection.execute(
             "INSERT INTO erp_receipts "
-            "(id, tenant_id, number, status, receipt_date, user_name, "
+            "(id, tenant_id, number, comment, status, receipt_date, user_name, "
             "idempotency_key, metadata_json, created_at, updated_at) "
-            "VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?)",
+            "VALUES (?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?)",
             (
                 receipt_id,
                 tenant_id,
                 str(receipt.get("number") or "") or None,
+                str(
+                    receipt.get("comment")
+                    if "comment" in receipt
+                    else receipt.get("note") or ""
+                ),
                 str(
                     receipt.get("receipt_date")
                     or receipt.get("created_at")
@@ -701,7 +768,7 @@ class ReceiptInventory:
                 )
             prepared.append({
                 "product_id": product_id,
-                "quantity": positive_number(
+                "quantity": positive_integer(
                     position.get("quantity"),
                     "Количество",
                 ),

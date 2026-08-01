@@ -3649,3 +3649,26 @@ input[type='number']::-webkit-outer-spin-button {
     transition-duration: 0.01ms !important;
   }
 }
+.searchable-select-option {
+  display: grid;
+  min-width: 0;
+}
+
+.searchable-select-option strong,
+.searchable-select-option small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.searchable-select-option small {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.searchable-select-meta {
+  margin-left: auto;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}

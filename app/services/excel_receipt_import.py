@@ -39,7 +39,7 @@ from app.services.product_reconciliation import (
 
 
 MAX_EXCEL_FILE_SIZE = 15 * 1024 * 1024
-PARSER_VERSION = 3
+PARSER_VERSION = 4
 LEGACY_SERIAL_TIME_BRANDS = {"28th of may"}
 HEADER_ALIASES = {
     "name": {
@@ -782,11 +782,13 @@ class ExcelReceiptImportService:
         if error_code is None:
             try:
                 quantity = _number(value("quantity"))
-                if quantity < 0:
-                    raise ValueError("negative")
+                if quantity <= 0 or not quantity.is_integer():
+                    raise ValueError("not-positive-integer")
+                quantity = int(quantity)
             except (TypeError, ValueError):
                 error_code, error_message = (
-                    "quantity_invalid", "Количество должно быть неотрицательным числом."
+                    "quantity_invalid",
+                    "Количество должно быть целым положительным числом.",
                 )
         data = {
             "excel_row": excel_row,

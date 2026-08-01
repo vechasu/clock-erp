@@ -77,6 +77,7 @@ export async function createCatalogProduct(values: {
   article: string;
   brand_id: number;
   category_id: number;
+  product_image?: { name: string; type: string; base64: string } | null;
 }) {
   const created = (
     await apiRequest(
