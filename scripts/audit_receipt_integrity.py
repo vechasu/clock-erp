@@ -4,6 +4,7 @@
 import argparse
 import json
 import sqlite3
+import sys
 from collections import Counter
 from pathlib import Path
 
@@ -141,7 +142,7 @@ def main():
     rendered = json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True)
     if arguments.output:
         arguments.output.write_text(rendered + "\n", encoding="utf-8")
-    print(rendered)
+    sys.stdout.buffer.write((rendered + "\n").encode("utf-8"))
 
 
 if __name__ == "__main__":
