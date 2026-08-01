@@ -99,6 +99,17 @@ class CatalogCascadeUnificationTest(unittest.TestCase):
         self.assertIn("data-catalog-create-action", macro)
         self.assertIn(".catalog-create-modal", styles)
 
+    def test_product_photo_belongs_to_new_product_creation_only(self):
+        receipts = self.source("app/templates/receipts.html")
+        macro = self.source("app/templates/_catalog_combobox.html")
+        component = self.source("app/static/js/catalog-combobox.js")
+
+        self.assertNotIn('name="product_image"', receipts)
+        self.assertIn("data-catalog-create-image-field", macro)
+        self.assertIn("data-catalog-create-image", macro)
+        self.assertIn("payload.product_image = await readProductImage()", component)
+        self.assertIn("file.size > 3 * 1024 * 1024", component)
+
     def test_visible_section_routes_keep_the_approved_legacy_interface(self):
         web = self.source("app/web.py")
         products_route = web.split('@app.route("/products")', 1)[1].split(
