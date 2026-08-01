@@ -60,7 +60,6 @@ EXPECTED_COLUMNS = {
         "Номер заказа",
         "Количество",
         "Цена продажи",
-        "Комиссия",
         "Статус",
         "Примечание",
     ],
@@ -72,13 +71,12 @@ EXPECTED_COLUMNS = {
         "Товар",
         "Количество",
         "Цена",
-        "Комиссия",
         "Статус",
         "ФИО получателя",
         "Номер заказа",
         "Площадка",
         "Страна",
-        "Номер накладной",
+        "Трекинг",
         "Примечание",
     ],
 }
@@ -299,7 +297,7 @@ class SalesSourceTabsTest(unittest.TestCase):
             self.get_combobox_values(
                 page,
                 "saleStatus",
-                'id="saleCommission"',
+                'data-source-fields="tictactoy"',
             ),
             ["shipped", "returned"],
         )
@@ -307,7 +305,7 @@ class SalesSourceTabsTest(unittest.TestCase):
             self.get_combobox_values(
                 page,
                 "saleCommission",
-                'data-source-fields="tictactoy"',
+                'id="tictactoyCountry"',
             ),
             web.SALE_COMMISSION_OPTIONS,
         )
@@ -330,7 +328,7 @@ class SalesSourceTabsTest(unittest.TestCase):
         )
         self.assertEqual(
             countries[:4],
-            ["Америка", "Япония", "Канада", "Мексика"],
+            ["США", "Япония", "Канада", "Мексика"],
         )
         self.assertGreaterEqual(len(countries), 195)
         self.assertEqual(len(countries), len(set(countries)))
@@ -951,14 +949,14 @@ class SalesSourceTabsTest(unittest.TestCase):
                 self.assertEqual(response.status_code, 302)
 
                 stored = web.load_manual_sales()[-1]
-                self.assertEqual(stored["commission"], commission)
+                self.assertEqual(stored["commission"], "")
                 self.assertEqual(stored["platform"], "Amazon (US)")
                 self.assertEqual(stored["country"], "Япония")
                 self.assertEqual(stored["order_status"], status)
                 self.assertEqual(stored["commission_amount"], 0)
 
                 record = web.build_sales_report_records()[0]
-                self.assertEqual(record["commission"], commission)
+                self.assertEqual(record["commission"], "")
                 self.assertEqual(record["platform"], "Amazon (US)")
                 self.assertEqual(record["country"], "Япония")
                 self.assertEqual(record["order_status"], status)
@@ -971,15 +969,11 @@ class SalesSourceTabsTest(unittest.TestCase):
         page = self.client.get(
             "/sales?source=amazon"
         ).get_data(as_text=True)
-        self.assertIn(
-            f'class="col-commission"',
-            page,
-        )
+        self.assertNotIn('class="col-commission"', page)
         self.assertIn(
             f'class="col-order_status_label"',
             page,
         )
-        self.assertIn(commission, page)
         self.assertIn("Amazon (US)", page)
         self.assertIn("Япония", page)
         self.assertIn("Отправлен", page)
@@ -1001,6 +995,8 @@ class SalesSourceTabsTest(unittest.TestCase):
                     "unit_price": 1000,
                     "order_number": "OLD-1",
                     "delivery_address": "Legacy Amazon address",
+                    "commission": "legacy commission",
+                    "commission_amount": 12,
                 },
             ], ensure_ascii=False),
             encoding="utf-8",
@@ -1049,9 +1045,9 @@ class SalesSourceTabsTest(unittest.TestCase):
         self.assertEqual(stored[0]["total_amount"], 2500.0)
         self.assertEqual(
             stored[0]["commission"],
-            web.SALE_COMMISSION_OPTIONS[1],
+            "legacy commission",
         )
-        self.assertEqual(stored[0]["commission_amount"], 75.5)
+        self.assertEqual(stored[0]["commission_amount"], 12)
         self.assertEqual(stored[0]["order_status"], "returned")
         self.assertEqual(stored[0]["platform"], "Amazon (CA)")
         self.assertEqual(stored[0]["country"], "Канада")
@@ -1615,7 +1611,7 @@ class SalesSourceTabsTest(unittest.TestCase):
                             report_page,
                         )
                         self.assertEqual(
-                            sheet["L5"].value,
+                            sheet["K5"].value,
                             "Amazon.de",
                         )
                         self.assertNotIn(

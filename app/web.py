@@ -4196,7 +4196,6 @@ SALES_TABLE_COLUMNS = {
         ("order_number", "Номер заказа"),
         ("quantity_display", "Количество"),
         ("unit_price_display", "Цена продажи"),
-        ("commission", "Комиссия"),
         ("order_status_label", "Статус"),
         ("note", "Примечание"),
     ],
@@ -4208,13 +4207,12 @@ SALES_TABLE_COLUMNS = {
         ("product_name", "Товар"),
         ("quantity_display", "Количество"),
         ("unit_price_display", "Цена"),
-        ("commission", "Комиссия"),
         ("order_status_label", "Статус"),
         ("recipient_name", "ФИО получателя"),
         ("order_number", "Номер заказа"),
         ("platform", "Площадка"),
         ("country", "Страна"),
-        ("invoice_number", "Номер накладной"),
+        ("invoice_number", "Трекинг"),
         ("note", "Примечание"),
     ],
 }
@@ -4267,7 +4265,7 @@ TICTACTOY_LOCATIONS_PATH = (
 )
 
 PINNED_SALE_COUNTRIES = [
-    "Америка",
+    "США",
     "Япония",
     "Канада",
     "Мексика",
@@ -4894,6 +4892,16 @@ def normalize_sales_source_key(value, default=""):
     return SALES_SOURCE_ALIASES.get(normalized, default)
 
 
+def normalize_amazon_country(value):
+    country = str(value or "").strip()
+    if country.casefold() in {
+        "америка", "сша", "usa", "us", "united states",
+        "united states of america",
+    }:
+        return "США"
+    return country
+
+
 def get_active_sales_source(value):
     return normalize_sales_source_key(value, default="all")
 
@@ -5154,18 +5162,24 @@ def build_sale_optional_fields(form, existing=None):
     from datetime import datetime
 
     existing = existing if isinstance(existing, dict) else {}
-    commission_amount = parse_sale_commission(
-        (
+    source_key = normalize_sales_source_key(
+        form.get("source") or existing.get("source")
+    )
+    supports_commission = source_key == "tictactoy"
+    if supports_commission:
+        commission_amount = parse_sale_commission(
             form.get("commission_amount")
             if "commission_amount" in form
             else existing.get("commission_amount")
         )
-    )
-
-    if commission_amount is None:
-        raise ValueError(
-            "Комиссия должна быть неотрицательной суммой в рублях"
-        )
+        if commission_amount is None:
+            raise ValueError(
+                "Комиссия должна быть неотрицательной суммой в рублях"
+            )
+    else:
+        commission_amount = parse_sale_commission(
+            existing.get("commission_amount")
+        ) or 0
 
     delivery_cost = parse_sale_commission(
         form.get("delivery_cost")
@@ -5186,13 +5200,17 @@ def build_sale_optional_fields(form, existing=None):
     commission = str(
         (
             form.get("commission")
-            if "commission" in form
+            if supports_commission and "commission" in form
             else existing.get("commission")
         )
         or ""
     ).strip()
 
-    if commission and commission not in SALE_COMMISSION_OPTIONS:
+    if (
+        supports_commission
+        and commission
+        and commission not in SALE_COMMISSION_OPTIONS
+    ):
         raise ValueError("Выберите комиссию из списка")
 
     was_cancelled = sale_is_cancelled(existing)
@@ -5230,14 +5248,22 @@ def build_sale_optional_fields(form, existing=None):
             form.get("sticker_number") or ""
         ).strip(),
         "delivery_cost": delivery_cost,
-        "country": str(
-            (
+        "country": (
+            normalize_amazon_country(
                 form.get("country")
                 if "country" in form
                 else existing.get("country")
             )
-            or ""
-        ).strip(),
+            if source_key == "amazon"
+            else str(
+                (
+                    form.get("country")
+                    if "country" in form
+                    else existing.get("country")
+                )
+                or ""
+            ).strip()
+        ),
         "delivery_address": str(
             (
                 form.get("delivery_address")
@@ -5381,12 +5407,15 @@ def respond_to_sales_action(
 
 
 def validate_sale_form_date(value):
-    from datetime import date
+    from datetime import date, datetime
 
     normalized = str(value or "").strip()
 
     try:
-        date.fromisoformat(normalized)
+        if "T" in normalized or " " in normalized:
+            datetime.fromisoformat(normalized.replace("Z", "+00:00"))
+        else:
+            date.fromisoformat(normalized)
     except (TypeError, ValueError):
         raise ValueError("Укажите корректную дату продажи")
 
@@ -6194,12 +6223,18 @@ def sale_delete():
             )
 
         if sale.get("inventory_managed"):
-            return respond_to_sales_action(
-                "Проведённую продажу удалить нельзя. "
-                "Используйте оформление возврата.",
-                notice="error",
-                status_code=409,
-            )
+            try:
+                SalesInventory().delete_sale(
+                    sale_id,
+                    reason="Удаление продажи",
+                    user_name=current_sales_user_name(),
+                    idempotency_key="sale-delete:{}".format(sale_id),
+                )
+            except SalesInventoryError as error:
+                return respond_to_sales_action(
+                    str(error), notice="error", status_code=409,
+                )
+            return respond_to_sales_action("Продажа удалена")
 
         if sale.get("deleted_at"):
             return respond_to_sales_action(
@@ -6880,6 +6915,10 @@ def build_sales_report_records(
     sales = manual_sales + automatic_sales
 
     for sale in sales:
+        if normalize_sales_source_key(sale.get("source")) == "amazon":
+            sale["country"] = normalize_amazon_country(
+                sale.get("country")
+            )
         quantity_value = float(sale.get("quantity_value") or 0)
         returned_quantity = float(
             sale.get("returned_quantity") or 0
@@ -13838,7 +13877,7 @@ API_SALE_TEXT_FIELDS = (
 
 
 def serialize_api_sale(sale):
-    return {
+    result = {
         "id": str(sale.get("id") or ""),
         "sale_type": str(sale.get("sale_type") or ""),
         "sale_type_label": str(sale.get("sale_type_label") or ""),
@@ -13903,14 +13942,22 @@ def serialize_api_sale(sale):
         "recipient": str(sale.get("recipient") or ""),
         "recipient_name": str(sale.get("recipient_name") or ""),
         "payment_method": str(sale.get("payment_method") or ""),
-        "commission": str(sale.get("commission") or ""),
-        "commission_amount": float(sale.get("commission_amount") or 0),
-        "country": str(sale.get("country") or ""),
+        "country": (
+            normalize_amazon_country(sale.get("country"))
+            if normalize_sales_source_key(sale.get("source")) == "amazon"
+            else str(sale.get("country") or "")
+        ),
         "delivery_address": str(sale.get("delivery_address") or ""),
         "platform": str(sale.get("platform") or ""),
         "invoice_number": str(sale.get("invoice_number") or ""),
         "sticker_number": str(sale.get("sticker_number") or ""),
     }
+    if normalize_sales_source_key(sale.get("source")) == "tictactoy":
+        result["commission"] = str(sale.get("commission") or "")
+        result["commission_amount"] = float(
+            sale.get("commission_amount") or 0
+        )
+    return result
 
 
 @lru_cache(maxsize=8)
@@ -14034,6 +14081,11 @@ def normalize_api_sale_payload(payload, existing=None, require_catalog=False):
             existing=existing,
         )
         optional_fields["country"] = location_fields["country"]
+    elif normalize_sales_source_key(source) == "amazon":
+        location_fields["country"] = normalize_amazon_country(
+            location_fields["country"]
+        )
+        optional_fields["country"] = location_fields["country"]
     normalized = {
         "id": str(existing.get("id") or payload.get("id") or uuid.uuid4().hex),
         "created_at": created_at,
@@ -14116,7 +14168,10 @@ def api_sales_sources():
 @app.route("/api/sales/locations", methods=["GET"])
 @app.route("/api/v1/sales/locations", methods=["GET"])
 def api_sales_locations():
-    return api_success(get_tictactoy_location_catalog())
+    locations = dict(get_tictactoy_location_catalog())
+    for country in get_sale_country_options():
+        locations.setdefault(country, {})
+    return api_success(locations)
 
 
 @app.route("/api/sales", methods=["GET", "POST"])
@@ -14307,6 +14362,14 @@ def api_sales_collection():
 def api_sale_resource(sale_id):
     record = find_api_sale(sale_id)
     if record is None:
+        if request.method == "DELETE":
+            deleted = SalesInventory().get_sale(sale_id)
+            if deleted and deleted.get("deleted_at"):
+                return api_success({
+                    "id": str(sale_id),
+                    "deleted": True,
+                    "stock_restored": True,
+                })
         return api_error("SALE_NOT_FOUND", "Продажа не найдена.", 404)
     if request.method == "GET":
         return api_success(serialize_api_sale(record))
@@ -14321,7 +14384,7 @@ def api_sale_resource(sale_id):
                         409,
                     )
                 try:
-                    SalesInventory().cancel_sale(
+                    SalesInventory().delete_sale(
                         sale_id,
                         reason="Удаление или отмена продажи",
                         user_name=current_sales_user_name(),
@@ -14332,6 +14395,13 @@ def api_sale_resource(sale_id):
                     )
                 except (SalesInventoryError, ReturnConflictError) as error:
                     return api_error("SALE_NOT_EDITABLE", str(error), 409)
+                except Exception:
+                    app.logger.exception("Sales API transactional delete failed")
+                    return api_error(
+                        "SALE_DELETE_FAILED",
+                        "Продажа не удалена. Остаток не изменён.",
+                        500,
+                    )
                 return api_success({
                     "id": str(sale_id),
                     "deleted": True,
@@ -14378,12 +14448,6 @@ def api_sale_resource(sale_id):
         if stored is None:
             return api_error("SALE_NOT_FOUND", "Продажа не найдена.", 404)
         if stored.get("inventory_managed"):
-            if normalized["product_id"] != str(stored.get("product_id") or ""):
-                return api_error(
-                    "SALE_NOT_EDITABLE",
-                    "Товар проведённой продажи изменить нельзя.",
-                    409,
-                )
             normalized["inventory_managed"] = True
             normalized["automatic_stock_applied"] = True
             try:
@@ -14400,6 +14464,13 @@ def api_sale_resource(sale_id):
                 )
             except SalesInventoryError as error:
                 return api_error("SALE_NOT_EDITABLE", str(error), 409)
+            except Exception:
+                app.logger.exception("Sales API transactional update failed")
+                return api_error(
+                    "SALE_UPDATE_FAILED",
+                    "Изменения не сохранены. Остаток не изменён.",
+                    500,
+                )
         else:
             stored.update(normalized)
             save_manual_sales(sales)

@@ -169,6 +169,54 @@ class Stage2SalesApiTest(unittest.TestCase):
         self.assertEqual(invalid.status_code, 422)
         self.assertEqual(invalid.get_json()["code"], "SALE_VALIDATION_FAILED")
 
+    def test_v1_patch_and_delete_are_json_transactional_and_idempotent(self):
+        created = self.create_sale().get_json()["data"]
+        updated = self.client.patch(
+            "/api/v1/sales/{}".format(created["id"]),
+            json={
+                "created_at": "2026-07-30T14:35",
+                "source": "Tictactoy",
+                "product_id": str(self.product["id"]),
+                "quantity": 3,
+                "unit_price": 1100,
+                "order_number": "ORDER-1",
+            },
+        )
+        self.assertEqual(updated.status_code, 200)
+        self.assertEqual(updated.content_type, "application/json")
+        self.assertEqual(updated.get_json()["data"]["created_at"], "2026-07-30T14:35")
+        self.assertEqual(self.stock(), 2)
+
+        first = self.client.delete("/api/v1/sales/{}".format(created["id"]))
+        second = self.client.delete("/api/v1/sales/{}".format(created["id"]))
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(first.content_type, "application/json")
+        self.assertEqual(self.stock(), 5)
+        self.assertEqual(
+            self.client.get("/api/v1/sales").get_json()["meta"]["total"], 0,
+        )
+
+    def test_amazon_country_is_canonical_and_commission_is_not_in_contract(self):
+        response = self.client.post(
+            "/api/v1/sales",
+            json={
+                "created_at": "2026-07-30T09:10",
+                "source": "Amazon",
+                "product_id": str(self.product["id"]),
+                "quantity": 1,
+                "unit_price": 900,
+                "country": "USA",
+                "commission": "invalid legacy value",
+                "commission_amount": -100,
+            },
+        )
+        self.assertEqual(response.status_code, 201)
+        sale = response.get_json()["data"]
+        self.assertEqual(sale["country"], "США")
+        self.assertNotIn("commission", sale)
+        self.assertNotIn("commission_amount", sale)
+
     def test_tictactoy_api_creation_ignores_delivery_method_field(self):
         response = self.client.post(
             "/api/sales",

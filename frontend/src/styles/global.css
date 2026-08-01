@@ -882,6 +882,18 @@ textarea:focus-visible {
   text-overflow: ellipsis;
 }
 
+.sale-date-cell span,
+.sale-date-cell small {
+  display: block;
+  white-space: nowrap;
+}
+
+.sale-date-cell small {
+  margin-top: 3px;
+  color: var(--theme-text-muted);
+  font-size: 10px;
+}
+
 .sale-product-cell strong {
   color: var(--theme-text-strong);
 }

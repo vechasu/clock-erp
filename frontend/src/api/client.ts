@@ -30,7 +30,19 @@ export async function apiRequest<T>(
       ...init.headers,
     },
   });
-  const payload: unknown = await response.json();
+  const responseText = await response.text();
+  let payload: unknown = null;
+  try {
+    payload = responseText ? JSON.parse(responseText) : null;
+  } catch {
+    throw new ApiRequestError(
+      response.status,
+      response.ok
+        ? 'Сервер вернул некорректный ответ'
+        : 'Не удалось выполнить запрос. Сервер вернул некорректный ответ.',
+      null,
+    );
+  }
 
   if (!response.ok) {
     const parsedError = apiErrorSchema.safeParse(payload);

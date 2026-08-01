@@ -51,6 +51,13 @@ function formatMoney(value: number | null) {
   return `${value.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} ₽`;
 }
 
+function formatSaleDateTime(value: string) {
+  const normalized = value.replace(' ', 'T');
+  const [date = '', time = ''] = normalized.split('T');
+  const formattedDate = date.length >= 10 ? date.slice(0, 10).split('-').reverse().join('.') : date;
+  return { date: formattedDate || '—', time: time.slice(0, 5) };
+}
+
 function saleStatusTone(status: string, returned: number) {
   if (returned > 0) return 'warning' as const;
   if (status === 'cancelled' || status === 'returned') return 'danger' as const;
@@ -129,11 +136,20 @@ export function SalesPage() {
   });
   const deleteMutation = useMutation({
     mutationFn: deleteSale,
-    onSuccess: () => {
+    onSuccess: (_, deletedId) => {
+      queryClient.setQueryData<Awaited<ReturnType<typeof fetchSales>>>(
+        ['sales', normalizedQuery],
+        (current) => current
+          ? {
+              ...current,
+              sales: current.sales.filter((sale) => sale.id !== deletedId),
+              meta: { ...current.meta, total: Math.max(0, current.meta.total - 1) },
+            }
+          : current,
+      );
       setDeleteTarget(null);
       setToast({ message: 'Продажа удалена', kind: 'success' });
       void Promise.all([
-        invalidate(),
         queryClient.invalidateQueries({ queryKey: ['products'] }),
         queryClient.invalidateQueries({ queryKey: ['catalog-options'] }),
       ]);
@@ -209,8 +225,11 @@ export function SalesPage() {
         id: 'created_at',
         accessorKey: 'created_at',
         header: 'Дата',
-        size: 115,
-        cell: ({ row }) => row.original.created_at.slice(0, 10).split('-').reverse().join('.'),
+        size: 125,
+        cell: ({ row }) => {
+          const value = formatSaleDateTime(row.original.created_at);
+          return <div className="sale-date-cell"><span>{value.date}</span>{value.time ? <small>{value.time}</small> : null}</div>;
+        },
       },
       {
         id: 'order_number',
@@ -501,7 +520,12 @@ export function SalesPage() {
                   <article className="mobile-document-card mobile-sale-card">
                     <div>
                       <strong>{sale.order_number || sale.sale_type_label}</strong>
-                      <time>{sale.created_at.slice(0, 10).split('-').reverse().join('.')}</time>
+                      <time>
+                        {formatSaleDateTime(sale.created_at).date}
+                        {formatSaleDateTime(sale.created_at).time
+                          ? ` · ${formatSaleDateTime(sale.created_at).time}`
+                          : ''}
+                      </time>
                     </div>
                     <h2>{sale.product_name}</h2>
                     <p>
@@ -651,9 +675,9 @@ export function SalesPage() {
         open={deleteTarget !== null}
         title={deleteTarget?.inventory_managed ? 'Отменить продажу?' : 'Удалить продажу?'}
         message={
-          deleteTarget?.inventory_managed
-            ? 'Несписанное количество вернётся в единый остаток, история сохранится.'
-            : 'Запись будет скрыта из списка.'
+          deleteTarget
+            ? `${deleteTarget.product_name}, ${deleteTarget.quantity_display} шт., ${deleteTarget.source}, ${formatSaleDateTime(deleteTarget.created_at).date}${deleteTarget.order_number ? `, заказ ${deleteTarget.order_number}` : ''}. ${deleteTarget.inventory_managed ? 'Невозвращённое количество вернётся в единый остаток.' : 'Запись будет скрыта из списка.'}`
+            : ''
         }
         pending={deleteMutation.isPending}
         onClose={() => setDeleteTarget(null)}
