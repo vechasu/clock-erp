@@ -259,6 +259,35 @@
             box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
         }
 
+        .warehouse-table-toolbar {
+            position: sticky;
+            left: 0;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            min-width: 100%;
+            padding: 8px 12px;
+            border-bottom: 1px solid #e5e7eb;
+            background: #ffffff;
+        }
+
+        .warehouse-table-reset {
+            padding: 8px 11px;
+            border: 1px solid #dbe3ec;
+            border-radius: 9px;
+            background: #ffffff;
+            color: #475569;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .warehouse-table-reset:hover,
+        .warehouse-table-reset:focus-visible {
+            border-color: #b8c5d5;
+            color: #0f172a;
+        }
+
         .warehouse-table-footer {
             min-height: 42px;
             display: grid;
@@ -3802,7 +3831,7 @@
 
 
             <div class="search-card erp-toolbar-card">
-                <form class="search-form erp-toolbar" method="get" action="/warehouse">
+                <form id="warehouseSearchForm" class="search-form erp-toolbar" method="get" action="/warehouse">
                     <input type="hidden" name="sort_by" value="{{ sort_by }}">
                     <input type="hidden" name="sort_dir" value="{{ sort_dir }}">
                     <input type="hidden" name="per_page" value="{{ per_page }}">
@@ -4229,6 +4258,13 @@
             ></div>
             <div id="warehouseResults">
             <div class="table-card erp-table-card">
+                    <div class="warehouse-table-toolbar">
+                        <button
+                            id="warehouseTableReset"
+                            class="warehouse-table-reset"
+                            type="button"
+                        >Сбросить вид таблицы</button>
+                    </div>
                     <table id="warehouseProductsTable" class="warehouse-products-table erp-data-table">
                         <colgroup>
                             <col class="warehouse-col-photo" data-column-key="photo">
@@ -5452,6 +5488,7 @@
 
         const warehouseSearchInput = document.getElementById("warehouseSearchInput");
         const warehouseSearchClear = document.getElementById("warehouseSearchClear");
+        const warehouseSearchForm = document.getElementById("warehouseSearchForm");
         let warehouseSearchTimer = null;
         let warehouseSearchController = null;
         let warehouseSearchRequestId = 0;
@@ -5848,14 +5885,28 @@
             syncWarehouseSearchClear();
             syncWarehouseResetButton();
             filterWarehouseRows();
+        }
 
-            if (sessionStorage.getItem("warehouseSearchKeepFocus") === "1") {
-                sessionStorage.removeItem("warehouseSearchKeepFocus");
+        if (warehouseSearchForm && warehouseSearchInput) {
+            warehouseSearchForm.addEventListener("submit", function(event) {
+                event.preventDefault();
+                window.clearTimeout(warehouseSearchTimer);
+                const query = warehouseSearchInput.value.trim();
+                const url = new URL(window.location.href);
+                if (query) {
+                    url.searchParams.set("q", query);
+                } else {
+                    url.searchParams.delete("q");
+                }
+                url.searchParams.delete("page");
+                window.history.replaceState(
+                    {},
+                    "",
+                    url.pathname + url.search + url.hash
+                );
+                loadWarehouseSearchResults(query);
                 warehouseSearchInput.focus();
-
-                const valueLength = warehouseSearchInput.value.length;
-                warehouseSearchInput.setSelectionRange(valueLength, valueLength);
-            }
+            });
         }
 
         function bindWarehouseSelectionHandlers() {
@@ -6177,6 +6228,7 @@
 
 
     <script>
+        const warehouseTableLegacyStorageKey = "vechasu.warehouse.table-view.v1";
         const warehouseTableStorageKey = "vechasu.warehouse.table-view.v2";
         const warehouseTableDefaults = {
             order: ["photo", "name", "price", "article", "brand", "category", "stock", "created", "cell", "actions"],
@@ -6186,16 +6238,30 @@
             photo: 60, name: 196, price: 72, article: 86, brand: 84,
             category: 138, stock: 98, created: 96, cell: 68, actions: 82
         };
+        const warehouseTableMaximumWidths = {
+            photo: 160, name: 520, price: 180, article: 240, brand: 260,
+            category: 360, stock: 200, created: 220, cell: 180, actions: 160
+        };
         let warehouseTableSuppressSortUntil = 0;
 
         function readWarehouseTableView() {
             try {
-                const saved = JSON.parse(localStorage.getItem(warehouseTableStorageKey) || "{}");
-                return {
+                let rawSaved = localStorage.getItem(warehouseTableStorageKey);
+                let migrated = false;
+                if (!rawSaved) {
+                    rawSaved = localStorage.getItem(warehouseTableLegacyStorageKey);
+                    migrated = Boolean(rawSaved);
+                }
+                const saved = JSON.parse(rawSaved || "{}");
+                const view = {
                     order: Array.isArray(saved.order) ? saved.order : warehouseTableDefaults.order.slice(),
                     widths: Object.assign({}, warehouseTableDefaults.widths, saved.widths || {}),
-                    rowHeights: saved.rowHeights || {}
+                    rowHeights: saved.rowHeights && typeof saved.rowHeights === "object"
+                        ? saved.rowHeights
+                        : {}
                 };
+                if (migrated) saveWarehouseTableView(view);
+                return view;
             } catch (error) {
                 return {
                     order: warehouseTableDefaults.order.slice(),
@@ -6235,7 +6301,10 @@
             warehouseTableDefaults.order.forEach(function(key) {
                 const width = Math.max(
                     warehouseTableMinimumWidths[key],
-                    Number(widths[key]) || warehouseTableDefaults.widths[key]
+                    Math.min(
+                        warehouseTableMaximumWidths[key],
+                        Number(widths[key]) || warehouseTableDefaults.widths[key]
+                    )
                 );
                 const column = table.querySelector('col[data-column-key="' + key + '"]');
                 if (column) column.style.width = width + "px";
@@ -6278,6 +6347,21 @@
                 "warehouse-table-ready"
             );
 
+            const resetButton = document.getElementById("warehouseTableReset");
+            if (resetButton) {
+                resetButton.addEventListener("click", function() {
+                    view.order = warehouseTableDefaults.order.slice();
+                    view.widths = Object.assign({}, warehouseTableDefaults.widths);
+                    view.rowHeights = {};
+                    applyWarehouseColumnOrder(table, view.order);
+                    applyWarehouseTableWidths(table, view.widths);
+                    table.querySelectorAll("tbody tr").forEach(function(row) {
+                        row.style.removeProperty("--warehouse-row-height");
+                    });
+                    saveWarehouseTableView(view);
+                }, { signal: viewSignal });
+            }
+
             table.querySelectorAll("thead th[data-column-key]").forEach(function(header) {
                 const handle = document.createElement("span");
                 handle.className = "warehouse-column-resize-handle";
@@ -6293,7 +6377,10 @@
                     function resizeColumn(moveEvent) {
                         view.widths[key] = Math.max(
                             warehouseTableMinimumWidths[key],
-                            Math.round(startWidth + moveEvent.clientX - startX)
+                            Math.min(
+                                warehouseTableMaximumWidths[key],
+                                Math.round(startWidth + moveEvent.clientX - startX)
+                            )
                         );
                         applyWarehouseTableWidths(table, view.widths);
                     }
