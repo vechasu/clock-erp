@@ -266,6 +266,41 @@ class NavigationSettingsTest(unittest.TestCase):
             )["mobile_primary"]
         )
 
+    def test_visibility_is_shared_by_every_primary_legacy_route(self):
+        self.seed_navigation(
+            repair={"enabled": False, "position": 7},
+            sales={"enabled": True, "position": 3},
+        )
+
+        for path in (
+            "/warehouse",
+            "/sales",
+            "/receipts",
+            "/repair",
+            "/settings",
+        ):
+            with self.subTest(path=path), web.app.test_request_context(path):
+                items = web.get_navigation_items()
+                keys = {item["key"] for item in items}
+                self.assertNotIn("repair", keys)
+                self.assertIn("sales", keys)
+
+    def test_invalid_navigation_json_is_logged_before_defaulting(self):
+        self.navigation_path.write_text("{invalid", encoding="utf-8")
+        web._load_navigation_settings_cached.cache_clear()
+
+        with self.assertLogs(web.app.logger.name, level="WARNING") as logs:
+            settings = web.load_navigation_settings()
+
+        self.assertTrue(settings["products"]["enabled"])
+        self.assertTrue(
+            any(
+                "Failed to load navigation settings" in message
+                and "default navigation will be used" in message
+                for message in logs.output
+            )
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

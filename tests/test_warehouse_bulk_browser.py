@@ -81,12 +81,12 @@ class WarehouseBulkBrowserTest(unittest.TestCase):
 
         try:
             with mock.patch.object(
-                web, "serialize_api_product", side_effect=lambda item: item
+                web, "build_excel_warehouse_items", return_value=items
             ), mock.patch.object(
                 web.ExcelProductCatalog,
                 "list_products",
                 return_value={
-                    "items": items,
+                    "items": [{}, {}],
                     "total": 2,
                     "page": 1,
                     "per_page": 50,
@@ -159,8 +159,7 @@ class WarehouseBulkBrowserTest(unittest.TestCase):
             (0, -15),
             stderr[-2000:],
         )
-        self.assertIn(">Часы Alpha<", stdout)
-        self.assertIn(">Часы Beta<", stdout)
-        self.assertIn(">Выбрать текущую страницу<", stdout)
-        self.assertIn('aria-label="Выбрать Часы Alpha"', stdout)
-        self.assertNotIn("Не удалось загрузить товары", stdout)
+        self.assertIn('data-bulk-ui-e2e="pass"', stdout)
+        self.assertIn(">Бренд<", stdout)
+        self.assertIn(">Категория<", stdout)
+        self.assertIn(">Применить<", stdout)

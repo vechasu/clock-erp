@@ -1,5 +1,6 @@
 import re
 import unittest
+from unittest import mock
 
 from app import web
 
@@ -45,36 +46,42 @@ class Stage2ReactAppTest(unittest.TestCase):
         finally:
             response.close()
 
-    def test_warehouse_route_redirects_to_react_products(self):
-        response = self.client.get("/warehouse")
+    def test_warehouse_route_serves_the_legacy_jinja_shell(self):
+        catalog = {
+            "items": [],
+            "brand_groups": [],
+            "category_groups": [],
+            "cell_groups": [],
+            "total": 0,
+            "stats": {"total_stock": 0},
+            "pages": 0,
+            "page": 1,
+        }
+        with (
+            mock.patch.object(
+                web.ExcelProductCatalog,
+                "list_products",
+                return_value=catalog,
+            ),
+            mock.patch.object(web, "get_excel_warehouse_items", return_value=[]),
+            mock.patch.object(
+                web,
+                "load_catalog_taxonomy",
+                return_value={"brands": [], "categories": []},
+            ),
+            mock.patch.object(web, "get_catalog_stock_history", return_value=[]),
+        ):
+            response = self.client.get("/warehouse?q=chrono")
         try:
-            self.assertEqual(response.status_code, 302)
-            self.assertEqual(response.location, "/app/products")
+            html = response.get_data(as_text=True)
+            self.assertEqual(response.status_code, 200)
+            self.assertIsNone(response.location)
+            self.assertIn('<div class="app">', html)
+            self.assertIn('class="sidebar"', html)
+            self.assertNotIn('<div id="root"></div>', html)
+            self.assertNotIn("/app/products", html)
         finally:
             response.close()
-
-    def test_warehouse_route_keeps_query_string(self):
-        response = self.client.get("/warehouse?q=chrono&hide_zero=1&per_page=100")
-        try:
-            self.assertEqual(response.status_code, 302)
-            self.assertEqual(
-                response.location,
-                "/app/products?q=chrono&hide_zero=1&per_page=100",
-            )
-        finally:
-            response.close()
-
-    def test_warehouse_route_does_not_loop_to_legacy_route(self):
-        first = self.client.get("/warehouse")
-        second = self.client.get(first.location)
-        try:
-            self.assertEqual(first.status_code, 302)
-            self.assertEqual(first.location, "/app/products")
-            self.assertEqual(second.status_code, 200)
-            self.assertIn("<div id=\"root\"", second.get_data(as_text=True))
-        finally:
-            first.close()
-            second.close()
 
     def test_products_route_redirects_to_warehouse(self):
         response = self.client.get("/products?in_stock=1&per_page=100")

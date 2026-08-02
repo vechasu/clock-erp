@@ -828,11 +828,15 @@ class UnifiedCatalogApiTest(unittest.TestCase):
             )
 
         warehouse = self.client.get("/warehouse?open_add=1")
-        self.assertEqual(warehouse.status_code, 302)
-        self.assertTrue(
-            warehouse.headers["Location"].endswith(
-                "/app/products?open_add=1"
-            )
+        self.assertEqual(warehouse.status_code, 200)
+        self.assertIn(b'class="warehouse-page"', warehouse.data)
+        self.assertIn(
+            b'data-shared-catalog-kind="brand"',
+            warehouse.data,
+        )
+        self.assertIn(
+            b'data-shared-catalog-kind="category"',
+            warehouse.data,
         )
         react_products = self.client.get("/app/products")
         self.assertEqual(react_products.status_code, 200)
