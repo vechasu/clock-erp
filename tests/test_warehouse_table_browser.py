@@ -200,6 +200,18 @@ class WarehouseTableContractTest(unittest.TestCase):
         self.assertIn("view.rowHeights = {};", self.template)
         self.assertIn("applyWarehouseColumnOrder(table, view.order)", self.template)
 
+    def test_column_visibility_uses_v2_state_and_stable_keys(self):
+        self.assertIn('id="warehouseColumnSettingsTrigger"', self.template)
+        self.assertIn("warehouseTableRequiredColumns", self.template)
+        self.assertIn("applyWarehouseColumnVisibility", self.template)
+        self.assertIn("saved.hidden", self.template)
+        self.assertNotIn("warehouse.column-visibility", self.template)
+        visibility_block = self.template.split(
+            "function applyWarehouseColumnVisibility", 1
+        )[1].split("function syncWarehouseColumnSettings", 1)[0]
+        self.assertIn("element.dataset.columnKey", visibility_block)
+        self.assertIn('matchMedia("(min-width: 768px)")', visibility_block)
+
     def test_photo_form_uses_the_existing_safe_products_api(self):
         form = self.template.split('id="warehouseAddForm"', 1)[1].split(
             "</form>", 1

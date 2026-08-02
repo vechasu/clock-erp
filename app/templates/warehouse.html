@@ -265,6 +265,7 @@
             display: flex;
             align-items: center;
             justify-content: flex-end;
+            gap: 8px;
             min-width: 100%;
             padding: 8px 12px;
             border-bottom: 1px solid #e5e7eb;
@@ -286,6 +287,55 @@
         .warehouse-table-reset:focus-visible {
             border-color: #b8c5d5;
             color: #0f172a;
+        }
+
+        .warehouse-column-settings {
+            position: relative;
+        }
+
+        .warehouse-column-settings-panel {
+            position: absolute;
+            z-index: 30;
+            top: calc(100% + 6px);
+            right: 0;
+            width: 220px;
+            padding: 10px;
+            border: 1px solid #dbe3ec;
+            border-radius: 12px;
+            background: #ffffff;
+            box-shadow: 0 14px 34px rgba(15, 23, 42, 0.14);
+        }
+
+        .warehouse-column-settings-panel[hidden] {
+            display: none;
+        }
+
+        .warehouse-column-settings-option {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 4px;
+            color: #334155;
+            font-size: 13px;
+            font-weight: 650;
+        }
+
+        .warehouse-column-settings-option input {
+            width: 16px;
+            height: 16px;
+        }
+
+        .warehouse-column-settings-hint {
+            min-height: 16px;
+            margin: 5px 4px 0;
+            color: #b45309;
+            font-size: 11px;
+        }
+
+        @media (max-width: 767px) {
+            .warehouse-column-settings {
+                display: none;
+            }
         }
 
         .warehouse-table-footer {
@@ -4313,6 +4363,23 @@
             <div id="warehouseResults">
             <div class="table-card erp-table-card">
                     <div class="warehouse-table-toolbar">
+                        <div class="warehouse-column-settings">
+                            <button
+                                id="warehouseColumnSettingsTrigger"
+                                class="warehouse-table-reset"
+                                type="button"
+                                aria-haspopup="true"
+                                aria-expanded="false"
+                                aria-controls="warehouseColumnSettingsPanel"
+                            >Столбцы</button>
+                            <div
+                                id="warehouseColumnSettingsPanel"
+                                class="warehouse-column-settings-panel"
+                                role="group"
+                                aria-label="Видимые столбцы таблицы"
+                                hidden
+                            ></div>
+                        </div>
                         <button
                             id="warehouseTableReset"
                             class="warehouse-table-reset"
@@ -6286,7 +6353,14 @@
         const warehouseTableStorageKey = "vechasu.warehouse.table-view.v2";
         const warehouseTableDefaults = {
             order: ["photo", "name", "price", "article", "brand", "category", "stock", "created", "cell", "actions"],
-            widths: { photo: 64, name: 256, price: 80, article: 96, brand: 95, category: 150, stock: 104, created: 106, cell: 75, actions: 82 }
+            widths: { photo: 64, name: 256, price: 80, article: 96, brand: 95, category: 150, stock: 104, created: 106, cell: 75, actions: 82 },
+            hidden: []
+        };
+        const warehouseTableRequiredColumns = ["photo", "name", "actions"];
+        const warehouseTableColumnLabels = {
+            photo: "Фото", name: "Название", price: "Цена", article: "Артикул",
+            brand: "Бренд", category: "Категория", stock: "Остаток",
+            created: "Добавлен", cell: "Ячейка", actions: "Действие"
         };
         const warehouseTableMinimumWidths = {
             photo: 60, name: 196, price: 72, article: 86, brand: 84,
@@ -6312,7 +6386,13 @@
                     widths: Object.assign({}, warehouseTableDefaults.widths, saved.widths || {}),
                     rowHeights: saved.rowHeights && typeof saved.rowHeights === "object"
                         ? saved.rowHeights
-                        : {}
+                        : {},
+                    hidden: Array.isArray(saved.hidden)
+                        ? saved.hidden.filter(function(key) {
+                            return warehouseTableDefaults.order.includes(key)
+                                && !warehouseTableRequiredColumns.includes(key);
+                        })
+                        : []
                 };
                 if (migrated) saveWarehouseTableView(view);
                 return view;
@@ -6320,7 +6400,8 @@
                 return {
                     order: warehouseTableDefaults.order.slice(),
                     widths: Object.assign({}, warehouseTableDefaults.widths),
-                    rowHeights: {}
+                    rowHeights: {},
+                    hidden: []
                 };
             }
         }
@@ -6363,9 +6444,85 @@
                 const column = table.querySelector('col[data-column-key="' + key + '"]');
                 if (column) column.style.width = width + "px";
                 widths[key] = width;
-                totalWidth += width;
+                if (!column || !column.hidden) totalWidth += width;
             });
             table.style.width = totalWidth + "px";
+        }
+
+        function applyWarehouseColumnVisibility(table, hidden) {
+            const desktop = window.matchMedia("(min-width: 768px)").matches;
+            const safeHidden = hidden.filter(function(key) {
+                return warehouseTableDefaults.order.includes(key)
+                    && !warehouseTableRequiredColumns.includes(key);
+            });
+            table.querySelectorAll("[data-column-key]").forEach(function(element) {
+                element.hidden = desktop
+                    && safeHidden.includes(element.dataset.columnKey);
+            });
+            return safeHidden;
+        }
+
+        function syncWarehouseColumnSettings(panel, view) {
+            if (!panel) return;
+            panel.querySelectorAll("input[data-column-key]").forEach(function(input) {
+                input.checked = !view.hidden.includes(input.dataset.columnKey);
+            });
+        }
+
+        function initializeWarehouseColumnSettings(table, view, viewSignal) {
+            const trigger = document.getElementById(
+                "warehouseColumnSettingsTrigger"
+            );
+            const panel = document.getElementById("warehouseColumnSettingsPanel");
+            if (!trigger || !panel) return;
+            panel.innerHTML = "";
+            warehouseTableDefaults.order.forEach(function(key) {
+                const label = document.createElement("label");
+                label.className = "warehouse-column-settings-option";
+                const input = document.createElement("input");
+                input.type = "checkbox";
+                input.dataset.columnKey = key;
+                input.checked = !view.hidden.includes(key);
+                input.disabled = warehouseTableRequiredColumns.includes(key);
+                input.addEventListener("change", function() {
+                    const optionalVisible = warehouseTableDefaults.order.filter(function(columnKey) {
+                        return !warehouseTableRequiredColumns.includes(columnKey)
+                            && !view.hidden.includes(columnKey);
+                    });
+                    const hint = panel.querySelector(".warehouse-column-settings-hint");
+                    if (!input.checked && optionalVisible.length === 1) {
+                        input.checked = true;
+                        if (hint) hint.textContent = "Оставьте хотя бы один содержательный столбец.";
+                        return;
+                    }
+                    if (hint) hint.textContent = "";
+                    view.hidden = input.checked
+                        ? view.hidden.filter((columnKey) => columnKey !== key)
+                        : view.hidden.concat(key);
+                    view.hidden = applyWarehouseColumnVisibility(table, view.hidden);
+                    applyWarehouseTableWidths(table, view.widths);
+                    saveWarehouseTableView(view);
+                }, { signal: viewSignal });
+                label.appendChild(input);
+                label.appendChild(document.createTextNode(
+                    warehouseTableColumnLabels[key]
+                ));
+                panel.appendChild(label);
+            });
+            const hint = document.createElement("div");
+            hint.className = "warehouse-column-settings-hint";
+            hint.setAttribute("aria-live", "polite");
+            panel.appendChild(hint);
+            trigger.addEventListener("click", function() {
+                panel.hidden = !panel.hidden;
+                trigger.setAttribute("aria-expanded", String(!panel.hidden));
+            }, { signal: viewSignal });
+            document.addEventListener("click", function(event) {
+                if (!event.target.closest(".warehouse-column-settings")) {
+                    panel.hidden = true;
+                    trigger.setAttribute("aria-expanded", "false");
+                }
+            }, { signal: viewSignal });
         }
 
         function initializeWarehouseTableView() {
@@ -6387,6 +6544,7 @@
             table.dataset.viewReady = "1";
             const view = readWarehouseTableView();
             view.order = applyWarehouseColumnOrder(table, view.order);
+            view.hidden = applyWarehouseColumnVisibility(table, view.hidden);
             applyWarehouseTableWidths(table, view.widths);
             table.querySelectorAll("tbody tr").forEach(function(row) {
                 const savedHeight = Number(view.rowHeights[row.dataset.productId]);
@@ -6400,6 +6558,7 @@
             document.documentElement.classList.add(
                 "warehouse-table-ready"
             );
+            initializeWarehouseColumnSettings(table, view, viewSignal);
 
             const resetButton = document.getElementById("warehouseTableReset");
             if (resetButton) {
@@ -6407,14 +6566,29 @@
                     view.order = warehouseTableDefaults.order.slice();
                     view.widths = Object.assign({}, warehouseTableDefaults.widths);
                     view.rowHeights = {};
+                    view.hidden = [];
                     applyWarehouseColumnOrder(table, view.order);
+                    applyWarehouseColumnVisibility(table, view.hidden);
                     applyWarehouseTableWidths(table, view.widths);
                     table.querySelectorAll("tbody tr").forEach(function(row) {
                         row.style.removeProperty("--warehouse-row-height");
                     });
+                    syncWarehouseColumnSettings(
+                        document.getElementById("warehouseColumnSettingsPanel"),
+                        view
+                    );
                     saveWarehouseTableView(view);
                 }, { signal: viewSignal });
             }
+
+            window.matchMedia("(min-width: 768px)").addEventListener(
+                "change",
+                function() {
+                    applyWarehouseColumnVisibility(table, view.hidden);
+                    applyWarehouseTableWidths(table, view.widths);
+                },
+                { signal: viewSignal }
+            );
 
             table.querySelectorAll("thead th[data-column-key]").forEach(function(header) {
                 const handle = document.createElement("span");
@@ -7104,6 +7278,33 @@
                     === "520px"
                 );
 
+                document.getElementById("warehouseColumnSettingsTrigger").click();
+                const settingsPanel = document.getElementById(
+                    "warehouseColumnSettingsPanel"
+                );
+                settingsPanel.querySelector(
+                    'input[data-column-key="price"]'
+                ).click();
+                const visibilitySaved = JSON.parse(
+                    localStorage.getItem(warehouseTableStorageKey) || "{}"
+                );
+                const priceHeader = table.querySelector(
+                    'th[data-column-key="price"]'
+                );
+                result.visibility = (
+                    visibilitySaved.hidden.includes("price")
+                    && (
+                        window.matchMedia("(max-width: 767px)").matches
+                            ? !priceHeader.hidden
+                            : priceHeader.hidden
+                    )
+                );
+                result.mandatoryColumns = ["photo", "name", "actions"].every(
+                    (key) => settingsPanel.querySelector(
+                        'input[data-column-key="' + key + '"]'
+                    ).disabled
+                );
+
                 document.getElementById("warehouseTableReset").click();
                 const reset = JSON.parse(
                     localStorage.getItem(warehouseTableStorageKey) || "{}"
@@ -7112,6 +7313,7 @@
                     reset.order[0] === "photo"
                     && reset.widths.name === warehouseTableDefaults.widths.name
                     && Object.keys(reset.rowHeights).length === 0
+                    && reset.hidden.length === 0
                     && table.querySelector("thead th").dataset.columnKey === "photo"
                 );
 
