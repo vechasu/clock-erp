@@ -7020,6 +7020,193 @@
     </script>
     {% endif %}
 
+    {% if warehouse_table_ui_e2e %}
+    <script>
+        window.addEventListener("load", async function() {
+            const result = {};
+            const wait = (milliseconds) => new Promise(
+                (resolve) => window.setTimeout(resolve, milliseconds)
+            );
+            try {
+                if (sessionStorage.getItem("warehouseTableE2ePhase") !== "verify") {
+                    localStorage.removeItem(warehouseTableStorageKey);
+                    localStorage.setItem(
+                        warehouseTableLegacyStorageKey,
+                        JSON.stringify({
+                            order: ["name", "photo", "price", "article", "brand", "category", "stock", "created", "cell", "actions"],
+                            widths: {name: 500},
+                            rowHeights: {"1001": 88}
+                        })
+                    );
+                    localStorage.setItem("ttt-erp-sidebar-collapsed", "1");
+                    sessionStorage.setItem("warehouseTableE2ePhase", "verify");
+                    window.location.reload();
+                    return;
+                }
+                sessionStorage.removeItem("warehouseTableE2ePhase");
+
+                const table = document.getElementById("warehouseProductsTable");
+                const migrated = JSON.parse(
+                    localStorage.getItem(warehouseTableStorageKey) || "{}"
+                );
+                result.migration = (
+                    migrated.order[0] === "name"
+                    && migrated.widths.name === 500
+                    && migrated.rowHeights["1001"] === 88
+                    && table.querySelector("thead th").dataset.columnKey === "name"
+                );
+                result.sidebarIsolation = (
+                    localStorage.getItem("ttt-erp-sidebar-collapsed") === "1"
+                    && migrated.order[0] === "name"
+                );
+                result.photoFallback = Boolean(
+                    table.querySelector(".warehouse-product-thumb")
+                    && table.querySelector(".warehouse-product-thumb-placeholder")
+                );
+                result.mobileContract = Boolean(
+                    document.querySelector(".warehouse-mobile-details")
+                    && document.getElementById("warehouseMobileSort")
+                );
+                result.orderPersistence = (
+                    migrated.order[0] === "name"
+                    && table.querySelector("thead th").dataset.columnKey === "name"
+                );
+                result.viewport = (
+                    document.documentElement.clientWidth >= 380
+                    && document.documentElement.clientWidth <= 1450
+                );
+
+                const firstEdit = table.querySelector("button[data-id]");
+                openEditDrawer(firstEdit);
+                result.correctEditRow = (
+                    document.getElementById("editProductId").value
+                    === firstEdit.dataset.id
+                );
+                closeAllDrawers(false);
+
+                const nameHeader = table.querySelector('th[data-column-key="name"]');
+                const resizeHandle = nameHeader.querySelector(
+                    ".warehouse-column-resize-handle"
+                );
+                resizeHandle.dispatchEvent(new PointerEvent("pointerdown", {
+                    bubbles: true, button: 0, clientX: 100
+                }));
+                window.dispatchEvent(new PointerEvent("pointermove", {
+                    bubbles: true, clientX: 1500
+                }));
+                window.dispatchEvent(new PointerEvent("pointerup", {bubbles: true}));
+                const resized = JSON.parse(
+                    localStorage.getItem(warehouseTableStorageKey) || "{}"
+                );
+                result.resizeMaximum = resized.widths.name === 520;
+                result.resizePersistence = (
+                    table.querySelector('col[data-column-key="name"]').style.width
+                    === "520px"
+                );
+
+                document.getElementById("warehouseTableReset").click();
+                const reset = JSON.parse(
+                    localStorage.getItem(warehouseTableStorageKey) || "{}"
+                );
+                result.reset = (
+                    reset.order[0] === "photo"
+                    && reset.widths.name === warehouseTableDefaults.widths.name
+                    && Object.keys(reset.rowHeights).length === 0
+                    && table.querySelector("thead th").dataset.columnKey === "photo"
+                );
+
+                let navigatedSort = [];
+                const originalNavigate = navigateWithWarehouseParams;
+                navigateWithWarehouseParams = function(url) {
+                    navigatedSort.push([
+                        url.searchParams.get("sort_by"),
+                        url.searchParams.get("sort_dir"),
+                        url.searchParams.get("page")
+                    ]);
+                };
+                window.history.replaceState({}, "", "/warehouse?brand=AARK&page=2&sort_by=name&sort_dir=asc");
+                sortWarehouseTable("name");
+                window.history.replaceState({}, "", "/warehouse?brand=AARK&page=2&sort_by=name&sort_dir=desc");
+                sortWarehouseTable("name");
+                navigateWithWarehouseParams = originalNavigate;
+                result.sorting = (
+                    navigatedSort[0][1] === "desc"
+                    && navigatedSort[1][1] === "asc"
+                    && navigatedSort.every((entry) => entry[2] === null)
+                );
+
+                const requested = [];
+                window.fetch = function(url) {
+                    const requestUrl = new URL(url, window.location.origin);
+                    const query = requestUrl.searchParams.get("q") || "";
+                    requested.push({query: query, url: requestUrl.toString()});
+                    const delay = query === "slow" ? 90 : 10;
+                    return new Promise(function(resolve) {
+                        window.setTimeout(function() {
+                            resolve({
+                                ok: true,
+                                text: async function() {
+                                    return '<div id="warehouseResults"><span id="warehouseSearchMarker" data-result-query="'
+                                        + query
+                                        + '"></span></div><div id="visiblePositionsCount">1</div>'
+                                        + '<div id="totalStockCount">1</div>';
+                                }
+                            });
+                        }, delay);
+                    });
+                };
+                const search = document.getElementById("warehouseSearchInput");
+                window.history.replaceState({}, "", "/warehouse?brand=AARK&page=2");
+                search.value = "debounced";
+                search.dispatchEvent(new Event("input", {bubbles: true}));
+                await wait(220);
+                result.debounceBefore = requested.length === 0;
+                await wait(100);
+                result.debounceAfter = (
+                    requested.length === 1
+                    && requested[0].query === "debounced"
+                    && requested[0].url.includes("brand=AARK")
+                    && !requested[0].url.includes("page=2")
+                );
+
+                const slow = loadWarehouseSearchResults("slow");
+                const fast = loadWarehouseSearchResults("fast");
+                await Promise.all([slow, fast]);
+                result.staleProtection = (
+                    document.getElementById("warehouseSearchMarker").dataset.resultQuery
+                    === "fast"
+                );
+
+                search.value = "clear-me";
+                syncWarehouseSearchClear();
+                clearWarehouseSearch();
+                await wait(30);
+                result.clearSearch = (
+                    search.value === ""
+                    && !new URL(window.location.href).searchParams.has("q")
+                    && requested.some((entry) => entry.query === "")
+                    && document.activeElement === search
+                );
+
+                result.bulkContract = Boolean(
+                    document.getElementById("warehouseBulkForm")
+                    && document.getElementById("warehouseBulkSelectAllButton")
+                    && document.getElementById("warehouseBulkSubmit")
+                );
+                const passed = Object.values(result).every(Boolean);
+                document.documentElement.dataset.tableUiE2e = passed
+                    ? "pass"
+                    : "fail";
+                document.documentElement.dataset.tableUiE2eResult = JSON.stringify(result);
+            } catch (error) {
+                document.documentElement.dataset.tableUiE2e = "fail";
+                document.documentElement.dataset.tableUiE2eError = error.message;
+                document.documentElement.dataset.tableUiE2eResult = JSON.stringify(result);
+            }
+        });
+    </script>
+    {% endif %}
+
     {{ render_catalog_create_modal() }}
 </body>
 </html>

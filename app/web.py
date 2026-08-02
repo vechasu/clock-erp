@@ -1645,6 +1645,10 @@ def warehouse_page():
                 app.testing
                 and request.args.get("bulk_ui_e2e") == "1"
             ),
+            warehouse_table_ui_e2e=(
+                app.testing
+                and request.args.get("table_ui_e2e") == "1"
+            ),
         )
     )
     response.headers["Cache-Control"] = (
