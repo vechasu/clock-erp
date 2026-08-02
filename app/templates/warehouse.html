@@ -1566,6 +1566,31 @@
             line-height: 1.25;
         }
 
+        .warehouse-product-image-field {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-width: 0;
+        }
+
+        .warehouse-product-image-field input[type="file"] {
+            min-width: 0;
+            font-size: 13px;
+        }
+
+        .warehouse-product-image-preview {
+            width: 42px;
+            height: 42px;
+            flex: 0 0 42px;
+            border: 1px solid #dbe3ec;
+            border-radius: 9px;
+            object-fit: cover;
+        }
+
+        .warehouse-product-image-preview[hidden] {
+            display: none;
+        }
+
         .add-card .add-form > button[type="submit"] {
             border: 1px solid #1d4ed8;
             background: #2563eb;
@@ -4039,11 +4064,13 @@
                 <div class="add-title">Добавить товар</div>
 
                 <form
+                    id="warehouseAddForm"
                     class="add-form"
                     method="post"
                     action="/warehouse/add"
+                    enctype="multipart/form-data"
                     data-shared-catalog-scope
-                    onsubmit="return lockWarehouseAddForm(this)"
+                    onsubmit="return submitWarehouseAddForm(event, this)"
                 >
                     <input
                         type="hidden"
@@ -4123,6 +4150,33 @@
                         name="cell"
                         placeholder="Ячейка, например A-01"
                     >
+
+                    <div class="add-form-field warehouse-product-image-field">
+                        <input
+                            id="warehouseProductImage"
+                            type="file"
+                            name="product_image"
+                            accept="image/jpeg,image/png,image/webp"
+                            aria-describedby="warehouseProductImageHint warehouseAddError"
+                            onchange="previewWarehouseProductImage(this)"
+                        >
+                        <img
+                            id="warehouseProductImagePreview"
+                            class="warehouse-product-image-preview"
+                            alt="Предпросмотр фотографии товара"
+                            hidden
+                        >
+                        <span id="warehouseProductImageHint" class="add-form-field-error">
+                            JPEG, PNG или WEBP, до 3 МБ
+                        </span>
+                    </div>
+
+                    <div
+                        id="warehouseAddError"
+                        class="add-form-field-error"
+                        role="alert"
+                        aria-live="assertive"
+                    ></div>
 
                     <button type="submit">Добавить товар</button>
                 </form>
@@ -6547,7 +6601,30 @@
             });
         }
 
-        function lockWarehouseAddForm(form) {
+        let warehouseProductImagePreviewUrl = "";
+
+        function previewWarehouseProductImage(input) {
+            const preview = document.getElementById(
+                "warehouseProductImagePreview"
+            );
+            if (!preview) return;
+            if (warehouseProductImagePreviewUrl) {
+                URL.revokeObjectURL(warehouseProductImagePreviewUrl);
+                warehouseProductImagePreviewUrl = "";
+            }
+            const file = input.files && input.files[0];
+            if (!file) {
+                preview.removeAttribute("src");
+                preview.hidden = true;
+                return;
+            }
+            warehouseProductImagePreviewUrl = URL.createObjectURL(file);
+            preview.src = warehouseProductImagePreviewUrl;
+            preview.hidden = false;
+        }
+
+        async function submitWarehouseAddForm(event, form) {
+            event.preventDefault();
             const stockInput = form.querySelector('input[name="stock"]');
 
             if (stockInput && !validateWarehouseInitialStock(stockInput)) {
@@ -6571,7 +6648,39 @@
                 button.textContent = "Добавляем...";
             }
 
-            return true;
+            const error = document.getElementById("warehouseAddError");
+            if (error) error.textContent = "";
+
+            try {
+                const response = await fetch("/api/v1/products", {
+                    method: "POST",
+                    body: new FormData(form),
+                    headers: { "X-Requested-With": "XMLHttpRequest" }
+                });
+                const payload = await response.json();
+                if (!response.ok || payload.error) {
+                    throw new Error(
+                        payload.message
+                        || (payload.error && payload.error.message)
+                        || "Не удалось добавить товар."
+                    );
+                }
+                const target = new URL("/warehouse", window.location.origin);
+                target.searchParams.set("notice", "success");
+                target.searchParams.set("message", "Товар добавлен");
+                window.location.assign(target.pathname + target.search);
+            } catch (submitError) {
+                form.dataset.submitting = "0";
+                if (button) {
+                    button.disabled = false;
+                    button.textContent = "Добавить товар";
+                }
+                if (error) {
+                    error.textContent = submitError.message;
+                }
+            }
+
+            return false;
         }
     </script>
 
