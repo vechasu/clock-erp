@@ -676,6 +676,8 @@ class OwnerFeedbackTest(unittest.TestCase):
         )
 
     def test_warehouse_thumbnail_proxy_and_live_search_template(self):
+        item = warehouse_item(has_images=True)
+
         with mock.patch.object(
             web.MoySkladClient,
             "download_product_thumbnail",
@@ -689,19 +691,33 @@ class OwnerFeedbackTest(unittest.TestCase):
         self.assertEqual(thumbnail.mimetype, "image/png")
         self.assertEqual(thumbnail.headers["X-Content-Type-Options"], "nosniff")
 
-        page = self.client.get("/warehouse?q=Часы")
-        self.assertEqual(page.status_code, 302)
-        self.assertIn("/app/products?", page.headers["Location"])
-        self.assertIn("q=", page.headers["Location"])
-        source = (
-            Path(web.PROJECT_ROOT)
-            / "frontend/src/features/products/ProductsPage.tsx"
+        with mock.patch.object(
+            web, "get_excel_warehouse_items", return_value=[item]
+        ):
+            page = self.client.get("/warehouse?q=Часы")
+
+        html = page.get_data(as_text=True)
+        self.assertEqual(page.status_code, 200)
+        self.assertIn("filterWarehouseRows", html)
+        self.assertIn("window.history.replaceState", html)
+        self.assertIn(item["thumbnail_url"], html)
+        self.assertIn("warehouseBulkForm", html)
+        self.assertIn("confirmWarehouseBulkEdit", html)
+        self.assertIn('id="bulkBrandCombobox"', html)
+        self.assertIn('role="combobox"', html)
+        self.assertIn('data-brand="Brand"', html)
+        self.assertIn('data-bulk-toggle="bulkBrandCombobox"', html)
+        self.assertNotIn('id="bulkBrandClear"', html)
+        self.assertNotIn("normalizeBrandSearch", html)
+        component_js = (
+            web.PROJECT_ROOT
+            / "app"
+            / "static"
+            / "js"
+            / "catalog-combobox.js"
         ).read_text(encoding="utf-8")
-        self.assertIn("function ProductImage", source)
-        self.assertIn("product.thumbnail_url && !failed", source)
-        self.assertIn("onError={() => setFailed(true)}", source)
-        self.assertIn('title="Фото отсутствует"', source)
-        self.assertIn("<LiveSearch", source)
+        self.assertIn('event.key === "ArrowDown"', component_js)
+        self.assertNotIn('id="warehouseBrandOptions"', html)
 
     def test_warehouse_bulk_selection_mode_uses_light_toolbar(self):
         source = (
@@ -757,68 +773,102 @@ class OwnerFeedbackTest(unittest.TestCase):
             ),
         )
 
-        listing = mock.Mock(return_value={
-            "items": [],
-            "total": 0,
-            "page": 1,
-            "per_page": 50,
-            "pages": 0,
-            "brand_groups": [],
-            "category_groups": [],
-            "cell_groups": [],
-            "stats": {"total_stock": 0},
-        })
-        with mock.patch.object(web.ExcelProductCatalog, "list_products", listing):
+        with mock.patch.object(
+            web, "get_excel_warehouse_items", return_value=[first, second]
+        ):
             page = self.client.get(
-                "/api/v1/products?date_from=2026-07-22&date_to=2026-07-22"
+                "/warehouse?date_from=2026-07-22&date_to=2026-07-22"
                 "&brand=Brand"
             )
+
+        html = page.get_data(as_text=True)
         self.assertEqual(page.status_code, 200)
-        arguments = listing.call_args.kwargs
-        self.assertEqual(arguments["created_from"], "2026-07-22")
-        self.assertEqual(arguments["created_to"], "2026-07-22")
-        self.assertEqual(arguments["brand"], "Brand")
-        redirect = self.client.get(
-            "/warehouse?date_from=2026-07-22&date_to=2026-07-22&brand=Brand"
+        self.assertIn(
+            'data-product-id="11111111-1111-1111-1111-111111111111"',
+            html,
         )
-        self.assertEqual(redirect.status_code, 302)
-        self.assertIn("date_from=2026-07-22", redirect.headers["Location"])
-        source = (
-            Path(web.PROJECT_ROOT)
-            / "frontend/src/features/products/ProductsPage.tsx"
-        ).read_text(encoding="utf-8")
-        self.assertIn("<DateRangePicker", source)
-        self.assertIn("onFromChange={(value) => setFilter('date_from'", source)
-        self.assertIn("onToChange={(value) => setFilter('date_to'", source)
+        self.assertNotIn(
+            'data-product-id="22222222-2222-2222-2222-222222222222"',
+            html,
+        )
+        self.assertIn('name="date_from" value="2026-07-22"', html)
+        self.assertIn('name="date_to" value="2026-07-22"', html)
+        self.assertIn("warehouse-calendar-popup", html)
+        self.assertIn('id="warehouseFilterReset"', html)
+        self.assertNotRegex(
+            html,
+            r'id="warehouseFilterReset"[^>]*\shidden',
+        )
+        self.assertIn('aria-label="Сбросить диапазон дат"', html)
+        self.assertIn("resetWarehouseTableFilters", html)
+        self.assertIn("clearWarehouseDateRange", html)
+
+        with mock.patch.object(
+            web, "get_excel_warehouse_items", return_value=[first, second]
+        ):
+            standard_page = self.client.get("/warehouse")
+
+        self.assertRegex(
+            standard_page.get_data(as_text=True),
+            r'id="warehouseFilterReset"[^>]*\shidden',
+        )
 
     def test_add_product_comboboxes_use_independent_contains_search(self):
-        page = self.client.get("/warehouse?open_add=1")
-        self.assertEqual(page.status_code, 302)
-        self.assertTrue(page.headers["Location"].endswith("/app/products?open_add=1"))
-        product_form = (
-            Path(web.PROJECT_ROOT)
-            / "frontend/src/features/products/ProductForm.tsx"
+        items = []
+        for index, (brand, category) in enumerate((
+            ("Hypergrand", "Наручные часы"),
+            ("Klokers", "Ремень"),
+            ("Contempus", "Аксессуары"),
+        ), start=1):
+            item = warehouse_item()
+            item.update(
+                id=f"{index:08d}-1111-1111-1111-111111111111",
+                brand=brand,
+                category=category,
+                raw_category=category,
+            )
+            items.append(item)
+
+        with mock.patch.object(
+            web, "get_excel_warehouse_items", return_value=items
+        ):
+            page = self.client.get("/warehouse?open_add=1")
+
+        html = page.get_data(as_text=True)
+        self.assertEqual(page.status_code, 200)
+        component_js = (
+            web.PROJECT_ROOT / "app" / "static" / "js" / "catalog-combobox.js"
         ).read_text(encoding="utf-8")
-        cascade = (
-            Path(web.PROJECT_ROOT)
-            / "frontend/src/features/catalog/CatalogComboboxes.tsx"
+        component_css = (
+            web.PROJECT_ROOT / "app" / "static" / "css" / "catalog-combobox.css"
         ).read_text(encoding="utf-8")
-        controls = (
-            Path(web.PROJECT_ROOT)
-            / "frontend/src/components/Controls.tsx"
-        ).read_text(encoding="utf-8")
-        self.assertIn("<CatalogCascade", product_form)
-        self.assertIn("showProduct={false}", product_form)
-        self.assertIn("allowCreate", product_form)
-        self.assertIn("setValue('category_id', null", product_form)
-        self.assertIn('emptyLabel="Ничего не найдено"', cascade)
-        self.assertIn("onQueryChange={setBrandQuery}", cascade)
-        self.assertIn("onQueryChange={setCategoryQuery}", cascade)
-        self.assertIn("disabled={disabled || !brandId}", cascade)
-        self.assertIn(".includes(normalized)", controls)
-        self.assertIn("event.key === 'ArrowDown'", controls)
-        self.assertIn("event.key === 'Enter'", controls)
-        self.assertIn("event.key === 'Escape'", controls)
+        component_assets = component_js + component_css
+        brand_component = html.split('id="addBrandCombobox"', 1)[1].split(
+            'id="addCategoryCombobox"', 1
+        )[0]
+        category_component = html.split('id="addCategoryCombobox"', 1)[1].split(
+            'name="stock"', 1
+        )[0]
+
+        self.assertEqual(html.count('id="addBrandCombobox"'), 1)
+        self.assertEqual(html.count('id="addCategoryCombobox"'), 1)
+        self.assertIn('data-prefix-search="false"', brand_component)
+        self.assertIn('data-prefix-search="false"', category_component)
+        self.assertIn("Ничего не найдено", brand_component)
+        self.assertIn("Ничего не найдено", category_component)
+        self.assertIn(".brand-combobox-option[hidden]", component_assets)
+        self.assertIn("normalized.includes(query)", component_assets)
+        self.assertIn('searchInput.addEventListener("input"', component_assets)
+        self.assertIn("window.filterBrandList(", component_assets)
+        self.assertIn('searchInput.dataset.searchBound === "1"', component_assets)
+        self.assertIn('searchInput.value = ""', component_assets)
+        self.assertIn('window.filterBrandList("", combobox)', component_assets)
+        self.assertIn(".clearSelectionOnSearchClear", component_assets)
+        self.assertIn("window.setBrandComboboxValue(", component_assets)
+        self.assertIn("hiddenInput.value = value", component_assets)
+        self.assertIn('event.key === "ArrowDown"', component_assets)
+        self.assertIn('event.key === "Enter"', component_assets)
+        self.assertIn('event.key === "Escape"', component_assets)
 
     def test_bulk_brand_search_matches_visible_name(self):
         controls = (
@@ -1133,11 +1183,15 @@ class OwnerFeedbackTest(unittest.TestCase):
             warehouse_page = self.client.get("/warehouse")
 
         sales_html = sales_page.get_data(as_text=True)
+        warehouse_html = warehouse_page.get_data(as_text=True)
         template_folder = (
             Path(web.app.root_path) / web.app.template_folder
         )
         sales_template = (
             template_folder / "sales.html"
+        ).read_text(encoding="utf-8")
+        warehouse_template = (
+            template_folder / "warehouse.html"
         ).read_text(encoding="utf-8")
         shared_css = (
             Path(web.app.static_folder)
@@ -1146,10 +1200,8 @@ class OwnerFeedbackTest(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         self.assertEqual(sales_page.status_code, 200)
-        self.assertEqual(warehouse_page.status_code, 302)
-        self.assertTrue(
-            warehouse_page.headers["Location"].endswith("/app/products")
-        )
+        self.assertEqual(warehouse_page.status_code, 200)
+        self.assertIn("css/erp-components.css", warehouse_html)
         react_shell = self.client.get("/app/products")
         self.assertEqual(react_shell.status_code, 200)
         self.assertIn(b'<div id="root"></div>', react_shell.data)
@@ -1167,28 +1219,13 @@ class OwnerFeedbackTest(unittest.TestCase):
             "erp-sort-arrow",
         ):
             self.assertIn(component_class, sales_template)
+            self.assertIn(component_class, warehouse_template)
             self.assertIn(f".{component_class}", shared_css)
         self.assertIn("erp-product-primary", sales_template)
         self.assertIn("erp-muted-value", sales_template)
         self.assertIn("overflow: hidden", sales_html)
         self.assertIn("text-overflow: ellipsis", sales_html)
 
-        products_source = (
-            Path(web.PROJECT_ROOT)
-            / "frontend/src/features/products/ProductsPage.tsx"
-        ).read_text(encoding="utf-8")
-        react_css = (
-            Path(web.PROJECT_ROOT) / "frontend/src/styles/global.css"
-        ).read_text(encoding="utf-8")
-        for component in ("PageHeader", "StatsGrid", "Toolbar", "DataTable"):
-            self.assertIn(f"<{component}", products_source)
-        for token in (
-            "--theme-surface",
-            "--theme-border",
-            "--theme-card-radius",
-            "--theme-shadow-xs",
-        ):
-            self.assertIn(token, react_css)
 
     def test_sales_uses_current_catalog_text_and_keeps_it_inside_cells(self):
         manual_sale = {

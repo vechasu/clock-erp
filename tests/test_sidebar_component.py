@@ -70,6 +70,25 @@ class SidebarComponentTest(unittest.TestCase):
             all(item["icon"] for item in definitions.values())
         )
 
+    def test_primary_sidebar_links_stay_on_legacy_routes(self):
+        definitions = {
+            item["key"]: item
+            for item in web.NAVIGATION_DEFINITIONS
+        }
+
+        self.assertEqual(definitions["orders"]["href"], "/")
+        self.assertEqual(definitions["products"]["href"], "/warehouse")
+        self.assertEqual(definitions["sales"]["href"], "/sales")
+        self.assertEqual(definitions["receipts"]["href"], "/receipts")
+        self.assertEqual(definitions["repair"]["href"], "/repair")
+        self.assertEqual(definitions["settings"]["href"], "/settings")
+        self.assertFalse(
+            any(
+                item["href"].startswith("/app/")
+                for item in definitions.values()
+            )
+        )
+
     def test_all_operational_templates_use_the_shared_component(self):
         operational_templates = {
             "base.html",

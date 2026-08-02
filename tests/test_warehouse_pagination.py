@@ -3,7 +3,6 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
-from urllib.parse import parse_qs, urlsplit
 from unittest import mock
 
 from openpyxl import load_workbook
@@ -308,19 +307,20 @@ class WarehousePaginationTest(unittest.TestCase):
         self.assertEqual(meta["facets"]["brands"], listing["brand_groups"])
 
     def test_pagination_state_is_kept_in_urls(self):
-        query = (
+        html = self.client.get(
             "/warehouse?q=Product&brand=Omega&sort_by=article"
             "&sort_dir=desc&page=2&per_page=100"
+        ).get_data(as_text=True)
+        self.assertIn(
+            'id="warehouseResultStart">101</span>–<span '
+            'id="warehouseResultEnd">200</span>',
+            html,
         )
-        redirect = self.client.get(query)
-        self.assertEqual(redirect.status_code, 302)
-        self.assertEqual(
-            parse_qs(urlsplit(redirect.headers["Location"]).query),
-            parse_qs(urlsplit(query).query),
-        )
-        products, meta = self.api_listing(query.replace("/warehouse", "", 1))
-        self.assertEqual(len(products), 100)
-        self.assertEqual((meta["page"], meta["page_size"], meta["pages"]), (2, 100, 25))
+        self.assertIn('class="active" aria-current="page">2</span>', html)
+        self.assertIn('aria-label="Страница 25"', html)
+        self.assertIn("q=Product", html)
+        self.assertIn("brand=Omega", html)
+        self.assertIn("per_page=100", html)
 
     def test_first_and_last_pages_use_compact_numbered_pagination(self):
         first, first_meta = self.api_listing()
@@ -398,24 +398,43 @@ class WarehousePaginationTest(unittest.TestCase):
         self.assertEqual(stocks, sorted(stocks, reverse=True))
 
     def test_in_stock_markup_keeps_toggle_and_sort_handlers_separate(self):
-        path = (
+        html = self.client.get(
             "/warehouse?brand=1&category=Будильники&q=Product"
             "&date_from=2026-07-29&date_to=2026-07-29"
             "&sort_by=stock&sort_dir=desc&page=2&per_page=100"
-        )
-        redirect = self.client.get(path)
-        self.assertEqual(redirect.status_code, 302)
-        self.assertEqual(
-            parse_qs(urlsplit(redirect.headers["Location"]).query),
-            parse_qs(urlsplit(path).query),
-        )
-        source = (
-            Path(web.PROJECT_ROOT)
-            / "frontend/src/features/products/ProductsPage.tsx"
+        ).get_data(as_text=True)
+        template = (
+            Path(web.app.root_path)
+            / web.app.template_folder
+            / "warehouse.html"
         ).read_text(encoding="utf-8")
-        self.assertIn("setFilter('in_stock'", source)
-        self.assertIn("updated.set('sort_by'", source)
-        self.assertIn("updated.set('sort_dir'", source)
+
+        self.assertIn('name="brand" value="1"', html)
+        self.assertIn('id="warehouseInStockToggle"', html)
+        self.assertIn('aria-checked="false"', html)
+        self.assertIn('data-sort-field="stock"', template)
+        self.assertIn(
+            'onclick="sortWarehouseTable(this.dataset.sortField)"',
+            template,
+        )
+        self.assertIn(
+            'onchange="toggleWarehouseInStock(event, this)"',
+            template,
+        )
+        self.assertIn('onclick="event.stopPropagation()"', template)
+        self.assertIn('url.searchParams.set("in_stock", "1");', template)
+        self.assertIn('url.searchParams.delete("in_stock");', template)
+        self.assertIn('url.searchParams.delete("page");', template)
+        toggle_handler = template.split(
+            "function toggleWarehouseInStock", 1
+        )[1].split("document.addEventListener", 1)[0]
+        self.assertNotIn('searchParams.set("brand"', toggle_handler)
+        self.assertNotIn('searchParams.delete("brand"', toggle_handler)
+        sort_handler = template.split(
+            "function sortWarehouseTable", 1
+        )[1].split("initializeWarehouseTableView", 1)[0]
+        self.assertNotIn('searchParams.set("in_stock"', sort_handler)
+        self.assertNotIn('searchParams.delete("in_stock"', sort_handler)
 
     def test_query_count_is_constant_and_response_is_bounded(self):
         catalog = ExcelProductCatalog(self.database)

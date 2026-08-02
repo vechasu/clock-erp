@@ -147,6 +147,7 @@ class MobileErpLayoutTest(unittest.TestCase):
 
     def test_primary_pages_share_mobile_navigation(self):
         pages = {
+            "/warehouse": "Товары",
             "/sales?source=all": "Продажи",
             "/receipts": "Приход",
         }
@@ -165,31 +166,24 @@ class MobileErpLayoutTest(unittest.TestCase):
                 self.assertIn('id="mobileErpMoreSheet"', html)
                 self.assertIn(f"<span>{active_label}</span>", html)
 
-    def test_warehouse_uses_the_react_products_entrypoint(self):
-        redirect = self.client.get("/warehouse?open_add=1&in_stock=1")
-        self.assertEqual(redirect.status_code, 302)
-        self.assertTrue(
-            redirect.headers["Location"].endswith(
-                "/app/products?open_add=1&in_stock=1"
-            )
-        )
-        shell = self.client.get("/app/products")
-        html = shell.get_data(as_text=True)
-        self.assertEqual(shell.status_code, 200)
-        self.assertIn(
-            '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"',
-            html,
-        )
-        self.assertIn('<div id="root"></div>', html)
-        self.assertIn('/app/assets/', html)
-
     def test_mobile_views_reuse_rendered_rows_and_forms(self):
+        warehouse_html = self.client.get(
+            "/warehouse"
+        ).get_data(as_text=True)
         sales_html = self.client.get(
             "/sales?source=all"
         ).get_data(as_text=True)
         receipts_html = self.client.get(
             "/receipts"
         ).get_data(as_text=True)
+
+        self.assertIn(
+            '<meta name="viewport" content="width=device-width, initial-scale=1">',
+            warehouse_html,
+        )
+        self.assertIn("warehouse-mobile-details", warehouse_html)
+        self.assertIn('id="warehouseMobileSort"', warehouse_html)
+        self.assertIn('data-product-id="mobile-product-1"', warehouse_html)
 
         self.assertIn('data-sale-id="mobile-sale-1"', sales_html)
         self.assertIn('id="salesMobileList"', sales_html)

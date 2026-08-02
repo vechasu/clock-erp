@@ -679,22 +679,18 @@ class ExcelProductCatalogTest(unittest.TestCase):
                 "/products/{}?return_to=https%3A%2F%2Fevil.test".format(product_id)
             )
         self.assertIn('href="/products?brand=Brand&amp;hide_zero=1"', response.get_data(as_text=True))
-        self.assertIn('href="/products"', unsafe.get_data(as_text=True))
+        self.assertIn('href="/warehouse"', unsafe.get_data(as_text=True))
 
     def test_operational_add_link_opens_preserved_warehouse_form(self):
         from app import web
         web.app.config["TESTING"] = True
-        client = web.app.test_client()
-        response = client.get("/warehouse?open_add=1")
-        self.assertEqual(response.status_code, 302)
-        self.assertTrue(
-            response.headers["Location"].endswith(
-                "/app/products?open_add=1"
-            )
-        )
-        shell = client.get("/app/products?open_add=1")
-        self.assertEqual(shell.status_code, 200)
-        self.assertIn('<div id="root"></div>', shell.get_data(as_text=True))
+        with mock.patch.object(web, "get_warehouse_items", return_value=[]), \
+                mock.patch.object(web, "load_stock_operations", return_value=[]):
+            response = web.app.test_client().get("/warehouse?open_add=1")
+        rendered = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('class="add-card" id="warehouseAddCard"', rendered)
+        self.assertIn('id="warehouseBulkForm"', rendered)
 
 
 if __name__ == "__main__":
