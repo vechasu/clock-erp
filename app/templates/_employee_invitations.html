@@ -1,0 +1,195 @@
+<style>
+    .invitation-form {
+        display: grid;
+        grid-template-columns: minmax(180px, 1.4fr) minmax(150px, 0.8fr) minmax(120px, 0.6fr);
+        gap: 14px;
+        align-items: end;
+    }
+
+    .invitation-form .button {
+        min-height: 46px;
+    }
+
+    .invitation-list {
+        display: grid;
+        gap: 10px;
+        margin-top: 22px;
+    }
+
+    .invitation-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto auto;
+        gap: 14px;
+        align-items: center;
+        padding: 13px 15px;
+        border: 1px solid #e2e8f0;
+        border-radius: 14px;
+        background: #f8fafc;
+    }
+
+    .invitation-email {
+        overflow: hidden;
+        font-size: 13px;
+        font-weight: 800;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .invitation-meta {
+        margin-top: 4px;
+        color: #64748b;
+        font-size: 12px;
+    }
+
+    .invitation-status {
+        padding: 5px 9px;
+        border-radius: 999px;
+        background: #e2e8f0;
+        color: #475569;
+        font-size: 11px;
+        font-weight: 850;
+    }
+
+    .invitation-status-active {
+        background: #dcfce7;
+        color: #166534;
+    }
+
+    .invitation-status-used {
+        background: #dbeafe;
+        color: #1d4ed8;
+    }
+
+    .invitation-revoke {
+        min-height: 36px;
+        padding: 0 12px;
+        border: 1px solid #fecaca;
+        border-radius: 10px;
+        background: white;
+        color: #b42318;
+        font-size: 12px;
+        font-weight: 800;
+        cursor: pointer;
+    }
+
+    @media (max-width: 760px) {
+        .invitation-form {
+            grid-template-columns: 1fr;
+        }
+
+        .invitation-row {
+            grid-template-columns: minmax(0, 1fr) auto;
+        }
+
+        .invitation-row form {
+            grid-column: 1 / -1;
+        }
+
+        .invitation-revoke {
+            width: 100%;
+        }
+    }
+</style>
+
+<section class="settings-card">
+    <section class="settings-section">
+        <h2>Приглашения сотрудников</h2>
+        <p>
+            Создайте одноразовую ссылку. Email можно закрепить за конкретным
+            сотрудником; безопасный срок по умолчанию — 72 часа.
+        </p>
+
+        <form
+            class="invitation-form"
+            method="post"
+            action="{{ url_for('auth.create_invitation') }}"
+        >
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+            <div class="field">
+                <label for="invitation_email">Email сотрудника</label>
+                <input
+                    class="control"
+                    id="invitation_email"
+                    name="email"
+                    type="email"
+                    maxlength="254"
+                    placeholder="name@tictactoy.ru"
+                >
+            </div>
+
+            <div class="field">
+                <label for="invitation_role">Роль</label>
+                <select class="control" id="invitation_role" name="role">
+                    {% for role, label in invitation_roles.items() %}
+                        <option value="{{ role }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="field">
+                <label for="invitation_lifetime">Срок, часов</label>
+                <input
+                    class="control"
+                    id="invitation_lifetime"
+                    name="lifetime_hours"
+                    type="number"
+                    value="72"
+                    min="1"
+                    max="720"
+                >
+            </div>
+
+            <button class="button" type="submit">
+                Создать приглашение
+            </button>
+        </form>
+
+        <div class="invitation-list">
+            {% for invitation in invitations %}
+                <div class="invitation-row">
+                    <div>
+                        <div class="invitation-email">
+                            {{ invitation.email or "Без привязки к email" }}
+                        </div>
+                        <div class="invitation-meta">
+                            {{ "Администратор" if invitation.role == "admin" else "Сотрудник" }}
+                            · до {{ invitation.expires_at_text }}
+                        </div>
+                    </div>
+
+                    <span
+                        class="invitation-status invitation-status-{{ invitation.status }}"
+                    >
+                        {{
+                            {
+                                "active": "Активно",
+                                "used": "Использовано",
+                                "expired": "Просрочено",
+                                "revoked": "Отозвано"
+                            }[invitation.status]
+                        }}
+                    </span>
+
+                    {% if invitation.status == "active" %}
+                        <form
+                            method="post"
+                            action="{{ url_for('auth.revoke_invitation', invitation_id=invitation.id) }}"
+                        >
+                            <input
+                                type="hidden"
+                                name="csrf_token"
+                                value="{{ csrf_token() }}"
+                            >
+                            <button class="invitation-revoke" type="submit">
+                                Отозвать
+                            </button>
+                        </form>
+                    {% endif %}
+                </div>
+            {% else %}
+                <p class="hint">Приглашений пока нет.</p>
+            {% endfor %}
+        </div>
+    </section>
+</section>

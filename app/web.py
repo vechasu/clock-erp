@@ -95,6 +95,7 @@ from app.auth import (
     csrf_token,
     current_auth_user,
     require_csrf_when_authenticated,
+    settings_invitation_context,
 )
 
 app = Flask(__name__)
@@ -112,14 +113,11 @@ LEGACY_FRONTEND_REDIRECTS = {
     "/overview": "/app/products",
     "/orders": "/app/products",
     "/products": "/app/products",
-    "/warehouse": "/app/products",
     "/stock-operations": "/app/products",
     "/repair": "/app/products",
     "/catalog": "/app/products",
     "/analytics": "/app/sales",
-    "/sales": "/app/sales",
-    "/receipts": "/app/receipts",
-    "/settings": "/app/settings",
+    "/receipt": "/app/receipts",
 }
 
 
@@ -1486,6 +1484,7 @@ def format_active_filter_label(count):
 
 
 @app.route("/warehouse")
+@app.route("/app/products")
 def warehouse_page():
     query = request.args.get("q", "").strip()
     selected_category = request.args.get("category", "").strip()
@@ -8521,6 +8520,7 @@ def build_legacy_sales_page():
 
 
 @app.route("/sales")
+@app.route("/app/sales")
 def sales_page():
     all_warehouse_items = get_warehouse_items()
     all_sales = build_sales_report_records(
@@ -9044,6 +9044,7 @@ def receipt_catalog_create():
 
 
 @app.route("/receipts")
+@app.route("/app/receipts")
 def receipts_page():
     from datetime import datetime
     from flask import request
@@ -12103,7 +12104,45 @@ def save_app_settings(settings):
     _load_app_settings_cached.cache_clear()
 
 
-@app.route("/api/v1/settings", methods=["GET", "PATCH"])
+@app.route("/settings", methods=["GET", "POST"])
+@app.route("/app/settings", methods=["GET", "POST"])
+def settings_page():
+    settings = load_app_settings()
+
+    if request.method == "POST":
+        require_csrf_when_authenticated()
+        company_name = (request.form.get("company_name") or "").strip()
+        erp_name = (request.form.get("erp_name") or "").strip()
+        try:
+            low_stock_threshold = int(
+                request.form.get("low_stock_threshold") or 0
+            )
+        except ValueError:
+            low_stock_threshold = 0
+
+        settings.update({
+            "company_name": company_name or "Tictactoy",
+            "erp_name": erp_name or "Vechasu ERP",
+            "low_stock_threshold": max(0, min(low_stock_threshold, 999)),
+        })
+        save_app_settings(settings)
+        return redirect(
+            url_for(
+                "settings_page",
+                notice="success",
+                message="Настройки сохранены",
+            )
+        )
+
+    return render_template(
+        "settings.html",
+        settings=settings,
+        notice=(request.args.get("notice") or "").strip(),
+        message=(request.args.get("message") or "").strip(),
+        **settings_invitation_context(),
+    )
+
+
 @app.route("/api/v1/settings", methods=["GET", "PATCH"])
 def api_settings_resource():
     settings = load_app_settings()
@@ -15113,53 +15152,8 @@ def api_repair_attachments(case_id):
 @app.route("/app", defaults={"react_path": ""}, strict_slashes=False)
 @app.route("/app/<path:react_path>")
 def react_application(react_path):
-    from flask import send_from_directory
-
-    build_directory = PROJECT_ROOT / "app" / "static" / "react"
-    retired_section = react_path.strip("/").split("/", 1)[0]
-    if retired_section in {
-        "repairs",
-        "repair",
-        "warehouse",
-        "stock-operations",
-        "operations",
-    }:
-        return redirect("/app/products")
-    requested_path = (build_directory / react_path).resolve()
-    if (
-        react_path
-        and requested_path.is_file()
-        and build_directory.resolve() in requested_path.parents
-    ):
-        return send_from_directory(build_directory, react_path)
-    index_path = build_directory / "index.html"
-    if not index_path.is_file():
-        return (
-            "React-интерфейс не собран. Выполните frontend production build.",
-            503,
-        )
-    user = current_auth_user()
-    bootstrap = {
-        "user": (
-            {
-                key: user.get(key)
-                for key in ("first_name", "last_name", "email", "role")
-            }
-            if user
-            else None
-        ),
-        "csrf_token": csrf_token(),
-    }
-    encoded_bootstrap = base64.b64encode(
-        json.dumps(bootstrap, ensure_ascii=False).encode("utf-8")
-    ).decode("ascii")
-    index_html = index_path.read_text(encoding="utf-8").replace(
-        "__ERP_BOOTSTRAP__",
-        encoded_bootstrap,
-    )
-    response = make_response(index_html)
-    response.headers["Content-Type"] = "text/html; charset=utf-8"
-    return response
+    del react_path
+    return redirect("/app/products")
 
 
 if __name__ == "__main__":

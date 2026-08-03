@@ -864,6 +864,21 @@ def revoke_invitation(invitation_id):
     return redirect(f"/app/settings?notice={notice}&message={message}")
 
 
+def settings_invitation_context():
+    user = current_auth_user()
+    if not user or user["role"] != "admin":
+        return {
+            "can_manage_invitations": False,
+            "invitations": [],
+            "invitation_roles": ALLOWED_ROLES,
+        }
+    return {
+        "can_manage_invitations": True,
+        "invitations": get_auth_store().list_invitations(),
+        "invitation_roles": ALLOWED_ROLES,
+    }
+
+
 def configure_auth(app, project_root):
     project_root = Path(project_root)
     app.secret_key = _load_or_create_secret(
