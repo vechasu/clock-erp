@@ -63,7 +63,7 @@ jobs:
         run: python -m compileall app scripts tests
 
   frontend:
-    name: React frontend safety checks
+    name: Frontend safety checks
     runs-on: ubuntu-latest
     timeout-minutes: 10
 

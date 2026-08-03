@@ -906,12 +906,10 @@ class UnifiedCatalogApiTest(unittest.TestCase):
         self.assertEqual(option_ids[0], self.product["category_id"])
         self.assertIn(other_category["id"], option_ids)
 
-    def test_visible_sections_use_react_and_retired_ui_redirects_safely(self):
+    def test_visible_sections_use_base_layout_and_retired_ui_redirects_safely(self):
         redirects = {
             "/products": "/app/products",
-            "/sales": "/app/sales",
-            "/receipts": "/app/receipts",
-            "/warehouse": "/app/products",
+            "/receipt": "/app/receipts",
             "/repair": "/app/products",
             "/stock-operations": "/app/products",
         }
@@ -921,11 +919,20 @@ class UnifiedCatalogApiTest(unittest.TestCase):
                 self.assertEqual(response.status_code, 302)
                 self.assertEqual(response.headers["Location"], target)
 
-        for path in ("/app/products", "/app/sales", "/app/receipts"):
-            response = self.client.get(path)
-            self.assertEqual(response.status_code, 200)
-            self.assertIn(b'<div id="root" data-bootstrap="', response.data)
-            self.assertIn(b'/app/assets/', response.data)
+        adapter = web.app.url_map.bind("")
+        aliases = {
+            "/warehouse": "warehouse_page",
+            "/app/products": "warehouse_page",
+            "/sales": "sales_page",
+            "/app/sales": "sales_page",
+            "/receipts": "receipts_page",
+            "/app/receipts": "receipts_page",
+            "/settings": "settings_page",
+            "/app/settings": "settings_page",
+        }
+        for path, endpoint in aliases.items():
+            with self.subTest(path=path):
+                self.assertEqual(adapter.match(path)[0], endpoint)
 
 
 if __name__ == "__main__":

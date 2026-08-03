@@ -1,0 +1,10 @@
+{% macro render_filter_count(count=0, element_id="", extra_class="", render_when_empty=false) -%}
+    {% if count or render_when_empty %}
+        <span
+            {% if element_id %}id="{{ element_id }}"{% endif %}
+            class="erp-filter-count{% if extra_class %} {{ extra_class }}{% endif %}"
+            aria-hidden="true"
+            {% if not count %}hidden{% endif %}
+        >{% if count > 9 %}9+{% elif count %}{{ count }}{% endif %}</span>
+    {% endif %}
+{%- endmacro %}

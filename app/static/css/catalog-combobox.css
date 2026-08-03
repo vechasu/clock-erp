@@ -1,0 +1,410 @@
+.brand-combobox {
+    position: relative;
+    width: 100%;
+}
+
+.brand-combobox-arrow {
+    color: #6b7280;
+    font-size: 13px;
+    transition: transform 0.18s ease;
+}
+
+.brand-combobox.open .brand-combobox-arrow {
+    transform: rotate(180deg);
+}
+
+.brand-combobox-dropdown {
+    position: absolute;
+    z-index: 1200;
+    top: calc(100% + 7px);
+    right: 0;
+    left: 0;
+    display: none;
+    padding: 10px;
+    border: 1px solid #dce3ed;
+    border-radius: 14px;
+    background: #ffffff;
+    box-shadow: 0 16px 40px rgba(15, 23, 42, 0.14);
+}
+
+.brand-combobox.open .brand-combobox-dropdown {
+    display: block;
+}
+
+.brand-combobox-search-wrap {
+    position: relative;
+}
+
+.brand-combobox-search {
+    width: 100%;
+    height: 42px;
+    margin: 0 0 8px;
+    padding: 0 40px 0 13px;
+    border: 1px solid #dce3ed;
+    border-radius: 11px;
+    background: #fbfcfe;
+    color: #111827;
+    font-size: 14px;
+    outline: none;
+}
+
+.brand-combobox-search:focus {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.brand-combobox-search-clear {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: #64748b;
+    font-size: 19px;
+    line-height: 1;
+}
+
+.brand-combobox-search-clear:hover {
+    background: #f1f5f9;
+    color: #0f172a;
+}
+
+.brand-combobox-empty {
+    padding: 12px 10px;
+    color: #64748b;
+    font-size: 13px;
+    text-align: center;
+}
+
+.brand-combobox.is-loading .brand-combobox-empty {
+    display: block;
+}
+
+.filter-combobox .brand-combobox-trigger {
+    position: relative;
+    display: block;
+    width: 100%;
+    height: 48px;
+    min-height: 48px;
+    margin: 0;
+    padding: 0 48px 0 15px;
+    overflow: hidden;
+    border: 1px solid #dce3ed;
+    border-radius: 14px;
+    background: #ffffff;
+    color: #172033;
+    font: inherit;
+    font-size: 15px;
+    font-weight: 500;
+    line-height: 46px;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    outline: none;
+    box-shadow: none;
+    appearance: none;
+}
+
+.filter-combobox .brand-combobox-trigger:hover:not(:disabled) {
+    border-color: #c8d2df;
+}
+
+.filter-combobox .brand-combobox-trigger:focus,
+.filter-combobox .brand-combobox-trigger:focus-visible,
+.filter-combobox.open .brand-combobox-trigger {
+    border-color: #8eb0ff;
+    outline: none;
+    box-shadow: none;
+}
+
+.filter-combobox .brand-combobox-trigger:disabled {
+    background: #f1f5f9;
+    color: #94a3b8;
+    cursor: not-allowed;
+}
+
+.filter-combobox .brand-combobox-arrow {
+    display: none;
+}
+
+.filter-combobox .brand-combobox-trigger::after {
+    position: absolute;
+    top: 50%;
+    right: 18px;
+    width: 10px;
+    height: 10px;
+    margin-top: -7px;
+    transform: rotate(45deg);
+    border-right: 2px solid #64748b;
+    border-bottom: 2px solid #64748b;
+    content: "";
+    pointer-events: none;
+}
+
+.filter-combobox.open .brand-combobox-trigger::after {
+    margin-top: -3px;
+    transform: rotate(225deg);
+}
+
+.filter-combobox .brand-combobox-options {
+    display: block;
+    max-height: 270px;
+    overflow-x: hidden;
+    overflow-y: auto;
+}
+
+.filter-combobox .brand-combobox-option {
+    display: flex;
+    width: 100%;
+    min-height: 40px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    margin: 0;
+    padding: 9px 11px;
+    border: 0;
+    border-radius: 10px;
+    background: #ffffff;
+    color: #374151;
+    font-size: 14px;
+    font-weight: 650;
+    line-height: 1.35;
+    text-align: left;
+    white-space: nowrap;
+    box-shadow: none;
+}
+
+.filter-combobox .brand-combobox-option span:first-child {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.filter-combobox .brand-combobox-option span:last-child {
+    flex: 0 0 auto;
+    margin-left: auto;
+    color: inherit;
+}
+
+.filter-combobox .catalog-combobox-option-copy {
+    display: flex;
+    min-width: 0;
+    flex: 1 1 auto;
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.filter-combobox
+.brand-combobox-option
+.catalog-combobox-option-copy span {
+    flex: 0 0 auto;
+    margin-left: 0;
+}
+
+.filter-combobox
+.brand-combobox-option
+.catalog-combobox-option-meta {
+    max-width: 100%;
+    overflow: hidden;
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 500;
+    text-overflow: ellipsis;
+}
+
+.filter-combobox
+.brand-combobox-option
+> .catalog-combobox-option-count {
+    flex: 0 0 auto;
+    margin-left: auto;
+}
+
+.filter-combobox .brand-combobox-option:hover,
+.filter-combobox .brand-combobox-option.is-keyboard-active {
+    background: #f3f4f6;
+}
+
+.filter-combobox .brand-combobox-option.active {
+    background: #dbeafe;
+    color: #1d4ed8;
+}
+
+.brand-combobox-option[hidden],
+.brand-combobox-empty[hidden],
+.catalog-combobox-action[hidden],
+.brand-combobox-search-wrap[hidden],
+.brand-combobox-search-clear[hidden] {
+    display: none;
+}
+
+.catalog-combobox-action {
+    width: 100%;
+    min-height: 40px;
+    margin-top: 6px;
+    padding: 8px 11px;
+    border: 1px dashed #93c5fd;
+    border-radius: 10px;
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-size: 13px;
+    font-weight: 800;
+    text-align: left;
+}
+
+.catalog-combobox-action:hover,
+.catalog-combobox-action.is-keyboard-active,
+.catalog-combobox-action:focus-visible {
+    border-color: #60a5fa;
+    background: #dbeafe;
+    outline: none;
+}
+
+.catalog-create-modal {
+    position: fixed;
+    z-index: 5000;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(15, 23, 42, 0.48);
+}
+
+.catalog-create-modal[hidden] {
+    display: none;
+}
+
+.catalog-create-dialog {
+    width: min(480px, 100%);
+    overflow: hidden;
+    border: 1px solid #dce3ed;
+    border-radius: 18px;
+    background: #ffffff;
+    box-shadow: 0 24px 70px rgba(15, 23, 42, 0.24);
+}
+
+.catalog-create-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 20px;
+    padding: 22px 24px 18px;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.catalog-create-header h2 {
+    margin: 0;
+    color: #111827;
+    font-size: 20px;
+}
+
+.catalog-create-header p {
+    margin: 5px 0 0;
+    color: #64748b;
+    font-size: 13px;
+}
+
+.catalog-create-close {
+    width: 36px;
+    height: 36px;
+    flex: 0 0 36px;
+    padding: 0;
+    border: 0;
+    border-radius: 10px;
+    background: #f8fafc;
+    color: #64748b;
+    font-size: 24px;
+    line-height: 1;
+}
+
+.catalog-create-body {
+    display: grid;
+    gap: 16px;
+    padding: 22px 24px 24px;
+}
+
+.catalog-create-field {
+    display: grid;
+    gap: 7px;
+    color: #374151;
+    font-size: 13px;
+    font-weight: 750;
+}
+
+.catalog-create-field input {
+    width: 100%;
+    height: 46px;
+    padding: 0 13px;
+    border: 1px solid #dce3ed;
+    border-radius: 12px;
+    background: #ffffff;
+    color: #111827;
+    font: inherit;
+    font-weight: 500;
+    outline: none;
+    box-sizing: border-box;
+}
+
+.catalog-create-field input:focus {
+    border-color: #8eb0ff;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.catalog-create-error {
+    min-height: 18px;
+    margin: 0;
+    color: #b91c1c;
+    font-size: 13px;
+}
+
+.catalog-create-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.catalog-create-actions button {
+    min-height: 42px;
+    padding: 0 18px;
+    border: 1px solid #dce3ed;
+    border-radius: 11px;
+    background: #ffffff;
+    color: #334155;
+    font: inherit;
+    font-weight: 750;
+}
+
+.catalog-create-actions .catalog-create-submit {
+    border-color: #2563eb;
+    background: #2563eb;
+    color: #ffffff;
+}
+
+.catalog-create-actions button:disabled {
+    opacity: 0.62;
+    cursor: wait;
+}
+
+@media (max-width: 560px) {
+    .brand-combobox-dropdown {
+        max-width: calc(100vw - 42px);
+    }
+
+    .catalog-create-modal {
+        align-items: flex-end;
+        padding: 12px;
+    }
+
+    .catalog-create-dialog {
+        border-radius: 18px 18px 12px 12px;
+    }
+
+    .catalog-create-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+    }
+}
