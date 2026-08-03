@@ -4215,7 +4215,21 @@
         {% include "_sidebar.html" %}
 
         <main class="main">
-
+            <header class="erp-workspace-header">
+                <div class="erp-workspace-heading">
+                    <h1>Товары</h1>
+                    <p>Каталог, цены и текущие остатки</p>
+                </div>
+                <div class="erp-workspace-actions">
+                    <button
+                        class="erp-workspace-primary erp-primary-action"
+                        type="button"
+                        onclick="toggleWarehouseAddCard()"
+                    >
+                        + Добавить товар
+                    </button>
+                </div>
+            </header>
 
             {% if request.args.get("notice") and request.args.get("message") %}
                 <div
@@ -4226,25 +4240,15 @@
                 </div>
             {% endif %}
 
-            <div class="stats erp-stats">
-                <div class="stat erp-stat-card">
-                    <div class="stock-summary">
-                        <div class="stock-summary-item">
-                            <div class="stat-title erp-stat-label">Позиций</div>
-                            <div id="visiblePositionsCount" class="stat-value erp-stat-value">{{ visible_positions }}</div>
-                        </div>
-
-                        <div class="stock-summary-divider"></div>
-
-                        <div class="stock-summary-item">
-                            <div class="stat-title erp-stat-label">Остаток, единиц</div>
-                            <div id="totalStockCount" class="stat-value erp-stat-value">{{ total_stock_display }}</div>
-                        </div>
-
-
-                    </div>
+            <div class="stats erp-stats erp-workspace-metrics">
+                <div class="stat erp-stat-card erp-workspace-metric">
+                    <div class="stat-title erp-stat-label">Позиций</div>
+                    <div id="visiblePositionsCount" class="stat-value erp-stat-value">{{ visible_positions }}</div>
                 </div>
-
+                <div class="stat erp-stat-card erp-workspace-metric">
+                    <div class="stat-title erp-stat-label">Единиц на складе</div>
+                    <div id="totalStockCount" class="stat-value erp-stat-value">{{ total_stock_display }}</div>
+                </div>
             </div>
 
 
@@ -4459,13 +4463,6 @@
                         × Сбросить
                     </button>
 
-                    <button
-                        class="add-position-card erp-primary-action"
-                        type="button"
-                        onclick="toggleWarehouseAddCard()"
-                    >
-                        + Добавить товар
-                    </button>
                 </form>
             </div>
 

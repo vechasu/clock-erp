@@ -1121,13 +1121,13 @@
             </div>
         {% endif %}
 
-        <header class="sales-page-header">
-            <div class="sales-page-heading">
+        <header class="sales-page-header erp-workspace-header">
+            <div class="sales-page-heading erp-workspace-heading">
                 <h1>Продажи</h1>
                 <p>Учёт продаж по всем каналам</p>
             </div>
 
-            <div class="sales-page-actions">
+            <div class="sales-page-actions erp-workspace-actions">
                 <a
                     id="salesReportLink"
                     class="button sales-report-button button-secondary erp-secondary-action"
@@ -1149,7 +1149,7 @@
 
                 <button
                     id="openManualSaleModal"
-                    class="button sales-add-button button-primary erp-primary-action"
+                    class="button sales-add-button button-primary erp-primary-action erp-workspace-primary"
                     type="button"
                 >
                     <span aria-hidden="true">+</span>
@@ -1176,10 +1176,10 @@
             </div>
         </nav>
 
-        <div class="stats erp-stats">
-            <div class="stat-card erp-stat-card">
+        <div class="stats erp-stats erp-workspace-metrics">
+            <div class="stat-card erp-stat-card erp-workspace-metric">
                 <span class="stat-label erp-stat-label">
-                    Не отменено
+                    Активных продаж
                 </span>
                 <span
                     id="statSales"
@@ -1187,7 +1187,7 @@
                 >{{ total_sales }}</span>
             </div>
 
-            <div class="stat-card erp-stat-card">
+            <div class="stat-card erp-stat-card erp-workspace-metric">
                 <span class="stat-label erp-stat-label">
                     Заказов
                 </span>
@@ -1197,7 +1197,7 @@
                 >{{ total_orders }}</span>
             </div>
 
-            <div class="stat-card erp-stat-card">
+            <div class="stat-card erp-stat-card erp-workspace-metric">
                 <span class="stat-label erp-stat-label">
                     Продано единиц
                 </span>
@@ -1207,7 +1207,7 @@
                 >{{ total_quantity }}</span>
             </div>
 
-            <div class="stat-card erp-stat-card">
+            <div class="stat-card erp-stat-card erp-workspace-metric">
                 <span class="stat-label erp-stat-label">
                     Отменено
                 </span>

@@ -1484,10 +1484,19 @@
     {% include "_sidebar.html" %}
 
     <main class="main">
-        <header class="page-header">
-            <div>
+        <header class="page-header erp-workspace-header">
+            <div class="erp-workspace-heading">
                 <h1>Приход</h1>
-                <p>Приёмка товаров и единые остатки Vechasu ERP</p>
+                <p>Приёмка товаров и увеличение остатков</p>
+            </div>
+            <div class="erp-workspace-actions">
+                <button
+                    class="button erp-workspace-primary erp-primary-action"
+                    type="button"
+                    onclick="openReceiptModal()"
+                >
+                    + Новый приход
+                </button>
             </div>
         </header>
 
@@ -1497,8 +1506,8 @@
             </div>
         {% endif %}
 
-        <section class="stats">
-            <div class="stat-card">
+        <section class="stats erp-stats erp-workspace-metrics">
+            <div class="stat-card erp-stat-card erp-workspace-metric">
                 <div class="stat-label">Документов прихода</div>
                 <div
                     class="stat-value"
@@ -1506,7 +1515,7 @@
                 >{{ total_receipts }}</div>
             </div>
 
-            <div class="stat-card">
+            <div class="stat-card erp-stat-card erp-workspace-metric">
                 <div class="stat-label">Принято единиц</div>
                 <div
                     class="stat-value"
@@ -1514,48 +1523,63 @@
                 >{{ total_quantity }}</div>
             </div>
 
-            <button
-                class="button stats-action-button"
-                type="button"
-                onclick="openReceiptModal()"
-            >
-                + Новый приход
-            </button>
         </section>
 
-        <div class="toolbar receipt-filter-toolbar">
+        <div class="toolbar receipt-filter-toolbar erp-toolbar-card erp-toolbar">
             <input
-                class="search"
+                class="search erp-search-input"
                 id="receiptSearch"
                 type="search"
                 placeholder="Поиск"
                 oninput="filterReceipts()"
             >
 
-            <input class="search" id="receiptDocumentFilter" type="search"
-                placeholder="Номер документа" oninput="filterReceipts()">
-            <input class="search" id="receiptCommentFilter" type="search"
-                placeholder="Комментарий" oninput="filterReceipts()">
-            <select class="control" id="receiptBrandFilter" onchange="filterReceipts()">
-                <option value="">Все бренды</option>
-                {% for value in receipt_filter_brands %}<option value="{{ value }}">{{ value }}</option>{% endfor %}
-            </select>
-            <select class="control" id="receiptCategoryFilter" onchange="filterReceipts()">
-                <option value="">Все категории</option>
-                {% for value in receipt_filter_categories %}<option value="{{ value }}">{{ value }}</option>{% endfor %}
-            </select>
-            <select class="control" id="receiptProductFilter" onchange="filterReceipts()">
-                <option value="">Все товары</option>
-                {% for value in receipt_filter_products %}<option value="{{ value }}">{{ value }}</option>{% endfor %}
-            </select>
-            <select class="control" id="receiptStatusFilter" onchange="filterReceipts()">
-                <option value="">Все статусы</option>
-                <option value="Проведён">Проведён</option>
-                <option value="Отменён">Отменён</option>
-            </select>
-            <button class="button button-secondary" type="button" onclick="resetReceiptFilters()">
-                Сбросить фильтры
-            </button>
+            <details class="receipt-filter-settings" id="receiptAdvancedFilters">
+                <summary
+                    class="erp-secondary-action receipt-filter-trigger"
+                    aria-label="Расширенные фильтры прихода"
+                >
+                    <span>Фильтры</span>
+                    <span
+                        class="erp-filter-count"
+                        id="receiptAdvancedFilterCount"
+                        aria-live="polite"
+                        hidden
+                    >0</span>
+                </summary>
+                <div class="receipt-advanced-filter-panel">
+                    <div class="receipt-advanced-filter-grid">
+                        <input class="search erp-control" id="receiptDocumentFilter" type="search"
+                            placeholder="Номер документа" oninput="filterReceipts()">
+                        <input class="search erp-control" id="receiptCommentFilter" type="search"
+                            placeholder="Комментарий" oninput="filterReceipts()">
+                        <select class="control erp-control" id="receiptBrandFilter" onchange="filterReceipts()">
+                            <option value="">Все бренды</option>
+                            {% for value in receipt_filter_brands %}<option value="{{ value }}">{{ value }}</option>{% endfor %}
+                        </select>
+                        <select class="control erp-control" id="receiptCategoryFilter" onchange="filterReceipts()">
+                            <option value="">Все категории</option>
+                            {% for value in receipt_filter_categories %}<option value="{{ value }}">{{ value }}</option>{% endfor %}
+                        </select>
+                        <select class="control erp-control" id="receiptProductFilter" onchange="filterReceipts()">
+                            <option value="">Все товары</option>
+                            {% for value in receipt_filter_products %}<option value="{{ value }}">{{ value }}</option>{% endfor %}
+                        </select>
+                        <select class="control erp-control" id="receiptStatusFilter" onchange="filterReceipts()">
+                            <option value="">Все статусы</option>
+                            <option value="Проведён">Проведён</option>
+                            <option value="Отменён">Отменён</option>
+                        </select>
+                    </div>
+                    <button
+                        class="button button-secondary erp-reset-action receipt-filter-reset"
+                        type="button"
+                        onclick="resetReceiptFilters()"
+                    >
+                        Сбросить фильтры
+                    </button>
+                </div>
+            </details>
 
             <label
                 class="mobile-erp-only mobile-erp-sort receipt-mobile-sort"
@@ -1690,7 +1714,7 @@
             </div>
 
             <button
-                class="receipt-report-button"
+                class="receipt-report-button erp-secondary-action"
                 type="button"
                 onclick="openReceiptsReport()"
             >
@@ -3750,6 +3774,21 @@
             : 0;
     }
 
+    function updateReceiptAdvancedFilterCount(values) {
+        const count = values.filter((value) => Boolean(value)).length;
+        const badge = document.getElementById("receiptAdvancedFilterCount");
+        const trigger = document.querySelector(
+            "#receiptAdvancedFilters > summary"
+        );
+
+        if (badge) {
+            badge.textContent = String(count);
+            badge.hidden = count === 0;
+        }
+
+        trigger?.classList.toggle("has-active-filters", count > 0);
+    }
+
     function filterReceipts() {
         const query = (
             document.getElementById(
@@ -3766,6 +3805,15 @@
         const category = document.getElementById("receiptCategoryFilter")?.value || "";
         const product = document.getElementById("receiptProductFilter")?.value || "";
         const status = document.getElementById("receiptStatusFilter")?.value || "";
+
+        updateReceiptAdvancedFilterCount([
+            documentQuery,
+            commentQuery,
+            brand,
+            category,
+            product,
+            status,
+        ]);
 
         const dateFrom = (
             document.getElementById(
