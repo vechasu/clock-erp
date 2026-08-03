@@ -1476,6 +1476,7 @@
     <script
         src="{{ url_for('static', filename='js/period-picker.js') }}"
     ></script>
+    <script defer src="{{ url_for('static', filename='js/table-scroll-hint.js') }}"></script>
 </head>
 
 <body class="receipts-page">
@@ -1713,18 +1714,41 @@
                 </div>
             </div>
 
+            <div class="receipt-column-settings">
+                <button
+                    id="receiptColumnSettingsTrigger"
+                    class="erp-secondary-action receipt-column-settings-trigger"
+                    type="button"
+                    aria-haspopup="true"
+                    aria-expanded="false"
+                    aria-controls="receiptColumnSettingsPanel"
+                >Столбцы</button>
+                <div
+                    id="receiptColumnSettingsPanel"
+                    class="receipt-column-settings-panel"
+                    role="group"
+                    aria-label="Видимые столбцы прихода"
+                    hidden
+                ></div>
+            </div>
+
             <button
                 class="receipt-report-button erp-secondary-action"
                 type="button"
                 onclick="openReceiptsReport()"
             >
-                Сформировать отчёт
+                Отчёт
             </button>
         </div>
 
         <section class="table-card">
             {% if receipts %}
-                <div class="table-wrap">
+                <div
+                    class="table-wrap erp-scroll-hint"
+                    data-erp-scroll-hint
+                    tabindex="0"
+                    aria-label="Таблица прихода с горизонтальной прокруткой"
+                >
                     <table class="receipts-table erp-data-table" id="receiptsTable">
                         <colgroup>
                             <col data-column-key="date">
@@ -4375,10 +4399,10 @@
         }
     });
 
-    // Excel-like receipt column widths use the same persisted view model.
+    // Excel-like receipt widths and visibility share one persisted view model.
     (() => {
         const table = document.getElementById("receiptsTable");
-        if (!table || window.matchMedia("(max-width: 900px)").matches) {
+        if (!table) {
             return;
         }
         const storageKey = "vechasu-receipts-table-view-v1";
@@ -4392,6 +4416,19 @@
             quantity: 82,
             status: 112,
         };
+        const columnOrder = Object.keys(defaults);
+        const requiredColumns = ["date", "product"];
+        const labels = {
+            date: "Дата",
+            document: "Документ",
+            comment: "Комментарий",
+            brand: "Бренд",
+            category: "Категория",
+            product: "Товар",
+            quantity: "Количество",
+            status: "Статус",
+        };
+        const desktopMedia = window.matchMedia("(min-width: 901px)");
         let saved = {};
         try {
             saved = JSON.parse(localStorage.getItem(storageKey) || "{}");
@@ -4399,6 +4436,19 @@
             saved = {};
         }
         const widths = {...defaults, ...(saved.widths || {})};
+        let hidden = Array.isArray(saved.hidden)
+            ? saved.hidden.filter((key) => (
+                columnOrder.includes(key)
+                && !requiredColumns.includes(key)
+            ))
+            : [];
+
+        function applyReceiptColumnVisibility() {
+            table.querySelectorAll("[data-column-key]").forEach((element) => {
+                element.hidden = desktopMedia.matches
+                    && hidden.includes(element.dataset.columnKey);
+            });
+        }
 
         function applyReceiptColumnWidths() {
             let total = 112;
@@ -4413,23 +4463,88 @@
                 ).forEach((column) => {
                     column.style.width = width + "px";
                 });
-                total += width;
+                if (!desktopMedia.matches || !hidden.includes(key)) {
+                    total += width;
+                }
             });
             table.style.width = total + "px";
         }
 
-        function saveReceiptColumnWidths() {
+        function saveReceiptTableView() {
             try {
                 localStorage.setItem(
                     storageKey,
-                    JSON.stringify({widths})
+                    JSON.stringify({widths, hidden})
                 );
             } catch (_error) {
-                // Ширины остаются рабочими до перезагрузки страницы.
+                // Настройки остаются рабочими до перезагрузки страницы.
             }
         }
 
+        function initializeReceiptColumnSettings() {
+            const wrapper = document.querySelector(
+                ".receipt-column-settings"
+            );
+            const trigger = document.getElementById(
+                "receiptColumnSettingsTrigger"
+            );
+            const panel = document.getElementById(
+                "receiptColumnSettingsPanel"
+            );
+            if (!wrapper || !trigger || !panel) {
+                return;
+            }
+
+            columnOrder.forEach((key) => {
+                const label = document.createElement("label");
+                label.className = "receipt-column-settings-option";
+                const input = document.createElement("input");
+                input.type = "checkbox";
+                input.dataset.columnKey = key;
+                input.checked = !hidden.includes(key);
+                input.disabled = requiredColumns.includes(key);
+                input.addEventListener("change", () => {
+                    hidden = input.checked
+                        ? hidden.filter((columnKey) => columnKey !== key)
+                        : hidden.concat(key);
+                    applyReceiptColumnVisibility();
+                    applyReceiptColumnWidths();
+                    saveReceiptTableView();
+                });
+                label.appendChild(input);
+                label.appendChild(document.createTextNode(labels[key]));
+                panel.appendChild(label);
+            });
+
+            const hint = document.createElement("div");
+            hint.className = "receipt-column-settings-hint";
+            hint.textContent = "Дата, товар и действия всегда видимы.";
+            panel.appendChild(hint);
+
+            trigger.addEventListener("click", () => {
+                panel.hidden = !panel.hidden;
+                trigger.setAttribute("aria-expanded", String(!panel.hidden));
+            });
+            document.addEventListener("click", (event) => {
+                if (!wrapper.contains(event.target)) {
+                    panel.hidden = true;
+                    trigger.setAttribute("aria-expanded", "false");
+                }
+            });
+        }
+
+        applyReceiptColumnVisibility();
         applyReceiptColumnWidths();
+        initializeReceiptColumnSettings();
+        desktopMedia.addEventListener("change", () => {
+            applyReceiptColumnVisibility();
+            applyReceiptColumnWidths();
+        });
+
+        if (!desktopMedia.matches) {
+            return;
+        }
+
         table.querySelectorAll("thead th[data-column-key]")
             .forEach((header) => {
                 const handle = document.createElement("span");
@@ -4465,7 +4580,7 @@
                         document.body.classList.remove(
                             "receipt-column-resizing"
                         );
-                        saveReceiptColumnWidths();
+                        saveReceiptTableView();
                         window.removeEventListener("pointermove", resize);
                     }
 

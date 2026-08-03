@@ -1106,6 +1106,7 @@
     <script
         src="{{ url_for('static', filename='js/period-picker.js') }}"
     ></script>
+    <script defer src="{{ url_for('static', filename='js/table-scroll-hint.js') }}"></script>
 </head>
 
 <body class="sales-page">
@@ -1144,7 +1145,7 @@
                         <path d="M11 2.75v3.5h3.5"></path>
                         <path d="M7.5 10h4.5M7.5 13h4.5"></path>
                     </svg>
-                    <span data-report-label>Сформировать отчёт</span>
+                    <span data-report-label>Отчёт</span>
                 </a>
 
                 <button
@@ -1575,7 +1576,12 @@
             </div>
 
             <section class="table-card erp-table-card">
-                <div class="table-wrap">
+                <div
+                    class="table-wrap erp-scroll-hint"
+                    data-erp-scroll-hint
+                    tabindex="0"
+                    aria-label="Таблица продаж с горизонтальной прокруткой"
+                >
                     <table
                         class="sales-table erp-data-table"
                         data-source="{{ active_source }}"
