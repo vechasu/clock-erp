@@ -21,9 +21,8 @@ describe('React infrastructure', () => {
     expect(await screen.findByRole('heading', { name: 'Товары' })).toBeInTheDocument();
   });
 
-  it('keeps a controlled fallback for unknown business modules', () => {
+  it('redirects unknown and retired business modules to products', async () => {
     renderApp('/customers');
-
-    expect(screen.getByRole('heading', { name: 'Раздел ещё не перенесён' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Товары' })).toBeInTheDocument();
   });
 });

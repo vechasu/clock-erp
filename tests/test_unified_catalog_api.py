@@ -906,56 +906,26 @@ class UnifiedCatalogApiTest(unittest.TestCase):
         self.assertEqual(option_ids[0], self.product["category_id"])
         self.assertIn(other_category["id"], option_ids)
 
-    def test_visible_sections_keep_the_approved_legacy_entrypoints(self):
-        products = self.client.get("/products")
-        sales = self.client.get("/sales")
-        receipts = self.client.get("/receipts")
+    def test_visible_sections_use_react_and_retired_ui_redirects_safely(self):
+        redirects = {
+            "/products": "/app/products",
+            "/sales": "/app/sales",
+            "/receipts": "/app/receipts",
+            "/warehouse": "/app/products",
+            "/repair": "/app/products",
+            "/stock-operations": "/app/products",
+        }
+        for path, target in redirects.items():
+            with self.subTest(path=path):
+                response = self.client.get(path)
+                self.assertEqual(response.status_code, 302)
+                self.assertEqual(response.headers["Location"], target)
 
-        self.assertEqual(products.status_code, 302)
-        self.assertIn("/warehouse", products.headers["Location"])
-        self.assertEqual(sales.status_code, 200)
-        self.assertIn(b'class="sales-page"', sales.data)
-        self.assertEqual(receipts.status_code, 200)
-        self.assertIn(b'class="receipts-page"', receipts.data)
-        self.assertNotIn(b'<div id="root"></div>', sales.data)
-        self.assertNotIn(b'<div id="root"></div>', receipts.data)
-        for response in (sales, receipts):
-            self.assertIn(
-                b"/static/js/catalog-combobox.js",
-                response.data,
-            )
-            self.assertIn(
-                b'data-shared-catalog-kind="brand"',
-                response.data,
-            )
-            self.assertIn(
-                b'data-shared-catalog-kind="category"',
-                response.data,
-            )
-            self.assertIn(
-                b'data-shared-catalog-kind="product"',
-                response.data,
-            )
-
-        warehouse = self.client.get("/warehouse?open_add=1")
-        self.assertEqual(warehouse.status_code, 200)
-        self.assertIn(b'class="warehouse-page"', warehouse.data)
-        self.assertIn(
-            b'data-shared-catalog-kind="brand"',
-            warehouse.data,
-        )
-        self.assertIn(
-            b'data-shared-catalog-kind="category"',
-            warehouse.data,
-        )
-        react_products = self.client.get("/app/products")
-        self.assertEqual(react_products.status_code, 200)
-        self.assertIn(b'<div id="root"></div>', react_products.data)
-        self.assertIn(b'/app/assets/', react_products.data)
-
-        repair = self.client.get("/repair")
-        self.assertEqual(repair.status_code, 200)
-        self.assertNotIn(b'<div id="root"></div>', repair.data)
+        for path in ("/app/products", "/app/sales", "/app/receipts"):
+            response = self.client.get(path)
+            self.assertEqual(response.status_code, 200)
+            self.assertIn(b'<div id="root" data-bootstrap="', response.data)
+            self.assertIn(b'/app/assets/', response.data)
 
 
 if __name__ == "__main__":

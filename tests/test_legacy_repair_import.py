@@ -213,39 +213,6 @@ class LegacyRepairImportTest(unittest.TestCase):
             case["legacy_import"]["review_notes"],
         )
 
-    def test_imported_cards_open_and_filter_by_status(self):
-        import_legacy_repair_file(
-            self.cases_path,
-            self.dataset,
-            apply=True,
-            backup_dir=self.backup_dir,
-            imported_at=IMPORTED_AT,
-        )
-        web.app.config.update(TESTING=True)
-        with mock.patch.object(
-            web,
-            "get_repair_cases_path",
-            return_value=self.cases_path,
-        ), mock.patch.object(
-            web,
-            "get_excel_warehouse_items",
-            return_value=[],
-        ):
-            client = web.app.test_client()
-            page = client.get("/repair")
-            filtered = client.get("/repair?status=waiting_payment")
-
-        page_html = page.get_data(as_text=True)
-        filtered_html = filtered.get_data(as_text=True)
-        self.assertEqual(page.status_code, 200)
-        self.assertEqual(filtered.status_code, 200)
-        self.assertIn("R-2026-0001", page_html)
-        self.assertIn("R-2026-0011", page_html)
-        self.assertIn("Периодически не переключаются диски", page_html)
-        self.assertIn('class="mobile-card"', page_html)
-        self.assertIn("R-2026-0005", filtered_html)
-        self.assertNotIn("R-2026-0007", filtered_html)
-
     def test_matching_waybill_updates_existing_card_without_overwriting(self):
         existing = migrate_repair_case({
             "id": "existing-case",

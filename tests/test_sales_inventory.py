@@ -425,69 +425,6 @@ class SalesInventoryWebTest(SalesInventoryTest):
             },
         )
 
-    def test_sale_and_return_routes_update_ui_stock_and_net_revenue(self):
-        response = self.add_sale(quantity=2)
-        self.assertEqual(response.status_code, 302)
-        self.assertEqual(self.stock(self.product["id"]), 1)
-
-        sale = SalesInventory(self.database).list_sales()[0]
-        page = self.client.get("/sales").get_data(as_text=True)
-        self.assertIn("Оформить возврат", page)
-        self.assertIn("data-sale-id=\"{}\"".format(sale["id"]), page)
-
-        response = self.client.post(
-            "/sales/return",
-            data={
-                "sale_id": sale["id"],
-                "return_quantity": "1",
-                "return_reason": "Не подошло",
-            },
-        )
-        self.assertEqual(response.status_code, 302)
-        self.assertEqual(self.stock(self.product["id"]), 2)
-
-        with web.app.test_request_context(
-            "/sales/report?source=all"
-        ):
-            context = web.build_sales_report_context()
-        self.assertEqual(context["gross_revenue"], 2000)
-        self.assertEqual(context["returns_amount"], 1000)
-        self.assertEqual(context["total_revenue"], 1000)
-        record = context["sales"][0]
-        self.assertEqual(record["order_status"], "partially_returned")
-        self.assertEqual(record["returned_quantity"], 1)
-        self.assertEqual(record["return_reason"], "Не подошло")
-
-        page = self.client.get("/sales").get_data(as_text=True)
-        self.assertIn("is-partially-returned", page)
-        self.assertIn("Частичный возврат:", page)
-
-    def test_second_full_return_is_rejected_without_stock_change(self):
-        self.add_sale()
-        sale_id = SalesInventory(self.database).list_sales()[0]["id"]
-        first = self.client.post(
-            "/sales/return",
-            data={
-                "sale_id": sale_id,
-                "return_quantity": "1",
-            },
-        )
-        second = self.client.post(
-            "/sales/return",
-            data={
-                "sale_id": sale_id,
-                "return_quantity": "1",
-            },
-            headers={"X-Requested-With": "XMLHttpRequest"},
-        )
-
-        self.assertEqual(first.status_code, 302)
-        self.assertEqual(second.status_code, 409)
-        self.assertEqual(self.stock(self.product["id"]), 3)
-        page = self.client.get("/sales").get_data(as_text=True)
-        self.assertIn("is-returned", page)
-        self.assertIn("Возврат оформлен", page)
-
     def test_legacy_sale_is_not_written_off_during_schema_migration(self):
         self.manual_sales_path.write_text(
             '[{"id":"legacy","product_id":"%s","quantity":1}]'

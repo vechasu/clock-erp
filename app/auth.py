@@ -855,32 +855,13 @@ def create_invitation():
 def revoke_invitation(invitation_id):
     require_csrf()
     revoked = get_auth_store().revoke_invitation(invitation_id)
-    return redirect(
-        url_for(
-            "settings_page",
-            notice="success" if revoked else "error",
-            message=(
-                "Приглашение отозвано."
-                if revoked
-                else "Активное приглашение не найдено."
-            ),
-        )
+    notice = "success" if revoked else "error"
+    message = (
+        "Приглашение отозвано."
+        if revoked
+        else "Активное приглашение не найдено."
     )
-
-
-def settings_invitation_context():
-    user = current_auth_user()
-    if not user or user["role"] != "admin":
-        return {
-            "can_manage_invitations": False,
-            "invitations": [],
-            "invitation_roles": ALLOWED_ROLES,
-        }
-    return {
-        "can_manage_invitations": True,
-        "invitations": get_auth_store().list_invitations(),
-        "invitation_roles": ALLOWED_ROLES,
-    }
+    return redirect(f"/app/settings?notice={notice}&message={message}")
 
 
 def configure_auth(app, project_root):

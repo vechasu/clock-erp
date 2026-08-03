@@ -1,6 +1,6 @@
 import re
 import unittest
-from unittest import mock
+from pathlib import Path
 
 from app import web
 
@@ -22,12 +22,12 @@ class Stage2ReactAppTest(unittest.TestCase):
             "/app/products",
             "/app/receipts",
             "/app/sales",
-            "/app/repairs",
+            "/app/settings",
         ):
             response = self.client.get(path)
             try:
                 self.assertEqual(response.status_code, 200, path)
-                self.assertIn('<div id="root"></div>', response.get_data(as_text=True))
+                self.assertIn('<div id="root" data-bootstrap="', response.get_data(as_text=True))
             finally:
                 response.close()
 
@@ -46,53 +46,44 @@ class Stage2ReactAppTest(unittest.TestCase):
         finally:
             response.close()
 
-    def test_warehouse_route_serves_the_legacy_jinja_shell(self):
-        catalog = {
-            "items": [],
-            "brand_groups": [],
-            "category_groups": [],
-            "cell_groups": [],
-            "total": 0,
-            "stats": {"total_stock": 0},
-            "pages": 0,
-            "page": 1,
+    def test_retired_frontend_routes_redirect_without_loading_legacy_ui(self):
+        redirects = {
+            "/warehouse": "/app/products",
+            "/stock-operations": "/app/products",
+            "/repair": "/app/products",
+            "/sales": "/app/sales",
+            "/receipts": "/app/receipts",
+            "/settings": "/app/settings",
+            "/app/repairs": "/app/products",
         }
-        with (
-            mock.patch.object(
-                web.ExcelProductCatalog,
-                "list_products",
-                return_value=catalog,
-            ),
-            mock.patch.object(web, "get_excel_warehouse_items", return_value=[]),
-            mock.patch.object(
-                web,
-                "load_catalog_taxonomy",
-                return_value={"brands": [], "categories": []},
-            ),
-            mock.patch.object(web, "get_catalog_stock_history", return_value=[]),
-        ):
-            response = self.client.get("/warehouse?q=chrono")
-        try:
-            html = response.get_data(as_text=True)
-            self.assertEqual(response.status_code, 200)
-            self.assertIsNone(response.location)
-            self.assertIn('<div class="app">', html)
-            self.assertIn('class="sidebar"', html)
-            self.assertNotIn('<div id="root"></div>', html)
-            self.assertNotIn("/app/products", html)
-        finally:
-            response.close()
+        for path, location in redirects.items():
+            with self.subTest(path=path):
+                response = self.client.get(path)
+                self.assertEqual(response.status_code, 302)
+                self.assertEqual(response.location, location)
 
-    def test_products_route_redirects_to_warehouse(self):
+    def test_products_legacy_route_preserves_filters_for_react(self):
         response = self.client.get("/products?in_stock=1&per_page=100")
-        try:
-            self.assertEqual(response.status_code, 302)
-            self.assertEqual(
-                response.location,
-                "/warehouse?in_stock=1&per_page=100",
-            )
-        finally:
-            response.close()
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.location, "/app/products?in_stock=1&per_page=100")
+
+    def test_production_bundle_has_no_retired_modules_or_stale_chunks(self):
+        assets = Path(web.PROJECT_ROOT, "app", "static", "react", "assets")
+        names = {path.name for path in assets.iterdir() if path.is_file()}
+        self.assertFalse(any("Repair" in name for name in names))
+        javascript = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in assets.glob("*.js")
+        )
+        for retired_marker in (
+            "RepairsPage",
+            "RepairForm",
+            'to:`/repairs`',
+            "Склад и ячейки",
+            "Журнал операций",
+            "Раздел ещё не перенесён",
+        ):
+            self.assertNotIn(retired_marker, javascript)
 
 
 if __name__ == "__main__":

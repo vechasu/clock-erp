@@ -95,7 +95,6 @@ from app.auth import (
     csrf_token,
     current_auth_user,
     require_csrf_when_authenticated,
-    settings_invitation_context,
 )
 
 app = Flask(__name__)
@@ -106,6 +105,53 @@ app.wsgi_app = ProxyFix(
     x_host=1,
 )
 configure_auth(app, PROJECT_ROOT)
+
+
+LEGACY_FRONTEND_REDIRECTS = {
+    "/": "/app/products",
+    "/overview": "/app/products",
+    "/orders": "/app/products",
+    "/products": "/app/products",
+    "/warehouse": "/app/products",
+    "/stock-operations": "/app/products",
+    "/repair": "/app/products",
+    "/catalog": "/app/products",
+    "/analytics": "/app/sales",
+    "/sales": "/app/sales",
+    "/receipts": "/app/receipts",
+    "/settings": "/app/settings",
+}
+
+
+@app.before_request
+def redirect_retired_frontend():
+    """Keep legacy UI routes out of the active ERP without touching write APIs."""
+    if request.method != "GET":
+        return None
+
+    target = LEGACY_FRONTEND_REDIRECTS.get(request.path)
+    if target is None and request.path.startswith("/order/"):
+        target = "/app/products"
+    if target is None and request.path.startswith("/catalog/"):
+        target = "/app/products"
+    if (
+        target is None
+        and request.path.startswith("/products/")
+        and not request.path.startswith("/products/receipts/")
+    ):
+        target = "/app/products"
+    if (
+        target is None
+        and request.path.startswith("/warehouse/product/")
+        and not request.path.endswith("/thumbnail")
+    ):
+        target = "/app/products"
+
+    if target is None:
+        return None
+    if request.query_string:
+        target += "?" + request.query_string.decode("utf-8")
+    return redirect(target)
 
 
 @app.cli.command("sync-bitrix-products")
@@ -11926,358 +11972,88 @@ DEFAULT_APP_SETTINGS = {
 }
 
 
+# Legacy templates that still support retained import/report flows share the
+# same fixed navigation as the React ERP. File-backed switches cannot restore
+# removed modules.
 NAVIGATION_DEFINITIONS = [
-    {
-        "key": "overview",
-        "label": "Обзор",
-        "description": "Главная страница и быстрый доступ к разделам ERP.",
-        "icon": "overview",
-        "href": "/overview",
-        "position": 1,
-        "group": "main",
-        "mobile_primary": False,
-        "active_exact": ["/", "/overview"],
-        "active_prefixes": [],
-    },
-    {
-        "key": "orders",
-        "label": "Заказы",
-        "description": "Заказы интернет-магазина и карточки заказов.",
-        "icon": "orders",
-        "href": "/orders",
-        "position": 2,
-        "group": "main",
-        "mobile_primary": False,
-        "active_exact": ["/orders"],
-        "active_prefixes": ["/order"],
-    },
     {
         "key": "products",
         "label": "Товары",
-        "description": "Каталог, остатки, ячейки и управление товарами.",
+        "description": "Каталог товаров.",
         "icon": "products",
-        "href": "/warehouse",
-        "mobile_href": "/warehouse",
-        "position": 3,
+        "href": "/app/products",
+        "mobile_href": "/app/products",
+        "position": 1,
         "group": "main",
         "mobile_primary": True,
         "active_exact": [],
-        "active_prefixes": ["/products", "/warehouse"],
-        "active_excluded_prefixes": ["/products/receipts"],
+        "active_prefixes": ["/app/products", "/products", "/warehouse"],
     },
     {
         "key": "sales",
         "label": "Продажи",
-        "description": "Ручные продажи, источники и отчёты.",
+        "description": "Продажи.",
         "icon": "sales",
-        "href": "/sales",
-        "position": 5,
+        "href": "/app/sales",
+        "mobile_href": "/app/sales",
+        "position": 2,
         "group": "main",
         "mobile_primary": True,
         "active_exact": [],
-        "active_prefixes": ["/sales"],
-    },
-    {
-        "key": "catalog",
-        "label": "Весь каталог Bitrix",
-        "description": "Карточки, контент и синхронизация каталога Bitrix.",
-        "icon": "catalog",
-        "href": "/catalog",
-        "position": 4,
-        "group": "main",
-        "mobile_primary": False,
-        "active_exact": [],
-        "active_prefixes": ["/catalog"],
+        "active_prefixes": ["/app/sales", "/sales"],
     },
     {
         "key": "receipts",
         "label": "Приход",
-        "description": "Оформление и проведение поступлений товара.",
+        "description": "Приход товаров.",
         "icon": "receipts",
-        "href": "/receipts",
-        "position": 6,
+        "href": "/app/receipts",
+        "mobile_href": "/app/receipts",
+        "position": 3,
         "group": "main",
         "mobile_primary": True,
         "active_exact": [],
-        "active_prefixes": ["/receipts", "/products/receipts"],
-    },
-    {
-        "key": "analytics",
-        "label": "Аналитика",
-        "description": "Продажи, приходы и текущие остатки товаров.",
-        "icon": "analytics",
-        "href": "/analytics",
-        "position": 7,
-        "group": "main",
-        "mobile_primary": False,
-        "active_exact": [],
-        "active_prefixes": ["/analytics"],
-    },
-    {
-        "key": "stock_operations",
-        "label": "Журнал операций",
-        "description": "История складских движений и операций.",
-        "icon": "stock_operations",
-        "href": "/stock-operations",
-        "position": 8,
-        "group": "main",
-        "mobile_primary": False,
-        "active_exact": [],
-        "active_prefixes": ["/stock-operations"],
-    },
-    {
-        "key": "repair",
-        "label": "Ремонт",
-        "description": "Учёт ремонтных обращений и статусов.",
-        "icon": "repair",
-        "href": "/repair",
-        "position": 9,
-        "group": "main",
-        "mobile_primary": False,
-        "active_exact": [],
-        "active_prefixes": ["/repair"],
+        "active_prefixes": ["/app/receipts", "/receipts", "/products/receipts"],
     },
     {
         "key": "settings",
         "label": "Настройки",
-        "description": "Управление компанией, системой и вкладками.",
+        "description": "Настройки ERP.",
         "icon": "settings",
-        "href": "/settings",
-        "position": 10,
+        "href": "/app/settings",
+        "mobile_href": "/app/settings",
+        "position": 4,
         "group": "system",
-        "mobile_primary": False,
+        "mobile_primary": True,
         "active_exact": [],
-        "active_prefixes": ["/settings"],
+        "active_prefixes": ["/app/settings", "/settings"],
         "required": True,
     },
 ]
 
 
-_LAST_SAFE_NAVIGATION_SETTINGS = {}
-
-
-def get_navigation_settings_path():
-    path = PROJECT_ROOT / "instance" / "navigation_settings.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    return path
-
-
-def get_default_navigation_settings():
-    return {
-        item["key"]: {
-            "enabled": True,
-            "position": item["position"],
-        }
-        for item in NAVIGATION_DEFINITIONS
-    }
-
-
-def get_safe_navigation_fallback():
-    settings = get_default_navigation_settings()
-    for item in NAVIGATION_DEFINITIONS:
-        settings[item["key"]]["enabled"] = bool(item.get("required"))
-    return settings
-
-
-@lru_cache(maxsize=16)
-def _load_navigation_settings_cached(signature):
-    settings = get_default_navigation_settings()
-    path = Path(signature[0])
-
-    if not path.exists():
-        _LAST_SAFE_NAVIGATION_SETTINGS[str(path)] = copy.deepcopy(settings)
-        return settings
-
-    try:
-        stored_settings = json.loads(
-            path.read_text(encoding="utf-8")
-        )
-    except (OSError, json.JSONDecodeError) as error:
-        app.logger.warning(
-            "Failed to load navigation settings from %s: %s; "
-            "last safe navigation settings will be used",
-            path,
-            error,
-        )
-        return copy.deepcopy(
-            _LAST_SAFE_NAVIGATION_SETTINGS.get(
-                str(path),
-                get_safe_navigation_fallback(),
-            )
-        )
-
-    if not isinstance(stored_settings, dict):
-        app.logger.warning(
-            "Failed to load navigation settings from %s: root value is not "
-            "an object; last safe navigation settings will be used",
-            path,
-        )
-        return copy.deepcopy(
-            _LAST_SAFE_NAVIGATION_SETTINGS.get(
-                str(path),
-                get_safe_navigation_fallback(),
-            )
-        )
-
-    legacy_navigation = "overview" not in stored_settings
-
-    for item in NAVIGATION_DEFINITIONS:
-        key = item["key"]
-        stored_item = stored_settings.get(key)
-
-        if not isinstance(stored_item, dict):
-            continue
-
-        enabled = bool(
-            stored_item.get(
-                "enabled",
-                settings[key]["enabled"],
-            )
-        )
-
-        if legacy_navigation:
-            position = settings[key]["position"]
-        else:
-            try:
-                position = int(
-                    stored_item.get(
-                        "position",
-                        settings[key]["position"],
-                    )
-                )
-            except (TypeError, ValueError):
-                position = settings[key]["position"]
-
-        settings[key] = {
-            "enabled": enabled,
-            "position": max(1, position),
-        }
-
-    # Настройки нельзя скрыть, иначе пользователь потеряет
-    # доступ к управлению вкладками.
-    settings["settings"]["enabled"] = True
-
-    _LAST_SAFE_NAVIGATION_SETTINGS[str(path)] = copy.deepcopy(settings)
-
-    return settings
-
-
-def load_navigation_settings():
-    return copy.deepcopy(_load_navigation_settings_cached(
-        file_cache_signature(get_navigation_settings_path())
-    ))
-
-
-def save_navigation_settings(settings):
-    path = get_navigation_settings_path()
-    normalized_settings = get_default_navigation_settings()
-
-    for item in NAVIGATION_DEFINITIONS:
-        key = item["key"]
-        source = settings.get(key, {})
-
-        enabled = bool(source.get("enabled", True))
-
-        if item.get("required"):
-            enabled = True
-
-        try:
-            position = int(
-                source.get("position", item["position"])
-            )
-        except (TypeError, ValueError):
-            position = item["position"]
-
-        normalized_settings[key] = {
-            "enabled": enabled,
-            "position": max(1, position),
-        }
-
-    temporary_path = path.with_suffix(".json.tmp")
-
-    temporary_path.write_text(
-        json.dumps(
-            normalized_settings,
-            ensure_ascii=False,
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
-
-    temporary_path.replace(path)
-    _load_navigation_settings_cached.cache_clear()
-
-
 def get_active_navigation_key(current_path):
     for definition in NAVIGATION_DEFINITIONS:
-        excluded = any(
+        if any(
             current_path.startswith(prefix)
-            for prefix in definition.get(
-                "active_excluded_prefixes",
-                [],
-            )
-        )
-
-        if excluded:
-            continue
-
-        if (
-            current_path in definition.get("active_exact", [])
-            or any(
-                current_path.startswith(prefix)
-                for prefix in definition.get(
-                    "active_prefixes",
-                    [],
-                )
-            )
+            for prefix in definition.get("active_prefixes", [])
         ):
             return definition["key"]
-
     return ""
 
 
 def get_navigation_items(include_disabled=False):
-    navigation_settings = load_navigation_settings()
-    current_path = request.path
-    active_key = get_active_navigation_key(current_path)
-    items = []
-
-    for definition in NAVIGATION_DEFINITIONS:
-        key = definition["key"]
-        item_settings = navigation_settings.get(key, {})
-
-        enabled = bool(item_settings.get("enabled", True))
-
-        if definition.get("required"):
-            enabled = True
-
-        if not include_disabled and not enabled:
-            continue
-
-        item = dict(definition)
-        item["enabled"] = enabled
-        item["position"] = item_settings.get(
-            "position",
-            definition["position"],
-        )
-
-        item["active"] = key == active_key
-
-        items.append(item)
-
-    return sorted(
-        items,
-        key=lambda item: (
-            item["position"],
-            item["label"],
-        ),
-    )
+    del include_disabled
+    active_key = get_active_navigation_key(request.path)
+    return [
+        {**definition, "enabled": True, "active": definition["key"] == active_key}
+        for definition in NAVIGATION_DEFINITIONS
+    ]
 
 
 @app.context_processor
 def inject_sidebar_navigation():
     app_settings = load_app_settings()
-
     return {
         "sidebar_navigation_items": get_navigation_items(),
         "sidebar_brand": {
@@ -12327,57 +12103,7 @@ def save_app_settings(settings):
     _load_app_settings_cached.cache_clear()
 
 
-@app.route("/settings", methods=["GET", "POST"])
-def settings_page():
-    settings = load_app_settings()
-
-    if request.method == "POST":
-        require_csrf_when_authenticated()
-        company_name = (
-            request.form.get("company_name") or ""
-        ).strip()
-
-        erp_name = (
-            request.form.get("erp_name") or ""
-        ).strip()
-
-        try:
-            low_stock_threshold = int(
-                request.form.get("low_stock_threshold") or 0
-            )
-        except ValueError:
-            low_stock_threshold = 0
-
-        low_stock_threshold = max(
-            0,
-            min(low_stock_threshold, 999),
-        )
-
-        settings.update({
-            "company_name": company_name or "Tictactoy",
-            "erp_name": erp_name or "Vechasu ERP",
-            "low_stock_threshold": low_stock_threshold,
-        })
-
-        save_app_settings(settings)
-
-        return redirect(
-            "/settings?notice=success"
-            "&message=Настройки сохранены"
-        )
-
-    return render_template(
-        "settings.html",
-        settings=settings,
-        navigation_items=get_navigation_items(
-            include_disabled=True
-        ),
-        notice=(request.args.get("notice") or "").strip(),
-        message=(request.args.get("message") or "").strip(),
-        **settings_invitation_context(),
-    )
-
-
+@app.route("/api/v1/settings", methods=["GET", "PATCH"])
 @app.route("/api/v1/settings", methods=["GET", "PATCH"])
 def api_settings_resource():
     settings = load_app_settings()
@@ -12433,63 +12159,6 @@ def api_settings_resource():
         settings.update({key: changes[key] for key in changed_fields})
         save_app_settings(settings)
     return api_success(settings, changed_fields=changed_fields)
-
-
-@app.route(
-    "/settings/navigation/<key>/toggle",
-    methods=["POST"],
-)
-def navigation_toggle(key):
-    require_csrf_when_authenticated()
-    definition = next(
-        (
-            item
-            for item in NAVIGATION_DEFINITIONS
-            if item["key"] == key
-        ),
-        None,
-    )
-
-    if definition is None:
-        abort(404)
-
-    if definition.get("required"):
-        return redirect(
-            "/settings?notice=success"
-            "&message=Обязательный раздел нельзя отключить"
-        )
-
-    navigation_settings = load_navigation_settings()
-    current_item = navigation_settings[key]
-    enabled = not bool(current_item.get("enabled", True))
-
-    navigation_settings[key] = {
-        "enabled": enabled,
-        "position": current_item.get(
-            "position",
-            definition["position"],
-        ),
-    }
-
-    save_navigation_settings(navigation_settings)
-
-    state = "включён" if enabled else "отключён"
-    if "application/json" in request.headers.get("Accept", ""):
-        return api_success({
-            "key": key,
-            "label": definition["label"],
-            "enabled": enabled,
-        })
-
-    return redirect(
-        url_for(
-            "settings_page",
-            notice="success",
-            message=(
-                f"Раздел «{definition['label']}» {state}"
-            ),
-        )
-    )
 
 
 def api_success(data, status=200, **meta):
@@ -15447,6 +15116,15 @@ def react_application(react_path):
     from flask import send_from_directory
 
     build_directory = PROJECT_ROOT / "app" / "static" / "react"
+    retired_section = react_path.strip("/").split("/", 1)[0]
+    if retired_section in {
+        "repairs",
+        "repair",
+        "warehouse",
+        "stock-operations",
+        "operations",
+    }:
+        return redirect("/app/products")
     requested_path = (build_directory / react_path).resolve()
     if (
         react_path
@@ -15460,7 +15138,28 @@ def react_application(react_path):
             "React-интерфейс не собран. Выполните frontend production build.",
             503,
         )
-    return send_from_directory(build_directory, "index.html")
+    user = current_auth_user()
+    bootstrap = {
+        "user": (
+            {
+                key: user.get(key)
+                for key in ("first_name", "last_name", "email", "role")
+            }
+            if user
+            else None
+        ),
+        "csrf_token": csrf_token(),
+    }
+    encoded_bootstrap = base64.b64encode(
+        json.dumps(bootstrap, ensure_ascii=False).encode("utf-8")
+    ).decode("ascii")
+    index_html = index_path.read_text(encoding="utf-8").replace(
+        "__ERP_BOOTSTRAP__",
+        encoded_bootstrap,
+    )
+    response = make_response(index_html)
+    response.headers["Content-Type"] = "text/html; charset=utf-8"
+    return response
 
 
 if __name__ == "__main__":

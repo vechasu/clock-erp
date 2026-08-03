@@ -329,15 +329,6 @@ class ExcelProductCatalogTest(unittest.TestCase):
         bitrix.assert_not_called()
         moysklad.assert_not_called()
 
-    def test_products_page_has_photo_placeholder_lazy_and_broken_image_fallback(self):
-        self.apply_initial()
-        from app import web
-        web.app.config["TESTING"] = True
-        with mock.patch.dict("os.environ", {"CATALOG_DATABASE_PATH": str(self.path)}):
-            response = web.app.test_client().get("/products?per_page=100")
-        self.assertEqual(response.status_code, 302)
-        self.assertTrue(response.headers["Location"].endswith("/warehouse?per_page=100"))
-
     def test_search_covers_excel_bitrix_brand_article_cell_and_xml_id(self):
         self.service.apply(
             [result(
@@ -419,21 +410,6 @@ class ExcelProductCatalogTest(unittest.TestCase):
             ),
             (1, 3),
         )
-
-    def test_products_page_is_simple_daily_workflow_without_external_reads(self):
-        self.apply_initial()
-        from app import web
-        web.app.config["TESTING"] = True
-        with mock.patch.dict("os.environ", {"CATALOG_DATABASE_PATH": str(self.path)}), \
-                mock.patch.object(web, "MoySkladClient") as moysklad, \
-                mock.patch.object(web, "BitrixCatalogReadOnlyClient") as bitrix:
-            response = web.app.test_client().get(
-                "/products?q=Watch&brand=Brand&category=Watches&cell=A-2&hide_zero=1"
-            )
-        self.assertEqual(response.status_code, 302)
-        self.assertIn("/warehouse?", response.headers["Location"])
-        moysklad.assert_not_called()
-        bitrix.assert_not_called()
 
     def test_warehouse_brand_options_count_products_not_stock(self):
         self.apply_initial()
@@ -562,16 +538,6 @@ class ExcelProductCatalogTest(unittest.TestCase):
             ])
         self.assertEqual(groups, [{"name": "Ремень", "count": 3}])
 
-    def test_product_actions_use_edit_form_and_confirmed_delete_urls(self):
-        self.apply_initial()
-        product_id = self.catalog.list_products(query="Watch X1")["items"][0]["id"]
-        from app import web
-        web.app.config["TESTING"] = True
-        with mock.patch.dict("os.environ", {"CATALOG_DATABASE_PATH": str(self.path)}):
-            response = web.app.test_client().get("/products?per_page=100")
-        self.assertEqual(response.status_code, 302)
-        self.assertTrue(response.headers["Location"].endswith("/warehouse?per_page=100"))
-
     def test_product_delete_requires_confirmation_and_blocks_audit_links(self):
         self.apply_initial()
         product_id = self.catalog.list_products(query="Watch X1")["items"][0]["id"]
@@ -653,45 +619,3 @@ class ExcelProductCatalogTest(unittest.TestCase):
         self.assertIsNone(self.catalog.get_product(product_id))
         moysklad.assert_not_called()
         bitrix.assert_not_called()
-
-    def test_partial_products_response_keeps_daily_catalog_fields_only(self):
-        self.apply_initial()
-        from app import web
-        web.app.config["TESTING"] = True
-        with mock.patch.dict("os.environ", {"CATALOG_DATABASE_PATH": str(self.path)}):
-            response = web.app.test_client().get(
-                "/products?_partial=1&q=Watch&brand=Brand&sort_by=stock&sort_dir=desc"
-            )
-        self.assertEqual(response.status_code, 302)
-        self.assertIn("/warehouse?", response.headers["Location"])
-
-    def test_product_detail_preserves_safe_return_url(self):
-        self.apply_initial()
-        product_id = self.catalog.list_products(query="Watch X1")["items"][0]["id"]
-        from app import web
-        web.app.config["TESTING"] = True
-        with mock.patch.dict("os.environ", {"CATALOG_DATABASE_PATH": str(self.path)}):
-            client = web.app.test_client()
-            response = client.get(
-                "/products/{}?return_to=%2Fproducts%3Fbrand%3DBrand%26hide_zero%3D1".format(product_id)
-            )
-            unsafe = client.get(
-                "/products/{}?return_to=https%3A%2F%2Fevil.test".format(product_id)
-            )
-        self.assertIn('href="/products?brand=Brand&amp;hide_zero=1"', response.get_data(as_text=True))
-        self.assertIn('href="/warehouse"', unsafe.get_data(as_text=True))
-
-    def test_operational_add_link_opens_preserved_warehouse_form(self):
-        from app import web
-        web.app.config["TESTING"] = True
-        with mock.patch.object(web, "get_warehouse_items", return_value=[]), \
-                mock.patch.object(web, "load_stock_operations", return_value=[]):
-            response = web.app.test_client().get("/warehouse?open_add=1")
-        rendered = response.get_data(as_text=True)
-        self.assertEqual(response.status_code, 200)
-        self.assertIn('class="add-card" id="warehouseAddCard"', rendered)
-        self.assertIn('id="warehouseBulkForm"', rendered)
-
-
-if __name__ == "__main__":
-    unittest.main()

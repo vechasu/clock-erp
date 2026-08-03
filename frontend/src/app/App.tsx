@@ -2,7 +2,6 @@ import { lazy, Suspense } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 
 import { LoadingState } from '../components/Layout';
-import { NotMigratedPage } from '../pages/NotMigratedPage';
 
 const ProductsPage = lazy(() =>
   import('../features/products/ProductsPage').then((module) => ({
@@ -14,14 +13,14 @@ const ReceiptsPage = lazy(() =>
     default: module.ReceiptsPage,
   })),
 );
-const RepairsPage = lazy(() =>
-  import('../features/repairs/RepairsPage').then((module) => ({
-    default: module.RepairsPage,
-  })),
-);
 const SalesPage = lazy(() =>
   import('../features/sales/SalesPage').then((module) => ({
     default: module.SalesPage,
+  })),
+);
+const SettingsPage = lazy(() =>
+  import('../features/settings/SettingsPage').then((module) => ({
+    default: module.SettingsPage,
   })),
 );
 
@@ -33,8 +32,8 @@ export function App() {
         <Route path="products" element={<ProductsPage />} />
         <Route path="receipts" element={<ReceiptsPage />} />
         <Route path="sales" element={<SalesPage />} />
-        <Route path="repairs" element={<RepairsPage />} />
-        <Route path="*" element={<NotMigratedPage />} />
+        <Route path="settings" element={<SettingsPage />} />
+        <Route path="*" element={<Navigate replace to="/products" />} />
       </Routes>
     </Suspense>
   );
