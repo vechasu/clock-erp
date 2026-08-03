@@ -284,6 +284,7 @@ export function CatalogCascade({
           }
         />
         <CategoryCombobox
+          key={`category-${brandId ?? 'none'}`}
           label="Категория"
           required={required}
           placeholder={brandId ? 'Найдите категорию' : 'Сначала выберите бренд'}
@@ -309,6 +310,7 @@ export function CatalogCascade({
         />
         {showProduct ? (
           <ProductCombobox
+            key={`product-${brandId ?? 'none'}-${categoryId ?? 'none'}`}
             label="Товар"
             required={required}
             placeholder={categoryId ? 'Найдите товар' : 'Сначала выберите категорию'}

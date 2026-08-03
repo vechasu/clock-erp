@@ -111,6 +111,15 @@ describe('CatalogCascade', () => {
     );
 
     expect(screen.getByRole('combobox', { name: 'Товар *' })).toHaveValue('Casio A168');
+    await user.click(screen.getByRole('button', { name: 'Очистить поле «Товар»' }));
+    await user.type(screen.getByRole('combobox', { name: 'Товар *' }), 'Черновик товара');
+    expect(screen.getByRole('combobox', { name: 'Товар *' })).toHaveValue('Черновик товара');
+    await user.click(screen.getByRole('button', { name: 'Очистить поле «Категория»' }));
+    await waitFor(() => {
+      expect(screen.getByRole('combobox', { name: 'Товар *' })).toHaveValue('');
+    });
+    expect(screen.getByRole('combobox', { name: 'Товар *' })).toBeDisabled();
+
     await user.click(screen.getByRole('button', { name: 'Очистить поле «Бренд»' }));
     await waitFor(() => {
       expect(screen.getByRole('combobox', { name: 'Категория *' })).toHaveValue('');
