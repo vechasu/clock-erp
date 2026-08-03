@@ -188,9 +188,13 @@
         /* Конец компактного верха страницы */
 
 </style>
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='css/erp-components.css') }}"
+    >
 </head>
 
-<body>
+<body class="settings-page">
 <div class="app">
     {% include "_sidebar.html" %}
 
