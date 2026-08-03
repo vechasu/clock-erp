@@ -22,6 +22,8 @@ class ReceiptsUiRegressionsTest(unittest.TestCase):
         self.assertIn('id="receiptsTable"', self.template)
         self.assertIn("receipt-column-resize-handle", self.template)
         self.assertIn("vechasu-receipts-table-view-v1", self.template)
+        self.assertNotIn("width: 100% !important", self.template)
+        self.assertIn('let total = 112;', self.template)
 
     def test_receipt_editor_is_a_product_style_modal_with_photo(self):
         self.assertIn('id="receiptEditModal"', self.template)

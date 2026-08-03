@@ -1930,7 +1930,9 @@ def warehouse_product_thumbnail(product_id):
         abort(404)
 
     if not thumbnail:
-        abort(404)
+        response = Response(status=204)
+        response.headers["Cache-Control"] = "private, max-age=300"
+        return response
 
     content, content_type = thumbnail
     response = Response(content, mimetype=content_type)
@@ -14069,18 +14071,20 @@ def api_receipt_resource(receipt_id):
                 position.get("moysklad_product_id")
                 or position["product_id"]
             )
-            if moysklad_client.product_has_images(image_product_id):
-                image_message = (
-                    "У товара уже есть фото — дубликат не создавался."
-                )
-            elif not moysklad_client.upload_product_image(
+            had_product_image = moysklad_client.product_has_images(
+                image_product_id
+            )
+            if not moysklad_client.upload_product_image(
                 image_product_id,
                 product_image["filename"],
                 product_image["content"],
             ):
                 raise ValueError("МойСклад не сохранил изображение.")
-            else:
-                image_message = "Фото товара добавлено."
+            image_message = (
+                "Фото товара обновлено."
+                if had_product_image
+                else "Фото товара добавлено."
+            )
         receipt.update({
             "number": document_number,
             "receipt_date": receipt_date,
