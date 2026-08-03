@@ -796,6 +796,116 @@ class UnifiedCatalogApiTest(unittest.TestCase):
         ).get_json()["data"]
         self.assertEqual(incompatible, [])
 
+    def test_new_brand_reuses_global_category_for_product_and_receipt(self):
+        brand_response = self.client.post(
+            "/api/v1/brands",
+            json={"name": "Global Category Brand"},
+        )
+        self.assertEqual(brand_response.status_code, 201)
+        brand = brand_response.get_json()["data"]
+
+        category_options = self.client.get(
+            "/api/v1/catalog/options?type=category&brand_id={}".format(
+                brand["id"]
+            )
+        ).get_json()["data"]
+        self.assertIn(
+            self.product["category_id"],
+            [item["id"] for item in category_options],
+        )
+
+        product_response = self.client.post(
+            "/api/v1/products",
+            json={
+                "name": "Global Category Product",
+                "article": "GLOBAL-CATEGORY-1",
+                "brand_id": brand["id"],
+                "category_id": self.product["category_id"],
+                "stock": 0,
+            },
+        )
+        self.assertEqual(product_response.status_code, 201)
+        product = product_response.get_json()["data"]
+        self.assertEqual(product["brand_id"], brand["id"])
+        self.assertEqual(
+            product["category_id"],
+            self.product["category_id"],
+        )
+
+        receipt_response = self.client.post(
+            "/api/v1/receipts",
+            json={
+                "receipt_date": "2026-08-03",
+                "note": "Глобальная категория",
+                "idempotency_key": "global-category-receipt",
+                "positions": [{
+                    "product_id": str(product["id"]),
+                    "brand_id": brand["id"],
+                    "category_id": self.product["category_id"],
+                    "quantity": 1,
+                    "purchase_price": 100,
+                }],
+            },
+        )
+        self.assertEqual(receipt_response.status_code, 201)
+        receipt_position = receipt_response.get_json()["data"]["positions"][0]
+        self.assertEqual(receipt_position["brand_id"], brand["id"])
+        self.assertEqual(
+            receipt_position["category_id"],
+            self.product["category_id"],
+        )
+
+    def test_category_creation_is_global_and_normalized(self):
+        brand = self.client.post(
+            "/api/v1/brands",
+            json={"name": "Duplicate Guard Brand"},
+        ).get_json()["data"]
+
+        duplicate_response = self.client.post(
+            "/api/v1/categories",
+            json={
+                "brand_id": brand["id"],
+                "name": "  нАРУЧНЫЕ ЧАСЫ  ",
+            },
+        )
+        self.assertEqual(duplicate_response.status_code, 409)
+        duplicate = duplicate_response.get_json()
+        self.assertEqual(duplicate["code"], "CATEGORY_ALREADY_EXISTS")
+        self.assertEqual(
+            duplicate["fields"]["existing"]["id"],
+            self.product["category_id"],
+        )
+
+        with CatalogDatabase(self.database_path).connect() as connection:
+            count = connection.execute(
+                "SELECT COUNT(*) FROM erp_categories "
+                "WHERE normalized_name = ?",
+                ("наручные часы",),
+            ).fetchone()[0]
+        self.assertEqual(count, 1)
+
+    def test_category_options_prioritize_used_then_offer_global_values(self):
+        other_brand = self.client.post(
+            "/api/v1/brands",
+            json={"name": "Other Category Brand"},
+        ).get_json()["data"]
+        other_category = self.client.post(
+            "/api/v1/categories",
+            json={
+                "brand_id": other_brand["id"],
+                "name": "Настольные часы",
+            },
+        ).get_json()["data"]
+
+        options = self.client.get(
+            "/api/v1/catalog/options?type=category&brand_id={}".format(
+                self.product["brand_id"]
+            )
+        ).get_json()["data"]
+        option_ids = [item["id"] for item in options]
+        self.assertEqual(option_ids[0], self.product["category_id"])
+        self.assertIn(other_category["id"], option_ids)
+
     def test_visible_sections_keep_the_approved_legacy_entrypoints(self):
         products = self.client.get("/products")
         sales = self.client.get("/sales")

@@ -1240,8 +1240,8 @@ class CatalogDatabase:
                 return None
             row = connection.execute(
                 "SELECT id, name FROM erp_categories "
-                "WHERE brand_id = ? AND normalized_name = ?",
-                (int(brand_id), key),
+                "WHERE normalized_name = ? ORDER BY id LIMIT 1",
+                (key,),
             ).fetchone()
             if row is None:
                 connection.execute(
@@ -1252,8 +1252,8 @@ class CatalogDatabase:
                 )
                 row = connection.execute(
                     "SELECT id, name FROM erp_categories "
-                    "WHERE brand_id = ? AND normalized_name = ?",
-                    (int(brand_id), key),
+                    "WHERE normalized_name = ? ORDER BY id LIMIT 1",
+                    (key,),
                 ).fetchone()
             elif row["name"] != display_name:
                 connection.execute(

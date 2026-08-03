@@ -113,6 +113,75 @@ class UnifiedCatalogInventoryTest(unittest.TestCase):
             {str(casio["id"]), str(casio_variant["id"])},
         )
 
+    def test_category_ids_are_global_across_brands(self):
+        casio = self.create_product()
+        seiko = self.create_product(
+            name="Seiko Global Category",
+            brand="Seiko",
+            category="  нАРУЧНЫЕ ЧАСЫ  ",
+        )
+
+        self.assertNotEqual(casio["brand_id"], seiko["brand_id"])
+        self.assertEqual(casio["category_id"], seiko["category_id"])
+        with self.assertRaises(DuplicateCatalogValueError) as duplicate:
+            self.catalog.create_category(
+                seiko["brand_id"],
+                " Наручные часы ",
+            )
+        self.assertEqual(
+            duplicate.exception.existing["id"],
+            casio["category_id"],
+        )
+
+    def test_legacy_per_brand_category_copy_resolves_to_global_id(self):
+        casio = self.create_product()
+        seiko = self.create_product(
+            name="Seiko Legacy Category",
+            brand="Seiko",
+            category="Наручные часы",
+        )
+        with self.database.transaction() as connection:
+            now = "2026-08-03T10:00:00+00:00"
+            cursor = connection.execute(
+                "INSERT INTO erp_categories "
+                "(brand_id, name, normalized_name, active, created_at, updated_at) "
+                "VALUES (?, ?, ?, 1, ?, ?)",
+                (
+                    seiko["brand_id"],
+                    " наручные часы ",
+                    "наручные часы",
+                    now,
+                    now,
+                ),
+            )
+            legacy_category_id = cursor.lastrowid
+            connection.execute(
+                "UPDATE catalog_excel_products SET category_id = ? WHERE id = ?",
+                (legacy_category_id, seiko["id"]),
+            )
+
+        options = self.catalog.list_category_options(
+            brand_id=seiko["brand_id"],
+        )
+        wristwatch_options = [
+            item for item in options
+            if item["name"].strip().casefold() == "наручные часы"
+        ]
+        self.assertEqual(
+            [item["id"] for item in wristwatch_options],
+            [casio["category_id"]],
+        )
+        products = self.catalog.list_products(
+            brand_id=seiko["brand_id"],
+            category_id=casio["category_id"],
+        )
+        self.assertEqual([item["id"] for item in products], [str(seiko["id"])])
+        self.assertEqual(products[0]["category_id"], casio["category_id"])
+        self.assertEqual(
+            self.catalog.products_by_ids([seiko["id"]])[str(seiko["id"])]["category_id"],
+            casio["category_id"],
+        )
+
     def test_rename_is_visible_through_shared_product_without_relinking_history(self):
         product = self.create_product(stock=1)
         self.sales.create_sale(

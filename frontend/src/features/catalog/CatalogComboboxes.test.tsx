@@ -348,4 +348,90 @@ describe('CatalogCascade', () => {
       category_id: 70,
     });
   });
+
+  it('reuses a global category after creating a brand without posting a duplicate', async () => {
+    const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input), 'https://erp.test');
+      if (init?.method === 'POST' && url.pathname.endsWith('/brands')) {
+        return Promise.resolve(
+          envelope({ id: 7, name: 'Global Test Brand', active: true, product_count: 0 }),
+        );
+      }
+      if (init?.method === 'POST' && url.pathname.endsWith('/products')) {
+        const values = JSON.parse(String(init.body));
+        return Promise.resolve(
+          envelope({
+            id: '700',
+            name: values.name,
+            article: '',
+            barcode: '',
+            brand_id: values.brand_id,
+            category_id: values.category_id,
+            brand: 'Global Test Brand',
+            category: 'Наручные часы',
+            cell: '',
+            stock: 0,
+            stock_display: '0',
+          }),
+        );
+      }
+      const kind = url.searchParams.get('type');
+      if (kind === 'category') {
+        expect(url.searchParams.get('brand_id')).toBe('7');
+        return Promise.resolve(
+          envelope([
+            {
+              id: 10,
+              brand_id: 1,
+              name: 'Наручные часы',
+              brand_name: 'Casio',
+              active: true,
+              product_count: 10,
+            },
+          ]),
+        );
+      }
+      return Promise.resolve(envelope([]));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    render(
+      <AppProviders>
+        <Harness allowCreate />
+      </AppProviders>,
+    );
+
+    const brand = screen.getByRole('combobox', { name: 'Бренд *' });
+    await user.type(brand, 'Global Test Brand');
+    await user.click(await screen.findByRole('option', { name: '➕ Создать "Global Test Brand"' }));
+    await waitFor(() => expect(brand).toHaveValue('Global Test Brand'));
+
+    const category = screen.getByRole('combobox', { name: 'Категория *' });
+    await user.click(category);
+    await user.click(await screen.findByRole('option', { name: 'Наручные часы' }));
+    expect(category).toHaveValue('Наручные часы');
+
+    const product = screen.getByRole('combobox', { name: 'Товар *' });
+    await user.type(product, 'Global Test Product');
+    await user.click(
+      await screen.findByRole('option', { name: '➕ Создать "Global Test Product"' }),
+    );
+    await waitFor(() => expect(product).toHaveValue('Global Test Product'));
+
+    const categoryPosts = fetchMock.mock.calls.filter(
+      ([input, init]) =>
+        (init as RequestInit | undefined)?.method === 'POST' &&
+        String(input).endsWith('/categories'),
+    );
+    expect(categoryPosts).toHaveLength(0);
+    const productPost = fetchMock.mock.calls.find(
+      ([input, init]) =>
+        (init as RequestInit | undefined)?.method === 'POST' &&
+        String(input).endsWith('/products'),
+    );
+    expect(JSON.parse(String((productPost?.[1] as RequestInit).body))).toMatchObject({
+      brand_id: 7,
+      category_id: 10,
+    });
+  });
 });
