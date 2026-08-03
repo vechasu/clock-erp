@@ -10093,6 +10093,16 @@ def receipt_create():
         request.form.get("receipt_date")
         or datetime.now().strftime("%Y-%m-%d")
     ).strip()
+    requested_document_number = (
+        request.form.get("document_number") or ""
+    ).strip()
+    if len(requested_document_number) > 120:
+        return redirect(url_for(
+            "receipts_page",
+            notice="error",
+            message="Номер документа не должен превышать 120 символов",
+            open_receipt_modal="1",
+        ))
     note = (request.form.get("note") or "").strip()
 
     raw_import_payload = (
@@ -10658,7 +10668,10 @@ def receipt_create():
 
     receipts = load_receipts()
     receipt_id = str(uuid.uuid4())
-    receipt_number = generate_receipt_number(receipts)
+    receipt_number = (
+        requested_document_number
+        or generate_receipt_number(receipts)
+    )
 
     first_position = positions[0]
 
@@ -10880,6 +10893,10 @@ def receipt_update():
         request.form.get("receipt_date") or ""
     ).strip()
 
+    document_number = (
+        request.form.get("document_number") or ""
+    ).strip()
+
     brand = (
         request.form.get("brand") or ""
     ).strip()
@@ -10912,6 +10929,13 @@ def receipt_update():
             "receipts_page",
             notice="error",
             message="Укажите дату прихода",
+        ))
+
+    if len(document_number) > 120:
+        return redirect(url_for(
+            "receipts_page",
+            notice="error",
+            message="Номер документа не должен превышать 120 символов",
         ))
 
     if not brand:
@@ -11115,6 +11139,7 @@ def receipt_update():
             )
 
         receipt.update({
+            "number": document_number,
             "receipt_date": receipt_date,
             "brand": brand,
             "category": category,
@@ -12740,6 +12765,10 @@ def api_catalog_options():
                 brand_id=request.args.get("brand_id"),
                 query=query,
                 limit=limit,
+                only_used_by_brand=(
+                    (request.args.get("category_scope") or "").strip()
+                    == "brand"
+                ),
             )
         elif kind == "product":
             items = catalog.list_products(
@@ -12845,6 +12874,11 @@ def serialize_api_receipt(
             "product_name": str(
                 product.get("name") if product else position.get("product_name") or ""
             ),
+            "moysklad_product_id": str(
+                product.get("moysklad_product_id")
+                if product
+                else position.get("moysklad_product_id") or ""
+            ),
             "article": str(
                 product.get("article") if product else position.get("article") or ""
             ),
@@ -12886,6 +12920,9 @@ def serialize_api_receipt(
         product = catalog_lookup.get(linked_product_id)
         positions = [{
             "product_id": linked_product_id,
+            "moysklad_product_id": str(
+                product.get("moysklad_product_id") if product else ""
+            ),
             "brand_id": (
                 product.get("brand_id") if product else receipt.get("brand_id")
             ),
@@ -12955,6 +12992,14 @@ def serialize_api_receipt(
             positions[0]["product_name"]
             if positions
             else receipt.get("product_name") or ""
+        ),
+        "product_image_url": (
+            "/warehouse/product/{}/thumbnail".format(
+                positions[0].get("moysklad_product_id")
+            )
+            if positions
+            and positions[0].get("moysklad_product_id")
+            else ""
         ),
         "note": str(receipt.get("note") or ""),
         "comment": str(receipt.get("note") or ""),
@@ -13508,11 +13553,6 @@ def api_receipts_collection():
         receipt_inventory = ReceiptInventory(receipt_database)
         try:
             payload, product_image = api_receipt_request_payload()
-            if product_image:
-                raise ValueError(
-                    "Фото существующего товара нельзя менять через приход. "
-                    "Добавьте фото при создании товара или в его карточке."
-                )
             request_idempotency_key = str(
                 request.headers.get("Idempotency-Key")
                 or payload.get("idempotency_key")
@@ -13942,7 +13982,13 @@ def api_receipt_resource(receipt_id):
             409,
         )
     try:
-        payload = api_json_payload()
+        if request.is_json:
+            payload = api_json_payload()
+            product_image = decode_api_product_image(
+                payload.get("product_image")
+            )
+        else:
+            payload, product_image = api_receipt_request_payload()
         receipt_date = validate_api_receipt_date(
             payload.get("receipt_date")
             or payload.get("date")
@@ -13962,8 +14008,6 @@ def api_receipt_resource(receipt_id):
             if "number" in payload
             else receipt.get("number") or ""
         ).strip()
-        if not document_number:
-            raise ValueError("Укажите номер документа.")
         if len(document_number) > 120:
             raise ValueError("Номер документа не должен превышать 120 символов.")
         if len(note) > 2000:
@@ -14019,6 +14063,24 @@ def api_receipt_resource(receipt_id):
         )
         if not document:
             raise ValueError("МойСклад не обновил приход.")
+        image_message = ""
+        if product_image:
+            image_product_id = (
+                position.get("moysklad_product_id")
+                or position["product_id"]
+            )
+            if moysklad_client.product_has_images(image_product_id):
+                image_message = (
+                    "У товара уже есть фото — дубликат не создавался."
+                )
+            elif not moysklad_client.upload_product_image(
+                image_product_id,
+                product_image["filename"],
+                product_image["content"],
+            ):
+                raise ValueError("МойСклад не сохранил изображение.")
+            else:
+                image_message = "Фото товара добавлено."
         receipt.update({
             "number": document_number,
             "receipt_date": receipt_date,
@@ -14082,7 +14144,10 @@ def api_receipt_resource(receipt_id):
         return api_error("REMOTE_DOCUMENT_CONFLICT", str(error), 502)
     WAREHOUSE_CACHE["items"] = []
     WAREHOUSE_CACHE["loaded_at"] = 0
-    return api_success(serialize_api_receipt(receipt))
+    return api_success(
+        serialize_api_receipt(receipt),
+        image_message=image_message,
+    )
 
 
 API_SALE_TEXT_FIELDS = (

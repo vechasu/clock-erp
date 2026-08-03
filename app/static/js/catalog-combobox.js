@@ -679,7 +679,7 @@
             : "➕ Создать";
     };
 
-    function sharedCatalogOption(item, kind) {
+    function sharedCatalogOption(item, kind, hideCategoryCount) {
         const product = kind === "product";
         return {
             value: product
@@ -705,7 +705,9 @@
                 : "",
             count: product
                 ? "Остаток: " + (item.stock_display ?? item.stock ?? 0)
-                : (item.product_count ?? item.count ?? ""),
+                : kind === "category" && hideCategoryCount
+                    ? ""
+                    : (item.product_count ?? item.count ?? ""),
             item,
         };
     }
@@ -724,6 +726,7 @@
         combobox.dataset.sharedCatalogSelectedId = "";
         combobox.dataset.sharedCatalogSelectedLabel = "";
         combobox.dataset.sharedCatalogSelectedItem = "";
+        combobox.dataset.sharedCatalogNewValue = "";
         window.setBrandComboboxValue(combobox, "", "");
     };
 
@@ -752,6 +755,7 @@
         combobox.dataset.sharedCatalogSelectedId = itemId;
         combobox.dataset.sharedCatalogSelectedLabel = displayValue;
         combobox.dataset.sharedCatalogSelectedItem = JSON.stringify(item);
+        combobox.dataset.sharedCatalogNewValue = "";
         window.setBrandComboboxValue(
             combobox,
             primaryValue,
@@ -826,6 +830,12 @@
         const categoryId = selectedSharedCatalogId(
             sharedCatalogCombobox(scope, "category")
         );
+        const brandCombobox = sharedCatalogCombobox(scope, "brand");
+        const newBrandUsesGlobalCategories = Boolean(
+            kind === "category"
+            && scope?.dataset.newBrandGlobalCategories === "true"
+            && brandCombobox?.dataset.sharedCatalogNewValue === "true"
+        );
 
         if (
             (kind === "category" && !brandId)
@@ -852,6 +862,15 @@
         }
         if (kind !== "brand") {
             parameters.set("brand_id", brandId);
+        }
+        if (
+            kind === "category"
+            && scope?.dataset.newBrandGlobalCategories === "true"
+        ) {
+            parameters.set(
+                "category_scope",
+                newBrandUsesGlobalCategories ? "all" : "brand"
+            );
         }
         if (kind === "product") {
             parameters.set("category_id", categoryId);
@@ -910,7 +929,11 @@
             }
 
             const options = availableItems.map((item) =>
-                sharedCatalogOption(item, kind)
+                sharedCatalogOption(
+                    item,
+                    kind,
+                    newBrandUsesGlobalCategories
+                )
             );
             window.replaceCatalogComboboxOptions(
                 combobox,
@@ -1065,6 +1088,7 @@
                 combobox.dataset.sharedCatalogSelectedId = id;
                 combobox.dataset.sharedCatalogSelectedLabel = label;
                 combobox.dataset.sharedCatalogSelectedItem = "";
+                combobox.dataset.sharedCatalogNewValue = "";
                 window.setBrandComboboxValue(
                     combobox,
                     primary,
@@ -1225,6 +1249,7 @@
                     combobox,
                     result.data
                 );
+                combobox.dataset.sharedCatalogNewValue = "true";
                 const search = combobox.querySelector(
                     ".brand-combobox-search"
                 );

@@ -649,85 +649,10 @@
             white-space: nowrap;
         }
 
-        .receipt-table-control {
-            width: 100%;
-            min-height: 34px;
-            padding: 6px 8px;
-            border: 1px solid #cbd5e1;
-            border-radius: 8px;
-            background: #ffffff;
-            color: #172033;
-            font: inherit;
-            font-size: 12px;
-            outline: none;
-        }
-
-        .receipt-table-control:focus {
-            border-color: #2563eb;
-            box-shadow:
-                0 0 0 3px rgba(37, 99, 235, 0.1);
-        }
-
-        .receipt-edit-control {
-            display: none !important;
-        }
-
-        .receipt-row .receipt-edit-control[hidden] {
-            display: none !important;
-        }
-
-        .receipt-row.is-editing {
-            background: #eff6ff;
-        }
-
-        .receipt-row.is-editing:hover {
-            background: #dbeafe;
-        }
-
-        .receipt-row.is-editing
-        .receipt-view-value {
-            display: none !important;
-        }
-
-        .receipt-row.is-editing
-        td.receipt-immutable
-        .receipt-view-value {
-            display: block !important;
-        }
-
-        .receipt-row.is-editing
-        .receipt-edit-control {
-            display: block !important;
-        }
-
-        .receipt-row.is-editing
-        .receipt-edit-control[hidden] {
-            display: none !important;
-        }
-
-        .receipt-view-actions,
-        .receipt-edit-actions {
+        .receipt-view-actions {
             align-items: center;
             justify-content: center;
             gap: 5px;
-        }
-
-        .receipt-view-actions {
-            display: flex;
-        }
-
-        .receipt-edit-actions {
-            display: none;
-            flex-direction: column;
-        }
-
-        .receipt-row.is-editing
-        .receipt-view-actions {
-            display: none;
-        }
-
-        .receipt-row.is-editing
-        .receipt-edit-actions {
             display: flex;
         }
 
@@ -903,11 +828,6 @@
             background: #f8fafc;
         }
 
-        .receipts-table tbody tr.is-editing
-        td.col-actions {
-            background: #eff6ff;
-        }
-
         .receipts-table th,
         .receipts-table td {
             overflow: hidden;
@@ -915,9 +835,7 @@
         }
 
         .receipts-table .positions-details,
-        .receipts-table .receipt-edit-control,
-        .receipts-table .receipt-view-actions,
-        .receipts-table .receipt-edit-actions {
+        .receipts-table .receipt-view-actions {
             overflow: visible;
         }
 
@@ -965,11 +883,153 @@
 
         /* RECEIPT PRODUCT NAME ONLY CSS V1 */
         .receipt-product-name-only {
+            display: flex;
+            align-items: center;
+            gap: 8px;
             color: #172033;
             font-weight: 700;
             line-height: 1.35;
             white-space: normal;
             overflow-wrap: anywhere;
+        }
+
+        .receipt-product-thumb {
+            flex: 0 0 34px;
+            width: 34px;
+            height: 34px;
+            border: 1px solid #dbe2ea;
+            border-radius: 8px;
+            object-fit: cover;
+            background: #f8fafc;
+        }
+
+        .receipt-date-stack {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .receipt-date-primary {
+            color: #172033;
+            font-weight: 700;
+        }
+
+        .receipt-date-time {
+            color: #94a3b8;
+            font-size: 11px;
+            font-weight: 500;
+        }
+
+        .receipts-table th[data-column-key] {
+            position: relative;
+            user-select: none;
+        }
+
+        .receipt-column-resize-handle {
+            position: absolute;
+            top: 0;
+            right: -4px;
+            z-index: 6;
+            width: 9px;
+            height: 100%;
+            cursor: col-resize;
+            touch-action: none;
+        }
+
+        .receipt-column-resize-handle::after {
+            position: absolute;
+            top: 18%;
+            bottom: 18%;
+            left: 4px;
+            width: 1px;
+            background: #cbd5e1;
+            content: "";
+            opacity: 0;
+        }
+
+        .receipts-table th:hover .receipt-column-resize-handle::after,
+        .receipt-column-resize-handle.is-active::after {
+            opacity: 1;
+            background: #2563eb;
+        }
+
+        body.receipt-column-resizing {
+            cursor: col-resize;
+            user-select: none;
+        }
+
+        .receipt-edit-dialog {
+            width: min(860px, calc(100vw - 32px));
+        }
+
+        .receipt-card-layout {
+            display: grid;
+            grid-template-columns: minmax(0, 220px) minmax(0, 1fr);
+            gap: 20px;
+        }
+
+        .receipt-card-media img {
+            display: block;
+            width: 100%;
+            aspect-ratio: 1;
+            border: 1px solid #dbe2ea;
+            border-radius: 14px;
+            object-fit: cover;
+            background: #f8fafc;
+        }
+
+        .receipt-card-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px;
+        }
+
+        .receipt-card-field {
+            display: flex;
+            min-width: 0;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .receipt-card-field > span {
+            color: #64748b;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .receipt-card-field > strong {
+            min-height: 40px;
+            padding: 10px 11px;
+            border-radius: 9px;
+            background: #f1f5f9;
+            color: #172033;
+        }
+
+        .receipt-card-field-wide {
+            grid-column: 1 / -1;
+        }
+
+        .receipt-edit-photo-field small {
+            color: #64748b;
+            font-size: 12px;
+        }
+
+        .receipt-edit-photo-field img {
+            width: 112px;
+            height: 112px;
+            border-radius: 10px;
+            object-fit: cover;
+        }
+
+        @media (max-width: 700px) {
+            .receipt-card-layout,
+            .receipt-card-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .receipt-card-media img {
+                max-width: 220px;
+            }
         }
         /* RECEIPT PRODUCT NAME ONLY CSS V1 END */
 
@@ -1398,18 +1458,6 @@
             margin-top: 12px;
         }
 
-        .receipt-edit-control .brand-combobox-trigger {
-            min-height: 40px;
-            height: 40px;
-            border-radius: 10px;
-            font-size: 12px;
-            line-height: 38px;
-        }
-
-        .receipt-edit-control .brand-combobox-dropdown {
-            min-width: 260px;
-        }
-
     </style>
     <link
         rel="stylesheet"
@@ -1480,7 +1528,7 @@
                 class="search"
                 id="receiptSearch"
                 type="search"
-                placeholder="Поиск по документу, бренду, категории или товару"
+                placeholder="Поиск"
                 oninput="filterReceipts()"
             >
 
@@ -1653,10 +1701,21 @@
         <section class="table-card">
             {% if receipts %}
                 <div class="table-wrap">
-                    <table class="receipts-table">
+                    <table class="receipts-table erp-data-table" id="receiptsTable">
+                        <colgroup>
+                            <col data-column-key="date">
+                            <col data-column-key="document">
+                            <col data-column-key="comment">
+                            <col data-column-key="brand">
+                            <col data-column-key="category">
+                            <col data-column-key="product">
+                            <col data-column-key="quantity">
+                            <col data-column-key="status">
+                            <col data-system-column="actions">
+                        </colgroup>
                         <thead>
                             <tr>
-                                <th class="col-date">
+                                <th class="col-date" data-column-key="date">
                                     <button
                                         class="receipt-sort-button"
                                         type="button"
@@ -1672,7 +1731,7 @@
                                     </button>
                                 </th>
 
-                                <th class="col-number">
+                                <th class="col-number" data-column-key="document">
                                     <button
                                         class="receipt-sort-button"
                                         type="button"
@@ -1688,11 +1747,11 @@
                                     </button>
                                 </th>
 
-                                <th class="col-comment">
+                                <th class="col-comment" data-column-key="comment">
                                     Комментарий
                                 </th>
 
-                                <th class="col-supplier">
+                                <th class="col-supplier" data-column-key="brand">
                                     <button
                                         class="receipt-sort-button"
                                         type="button"
@@ -1708,7 +1767,7 @@
                                     </button>
                                 </th>
 
-                                <th class="col-invoice">
+                                <th class="col-invoice" data-column-key="category">
                                     <button
                                         class="receipt-sort-button"
                                         type="button"
@@ -1724,7 +1783,7 @@
                                     </button>
                                 </th>
 
-                                <th class="col-products">
+                                <th class="col-products" data-column-key="product">
                                     <button
                                         class="receipt-sort-button"
                                         type="button"
@@ -1740,7 +1799,7 @@
                                     </button>
                                 </th>
 
-                                <th class="col-qty">
+                                <th class="col-qty" data-column-key="quantity">
                                     <button
                                         class="receipt-sort-button"
                                         type="button"
@@ -1756,7 +1815,7 @@
                                     </button>
                                 </th>
 
-                                <th class="col-status">
+                                <th class="col-status" data-column-key="status">
                                     <button
                                         class="receipt-sort-button"
                                         type="button"
@@ -1771,7 +1830,7 @@
                                         </span>
                                     </button>
                                 </th>
-                                <th class="col-actions">
+                                <th class="col-actions" data-system-column="actions">
                                     Действия
                                 </th>
                             </tr>
@@ -1780,16 +1839,13 @@
                                                 <!-- RECEIPT ROW ACTIONS UI V1 -->
                         <tbody id="receiptsTableBody">
                             {% for receipt in receipts %}
-                                {% set edit_form_id = "edit-receipt-" ~ receipt.id %}
                                 {% set receipt_position = receipt.positions[0] if receipt.positions else none %}
-                                {% set receipt_quantity = receipt.quantity if receipt.quantity is defined and receipt.quantity is not none else receipt.total_quantity %}
                                 {% set receipt_product_id = receipt.product_id or (receipt_position.product_id if receipt_position else "") %}
                                 {% set receipt_product_name = receipt.product_name or (receipt_position.product_name if receipt_position else "") %}
 
                                 <tr
                                     class="receipt-row"
-                                    data-receipt-catalog-context
-                                    data-shared-catalog-scope
+                                    data-receipt-id="{{ receipt.id }}"
                                     data-search="{{ (
                                         (receipt.number or '') ~ ' ' ~
                                         (receipt.brand or receipt.supplier or '') ~ ' ' ~
@@ -1806,14 +1862,25 @@
                                     data-category-id="{{ receipt.category_id or (receipt_position.category_id if receipt_position else '') }}"
                                     data-product="{{ receipt_product_name }}"
                                     data-product-id="{{ receipt_product_id }}"
+                                    data-product-image="{{ receipt.product_image_url or '' }}"
                                     data-quantity="{{ receipt.total_quantity or 0 }}"
                                     data-status="{{ receipt.status_label or 'Проведён' }}"
                                 >
-                                    <td class="col-date">
-                                        <span class="receipt-view-value receipt-date-desktop">
-                                            {{ receipt.receipt_date or receipt.created_at }}
-                                        </span>
+                                    <td class="col-date" data-column-key="date">
                                         {% set receipt_date_value = receipt.receipt_date or receipt.created_at or "" %}
+                                        {% set receipt_created_value = receipt.created_at or "" %}
+                                        <span class="receipt-view-value receipt-date-desktop receipt-date-stack">
+                                            <span class="receipt-date-primary">
+                                                {% if receipt_date_value|length >= 10 %}
+                                                    {{ receipt_date_value[8:10] }}.{{ receipt_date_value[5:7] }}.{{ receipt_date_value[:4] }}
+                                                {% else %}
+                                                    {{ receipt_date_value or "—" }}
+                                                {% endif %}
+                                            </span>
+                                            {% if receipt_created_value|length >= 16 %}
+                                                <span class="receipt-date-time">{{ receipt_created_value[11:16] }}</span>
+                                            {% endif %}
+                                        </span>
                                         <span class="receipt-view-value mobile-erp-only receipt-date-mobile">
                                             {% if receipt_date_value|length >= 10 %}
                                                 {{ receipt_date_value[8:10] }}.{{ receipt_date_value[5:7] }}.{{ receipt_date_value[:4] }}
@@ -1822,182 +1889,70 @@
                                             {% endif %}
                                         </span>
 
-                                        <input
-                                            class="receipt-table-control receipt-edit-control"
-                                            type="date"
-                                            name="receipt_date"
-                                            value="{{ receipt.receipt_date }}"
-                                            form="{{ edit_form_id }}"
-                                            required
-                                        >
                                     </td>
 
-                                    <td class="col-document">
+                                    <td class="col-document" data-column-key="document">
                                         <div class="receipt-view-value">
                                             <div class="document-number">
-                                                {{ receipt.number }}
+                                                {{ receipt.number or "—" }}
                                             </div>
                                         </div>
 
-                                        <input
-                                            class="receipt-table-control receipt-edit-control"
-                                            type="text"
-                                            name="document_number"
-                                            value="{{ receipt.number }}"
-                                            form="{{ edit_form_id }}"
-                                            maxlength="120"
-                                            required
-                                        >
                                     </td>
 
-                                    <td class="col-comment">
+                                    <td class="col-comment" data-column-key="comment">
                                         <span class="receipt-view-value">
                                             {{ receipt.note or "—" }}
                                         </span>
 
-                                        <textarea
-                                            class="receipt-table-control receipt-edit-control receipt-note-input"
-                                            name="note"
-                                            placeholder="Комментарий"
-                                            form="{{ edit_form_id }}"
-                                        >{{ receipt.note }}</textarea>
                                     </td>
 
-                                    <td class="col-brand receipt-immutable">
+                                    <td class="col-brand receipt-immutable" data-column-key="brand">
                                         <span class="receipt-view-value supplier-name">
                                             {{ receipt.brand or receipt.supplier or "—" }}
                                         </span>
 
-                                        <div
-                                            class="receipt-edit-control"
-                                            data-receipt-catalog-field="brand"
-                                            hidden
-                                        >
-                                            {{ render_catalog_combobox(
-                                                "receiptEditBrand" ~ loop.index,
-                                                "brand",
-                                                [],
-                                                receipt.brand or receipt.supplier or "",
-                                                item_label="бренд",
-                                                prefix_search=false,
-                                                empty_label="Ничего не найдено",
-                                                component_class="filter-combobox",
-                                                clear_selection_on_search_clear=true,
-                                                form_id=edit_form_id,
-                                                action_kind="brand",
-                                                action_label="Добавить новый бренд",
-                                                shared_catalog_kind="brand",
-                                                selected_id=receipt.brand_id or (receipt_position.brand_id if receipt_position else ""),
-                                                id_input_name="brand_id"
-                                            ) }}
-                                        </div>
                                     </td>
 
-                                    <td class="col-category receipt-immutable">
+                                    <td class="col-category receipt-immutable" data-column-key="category">
                                         <span class="receipt-view-value">
                                             {{ receipt.category or receipt.invoice_number or "—" }}
                                         </span>
 
-                                        <div
-                                            class="receipt-edit-control"
-                                            data-receipt-catalog-field="category"
-                                            hidden
-                                        >
-                                            {{ render_catalog_combobox(
-                                                "receiptEditCategory" ~ loop.index,
-                                                "category",
-                                                [],
-                                                receipt.category or receipt.invoice_number or "",
-                                                item_label="категорию",
-                                                prefix_search=false,
-                                                empty_label="Категории не найдены",
-                                                component_class="filter-combobox",
-                                                clear_selection_on_search_clear=true,
-                                                form_id=edit_form_id,
-                                                action_kind="category",
-                                                action_label="Добавить новую категорию",
-                                                shared_catalog_kind="category",
-                                                selected_id=receipt.category_id or (receipt_position.category_id if receipt_position else ""),
-                                                id_input_name="category_id"
-                                            ) }}
-                                        </div>
                                     </td>
 
-                                    <td class="col-products receipt-immutable">
+                                    <td class="col-products receipt-immutable" data-column-key="product">
                                         <!-- RECEIPT PRODUCT NAME ONLY V1 -->
                                         <div class="receipt-view-value receipt-product-name-only">
+                                            {% if receipt.product_image_url %}
+                                                <img
+                                                    class="receipt-product-thumb"
+                                                    src="{{ receipt.product_image_url }}"
+                                                    alt=""
+                                                    loading="lazy"
+                                                    onerror="this.hidden=true"
+                                                >
+                                            {% endif %}
                                             {{ receipt_product_name or "—" }}
                                         </div>
 
-                                        <div
-                                            class="receipt-edit-control"
-                                            data-receipt-catalog-field="product"
-                                            hidden
-                                        >
-                                            {{ render_catalog_combobox(
-                                                "receiptEditProduct" ~ loop.index,
-                                                "product_id",
-                                                [],
-                                                receipt_product_id,
-                                                item_label="товар",
-                                                prefix_search=false,
-                                                empty_label="Товары не найдены",
-                                                component_class="filter-combobox",
-                                                clear_selection_on_search_clear=true,
-                                                form_id=edit_form_id,
-                                                action_kind="product",
-                                                action_label="Добавить новый товар",
-                                                shared_catalog_kind="product",
-                                                selected_id=receipt_product_id,
-                                                selected_label=receipt_product_name
-                                            ) }}
-                                        </div>
                                         <!-- RECEIPT PRODUCT NAME ONLY V1 END -->
                                     </td>
 
-                                    <td class="col-qty">
+                                    <td class="col-qty" data-column-key="quantity">
                                         <span class="receipt-view-value">
                                             {{ receipt.total_quantity }}
                                         </span>
 
-                                        <input
-                                            class="receipt-table-control receipt-edit-control receipt-number-input"
-                                            type="number"
-                                            inputmode="numeric"
-                                            name="quantity"
-                                            value="{{ receipt_quantity }}"
-                                            min="1"
-                                            step="1"
-                                            form="{{ edit_form_id }}"
-                                            required
-                                        >
                                     </td>
 
-                                    <td class="col-status">
+                                    <td class="col-status" data-column-key="status">
                                         <span class="status-badge">
                                             {{ receipt.status_label or "Проведён" }}
                                         </span>
                                     </td>
 
-                                    <td class="col-actions">
-                                        <form
-                                            id="{{ edit_form_id }}"
-                                            class="receipt-edit-form"
-                                            method="post"
-                                            action="/receipts/update"
-                                        >
-                                            <input
-                                                type="hidden"
-                                                name="csrf_token"
-                                                value="{{ csrf_token() }}"
-                                            >
-                                            <input
-                                                type="hidden"
-                                                name="receipt_id"
-                                                value="{{ receipt.id }}"
-                                            >
-                                        </form>
-
+                                    <td class="col-actions" data-system-column="actions">
                                         <div class="receipt-view-actions">
                                             <!-- RECEIPT MOYSKLAD ACTION V2 -->
                                             {% if receipt.moysklad_document_url %}
@@ -2103,22 +2058,6 @@
                                             </form>
                                         </div>
 
-                                        <div class="receipt-edit-actions">
-                                            <button
-                                                class="receipt-save-button"
-                                                type="submit"
-                                                form="{{ edit_form_id }}"
-                                            >
-                                                Сохранить
-                                            </button>
-
-                                            <button
-                                                class="receipt-cancel-button js-cancel-receipt"
-                                                type="button"
-                                            >
-                                                Отмена
-                                            </button>
-                                        </div>
                                     </td>
                                 </tr>
                             {% endfor %}
@@ -2222,6 +2161,7 @@
                     class="form-grid receipt-simple-grid"
                     data-receipt-catalog-context
                     data-shared-catalog-scope
+                    data-new-brand-global-categories="true"
                 >
                     <div class="field">
                         <label for="receipt_date">
@@ -2240,7 +2180,7 @@
 
                     <div class="field">
                         <label for="document_number">
-                            Номер документа *
+                            Документ
                         </label>
 
                         <input
@@ -2249,8 +2189,7 @@
                             name="document_number"
                             type="text"
                             maxlength="120"
-                            placeholder="Например, ПР-2026-001"
-                            required
+                            placeholder="Можно оставить пустым"
                         >
                     </div>
 
@@ -2350,6 +2289,43 @@
                         >
                     </div>
 
+                    <div
+                        id="receiptImageField"
+                        class="field field-wide"
+                    >
+                        <label for="receipt_product_image">
+                            Фото товара
+                        </label>
+
+                        <div class="receipt-image-picker">
+                            <div>
+                                <input
+                                    class="control"
+                                    id="receipt_product_image"
+                                    name="product_image"
+                                    type="file"
+                                    accept="image/jpeg,image/png,.jpg,.jpeg,.png"
+                                >
+                                <div
+                                    id="receiptImageHelp"
+                                    class="receipt-image-help"
+                                >JPEG или PNG, не больше 3 МБ</div>
+                            </div>
+
+                            <div
+                                id="receiptImagePreview"
+                                class="receipt-image-preview"
+                            >
+                                <img id="receiptImagePreviewPicture" alt="Предпросмотр фото товара">
+                                <button
+                                    class="button button-secondary"
+                                    type="button"
+                                    id="removeReceiptImage"
+                                >Удалить</button>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="field field-wide">
                         <label for="note">
                             Комментарий
@@ -2392,6 +2368,86 @@
                         Провести приход
                     </button>
                     <!-- RECEIPT CREATE NEXT V2 END -->
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div
+    class="modal receipt-edit-modal"
+    id="receiptEditModal"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="receiptEditModalTitle"
+>
+    <div class="modal-dialog receipt-edit-dialog">
+        <div class="modal-header">
+            <div>
+                <h2 id="receiptEditModalTitle">Карточка прихода</h2>
+                <p>Просмотр и редактирование проведённого прихода</p>
+            </div>
+            <button class="modal-close" type="button" data-receipt-edit-close>×</button>
+        </div>
+        <div class="modal-body">
+            <form id="receiptEditModalForm" enctype="multipart/form-data">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="receipt_id">
+                <input type="hidden" name="product_id">
+
+                <div class="receipt-card-layout">
+                    <section class="receipt-card-media" id="receiptEditCurrentImage" hidden>
+                        <img alt="Фотография товара" loading="lazy">
+                    </section>
+
+                    <div class="receipt-card-grid">
+                        <label class="receipt-card-field">
+                            <span>Дата *</span>
+                            <input class="control" type="date" name="receipt_date" required>
+                        </label>
+                        <label class="receipt-card-field">
+                            <span>Документ</span>
+                            <input class="control" type="text" name="document_number" maxlength="120">
+                        </label>
+                        <label class="receipt-card-field">
+                            <span>Количество *</span>
+                            <input class="control" type="number" name="quantity" min="1" step="1" required>
+                        </label>
+                        <div class="receipt-card-field">
+                            <span>Бренд</span>
+                            <strong data-receipt-edit-brand>—</strong>
+                        </div>
+                        <div class="receipt-card-field">
+                            <span>Категория</span>
+                            <strong data-receipt-edit-category>—</strong>
+                        </div>
+                        <div class="receipt-card-field receipt-card-field-wide">
+                            <span>Товар</span>
+                            <strong data-receipt-edit-product>—</strong>
+                        </div>
+                        <label class="receipt-card-field receipt-card-field-wide">
+                            <span>Комментарий</span>
+                            <textarea class="control" name="comment" maxlength="2000"></textarea>
+                        </label>
+                        <label class="receipt-card-field receipt-card-field-wide receipt-edit-photo-field">
+                            <span>Добавить фотографию товара</span>
+                            <input
+                                class="control"
+                                type="file"
+                                name="product_image"
+                                accept="image/jpeg,image/png,.jpg,.jpeg,.png"
+                                data-receipt-edit-image
+                            >
+                            <small data-receipt-edit-image-help>JPEG или PNG, не больше 3 МБ</small>
+                            <img data-receipt-edit-preview alt="Предпросмотр фотографии" hidden>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="receipt-submit-message notice" aria-live="polite"></div>
+                <div class="modal-actions">
+                    <button class="button button-secondary" type="button" data-receipt-edit-close>Отмена</button>
+                    <button class="button button-primary" type="submit">Сохранить</button>
                 </div>
             </form>
         </div>
@@ -3658,24 +3714,6 @@
         );
     });
 
-    function restoreReceiptCatalogContext(context) {
-        const brand = context.dataset.brand || "";
-        const category = context.dataset.category || "";
-        const productId = context.dataset.productId || "";
-
-        window.restoreSharedCatalogCascade(
-            context,
-            {
-                brandId: context.dataset.brandId || "",
-                brandLabel: brand,
-                categoryId: context.dataset.categoryId || "",
-                categoryLabel: category,
-                productId,
-                productLabel: context.dataset.product || "",
-            }
-        );
-    }
-
     // SIMPLE RECEIPT FORM SCRIPT V1 END
 
     function togglePositions(button) {
@@ -3996,80 +4034,132 @@
         }
     });
 
-    // RECEIPT ROW ACTIONS SCRIPT V1
+    // RECEIPT CARD EDITOR
+    const receiptEditModal = document.getElementById(
+        "receiptEditModal"
+    );
+    const receiptEditModalForm = document.getElementById(
+        "receiptEditModalForm"
+    );
+    let receiptEditImageObjectUrl = "";
+
+    function closeReceiptEditModal() {
+        receiptEditModal?.classList.remove("is-open");
+        document.body.classList.remove("modal-open");
+        if (receiptEditImageObjectUrl) {
+            URL.revokeObjectURL(receiptEditImageObjectUrl);
+            receiptEditImageObjectUrl = "";
+        }
+        receiptEditModalForm?.reset();
+        receiptEditModalForm?.querySelector(
+            "[data-receipt-edit-preview]"
+        )?.setAttribute("hidden", "");
+    }
+
+    function openReceiptEditModal(row) {
+        if (!row || !receiptEditModalForm) {
+            return;
+        }
+        receiptEditModalForm.reset();
+        receiptEditModalForm.querySelector('[name="receipt_id"]').value =
+            row.dataset.receiptId || "";
+        receiptEditModalForm.querySelector('[name="product_id"]').value =
+            row.dataset.productId || "";
+        receiptEditModalForm.querySelector('[name="receipt_date"]').value =
+            String(row.dataset.date || "").slice(0, 10);
+        receiptEditModalForm.querySelector('[name="document_number"]').value =
+            row.dataset.document || "";
+        receiptEditModalForm.querySelector('[name="quantity"]').value =
+            row.dataset.quantity || "1";
+        receiptEditModalForm.querySelector('[name="comment"]').value =
+            row.dataset.comment || "";
+        receiptEditModalForm.querySelector(
+            "[data-receipt-edit-brand]"
+        ).textContent = row.dataset.brand || "—";
+        receiptEditModalForm.querySelector(
+            "[data-receipt-edit-category]"
+        ).textContent = row.dataset.category || "—";
+        receiptEditModalForm.querySelector(
+            "[data-receipt-edit-product]"
+        ).textContent = row.dataset.product || "—";
+
+        const currentImage = document.getElementById(
+            "receiptEditCurrentImage"
+        );
+        const currentPicture = currentImage?.querySelector("img");
+        const imageUrl = row.dataset.productImage || "";
+        if (currentImage && currentPicture) {
+            currentImage.hidden = !imageUrl;
+            if (imageUrl) {
+                currentPicture.src = imageUrl;
+                currentPicture.onerror = () => {
+                    currentImage.hidden = true;
+                };
+            } else {
+                currentPicture.removeAttribute("src");
+            }
+        }
+
+        receiptEditModal.classList.add("is-open");
+        document.body.classList.add("modal-open");
+        requestAnimationFrame(() => {
+            receiptEditModalForm.querySelector(
+                'input:not([type="hidden"])'
+            )?.focus();
+        });
+    }
+
     document
         .querySelectorAll(".js-edit-receipt")
         .forEach((button) => {
-            button.addEventListener(
-                "click",
-                () => {
-                    const row = button.closest(
-                        ".receipt-row"
-                    );
-
-                    document
-                        .querySelectorAll(
-                            ".receipt-row.is-editing"
-                        )
-                        .forEach((editingRow) => {
-                            if (editingRow !== row) {
-                                const form =
-                                    editingRow.querySelector(
-                                        ".receipt-edit-form"
-                                    );
-
-                                if (form) {
-                                    form.reset();
-                                }
-
-                                restoreReceiptCatalogContext(
-                                    editingRow
-                                );
-                                editingRow.classList.remove(
-                                    "is-editing"
-                                );
-                            }
-                        });
-
-                    if (row) {
-                        row.classList.add(
-                            "is-editing"
-                        );
-                    }
-                }
-            );
+            button.addEventListener("click", () => {
+                openReceiptEditModal(button.closest(".receipt-row"));
+            });
         });
 
-    document
-        .querySelectorAll(".js-cancel-receipt")
+    receiptEditModal?.querySelectorAll("[data-receipt-edit-close]")
         .forEach((button) => {
-            button.addEventListener(
-                "click",
-                () => {
-                    const row = button.closest(
-                        ".receipt-row"
-                    );
-
-                    if (!row) {
-                        return;
-                    }
-
-                    const form = row.querySelector(
-                        ".receipt-edit-form"
-                    );
-
-                    if (form) {
-                        form.reset();
-                    }
-
-                    restoreReceiptCatalogContext(row);
-                    row.classList.remove(
-                        "is-editing"
-                    );
-                }
-            );
+            button.addEventListener("click", closeReceiptEditModal);
         });
-    // RECEIPT ROW ACTIONS SCRIPT V1 END
+    receiptEditModal?.addEventListener("click", (event) => {
+        if (event.target === receiptEditModal) {
+            closeReceiptEditModal();
+        }
+    });
+
+    const receiptEditImage = receiptEditModalForm?.querySelector(
+        "[data-receipt-edit-image]"
+    );
+    receiptEditImage?.addEventListener("change", () => {
+        const file = receiptEditImage.files?.[0];
+        const help = receiptEditModalForm.querySelector(
+            "[data-receipt-edit-image-help]"
+        );
+        const preview = receiptEditModalForm.querySelector(
+            "[data-receipt-edit-preview]"
+        );
+        let error = "";
+        if (file && !["image/jpeg", "image/png"].includes(file.type)) {
+            error = "Выберите изображение JPEG или PNG";
+        } else if (file && file.size > 3 * 1024 * 1024) {
+            error = "Изображение не должно быть больше 3 МБ";
+        }
+        receiptEditImage.setCustomValidity(error);
+        help.textContent = error || (
+            file
+                ? file.name + " · " + Math.ceil(file.size / 1024) + " КБ"
+                : "JPEG или PNG, не больше 3 МБ"
+        );
+        if (receiptEditImageObjectUrl) {
+            URL.revokeObjectURL(receiptEditImageObjectUrl);
+            receiptEditImageObjectUrl = "";
+        }
+        preview.hidden = !file || Boolean(error);
+        if (file && !error) {
+            receiptEditImageObjectUrl = URL.createObjectURL(file);
+            preview.src = receiptEditImageObjectUrl;
+        }
+    });
 
     function setReceiptSubmitting(form, submitting) {
         form.dataset.submitting = submitting ? "true" : "";
@@ -4177,69 +4267,165 @@
         }
     });
 
-    document
-        .querySelectorAll(".receipt-edit-form")
-        .forEach((form) => {
-            form.addEventListener("submit", async (event) => {
-                const row = form.closest(".receipt-row");
-                const productId = row?.querySelector(
-                    '[name="product_id"]'
-                )?.value || "";
+    receiptEditModalForm?.addEventListener(
+        "submit",
+        async (event) => {
+            event.preventDefault();
+            if (
+                receiptEditModalForm.dataset.submitting
+                === "true"
+            ) {
+                return;
+            }
+            setReceiptSubmitting(receiptEditModalForm, true);
+            showReceiptSubmitMessage(
+                receiptEditModalForm,
+                "",
+                ""
+            );
+            const receiptId = receiptEditModalForm.querySelector(
+                '[name="receipt_id"]'
+            )?.value || "";
+            try {
+                const result = await submitSharedReceipt(
+                    receiptEditModalForm,
+                    "/api/v1/receipts/"
+                        + encodeURIComponent(receiptId),
+                    "PATCH",
+                    new FormData(receiptEditModalForm)
+                );
+                const imageMessage = String(
+                    result?.meta?.image_message || ""
+                ).trim();
+                window.location.href = (
+                    "/receipts?notice=success&message="
+                    + encodeURIComponent(
+                        [
+                            "Изменения прихода сохранены.",
+                            imageMessage,
+                        ].filter(Boolean).join(" ")
+                    )
+                );
+            } catch (error) {
+                showReceiptSubmitMessage(
+                    receiptEditModalForm,
+                    error?.message
+                        || "Ошибка сервера при сохранении прихода.",
+                    "error"
+                );
+                setReceiptSubmitting(receiptEditModalForm, false);
+            }
+        }
+    );
 
-                if (!/^\d+$/.test(productId)) {
-                    return;
-                }
+    document.addEventListener("keydown", (event) => {
+        if (
+            event.key === "Escape"
+            && receiptEditModal?.classList.contains("is-open")
+        ) {
+            closeReceiptEditModal();
+        }
+    });
 
-                event.preventDefault();
-                if (form.dataset.submitting === "true") {
-                    return;
-                }
-                setReceiptSubmitting(form, true);
-                showReceiptSubmitMessage(form, "", "");
+    // Excel-like receipt column widths use the same persisted view model.
+    (() => {
+        const table = document.getElementById("receiptsTable");
+        if (!table || window.matchMedia("(max-width: 900px)").matches) {
+            return;
+        }
+        const storageKey = "vechasu-receipts-table-view-v1";
+        const defaults = {
+            date: 112,
+            document: 145,
+            comment: 180,
+            brand: 140,
+            category: 150,
+            product: 250,
+            quantity: 82,
+            status: 112,
+        };
+        let saved = {};
+        try {
+            saved = JSON.parse(localStorage.getItem(storageKey) || "{}");
+        } catch (_error) {
+            saved = {};
+        }
+        const widths = {...defaults, ...(saved.widths || {})};
 
-                try {
-                    await submitSharedReceipt(
-                        form,
-                        "/api/v1/receipts/"
-                            + encodeURIComponent(
-                                form.querySelector(
-                                    '[name="receipt_id"]'
-                                )?.value || ""
-                            ),
-                        "PATCH",
-                        {
-                            document_number: row.querySelector(
-                                '[name="document_number"]'
-                            )?.value,
-                            receipt_date: row.querySelector(
-                                '[name="receipt_date"]'
-                            )?.value,
-                            comment: row.querySelector(
-                                '[name="note"]'
-                            )?.value || "",
-                            product_id: productId,
-                            quantity: row.querySelector(
-                                '[name="quantity"]'
-                            )?.value,
-                        }
-                    );
-                    window.location.href = (
-                        "/receipts?notice=success&message="
-                        + encodeURIComponent(
-                            "Изменения прихода сохранены."
-                        )
-                    );
-                } catch (error) {
-                    showReceiptSubmitMessage(
-                        form,
-                        error?.message
-                            || "Ошибка сервера при сохранении прихода.",
-                        "error"
-                    );
-                    setReceiptSubmitting(form, false);
-                }
+        function applyReceiptColumnWidths() {
+            let total = 112;
+            Object.entries(widths).forEach(([key, value]) => {
+                const width = Math.min(
+                    520,
+                    Math.max(64, Number(value) || defaults[key])
+                );
+                widths[key] = width;
+                table.querySelectorAll(
+                    'col[data-column-key="' + key + '"]'
+                ).forEach((column) => {
+                    column.style.width = width + "px";
+                });
+                total += width;
             });
-        });
+            table.style.width = total + "px";
+        }
+
+        function saveReceiptColumnWidths() {
+            try {
+                localStorage.setItem(
+                    storageKey,
+                    JSON.stringify({widths})
+                );
+            } catch (_error) {
+                // Ширины остаются рабочими до перезагрузки страницы.
+            }
+        }
+
+        applyReceiptColumnWidths();
+        table.querySelectorAll("thead th[data-column-key]")
+            .forEach((header) => {
+                const handle = document.createElement("span");
+                handle.className = "receipt-column-resize-handle";
+                handle.setAttribute("aria-hidden", "true");
+                header.appendChild(handle);
+                handle.addEventListener("pointerdown", (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const key = header.dataset.columnKey;
+                    const startX = event.clientX;
+                    const startWidth = header.getBoundingClientRect().width;
+                    handle.classList.add("is-active");
+                    document.body.classList.add("receipt-column-resizing");
+
+                    function resize(moveEvent) {
+                        widths[key] = Math.min(
+                            520,
+                            Math.max(
+                                64,
+                                Math.round(
+                                    startWidth
+                                    + moveEvent.clientX
+                                    - startX
+                                )
+                            )
+                        );
+                        applyReceiptColumnWidths();
+                    }
+
+                    function finish() {
+                        handle.classList.remove("is-active");
+                        document.body.classList.remove(
+                            "receipt-column-resizing"
+                        );
+                        saveReceiptColumnWidths();
+                        window.removeEventListener("pointermove", resize);
+                    }
+
+                    window.addEventListener("pointermove", resize);
+                    window.addEventListener("pointerup", finish, {once: true});
+                });
+            });
+    })();
 
 </script>
 
