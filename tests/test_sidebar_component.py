@@ -16,7 +16,9 @@ class SidebarComponentTest(unittest.TestCase):
 
     def test_active_section_is_centralized_for_parent_and_child_routes(self):
         routes = {
-            "/": "orders",
+            "/": "overview",
+            "/overview": "overview",
+            "/orders": "orders",
             "/order/42": "orders",
             "/products": "products",
             "/products/42": "products",
@@ -76,7 +78,8 @@ class SidebarComponentTest(unittest.TestCase):
             for item in web.NAVIGATION_DEFINITIONS
         }
 
-        self.assertEqual(definitions["orders"]["href"], "/")
+        self.assertEqual(definitions["overview"]["href"], "/overview")
+        self.assertEqual(definitions["orders"]["href"], "/orders")
         self.assertEqual(definitions["products"]["href"], "/warehouse")
         self.assertEqual(definitions["sales"]["href"], "/sales")
         self.assertEqual(definitions["receipts"]["href"], "/receipts")
@@ -92,6 +95,7 @@ class SidebarComponentTest(unittest.TestCase):
     def test_all_operational_templates_use_the_shared_component(self):
         operational_templates = {
             "base.html",
+            "overview.html",
             "orders.html",
             "warehouse.html",
             "excel_products.html",

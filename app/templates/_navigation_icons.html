@@ -1,5 +1,10 @@
 {% macro navigation_icon(key, class_name="") -%}
-    {% if key == "orders" %}
+    {% if key == "overview" %}
+        <svg class="{{ class_name }}" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M4 11 12 4l8 7" />
+            <path d="M6.5 10.5V20h11v-9.5M10 20v-6h4v6" />
+        </svg>
+    {% elif key == "orders" %}
         <svg class="{{ class_name }}" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M4 7.5 12 3l8 4.5v9L12 21l-8-4.5v-9Z" />
             <path d="M4.5 7.5 12 12l7.5-4.5M12 12v9" />
