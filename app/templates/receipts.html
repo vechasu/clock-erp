@@ -1477,6 +1477,7 @@
         src="{{ url_for('static', filename='js/period-picker.js') }}"
     ></script>
     <script defer src="{{ url_for('static', filename='js/table-scroll-hint.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='js/erp-modal-shell.js') }}"></script>
 </head>
 
 <body class="receipts-page">
@@ -2128,6 +2129,9 @@
     role="dialog"
     aria-modal="true"
     aria-labelledby="receiptModalTitle"
+    aria-hidden="true"
+    data-erp-modal-shell
+    data-erp-modal-lock
 >
     <div class="modal-dialog">
         <div class="modal-header">
@@ -2139,6 +2143,7 @@
             <button
                 class="modal-close"
                 type="button"
+                aria-label="Закрыть"
                 onclick="closeReceiptModal()"
             >
                 ×
@@ -2166,12 +2171,13 @@
                 >
 
                 <div class="receipt-import-toolbar">
+                    <span class="receipt-import-toolbar-icon" aria-hidden="true">⇩</span>
                     <div class="receipt-import-toolbar-text">
                         <div class="receipt-import-toolbar-title">
-                            Массовое добавление товаров
+                            Импортировать товары из Excel
                         </div>
                         <p class="receipt-import-toolbar-description">
-                            Загрузите Excel, проверьте строки и добавьте их в приход
+                            Загрузите файл и проверьте позиции перед проведением
                         </p>
                     </div>
 
@@ -2179,7 +2185,7 @@
                         class="button receipt-import-button"
                         href="{{ url_for('excel_receipt_new') }}"
                     >
-                        Импорт из Excel
+                        Импортировать
                     </a>
                 </div>
 
@@ -2211,6 +2217,7 @@
                     data-shared-catalog-scope
                     data-new-brand-global-categories="true"
                 >
+                    <h3 class="erp-form-section-title field-wide">Документ</h3>
                     <div class="field">
                         <label for="receipt_date">
                             Дата *
@@ -2241,6 +2248,7 @@
                         >
                     </div>
 
+                    <h3 class="erp-form-section-title field-wide">Товар</h3>
                     <div
                         class="field"
                         data-receipt-catalog-field="brand"
@@ -2337,6 +2345,7 @@
                         >
                     </div>
 
+                    <h3 class="erp-form-section-title field-wide">Фото</h3>
                     <div
                         id="receiptImageField"
                         class="field field-wide"
@@ -2348,7 +2357,7 @@
                         <div class="receipt-image-picker">
                             <div>
                                 <input
-                                    class="control"
+                                    class="control receipt-image-input"
                                     id="receipt_product_image"
                                     name="product_image"
                                     type="file"
@@ -2374,6 +2383,7 @@
                         </div>
                     </div>
 
+                    <h3 class="erp-form-section-title field-wide">Комментарий</h3>
                     <div class="field field-wide">
                         <label for="note">
                             Комментарий
@@ -2404,7 +2414,7 @@
                         name="submit_mode"
                         value="create_next"
                     >
-                        Создать и оформить следующий приход
+                        Провести и добавить ещё
                     </button>
 
                     <button
@@ -3669,6 +3679,7 @@
         }
 
         receiptModal.classList.add("is-open");
+        receiptModal.setAttribute("aria-hidden", "false");
         document.body.classList.add("modal-open");
         requestAnimationFrame(() => {
             receiptModal.querySelector(
@@ -3679,6 +3690,7 @@
 
     function closeReceiptModal() {
         receiptModal.classList.remove("is-open");
+        receiptModal.setAttribute("aria-hidden", "true");
         document.body.classList.remove("modal-open");
         document.querySelector(
             '[onclick="openReceiptModal()"]'

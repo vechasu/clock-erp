@@ -329,7 +329,7 @@ html[data-theme] :where(
     .source-card,
     .navigation-item,
     .auth-card,
-    .modal,
+    .modal:not([data-erp-modal-shell]),
     .modal-content,
     .modal-dialog,
     dialog,
@@ -350,7 +350,7 @@ html[data-theme] :where(
 }
 
 html[data-theme] :where(
-    .modal,
+    .modal:not([data-erp-modal-shell]),
     .modal-content,
     .modal-dialog,
     dialog,
@@ -477,7 +477,7 @@ html[data-theme] :where(
     border-color: var(--theme-primary) !important;
     background: var(--theme-primary) !important;
     color: var(--theme-primary-text) !important;
-    font-weight: 750;
+    font-weight: 700;
 }
 
 html[data-theme] :where(
@@ -1257,7 +1257,7 @@ html[data-theme] .theme-option[aria-checked="true"] {
     background: var(--theme-surface);
     color: var(--theme-text-muted);
     font-size: 11px;
-    font-weight: 750;
+    font-weight: 700;
     white-space: nowrap;
 }
 
@@ -1342,12 +1342,17 @@ html[data-theme] ::-webkit-scrollbar-thumb {
     }
 
     html[data-theme] :where(
-        .modal,
+        .modal:not([data-erp-modal-shell]),
         .modal-content,
         .modal-dialog,
         dialog
     ) {
         max-width: calc(100vw - 24px) !important;
+    }
+
+    html[data-theme] .modal[data-erp-modal-shell] .modal-dialog {
+        max-width: 100% !important;
+        border-radius: 0 !important;
     }
 }
 

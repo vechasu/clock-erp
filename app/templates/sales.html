@@ -1107,6 +1107,7 @@
         src="{{ url_for('static', filename='js/period-picker.js') }}"
     ></script>
     <script defer src="{{ url_for('static', filename='js/table-scroll-hint.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='js/erp-modal-shell.js') }}"></script>
 </head>
 
 <body class="sales-page">
@@ -1957,6 +1958,9 @@
     role="dialog"
     aria-modal="true"
     aria-labelledby="manualSaleModalTitle"
+    aria-hidden="true"
+    data-erp-modal-shell
+    data-erp-modal-lock
 >
     <div class="modal-dialog">
         <div class="modal-header">
@@ -1965,7 +1969,7 @@
                     Добавить продажу
                 </h2>
                 <p id="manualSaleModalDescription">
-                    Выберите источник продажи.
+                    Заполните данные продажи и выберите канал.
                 </p>
             </div>
             <button
@@ -1982,25 +1986,28 @@
                 class="source-choice-panel"
             >
                 <button
-                    class="source-choice"
+                    class="source-choice source-choice--tictactoy"
                     type="button"
                     data-sale-source="tictactoy"
+                    aria-pressed="false"
                 >Tictactoy</button>
                 <button
-                    class="source-choice"
+                    class="source-choice source-choice--wildberries"
                     type="button"
                     data-sale-source="wildberries"
+                    aria-pressed="false"
                 >Wildberries</button>
                 <button
-                    class="source-choice"
+                    class="source-choice source-choice--amazon"
                     type="button"
                     data-sale-source="amazon"
+                    aria-pressed="false"
                 >Amazon</button>
             </div>
 
             <form
                 id="manualSaleForm"
-                class="sale-form is-hidden"
+                class="sale-form"
                 method="post"
                 action="{{ url_for('manual_sale_add') }}"
                 data-shared-catalog-scope
@@ -2061,6 +2068,7 @@
                         role="alert"
                         hidden
                     ></p>
+                    <h3 class="erp-form-section-title field-wide">Товар</h3>
                     <div class="field">
                         <label for="saleBrandTrigger">Бренд</label>
                         {{ render_catalog_combobox(
@@ -2125,6 +2133,7 @@
                         </div>
                     </div>
 
+                    <h3 class="erp-form-section-title field-wide">Продажа</h3>
                     <div class="field">
                         <label for="created_at">Дата</label>
                         <input
@@ -2180,6 +2189,7 @@
                         ) }}
                     </div>
 
+                    <h3 class="erp-form-section-title field-wide">Данные канала</h3>
                     <div
                         class="source-specific-fields"
                         data-source-fields="tictactoy"
@@ -2285,6 +2295,7 @@
                         </div>
 
                         <div class="field field-wide">
+                            <span class="erp-form-subsection-title">Дополнительно</span>
                             <label for="tictactoy_note">
                                 Примечание
                             </label>
@@ -2325,6 +2336,7 @@
                         </div>
 
                         <div class="field field-wide">
+                            <span class="erp-form-subsection-title">Дополнительно</span>
                             <label for="wildberries_note">
                                 Примечание
                             </label>
@@ -2409,6 +2421,7 @@
                         </div>
 
                         <div class="field field-wide">
+                            <span class="erp-form-subsection-title">Дополнительно</span>
                             <label for="amazon_note">
                                 Примечание
                             </label>
@@ -2421,13 +2434,6 @@
                     </div>
 
                     <div class="form-actions">
-                        <button
-                            id="cancelManualSaleModal"
-                            class="button button-muted"
-                            type="button"
-                        >
-                            Отмена
-                        </button>
                         <button
                             class="button button-primary"
                             type="submit"
@@ -4423,9 +4429,6 @@
     const closeManualSaleModalButton = document.getElementById(
         "closeManualSaleModal"
     );
-    const cancelManualSaleModalButton = document.getElementById(
-        "cancelManualSaleModal"
-    );
     const sourceChoicePanel = document.getElementById(
         "saleSourceChoice"
     );
@@ -4477,12 +4480,26 @@
 
     function showSaleForm(sourceKey) {
         saleSourceInput.value = sourceLabels[sourceKey];
-        sourceChoicePanel.classList.add("is-hidden");
         manualSaleForm.classList.remove("is-hidden");
-        modalTitle.textContent =
-            "Добавить продажу — " + sourceLabels[sourceKey];
+        modalTitle.textContent = "Добавить продажу";
         modalDescription.textContent =
-            "Источник сохранится вместе с продажей.";
+            "Источник: " + sourceLabels[sourceKey]
+            + ". Он сохранится вместе с продажей.";
+        sourceChoicePanel
+            .querySelectorAll("[data-sale-source]")
+            .forEach((button) => {
+                const active = button.dataset.saleSource === sourceKey;
+                button.classList.toggle("is-active", active);
+                button.setAttribute("aria-pressed", String(active));
+            });
+        try {
+            localStorage.setItem(
+                "vechasu-sales-last-source",
+                sourceKey,
+            );
+        } catch (_error) {
+            // Выбор остаётся рабочим до перезагрузки страницы.
+        }
 
         document
             .querySelectorAll("[data-source-fields]")
@@ -4514,15 +4531,20 @@
         resetProductFilters();
         resetSaleChoiceFields();
 
-        if (activeSalesSource === "all") {
-            sourceChoicePanel.classList.remove("is-hidden");
-            manualSaleForm.classList.add("is-hidden");
-            modalTitle.textContent = "Добавить продажу";
-            modalDescription.textContent =
-                "Выберите источник продажи.";
-        } else {
-            showSaleForm(activeSalesSource);
+        let preferredSource = activeSalesSource;
+        if (!Object.hasOwn(sourceLabels, preferredSource)) {
+            try {
+                preferredSource = localStorage.getItem(
+                    "vechasu-sales-last-source"
+                ) || "tictactoy";
+            } catch (_error) {
+                preferredSource = "tictactoy";
+            }
         }
+        if (!Object.hasOwn(sourceLabels, preferredSource)) {
+            preferredSource = "tictactoy";
+        }
+        showSaleForm(preferredSource);
 
         const today = new Date();
         const offset = today.getTimezoneOffset() * 60000;
@@ -4536,6 +4558,7 @@
         manualSaleReturnFocus = openManualSaleModalButton;
         resetModalView();
         manualSaleModal.classList.add("is-open");
+        manualSaleModal.setAttribute("aria-hidden", "false");
         document.body.classList.add("modal-open");
         requestAnimationFrame(() => {
             manualSaleModal.querySelector(
@@ -4546,6 +4569,7 @@
 
     function closeManualSaleModalWindow() {
         manualSaleModal.classList.remove("is-open");
+        manualSaleModal.setAttribute("aria-hidden", "true");
         document.body.classList.remove("modal-open");
         setSaleFormError();
         manualSaleReturnFocus?.focus();
@@ -4559,11 +4583,6 @@
         "click",
         closeManualSaleModalWindow,
     );
-    cancelManualSaleModalButton.addEventListener(
-        "click",
-        closeManualSaleModalWindow,
-    );
-
     sourceChoicePanel
         .querySelectorAll("[data-sale-source]")
         .forEach((button) => {
@@ -6181,9 +6200,12 @@
                 && getComputedStyle(actionHeader).right === "0px"
                 && actionCells.every(
                     (cell) =>
-                        cell.querySelectorAll(
-                            ".sales-row-action"
-                        ).length === 2
+                        cell.querySelector(
+                            ".sales-row-edit"
+                        )
+                        && cell.querySelector(
+                            ".sales-row-delete"
+                        )
                         && cell === cell.parentElement.lastElementChild
                 )
                 && !document.querySelector(

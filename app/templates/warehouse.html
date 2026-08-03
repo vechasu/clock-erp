@@ -4207,6 +4207,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-combobox.css') }}">
     <script src="{{ url_for('static', filename='js/catalog-combobox.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/table-scroll-hint.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='js/erp-modal-shell.js') }}"></script>
 </head>
 <body class="warehouse-page">
     {% from "_catalog_combobox.html" import render_catalog_combobox %}
@@ -4223,6 +4224,7 @@
                 </div>
                 <div class="erp-workspace-actions">
                     <button
+                        id="openWarehouseAddModal"
                         class="erp-workspace-primary erp-primary-action"
                         type="button"
                         onclick="toggleWarehouseAddCard()"
@@ -4475,13 +4477,29 @@
                 </form>
             </div>
 
-            <div class="add-card{% if not open_add %} is-hidden{% endif %}" id="warehouseAddCard">
-                <div class="warehouse-add-header">
+            <div
+                id="warehouseAddModal"
+                class="modal warehouse-add-modal{% if open_add %} is-open{% endif %}"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="warehouseAddTitle"
+                aria-hidden="{{ 'false' if open_add else 'true' }}"
+                data-erp-modal-shell
+                data-erp-modal-lock
+            >
+            <div class="add-card modal-dialog erp-modal-dialog" id="warehouseAddCard">
+                <div class="warehouse-add-header modal-header">
                     <span class="warehouse-add-header-icon" aria-hidden="true">＋</span>
                     <div>
                         <div class="add-title" id="warehouseAddTitle">Добавление товара</div>
                         <p class="warehouse-add-subtitle">Заполните информацию о товаре</p>
                     </div>
+                    <button
+                        class="modal-close warehouse-add-close"
+                        type="button"
+                        aria-label="Закрыть"
+                        onclick="closeWarehouseAddModal()"
+                    >×</button>
                 </div>
 
                 <div
@@ -4680,6 +4698,7 @@
                         <button id="warehouseAddSubmit" type="submit">Добавить товар</button>
                     </div>
                 </form>
+            </div>
             </div>
 
             <div id="warehouseBulkPanel" class="warehouse-bulk-panel">
@@ -6727,21 +6746,40 @@
         syncWarehouseBulkSelection();
     }
 
-    function toggleWarehouseAddCard() {
-        const card = document.getElementById("warehouseAddCard");
+    let warehouseAddReturnFocus = null;
 
-        if (!card) {
+    function openWarehouseAddModal() {
+        const modal = document.getElementById("warehouseAddModal");
+        if (!modal) {
             return;
         }
+        warehouseAddReturnFocus = document.activeElement;
+        modal.classList.add("is-open");
+        modal.setAttribute("aria-hidden", "false");
+        document.body.classList.add("modal-open");
+        requestAnimationFrame(function() {
+            document.getElementById("addBrandComboboxTrigger")?.focus();
+        });
+    }
 
-        card.classList.toggle("is-hidden");
+    function closeWarehouseAddModal() {
+        const modal = document.getElementById("warehouseAddModal");
+        if (!modal) {
+            return;
+        }
+        modal.classList.remove("is-open");
+        modal.setAttribute("aria-hidden", "true");
+        document.body.classList.remove("modal-open");
+        warehouseAddReturnFocus?.focus();
+        warehouseAddReturnFocus = null;
+    }
 
-        if (!card.classList.contains("is-hidden")) {
-            const firstInput = card.querySelector('input[name="name"]');
-
-            if (firstInput) {
-                firstInput.focus();
-            }
+    function toggleWarehouseAddCard() {
+        const modal = document.getElementById("warehouseAddModal");
+        if (modal?.classList.contains("is-open")) {
+            closeWarehouseAddModal();
+        } else {
+            openWarehouseAddModal();
         }
     }
 
