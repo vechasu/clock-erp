@@ -1109,7 +1109,7 @@
 </head>
 
 <body class="sales-page">
-{% from "_catalog_combobox.html" import render_catalog_combobox, render_catalog_create_modal %}
+{% from "_catalog_combobox.html" import render_catalog_combobox %}
 {% from "_filter_count.html" import render_filter_count %}
 <div class="app">
     {% include "_sidebar.html" %}
@@ -2537,7 +2537,6 @@
     </div>
 </div>
 
-{{ render_catalog_create_modal() }}
 
 <script>
     const activeSalesSource = {{ active_source | tojson }};
@@ -5595,6 +5594,37 @@
                 ).disabled
             ) {
                 throw new Error("category-search");
+            }
+
+            const createdProductName = "Alpha New E2E";
+            await searchWithKeyboard(product, createdProductName);
+            await new Promise((resolve) =>
+                window.setTimeout(resolve, 650)
+            );
+            const createdProductOption = Array.from(
+                product.querySelectorAll(
+                    ".brand-combobox-option"
+                )
+            ).find((option) => {
+                try {
+                    return JSON.parse(
+                        option.dataset.catalogItem || "{}"
+                    ).name === createdProductName;
+                } catch (error) {
+                    return false;
+                }
+            });
+
+            if (
+                !/^\d+$/.test(productInput.value)
+                || brandInput.value !== "Alpha"
+                || categoryInput.value !== "Часы/Мужские"
+                || !createdProductOption
+                || document.querySelector(
+                    "[data-shared-catalog-create-modal]"
+                )
+            ) {
+                throw new Error("product-inline-create");
             }
 
             await searchWithKeyboard(product, "ARTICLE-ONE");

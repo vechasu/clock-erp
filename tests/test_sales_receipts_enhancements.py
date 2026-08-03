@@ -391,9 +391,10 @@ class SalesReceiptsEnhancementsTest(unittest.TestCase):
         )
         self.assertNotIn("receiptProductsForSelection", page)
         self.assertNotIn("receiptCategoriesForBrand", page)
-        self.assertIn("Добавить новый бренд", page)
-        self.assertIn("Добавить новую категорию", page)
-        self.assertIn("Добавить новый товар", page)
+        self.assertIn('data-catalog-create-action="brand"', page)
+        self.assertIn('data-catalog-create-action="category"', page)
+        self.assertIn('data-catalog-create-action="product"', page)
+        self.assertNotIn("data-shared-catalog-create-modal", page)
         self.assertIn("brand-combobox-search-clear", page)
 
     def test_catalog_creation_and_duplicate_protection(self):

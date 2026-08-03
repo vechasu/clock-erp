@@ -3854,7 +3854,7 @@
     <script src="{{ url_for('static', filename='js/catalog-combobox.js') }}"></script>
 </head>
 <body class="warehouse-page">
-    {% from "_catalog_combobox.html" import render_catalog_combobox, render_catalog_create_modal %}
+    {% from "_catalog_combobox.html" import render_catalog_combobox %}
     {% from "_filter_count.html" import render_filter_count %}
     {% from "_navigation_icons.html" import navigation_icon %}
     <div class="app">
@@ -7481,6 +7481,5 @@
     </script>
     {% endif %}
 
-    {{ render_catalog_create_modal() }}
 </body>
 </html>

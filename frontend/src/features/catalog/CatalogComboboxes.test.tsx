@@ -110,9 +110,7 @@ describe('CatalogCascade', () => {
       }),
     );
 
-    expect(screen.getByRole('combobox', { name: 'Товар *' })).toHaveValue(
-      'Casio A168',
-    );
+    expect(screen.getByRole('combobox', { name: 'Товар *' })).toHaveValue('Casio A168');
     await user.click(screen.getByRole('button', { name: 'Очистить поле «Бренд»' }));
     await waitFor(() => {
       expect(screen.getByRole('combobox', { name: 'Категория *' })).toHaveValue('');
@@ -318,42 +316,36 @@ describe('CatalogCascade', () => {
       </AppProviders>,
     );
 
-    await user.click(screen.getByRole('combobox', { name: 'Бренд *' }));
-    await user.click(await screen.findByRole('button', { name: '+ Добавить новый бренд' }));
-    let dialog = await screen.findByRole('dialog', { name: 'Новый бренд' });
-    await user.type(within(dialog).getByRole('textbox', { name: 'Название *' }), 'Vechasu');
-    await user.click(within(dialog).getByRole('button', { name: 'Создать' }));
-    await waitFor(() =>
-      expect(screen.getByRole('combobox', { name: 'Бренд *' })).toHaveValue('Vechasu'),
-    );
+    const brand = screen.getByRole('combobox', { name: 'Бренд *' });
+    await user.type(brand, 'Vechasu');
+    await user.click(await screen.findByRole('option', { name: '➕ Создать "Vechasu"' }));
+    await waitFor(() => expect(brand).toHaveValue('Vechasu'));
 
-    await user.click(screen.getByRole('combobox', { name: 'Категория *' }));
-    await user.click(await screen.findByRole('button', { name: '+ Добавить новую категорию' }));
-    dialog = await screen.findByRole('dialog', { name: 'Новая категория' });
-    await user.type(within(dialog).getByRole('textbox', { name: 'Название *' }), 'Ремешки');
-    await user.click(within(dialog).getByRole('button', { name: 'Создать' }));
-    await waitFor(() =>
-      expect(screen.getByRole('combobox', { name: 'Категория *' })).toHaveValue('Ремешки'),
-    );
+    const category = screen.getByRole('combobox', { name: 'Категория *' });
+    await user.type(category, 'Ремешки');
+    await user.click(await screen.findByRole('option', { name: '➕ Создать "Ремешки"' }));
+    await waitFor(() => expect(category).toHaveValue('Ремешки'));
 
-    await user.click(screen.getByRole('combobox', { name: 'Товар *' }));
-    await user.click(await screen.findByRole('button', { name: '+ Добавить новый товар' }));
-    dialog = await screen.findByRole('dialog', { name: 'Новый товар' });
-    await user.type(within(dialog).getByRole('textbox', { name: 'Название *' }), 'Ремешок Classic');
-    await user.type(within(dialog).getByRole('textbox', { name: 'Артикул' }), 'STRAP-700');
-    await user.click(within(dialog).getByRole('button', { name: 'Создать' }));
-    await waitFor(() =>
-      expect(screen.getByRole('combobox', { name: 'Товар *' })).toHaveValue(
-        'Ремешок Classic',
-      ),
-    );
+    const product = screen.getByRole('combobox', { name: 'Товар *' });
+    await user.type(product, 'Ремешок Classic');
+    await user.click(await screen.findByRole('option', { name: '➕ Создать "Ремешок Classic"' }));
+    await waitFor(() => expect(product).toHaveValue('Ремешок Classic'));
 
-    expect(
-      fetchMock.mock.calls.filter(
-        ([input, init]) =>
-          (init as RequestInit | undefined)?.method === 'POST' &&
-          String(input).startsWith('/api/v1/'),
-      ),
-    ).toHaveLength(3);
+    await user.click(product);
+    expect(await screen.findByRole('option', { name: /Ремешок Classic/ })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    const createCalls = fetchMock.mock.calls.filter(
+      ([input, init]) =>
+        (init as RequestInit | undefined)?.method === 'POST' &&
+        String(input).startsWith('/api/v1/'),
+    );
+    expect(createCalls).toHaveLength(3);
+    expect(JSON.parse(String((createCalls[2][1] as RequestInit).body))).toMatchObject({
+      name: 'Ремешок Classic',
+      article: '',
+      brand_id: 7,
+      category_id: 70,
+    });
   });
 });

@@ -126,6 +126,10 @@
         if (emptyMessage) {
             emptyMessage.hidden = visibleCount !== 0;
         }
+
+        if (typeof window.updateCatalogCreateAction === "function") {
+            window.updateCatalogCreateAction(combobox, value);
+        }
     };
 
     window.setBrandComboboxValue = function(
@@ -484,6 +488,8 @@
                         const visibleOptions = Array.from(
                             combobox.querySelectorAll(
                                 ".brand-combobox-option"
+                                + ":not([hidden]),"
+                                + ".catalog-combobox-action"
                                 + ":not([hidden])"
                             )
                         );
@@ -538,9 +544,15 @@
 
                             if (activeOption) {
                                 event.preventDefault();
-                                window.selectBrandOption(
-                                    activeOption
-                                );
+                                if (activeOption.matches(
+                                    "[data-catalog-create-action]"
+                                )) {
+                                    activeOption.click();
+                                } else {
+                                    window.selectBrandOption(
+                                        activeOption
+                                    );
+                                }
                             }
                         } else if (event.key === "Escape") {
                             event.preventDefault();
@@ -631,6 +643,42 @@
             .join(" · ");
     }
 
+    window.updateCatalogCreateAction = function(
+        combobox,
+        rawQuery
+    ) {
+        const action = combobox?.querySelector(
+            "[data-catalog-create-action]"
+        );
+
+        if (!action) {
+            return;
+        }
+
+        const query = String(rawQuery || "")
+            .replace(/\s+/g, " ")
+            .trim();
+        const hasMatches = Boolean(
+            combobox.querySelector(
+                ".brand-combobox-option:not([hidden])"
+            )
+        );
+        const trigger = combobox.querySelector(
+            ".brand-combobox-trigger"
+        );
+        const available = Boolean(query)
+            && !hasMatches
+            && !combobox.classList.contains("is-loading")
+            && !trigger?.disabled;
+
+        action.hidden = !available;
+        action.disabled = !available;
+        action.dataset.catalogCreateName = query;
+        action.textContent = available
+            ? '➕ Создать "' + query + '"'
+            : "➕ Создать";
+    };
+
     function sharedCatalogOption(item, kind) {
         const product = kind === "product";
         return {
@@ -675,6 +723,7 @@
 
         combobox.dataset.sharedCatalogSelectedId = "";
         combobox.dataset.sharedCatalogSelectedLabel = "";
+        combobox.dataset.sharedCatalogSelectedItem = "";
         window.setBrandComboboxValue(combobox, "", "");
     };
 
@@ -702,6 +751,7 @@
 
         combobox.dataset.sharedCatalogSelectedId = itemId;
         combobox.dataset.sharedCatalogSelectedLabel = displayValue;
+        combobox.dataset.sharedCatalogSelectedItem = JSON.stringify(item);
         window.setBrandComboboxValue(
             combobox,
             primaryValue,
@@ -731,6 +781,13 @@
             emptyMessage.textContent = "Загрузка…";
             emptyMessage.hidden = false;
         }
+
+        window.updateCatalogCreateAction(
+            combobox,
+            combobox?.querySelector(
+                ".brand-combobox-search"
+            )?.value || ""
+        );
     }
 
     function clearSharedCatalogOptions(combobox, emptyLabel) {
@@ -829,7 +886,30 @@
             const items = Array.isArray(payload?.data)
                 ? payload.data
                 : [];
-            const options = items.map((item) =>
+            let availableItems = items;
+            const selectedId = selectedSharedCatalogId(combobox);
+            const selectedItem = (() => {
+                try {
+                    return JSON.parse(
+                        combobox.dataset.sharedCatalogSelectedItem
+                        || "null"
+                    );
+                } catch (error) {
+                    return null;
+                }
+            })();
+
+            if (
+                selectedId
+                && selectedItem
+                && !items.some(
+                    (item) => String(item.id || "") === selectedId
+                )
+            ) {
+                availableItems = [selectedItem, ...items];
+            }
+
+            const options = availableItems.map((item) =>
                 sharedCatalogOption(item, kind)
             );
             window.replaceCatalogComboboxOptions(
@@ -838,7 +918,7 @@
                 "Ничего не найдено"
             );
             window.filterBrandList(query, combobox);
-            return items;
+            return availableItems;
         } catch (error) {
             if (error.name === "AbortError") {
                 return [];
@@ -862,6 +942,8 @@
         query
     ) {
         window.clearTimeout(searchTimers.get(combobox));
+        setSharedCatalogLoading(combobox, true);
+        window.filterBrandList(query, combobox);
         searchTimers.set(
             combobox,
             window.setTimeout(function() {
@@ -982,6 +1064,7 @@
 
                 combobox.dataset.sharedCatalogSelectedId = id;
                 combobox.dataset.sharedCatalogSelectedLabel = label;
+                combobox.dataset.sharedCatalogSelectedItem = "";
                 window.setBrandComboboxValue(
                     combobox,
                     primary,
@@ -1054,181 +1137,77 @@
         );
     }
 
-    function initializeSharedCatalogCreation() {
-        const modal = document.querySelector(
-            "[data-shared-catalog-create-modal]"
-        );
-
-        if (!modal || modal.dataset.catalogCreateBound === "1") {
+    function initializeSharedCatalogInlineCreation() {
+        if (document.documentElement.dataset.catalogInlineCreateBound === "1") {
             return;
         }
 
-        modal.dataset.catalogCreateBound = "1";
-        const form = modal.querySelector(
-            "[data-catalog-create-form]"
-        );
-        const title = modal.querySelector(
-            "[data-catalog-create-title]"
-        );
-        const description = modal.querySelector(
-            "[data-catalog-create-description]"
-        );
-        const nameInput = modal.querySelector(
-            "[data-catalog-create-name]"
-        );
-        const articleField = modal.querySelector(
-            "[data-catalog-create-article-field]"
-        );
-        const articleInput = modal.querySelector(
-            "[data-catalog-create-article]"
-        );
-        const imageField = modal.querySelector(
-            "[data-catalog-create-image-field]"
-        );
-        const imageInput = modal.querySelector(
-            "[data-catalog-create-image]"
-        );
-        const errorElement = modal.querySelector(
-            "[data-catalog-create-error]"
-        );
-        const submit = modal.querySelector(
-            "[data-catalog-create-submit]"
-        );
-        let active = null;
-
-        function readProductImage() {
-            const file = imageInput?.files?.[0];
-
-            if (!file) {
-                return Promise.resolve(null);
-            }
-            if (!["image/jpeg", "image/png"].includes(file.type)) {
-                return Promise.reject(new Error(
-                    "Поддерживаются только JPEG и PNG"
-                ));
-            }
-            if (file.size > 3 * 1024 * 1024) {
-                return Promise.reject(new Error(
-                    "Файл слишком большой. Максимальный размер — 3 МБ"
-                ));
-            }
-            return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onload = () => resolve({
-                    name: file.name,
-                    type: file.type,
-                    base64: String(reader.result || ""),
-                });
-                reader.onerror = () => reject(new Error(
-                    "Не удалось прочитать изображение"
-                ));
-                reader.readAsDataURL(file);
-            });
-        }
-
-        function closeModal() {
-            modal.hidden = true;
-            active?.trigger?.focus();
-            active = null;
-        }
-
-        document.addEventListener("click", function(event) {
-            const trigger = event.target.closest(
+        document.documentElement.dataset.catalogInlineCreateBound = "1";
+        document.addEventListener("click", async function(event) {
+            const action = event.target.closest(
                 "[data-catalog-create-action]"
             );
 
-            if (!trigger) {
+            if (!action || action.disabled) {
                 return;
             }
 
-            const combobox = trigger.closest(
+            const combobox = action.closest(
                 "[data-shared-catalog-kind]"
             );
             const scope = sharedCatalogScope(combobox);
+            const kind = action.dataset.catalogCreateAction;
+            const name = String(
+                action.dataset.catalogCreateName || ""
+            ).replace(/\s+/g, " ").trim();
 
-            if (!combobox || !scope) {
+            if (!combobox || !scope || !name) {
                 return;
             }
 
             event.preventDefault();
-            const kind = trigger.dataset.catalogCreateAction;
-            const titles = {
-                brand: "Новый бренд",
-                category: "Новая категория",
-                product: "Новый товар",
-            };
-            active = {kind, scope, combobox, trigger};
-            title.textContent = titles[kind];
-            description.textContent =
-                "Значение сохранится в едином справочнике Vechasu ERP.";
-            articleField.hidden = kind !== "product";
-            imageField.hidden = kind !== "product";
-            nameInput.value = "";
-            articleInput.value = "";
-            imageInput.value = "";
-            errorElement.textContent = "";
-            modal.hidden = false;
-            window.setBrandDropdownOpen(combobox, false);
-            window.requestAnimationFrame(() => nameInput.focus());
-        });
-
-        form.addEventListener("submit", async function(event) {
-            event.preventDefault();
-
-            if (!active) {
-                return;
-            }
-
-            const name = nameInput.value.replace(/\s+/g, " ").trim();
-
-            if (!name) {
-                errorElement.textContent = "Введите название";
-                return;
-            }
-
             const brandId = selectedSharedCatalogId(
-                sharedCatalogCombobox(active.scope, "brand")
+                sharedCatalogCombobox(scope, "brand")
             );
             const categoryId = selectedSharedCatalogId(
-                sharedCatalogCombobox(active.scope, "category")
+                sharedCatalogCombobox(scope, "category")
             );
             const paths = {
                 brand: "/api/v1/brands",
                 category: "/api/v1/categories",
                 product: "/api/v1/products",
             };
-            const payload = active.kind === "brand"
+            const payload = kind === "brand"
                 ? {name}
-                : active.kind === "category"
+                : kind === "category"
                     ? {name, brand_id: Number(brandId)}
                     : {
                         name,
-                        article: articleInput.value.trim(),
+                        article: "",
                         brand_id: Number(brandId),
                         category_id: Number(categoryId),
                         brand: "",
                         category: "",
                         cell: "",
                         stock: 0,
+                        product_image: null,
                     };
+            const empty = combobox.querySelector(
+                "[data-brand-empty]"
+            );
 
-            submit.disabled = true;
-            submit.textContent = "Создаём…";
-            errorElement.textContent = "";
+            action.disabled = true;
+            action.textContent = "Создаём…";
+            setSharedCatalogLoading(combobox, true);
 
             try {
-                if (active.kind === "product") {
-                    payload.product_image = await readProductImage();
-                }
-                const response = await fetch(paths[active.kind], {
+                const response = await fetch(paths[kind], {
                     method: "POST",
                     credentials: "same-origin",
                     headers: {
                         Accept: "application/json",
                         "Content-Type": "application/json",
-                        "X-CSRF-Token": catalogCsrfToken(
-                            active.scope
-                        ),
+                        "X-CSRF-Token": catalogCsrfToken(scope),
                     },
                     body: JSON.stringify(payload),
                 });
@@ -1243,28 +1222,32 @@
                 }
 
                 window.setSharedCatalogComboboxValue(
-                    active.combobox,
+                    combobox,
                     result.data
                 );
-                closeModal();
-            } catch (error) {
-                errorElement.textContent =
-                    error.message || "Не удалось сохранить значение";
-            } finally {
-                submit.disabled = false;
-                submit.textContent = "Создать";
-            }
-        });
+                const search = combobox.querySelector(
+                    ".brand-combobox-search"
+                );
 
-        modal.querySelectorAll(
-            "[data-catalog-create-close],"
-            + "[data-catalog-create-cancel]"
-        ).forEach((button) =>
-            button.addEventListener("click", closeModal)
-        );
-        modal.addEventListener("click", function(event) {
-            if (event.target === modal) {
-                closeModal();
+                if (search) {
+                    search.value = "";
+                }
+                await window.loadSharedCatalogOptions(combobox, "");
+                window.setBrandDropdownOpen(combobox, false);
+            } catch (error) {
+                if (empty) {
+                    empty.textContent = error.message
+                        || "Не удалось сохранить значение";
+                    empty.hidden = false;
+                }
+            } finally {
+                setSharedCatalogLoading(combobox, false);
+                window.updateCatalogCreateAction(
+                    combobox,
+                    combobox.querySelector(
+                        ".brand-combobox-search"
+                    )?.value || ""
+                );
             }
         });
     }
@@ -1273,7 +1256,7 @@
         (root || document)
             .querySelectorAll("[data-shared-catalog-scope]")
             .forEach(bindSharedCatalogScope);
-        initializeSharedCatalogCreation();
+        initializeSharedCatalogInlineCreation();
     };
 
     document.addEventListener("DOMContentLoaded", function() {

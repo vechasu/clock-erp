@@ -1,14 +1,14 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 
 import { SearchableSelect } from '../../components/Controls';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
-import { createCatalogCategory, fetchCatalogOptions } from './api';
 import {
-  CatalogCreationModal,
-  type CatalogCreatedEntity,
-  type CatalogCreationRequest,
-} from './CatalogCreationModal';
+  createCatalogBrand,
+  createCatalogCategory,
+  createCatalogProduct,
+  fetchCatalogOptions,
+} from './api';
 import type { CatalogBrand, CatalogCategory, CatalogProduct } from './schemas';
 
 interface EntityComboboxProps<T> {
@@ -31,8 +31,8 @@ interface EntityComboboxProps<T> {
   onChange: (value: string, option?: T) => void;
   onQueryChange: (query: string) => void;
   createAction?: {
-    label: string;
-    onClick: () => void;
+    onCreate: (name: string) => void | Promise<void>;
+    loading?: boolean;
   };
 }
 
@@ -112,10 +112,14 @@ export function CatalogCascade({
   allowCreate = false,
   onCatalogCreated,
 }: CatalogCascadeProps) {
+  const queryClient = useQueryClient();
   const [brandQuery, setBrandQuery] = useState('');
   const [categoryQuery, setCategoryQuery] = useState('');
   const [productQuery, setProductQuery] = useState('');
-  const [creationRequest, setCreationRequest] = useState<CatalogCreationRequest | null>(null);
+  const [creatingKind, setCreatingKind] = useState<'brand' | 'category' | 'product' | null>(null);
+  const [creationError, setCreationError] = useState<
+    Partial<Record<'brand' | 'category' | 'product', string>>
+  >({});
   const [createdBrand, setCreatedBrand] = useState<CatalogBrand | null>(null);
   const [createdCategory, setCreatedCategory] = useState<CatalogCategory | null>(null);
   const [createdProduct, setCreatedProduct] = useState<CatalogProduct | null>(null);
@@ -232,18 +236,49 @@ export function CatalogCascade({
       : items;
   }, [brandId, categoryId, createdProduct, initialProduct, productId, productsQuery.data]);
 
-  const selectCreatedEntity = (created: CatalogCreatedEntity, message: string) => {
-    if (created.kind === 'brand') {
-      setCreatedBrand(created.value);
-      onBrandChange(created.value.id, created.value);
-    } else if (created.kind === 'category') {
-      setCreatedCategory(created.value);
-      onCategoryChange(created.value.id, created.value);
-    } else {
-      setCreatedProduct(created.value);
-      onProductChange?.(created.value.id, created.value);
+  const createCatalogValue = async (kind: 'brand' | 'category' | 'product', rawName: string) => {
+    const name = rawName.replace(/\s+/g, ' ').trim();
+    if (!name || creatingKind) return;
+    setCreatingKind(kind);
+    setCreationError((current) => ({ ...current, [kind]: '' }));
+    try {
+      if (kind === 'brand') {
+        const created = await createCatalogBrand(name);
+        setCreatedBrand(created);
+        onBrandChange(created.id, created);
+        onCatalogCreated?.('Бренд создан');
+      } else if (kind === 'category') {
+        if (!brandId) throw new Error('Сначала выберите бренд');
+        const created = await createCatalogCategory(brandId, name);
+        setCreatedCategory(created);
+        onCategoryChange(created.id, created);
+        onCatalogCreated?.('Категория создана');
+      } else {
+        if (!brandId || !categoryId) throw new Error('Сначала выберите бренд и категорию');
+        const created = await createCatalogProduct({
+          name,
+          article: '',
+          brand_id: brandId,
+          category_id: categoryId,
+          product_image: null,
+        });
+        setCreatedProduct(created);
+        onProductChange?.(created.id, created);
+        onCatalogCreated?.('Товар создан и выбран');
+      }
+      void Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['catalog-options'] }),
+        queryClient.invalidateQueries({ queryKey: ['products'] }),
+      ]);
+    } catch (error) {
+      setCreationError((current) => ({
+        ...current,
+        [kind]: error instanceof Error ? error.message : 'Не удалось создать значение',
+      }));
+      throw error;
+    } finally {
+      setCreatingKind(null);
     }
-    onCatalogCreated?.(message);
   };
 
   return (
@@ -263,15 +298,15 @@ export function CatalogCascade({
           onQueryChange={setBrandQuery}
           loading={brandsQuery.isFetching}
           disabled={disabled}
-          error={errors?.brand}
+          error={creationError.brand || errors?.brand}
           onChange={(value, option) => {
             onBrandChange(value ? Number(value) : null, option);
           }}
           createAction={
             allowCreate
               ? {
-                  label: '+ Добавить новый бренд',
-                  onClick: () => setCreationRequest({ kind: 'brand' }),
+                  onCreate: (name) => createCatalogValue('brand', name),
+                  loading: creatingKind === 'brand',
                 }
               : undefined
           }
@@ -287,7 +322,7 @@ export function CatalogCascade({
           onQueryChange={setCategoryQuery}
           loading={categoriesQuery.isFetching || globalCategoriesQuery.isFetching}
           disabled={disabled || !brandId}
-          error={categoryLinkError || errors?.category}
+          error={creationError.category || categoryLinkError || errors?.category}
           onChange={(value, option) => {
             if (!value || !option || option.brand_id === brandId) {
               setCategoryLinkError('');
@@ -321,8 +356,8 @@ export function CatalogCascade({
           createAction={
             allowCreate && brandId
               ? {
-                  label: '+ Добавить новую категорию',
-                  onClick: () => setCreationRequest({ kind: 'category', brandId }),
+                  onCreate: (name) => createCatalogValue('category', name),
+                  loading: creatingKind === 'category',
                 }
               : undefined
           }
@@ -345,29 +380,19 @@ export function CatalogCascade({
             onQueryChange={setProductQuery}
             loading={productsQuery.isFetching}
             disabled={disabled || productDisabled || !categoryId}
-            error={errors?.product}
+            error={creationError.product || errors?.product}
             onChange={(value, option) => onProductChange?.(value, option)}
             createAction={
               allowCreate && brandId && categoryId
                 ? {
-                    label: '+ Добавить новый товар',
-                    onClick: () =>
-                      setCreationRequest({
-                        kind: 'product',
-                        brandId,
-                        categoryId,
-                      }),
+                    onCreate: (name) => createCatalogValue('product', name),
+                    loading: creatingKind === 'product',
                   }
                 : undefined
             }
           />
         ) : null}
       </div>
-      <CatalogCreationModal
-        request={creationRequest}
-        onClose={() => setCreationRequest(null)}
-        onCreated={selectCreatedEntity}
-      />
     </>
   );
 }

@@ -97,18 +97,35 @@ class CatalogCascadeUnificationTest(unittest.TestCase):
         self.assertIn("ArrowDown", component)
         self.assertIn("ArrowUp", component)
         self.assertIn("data-catalog-create-action", macro)
+        self.assertIn("dataset.catalogCreateName", component)
+        self.assertIn("window.updateCatalogCreateAction", component)
+        self.assertIn("initializeSharedCatalogInlineCreation", component)
+        self.assertIn("product_image: null", component)
+        self.assertIn("await window.loadSharedCatalogOptions(combobox, \"\")", component)
+        self.assertIn("dataset.sharedCatalogSelectedItem", component)
+        self.assertIn("availableItems = [selectedItem, ...items]", component)
+        self.assertNotIn(
+            "render_catalog_create_modal()",
+            "".join(
+                self.source(page)
+                for page in (
+                    "app/templates/warehouse.html",
+                    "app/templates/sales.html",
+                    "app/templates/receipts.html",
+                )
+            ),
+        )
         self.assertIn(".catalog-create-modal", styles)
 
-    def test_product_photo_belongs_to_new_product_creation_only(self):
+    def test_inline_product_creation_uses_the_combobox_name_only(self):
         receipts = self.source("app/templates/receipts.html")
-        macro = self.source("app/templates/_catalog_combobox.html")
         component = self.source("app/static/js/catalog-combobox.js")
 
         self.assertNotIn('name="product_image"', receipts)
-        self.assertIn("data-catalog-create-image-field", macro)
-        self.assertIn("data-catalog-create-image", macro)
-        self.assertIn("payload.product_image = await readProductImage()", component)
-        self.assertIn("file.size > 3 * 1024 * 1024", component)
+        self.assertNotIn("render_catalog_create_modal()", receipts)
+        self.assertIn("action.dataset.catalogCreateName", component)
+        self.assertIn("product_image: null", component)
+        self.assertNotIn("readProductImage", component)
 
     def test_receipt_edit_keeps_catalog_fields_immutable(self):
         receipts = self.source("app/templates/receipts.html")
