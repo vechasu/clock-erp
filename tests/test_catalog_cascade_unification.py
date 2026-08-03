@@ -102,6 +102,8 @@ class CatalogCascadeUnificationTest(unittest.TestCase):
         self.assertIn("initializeSharedCatalogInlineCreation", component)
         self.assertIn("product_image: null", component)
         self.assertIn("await window.loadSharedCatalogOptions(combobox, \"\")", component)
+        self.assertIn("dataset.sharedCatalogSelectedItem", component)
+        self.assertIn("availableItems = [selectedItem, ...items]", component)
         self.assertNotIn(
             "render_catalog_create_modal()",
             "".join(

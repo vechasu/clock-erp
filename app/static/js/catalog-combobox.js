@@ -723,6 +723,7 @@
 
         combobox.dataset.sharedCatalogSelectedId = "";
         combobox.dataset.sharedCatalogSelectedLabel = "";
+        combobox.dataset.sharedCatalogSelectedItem = "";
         window.setBrandComboboxValue(combobox, "", "");
     };
 
@@ -750,6 +751,7 @@
 
         combobox.dataset.sharedCatalogSelectedId = itemId;
         combobox.dataset.sharedCatalogSelectedLabel = displayValue;
+        combobox.dataset.sharedCatalogSelectedItem = JSON.stringify(item);
         window.setBrandComboboxValue(
             combobox,
             primaryValue,
@@ -884,7 +886,30 @@
             const items = Array.isArray(payload?.data)
                 ? payload.data
                 : [];
-            const options = items.map((item) =>
+            let availableItems = items;
+            const selectedId = selectedSharedCatalogId(combobox);
+            const selectedItem = (() => {
+                try {
+                    return JSON.parse(
+                        combobox.dataset.sharedCatalogSelectedItem
+                        || "null"
+                    );
+                } catch (error) {
+                    return null;
+                }
+            })();
+
+            if (
+                selectedId
+                && selectedItem
+                && !items.some(
+                    (item) => String(item.id || "") === selectedId
+                )
+            ) {
+                availableItems = [selectedItem, ...items];
+            }
+
+            const options = availableItems.map((item) =>
                 sharedCatalogOption(item, kind)
             );
             window.replaceCatalogComboboxOptions(
@@ -893,7 +918,7 @@
                 "Ничего не найдено"
             );
             window.filterBrandList(query, combobox);
-            return items;
+            return availableItems;
         } catch (error) {
             if (error.name === "AbortError") {
                 return [];
@@ -1039,6 +1064,7 @@
 
                 combobox.dataset.sharedCatalogSelectedId = id;
                 combobox.dataset.sharedCatalogSelectedLabel = label;
+                combobox.dataset.sharedCatalogSelectedItem = "";
                 window.setBrandComboboxValue(
                     combobox,
                     primary,
