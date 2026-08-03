@@ -1,4 +1,5 @@
 import json
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -33,6 +34,11 @@ class NavigationSettingsTest(unittest.TestCase):
         self.app_settings_path_patcher.start()
 
     def tearDown(self):
+        web._load_navigation_settings_cached.cache_clear()
+        web._LAST_SAFE_NAVIGATION_SETTINGS.pop(
+            str(self.navigation_path),
+            None,
+        )
         self.navigation_path_patcher.stop()
         self.app_settings_path_patcher.stop()
         self.temp_directory.cleanup()
@@ -65,6 +71,152 @@ class NavigationSettingsTest(unittest.TestCase):
         return self.client.post(
             "/settings/navigation/orders/toggle"
         )
+
+    @staticmethod
+    def sidebar_html(response):
+        html = response.get_data(as_text=True)
+        return html.split('<aside', 1)[1].split('</aside>', 1)[0]
+
+    @staticmethod
+    def sidebar_keys(response):
+        return re.findall(
+            r'class="sidebar-link[^>]*?data-navigation-key="([^"]+)"',
+            NavigationSettingsTest.sidebar_html(response),
+            re.DOTALL,
+        )
+
+    def test_root_redirects_to_overview(self):
+        response = self.client.get("/")
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers["Location"], "/overview")
+
+    def test_overview_returns_200_and_is_active_in_sidebar(self):
+        response = self.client.get("/overview")
+        sidebar = self.sidebar_html(response)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertRegex(
+            sidebar,
+            r'class="sidebar-link active"[^>]*href="/overview"',
+        )
+        self.assertIn('aria-current="page"', sidebar)
+
+    def test_overview_is_enabled_by_default_and_available_in_settings(self):
+        defaults = web.get_default_navigation_settings()
+        response = self.client.get("/settings")
+
+        self.assertTrue(defaults["overview"]["enabled"])
+        self.assertIn(
+            'action="/settings/navigation/overview/toggle"',
+            response.get_data(as_text=True),
+        )
+
+    def test_default_main_menu_order_matches_navigation_contract(self):
+        with web.app.test_request_context("/overview"):
+            keys = [
+                item["key"]
+                for item in web.get_navigation_items()
+                if item["group"] == "main"
+            ]
+
+        self.assertEqual(
+            keys,
+            [
+                "overview",
+                "orders",
+                "products",
+                "catalog",
+                "sales",
+                "receipts",
+                "analytics",
+                "stock_operations",
+                "repair",
+            ],
+        )
+
+    def test_settings_sidebar_uses_enabled_navigation_on_get(self):
+        self.seed_navigation(
+            repair={"enabled": False, "position": 9},
+            sales={"enabled": True, "position": 5},
+        )
+
+        response = self.client.get("/settings")
+        keys = self.sidebar_keys(response)
+
+        self.assertNotIn("repair", keys)
+        self.assertIn("sales", keys)
+        self.assertIn("settings", keys)
+
+    def test_settings_sidebar_uses_saved_navigation_after_post(self):
+        self.seed_navigation(
+            repair={"enabled": False, "position": 9},
+            sales={"enabled": True, "position": 5},
+        )
+
+        response = self.client.post(
+            "/settings",
+            data={
+                "company_name": "Tictactoy",
+                "erp_name": "Vechasu ERP",
+                "low_stock_threshold": "3",
+            },
+            follow_redirects=True,
+        )
+        keys = self.sidebar_keys(response)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("repair", keys)
+        self.assertIn("sales", keys)
+        self.assertIn("settings", keys)
+
+    def test_navigation_toggle_applies_immediately_and_survives_reload(self):
+        self.seed_navigation(repair={"enabled": True, "position": 9})
+
+        response = self.client.post(
+            "/settings/navigation/repair/toggle",
+            follow_redirects=True,
+        )
+        reloaded = self.client.get("/settings")
+
+        self.assertNotIn("repair", self.sidebar_keys(response))
+        self.assertNotIn("repair", self.sidebar_keys(reloaded))
+        self.assertFalse(self.read_navigation()["repair"]["enabled"])
+
+    def test_menu_order_is_shared_across_primary_jinja_pages(self):
+        self.seed_navigation()
+        expected = None
+
+        for path in (
+            "/warehouse",
+            "/sales",
+            "/receipts",
+            "/repair",
+            "/settings",
+            "/overview",
+        ):
+            with self.subTest(path=path), web.app.test_request_context(path):
+                keys = [item["key"] for item in web.get_navigation_items()]
+                if expected is None:
+                    expected = keys
+                self.assertEqual(keys, expected)
+
+    def test_primary_jinja_routes_do_not_redirect_to_react_app(self):
+        endpoints = {
+            rule.rule: rule.endpoint
+            for rule in web.app.url_map.iter_rules()
+        }
+
+        for path in (
+            "/overview",
+            "/warehouse",
+            "/sales",
+            "/receipts",
+            "/repair",
+            "/settings",
+        ):
+            with self.subTest(path=path):
+                self.assertNotEqual(endpoints[path], "react_app")
 
     def test_orders_toggle_disables_and_saves_immediately(self):
         self.seed_navigation()
@@ -292,14 +444,32 @@ class NavigationSettingsTest(unittest.TestCase):
         with self.assertLogs(web.app.logger.name, level="WARNING") as logs:
             settings = web.load_navigation_settings()
 
-        self.assertTrue(settings["products"]["enabled"])
+        self.assertFalse(settings["products"]["enabled"])
+        self.assertTrue(settings["settings"]["enabled"])
         self.assertTrue(
             any(
                 "Failed to load navigation settings" in message
-                and "default navigation will be used" in message
+                and "last safe navigation settings will be used" in message
                 for message in logs.output
             )
         )
+
+    def test_invalid_navigation_json_keeps_last_safe_visibility(self):
+        self.seed_navigation(
+            repair={"enabled": False, "position": 9},
+            sales={"enabled": True, "position": 5},
+        )
+        web._load_navigation_settings_cached.cache_clear()
+        safe_settings = web.load_navigation_settings()
+
+        self.navigation_path.write_text("{invalid", encoding="utf-8")
+        web._load_navigation_settings_cached.cache_clear()
+        with self.assertLogs(web.app.logger.name, level="WARNING"):
+            fallback_settings = web.load_navigation_settings()
+
+        self.assertFalse(safe_settings["repair"]["enabled"])
+        self.assertFalse(fallback_settings["repair"]["enabled"])
+        self.assertTrue(fallback_settings["sales"]["enabled"])
 
 
 if __name__ == "__main__":

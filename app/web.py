@@ -516,6 +516,16 @@ def update_order_status(order_id, new_status):
 
 @app.route("/")
 def index():
+    return redirect(url_for("overview_page"))
+
+
+@app.route("/overview")
+def overview_page():
+    return render_template("overview.html")
+
+
+@app.route("/orders")
+def orders_page():
     orders = get_orders()
     selected_order = orders[0] if orders else None
 
@@ -524,7 +534,7 @@ def index():
         orders=orders,
         selected_order=selected_order,
         warehouse_items=get_warehouse_items(),
-        product_mappings=load_product_mappings()
+        product_mappings=load_product_mappings(),
     )
 
 
@@ -11874,15 +11884,27 @@ DEFAULT_APP_SETTINGS = {
 
 NAVIGATION_DEFINITIONS = [
     {
+        "key": "overview",
+        "label": "Обзор",
+        "description": "Главная страница и быстрый доступ к разделам ERP.",
+        "icon": "overview",
+        "href": "/overview",
+        "position": 1,
+        "group": "main",
+        "mobile_primary": False,
+        "active_exact": ["/", "/overview"],
+        "active_prefixes": [],
+    },
+    {
         "key": "orders",
         "label": "Заказы",
         "description": "Заказы интернет-магазина и карточки заказов.",
         "icon": "orders",
-        "href": "/",
-        "position": 1,
+        "href": "/orders",
+        "position": 2,
         "group": "main",
         "mobile_primary": False,
-        "active_exact": ["/"],
+        "active_exact": ["/orders"],
         "active_prefixes": ["/order"],
     },
     {
@@ -11892,7 +11914,7 @@ NAVIGATION_DEFINITIONS = [
         "icon": "products",
         "href": "/warehouse",
         "mobile_href": "/warehouse",
-        "position": 2,
+        "position": 3,
         "group": "main",
         "mobile_primary": True,
         "active_exact": [],
@@ -11905,7 +11927,7 @@ NAVIGATION_DEFINITIONS = [
         "description": "Ручные продажи, источники и отчёты.",
         "icon": "sales",
         "href": "/sales",
-        "position": 3,
+        "position": 5,
         "group": "main",
         "mobile_primary": True,
         "active_exact": [],
@@ -11917,7 +11939,7 @@ NAVIGATION_DEFINITIONS = [
         "description": "Карточки, контент и синхронизация каталога Bitrix.",
         "icon": "catalog",
         "href": "/catalog",
-        "position": 3,
+        "position": 4,
         "group": "main",
         "mobile_primary": False,
         "active_exact": [],
@@ -11929,7 +11951,7 @@ NAVIGATION_DEFINITIONS = [
         "description": "Оформление и проведение поступлений товара.",
         "icon": "receipts",
         "href": "/receipts",
-        "position": 4,
+        "position": 6,
         "group": "main",
         "mobile_primary": True,
         "active_exact": [],
@@ -11941,7 +11963,7 @@ NAVIGATION_DEFINITIONS = [
         "description": "Продажи, приходы и текущие остатки товаров.",
         "icon": "analytics",
         "href": "/analytics",
-        "position": 5,
+        "position": 7,
         "group": "main",
         "mobile_primary": False,
         "active_exact": [],
@@ -11953,7 +11975,7 @@ NAVIGATION_DEFINITIONS = [
         "description": "История складских движений и операций.",
         "icon": "stock_operations",
         "href": "/stock-operations",
-        "position": 6,
+        "position": 8,
         "group": "main",
         "mobile_primary": False,
         "active_exact": [],
@@ -11965,7 +11987,7 @@ NAVIGATION_DEFINITIONS = [
         "description": "Учёт ремонтных обращений и статусов.",
         "icon": "repair",
         "href": "/repair",
-        "position": 7,
+        "position": 9,
         "group": "main",
         "mobile_primary": False,
         "active_exact": [],
@@ -11977,7 +11999,7 @@ NAVIGATION_DEFINITIONS = [
         "description": "Управление компанией, системой и вкладками.",
         "icon": "settings",
         "href": "/settings",
-        "position": 8,
+        "position": 10,
         "group": "system",
         "mobile_primary": False,
         "active_exact": [],
@@ -11985,6 +12007,9 @@ NAVIGATION_DEFINITIONS = [
         "required": True,
     },
 ]
+
+
+_LAST_SAFE_NAVIGATION_SETTINGS = {}
 
 
 def get_navigation_settings_path():
@@ -12003,12 +12028,20 @@ def get_default_navigation_settings():
     }
 
 
+def get_safe_navigation_fallback():
+    settings = get_default_navigation_settings()
+    for item in NAVIGATION_DEFINITIONS:
+        settings[item["key"]]["enabled"] = bool(item.get("required"))
+    return settings
+
+
 @lru_cache(maxsize=16)
 def _load_navigation_settings_cached(signature):
     settings = get_default_navigation_settings()
     path = Path(signature[0])
 
     if not path.exists():
+        _LAST_SAFE_NAVIGATION_SETTINGS[str(path)] = copy.deepcopy(settings)
         return settings
 
     try:
@@ -12018,14 +12051,31 @@ def _load_navigation_settings_cached(signature):
     except (OSError, json.JSONDecodeError) as error:
         app.logger.warning(
             "Failed to load navigation settings from %s: %s; "
-            "default navigation will be used",
+            "last safe navigation settings will be used",
             path,
             error,
         )
-        return settings
+        return copy.deepcopy(
+            _LAST_SAFE_NAVIGATION_SETTINGS.get(
+                str(path),
+                get_safe_navigation_fallback(),
+            )
+        )
 
     if not isinstance(stored_settings, dict):
-        return settings
+        app.logger.warning(
+            "Failed to load navigation settings from %s: root value is not "
+            "an object; last safe navigation settings will be used",
+            path,
+        )
+        return copy.deepcopy(
+            _LAST_SAFE_NAVIGATION_SETTINGS.get(
+                str(path),
+                get_safe_navigation_fallback(),
+            )
+        )
+
+    legacy_navigation = "overview" not in stored_settings
 
     for item in NAVIGATION_DEFINITIONS:
         key = item["key"]
@@ -12041,15 +12091,18 @@ def _load_navigation_settings_cached(signature):
             )
         )
 
-        try:
-            position = int(
-                stored_item.get(
-                    "position",
-                    settings[key]["position"],
-                )
-            )
-        except (TypeError, ValueError):
+        if legacy_navigation:
             position = settings[key]["position"]
+        else:
+            try:
+                position = int(
+                    stored_item.get(
+                        "position",
+                        settings[key]["position"],
+                    )
+                )
+            except (TypeError, ValueError):
+                position = settings[key]["position"]
 
         settings[key] = {
             "enabled": enabled,
@@ -12059,6 +12112,8 @@ def _load_navigation_settings_cached(signature):
     # Настройки нельзя скрыть, иначе пользователь потеряет
     # доступ к управлению вкладками.
     settings["settings"]["enabled"] = True
+
+    _LAST_SAFE_NAVIGATION_SETTINGS[str(path)] = copy.deepcopy(settings)
 
     return settings
 
@@ -12271,9 +12326,6 @@ def settings_page():
         "settings.html",
         settings=settings,
         navigation_items=get_navigation_items(
-            include_disabled=True
-        ),
-        sidebar_navigation_items=get_navigation_items(
             include_disabled=True
         ),
         notice=(request.args.get("notice") or "").strip(),

@@ -140,14 +140,14 @@ class AuthRegistrationTest(unittest.TestCase):
         user = self.create_user()
         self.login_session(user)
 
-        with mock.patch.object(web, "get_orders", return_value=[]), \
-             mock.patch.object(web, "get_warehouse_items", return_value=[]), \
-             mock.patch.object(web, "load_product_mappings", return_value={}):
-            root = self.client.get("/")
+        root = self.client.get("/", follow_redirects=False)
+        overview = self.client.get("/overview")
         register_page = self.client.get("/register", follow_redirects=False)
 
-        self.assertEqual(root.status_code, 200)
-        self.assertIn("Заказы", root.get_data(as_text=True))
+        self.assertEqual(root.status_code, 302)
+        self.assertEqual(root.headers["Location"], "/overview")
+        self.assertEqual(overview.status_code, 200)
+        self.assertIn("Обзор", overview.get_data(as_text=True))
         self.assertEqual(register_page.status_code, 302)
         self.assertEqual(register_page.headers["Location"], "/")
 
