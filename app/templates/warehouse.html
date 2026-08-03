@@ -4206,6 +4206,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/erp-components.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-combobox.css') }}">
     <script src="{{ url_for('static', filename='js/catalog-combobox.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='js/table-scroll-hint.js') }}"></script>
 </head>
 <body class="warehouse-page">
     {% from "_catalog_combobox.html" import render_catalog_combobox %}
@@ -4379,25 +4380,24 @@
                                 <option value="cell" {% if sort_by == "cell" %}selected{% endif %}>По ячейке</option>
                             </select>
                         </label>
-                        <label
-                            class="warehouse-mobile-stock-filter"
-                            title="{% if in_stock %}Показать товары с нулевым остатком{% else %}Показать только товары в наличии{% endif %}"
-                            onclick="event.stopPropagation()"
-                        >
-                            <span class="stock-mini-toggle">
-                                <input
-                                    id="warehouseMobileInStockToggle"
-                                    type="checkbox"
-                                    role="switch"
-                                    aria-checked="{{ 'true' if in_stock else 'false' }}"
-                                    aria-label="{% if in_stock %}Показать товары с нулевым остатком{% else %}Показать только товары в наличии{% endif %}"
-                                    {% if in_stock %}checked{% endif %}
-                                    onclick="event.stopPropagation()"
-                                    onchange="toggleWarehouseInStock(event, this)"
-                                >
-                                <span class="stock-mini-slider" aria-hidden="true"></span>
-                            </span>
-                        </label>
+                    </div>
+
+                    <div class="warehouse-column-settings">
+                        <button
+                            id="warehouseColumnSettingsTrigger"
+                            class="search-tool-button erp-secondary-action"
+                            type="button"
+                            aria-haspopup="true"
+                            aria-expanded="false"
+                            aria-controls="warehouseColumnSettingsPanel"
+                        >Столбцы</button>
+                        <div
+                            id="warehouseColumnSettingsPanel"
+                            class="warehouse-column-settings-panel"
+                            role="group"
+                            aria-label="Видимые столбцы таблицы"
+                            hidden
+                        ></div>
                     </div>
 
                     <div id="warehouseMoreMenu" class="warehouse-more-menu">
@@ -4450,6 +4450,15 @@
                             >
                                 Экспорт PDF
                             </a>
+                            <button
+                                id="warehouseTableReset"
+                                class="warehouse-more-item"
+                                type="button"
+                                role="menuitem"
+                                onclick="setWarehouseMoreMenuOpen(false)"
+                            >
+                                Сбросить вид таблицы
+                            </button>
                         </div>
                     </div>
 
@@ -4802,31 +4811,12 @@
                 aria-live="polite"
             ></div>
             <div id="warehouseResults">
-            <div class="table-card erp-table-card">
-                    <div class="warehouse-table-toolbar">
-                        <div class="warehouse-column-settings">
-                            <button
-                                id="warehouseColumnSettingsTrigger"
-                                class="warehouse-table-reset"
-                                type="button"
-                                aria-haspopup="true"
-                                aria-expanded="false"
-                                aria-controls="warehouseColumnSettingsPanel"
-                            >Столбцы</button>
-                            <div
-                                id="warehouseColumnSettingsPanel"
-                                class="warehouse-column-settings-panel"
-                                role="group"
-                                aria-label="Видимые столбцы таблицы"
-                                hidden
-                            ></div>
-                        </div>
-                        <button
-                            id="warehouseTableReset"
-                            class="warehouse-table-reset"
-                            type="button"
-                        >Сбросить вид таблицы</button>
-                    </div>
+            <div
+                class="table-card erp-table-card erp-scroll-hint"
+                data-erp-scroll-hint
+                tabindex="0"
+                aria-label="Таблица товаров с горизонтальной прокруткой"
+            >
                     <table id="warehouseProductsTable" class="warehouse-products-table erp-data-table">
                         <colgroup>
                             <col class="warehouse-col-photo" data-column-key="photo">
@@ -4920,37 +4910,18 @@
                                 </th>
 
                                 <th data-column-key="stock">
-                                    <span class="stock-column-title">
-                                        <span
-                                            class="warehouse-sort-label erp-sort-label{% if sort_by == 'stock' %} is-active{% endif %}"
-                                            data-sort-field="stock"
-                                            onclick="sortWarehouseTable(this.dataset.sortField)"
-                                            title="По возрастанию. Повторное нажатие: по убыванию"
-                                        >
-                                            Остаток
-                                            <span class="warehouse-sort-arrow erp-sort-arrow">
-                                                {% if sort_by == "stock" %}
-                                                    {% if sort_dir == "asc" %}↑{% else %}↓{% endif %}
-                                                {% else %}↕{% endif %}
-                                            </span>
+                                    <span
+                                        class="warehouse-sort-label erp-sort-label{% if sort_by == 'stock' %} is-active{% endif %}"
+                                        data-sort-field="stock"
+                                        onclick="sortWarehouseTable(this.dataset.sortField)"
+                                        title="По возрастанию. Повторное нажатие: по убыванию"
+                                    >
+                                        Остаток
+                                        <span class="warehouse-sort-arrow erp-sort-arrow">
+                                            {% if sort_by == "stock" %}
+                                                {% if sort_dir == "asc" %}↑{% else %}↓{% endif %}
+                                            {% else %}↕{% endif %}
                                         </span>
-                                        <label
-                                            class="stock-mini-toggle"
-                                            title="{% if in_stock %}Показать товары с нулевым остатком{% else %}Показать только товары в наличии{% endif %}"
-                                            onclick="event.stopPropagation()"
-                                        >
-                                            <input
-                                                id="warehouseInStockToggle"
-                                                type="checkbox"
-                                                role="switch"
-                                                aria-checked="{{ 'true' if in_stock else 'false' }}"
-                                                aria-label="{% if in_stock %}Показать товары с нулевым остатком{% else %}Показать только товары в наличии{% endif %}"
-                                                {% if in_stock %}checked{% endif %}
-                                                onclick="event.stopPropagation()"
-                                                onchange="toggleWarehouseInStock(event, this)"
-                                            >
-                                            <span class="stock-mini-slider" aria-hidden="true"></span>
-                                        </label>
                                     </span>
                                 </th>
 
@@ -5215,10 +5186,6 @@
 
             <input type="hidden" name="sort_by" value="{{ sort_by }}">
             <input type="hidden" name="sort_dir" value="{{ sort_dir }}">
-            {% if in_stock %}
-                <input type="hidden" name="in_stock" value="1">
-            {% endif %}
-
             <div class="category-cell-form-title">Бренд</div>
 
             {{ render_catalog_combobox(
@@ -5237,6 +5204,17 @@
                 id_input_name="brand_id",
                 selected_label=selected_brand
             ) }}
+
+            <label class="warehouse-filter-stock-option">
+                <input
+                    id="warehouseFilterInStock"
+                    type="checkbox"
+                    name="in_stock"
+                    value="1"
+                    {% if in_stock %}checked{% endif %}
+                >
+                <span>Только в наличии</span>
+            </label>
 
             <div class="category-cell-form-title" style="margin-top: 14px;">
                 Категория

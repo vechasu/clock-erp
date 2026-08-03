@@ -3382,3 +3382,319 @@ select.erp-control {
         justify-content: center;
     }
 }
+
+/* ERP table UX polish: shared header, density, actions and scroll affordance. */
+.warehouse-filter-stock-option {
+    display: flex;
+    min-height: 44px;
+    align-items: center;
+    gap: 10px;
+    margin-top: 14px;
+    padding: 0 12px;
+    border: 1px solid var(--erp-border);
+    border-radius: 11px;
+    background: var(--erp-surface-muted);
+    color: var(--erp-text);
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.warehouse-filter-stock-option input {
+    width: 17px;
+    height: 17px;
+    margin: 0;
+    accent-color: var(--erp-primary);
+}
+
+.warehouse-page .warehouse-column-settings > .erp-secondary-action {
+    min-width: 108px;
+}
+
+.warehouse-page .warehouse-column-settings-panel {
+    z-index: 1200;
+}
+
+.warehouse-products-table.erp-data-table,
+.sales-table.erp-data-table,
+.receipts-table.erp-data-table {
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.warehouse-products-table.erp-data-table thead th,
+.sales-table.erp-data-table thead th,
+.receipts-table.erp-data-table thead th {
+    height: 46px;
+    padding-top: 0;
+    padding-bottom: 0;
+    border: 0;
+    border-bottom: 1px solid #dce3eb;
+    border-radius: 0 !important;
+    background: #f3f6f9 !important;
+    background-image: none !important;
+    color: #334155;
+    font-size: 12px;
+    font-weight: 700;
+    box-shadow: none;
+}
+
+.warehouse-products-table.erp-data-table thead th:first-child,
+.sales-table.erp-data-table thead th:first-child,
+.receipts-table.erp-data-table thead th:first-child {
+    border-top-left-radius: 0 !important;
+}
+
+.warehouse-products-table.erp-data-table thead th:last-child,
+.sales-table.erp-data-table thead th:last-child,
+.receipts-table.erp-data-table thead th:last-child {
+    border-top-right-radius: 0 !important;
+}
+
+.warehouse-products-table .erp-sort-arrow,
+.sales-table .erp-sort-arrow,
+.receipts-table .receipt-sort-button > span {
+    color: #64748b;
+    opacity: 0.18;
+    transition: color 0.14s ease, opacity 0.14s ease;
+}
+
+.warehouse-products-table .erp-sort-label:hover .erp-sort-arrow,
+.warehouse-products-table .erp-sort-label.is-active .erp-sort-arrow,
+.sales-table .sales-sort-label:hover .erp-sort-arrow,
+.sales-table .sales-sort-label.is-active .erp-sort-arrow,
+.receipts-table .receipt-sort-button:hover > span,
+.receipts-table .receipt-sort-button > span.is-active {
+    color: var(--erp-primary);
+    opacity: 1;
+}
+
+.warehouse-products-table.erp-data-table tbody td,
+.sales-table.erp-data-table tbody td,
+.receipts-table.erp-data-table tbody td {
+    color: #334155;
+    font-weight: 500;
+}
+
+.warehouse-products-table td[data-column-key="name"] .name,
+.sales-table td.col-product_name .manual-view-value,
+.sales-table td.col-product_name .automatic-view-value,
+.receipts-table td.col-document,
+.receipts-table .receipt-product-name-only {
+    color: var(--erp-text);
+    font-weight: 650;
+}
+
+.receipts-table.erp-data-table tbody td {
+    height: 80px;
+    padding: 10px 11px;
+    line-height: 1.35;
+}
+
+.sales-table.erp-data-table .sale-row.is-cancelled td,
+.sales-table.erp-data-table .sale-row.is-returned td,
+.sales-table.erp-data-table .sale-row.is-partially-returned td,
+.sales-table.erp-data-table .sale-row.is-cancelled:hover td,
+.sales-table.erp-data-table .sale-row.is-returned:hover td,
+.sales-table.erp-data-table .sale-row.is-partially-returned:hover td {
+    background: #fff;
+    color: #334155;
+}
+
+.sales-table.erp-data-table .sale-row.is-cancelled:hover td,
+.sales-table.erp-data-table .sale-row.is-returned:hover td,
+.sales-table.erp-data-table .sale-row.is-partially-returned:hover td {
+    background: #f8fafc;
+}
+
+.erp-table-action,
+.sales-row-action,
+.receipt-action-button {
+    width: 30px;
+    min-width: 30px;
+    height: 30px;
+    min-height: 30px;
+    flex-basis: 30px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: #52677f;
+}
+
+.erp-table-action:hover,
+.erp-table-action:focus-visible,
+.sales-row-action:hover,
+.sales-row-action:focus-visible,
+.receipt-action-button:hover,
+.receipt-action-button:focus-visible {
+    border-color: #dbe3ec;
+    background: #f1f5f9;
+    color: #31588c;
+}
+
+.erp-table-action-delete,
+.sales-row-delete,
+.receipt-delete-button {
+    background: transparent;
+    color: #7b8797;
+}
+
+.warehouse-products-table .erp-table-action.erp-table-action-delete,
+.sales-table .sales-row-action.sales-row-delete,
+.receipts-table .receipt-action-button.receipt-delete-button {
+    border-color: transparent !important;
+    background: transparent !important;
+    color: #7b8797 !important;
+}
+
+.erp-table-action-delete:hover,
+.erp-table-action-delete:focus-visible,
+.sales-row-delete:hover,
+.sales-row-delete:focus-visible,
+.receipt-delete-button:hover,
+.receipt-delete-button:focus-visible {
+    border-color: #fecaca;
+    background: #fff1f2;
+    color: #dc2626;
+}
+
+.warehouse-products-table .erp-table-action.erp-table-action-delete:hover,
+.warehouse-products-table .erp-table-action.erp-table-action-delete:focus-visible,
+.sales-table .sales-row-action.sales-row-delete:hover,
+.sales-table .sales-row-action.sales-row-delete:focus-visible,
+.receipts-table .receipt-action-button.receipt-delete-button:hover,
+.receipts-table .receipt-action-button.receipt-delete-button:focus-visible {
+    border-color: #fecaca !important;
+    background: #fff1f2 !important;
+    color: #dc2626 !important;
+}
+
+.receipt-moysklad-button {
+    background: transparent;
+    color: #4f6f9b;
+}
+
+.receipt-moysklad-button.is-disabled,
+.receipt-action-button:disabled {
+    border-color: transparent;
+    background: transparent;
+    color: #cbd5e1;
+    opacity: 1;
+}
+
+.erp-scroll-hint.has-horizontal-overflow:not(.is-at-scroll-end) {
+    box-shadow: inset -18px 0 16px -18px rgba(30, 64, 110, 0.45);
+}
+
+.warehouse-page .erp-table-card.erp-scroll-hint.has-horizontal-overflow:not(.is-at-scroll-end) {
+    box-shadow:
+        inset -18px 0 16px -18px rgba(30, 64, 110, 0.45),
+        0 8px 24px rgba(15, 23, 42, 0.04);
+}
+
+.receipt-column-settings {
+    position: relative;
+    min-width: 0;
+    order: 4;
+}
+
+.receipt-filter-toolbar > .receipt-report-button {
+    order: 5;
+}
+
+.receipt-filter-toolbar > .receipt-mobile-sort {
+    order: 6;
+}
+
+.receipt-column-settings-trigger {
+    min-width: 104px;
+}
+
+.receipt-column-settings-panel {
+    position: absolute;
+    z-index: 1250;
+    top: calc(100% + 7px);
+    right: 0;
+    width: 230px;
+    padding: 10px;
+    border: 1px solid #dbe3ec;
+    border-radius: 12px;
+    background: #fff;
+    box-shadow: 0 14px 34px rgba(15, 23, 42, 0.14);
+}
+
+.receipt-column-settings-panel[hidden] {
+    display: none;
+}
+
+.receipt-column-settings-option {
+    display: flex;
+    min-height: 34px;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 4px;
+    color: #334155;
+    font-size: 13px;
+    font-weight: 650;
+}
+
+.receipt-column-settings-option input {
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    accent-color: var(--erp-primary);
+}
+
+.receipt-column-settings-hint {
+    margin: 7px 4px 2px;
+    color: var(--erp-muted);
+    font-size: 11px;
+    line-height: 1.35;
+}
+
+@media (min-width: 1101px) {
+    .receipt-filter-toolbar.erp-toolbar {
+        grid-template-columns: minmax(280px, 1fr) auto auto auto auto;
+    }
+}
+
+@media (max-width: 1100px) {
+    .receipt-filter-toolbar > .receipt-column-settings {
+        width: 100%;
+        min-width: 0;
+    }
+
+    .receipt-column-settings-trigger {
+        width: 100%;
+    }
+}
+
+@media (min-width: 901px) and (max-width: 1100px) {
+    .receipt-filter-toolbar > .receipt-report-button {
+        width: 100%;
+        min-width: 0;
+        grid-column: auto;
+    }
+}
+
+@media (max-width: 900px) {
+    .receipt-filter-toolbar > .receipt-column-settings {
+        display: none;
+    }
+
+    .receipt-filter-toolbar > .receipt-report-button {
+        grid-column: 1 / -1;
+    }
+}
+
+@media (max-width: 767px) {
+    .receipts-table.erp-data-table tbody td {
+        height: auto;
+        padding: 0;
+    }
+
+    .erp-scroll-hint,
+    .erp-scroll-hint.has-horizontal-overflow:not(.is-at-scroll-end) {
+        box-shadow: none;
+    }
+}
