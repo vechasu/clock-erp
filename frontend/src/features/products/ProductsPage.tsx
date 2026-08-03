@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 import { ApiRequestError } from '../../api/client';
-import { AppShell } from '../../components/AppShell';
+import { ErpShell } from '../../components/ErpShell';
 import { DateRangePicker, FilterPanel, LiveSearch } from '../../components/Controls';
 import { DataTable } from '../../components/DataTable';
 import { Icon } from '../../components/Icons';
@@ -466,7 +466,7 @@ export function ProductsPage() {
   );
 
   return (
-    <AppShell>
+    <ErpShell>
       <div className="erp-page">
         <PageHeader
           eyebrow="Складской каталог"
@@ -479,9 +479,6 @@ export function ProductsPage() {
               </ActionLink>
               <ActionLink href="/warehouse/export.pdf" icon="download">
                 PDF
-              </ActionLink>
-              <ActionLink href="/warehouse" icon="warehouse">
-                Карта склада
               </ActionLink>
               <Button tone="primary" icon="plus" type="button" onClick={() => setEditor('new')}>
                 Добавить товар
@@ -817,6 +814,6 @@ export function ProductsPage() {
         )}
       </Modal>
       {toast ? <Toast {...toast} onClose={() => setToast(null)} /> : null}
-    </AppShell>
+    </ErpShell>
   );
 }

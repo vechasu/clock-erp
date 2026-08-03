@@ -141,13 +141,13 @@ class AuthRegistrationTest(unittest.TestCase):
         self.login_session(user)
 
         root = self.client.get("/", follow_redirects=False)
-        overview = self.client.get("/overview")
+        overview = self.client.get("/overview", follow_redirects=False)
         register_page = self.client.get("/register", follow_redirects=False)
 
         self.assertEqual(root.status_code, 302)
-        self.assertEqual(root.headers["Location"], "/overview")
-        self.assertEqual(overview.status_code, 200)
-        self.assertIn("Обзор", overview.get_data(as_text=True))
+        self.assertEqual(root.headers["Location"], "/app/products")
+        self.assertEqual(overview.status_code, 302)
+        self.assertEqual(overview.headers["Location"], "/app/products")
         self.assertEqual(register_page.status_code, 302)
         self.assertEqual(register_page.headers["Location"], "/")
 

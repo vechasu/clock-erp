@@ -8,12 +8,8 @@ test('React entry point opens the unified ERP workspace', async ({ page }) => {
   await expect(page).toHaveURL(/\/app\/products$/);
 });
 
-test('unknown React routes keep a controlled empty state', async ({ page }) => {
+test('unknown React routes safely return to products', async ({ page }) => {
   await page.goto('/app/unknown');
-
-  await expect(page.getByRole('heading', { name: 'Раздел ещё не перенесён' })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Вернуться к инфраструктуре' })).toHaveAttribute(
-    'href',
-    '/app',
-  );
+  await expect(page.getByRole('heading', { name: 'Товары' })).toBeVisible();
+  await expect(page).toHaveURL(/\/app\/products$/);
 });

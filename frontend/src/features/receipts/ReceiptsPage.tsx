@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 import { ApiRequestError } from '../../api/client';
-import { AppShell } from '../../components/AppShell';
+import { ErpShell } from '../../components/ErpShell';
 import { DateRangePicker, FilterPanel, LiveSearch } from '../../components/Controls';
 import { DataTable } from '../../components/DataTable';
 import {
@@ -265,7 +265,7 @@ export function ReceiptsPage() {
   );
 
   return (
-    <AppShell>
+    <ErpShell>
       <div className="erp-page">
         <PageHeader
           eyebrow="Складские документы"
@@ -529,6 +529,6 @@ export function ReceiptsPage() {
         }}
       />
       {toast ? <Toast {...toast} onClose={() => setToast(null)} /> : null}
-    </AppShell>
+    </ErpShell>
   );
 }
