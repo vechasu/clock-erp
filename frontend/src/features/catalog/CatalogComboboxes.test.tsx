@@ -354,7 +354,7 @@ describe('CatalogCascade', () => {
       const url = new URL(String(input), 'https://erp.test');
       if (init?.method === 'POST' && url.pathname.endsWith('/brands')) {
         return Promise.resolve(
-          envelope({ id: 7, name: 'Vechasu', active: true, product_count: 0 }),
+          envelope({ id: 7, name: 'Global Test Brand', active: true, product_count: 0 }),
         );
       }
       if (init?.method === 'POST' && url.pathname.endsWith('/products')) {
@@ -367,7 +367,7 @@ describe('CatalogCascade', () => {
             barcode: '',
             brand_id: values.brand_id,
             category_id: values.category_id,
-            brand: 'Vechasu',
+            brand: 'Global Test Brand',
             category: 'Наручные часы',
             cell: '',
             stock: 0,
@@ -402,9 +402,9 @@ describe('CatalogCascade', () => {
     );
 
     const brand = screen.getByRole('combobox', { name: 'Бренд *' });
-    await user.type(brand, 'Vechasu');
-    await user.click(await screen.findByRole('option', { name: '➕ Создать "Vechasu"' }));
-    await waitFor(() => expect(brand).toHaveValue('Vechasu'));
+    await user.type(brand, 'Global Test Brand');
+    await user.click(await screen.findByRole('option', { name: '➕ Создать "Global Test Brand"' }));
+    await waitFor(() => expect(brand).toHaveValue('Global Test Brand'));
 
     const category = screen.getByRole('combobox', { name: 'Категория *' });
     await user.click(category);
@@ -412,9 +412,11 @@ describe('CatalogCascade', () => {
     expect(category).toHaveValue('Наручные часы');
 
     const product = screen.getByRole('combobox', { name: 'Товар *' });
-    await user.type(product, 'Vechasu One');
-    await user.click(await screen.findByRole('option', { name: '➕ Создать "Vechasu One"' }));
-    await waitFor(() => expect(product).toHaveValue('Vechasu One'));
+    await user.type(product, 'Global Test Product');
+    await user.click(
+      await screen.findByRole('option', { name: '➕ Создать "Global Test Product"' }),
+    );
+    await waitFor(() => expect(product).toHaveValue('Global Test Product'));
 
     const categoryPosts = fetchMock.mock.calls.filter(
       ([input, init]) =>
