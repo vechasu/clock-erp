@@ -101,16 +101,18 @@
                     data-brand-empty
                     hidden
                 >{{ empty_label }}</div>
+                {% if action_kind and action_label %}
+                    <button
+                        class="catalog-combobox-action"
+                        type="button"
+                        role="option"
+                        data-catalog-create-action="{{ action_kind }}"
+                        hidden
+                    >
+                        ➕ Создать
+                    </button>
+                {% endif %}
             </div>
-            {% if action_kind and action_label %}
-                <button
-                    class="catalog-combobox-action"
-                    type="button"
-                    data-catalog-create-action="{{ action_kind }}"
-                >
-                    ＋ {{ action_label }}
-                </button>
-            {% endif %}
         </div>
     </div>
 {% endmacro %}

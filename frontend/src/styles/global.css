@@ -2332,10 +2332,10 @@ input[type='number']::-webkit-outer-spin-button {
   cursor: default;
 }
 
-.searchable-select-create {
-  width: calc(100% - 10px);
+.searchable-select-popover li.searchable-select-create {
+  width: auto;
   min-height: 38px;
-  margin: 0 5px 5px;
+  margin-top: 5px;
   border: 1px dashed var(--theme-primary);
   border-radius: var(--radius-xs);
   background: var(--theme-primary-soft);

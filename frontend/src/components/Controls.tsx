@@ -84,8 +84,8 @@ interface SearchableSelectProps {
   emptyLabel?: string;
   onQueryChange?: (query: string) => void;
   createAction?: {
-    label: string;
-    onClick: () => void;
+    onCreate: (name: string) => void | Promise<void>;
+    loading?: boolean;
   };
 }
 
@@ -131,20 +131,37 @@ export function SearchableSelect({
       return options.slice(0, 100);
     }
     return options
-      .filter((option) =>
-        option.label.toLocaleLowerCase('ru-RU').includes(normalized) ||
-        (option.searchText ?? [option.description, option.meta].filter(Boolean).join(' '))
-          .toLocaleLowerCase('ru-RU')
-          .includes(normalized),
+      .filter(
+        (option) =>
+          option.label.toLocaleLowerCase('ru-RU').includes(normalized) ||
+          (option.searchText ?? [option.description, option.meta].filter(Boolean).join(' '))
+            .toLocaleLowerCase('ru-RU')
+            .includes(normalized),
       )
       .slice(0, 100);
   }, [options, query, selected?.inputLabel, selected?.label]);
+  const createName = query.replace(/\s+/g, ' ').trim();
+  const showCreateOption = Boolean(
+    createAction && createName && !loading && !visibleOptions.length,
+  );
+  const interactiveOptionCount = visibleOptions.length + (showCreateOption ? 1 : 0);
 
   const choose = (option: EntityOption) => {
     if (option.disabled) return;
     onChange(option.value);
     setQuery(option.inputLabel ?? option.label);
     setOpen(false);
+    inputRef.current?.focus();
+  };
+
+  const create = async () => {
+    if (!createAction || !showCreateOption || createAction.loading) return;
+    try {
+      await createAction.onCreate(createName);
+      setOpen(false);
+    } catch {
+      setOpen(true);
+    }
     inputRef.current?.focus();
   };
 
@@ -165,13 +182,18 @@ export function SearchableSelect({
           aria-controls={listboxId}
           aria-expanded={open}
           aria-activedescendant={
-            open && visibleOptions[activeIndex] ? `${listboxId}-${activeIndex}` : undefined
+            open && activeIndex < interactiveOptionCount
+              ? activeIndex < visibleOptions.length
+                ? `${listboxId}-${activeIndex}`
+                : `${listboxId}-create`
+              : undefined
           }
           aria-invalid={Boolean(error)}
           value={query}
           placeholder={placeholder}
           disabled={disabled}
           onFocus={() => setOpen(true)}
+          onClick={() => setOpen(true)}
           onChange={(event) => {
             setQuery(event.target.value);
             onQueryChange?.(event.target.value);
@@ -183,13 +205,21 @@ export function SearchableSelect({
             if (event.key === 'ArrowDown') {
               event.preventDefault();
               setOpen(true);
-              setActiveIndex((index) => Math.min(index + 1, visibleOptions.length - 1));
+              setActiveIndex((index) => Math.min(index + 1, interactiveOptionCount - 1));
             } else if (event.key === 'ArrowUp') {
               event.preventDefault();
               setActiveIndex((index) => Math.max(index - 1, 0));
             } else if (event.key === 'Enter' && open && visibleOptions[activeIndex]) {
               event.preventDefault();
               choose(visibleOptions[activeIndex]);
+            } else if (
+              event.key === 'Enter' &&
+              open &&
+              showCreateOption &&
+              activeIndex === visibleOptions.length
+            ) {
+              event.preventDefault();
+              void create();
             } else if (event.key === 'Escape') {
               setOpen(false);
             }
@@ -248,20 +278,25 @@ export function SearchableSelect({
                 {loading ? 'Загружаем значения…' : emptyLabel}
               </li>
             ) : null}
+            {showCreateOption ? (
+              <li
+                id={`${listboxId}-create`}
+                role="option"
+                aria-selected="false"
+                aria-disabled={createAction?.loading}
+                className={`searchable-select-create${
+                  activeIndex === visibleOptions.length ? ' is-active' : ''
+                }`}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  void create();
+                }}
+                onMouseEnter={() => setActiveIndex(visibleOptions.length)}
+              >
+                {createAction?.loading ? 'Создаём…' : `➕ Создать "${createName}"`}
+              </li>
+            ) : null}
           </ul>
-          {createAction ? (
-            <button
-              className="searchable-select-create"
-              type="button"
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => {
-                setOpen(false);
-                createAction.onClick();
-              }}
-            >
-              {createAction.label}
-            </button>
-          ) : null}
         </div>
       ) : null}
       {hint && !error ? <small className="field-hint">{hint}</small> : null}
