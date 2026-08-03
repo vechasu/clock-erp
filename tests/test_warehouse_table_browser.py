@@ -13,6 +13,10 @@ from app import web
 
 
 def product(item_id, name, article, with_photo=False):
+    bitrix_element_id = "204699" if item_id == 1001 else ""
+    public_product_url = (
+        "https://www.tictactoy.ru/catalog/watches/luch/011211757/"
+    )
     return {
         "id": item_id,
         "name": name,
@@ -48,6 +52,13 @@ def product(item_id, name, article, with_photo=False):
         "cell_source_label": "у позиции",
         "cell_source_path": "",
         "moysklad_url": "#",
+        "bitrix_element_id": bitrix_element_id,
+        "bitrix_iblock_id": 5,
+        "bitrix_admin_url": web.build_bitrix_product_links(
+            bitrix_element_id,
+            public_product_url,
+        )["bitrix_admin_url"],
+        "public_product_url": public_product_url,
         "raw_category": "Наручные часы",
     }
 

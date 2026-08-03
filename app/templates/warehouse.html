@@ -3737,6 +3737,11 @@
             box-shadow: none;
         }
 
+        #editDrawer .product-inline-actions .moysklad-link[aria-disabled="true"] {
+            pointer-events: none;
+            opacity: 0.55;
+        }
+
         #editDrawer .product-history-section {
             margin-top: 14px;
             padding: 12px;
@@ -4641,7 +4646,9 @@
                                                     data-cell="{{ item.cell|e }}"
                                                     data-cell-source="{{ item.cell_source|e }}"
                                                     data-cell-source-label="{{ item.cell_source_label|e }}"
-                                                    data-url="{{ item.moysklad_url|e }}"
+                                                    data-bitrix-element-id="{{ item.bitrix_element_id|e }}"
+                                                    data-bitrix-admin-url="{{ item.bitrix_admin_url|e }}"
+                                                    data-public-product-url="{{ item.public_product_url|e }}"
                                                     data-detail-url="/warehouse/product/{{ item.id }}"
                                                     onclick="openEditDrawer(this)"
                                                 >
@@ -5033,8 +5040,24 @@
                 <button type="button" data-edit-start onclick="startInlineProductEdit()">Редактировать</button>
                 <button type="submit" data-edit-actions>Сохранить</button>
                 <button class="cancel-button" type="button" data-edit-actions onclick="cancelInlineProductEdit()">Отмена</button>
-                <a id="detailMoySkladLink" class="moysklad-link" href="#" target="_blank">
+                <a
+                    id="detailBitrixLink"
+                    class="moysklad-link"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-disabled="true"
+                    title="Карточка Bitrix не найдена"
+                >
                     Открыть в Bitrix
+                </a>
+                <a
+                    id="detailPublicProductLink"
+                    class="moysklad-link"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    hidden
+                >
+                    Открыть на сайте
                 </a>
             </div>
         </form>
@@ -5414,7 +5437,8 @@
             renderStockHistory(button.dataset.id || button.dataset.productId || "");
             const productCell = button.dataset.cell || "";
             const productCellSourceLabel = button.dataset.cellSourceLabel || "";
-            const productUrl = button.dataset.url || "#";
+            const bitrixAdminUrl = button.dataset.bitrixAdminUrl || "";
+            const publicProductUrl = button.dataset.publicProductUrl || "";
             const gallerySection = document.getElementById("detailGallerySection");
             const galleryElement = document.getElementById("detailGallery");
             let galleryUrls = [];
@@ -5482,7 +5506,28 @@
             document.getElementById("detailCell").textContent = productCell
                 ? (productCellSourceLabel ? `${productCell} · ${productCellSourceLabel}` : productCell)
                 : "—";
-            document.getElementById("detailMoySkladLink").href = productUrl;
+            const bitrixLink = document.getElementById("detailBitrixLink");
+            if (bitrixAdminUrl) {
+                bitrixLink.href = bitrixAdminUrl;
+                bitrixLink.removeAttribute("aria-disabled");
+                bitrixLink.removeAttribute("tabindex");
+                bitrixLink.title = "Открыть административную карточку Bitrix";
+            } else {
+                bitrixLink.removeAttribute("href");
+                bitrixLink.setAttribute("aria-disabled", "true");
+                bitrixLink.setAttribute("tabindex", "-1");
+                bitrixLink.title = "Карточка Bitrix не найдена";
+            }
+
+            const publicProductLink = document.getElementById(
+                "detailPublicProductLink"
+            );
+            publicProductLink.hidden = !publicProductUrl;
+            if (publicProductUrl) {
+                publicProductLink.href = publicProductUrl;
+            } else {
+                publicProductLink.removeAttribute("href");
+            }
 
             document.getElementById("editProductId").value = button.dataset.id || "";
             const editableValues = {
@@ -7255,6 +7300,33 @@
                 result.correctEditRow = (
                     document.getElementById("editProductId").value
                     === firstEdit.dataset.id
+                );
+                const bitrixLink = document.getElementById("detailBitrixLink");
+                const publicLink = document.getElementById(
+                    "detailPublicProductLink"
+                );
+                result.bitrixAdminLink = (
+                    bitrixLink.href.includes("/bitrix/admin/iblock_element_edit.php")
+                    && bitrixLink.href.includes("IBLOCK_ID=5")
+                    && bitrixLink.href.includes("ID=204699")
+                    && !bitrixLink.href.includes("/catalog/watches/")
+                    && bitrixLink.target === "_blank"
+                    && bitrixLink.rel.includes("noopener")
+                    && bitrixLink.rel.includes("noreferrer")
+                    && !publicLink.hidden
+                    && publicLink.href.includes(
+                        "/catalog/watches/luch/011211757/"
+                    )
+                );
+                const secondEdit = table.querySelector(
+                    'button[data-id="1002"]'
+                );
+                openEditDrawer(secondEdit);
+                result.bitrixMissingState = (
+                    !bitrixLink.hasAttribute("href")
+                    && bitrixLink.getAttribute("aria-disabled") === "true"
+                    && bitrixLink.title === "Карточка Bitrix не найдена"
+                    && !publicLink.hidden
                 );
                 closeAllDrawers(false);
 

@@ -1303,6 +1303,35 @@ def item_in_category(item, selected_category):
     )
 
 
+BITRIX_ADMIN_ELEMENT_EDIT_URL = (
+    "https://www.tictactoy.ru/bitrix/admin/iblock_element_edit.php"
+)
+BITRIX_CATALOG_IBLOCK_ID = 5
+BITRIX_CATALOG_IBLOCK_TYPE = "TicTacToy"
+
+
+def build_bitrix_product_links(element_id, public_product_url=""):
+    element_id = str(element_id or "").strip()
+    if not element_id.isdigit() or int(element_id) < 1:
+        element_id = ""
+
+    admin_url = ""
+    if element_id:
+        admin_url = BITRIX_ADMIN_ELEMENT_EDIT_URL + "?" + urlencode([
+            ("IBLOCK_ID", BITRIX_CATALOG_IBLOCK_ID),
+            ("type", BITRIX_CATALOG_IBLOCK_TYPE),
+            ("ID", element_id),
+            ("lang", "ru"),
+        ])
+
+    return {
+        "bitrix_element_id": element_id,
+        "bitrix_iblock_id": BITRIX_CATALOG_IBLOCK_ID,
+        "bitrix_admin_url": admin_url,
+        "public_product_url": str(public_product_url or "").strip(),
+    }
+
+
 def build_excel_warehouse_items(products):
     items = []
     for product in products:
@@ -1321,7 +1350,7 @@ def build_excel_warehouse_items(products):
                 format_stock_number(price), "₽" if currency == "RUB" else currency
             )
         stock = float(product.get("stock") or 0)
-        items.append({
+        item = {
             "id": product["id"],
             "name": product.get("excel_name_raw") or "",
             "article": product.get("excel_article") or "",
@@ -1354,8 +1383,15 @@ def build_excel_warehouse_items(products):
             ),
             "gallery": product.get("gallery") or [],
             "price_display": price_display,
+            # Legacy export field retained for compatibility. UI links use the
+            # explicit admin/public fields below.
             "moysklad_url": product.get("bitrix_source_url") or "",
-        })
+        }
+        item.update(build_bitrix_product_links(
+            product.get("bitrix_external_product_id"),
+            product.get("bitrix_source_url"),
+        ))
+        items.append(item)
     return items
 
 
@@ -11648,6 +11684,10 @@ def excel_product_page(product_id):
     product = ExcelProductCatalog().get_product(product_id)
     if product is None:
         abort(404)
+    product.update(build_bitrix_product_links(
+        product.get("bitrix_external_product_id"),
+        product.get("bitrix_source_url"),
+    ))
     return render_template(
         "excel_product_detail.html", product=product, match_labels=EXCEL_MATCH_LABELS,
         return_to=_safe_products_return_to(request.args.get("return_to")),
@@ -11789,6 +11829,10 @@ def catalog_product_page(product_id):
     product = CatalogReader().get_product(product_id)
     if product is None:
         abort(404)
+    product.update(build_bitrix_product_links(
+        product.get("external_product_id"),
+        product.get("source_url"),
+    ))
     return render_template("catalog_detail.html", product=product)
 
 
