@@ -234,6 +234,20 @@ class Stage2ReceiptsApiTest(unittest.TestCase):
         self.assertEqual(second.status_code, 200)
         load_receipts.assert_called_once_with()
 
+    def test_missing_product_thumbnail_is_a_cacheable_empty_response(self):
+        self.remote.download_product_thumbnail.return_value = None
+
+        response = self.client.get(
+            "/warehouse/product/"
+            "11111111-1111-1111-1111-111111111111/thumbnail"
+        )
+
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(
+            response.headers["Cache-Control"],
+            "private, max-age=300",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

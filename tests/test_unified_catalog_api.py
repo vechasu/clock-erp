@@ -546,6 +546,41 @@ class UnifiedCatalogApiTest(unittest.TestCase):
         )
         self.remote.upload_product_image.assert_called_once()
 
+    def test_receipt_edit_replaces_existing_product_photo(self):
+        created = self.client.post(
+            "/api/v1/receipts",
+            json=self.receipt_payload(quantity=1),
+        ).get_json()["data"]
+        self.remote.product_has_images.return_value = True
+
+        response = self.client.patch(
+            "/api/v1/receipts/{}".format(created["id"]),
+            data={
+                "receipt_date": "2026-07-30",
+                "document_number": created["document_number"],
+                "quantity": "1",
+                "product_id": str(self.product["id"]),
+                "product_image": (
+                    BytesIO(b"\x89PNG\r\n\x1a\nreplacement"),
+                    "replacement.png",
+                    "image/png",
+                ),
+            },
+            content_type="multipart/form-data",
+            headers={"Idempotency-Key": "receipt-photo-replacement"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.get_json()["meta"]["image_message"],
+            "Фото товара обновлено.",
+        )
+        self.remote.upload_product_image.assert_called_once_with(
+            "ms-casio-a168",
+            "replacement.png",
+            b"\x89PNG\r\n\x1a\nreplacement",
+        )
+
     def test_photo_upload_is_part_of_remote_receipt_creation(self):
         response = self.multipart_receipt(
             image=b"\x89PNG\r\n\x1a\nparallel",
