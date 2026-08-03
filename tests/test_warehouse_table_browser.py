@@ -186,6 +186,112 @@ class WarehouseTableBrowserTest(unittest.TestCase):
                 self.assertIn("migration", marker)
                 self.assertIn("staleProtection", marker)
 
+    def run_add_form_browser(self, width):
+        chrome = self.find_chrome()
+        if not chrome:
+            self.skipTest("Chrome/Chromium is unavailable")
+
+        original_testing = web.app.testing
+        original_auth_testing = web.app.config.get("AUTH_TESTING")
+        web.app.testing = True
+        web.app.config["AUTH_TESTING"] = False
+        server = make_server("127.0.0.1", 0, web.app)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        listing = {
+            "items": [],
+            "total": 0,
+            "page": 1,
+            "per_page": 50,
+            "pages": 0,
+            "brand_groups": [],
+            "brand_all_count": 0,
+            "category_groups": [],
+            "cell_groups": [],
+            "stats": {
+                "positions": 0,
+                "total_stock": 0,
+                "positive_positions": 0,
+                "zero_positions": 0,
+            },
+        }
+
+        try:
+            with mock.patch.object(
+                web, "build_excel_warehouse_items", return_value=[]
+            ), mock.patch.object(
+                web.ExcelProductCatalog, "list_products", return_value=listing
+            ), mock.patch.object(
+                web.ExcelProductCatalog,
+                "list_manual_stock_operations",
+                return_value=[],
+            ), tempfile.TemporaryDirectory() as profile:
+                thread.start()
+                url = (
+                    "http://127.0.0.1:{}"
+                    "/warehouse?warehouse_add_ui_e2e=1&open_add=1"
+                ).format(server.server_port)
+                process = subprocess.Popen(
+                    [
+                        chrome,
+                        "--headless=new",
+                        "--no-sandbox",
+                        "--disable-gpu",
+                        "--disable-dev-shm-usage",
+                        "--window-size={},1000".format(width),
+                        "--virtual-time-budget=5000",
+                        "--user-data-dir={}".format(profile),
+                        "--dump-dom",
+                        url,
+                    ],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+                try:
+                    stdout, stderr = process.communicate(timeout=8)
+                except subprocess.TimeoutExpired as error:
+                    process.terminate()
+                    trailing_stdout, trailing_stderr = process.communicate(
+                        timeout=5
+                    )
+                    stdout = error.stdout or ""
+                    stderr = error.stderr or ""
+                    if isinstance(stdout, bytes):
+                        stdout = stdout.decode("utf-8", errors="replace")
+                    if isinstance(stderr, bytes):
+                        stderr = stderr.decode("utf-8", errors="replace")
+                    stdout += trailing_stdout
+                    stderr += trailing_stderr
+        finally:
+            server.shutdown()
+            thread.join(timeout=5)
+            web.app.testing = original_testing
+            if original_auth_testing is None:
+                web.app.config.pop("AUTH_TESTING", None)
+            else:
+                web.app.config["AUTH_TESTING"] = original_auth_testing
+
+        self.assertIn(process.returncode, (0, -15), stderr[-2000:])
+        self.assertIn('data-warehouse-add-ui-e2e="pass"', stdout)
+        return stdout
+
+    def test_add_form_create_and_edit_contracts_at_mobile_and_desktop(self):
+        for width in (390, 1440):
+            with self.subTest(width=width):
+                html = self.run_add_form_browser(width)
+                marker = html.split(
+                    'data-warehouse-add-ui-e2e-result="', 1
+                )[1].split('"', 1)[0]
+                for expected in (
+                    "initialCascade",
+                    "patchMinimal",
+                    "patchFailurePreserves",
+                    "postPayload",
+                    "cascadeResets",
+                    "doubleSubmit",
+                ):
+                    self.assertIn(expected, marker)
+
 
 class WarehouseTableContractTest(unittest.TestCase):
     @classmethod
@@ -233,6 +339,25 @@ class WarehouseTableContractTest(unittest.TestCase):
         self.assertIn('fetch("/api/v1/products"', self.template)
         self.assertIn("new FormData(form)", self.template)
         self.assertIn("warehouseAddError", self.template)
+
+    def test_add_form_reuses_shared_product_cascade_and_partial_patch(self):
+        form = self.template.split('id="warehouseAddForm"', 1)[1].split(
+            "</form>", 1
+        )[0]
+        self.assertIn('shared_catalog_kind="product"', form)
+        self.assertIn('"product_id",', form)
+        name_control = form.split('id="warehouseProductName"', 1)[1].split(
+            ">", 1
+        )[0]
+        self.assertIn('type="hidden"', name_control)
+        self.assertIn('name="name"', name_control)
+        self.assertNotIn('type="text"\n                                    name="name"', form)
+        self.assertIn('method: "PATCH"', self.template)
+        self.assertIn("warehouseProductPatch(form)", self.template)
+        self.assertIn('if (editing) {', self.template)
+        self.assertIn('response = await fetch("/api/v1/products", {', self.template)
+        self.assertIn('if (form.dataset.submitting === "1")', self.template)
+        self.assertIn('image.disabled = editing', self.template)
 
     def test_bulk_limit_and_edit_preserve_existing_photo_contract(self):
         web.app.config.update(TESTING=True, AUTH_TESTING=False)
