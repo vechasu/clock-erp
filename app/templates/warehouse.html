@@ -3274,55 +3274,354 @@
         }
 
 
-        /* add-product-brand-category-grid */
+        /* add-product-crm-card */
 
-        .add-card .add-form {
-            grid-template-columns:
-                minmax(220px, 1.45fr)
-                minmax(125px, 0.8fr)
-                minmax(135px, 0.85fr)
-                minmax(150px, 1fr)
-                minmax(120px, 0.7fr)
-                minmax(145px, 0.85fr)
-                minmax(165px, 0.9fr);
+        #warehouseAddCard {
+            padding: 24px;
+            border-color: #e2e8f0;
+            border-radius: 18px;
+            box-shadow:
+                0 12px 34px rgba(15, 23, 42, 0.055),
+                0 2px 6px rgba(15, 23, 42, 0.025);
+        }
+
+        .warehouse-add-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #e8edf4;
+        }
+
+        .warehouse-add-header-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 38px;
+            height: 38px;
+            flex: 0 0 38px;
+            border-radius: 11px;
+            background: #eef4ff;
+            color: #2563eb;
+            font-size: 26px;
+            font-weight: 400;
+            line-height: 1;
+        }
+
+        #warehouseAddCard .add-title {
+            margin: 0;
+            color: #172033;
+            font-size: 20px;
+            font-weight: 850;
+            letter-spacing: -0.025em;
+            line-height: 1.2;
+        }
+
+        .warehouse-add-subtitle {
+            margin: 4px 0 0;
+            color: #69768c;
+            font-size: 13px;
+            font-weight: 600;
+            line-height: 1.4;
+        }
+
+        #warehouseAddCard .add-form {
+            display: block;
+        }
+
+        .warehouse-add-section {
+            padding: 20px 0;
+            border-bottom: 1px solid #e8edf4;
+        }
+
+        .warehouse-add-section-title {
+            margin: 0 0 14px;
+            color: #172033;
+            font-size: 15px;
+            font-weight: 800;
+            letter-spacing: -0.01em;
+            line-height: 1.3;
+        }
+
+        .warehouse-add-grid {
+            display: grid;
+            gap: 16px;
+        }
+
+        .warehouse-add-grid-main,
+        .warehouse-add-grid-stock {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .warehouse-add-grid-catalog {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .warehouse-add-field {
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+            gap: 7px;
+            color: #253046;
+            font-size: 13px;
+            font-weight: 750;
+            line-height: 1.25;
+        }
+
+        #warehouseAddCard .warehouse-add-field > input,
+        #warehouseAddCard .warehouse-stock-control > input,
+        #warehouseAddCard .brand-combobox-trigger {
+            width: 100%;
+            height: 44px;
+            min-height: 44px;
+            margin: 0;
+            padding: 0 13px;
+            border: 1px solid #cfd8e6;
+            border-radius: 11px;
+            background: #ffffff;
+            color: #172033;
+            font-size: 14px;
+            font-weight: 650;
+            outline: none;
+            box-sizing: border-box;
+            transition:
+                border-color 0.16s ease,
+                box-shadow 0.16s ease;
+        }
+
+        #warehouseAddCard .warehouse-add-field > input::placeholder,
+        #warehouseAddCard .warehouse-stock-control > input::placeholder {
+            color: #8a96a9;
+            font-weight: 550;
+        }
+
+        #warehouseAddCard .warehouse-add-field > input:focus,
+        #warehouseAddCard .warehouse-stock-control > input:focus,
+        #warehouseAddCard .brand-combobox.open .brand-combobox-trigger {
+            border-color: #5f83ea;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.11);
+        }
+
+        #warehouseAddCard .brand-combobox-trigger:disabled {
+            border-color: #e2e8f0;
+            background: #f5f7fa;
+            color: #98a2b3;
         }
 
         #addBrandCombobox,
         #addCategoryCombobox {
+            width: 100%;
             min-width: 0;
-            height: 48px;
-            min-height: 48px;
+            height: 44px;
+            min-height: 44px;
         }
 
-        @media (max-width: 1450px) {
-            .add-card .add-form {
-                grid-template-columns:
-                    repeat(4, minmax(150px, 1fr));
-            }
+        #warehouseAddCard .brand-combobox-dropdown {
+            margin-top: 6px;
+            border-radius: 12px;
+        }
 
-            .add-card .add-form button {
-                grid-column: span 2;
-            }
+        .warehouse-stock-control {
+            display: block;
+        }
+
+        #warehouseAddCard .warehouse-stock-control > input {
+            text-align: center;
+        }
+
+        #warehouseAddCard .add-form-field-error {
+            min-height: 0;
+            margin: 0;
+        }
+
+        #warehouseAddCard .add-form-field-error:empty {
+            display: none;
+        }
+
+        .warehouse-add-photo-section {
+            border-bottom: 0;
+            padding-bottom: 18px;
+        }
+
+        #warehouseAddCard .warehouse-product-image-field {
+            position: relative;
+            display: grid;
+            grid-template-columns: 1fr auto;
+            align-items: center;
+            min-height: 170px;
+            padding: 20px 26px;
+            overflow: hidden;
+            border: 1.5px dashed #7aa2f7;
+            border-radius: 14px;
+            background: #fbfdff;
+            color: #516078;
+            cursor: pointer;
+            box-sizing: border-box;
+            transition:
+                border-color 0.16s ease,
+                background 0.16s ease,
+                box-shadow 0.16s ease;
+        }
+
+        #warehouseAddCard .warehouse-product-image-field:hover,
+        #warehouseAddCard .warehouse-product-image-field:focus-within {
+            border-color: #2563eb;
+            background: #f7faff;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.07);
+        }
+
+        #warehouseAddCard .warehouse-product-image-field input[type="file"] {
+            position: absolute;
+            inset: 0;
+            z-index: 2;
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            opacity: 0;
+            cursor: pointer;
+        }
+
+        .warehouse-upload-content {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            min-width: 0;
+            text-align: center;
+        }
+
+        .warehouse-upload-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 42px;
+            height: 42px;
+            margin-bottom: 2px;
+            border-radius: 12px;
+            background: #eef4ff;
+            color: #315fd8;
+        }
+
+        .warehouse-upload-icon svg {
+            width: 24px;
+            height: 24px;
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 1.7;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        .warehouse-upload-content strong {
+            color: #253046;
+            font-size: 14px;
+            font-weight: 800;
+        }
+
+        .warehouse-upload-content > span:not(.warehouse-upload-icon):not(.warehouse-upload-button) {
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .warehouse-upload-button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 34px;
+            padding: 0 14px;
+            border: 1px solid #c5d4f5;
+            border-radius: 9px;
+            background: #ffffff;
+            color: #2457d6;
+            font-size: 13px;
+            font-weight: 800;
+            box-shadow: 0 2px 5px rgba(37, 99, 235, 0.06);
+        }
+
+        .warehouse-upload-content small {
+            margin-top: 2px;
+            color: #7b8799;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        #warehouseAddCard .warehouse-product-image-preview {
+            position: relative;
+            z-index: 1;
+            width: 124px;
+            height: 124px;
+            margin-left: 24px;
+            border: 1px solid #d8e1ed;
+            border-radius: 12px;
+            background: #ffffff;
+            object-fit: cover;
+            box-shadow: 0 7px 18px rgba(15, 23, 42, 0.08);
+        }
+
+        .warehouse-add-actions {
+            display: flex;
+            justify-content: flex-end;
+            padding-top: 4px;
+        }
+
+        #warehouseAddCard .warehouse-add-actions > button[type="submit"] {
+            width: auto;
+            min-width: 164px;
+            height: 44px;
+            min-height: 44px;
+            margin: 0;
+            padding: 0 20px;
+            border: 1px solid #1d4ed8;
+            border-radius: 11px;
+            background: #2563eb;
+            color: #ffffff;
+            font-size: 14px;
+            font-weight: 800;
+            cursor: pointer;
+            box-shadow: 0 7px 17px rgba(37, 99, 235, 0.18);
+        }
+
+        #warehouseAddCard .warehouse-add-actions > button[type="submit"]:hover {
+            border-color: #1d4ed8;
+            background: #1d4ed8;
+        }
+
+        #warehouseAddCard .warehouse-add-actions > button[type="submit"]:disabled {
+            cursor: wait;
+            opacity: 0.68;
         }
 
         @media (max-width: 850px) {
-            .add-card .add-form {
-                grid-template-columns: 1fr 1fr;
+            #warehouseAddCard {
+                padding: 20px;
             }
 
-            .add-card .add-form button {
-                grid-column: 1 / -1;
+            .warehouse-add-grid-main,
+            .warehouse-add-grid-catalog,
+            .warehouse-add-grid-stock {
+                grid-template-columns: 1fr;
             }
         }
 
         @media (max-width: 560px) {
-            .add-card .add-form {
-                grid-template-columns: 1fr;
+            #warehouseAddCard {
+                padding: 16px;
+                border-radius: 15px;
             }
 
-            .add-card .add-form button {
-                grid-column: auto;
+            #warehouseAddCard .warehouse-product-image-field {
+                grid-template-columns: 1fr;
+                padding: 20px;
             }
+
+            #warehouseAddCard .warehouse-product-image-preview {
+                width: 96px;
+                height: 96px;
+                margin: 18px auto 0;
+            }
+
         }
 
 
@@ -4116,7 +4415,13 @@
             </div>
 
             <div class="add-card{% if not open_add %} is-hidden{% endif %}" id="warehouseAddCard">
-                <div class="add-title">Добавить товар</div>
+                <div class="warehouse-add-header">
+                    <span class="warehouse-add-header-icon" aria-hidden="true">＋</span>
+                    <div>
+                        <div class="add-title">Добавление товара</div>
+                        <p class="warehouse-add-subtitle">Заполните информацию о товаре</p>
+                    </div>
+                </div>
 
                 <form
                     id="warehouseAddForm"
@@ -4137,94 +4442,143 @@
                         name="request_id"
                         value="{{ add_request_id }}"
                     >
-                    <input
-                        type="text"
-                        name="name"
-                        placeholder="Название товара"
-                        required
-                    >
+                    <section class="warehouse-add-section">
+                        <h3 class="warehouse-add-section-title">Основная информация</h3>
+                        <div class="warehouse-add-grid warehouse-add-grid-main">
+                            <label class="warehouse-add-field" for="warehouseProductName">
+                                <span>Название товара</span>
+                                <input
+                                    id="warehouseProductName"
+                                    type="text"
+                                    name="name"
+                                    placeholder="Rolex Submariner"
+                                    required
+                                >
+                            </label>
 
-                    <input
-                        type="text"
-                        name="article"
-                        placeholder="Артикул"
-                    >
+                            <label class="warehouse-add-field" for="warehouseProductArticle">
+                                <span>Артикул</span>
+                                <input
+                                    id="warehouseProductArticle"
+                                    type="text"
+                                    name="article"
+                                    placeholder="Например, 126610LN"
+                                >
+                            </label>
+                        </div>
+                    </section>
 
-                    {{ render_catalog_combobox(
-                        "addBrandCombobox",
-                        "brand",
-                        brand_groups,
-                        item_label="бренд",
-                        prefix_search=false,
-                        component_class="filter-combobox",
-                        clear_selection_on_search_clear=true,
-                        action_kind="brand",
-                        action_label="Добавить новый бренд",
-                        shared_catalog_kind="brand",
-                        id_input_name="brand_id"
-                    ) }}
+                    <section class="warehouse-add-section">
+                        <h3 class="warehouse-add-section-title">Каталог</h3>
+                        <div class="warehouse-add-grid warehouse-add-grid-catalog">
+                            <div class="warehouse-add-field">
+                                <label for="addBrandComboboxTrigger">Бренд</label>
+                                {{ render_catalog_combobox(
+                                    "addBrandCombobox",
+                                    "brand",
+                                    brand_groups,
+                                    item_label="бренд",
+                                    prefix_search=false,
+                                    component_class="filter-combobox",
+                                    clear_selection_on_search_clear=true,
+                                    action_kind="brand",
+                                    action_label="Добавить новый бренд",
+                                    shared_catalog_kind="brand",
+                                    id_input_name="brand_id"
+                                ) }}
+                            </div>
 
-                    {{ render_catalog_combobox(
-                        "addCategoryCombobox",
-                        "category",
-                        category_groups,
-                        item_label="категорию",
-                        disabled=true,
-                        prefix_search=false,
-                        component_class="filter-combobox",
-                        clear_selection_on_search_clear=true,
-                        action_kind="category",
-                        action_label="Добавить новую категорию",
-                        shared_catalog_kind="category",
-                        id_input_name="category_id"
-                    ) }}
+                            <div class="warehouse-add-field">
+                                <label for="addCategoryComboboxTrigger">Категория</label>
+                                {{ render_catalog_combobox(
+                                    "addCategoryCombobox",
+                                    "category",
+                                    category_groups,
+                                    item_label="категорию",
+                                    disabled=true,
+                                    prefix_search=false,
+                                    component_class="filter-combobox",
+                                    clear_selection_on_search_clear=true,
+                                    action_kind="category",
+                                    action_label="Добавить новую категорию",
+                                    shared_catalog_kind="category",
+                                    id_input_name="category_id"
+                                ) }}
+                            </div>
+                        </div>
+                    </section>
 
-                    <div class="add-form-field">
-                        <input
-                            id="addStock"
-                            type="number"
-                            name="stock"
-                            min="0"
-                            step="1"
-                            inputmode="numeric"
-                            required
-                            value="{{ request.args.get('add_stock', '0') if request.args.get('stock_error') else '0' }}"
-                            placeholder="Начальный остаток"
-                            aria-describedby="addStockError"
-                            {% if request.args.get("stock_error") %}class="is-invalid" aria-invalid="true"{% endif %}
-                        >
-                        <span
-                            id="addStockError"
-                            class="add-form-field-error"
-                            aria-live="polite"
-                        >{{ request.args.get("stock_error", "") }}</span>
-                    </div>
+                    <section class="warehouse-add-section">
+                        <h3 class="warehouse-add-section-title">Склад</h3>
+                        <div class="warehouse-add-grid warehouse-add-grid-stock">
+                            <label class="warehouse-add-field" for="addStock">
+                                <span>Остаток</span>
+                                <span class="warehouse-stock-control">
+                                    <input
+                                        id="addStock"
+                                        type="number"
+                                        name="stock"
+                                        min="0"
+                                        step="1"
+                                        inputmode="numeric"
+                                        required
+                                        value="{{ request.args.get('add_stock', '0') if request.args.get('stock_error') else '0' }}"
+                                        placeholder="0"
+                                        aria-describedby="addStockError"
+                                        {% if request.args.get("stock_error") %}class="is-invalid" aria-invalid="true"{% endif %}
+                                    >
+                                </span>
+                                <span
+                                    id="addStockError"
+                                    class="add-form-field-error"
+                                    aria-live="polite"
+                                >{{ request.args.get("stock_error", "") }}</span>
+                            </label>
 
-                    <input
-                        type="text"
-                        name="cell"
-                        placeholder="Ячейка, например A-01"
-                    >
+                            <label class="warehouse-add-field" for="warehouseProductCell">
+                                <span>Ячейка</span>
+                                <input
+                                    id="warehouseProductCell"
+                                    type="text"
+                                    name="cell"
+                                    placeholder="Например, A-01"
+                                >
+                            </label>
+                        </div>
+                    </section>
 
-                    <div class="add-form-field warehouse-product-image-field">
-                        <input
-                            id="warehouseProductImage"
-                            type="file"
-                            name="product_image"
-                            accept="image/jpeg,image/png,image/webp"
-                            aria-describedby="warehouseProductImageHint warehouseAddError"
-                            onchange="previewWarehouseProductImage(this)"
-                        >
-                        <img
-                            id="warehouseProductImagePreview"
-                            class="warehouse-product-image-preview"
-                            alt="Предпросмотр фотографии товара"
-                            hidden
-                        >
-                        <span id="warehouseProductImageHint" class="add-form-field-error">
-                            JPEG, PNG или WEBP, до 3 МБ
-                        </span>
-                    </div>
+                    <section class="warehouse-add-section warehouse-add-photo-section">
+                        <h3 class="warehouse-add-section-title">Фото товара</h3>
+                        <label class="add-form-field warehouse-product-image-field" for="warehouseProductImage">
+                            <input
+                                id="warehouseProductImage"
+                                type="file"
+                                name="product_image"
+                                accept="image/jpeg,image/png,image/webp"
+                                aria-describedby="warehouseProductImageHint warehouseAddError"
+                                onchange="previewWarehouseProductImage(this)"
+                            >
+                            <span class="warehouse-upload-content">
+                                <span class="warehouse-upload-icon" aria-hidden="true">
+                                    <svg viewBox="0 0 24 24" focusable="false">
+                                        <path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5v-13Z"></path>
+                                        <circle cx="9" cy="9" r="1.5"></circle>
+                                        <path d="m6.5 17 3.3-3.4 2.5 2.5 2.1-2.2 3.1 3.1"></path>
+                                    </svg>
+                                </span>
+                                <strong>Перетащите фото сюда</strong>
+                                <span>или</span>
+                                <span class="warehouse-upload-button">Выбрать файл</span>
+                                <small id="warehouseProductImageHint">JPEG, PNG или WEBP, до 3 МБ</small>
+                            </span>
+                            <img
+                                id="warehouseProductImagePreview"
+                                class="warehouse-product-image-preview"
+                                alt="Предпросмотр фотографии товара"
+                                hidden
+                            >
+                        </label>
+                    </section>
 
                     <div
                         id="warehouseAddError"
@@ -4233,7 +4587,9 @@
                         aria-live="assertive"
                     ></div>
 
-                    <button type="submit">Добавить товар</button>
+                    <div class="warehouse-add-actions">
+                        <button type="submit">Добавить товар</button>
+                    </div>
                 </form>
             </div>
 
