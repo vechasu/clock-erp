@@ -252,8 +252,14 @@ class SharedCatalog:
             ).fetchall()
         return [self._category(row) for row in rows]
 
-    def list_category_options(self, brand_id=None, query="", limit=50):
-        """Return global categories, prioritizing those used by a brand."""
+    def list_category_options(
+        self,
+        brand_id=None,
+        query="",
+        limit=50,
+        only_used_by_brand=False,
+    ):
+        """Return global categories, optionally limited to a brand's products."""
         self.database.initialize()
         where = ["c.active = 1"]
         parameters = []
@@ -303,8 +309,13 @@ class SharedCatalog:
                 current["used_by_brand"] or bool(row["used_by_brand"])
             )
 
+        available = grouped.values()
+        if only_used_by_brand:
+            available = (
+                item for item in available if item["used_by_brand"]
+            )
         ordered = sorted(
-            grouped.values(),
+            available,
             key=lambda item: (
                 not item["used_by_brand"],
                 normalized_name(item["canonical"]["name"]),
