@@ -113,10 +113,6 @@ def ensure_category(
         ).fetchone()
         if row is None:
             raise CatalogReferenceError("Категория не найдена.")
-        if brand_id and int(row["brand_id"]) != int(brand_id):
-            raise CatalogReferenceError(
-                "Категория не относится к выбранному бренду."
-            )
         return row
 
     name = display_name(name)
@@ -127,8 +123,8 @@ def ensure_category(
         raise CatalogReferenceError("Сначала выберите бренд.")
     row = connection.execute(
         "SELECT * FROM erp_categories "
-        "WHERE brand_id = ? AND normalized_name = ?",
-        (int(brand_id), key),
+        "WHERE normalized_name = ? ORDER BY id LIMIT 1",
+        (key,),
     ).fetchone()
     if row is not None:
         if not row["active"]:
@@ -152,8 +148,8 @@ def ensure_category(
     )
     return connection.execute(
         "SELECT * FROM erp_categories "
-        "WHERE brand_id = ? AND normalized_name = ?",
-        (int(brand_id), key),
+        "WHERE normalized_name = ? ORDER BY id LIMIT 1",
+        (key,),
     ).fetchone()
 
 
@@ -256,6 +252,72 @@ class SharedCatalog:
             ).fetchall()
         return [self._category(row) for row in rows]
 
+    def list_category_options(self, brand_id=None, query="", limit=50):
+        """Return global categories, prioritizing those used by a brand."""
+        self.database.initialize()
+        where = ["c.active = 1"]
+        parameters = []
+        query = normalized_name(query)
+        if query:
+            where.append("c.normalized_name LIKE ?")
+            parameters.append("%{}%".format(query))
+        selected_brand_id = (
+            int(brand_id) if brand_id not in (None, "") else None
+        )
+        with self.database.connect() as connection:
+            rows = connection.execute(
+                "SELECT c.id, c.brand_id, c.name, c.normalized_name, "
+                "c.active, b.name AS brand_name, "
+                "COUNT(p.id) AS product_count, "
+                "CASE WHEN ? IS NOT NULL AND EXISTS ("
+                "SELECT 1 FROM catalog_excel_products linked "
+                "WHERE linked.category_id = c.id "
+                "AND linked.brand_id = ? AND linked.active = 1"
+                ") THEN 1 ELSE 0 END AS used_by_brand "
+                "FROM erp_categories c "
+                "JOIN erp_brands b ON b.id = c.brand_id "
+                "LEFT JOIN catalog_excel_products p "
+                "ON p.category_id = c.id AND p.active = 1 "
+                "WHERE " + " AND ".join(where) + " "
+                "GROUP BY c.id "
+                "ORDER BY used_by_brand DESC, "
+                "c.name COLLATE NOCASE, c.id",
+                [selected_brand_id, selected_brand_id] + parameters,
+            ).fetchall()
+
+        grouped = {}
+        for row in rows:
+            key = normalized_name(row["name"])
+            current = grouped.get(key)
+            if current is None:
+                current = {
+                    "canonical": row,
+                    "product_count": 0,
+                    "used_by_brand": False,
+                }
+                grouped[key] = current
+            if int(row["id"]) < int(current["canonical"]["id"]):
+                current["canonical"] = row
+            current["product_count"] += int(row["product_count"])
+            current["used_by_brand"] = (
+                current["used_by_brand"] or bool(row["used_by_brand"])
+            )
+
+        ordered = sorted(
+            grouped.values(),
+            key=lambda item: (
+                not item["used_by_brand"],
+                normalized_name(item["canonical"]["name"]),
+                int(item["canonical"]["id"]),
+            ),
+        )
+        result = []
+        for item in ordered[:max(1, min(int(limit), 100))]:
+            prepared = dict(item["canonical"])
+            prepared["product_count"] = item["product_count"]
+            result.append(self._category(prepared))
+        return result
+
     def list_products(
         self,
         query="",
@@ -274,7 +336,11 @@ class SharedCatalog:
             where.append("p.brand_id = ?")
             parameters.append(int(brand_id))
         if category_id not in (None, ""):
-            where.append("p.category_id = ?")
+            where.append(
+                "c.normalized_name = ("
+                "SELECT selected.normalized_name FROM erp_categories selected "
+                "WHERE selected.id = ?)"
+            )
             parameters.append(int(category_id))
         if in_stock:
             where.append("p.stock > 0")
@@ -299,7 +365,11 @@ class SharedCatalog:
                 "CASE WHEN COALESCE("
                 "p.moysklad_product_id, mm.moysklad_product_id, '') = '' "
                 "THEN 1 ELSE 0 END AS can_create_moysklad, "
-                "p.brand_id, p.category_id, "
+                "p.brand_id, COALESCE(("
+                "SELECT MIN(canonical.id) FROM erp_categories canonical "
+                "WHERE canonical.active = 1 "
+                "AND canonical.normalized_name = c.normalized_name"
+                "), p.category_id) AS category_id, "
                 "COALESCE(b.name, '') AS brand, "
                 "COALESCE(c.name, '') AS category, "
                 "COALESCE(p.cell, '') AS cell, p.stock, p.active "
@@ -365,7 +435,11 @@ class SharedCatalog:
                 "CASE WHEN COALESCE("
                 "p.moysklad_product_id, mm.moysklad_product_id, '') = '' "
                 "THEN 1 ELSE 0 END AS can_create_moysklad, "
-                "p.brand_id, p.category_id, "
+                "p.brand_id, COALESCE(("
+                "SELECT MIN(canonical.id) FROM erp_categories canonical "
+                "WHERE canonical.active = 1 "
+                "AND canonical.normalized_name = c.normalized_name"
+                "), p.category_id) AS category_id, "
                 "COALESCE(b.name, '') AS brand, "
                 "COALESCE(c.name, '') AS category, "
                 "COALESCE(p.cell, '') AS cell, p.stock, p.active "
@@ -407,7 +481,11 @@ class SharedCatalog:
                     "CASE WHEN COALESCE("
                     "p.moysklad_product_id, mm.moysklad_product_id, '') = '' "
                     "THEN 1 ELSE 0 END AS can_create_moysklad, "
-                    "p.brand_id, p.category_id, "
+                    "p.brand_id, COALESCE(("
+                    "SELECT MIN(canonical.id) FROM erp_categories canonical "
+                    "WHERE canonical.active = 1 "
+                    "AND canonical.normalized_name = c.normalized_name"
+                    "), p.category_id) AS category_id, "
                     "COALESCE(b.name, '') AS brand, "
                     "COALESCE(c.name, '') AS category, "
                     "COALESCE(p.cell, '') AS cell, p.stock, p.active "
@@ -500,18 +578,21 @@ class SharedCatalog:
             if brand is None:
                 raise CatalogReferenceError("Сначала выберите бренд.")
             existing = connection.execute(
-                "SELECT * FROM erp_categories "
-                "WHERE brand_id = ? AND normalized_name = ?",
-                (brand["id"], normalized_name(name)),
+                "SELECT c.*, b.name AS brand_name "
+                "FROM erp_categories c "
+                "JOIN erp_brands b ON b.id = c.brand_id "
+                "WHERE c.normalized_name = ? ORDER BY c.id LIMIT 1",
+                (normalized_name(name),),
             ).fetchone()
             if existing is None:
                 existing = next(
                     (
                         row
                         for row in connection.execute(
-                            "SELECT * FROM erp_categories "
-                            "WHERE brand_id = ? ORDER BY id",
-                            (brand["id"],),
+                            "SELECT c.*, b.name AS brand_name "
+                            "FROM erp_categories c "
+                            "JOIN erp_brands b ON b.id = c.brand_id "
+                            "ORDER BY c.id",
                         ).fetchall()
                         if potential_alias_key(row["name"])
                         == potential_alias_key(name)
@@ -519,10 +600,7 @@ class SharedCatalog:
                     None,
                 )
             if existing is not None:
-                prepared = {
-                    **self._category(existing),
-                    "brand_name": brand["name"],
-                }
+                prepared = self._category(existing)
                 raise DuplicateCatalogValueError(
                     "Такая категория уже существует: {}.".format(
                         existing["name"]
@@ -603,12 +681,8 @@ class SharedCatalog:
                 raise CatalogReferenceError("Категория не найдена.")
             duplicate = connection.execute(
                 "SELECT * FROM erp_categories "
-                "WHERE brand_id = ? AND normalized_name = ? AND id <> ?",
-                (
-                    current["brand_id"],
-                    normalized_name(name),
-                    current["id"],
-                ),
+                "WHERE normalized_name = ? AND id <> ? ORDER BY id LIMIT 1",
+                (normalized_name(name), current["id"]),
             ).fetchone()
             if duplicate is None:
                 duplicate = next(
@@ -616,8 +690,8 @@ class SharedCatalog:
                         row
                         for row in connection.execute(
                             "SELECT * FROM erp_categories "
-                            "WHERE brand_id = ? AND id <> ? ORDER BY id",
-                            (current["brand_id"], current["id"]),
+                            "WHERE id <> ? ORDER BY id",
+                            (current["id"],),
                         ).fetchall()
                         if potential_alias_key(row["name"])
                         == potential_alias_key(name)

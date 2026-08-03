@@ -13028,7 +13028,7 @@ def api_catalog_options():
         if kind == "brand":
             items = catalog.list_brands(query=query, limit=limit)
         elif kind == "category":
-            items = catalog.list_categories(
+            items = catalog.list_category_options(
                 brand_id=request.args.get("brand_id"),
                 query=query,
                 limit=limit,
