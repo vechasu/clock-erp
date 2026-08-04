@@ -4937,8 +4937,13 @@
         productIdInput.value = sale.product_id || "";
         productNameInput.value = sale.product_name || "";
 
+        const saleDateValue = String(sale.created_at || "")
+            .replace(" ", "T")
+            .slice(0, 16);
         const fieldValues = {
-            created_at: String(sale.created_at || "").replace(" ", "T").slice(0, 16),
+            created_at: /^\d{4}-\d{2}-\d{2}$/.test(saleDateValue)
+                ? saleDateValue + "T00:00"
+                : saleDateValue,
             quantity: sale.quantity_value || 1,
             unit_price: sale.unit_price || "",
             order_number: sale.order_number || "",
