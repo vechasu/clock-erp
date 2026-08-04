@@ -1452,19 +1452,33 @@ def merge_catalog_groups(groups, taxonomy_values):
         name = str(group.get("name") or "").strip()
         if not name:
             continue
-        count = group.get("count") or 0
+        count = group.get("count", group.get("product_count", 0)) or 0
         if isinstance(count, float) and count.is_integer():
             count = int(count)
+        stock_total = group.get("stock_total", 0) or 0
+        stock_display = str(
+            group.get("stock_display")
+            or format_stock_number(stock_total)
+        )
         merged.setdefault(catalog_label_key(name), {
             "name": name,
             "count": count,
+            "product_count": count,
+            "stock_total": stock_total,
+            "stock_display": stock_display,
         })
     for value in taxonomy_values:
         name = str(value or "").strip()
         if name:
             merged.setdefault(
                 catalog_label_key(name),
-                {"name": name, "count": 0},
+                {
+                    "name": name,
+                    "count": 0,
+                    "product_count": 0,
+                    "stock_total": 0,
+                    "stock_display": "0",
+                },
             )
     return [merged[key] for key in sorted(merged)]
 
@@ -1507,7 +1521,7 @@ def warehouse_page():
         selected_category_match = next(
             (
                 item
-                for item in shared_catalog.list_categories(
+                for item in shared_catalog.list_category_options(
                     brand_id=selected_brand_id or None,
                     limit=200,
                 )
@@ -1608,12 +1622,10 @@ def warehouse_page():
             filtered_items.append(item)
         items = filtered_items
     taxonomy = load_catalog_taxonomy()
-    filter_brand_groups = merge_catalog_groups(
-        catalog["brand_groups"],
-        [],
-    )
+    shared_brand_groups = shared_catalog.list_brands(limit=200)
+    filter_brand_groups = merge_catalog_groups(shared_brand_groups, [])
     brand_groups = merge_catalog_groups(
-        filter_brand_groups + build_brand_groups(items),
+        shared_brand_groups,
         [
             brand
             for brand in (
@@ -1623,9 +1635,20 @@ def warehouse_page():
             if brand
         ],
     )
+    shared_category_groups = shared_catalog.list_category_options(
+        brand_id=selected_brand_id or None,
+        limit=100,
+        only_used_by_brand=bool(selected_brand_id),
+    )
     category_groups = merge_catalog_groups(
-        catalog["category_groups"] + build_category_groups(items),
-        [item["name"] for item in taxonomy["categories"]] + list(CATEGORIES),
+        shared_category_groups,
+        (
+            []
+            if selected_brand_id
+            else [
+                item["name"] for item in taxonomy["categories"]
+            ] + list(CATEGORIES)
+        ),
     )
     cell_groups = []
     for group in catalog["cell_groups"]:
@@ -1707,8 +1730,15 @@ def warehouse_page():
             visible_positions=visible_positions,
             brand_groups=brand_groups,
             filter_brand_groups=filter_brand_groups,
-            brand_all_count=catalog.get("brand_all_count", catalog["total"]),
+            brand_all_count="{} ед.".format(format_stock_number(sum(
+                float(item.get("stock_total") or 0)
+                for item in shared_brand_groups
+            ))),
             category_groups=category_groups,
+            category_all_count="{} ед.".format(format_stock_number(sum(
+                float(item.get("stock_total") or 0)
+                for item in category_groups
+            ))),
             cell_groups=cell_groups,
             total_stock=total_stock,
             total_stock_display=format_stock_number(total_stock),
@@ -12791,6 +12821,11 @@ def api_catalog_options():
             )
     except (TypeError, ValueError) as error:
         return api_error("CATALOG_FILTER_INVALID", str(error), 422)
+    if kind in {"brand", "category"}:
+        items = [
+            {**item, "count": item.get("product_count", 0)}
+            for item in items
+        ]
     return api_success(items, total=len(items), limit=limit)
 
 

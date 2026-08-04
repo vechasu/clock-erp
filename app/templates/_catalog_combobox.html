@@ -83,6 +83,7 @@
                 {% endif %}
                 {% for option in options %}
                     {% set option_value = option.value|default(option.name) %}
+                    {% set option_stat = (option.stock_display ~ ' ед.') if option.stock_display is defined else option.count %}
                     <button
                         class="brand-combobox-option{% if selected_value == option_value %} active{% endif %}"
                         type="button"
@@ -93,7 +94,7 @@
                         <span class="brand-combobox-option-label">
                             {{ option.name }}
                         </span>
-                        <span>{{ option.count }}</span>
+                        <span>{{ option_stat }}</span>
                     </button>
                 {% endfor %}
                 <div

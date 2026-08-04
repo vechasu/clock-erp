@@ -285,6 +285,43 @@ class UnifiedCatalogApiTest(unittest.TestCase):
             )
         )
 
+    def test_shared_catalog_stock_statistics_follow_inventory_lifecycle(self):
+        def brand_stock():
+            options = self.client.get(
+                "/api/v1/catalog/options?type=brand&limit=100"
+            ).get_json()["data"]
+            return next(
+                item for item in options
+                if item["id"] == self.product["brand_id"]
+            )["stock_total"]
+
+        self.assertEqual(brand_stock(), 0)
+        receipt = self.client.post(
+            "/api/v1/receipts",
+            json=self.receipt_payload(quantity=10),
+        ).get_json()["data"]
+        self.assertEqual(brand_stock(), 10)
+
+        sale = self.client.post(
+            "/api/v1/sales",
+            json={
+                "created_at": "2026-07-30",
+                "source": "Tictactoy",
+                "product_id": str(self.product["id"]),
+                "brand_id": self.product["brand_id"],
+                "category_id": self.product["category_id"],
+                "quantity": 3,
+                "unit_price": 1000,
+                "order_number": "ORDER-STOCK-STATS",
+            },
+        ).get_json()["data"]
+        self.assertEqual(brand_stock(), 7)
+
+        self.client.delete("/api/v1/sales/{}".format(sale["id"]))
+        self.assertEqual(brand_stock(), 10)
+        self.client.delete("/api/v1/receipts/{}".format(receipt["id"]))
+        self.assertEqual(brand_stock(), 0)
+
     def test_receipt_requires_positive_integer_quantity(self):
         for index, quantity in enumerate((1.5, "1,5", 0, -1, "text")):
             with self.subTest(quantity=quantity):

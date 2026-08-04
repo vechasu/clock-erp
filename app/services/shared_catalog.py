@@ -27,6 +27,26 @@ def normalized_name(value):
     return display_name(value).casefold()
 
 
+def normalized_stock_value(value):
+    try:
+        number = float(value or 0)
+    except (TypeError, ValueError):
+        number = 0.0
+    return int(number) if number.is_integer() else number
+
+
+def format_stock_value(value):
+    number = float(normalized_stock_value(value))
+    if number.is_integer():
+        return "{:,}".format(int(number)).replace(",", " ")
+    sign = "-" if number < 0 else ""
+    absolute = abs(number)
+    integer, fraction = ("{:.12f}".format(absolute)).split(".")
+    fraction = fraction.rstrip("0")
+    integer = "{:,}".format(int(integer)).replace(",", " ")
+    return sign + integer + "." + fraction
+
+
 CYRILLIC_TRANSLITERATION = str.maketrans({
     "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e",
     "ё": "e", "ж": "zh", "з": "z", "и": "i", "й": "i", "к": "k",
@@ -196,24 +216,31 @@ class SharedCatalog:
     def list_brands(self, query="", limit=50, include_archived=False):
         self.database.initialize()
         where = []
-        parameters = []
         if not include_archived:
             where.append("b.active = 1")
         query = normalized_name(query)
-        if query:
-            where.append("b.normalized_name LIKE ?")
-            parameters.append("%{}%".format(query))
         where_sql = " WHERE " + " AND ".join(where) if where else ""
-        parameters.append(max(1, min(int(limit), 200)))
+        query_pattern = "%{}%".format(query)
         with self.database.connect() as connection:
             rows = connection.execute(
-                "SELECT b.id, b.name, b.active, COUNT(p.id) AS product_count "
-                "FROM erp_brands b "
-                "LEFT JOIN catalog_excel_products p "
-                "ON p.brand_id = b.id AND p.active = 1"
+                "WITH brand_options AS ("
+                "SELECT b.id, b.name, b.normalized_name, b.active, "
+                "COUNT(p.id) AS product_count, "
+                "COALESCE(SUM(p.stock), 0) AS stock_total "
+                "FROM erp_brands b LEFT JOIN catalog_excel_products p "
+                "ON p.brand_id = b.id AND p.active = 1 "
                 + where_sql
-                + " GROUP BY b.id ORDER BY b.name COLLATE NOCASE LIMIT ?",
-                parameters,
+                + " GROUP BY b.id UNION ALL "
+                "SELECT 0 AS id, 'Без бренда' AS name, "
+                "'без бренда' AS normalized_name, 1 AS active, "
+                "COUNT(p.id) AS product_count, "
+                "COALESCE(SUM(p.stock), 0) AS stock_total "
+                "FROM catalog_excel_products p "
+                "WHERE p.active = 1 AND p.brand_id IS NULL) "
+                "SELECT id, name, active, product_count, stock_total "
+                "FROM brand_options WHERE normalized_name LIKE ? "
+                "ORDER BY name COLLATE NOCASE LIMIT ?",
+                (query_pattern, max(1, min(int(limit), 200))),
             ).fetchall()
         return [self._brand(row) for row in rows]
 
@@ -241,7 +268,8 @@ class SharedCatalog:
         with self.database.connect() as connection:
             rows = connection.execute(
                 "SELECT c.id, c.brand_id, c.name, c.active, "
-                "b.name AS brand_name, COUNT(p.id) AS product_count "
+                "b.name AS brand_name, COUNT(p.id) AS product_count, "
+                "COALESCE(SUM(p.stock), 0) AS stock_total "
                 "FROM erp_categories c "
                 "JOIN erp_brands b ON b.id = c.brand_id "
                 "LEFT JOIN catalog_excel_products p "
@@ -272,23 +300,54 @@ class SharedCatalog:
         )
         with self.database.connect() as connection:
             rows = connection.execute(
+                "WITH category_rows AS ("
                 "SELECT c.id, c.brand_id, c.name, c.normalized_name, "
                 "c.active, b.name AS brand_name, "
                 "COUNT(p.id) AS product_count, "
-                "CASE WHEN ? IS NOT NULL AND EXISTS ("
-                "SELECT 1 FROM catalog_excel_products linked "
-                "WHERE linked.category_id = c.id "
-                "AND linked.brand_id = ? AND linked.active = 1"
-                ") THEN 1 ELSE 0 END AS used_by_brand "
+                "COALESCE(SUM(p.stock), 0) AS global_stock_total, "
+                "COALESCE(SUM(CASE WHEN p.brand_id = ? "
+                "OR (? = 0 AND p.brand_id IS NULL) "
+                "THEN p.stock ELSE 0 END), 0) AS selected_stock_total, "
+                "MAX(CASE WHEN p.brand_id = ? "
+                "OR (? = 0 AND p.brand_id IS NULL) "
+                "THEN 1 ELSE 0 END) AS used_by_brand "
                 "FROM erp_categories c "
                 "JOIN erp_brands b ON b.id = c.brand_id "
                 "LEFT JOIN catalog_excel_products p "
                 "ON p.category_id = c.id AND p.active = 1 "
                 "WHERE " + " AND ".join(where) + " "
-                "GROUP BY c.id "
+                "GROUP BY c.id UNION ALL "
+                "SELECT 0 AS id, 0 AS brand_id, "
+                "'Без категории' AS name, 'без категории' AS normalized_name, "
+                "1 AS active, 'Без бренда' AS brand_name, "
+                "COUNT(p.id) AS product_count, "
+                "COALESCE(SUM(p.stock), 0) AS global_stock_total, "
+                "COALESCE(SUM(CASE WHEN p.brand_id = ? "
+                "OR (? = 0 AND p.brand_id IS NULL) "
+                "THEN p.stock ELSE 0 END), 0) AS selected_stock_total, "
+                "MAX(CASE WHEN p.brand_id = ? "
+                "OR (? = 0 AND p.brand_id IS NULL) "
+                "THEN 1 ELSE 0 END) AS used_by_brand "
+                "FROM catalog_excel_products p "
+                "WHERE p.active = 1 AND p.category_id IS NULL "
+                "HAVING COUNT(p.id) > 0 "
+                "AND (? = '' OR 'без категории' LIKE ?)) "
+                "SELECT * FROM category_rows "
                 "ORDER BY used_by_brand DESC, "
-                "c.name COLLATE NOCASE, c.id",
-                [selected_brand_id, selected_brand_id] + parameters,
+                "name COLLATE NOCASE, id",
+                [
+                    selected_brand_id,
+                    selected_brand_id,
+                    selected_brand_id,
+                    selected_brand_id,
+                ] + parameters + [
+                    selected_brand_id,
+                    selected_brand_id,
+                    selected_brand_id,
+                    selected_brand_id,
+                    query,
+                    "%{}%".format(query),
+                ],
             ).fetchall()
 
         grouped = {}
@@ -299,12 +358,20 @@ class SharedCatalog:
                 current = {
                     "canonical": row,
                     "product_count": 0,
+                    "global_stock_total": 0.0,
+                    "selected_stock_total": 0.0,
                     "used_by_brand": False,
                 }
                 grouped[key] = current
             if int(row["id"]) < int(current["canonical"]["id"]):
                 current["canonical"] = row
             current["product_count"] += int(row["product_count"])
+            current["global_stock_total"] += float(
+                row["global_stock_total"] or 0
+            )
+            current["selected_stock_total"] += float(
+                row["selected_stock_total"] or 0
+            )
             current["used_by_brand"] = (
                 current["used_by_brand"] or bool(row["used_by_brand"])
             )
@@ -326,6 +393,11 @@ class SharedCatalog:
         for item in ordered[:max(1, min(int(limit), 100))]:
             prepared = dict(item["canonical"])
             prepared["product_count"] = item["product_count"]
+            prepared["stock_total"] = (
+                item["selected_stock_total"]
+                if selected_brand_id is not None
+                else item["global_stock_total"]
+            )
             result.append(self._category(prepared))
         return result
 
@@ -344,15 +416,21 @@ class SharedCatalog:
         if not include_archived:
             where.append("p.active = 1")
         if brand_id not in (None, ""):
-            where.append("p.brand_id = ?")
-            parameters.append(int(brand_id))
+            if int(brand_id) == 0:
+                where.append("p.brand_id IS NULL")
+            else:
+                where.append("p.brand_id = ?")
+                parameters.append(int(brand_id))
         if category_id not in (None, ""):
-            where.append(
-                "c.normalized_name = ("
-                "SELECT selected.normalized_name FROM erp_categories selected "
-                "WHERE selected.id = ?)"
-            )
-            parameters.append(int(category_id))
+            if int(category_id) == 0:
+                where.append("p.category_id IS NULL")
+            else:
+                where.append(
+                    "c.normalized_name = ("
+                    "SELECT selected.normalized_name FROM erp_categories selected "
+                    "WHERE selected.id = ?)"
+                )
+                parameters.append(int(category_id))
         if in_stock:
             where.append("p.stock > 0")
         query = normalized_name(query)
@@ -817,6 +895,9 @@ class SharedCatalog:
 
     @staticmethod
     def _brand(row):
+        stock_total = normalized_stock_value(
+            row["stock_total"] if "stock_total" in row.keys() else 0
+        )
         return {
             "id": int(row["id"]),
             "name": row["name"],
@@ -826,10 +907,15 @@ class SharedCatalog:
                 if "product_count" in row.keys()
                 else 0
             ),
+            "stock_total": stock_total,
+            "stock_display": format_stock_value(stock_total),
         }
 
     @staticmethod
     def _category(row):
+        stock_total = normalized_stock_value(
+            row["stock_total"] if "stock_total" in row.keys() else 0
+        )
         return {
             "id": int(row["id"]),
             "brand_id": int(row["brand_id"]),
@@ -845,6 +931,8 @@ class SharedCatalog:
                 if "product_count" in row.keys()
                 else 0
             ),
+            "stock_total": stock_total,
+            "stock_display": format_stock_value(stock_total),
         }
 
     @staticmethod
@@ -870,6 +958,6 @@ class SharedCatalog:
             "category": row["category"],
             "cell": row["cell"],
             "stock": stock,
-            "stock_display": str(int(stock)) if stock.is_integer() else "{:g}".format(stock),
+            "stock_display": format_stock_value(stock),
             "active": bool(row["active"]),
         }
