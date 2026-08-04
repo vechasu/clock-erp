@@ -5788,19 +5788,49 @@ def respond_to_sales_action(
 
 
 def validate_sale_form_date(value):
-    from datetime import date, datetime
-
     normalized = str(value or "").strip()
+    candidate = normalized
+    if candidate.endswith("Z"):
+        candidate = candidate[:-1] + "+0000"
+    elif (
+        len(candidate) >= 6
+        and candidate[-6] in {"+", "-"}
+        and candidate[-3] == ":"
+    ):
+        candidate = candidate[:-3] + candidate[-2:]
 
-    try:
-        if "T" in normalized or " " in normalized:
-            datetime.fromisoformat(normalized.replace("Z", "+00:00"))
-        else:
-            date.fromisoformat(normalized)
-    except (TypeError, ValueError):
+    formats = (
+        "%Y-%m-%d",
+        "%Y-%m-%dT%H:%M",
+        "%Y-%m-%d %H:%M",
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%dT%H:%M:%S.%f",
+        "%Y-%m-%d %H:%M:%S.%f",
+        "%Y-%m-%dT%H:%M%z",
+        "%Y-%m-%d %H:%M%z",
+        "%Y-%m-%dT%H:%M:%S%z",
+        "%Y-%m-%d %H:%M:%S%z",
+        "%Y-%m-%dT%H:%M:%S.%f%z",
+        "%Y-%m-%d %H:%M:%S.%f%z",
+    )
+    if not any(
+        _parse_sale_form_date(candidate, date_format)
+        for date_format in formats
+    ):
         raise ValueError("Укажите корректную дату продажи")
 
     return normalized
+
+
+def _parse_sale_form_date(value, date_format):
+    from datetime import datetime
+
+    try:
+        datetime.strptime(value, date_format)
+    except (TypeError, ValueError):
+        return False
+    return True
 
 
 @app.route("/sales/manual/add", methods=["POST"])
@@ -6087,32 +6117,11 @@ def manual_sale_update():
                 status_code=410,
             )
 
-        product_id = (
+        product_id = str(
             request.form.get("product_id")
             or sale.get("product_id")
             or ""
         ).strip()
-        if sale.get("inventory_managed"):
-            if product_id != str(sale.get("product_id") or ""):
-                return respond_to_sales_action(
-                    "Товар проведённой продажи изменить нельзя. "
-                    "Оформите возврат.",
-                    notice="error",
-                    status_code=409,
-                )
-            if (
-                abs(
-                    float(quantity)
-                    - float(sale.get("quantity") or 0)
-                )
-                > 0.000001
-            ):
-                return respond_to_sales_action(
-                    "Количество проведённой продажи изменить нельзя. "
-                    "Оформите возврат.",
-                    notice="error",
-                    status_code=409,
-                )
         product_metadata = resolve_sale_product_metadata(
             product_id,
             product_name,
@@ -6125,7 +6134,11 @@ def manual_sale_update():
         )
 
         updated_source = normalize_manual_sale_source(
-            request.form.get("source"),
+            (
+                request.form.get("source")
+                if "source" in request.form
+                else sale.get("source")
+            ),
             request.form.get("custom_source"),
         )
         location_fields = {
@@ -6211,16 +6224,31 @@ def manual_sale_update():
                 optional_fields.get("order_status")
             )
             try:
-                SalesInventory().update_metadata(
+                SalesInventory().update_sale(
                     sale_id,
                     sale,
-                    unit_price,
+                    quantity=quantity,
+                    unit_price=unit_price,
+                    user_name=current_sales_user_name(),
+                    idempotency_key=(
+                        request.headers.get("Idempotency-Key")
+                        or ""
+                    ),
                 )
             except SalesInventoryError as error:
                 return respond_to_sales_action(
                     str(error),
                     notice="error",
                     status_code=409,
+                )
+            except Exception:
+                app.logger.exception(
+                    "Transactional manual sale update failed"
+                )
+                return respond_to_sales_action(
+                    "Изменения не сохранены. Остаток не изменён.",
+                    notice="error",
+                    status_code=500,
                 )
             managed_sale_updated = True
 

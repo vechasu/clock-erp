@@ -182,6 +182,66 @@ class SalesInventoryTest(unittest.TestCase):
         self.assertEqual(self.stock(product["id"]), 2)
         self.assertEqual(self.inventory.get_sale("sale-1")["quantity"], 3)
 
+    def test_update_quantity_applies_only_delta_and_repeated_values_are_noop(self):
+        product = self.create_product(stock=5)
+        sale = self.inventory.create_sale(
+            self.payload(product), product["id"], 1, 1000,
+        )
+
+        increased = self.inventory.update_sale(
+            "sale-1", {**sale, "quantity": 2}, 2, 1000,
+        )
+        self.assertEqual(self.stock(product["id"]), 3)
+
+        decreased = self.inventory.update_sale(
+            "sale-1", {**increased, "quantity": 1}, 1, 1000,
+        )
+        self.assertEqual(self.stock(product["id"]), 4)
+
+        repeated = self.inventory.update_sale(
+            "sale-1", {**decreased, "quantity": 1}, 1, 1000,
+        )
+        movements = self.inventory.list_movements(product["id"])
+        self.assertEqual(repeated["quantity"], 1)
+        self.assertEqual(self.stock(product["id"]), 4)
+        self.assertEqual(len(movements), 3)
+        self.assertEqual(
+            [movement["diff"] for movement in reversed(movements)],
+            [-1, -1, 1],
+        )
+
+    def test_replace_with_insufficient_stock_rolls_back_both_products(self):
+        old_product = self.create_product(stock=4)
+        new_product = self.create_product(
+            stock=1, name="Часы Limited", article="ARTICLE-2",
+        )
+        sale = self.inventory.create_sale(
+            self.payload(old_product), old_product["id"], 2, 1000,
+        )
+        old_movements = self.inventory.list_movements(old_product["id"])
+
+        with self.assertRaises(InsufficientStockError):
+            self.inventory.update_sale(
+                "sale-1",
+                {**sale, "product_id": str(new_product["id"])},
+                2,
+                1000,
+            )
+
+        stored = self.inventory.get_sale("sale-1")
+        self.assertEqual(stored["product_id"], str(old_product["id"]))
+        self.assertEqual(stored["quantity"], 2)
+        self.assertEqual(self.stock(old_product["id"]), 2)
+        self.assertEqual(self.stock(new_product["id"]), 1)
+        self.assertEqual(
+            self.inventory.list_movements(old_product["id"]),
+            old_movements,
+        )
+        self.assertEqual(
+            self.inventory.list_movements(new_product["id"]),
+            [],
+        )
+
     def test_update_replaces_product_and_status_changes_stock(self):
         old_product = self.create_product(stock=4)
         new_product = self.create_product(
@@ -423,6 +483,205 @@ class SalesInventoryWebTest(SalesInventoryTest):
                 "unit_price": "1000",
                 "order_number": "125",
             },
+        )
+
+    def create_managed_sale(
+        self,
+        source="Tictactoy",
+        quantity=1,
+        sale_id="sale-web",
+    ):
+        payload = self.payload(self.product, sale_id)
+        payload.update({
+            "created_at": "2026-08-04T14:14",
+            "source": source,
+            "order_number": "ORDER-{}".format(sale_id),
+            "order_status": "completed",
+        })
+        return self.inventory.create_sale(
+            payload,
+            self.product["id"],
+            quantity,
+            1000,
+        )
+
+    def update_sale_form(self, sale, **changes):
+        data = {
+            "sale_id": sale["id"],
+            "source": sale["source"],
+            "product_id": sale["product_id"],
+            "product_name": self.product["display_name"],
+            "created_at": sale["created_at"],
+            "quantity": str(sale["quantity"]),
+            "unit_price": str(sale["unit_price"]),
+            "order_number": sale.get("order_number") or "",
+            "note": sale.get("note") or "",
+        }
+        data.update(changes)
+        data = {
+            key: value
+            for key, value in data.items()
+            if value is not None
+        }
+        return self.client.post(
+            "/sales/manual/update",
+            data=data,
+            headers={"X-Requested-With": "XMLHttpRequest"},
+        )
+
+    def test_manual_update_returns_json_and_preserves_inventory_for_all_channels(self):
+        initial_stock = self.stock(self.product["id"])
+        sales = [
+            self.create_managed_sale(source, sale_id="sale-{}".format(index))
+            for index, source in enumerate(
+                ("Tictactoy", "Wildberries", "Amazon"),
+                start=1,
+            )
+        ]
+        movements_before = self.inventory.list_movements(self.product["id"])
+
+        for sale in sales:
+            with self.subTest(source=sale["source"]):
+                response = self.update_sale_form(
+                    sale,
+                    note="QA {}".format(sale["source"]),
+                )
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.content_type, "application/json")
+                self.assertEqual(response.get_json(), {
+                    "ok": True,
+                    "message": "Изменения сохранены",
+                })
+                stored = self.inventory.get_sale(sale["id"])
+                self.assertEqual(stored["id"], sale["id"])
+                self.assertEqual(stored["source"], sale["source"])
+                self.assertEqual(stored["note"], "QA {}".format(sale["source"]))
+
+        self.assertEqual(self.stock(self.product["id"]), initial_stock - 3)
+        self.assertEqual(
+            self.inventory.list_movements(self.product["id"]),
+            movements_before,
+        )
+        self.assertEqual(len(self.inventory.list_sales()), 3)
+        page = self.client.get("/app/sales?source=all")
+        self.assertEqual(page.status_code, 200)
+        page_text = page.get_data(as_text=True)
+        for source in ("Tictactoy", "Wildberries", "Amazon"):
+            self.assertIn("QA {}".format(source), page_text)
+
+    def test_manual_update_quantity_is_delta_based_and_idempotent(self):
+        sale = self.create_managed_sale(quantity=1)
+
+        increased = self.update_sale_form(sale, quantity="2")
+        self.assertEqual(increased.status_code, 200)
+        self.assertEqual(self.stock(self.product["id"]), 1)
+
+        sale = self.inventory.get_sale(sale["id"])
+        decreased = self.update_sale_form(sale, quantity="1")
+        self.assertEqual(decreased.status_code, 200)
+        self.assertEqual(self.stock(self.product["id"]), 2)
+
+        sale = self.inventory.get_sale(sale["id"])
+        repeated = self.update_sale_form(sale, quantity="1")
+        self.assertEqual(repeated.status_code, 200)
+        self.assertEqual(self.stock(self.product["id"]), 2)
+        movements = self.inventory.list_movements(self.product["id"])
+        self.assertEqual(len(movements), 3)
+        self.assertEqual(
+            [movement["diff"] for movement in reversed(movements)],
+            [-1, -1, 1],
+        )
+
+    def test_manual_update_error_is_json_and_rolls_back(self):
+        sale = self.create_managed_sale(quantity=1)
+        stock_before = self.stock(self.product["id"])
+        movements_before = self.inventory.list_movements(self.product["id"])
+
+        with mock.patch.object(
+            SalesInventory,
+            "update_sale",
+            side_effect=RuntimeError("forced failure"),
+        ):
+            response = self.update_sale_form(
+                sale,
+                quantity="2",
+                note="Не должно сохраниться",
+            )
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.content_type, "application/json")
+        self.assertEqual(response.get_json(), {
+            "ok": False,
+            "message": "Изменения не сохранены. Остаток не изменён.",
+        })
+        stored = self.inventory.get_sale(sale["id"])
+        self.assertEqual(stored["quantity"], 1)
+        self.assertEqual(stored.get("note") or "", "")
+        self.assertEqual(self.stock(self.product["id"]), stock_before)
+        self.assertEqual(
+            self.inventory.list_movements(self.product["id"]),
+            movements_before,
+        )
+
+    def test_manual_update_insufficient_stock_is_json_and_rolls_back(self):
+        sale = self.create_managed_sale(quantity=1)
+        stock_before = self.stock(self.product["id"])
+        movements_before = self.inventory.list_movements(self.product["id"])
+
+        response = self.update_sale_form(sale, quantity="4")
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.content_type, "application/json")
+        self.assertFalse(response.get_json()["ok"])
+        self.assertIn(
+            "Недостаточно товара на складе",
+            response.get_json()["message"],
+        )
+        self.assertEqual(self.inventory.get_sale(sale["id"])["quantity"], 1)
+        self.assertEqual(self.stock(self.product["id"]), stock_before)
+        self.assertEqual(
+            self.inventory.list_movements(self.product["id"]),
+            movements_before,
+        )
+
+    def test_manual_update_preserves_source_when_source_field_is_missing(self):
+        sale = self.create_managed_sale(source="Amazon")
+        response = self.update_sale_form(sale, source=None, note="No drift")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            self.inventory.get_sale(sale["id"])["source"],
+            "Amazon",
+        )
+
+    def test_sale_date_validation_is_python_36_compatible(self):
+        self.assertEqual(
+            web.validate_sale_form_date("2026-08-04T14:14"),
+            "2026-08-04T14:14",
+        )
+        self.assertEqual(
+            web.validate_sale_form_date("2026-08-04"),
+            "2026-08-04",
+        )
+        self.assertEqual(
+            web.validate_sale_form_date("2026-08-04T14:14:00+03:00"),
+            "2026-08-04T14:14:00+03:00",
+        )
+        with self.assertRaisesRegex(ValueError, "корректную дату"):
+            web.validate_sale_form_date("2026-02-30T14:14")
+
+    def test_sale_editor_keeps_values_and_server_errors_in_the_open_modal(self):
+        template = (
+            Path(web.app.root_path) / "templates" / "sales.html"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('const sourceKey = sale.source_key || "tictactoy";', template)
+        self.assertIn('saleDateValue + "T00:00"', template)
+        self.assertIn('setSaleFormError(\n                error.message', template)
+        self.assertIn('manualSaleModal.classList.add("is-open")', template)
+        self.assertNotIn(
+            'catch (error) {\n            closeManualSaleModal()',
+            template,
         )
 
     def test_legacy_sale_is_not_written_off_during_schema_migration(self):
