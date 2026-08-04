@@ -299,15 +299,19 @@
                 const label = document.createElement("span");
                 label.className = "brand-combobox-option-label";
                 label.textContent = option.label || option.value || "";
+                label.title = option.title || label.textContent;
 
                 if (option.meta) {
                     const copy = document.createElement("span");
+                    const details = document.createElement("span");
                     const meta = document.createElement("span");
                     copy.className = "catalog-combobox-option-copy";
+                    details.className = "catalog-combobox-option-details";
                     meta.className = "catalog-combobox-option-meta";
                     meta.textContent = option.meta;
-                    copy.append(label, meta);
-                    button.append(copy, count);
+                    details.append(meta, count);
+                    copy.append(label, details);
+                    button.append(copy);
                 } else {
                     button.append(label, count);
                 }
@@ -635,16 +639,25 @@
     }
 
     function sharedCatalogProductLabel(item) {
-        const details = [
-            item.article || "без артикула",
-            "остаток " + sharedCatalogStockDisplay(item),
-        ];
-        return [item.name || "Товар без названия", ...details]
-            .join(" · ");
+        return String(item.name || "Товар без названия");
+    }
+
+    function sharedCatalogStockValue(item) {
+        const value = item.stock_display ?? item.stock ?? 0;
+        const normalized = String(value).trim().replace(/\s+/g, " ");
+        const numeric = Number(normalized.replaceAll(" ", ""));
+
+        if (!Number.isFinite(numeric)) {
+            return normalized || "0";
+        }
+
+        return new Intl.NumberFormat("ru-RU", {
+            maximumFractionDigits: 20,
+        }).format(numeric).replaceAll(" ", " ");
     }
 
     function sharedCatalogStockDisplay(item) {
-        return String(item.stock_display ?? item.stock ?? 0) + " ед.";
+        return sharedCatalogStockValue(item) + " ед.";
     }
 
     window.updateCatalogCreateAction = function(
@@ -692,23 +705,19 @@
             label: product
                 ? sharedCatalogProductLabel(item)
                 : String(item.name || ""),
+            title: product
+                ? sharedCatalogProductLabel(item)
+                : String(item.name || ""),
             searchText: [
                 item.name,
                 item.article,
                 item.barcode,
             ].filter(Boolean).join(" "),
             meta: product
-                ? [
-                    item.article
-                        ? "Артикул: " + item.article
-                        : "",
-                    item.barcode
-                        ? "Баркод: " + item.barcode
-                        : "",
-                ].filter(Boolean).join(" · ")
+                ? "Артикул: " + (item.article || "—")
                 : "",
             count: product
-                ? sharedCatalogStockDisplay(item)
+                ? "Остаток: " + sharedCatalogStockValue(item)
                 : kind === "category" && hideCategoryCount
                     ? ""
                     : sharedCatalogStockDisplay(item),

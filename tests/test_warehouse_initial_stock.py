@@ -121,6 +121,34 @@ class WarehouseInitialStockTest(unittest.TestCase):
         self.assertEqual(products[0]["stock"], 7)
         self.assertEqual(products[0]["stock_display"], "7")
 
+    def test_single_api_save_persists_article_stock_and_movement_once(self):
+        response = self.client.post(
+            "/api/v1/products",
+            json={
+                "name": "Single Save Product",
+                "article": "КИР-АРТ-6000",
+                "brand": "Test",
+                "category": "Часы",
+                "cell": "A-02",
+                "stock": 6,
+            },
+        )
+
+        self.assertEqual(response.status_code, 201)
+        product = response.get_json()["data"]
+        stored = self.catalog.get_product(product["id"])
+        self.assertEqual(product["article"], "КИР-АРТ-6000")
+        self.assertEqual(stored["excel_article"], "КИР-АРТ-6000")
+        self.assertEqual(stored["stock"], 6)
+        operations = [
+            item
+            for item in self.catalog.list_manual_stock_operations()
+            if str(item["product_id"]) == str(product["id"])
+        ]
+        self.assertEqual(len(operations), 1)
+        self.assertEqual(operations[0]["stock_before"], 0)
+        self.assertEqual(operations[0]["stock_after"], 6)
+
 
 if __name__ == "__main__":
     unittest.main()
