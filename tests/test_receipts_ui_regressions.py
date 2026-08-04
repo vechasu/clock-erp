@@ -30,6 +30,26 @@ class ReceiptsUiRegressionsTest(unittest.TestCase):
         self.assertIn("receipt-card-layout", self.template)
         self.assertIn("data-receipt-edit-image", self.template)
 
+    def test_receipt_editor_uses_full_width_and_closes_only_by_cross(self):
+        self.assertIn(
+            ".receipt-card-layout {\n"
+            "            display: grid;\n"
+            "            width: 100%;\n"
+            "            min-width: 0;\n"
+            "            grid-template-columns: minmax(0, 1fr);",
+            self.template,
+        )
+        self.assertIn("overflow-wrap: anywhere", self.template)
+        modal = self.template.split('id="receiptEditModal"', 1)[1]
+        modal = modal.split("<!-- RECEIPTS EXCEL IMPORT MODAL V1 -->", 1)[0]
+        self.assertEqual(modal.count("data-receipt-edit-close"), 1)
+        editor_script = self.template.split("// RECEIPT CARD EDITOR", 1)[1]
+        editor_script = editor_script.split(
+            "// Excel-like receipt widths", 1
+        )[0]
+        self.assertNotIn("event.target === receiptEditModal", editor_script)
+        self.assertNotIn('event.key === "Escape"', editor_script)
+
     def test_date_has_a_secondary_time_and_search_has_no_long_hint(self):
         self.assertIn("receipt-date-time", self.template)
         self.assertIn('placeholder="Поиск"', self.template)
