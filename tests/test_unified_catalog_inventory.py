@@ -295,6 +295,38 @@ class UnifiedCatalogInventoryTest(unittest.TestCase):
             any(item["receipt_id"] == "receipt-1" for item in movements)
         )
 
+    def test_comment_only_receipt_update_preserves_stock_and_movements(self):
+        product = self.create_product()
+        receipt = {
+            "id": "receipt-comment-only",
+            "number": "ПР-COMMENT",
+            "receipt_date": "2026-08-04",
+            "comment": "Исходный комментарий",
+        }
+        positions = [{
+            "product_id": product["id"],
+            "quantity": 4,
+            "purchase_price": 500,
+        }]
+        self.receipts.create_receipt(receipt, positions)
+        stock_before = self.stock(product["id"])
+        movements_before = self.sales.list_movements(product["id"])
+
+        self.receipts.update_receipt(
+            receipt["id"],
+            {**receipt, "comment": "Сохранённый QA-комментарий"},
+            positions,
+            idempotency_key="receipt-comment-only-update",
+        )
+
+        reopened = self.receipts.get_receipt(receipt["id"])
+        self.assertEqual(reopened["comment"], "Сохранённый QA-комментарий")
+        self.assertEqual(self.stock(product["id"]), stock_before)
+        self.assertEqual(
+            self.sales.list_movements(product["id"]),
+            movements_before,
+        )
+
     def test_draft_keeps_new_shared_product_at_zero_until_posting(self):
         product = self.create_product(
             name="Draft New Product",

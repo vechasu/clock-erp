@@ -960,17 +960,25 @@
 
         .receipt-edit-dialog {
             width: min(860px, calc(100vw - 32px));
+            overflow-x: hidden;
         }
 
         .receipt-card-layout {
             display: grid;
-            grid-template-columns: minmax(0, 220px) minmax(0, 1fr);
-            gap: 20px;
+            width: 100%;
+            min-width: 0;
+            grid-template-columns: minmax(0, 1fr);
+            gap: 16px;
+        }
+
+        .receipt-card-media {
+            width: 100%;
+            min-width: 0;
         }
 
         .receipt-card-media img {
             display: block;
-            width: 100%;
+            width: min(220px, 100%);
             aspect-ratio: 1;
             border: 1px solid #dbe2ea;
             border-radius: 14px;
@@ -980,6 +988,8 @@
 
         .receipt-card-grid {
             display: grid;
+            width: 100%;
+            min-width: 0;
             grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: 14px;
         }
@@ -1003,10 +1013,19 @@
             border-radius: 9px;
             background: #f1f5f9;
             color: #172033;
+            overflow-wrap: anywhere;
+            white-space: pre-wrap;
         }
 
+        .receipt-card-quantity-field,
         .receipt-card-field-wide {
             grid-column: 1 / -1;
+        }
+
+        .receipt-card-field .control {
+            width: 100%;
+            min-width: 0;
+            max-width: 100%;
         }
 
         .receipt-edit-photo-field small {
@@ -1022,9 +1041,24 @@
         }
 
         @media (max-width: 700px) {
+            .receipt-edit-modal {
+                padding: 12px;
+            }
+
+            .receipt-edit-dialog {
+                width: 100%;
+                max-height: calc(100vh - 24px);
+            }
+
+            .receipt-edit-dialog .modal-header,
+            .receipt-edit-dialog .modal-body {
+                padding-right: 16px;
+                padding-left: 16px;
+            }
+
             .receipt-card-layout,
             .receipt-card-grid {
-                grid-template-columns: 1fr;
+                grid-template-columns: minmax(0, 1fr);
             }
 
             .receipt-card-media img {
@@ -2467,7 +2501,7 @@
                             <span>Документ</span>
                             <input class="control" type="text" name="document_number" maxlength="120">
                         </label>
-                        <label class="receipt-card-field">
+                        <label class="receipt-card-field receipt-card-quantity-field">
                             <span>Количество *</span>
                             <input class="control" type="number" name="quantity" min="1" step="1" required>
                         </label>
@@ -2504,7 +2538,6 @@
 
                 <div class="receipt-submit-message notice" aria-live="polite"></div>
                 <div class="modal-actions">
-                    <button class="button button-secondary" type="button" data-receipt-edit-close>Отмена</button>
                     <button class="button button-primary" type="submit">Сохранить</button>
                 </div>
             </form>
@@ -4205,11 +4238,6 @@
         .forEach((button) => {
             button.addEventListener("click", closeReceiptEditModal);
         });
-    receiptEditModal?.addEventListener("click", (event) => {
-        if (event.target === receiptEditModal) {
-            closeReceiptEditModal();
-        }
-    });
 
     const receiptEditImage = receiptEditModalForm?.querySelector(
         "[data-receipt-edit-image]"
@@ -4401,15 +4429,6 @@
             }
         }
     );
-
-    document.addEventListener("keydown", (event) => {
-        if (
-            event.key === "Escape"
-            && receiptEditModal?.classList.contains("is-open")
-        ) {
-            closeReceiptEditModal();
-        }
-    });
 
     // Excel-like receipt widths and visibility share one persisted view model.
     (() => {
@@ -4655,6 +4674,171 @@
     }
     // RECEIPTS REPORT BUTTON SCRIPT V1 END
 </script>
+
+{% if config.TESTING and request.args.get("receipt_card_layout_e2e") == "1" %}
+<script>
+    window.addEventListener("load", async () => {
+        const root = document.documentElement;
+        const wait = (delay) => new Promise((resolve) =>
+            window.setTimeout(resolve, delay)
+        );
+        const insideHorizontally = (inner, outer) => (
+            inner.left >= outer.left - 1
+            && inner.right <= outer.right + 1
+        );
+        const overlaps = (first, second) => !(
+            first.right <= second.left + 1
+            || second.right <= first.left + 1
+            || first.bottom <= second.top + 1
+            || second.bottom <= first.top + 1
+        );
+
+        try {
+            const openButton = document.querySelector(".js-edit-receipt");
+            const modal = document.getElementById("receiptEditModal");
+            const dialog = modal?.querySelector(".receipt-edit-dialog");
+            const form = document.getElementById("receiptEditModalForm");
+            const layout = form?.querySelector(".receipt-card-layout");
+            const grid = form?.querySelector(".receipt-card-grid");
+            const fields = Array.from(
+                form?.querySelectorAll(".receipt-card-field") || []
+            );
+            const product = form?.querySelector(
+                "[data-receipt-edit-product]"
+            )?.closest(".receipt-card-field");
+            const comment = form?.querySelector('[name="comment"]')
+                ?.closest(".receipt-card-field");
+            const photo = form?.querySelector(".receipt-edit-photo-field");
+            const actions = form?.querySelector(".modal-actions");
+            const currentImage = document.getElementById(
+                "receiptEditCurrentImage"
+            );
+            const closeButton = modal?.querySelector(
+                "[data-receipt-edit-close]"
+            );
+            if (
+                !openButton || !modal || !dialog || !form || !layout
+                || !grid || fields.length < 7 || !product || !comment
+                || !photo || !actions || !closeButton || !currentImage
+            ) {
+                throw new Error("missing-elements");
+            }
+
+            openButton.click();
+            await wait(180);
+            if (!modal.classList.contains("is-open")) {
+                throw new Error("modal-not-open");
+            }
+            if (currentImage.hidden) {
+                throw new Error("existing-photo-hidden");
+            }
+
+            const dialogRect = dialog.getBoundingClientRect();
+            const formRect = form.getBoundingClientRect();
+            const layoutRect = layout.getBoundingClientRect();
+            const gridRect = grid.getBoundingClientRect();
+            if (
+                dialogRect.width < Math.min(760, innerWidth - 64)
+                || formRect.width < dialogRect.width * 0.82
+                || layoutRect.width < formRect.width * 0.98
+                || gridRect.width < layoutRect.width * 0.98
+            ) {
+                throw new Error("compressed-layout");
+            }
+
+            const fieldRects = fields.map((field) =>
+                field.getBoundingClientRect()
+            );
+            fieldRects.forEach((rect) => {
+                if (!insideHorizontally(rect, dialogRect)) {
+                    throw new Error("field-outside-dialog");
+                }
+            });
+            for (let index = 0; index < fieldRects.length; index += 1) {
+                for (let next = index + 1; next < fieldRects.length; next += 1) {
+                    if (overlaps(fieldRects[index], fieldRects[next])) {
+                        throw new Error("field-overlap");
+                    }
+                }
+            }
+
+            [product, comment, photo].forEach((field) => {
+                if (field.getBoundingClientRect().width < gridRect.width * 0.96) {
+                    throw new Error("wide-field-compressed");
+                }
+            });
+
+            const dateRect = fields[0].getBoundingClientRect();
+            const documentRect = fields[1].getBoundingClientRect();
+            const brandRect = fields[3].getBoundingClientRect();
+            const categoryRect = fields[4].getBoundingClientRect();
+            if (innerWidth > 700) {
+                if (
+                    Math.abs(dateRect.top - documentRect.top) > 2
+                    || Math.abs(brandRect.top - categoryRect.top) > 2
+                    || dateRect.width < gridRect.width * 0.4
+                    || documentRect.width < gridRect.width * 0.4
+                ) {
+                    throw new Error("desktop-grid");
+                }
+            } else {
+                fieldRects.forEach((rect) => {
+                    if (
+                        Math.abs(rect.left - gridRect.left) > 2
+                        || rect.width < gridRect.width * 0.98
+                    ) {
+                        throw new Error("mobile-grid");
+                    }
+                });
+            }
+
+            fields.forEach((field) => {
+                if (field.scrollWidth > field.clientWidth + 1) {
+                    throw new Error("long-value-overflow");
+                }
+            });
+            if (root.scrollWidth > root.clientWidth + 1) {
+                throw new Error("page-horizontal-overflow");
+            }
+
+            dialog.scrollTop = dialog.scrollHeight;
+            await wait(60);
+            const scrolledDialogRect = dialog.getBoundingClientRect();
+            const actionsRect = actions.getBoundingClientRect();
+            if (
+                !insideHorizontally(actionsRect, scrolledDialogRect)
+                || actionsRect.bottom > scrolledDialogRect.bottom + 2
+            ) {
+                throw new Error("actions-unreachable");
+            }
+
+            const commentInput = form.querySelector('[name="comment"]');
+            commentInput.value = "Несохранённая длинная E2E QA заметка";
+            modal.dispatchEvent(new MouseEvent("click", {bubbles: true}));
+            document.dispatchEvent(new KeyboardEvent(
+                "keydown",
+                {key: "Escape", bubbles: true}
+            ));
+            await wait(60);
+            if (
+                !modal.classList.contains("is-open")
+                || commentInput.value !== "Несохранённая длинная E2E QA заметка"
+            ) {
+                throw new Error("accidental-close-or-data-loss");
+            }
+
+            closeButton.click();
+            await wait(60);
+            if (modal.classList.contains("is-open")) {
+                throw new Error("cross-does-not-close");
+            }
+            root.dataset.receiptCardLayoutE2e = "pass";
+        } catch (error) {
+            root.dataset.receiptCardLayoutE2e = "fail-" + error.message;
+        }
+    });
+</script>
+{% endif %}
 
 {% if config.TESTING and request.args.get("receipts_modal_e2e") == "1" %}
 <script>
