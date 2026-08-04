@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/static/css/catalog-combobox.css">
+    <style>
+        * { box-sizing: border-box; }
+        body { margin: 0; padding: 16px; font-family: Arial, sans-serif; }
+        .fixture { width: min(640px, 100%); }
+        .brand-combobox-dropdown { position: relative; top: 0; margin-top: 7px; }
+    </style>
+</head>
+<body>
+    <div class="fixture filter-combobox" data-shared-catalog-scope>
+        <div data-brand-combobox data-shared-catalog-kind="brand">
+            <input class="brand-combobox-hidden" value="Тестовый бренд">
+            <input class="catalog-combobox-id" value="1">
+        </div>
+        <div data-brand-combobox data-shared-catalog-kind="category">
+            <input class="brand-combobox-hidden" value="Часы">
+            <input class="catalog-combobox-id" value="2">
+        </div>
+        <div
+            id="productCombobox"
+            class="brand-combobox"
+            data-brand-combobox
+            data-shared-catalog-kind="product"
+            data-prefix-search="false"
+            data-search-enabled="true"
+            data-all-label="Выберите товар"
+        >
+            <input class="brand-combobox-hidden" name="product_id" value="">
+            <button class="brand-combobox-trigger" type="button">
+                <span class="brand-combobox-value">Выберите товар</span>
+                <span class="brand-combobox-arrow">▾</span>
+            </button>
+            <div class="brand-combobox-dropdown">
+                <div class="brand-combobox-search-wrap">
+                    <input
+                        class="brand-combobox-search"
+                        data-brand-search-input
+                        type="text"
+                    >
+                </div>
+                <div class="brand-combobox-options">
+                    <div class="brand-combobox-empty" data-brand-empty hidden></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/catalog-combobox.js"></script>
+    <script>
+        window.addEventListener("load", async function() {
+            const root = document.documentElement;
+            const result = {};
+            const requests = [];
+            const products = [
+                {
+                    id: "1",
+                    name: "Короткий товар",
+                    article: "SHORT-1",
+                    stock: 12,
+                    stock_display: "12",
+                },
+                {
+                    id: "2",
+                    name: "Нейтральный товар",
+                    article: "",
+                    stock: 0,
+                    stock_display: "0",
+                },
+                {
+                    id: "3",
+                    name: "Товар с большим остатком",
+                    article: "BIG-6000",
+                    stock: 6000,
+                    stock_display: "6000",
+                },
+                {
+                    id: "4",
+                    name: "Очень длинное название товара для проверки устойчивого переноса и сохранения полезной ширины выпадающего списка",
+                    article: "КИР-АРТ-4",
+                    stock: 3,
+                    stock_display: "3",
+                },
+            ];
+            const normalize = (value) => String(value || "")
+                .toLocaleLowerCase("ru").replaceAll("ё", "е");
+            const occurrences = (text, value) => (
+                text.split(value).length - 1
+            );
+
+            try {
+                window.fetch = async function(url) {
+                    const target = new URL(url, window.location.origin);
+                    requests.push(target.href);
+                    const query = normalize(target.searchParams.get("q"));
+                    const inStock = target.searchParams.get("in_stock") === "1";
+                    const data = products.filter((item) => (
+                        (!inStock || item.stock > 0)
+                        && (!query || normalize([
+                            item.name,
+                            item.article,
+                        ].join(" ")).includes(query))
+                    ));
+                    return {
+                        ok: true,
+                        json: async () => ({data}),
+                    };
+                };
+
+                const scope = document.querySelector(
+                    "[data-shared-catalog-scope]"
+                );
+                const combobox = document.getElementById("productCombobox");
+                await window.loadSharedCatalogOptions(combobox, "");
+                window.setBrandDropdownOpen(combobox, true);
+
+                let options = Array.from(combobox.querySelectorAll(
+                    ".brand-combobox-option:not([hidden])"
+                ));
+                result.optionCount = options.length === products.length;
+                result.structure = options.every((option) => (
+                    option.children.length === 1
+                    && option.querySelector(
+                        ".catalog-combobox-option-copy"
+                    )
+                    && option.querySelector(
+                        ".catalog-combobox-option-details"
+                    )
+                    && option.querySelector(
+                        ".catalog-combobox-option-meta"
+                    )
+                    && option.querySelector(
+                        ".catalog-combobox-option-count"
+                    )
+                ));
+                result.uniqueText = options.every((option, index) => {
+                    const item = products[index];
+                    const text = option.innerText;
+                    const article = item.article || "—";
+                    return (
+                        occurrences(text, item.name) === 1
+                        && occurrences(text, "Артикул:") === 1
+                        && occurrences(text, article) === 1
+                        && occurrences(text, "Остаток:") === 1
+                        && !text.includes("без артикула")
+                    );
+                });
+                result.noArticle = (
+                    options[1].querySelector(
+                        ".catalog-combobox-option-meta"
+                    ).textContent === "Артикул: —"
+                );
+                result.largeStock = (
+                    options[2].querySelector(
+                        ".catalog-combobox-option-count"
+                    ).textContent === "Остаток: 6 000"
+                );
+                result.longTitle = (
+                    options[3].querySelector(
+                        ".brand-combobox-option-label"
+                    ).title === products[3].name
+                );
+
+                await window.loadSharedCatalogOptions(
+                    combobox,
+                    "Короткий"
+                );
+                result.nameSearch = (
+                    combobox.querySelectorAll(
+                        ".brand-combobox-option:not([hidden])"
+                    ).length === 1
+                );
+                await window.loadSharedCatalogOptions(
+                    combobox,
+                    "КИР-АРТ-4"
+                );
+                result.articleSearch = (
+                    combobox.querySelectorAll(
+                        ".brand-combobox-option:not([hidden])"
+                    ).length === 1
+                );
+
+                await window.loadSharedCatalogOptions(combobox, "");
+                options = Array.from(combobox.querySelectorAll(
+                    ".brand-combobox-option:not([hidden])"
+                ));
+                options[0].click();
+                result.selectedValue = (
+                    combobox.querySelector(
+                        ".brand-combobox-value"
+                    ).textContent === products[0].name
+                    && !combobox.querySelector(
+                        ".brand-combobox-value"
+                    ).textContent.includes("Артикул:")
+                    && !combobox.querySelector(
+                        ".brand-combobox-value"
+                    ).textContent.includes("Остаток:")
+                );
+                combobox.querySelector(
+                    ".brand-combobox-trigger"
+                ).click();
+                await new Promise((resolve) => setTimeout(resolve, 30));
+                result.reopen = combobox.classList.contains("open");
+
+                scope.dataset.catalogInStock = "true";
+                await window.loadSharedCatalogOptions(combobox, "");
+                result.inStock = (
+                    requests.at(-1).includes("in_stock=1")
+                    && !Array.from(combobox.querySelectorAll(
+                        ".brand-combobox-option"
+                    )).some((option) => (
+                        option.dataset.brand === "2"
+                    ))
+                );
+
+                const dropdown = combobox.querySelector(
+                    ".brand-combobox-dropdown"
+                );
+                result.noOverflow = (
+                    root.scrollWidth <= root.clientWidth
+                    && dropdown.scrollWidth <= dropdown.clientWidth
+                );
+
+                const passed = Object.values(result).every(Boolean);
+                root.dataset.catalogComboboxE2e = passed ? "pass" : "fail";
+                root.dataset.catalogComboboxE2eResult = JSON.stringify(result);
+            } catch (error) {
+                root.dataset.catalogComboboxE2e = "fail";
+                root.dataset.catalogComboboxE2eError = error.message;
+                root.dataset.catalogComboboxE2eResult = JSON.stringify(result);
+            }
+        });
+    </script>
+</body>
+</html>

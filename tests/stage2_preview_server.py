@@ -168,4 +168,9 @@ web.app.config.update(TESTING=True, AUTH_TESTING=False)
 
 
 if __name__ == "__main__":
-    web.app.run(host="127.0.0.1", port=5050, debug=False, use_reloader=False)
+    web.app.run(
+        host="127.0.0.1",
+        port=int(os.environ.get("PREVIEW_PORT", "5050")),
+        debug=False,
+        use_reloader=False,
+    )
