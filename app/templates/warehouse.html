@@ -5193,6 +5193,7 @@
             method="get"
             action="/warehouse"
             data-shared-catalog-scope
+            data-catalog-category-without-brand="true"
         >
             <input type="hidden" name="per_page" value="{{ per_page }}">
             {% if query %}
@@ -5248,6 +5249,7 @@
                 "категорию",
                 "Все категории",
                 component_class="filter-combobox",
+                all_count=category_all_count,
                 shared_catalog_kind="category",
                 selected_id=selected_category_id,
                 id_input_name="category_id",

@@ -637,10 +637,14 @@
     function sharedCatalogProductLabel(item) {
         const details = [
             item.article || "без артикула",
-            "остаток " + (item.stock_display ?? item.stock ?? 0),
+            "остаток " + sharedCatalogStockDisplay(item),
         ];
         return [item.name || "Товар без названия", ...details]
             .join(" · ");
+    }
+
+    function sharedCatalogStockDisplay(item) {
+        return String(item.stock_display ?? item.stock ?? 0) + " ед.";
     }
 
     window.updateCatalogCreateAction = function(
@@ -704,10 +708,10 @@
                 ].filter(Boolean).join(" · ")
                 : "",
             count: product
-                ? "Остаток: " + (item.stock_display ?? item.stock ?? 0)
+                ? sharedCatalogStockDisplay(item)
                 : kind === "category" && hideCategoryCount
                     ? ""
-                    : (item.product_count ?? item.count ?? ""),
+                    : sharedCatalogStockDisplay(item),
             item,
         };
     }
@@ -837,8 +841,12 @@
             && brandCombobox?.dataset.sharedCatalogNewValue === "true"
         );
 
+        const categoryWithoutBrand = Boolean(
+            scope?.dataset.catalogCategoryWithoutBrand === "true"
+        );
+
         if (
-            (kind === "category" && !brandId)
+            (kind === "category" && !brandId && !categoryWithoutBrand)
             || (kind === "product" && (!brandId || !categoryId))
         ) {
             clearSharedCatalogOptions(
@@ -860,16 +868,13 @@
         if (query) {
             parameters.set("q", query);
         }
-        if (kind !== "brand") {
+        if (kind !== "brand" && brandId) {
             parameters.set("brand_id", brandId);
         }
-        if (
-            kind === "category"
-            && scope?.dataset.newBrandGlobalCategories === "true"
-        ) {
+        if (kind === "category") {
             parameters.set(
                 "category_scope",
-                newBrandUsesGlobalCategories ? "all" : "brand"
+                !brandId || newBrandUsesGlobalCategories ? "all" : "brand"
             );
         }
         if (kind === "product") {
@@ -996,6 +1001,10 @@
         );
     }
 
+    function categoryNeedsBrand(scope) {
+        return scope?.dataset.catalogCategoryWithoutBrand !== "true";
+    }
+
     function resetCascadeAfter(scope, kind) {
         if (!scope || scope.dataset.catalogCascadeResetting === "1") {
             return;
@@ -1026,7 +1035,8 @@
                 setCascadeFieldDisabled(
                     scope,
                     "category",
-                    !selectedSharedCatalogId(
+                    categoryNeedsBrand(scope)
+                    && !selectedSharedCatalogId(
                         sharedCatalogCombobox(scope, "brand")
                     )
                 );
@@ -1102,7 +1112,7 @@
         setCascadeFieldDisabled(
             scope,
             "category",
-            !values?.brandId
+            categoryNeedsBrand(scope) && !values?.brandId
         );
         setCascadeFieldDisabled(
             scope,
@@ -1141,7 +1151,7 @@
         setCascadeFieldDisabled(
             scope,
             "category",
-            !selectedSharedCatalogId(brand)
+            categoryNeedsBrand(scope) && !selectedSharedCatalogId(brand)
         );
         setCascadeFieldDisabled(
             scope,
