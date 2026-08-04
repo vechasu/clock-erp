@@ -223,7 +223,7 @@ class SharedCatalog:
         query_pattern = "%{}%".format(query)
         with self.database.connect() as connection:
             rows = connection.execute(
-                "WITH brand_options AS ("
+                "SELECT id, name, active, product_count, stock_total FROM ("
                 "SELECT b.id, b.name, b.normalized_name, b.active, "
                 "COUNT(p.id) AS product_count, "
                 "COALESCE(SUM(p.stock), 0) AS stock_total "
@@ -236,9 +236,8 @@ class SharedCatalog:
                 "COUNT(p.id) AS product_count, "
                 "COALESCE(SUM(p.stock), 0) AS stock_total "
                 "FROM catalog_excel_products p "
-                "WHERE p.active = 1 AND p.brand_id IS NULL) "
-                "SELECT id, name, active, product_count, stock_total "
-                "FROM brand_options WHERE normalized_name LIKE ? "
+                "WHERE p.active = 1 AND p.brand_id IS NULL) AS brand_options "
+                "WHERE normalized_name LIKE ? "
                 "ORDER BY name COLLATE NOCASE LIMIT ?",
                 (query_pattern, max(1, min(int(limit), 200))),
             ).fetchall()
@@ -300,7 +299,7 @@ class SharedCatalog:
         )
         with self.database.connect() as connection:
             rows = connection.execute(
-                "WITH category_rows AS ("
+                "SELECT * FROM ("
                 "SELECT c.id, c.brand_id, c.name, c.normalized_name, "
                 "c.active, b.name AS brand_name, "
                 "COUNT(p.id) AS product_count, "
@@ -330,9 +329,9 @@ class SharedCatalog:
                 "THEN 1 ELSE 0 END) AS used_by_brand "
                 "FROM catalog_excel_products p "
                 "WHERE p.active = 1 AND p.category_id IS NULL "
+                "GROUP BY p.category_id "
                 "HAVING COUNT(p.id) > 0 "
-                "AND (? = '' OR 'без категории' LIKE ?)) "
-                "SELECT * FROM category_rows "
+                "AND (? = '' OR 'без категории' LIKE ?)) AS category_rows "
                 "ORDER BY used_by_brand DESC, "
                 "name COLLATE NOCASE, id",
                 [

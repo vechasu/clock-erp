@@ -17,6 +17,7 @@ class CountingDatabase:
     def __init__(self, database):
         self.database = database
         self.execute_count = 0
+        self.statements = []
 
     def initialize(self):
         return self.database.initialize()
@@ -29,6 +30,7 @@ class CountingDatabase:
             class CountingConnection:
                 def execute(self, *args, **kwargs):
                     owner.execute_count += 1
+                    owner.statements.append(args[0])
                     return connection.execute(*args, **kwargs)
 
             yield CountingConnection()
@@ -185,6 +187,7 @@ class CatalogStockStatisticsTest(unittest.TestCase):
                 counting = CountingDatabase(self.database)
                 getattr(SharedCatalog(counting), method)(limit=100, **arguments)
                 self.assertEqual(counting.execute_count, 1)
+                self.assertNotIn("WITH ", counting.statements[0].upper())
 
     def test_all_three_active_sections_use_the_shared_stock_component(self):
         component = Path("app/static/js/catalog-combobox.js").read_text(
