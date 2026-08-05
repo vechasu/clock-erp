@@ -1926,6 +1926,45 @@ def warehouse_export_pdf():
     return response
 
 
+def warehouse_product_gallery(product):
+    urls = []
+    for image in product.get("gallery") or []:
+        if isinstance(image, dict):
+            url = next((
+                str(image.get(key) or "").strip()
+                for key in (
+                    "original_url", "url", "download_url", "thumbnail_url",
+                )
+                if image.get(key)
+            ), "")
+        else:
+            url = str(image or "").strip()
+        if url and url not in urls:
+            urls.append(url)
+
+    if not urls:
+        primary_url = str(
+            product.get("bitrix_primary_image_url")
+            or product.get("bitrix_thumbnail_url")
+            or ""
+        ).strip()
+        if primary_url:
+            urls.append(primary_url)
+
+    if not urls:
+        moysklad_product_id = str(
+            product.get("moysklad_product_id") or ""
+        ).strip()
+        if moysklad_product_id:
+            urls.append(
+                "/warehouse/product/{}/thumbnail".format(
+                    moysklad_product_id
+                )
+            )
+
+    return urls
+
+
 @app.route("/warehouse/product/<int:product_id>")
 def warehouse_product_detail(product_id):
     product = ExcelProductCatalog().get_product(product_id)
@@ -1933,7 +1972,10 @@ def warehouse_product_detail(product_id):
         abort(404)
     return jsonify({
         "id": product["id"],
-        "gallery": product.get("gallery") or [],
+        "gallery": [
+            {"original_url": url}
+            for url in warehouse_product_gallery(product)
+        ],
     })
 
 
