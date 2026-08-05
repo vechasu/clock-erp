@@ -12398,6 +12398,42 @@ def api_product_request_payload():
     return payload, decode_api_product_image(payload.get("product_image"))
 
 
+def api_product_update_request_payload():
+    if request.mimetype != "multipart/form-data":
+        return api_json_payload(), None, "keep"
+
+    allowed_names = (
+        "name", "article", "brand", "category", "brand_id",
+        "category_id", "cell", "stock", "stock_reason",
+    )
+    payload = {
+        key: request.form.get(key)
+        for key in allowed_names
+        if key in request.form
+    }
+    for key in ("brand_id", "category_id"):
+        if key in payload and payload[key] in (None, ""):
+            payload[key] = None
+    image = read_product_image_upload(
+        request.files.get("product_image"),
+        allow_webp=True,
+    )
+    action = str(
+        request.form.get("product_image_action") or "keep"
+    ).strip().lower()
+    if action not in {"keep", "add", "replace", "remove"}:
+        raise ValueError("Неизвестное действие с фотографией.")
+    if action == "remove" and image:
+        raise ValueError(
+            "Нельзя одновременно заменить и удалить фотографию."
+        )
+    if action in {"add", "replace"} and not image:
+        raise ValueError("Выберите фотографию товара.")
+    if image and action == "keep":
+        action = "replace"
+    return payload, image, action
+
+
 def rollback_remote_product(client, product):
     product_id = str((product or {}).get("id") or "").strip()
     if not product_id:
@@ -12630,7 +12666,9 @@ def api_product_resource(product_id):
         return api_success({"id": product_id, "deleted": True})
 
     try:
-        payload = api_json_payload()
+        payload, product_image, image_action = (
+            api_product_update_request_payload()
+        )
         allowed_fields = {
             "name", "article", "brand", "category", "brand_id", "category_id",
             "cell", "stock", "stock_reason",
@@ -12643,13 +12681,57 @@ def api_product_resource(product_id):
                 422,
                 {"payload": sorted(unknown_fields)},
             )
-        if not payload:
+        if not payload and image_action == "keep":
             return api_error(
                 "PRODUCT_VALIDATION_FAILED",
                 "Не передано ни одного изменения.",
                 422,
             )
-        updated = catalog_service.update_product(product_id, **payload)
+        remote_product_id = str(
+            product.get("moysklad_product_id") or ""
+        ).strip()
+        image_message = ""
+        if image_action != "keep":
+            if not remote_product_id:
+                return api_error(
+                    "PRODUCT_IMAGE_STORAGE_UNAVAILABLE",
+                    "У товара нет связанной карточки в МойСклад.",
+                    422,
+                )
+            image_client = MoySkladClient()
+            try:
+                if image_action == "remove":
+                    image_result = image_client.delete_product_images(
+                        remote_product_id
+                    )
+                    image_message = "Фото товара удалено."
+                else:
+                    image_result = image_client.upload_product_image(
+                        remote_product_id,
+                        product_image["filename"],
+                        product_image["content"],
+                    )
+                    image_message = "Фото товара обновлено."
+            except Exception:
+                app.logger.exception(
+                    "Products API failed to update image for %s",
+                    product_id,
+                )
+                image_result = None
+            if not image_result:
+                return api_error(
+                    "PRODUCT_IMAGE_UPLOAD_FAILED",
+                    (
+                        "Не удалось изменить фотографию. "
+                        "Прежнее изображение и данные товара сохранены."
+                    ),
+                    502,
+                )
+        updated = (
+            catalog_service.update_product(product_id, **payload)
+            if payload
+            else catalog_service.get_product(product_id)
+        )
     except DuplicateCatalogValueError as error:
         return api_error(
             "PRODUCT_ALREADY_EXISTS",
@@ -12659,7 +12741,12 @@ def api_product_resource(product_id):
         )
     except ValueError as error:
         return api_error("PRODUCT_VALIDATION_FAILED", str(error), 422)
-    return api_success(serialize_api_product(updated))
+    WAREHOUSE_CACHE["items"] = []
+    WAREHOUSE_CACHE["loaded_at"] = 0
+    return api_success(
+        serialize_api_product(updated),
+        image_message=image_message,
+    )
 
 
 @app.route("/api/products/<int:product_id>/movements", methods=["GET"])

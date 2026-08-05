@@ -944,6 +944,42 @@
             line-height: 1.45;
         }
 
+        .sale-product-photo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-width: 0;
+            margin-top: 8px;
+            padding: 8px;
+            border: 1px solid #dbe3ec;
+            border-radius: 10px;
+            background: #f8fafc;
+            color: #64748b;
+            font-size: 12px;
+        }
+
+        .sale-product-photo img,
+        .sale-product-photo-placeholder {
+            width: 52px;
+            height: 52px;
+            flex: 0 0 52px;
+            border-radius: 8px;
+        }
+
+        .sale-product-photo img {
+            object-fit: contain;
+            background: #ffffff;
+        }
+
+        .sale-product-photo-placeholder {
+            display: grid;
+            place-items: center;
+            background: #e9eef5;
+            color: #7b8798;
+            font-size: 10px;
+            font-weight: 800;
+        }
+
         .sales-product-combobox .brand-combobox-option {
             white-space: normal;
         }
@@ -2128,6 +2164,11 @@
                             class="product-meta-preview"
                         >
                             Баркод, артикул и остаток появятся после выбора товара.
+                        </div>
+                        <div id="saleProductPhoto" class="sale-product-photo">
+                            <img id="saleProductPhotoImage" alt="Фото выбранного товара" hidden>
+                            <span id="saleProductPhotoPlaceholder" class="sale-product-photo-placeholder">Нет фото</span>
+                            <span id="saleProductPhotoText">Выберите товар</span>
                         </div>
                     </div>
 
@@ -4728,7 +4769,36 @@
     const productMeta = document.getElementById(
         "productMeta"
     );
+    const saleProductPhotoImage = document.getElementById(
+        "saleProductPhotoImage"
+    );
+    const saleProductPhotoPlaceholder = document.getElementById(
+        "saleProductPhotoPlaceholder"
+    );
+    const saleProductPhotoText = document.getElementById(
+        "saleProductPhotoText"
+    );
     let sharedSelectedSaleProduct = null;
+
+    function renderSaleProductPhoto(product) {
+        const source = String(
+            product?.image_url || product?.thumbnail_url || ""
+        ).trim();
+        saleProductPhotoImage.hidden = !source;
+        saleProductPhotoPlaceholder.hidden = Boolean(source);
+        saleProductPhotoText.textContent = product
+            ? (source ? "Фото выбранного товара" : "У товара нет фотографии")
+            : "Выберите товар";
+        if (source) {
+            saleProductPhotoImage.src = source;
+            saleProductPhotoImage.onerror = () => {
+                saleProductPhotoImage.hidden = true;
+                saleProductPhotoPlaceholder.hidden = false;
+            };
+        } else {
+            saleProductPhotoImage.removeAttribute("src");
+        }
+    }
 
     function resetProductFilters() {
         sharedSelectedSaleProduct = null;
@@ -4746,6 +4816,7 @@
         productNameInput.value = "";
         productMeta.textContent =
             "Баркод, артикул и остаток появятся после выбора товара.";
+        renderSaleProductPhoto(null);
     }
 
     function resetSaleChoiceFields() {
@@ -4934,6 +5005,7 @@
                 const item = event.detail.item;
                 sharedSelectedSaleProduct = item;
                 productNameInput.value = item.name || "";
+                renderSaleProductPhoto(item);
                 productMeta.textContent = [
                     "Баркод: " + (item.barcode || "—"),
                     "Артикул: " + (item.article || "—"),
@@ -4952,6 +5024,7 @@
                     productNameInput.value = "";
                     productMeta.textContent =
                         "Баркод, артикул и остаток появятся после выбора товара.";
+                    renderSaleProductPhoto(null);
                 }
             },
     );

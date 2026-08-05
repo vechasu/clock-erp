@@ -547,14 +547,68 @@
         }
 
         .receipt-image-picker {
-            display: grid;
-            grid-template-columns: minmax(0, 1fr) auto;
+            display: flex;
             gap: 10px;
             align-items: center;
             padding: 11px;
-            border: 1px dashed #cbd5e1;
+            border: 1px solid #dbe3ec;
             border-radius: 12px;
             background: #f8fafc;
+        }
+
+        .receipt-image-input {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            overflow: hidden;
+            clip: rect(0 0 0 0);
+            clip-path: inset(50%);
+        }
+
+        .receipt-image-choose {
+            display: inline-flex;
+            min-height: 34px;
+            align-items: center;
+            padding: 0 13px;
+            border: 1px solid #c5d4f5;
+            border-radius: 9px;
+            background: #ffffff;
+            color: #2457d6;
+            font-size: 13px;
+            font-weight: 800;
+            cursor: pointer;
+        }
+
+        .receipt-selected-photo {
+            display: flex;
+            min-width: 0;
+            align-items: center;
+            gap: 12px;
+            padding: 11px;
+            border: 1px solid #dbe3ec;
+            border-radius: 12px;
+            background: #f8fafc;
+        }
+
+        .receipt-selected-photo img,
+        .receipt-selected-photo-placeholder {
+            width: 58px;
+            height: 58px;
+            flex: 0 0 58px;
+            border: 1px solid #dbe3ec;
+            border-radius: 10px;
+            background: #ffffff;
+            object-fit: contain;
+        }
+
+        .receipt-selected-photo-placeholder {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #94a3b8;
+            font-size: 10px;
+            font-weight: 700;
+            text-align: center;
         }
 
         .receipt-image-preview {
@@ -583,13 +637,8 @@
         }
 
         @media (max-width: 900px) {
-            .receipt-image-picker {
-                grid-template-columns: 1fr;
-            }
-
-            .receipt-image-picker input[type="file"] {
-                max-width: 100%;
-            }
+            .receipt-image-picker,
+            .receipt-selected-photo { min-width: 0; }
 
             .main {
                 padding: 14px;
@@ -1026,18 +1075,6 @@
             width: 100%;
             min-width: 0;
             max-width: 100%;
-        }
-
-        .receipt-edit-photo-field small {
-            color: #64748b;
-            font-size: 12px;
-        }
-
-        .receipt-edit-photo-field img {
-            width: 112px;
-            height: 112px;
-            border-radius: 10px;
-            object-fit: cover;
         }
 
         @media (max-width: 700px) {
@@ -2371,6 +2408,19 @@
                         >
                     </div>
 
+                    <h3 class="erp-form-section-title field-wide">Фото</h3>
+                    <div
+                        id="receiptSelectedPhoto"
+                        class="field field-wide receipt-selected-photo"
+                    >
+                        <img id="receiptSelectedPhotoPicture" alt="Фото выбранного товара" hidden>
+                        <span id="receiptSelectedPhotoPlaceholder" class="receipt-selected-photo-placeholder">Нет фото</span>
+                        <div>
+                            <strong>Фото товара</strong>
+                            <div id="receiptSelectedPhotoText" class="receipt-image-help">Выберите товар</div>
+                        </div>
+                    </div>
+
                     <div class="field">
                         <label for="receipt_quantity">
                             Количество *
@@ -2389,17 +2439,14 @@
                         >
                     </div>
 
-                    <h3 class="erp-form-section-title field-wide">Фото</h3>
                     <div
                         id="receiptImageField"
                         class="field field-wide"
+                        hidden
                     >
-                        <label for="receipt_product_image">
-                            Фото товара
-                        </label>
-
                         <div class="receipt-image-picker">
                             <div>
+                                <label class="receipt-image-choose" for="receipt_product_image">Добавить фото</label>
                                 <input
                                     class="control receipt-image-input"
                                     id="receipt_product_image"
@@ -2498,8 +2545,9 @@
                 <input type="hidden" name="product_id">
 
                 <div class="receipt-card-layout">
-                    <section class="receipt-card-media" id="receiptEditCurrentImage" hidden>
-                        <img alt="Фотография товара" loading="lazy">
+                    <section class="receipt-card-media" id="receiptEditCurrentImage">
+                        <img alt="Фотография товара" loading="lazy" hidden>
+                        <span data-receipt-edit-photo-placeholder>Нет фото</span>
                     </section>
 
                     <div class="receipt-card-grid">
@@ -2530,18 +2578,6 @@
                         <label class="receipt-card-field receipt-card-field-wide">
                             <span>Комментарий</span>
                             <textarea class="control" name="comment" maxlength="2000"></textarea>
-                        </label>
-                        <label class="receipt-card-field receipt-card-field-wide receipt-edit-photo-field">
-                            <span>Добавить фотографию товара</span>
-                            <input
-                                class="control"
-                                type="file"
-                                name="product_image"
-                                accept="image/jpeg,image/png,.jpg,.jpeg,.png"
-                                data-receipt-edit-image
-                            >
-                            <small data-receipt-edit-image-help>JPEG или PNG, не больше 3 МБ</small>
-                            <img data-receipt-edit-preview alt="Предпросмотр фотографии" hidden>
                         </label>
                     </div>
                 </div>
@@ -2787,6 +2823,15 @@
             "receiptImagePreviewPicture"
         );
 
+    const receiptImageField =
+        document.getElementById("receiptImageField");
+    const receiptSelectedPhotoPicture =
+        document.getElementById("receiptSelectedPhotoPicture");
+    const receiptSelectedPhotoPlaceholder =
+        document.getElementById("receiptSelectedPhotoPlaceholder");
+    const receiptSelectedPhotoText =
+        document.getElementById("receiptSelectedPhotoText");
+
     const removeReceiptImage =
         document.getElementById("removeReceiptImage");
 
@@ -2816,27 +2861,44 @@
         receiptImagePreview?.classList.remove("is-visible");
     }
 
-    function updateReceiptImageAvailability(product) {
-        if (!receiptProductImage || !receiptImageHelp) {
-            return;
+    function renderReceiptSelectedPhoto(product) {
+        const source = String(
+            product?.image_url || product?.thumbnail_url || ""
+        ).trim();
+        if (receiptSelectedPhotoPicture) {
+            receiptSelectedPhotoPicture.hidden = !source;
+            if (source) {
+                receiptSelectedPhotoPicture.src = source;
+                receiptSelectedPhotoPicture.onerror = () => {
+                    receiptSelectedPhotoPicture.hidden = true;
+                    if (receiptSelectedPhotoPlaceholder) {
+                        receiptSelectedPhotoPlaceholder.hidden = false;
+                    }
+                };
+            } else {
+                receiptSelectedPhotoPicture.removeAttribute("src");
+            }
         }
+        if (receiptSelectedPhotoPlaceholder) {
+            receiptSelectedPhotoPlaceholder.hidden = Boolean(source);
+        }
+        if (receiptSelectedPhotoText) {
+            receiptSelectedPhotoText.textContent = product
+                ? (source ? "Фото выбранного товара" : "У товара нет фотографии")
+                : "Выберите товар";
+        }
+    }
 
-        const alreadyHasImage = Boolean(
-            product && product.has_images
-        );
-
-        receiptProductImage.disabled = alreadyHasImage;
-
-        if (alreadyHasImage) {
-            clearReceiptImage();
-            receiptImageHelp.textContent = (
-                "У выбранного товара уже есть фото. "
-                + "Новый файл не будет добавлен"
-            );
-        } else {
-            receiptImageHelp.textContent = (
-                "JPEG или PNG, не больше 3 МБ"
-            );
+    function setReceiptNewProductPhotoMode(enabled) {
+        clearReceiptImage();
+        if (receiptImageField) {
+            receiptImageField.hidden = !enabled;
+        }
+        if (receiptProductImage) {
+            receiptProductImage.disabled = !enabled;
+        }
+        if (receiptImageHelp) {
+            receiptImageHelp.textContent = "JPEG или PNG, не больше 3 МБ";
         }
     }
 
@@ -2895,9 +2957,7 @@
         "click",
         () => {
             clearReceiptImage();
-            updateReceiptImageAvailability(
-                receiptSelectedProduct
-            );
+            setReceiptNewProductPhotoMode(true);
         }
     );
 
@@ -3718,7 +3778,8 @@
                 {}
             );
             receiptSelectedProduct = null;
-            updateReceiptImageAvailability(null);
+            renderReceiptSelectedPhoto(null);
+            setReceiptNewProductPhotoMode(false);
         }
 
         receiptModal.classList.add("is-open");
@@ -3802,7 +3863,8 @@
                 const product = event.detail.item;
                 if (context.closest("#receiptModal")) {
                     receiptSelectedProduct = product;
-                    updateReceiptImageAvailability(product);
+                    renderReceiptSelectedPhoto(product);
+                    setReceiptNewProductPhotoMode(false);
                     const catalogProductInput =
                         document.getElementById(
                             "receipt_catalog_product_id"
@@ -3813,6 +3875,20 @@
                             String(product.id || "");
                     }
                 }
+            }
+        );
+        context.addEventListener(
+            "shared-catalog:created",
+            (event) => {
+                if (
+                    event.detail?.kind !== "product"
+                    || !context.closest("#receiptModal")
+                ) {
+                    return;
+                }
+                receiptSelectedProduct = event.detail.item;
+                renderReceiptSelectedPhoto(receiptSelectedProduct);
+                setReceiptNewProductPhotoMode(true);
             }
         );
     });
@@ -4298,19 +4374,10 @@
     const receiptEditModalForm = document.getElementById(
         "receiptEditModalForm"
     );
-    let receiptEditImageObjectUrl = "";
-
     function closeReceiptEditModal() {
         receiptEditModal?.classList.remove("is-open");
         document.body.classList.remove("modal-open");
-        if (receiptEditImageObjectUrl) {
-            URL.revokeObjectURL(receiptEditImageObjectUrl);
-            receiptEditImageObjectUrl = "";
-        }
         receiptEditModalForm?.reset();
-        receiptEditModalForm?.querySelector(
-            "[data-receipt-edit-preview]"
-        )?.setAttribute("hidden", "");
     }
 
     function openReceiptEditModal(row) {
@@ -4344,13 +4411,22 @@
             "receiptEditCurrentImage"
         );
         const currentPicture = currentImage?.querySelector("img");
+        const currentPlaceholder = currentImage?.querySelector(
+            "[data-receipt-edit-photo-placeholder]"
+        );
         const imageUrl = row.dataset.productImage || "";
         if (currentImage && currentPicture) {
-            currentImage.hidden = !imageUrl;
+            currentPicture.hidden = !imageUrl;
+            if (currentPlaceholder) {
+                currentPlaceholder.hidden = Boolean(imageUrl);
+            }
             if (imageUrl) {
                 currentPicture.src = imageUrl;
                 currentPicture.onerror = () => {
-                    currentImage.hidden = true;
+                    currentPicture.hidden = true;
+                    if (currentPlaceholder) {
+                        currentPlaceholder.hidden = false;
+                    }
                 };
             } else {
                 currentPicture.removeAttribute("src");
@@ -4378,40 +4454,6 @@
         .forEach((button) => {
             button.addEventListener("click", closeReceiptEditModal);
         });
-
-    const receiptEditImage = receiptEditModalForm?.querySelector(
-        "[data-receipt-edit-image]"
-    );
-    receiptEditImage?.addEventListener("change", () => {
-        const file = receiptEditImage.files?.[0];
-        const help = receiptEditModalForm.querySelector(
-            "[data-receipt-edit-image-help]"
-        );
-        const preview = receiptEditModalForm.querySelector(
-            "[data-receipt-edit-preview]"
-        );
-        let error = "";
-        if (file && !["image/jpeg", "image/png"].includes(file.type)) {
-            error = "Выберите изображение JPEG или PNG";
-        } else if (file && file.size > 3 * 1024 * 1024) {
-            error = "Изображение не должно быть больше 3 МБ";
-        }
-        receiptEditImage.setCustomValidity(error);
-        help.textContent = error || (
-            file
-                ? file.name + " · " + Math.ceil(file.size / 1024) + " КБ"
-                : "JPEG или PNG, не больше 3 МБ"
-        );
-        if (receiptEditImageObjectUrl) {
-            URL.revokeObjectURL(receiptEditImageObjectUrl);
-            receiptEditImageObjectUrl = "";
-        }
-        preview.hidden = !file || Boolean(error);
-        if (file && !error) {
-            receiptEditImageObjectUrl = URL.createObjectURL(file);
-            preview.src = receiptEditImageObjectUrl;
-        }
-    });
 
     function setReceiptSubmitting(form, submitting) {
         form.dataset.submitting = submitting ? "true" : "";
@@ -5030,7 +5072,6 @@
             )?.closest(".receipt-card-field");
             const comment = form?.querySelector('[name="comment"]')
                 ?.closest(".receipt-card-field");
-            const photo = form?.querySelector(".receipt-edit-photo-field");
             const actions = form?.querySelector(".modal-actions");
             const currentImage = document.getElementById(
                 "receiptEditCurrentImage"
@@ -5041,7 +5082,7 @@
             if (
                 !openButton || !modal || !dialog || !form || !layout
                 || !grid || fields.length < 7 || !product || !comment
-                || !photo || !actions || !closeButton || !currentImage
+                || !actions || !closeButton || !currentImage
             ) {
                 throw new Error("missing-elements");
             }
@@ -5084,7 +5125,7 @@
                 }
             }
 
-            [product, comment, photo].forEach((field) => {
+            [product, comment].forEach((field) => {
                 if (field.getBoundingClientRect().width < gridRect.width * 0.96) {
                     throw new Error("wide-field-compressed");
                 }

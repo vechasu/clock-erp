@@ -3425,85 +3425,43 @@
 
         #warehouseAddCard .warehouse-product-image-field {
             position: relative;
-            display: grid;
-            grid-template-columns: 1fr auto;
+            display: flex;
             align-items: center;
-            min-height: 170px;
-            padding: 20px 26px;
+            gap: 16px;
+            min-width: 0;
+            min-height: 92px;
+            padding: 14px;
             overflow: hidden;
-            border: 1.5px dashed #7aa2f7;
+            border: 1px solid #d8e1ed;
             border-radius: 14px;
-            background: #fbfdff;
+            background: #f8fafc;
             color: #516078;
-            cursor: pointer;
             box-sizing: border-box;
-            transition:
-                border-color 0.16s ease,
-                background 0.16s ease,
-                box-shadow 0.16s ease;
-        }
-
-        #warehouseAddCard .warehouse-product-image-field:hover,
-        #warehouseAddCard .warehouse-product-image-field:focus-within {
-            border-color: #2563eb;
-            background: #f7faff;
-            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.07);
         }
 
         #warehouseAddCard .warehouse-product-image-field input[type="file"] {
             position: absolute;
-            inset: 0;
-            z-index: 2;
-            width: 100%;
-            height: 100%;
-            margin: 0;
-            padding: 0;
+            width: 1px;
+            height: 1px;
+            overflow: hidden;
+            clip: rect(0 0 0 0);
+            clip-path: inset(50%);
             opacity: 0;
-            cursor: pointer;
-        }
-
-        #warehouseAddCard.is-editing-product .warehouse-product-image-field {
-            border-style: solid;
-            border-color: #d8e1ed;
-            background: #f8fafc;
-            cursor: default;
-        }
-
-        #warehouseAddCard.is-editing-product
-        .warehouse-product-image-field input[type="file"] {
-            pointer-events: none;
-            cursor: default;
-        }
-
-        #warehouseAddCard.is-editing-product .warehouse-upload-content {
-            opacity: 0.7;
-        }
-
-        #warehouseAddCard.is-editing-product
-        .warehouse-upload-content strong::after {
-            content: " — сохранится без изменений";
+            white-space: nowrap;
         }
 
         .warehouse-upload-content {
             display: flex;
+            flex: 1 1 auto;
             flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            gap: 6px;
+            align-items: flex-start;
+            gap: 5px;
             min-width: 0;
-            text-align: center;
+            text-align: left;
         }
 
         .warehouse-upload-icon {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            width: 42px;
-            height: 42px;
-            margin-bottom: 2px;
-            border-radius: 12px;
-            background: #eef4ff;
-            color: #315fd8;
+            display: none;
         }
 
         .warehouse-upload-icon svg {
@@ -3527,7 +3485,15 @@
             font-weight: 600;
         }
 
-        .warehouse-upload-button {
+        .warehouse-photo-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 7px;
+            min-width: 0;
+        }
+
+        .warehouse-upload-button,
+        .warehouse-photo-action {
             display: inline-flex;
             align-items: center;
             justify-content: center;
@@ -3540,6 +3506,16 @@
             font-size: 13px;
             font-weight: 800;
             box-shadow: 0 2px 5px rgba(37, 99, 235, 0.06);
+            cursor: pointer;
+        }
+
+        .warehouse-photo-action.is-danger {
+            border-color: #fecaca;
+            color: #b91c1c;
+        }
+
+        .warehouse-photo-action[hidden] {
+            display: none;
         }
 
         .warehouse-upload-content small {
@@ -3550,16 +3526,33 @@
         }
 
         #warehouseAddCard .warehouse-product-image-preview {
-            position: relative;
-            z-index: 1;
-            width: 124px;
-            height: 124px;
-            margin-left: 24px;
+            width: 72px;
+            height: 72px;
+            flex: 0 0 72px;
             border: 1px solid #d8e1ed;
             border-radius: 12px;
             background: #ffffff;
             object-fit: cover;
-            box-shadow: 0 7px 18px rgba(15, 23, 42, 0.08);
+        }
+
+        .warehouse-product-image-placeholder {
+            display: flex;
+            width: 72px;
+            height: 72px;
+            flex: 0 0 72px;
+            align-items: center;
+            justify-content: center;
+            border: 1px dashed #cbd5e1;
+            border-radius: 12px;
+            background: #ffffff;
+            color: #94a3b8;
+            font-size: 11px;
+            font-weight: 700;
+            text-align: center;
+        }
+
+        .warehouse-product-image-placeholder[hidden] {
+            display: none;
         }
 
         .warehouse-add-actions {
@@ -3613,14 +3606,20 @@
             }
 
             #warehouseAddCard .warehouse-product-image-field {
-                grid-template-columns: 1fr;
-                padding: 20px;
+                align-items: flex-start;
+                padding: 12px;
             }
 
             #warehouseAddCard .warehouse-product-image-preview {
-                width: 96px;
-                height: 96px;
-                margin: 18px auto 0;
+                width: 64px;
+                height: 64px;
+                flex-basis: 64px;
+            }
+
+            .warehouse-product-image-placeholder {
+                width: 64px;
+                height: 64px;
+                flex-basis: 64px;
             }
 
         }
@@ -4601,6 +4600,58 @@
                         </div>
                     </section>
 
+                    <section class="warehouse-add-section warehouse-add-photo-section">
+                        <h3 class="warehouse-add-section-title">Фото товара</h3>
+                        <div class="warehouse-product-image-field">
+                            <img
+                                id="warehouseProductImagePreview"
+                                class="warehouse-product-image-preview"
+                                alt="Фото товара"
+                                hidden
+                            >
+                            <span
+                                id="warehouseProductImagePlaceholder"
+                                class="warehouse-product-image-placeholder"
+                            >Нет фото</span>
+                            <div class="warehouse-upload-content">
+                                <strong id="warehouseProductImageStatus">Фотография не выбрана</strong>
+                                <small id="warehouseProductImageHint">JPEG, PNG или WEBP, до 3 МБ</small>
+                                <div class="warehouse-photo-actions">
+                                    <label
+                                        id="warehouseProductImageChoose"
+                                        class="warehouse-upload-button"
+                                        for="warehouseProductImage"
+                                    >Добавить фото</label>
+                                    <button
+                                        id="warehouseProductImageCancel"
+                                        class="warehouse-photo-action"
+                                        type="button"
+                                        hidden
+                                    >Отменить выбор</button>
+                                    <button
+                                        id="warehouseProductImageRemove"
+                                        class="warehouse-photo-action is-danger"
+                                        type="button"
+                                        hidden
+                                    >Удалить фото</button>
+                                </div>
+                            </div>
+                            <input
+                                id="warehouseProductImage"
+                                type="file"
+                                name="product_image"
+                                accept="image/jpeg,image/png,image/webp"
+                                aria-describedby="warehouseProductImageHint warehouseAddError"
+                            >
+                            <input
+                                id="warehouseProductImageAction"
+                                type="hidden"
+                                name="product_image_action"
+                                value="keep"
+                            >
+                        </div>
+                    </section>
+
                     <section class="warehouse-add-section">
                         <h3 class="warehouse-add-section-title">Данные товара</h3>
                         <div class="warehouse-add-grid">
@@ -4653,39 +4704,6 @@
                                 >
                             </label>
                         </div>
-                    </section>
-
-                    <section class="warehouse-add-section warehouse-add-photo-section">
-                        <h3 class="warehouse-add-section-title">Фото товара</h3>
-                        <label class="add-form-field warehouse-product-image-field" for="warehouseProductImage">
-                            <input
-                                id="warehouseProductImage"
-                                type="file"
-                                name="product_image"
-                                accept="image/jpeg,image/png,image/webp"
-                                aria-describedby="warehouseProductImageHint warehouseAddError"
-                                onchange="previewWarehouseProductImage(this)"
-                            >
-                            <span class="warehouse-upload-content">
-                                <span class="warehouse-upload-icon" aria-hidden="true">
-                                    <svg viewBox="0 0 24 24" focusable="false">
-                                        <path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5v-13Z"></path>
-                                        <circle cx="9" cy="9" r="1.5"></circle>
-                                        <path d="m6.5 17 3.3-3.4 2.5 2.5 2.1-2.2 3.1 3.1"></path>
-                                    </svg>
-                                </span>
-                                <strong>Перетащите фото сюда</strong>
-                                <span>или</span>
-                                <span class="warehouse-upload-button">Выбрать файл</span>
-                                <small id="warehouseProductImageHint">JPEG, PNG или WEBP, до 3 МБ</small>
-                            </span>
-                            <img
-                                id="warehouseProductImagePreview"
-                                class="warehouse-product-image-preview"
-                                alt="Предпросмотр фотографии товара"
-                                hidden
-                            >
-                        </label>
                     </section>
 
                     <div
@@ -6758,6 +6776,9 @@
         modal.classList.remove("is-open");
         modal.setAttribute("aria-hidden", "true");
         document.body.classList.remove("modal-open");
+        if (typeof restoreWarehouseProductPhoto === "function") {
+            restoreWarehouseProductPhoto();
+        }
         warehouseAddReturnFocus?.focus();
         warehouseAddReturnFocus = null;
     }
@@ -7261,6 +7282,7 @@
         }
 
         let warehouseProductImagePreviewUrl = "";
+        let warehouseExistingProductPhotoUrl = "";
         let warehouseSelectedProduct = null;
         let warehouseProductLoadController = null;
 
@@ -7275,48 +7297,120 @@
             return form.querySelector('[name="' + name + '"]');
         }
 
-        function clearWarehouseProductPreview() {
-            const preview = document.getElementById(
-                "warehouseProductImagePreview"
-            );
+        function revokeWarehouseProductPreviewUrl() {
             if (warehouseProductImagePreviewUrl) {
                 URL.revokeObjectURL(warehouseProductImagePreviewUrl);
                 warehouseProductImagePreviewUrl = "";
             }
-            if (preview) {
-                preview.removeAttribute("src");
-                preview.hidden = true;
-            }
         }
 
-        function previewWarehouseProductImage(input) {
+        function renderWarehouseProductPhoto(source, status) {
             const preview = document.getElementById(
                 "warehouseProductImagePreview"
             );
-            if (!preview) return;
-            clearWarehouseProductPreview();
-            const file = input.files && input.files[0];
-            if (!file) return;
-            warehouseProductImagePreviewUrl = URL.createObjectURL(file);
-            preview.src = warehouseProductImagePreviewUrl;
-            preview.hidden = false;
-        }
-
-        function showWarehouseExistingProductPhoto(product) {
-            clearWarehouseProductPreview();
-            const preview = document.getElementById(
-                "warehouseProductImagePreview"
+            const placeholder = document.getElementById(
+                "warehouseProductImagePlaceholder"
             );
-            const source = String(
-                product?.thumbnail_url
-                || product?.gallery?.[0]?.thumbnail_url
-                || product?.gallery?.[0]?.download_url
-                || ""
+            const statusElement = document.getElementById(
+                "warehouseProductImageStatus"
             );
             if (preview && source) {
                 preview.src = source;
                 preview.hidden = false;
+            } else if (preview) {
+                preview.removeAttribute("src");
+                preview.hidden = true;
             }
+            if (placeholder) {
+                placeholder.hidden = Boolean(source);
+            }
+            if (statusElement) {
+                statusElement.textContent = status || (
+                    source ? "Текущее фото товара" : "Фотография не выбрана"
+                );
+            }
+        }
+
+        function previewWarehouseProductImage(input) {
+            const file = input.files && input.files[0];
+            if (!file) {
+                restoreWarehouseProductPhoto();
+                return;
+            }
+            const allowed = new Set([
+                "image/jpeg", "image/png", "image/webp",
+            ]);
+            if (!allowed.has(file.type) || file.size > 3 * 1024 * 1024) {
+                input.value = "";
+                warehouseAddError(
+                    !allowed.has(file.type)
+                        ? "Выберите изображение JPEG, PNG или WEBP."
+                        : "Изображение не должно быть больше 3 МБ."
+                );
+                restoreWarehouseProductPhoto();
+                return;
+            }
+            warehouseAddError("");
+            revokeWarehouseProductPreviewUrl();
+            warehouseProductImagePreviewUrl = URL.createObjectURL(file);
+            document.getElementById("warehouseProductImageAction").value = (
+                warehouseExistingProductPhotoUrl ? "replace" : "add"
+            );
+            renderWarehouseProductPhoto(
+                warehouseProductImagePreviewUrl,
+                "Новое фото: " + file.name
+            );
+            document.getElementById(
+                "warehouseProductImageCancel"
+            ).hidden = false;
+            document.getElementById(
+                "warehouseProductImageRemove"
+            ).hidden = true;
+        }
+
+        function showWarehouseExistingProductPhoto(product) {
+            revokeWarehouseProductPreviewUrl();
+            warehouseExistingProductPhotoUrl = String(
+                product?.thumbnail_url
+                || product?.image_url
+                || product?.gallery?.[0]?.thumbnail_url
+                || product?.gallery?.[0]?.download_url
+                || ""
+            );
+            const input = document.getElementById("warehouseProductImage");
+            if (input) input.value = "";
+            document.getElementById("warehouseProductImageAction").value = "keep";
+            renderWarehouseProductPhoto(warehouseExistingProductPhotoUrl);
+            document.getElementById("warehouseProductImageChoose").textContent = (
+                warehouseExistingProductPhotoUrl
+                    ? "Заменить фото"
+                    : "Добавить фото"
+            );
+            document.getElementById(
+                "warehouseProductImageRemove"
+            ).hidden = !warehouseExistingProductPhotoUrl;
+            document.getElementById(
+                "warehouseProductImageCancel"
+            ).hidden = true;
+        }
+
+        function restoreWarehouseProductPhoto() {
+            revokeWarehouseProductPreviewUrl();
+            const input = document.getElementById("warehouseProductImage");
+            if (input) input.value = "";
+            document.getElementById("warehouseProductImageAction").value = "keep";
+            renderWarehouseProductPhoto(warehouseExistingProductPhotoUrl);
+            document.getElementById("warehouseProductImageChoose").textContent = (
+                warehouseExistingProductPhotoUrl
+                    ? "Заменить фото"
+                    : "Добавить фото"
+            );
+            document.getElementById(
+                "warehouseProductImageRemove"
+            ).hidden = !warehouseExistingProductPhotoUrl;
+            document.getElementById(
+                "warehouseProductImageCancel"
+            ).hidden = true;
         }
 
         function setWarehouseAddMode(form, mode, product) {
@@ -7330,7 +7424,6 @@
                 "warehouseCreateNewProduct"
             );
             const submit = document.getElementById("warehouseAddSubmit");
-            const image = document.getElementById("warehouseProductImage");
 
             form.dataset.productMode = editing ? "edit" : "create";
             card?.classList.toggle("is-editing-product", editing);
@@ -7355,12 +7448,11 @@
                     ? "Сохранить изменения"
                     : "Добавить товар";
             }
-            if (image) {
-                image.disabled = editing;
-                if (editing) {
-                    image.value = "";
-                }
-            }
+            document.getElementById("warehouseProductImageChoose").textContent = (
+                editing && warehouseExistingProductPhotoUrl
+                    ? "Заменить фото"
+                    : "Добавить фото"
+            );
         }
 
         function resetWarehouseProductFields(form) {
@@ -7373,10 +7465,10 @@
             warehouseAddControl(form, "cell").value = "";
             const image = warehouseAddControl(form, "product_image");
             if (image) {
-                image.disabled = false;
                 image.value = "";
             }
-            clearWarehouseProductPreview();
+            warehouseExistingProductPhotoUrl = "";
+            restoreWarehouseProductPhoto();
             warehouseAddError("");
         }
 
@@ -7556,8 +7648,24 @@
                 let response;
                 if (editing) {
                     const changes = warehouseProductPatch(form);
-                    if (!Object.keys(changes).length) {
+                    const photoAction = document.getElementById(
+                        "warehouseProductImageAction"
+                    ).value;
+                    if (!Object.keys(changes).length && photoAction === "keep") {
                         throw new Error("Нет изменений для сохранения.");
+                    }
+                    const updateBody = new FormData();
+                    Object.entries(changes).forEach(function(entry) {
+                        updateBody.set(entry[0], String(entry[1]));
+                    });
+                    updateBody.set("product_image_action", photoAction);
+                    const image = warehouseAddControl(form, "product_image");
+                    if (image?.files?.[0]) {
+                        updateBody.set(
+                            "product_image",
+                            image.files[0],
+                            image.files[0].name
+                        );
                     }
                     response = await fetch(
                         "/api/v1/products/" + encodeURIComponent(productId),
@@ -7566,14 +7674,13 @@
                             credentials: "same-origin",
                             headers: {
                                 Accept: "application/json",
-                                "Content-Type": "application/json",
                                 "X-CSRF-Token": warehouseAddControl(
                                     form,
                                     "csrf_token"
                                 ).value,
                                 "X-Requested-With": "XMLHttpRequest",
                             },
-                            body: JSON.stringify(changes),
+                            body: updateBody,
                         }
                     );
                 } else {
@@ -7625,6 +7732,32 @@
 
         const warehouseAddForm = document.getElementById("warehouseAddForm");
         if (warehouseAddForm) {
+            document.getElementById("warehouseProductImage")?.addEventListener(
+                "change",
+                function(event) {
+                    previewWarehouseProductImage(event.currentTarget);
+                }
+            );
+            document.getElementById(
+                "warehouseProductImageCancel"
+            )?.addEventListener("click", restoreWarehouseProductPhoto);
+            document.getElementById(
+                "warehouseProductImageRemove"
+            )?.addEventListener("click", function() {
+                revokeWarehouseProductPreviewUrl();
+                const image = document.getElementById("warehouseProductImage");
+                if (image) image.value = "";
+                document.getElementById(
+                    "warehouseProductImageAction"
+                ).value = "remove";
+                renderWarehouseProductPhoto("", "Фото будет удалено после сохранения");
+                document.getElementById(
+                    "warehouseProductImageRemove"
+                ).hidden = true;
+                document.getElementById(
+                    "warehouseProductImageCancel"
+                ).hidden = false;
+            });
             warehouseAddForm.addEventListener(
                 "click",
                 function(event) {
@@ -8508,9 +8641,14 @@
                         if (failPatch) {
                             return response(false, null, "PATCH test error");
                         }
+                        const patchData = Object.fromEntries(
+                            Array.from(settings.body.entries()).filter(
+                                (entry) => entry[0] !== "product_image"
+                            )
+                        );
                         return response(true, {
                             ...existing,
-                            ...JSON.parse(settings.body),
+                            ...patchData,
                         });
                     }
                     if (method === "POST" && path === "/api/v1/products") {
@@ -8584,9 +8722,12 @@
                     ).hidden
                 );
                 result.photoPreserved = (
-                    image.disabled
+                    !image.disabled
                     && !document.getElementById(
                         "warehouseProductImagePreview"
+                    ).hidden
+                    && !document.getElementById(
+                        "warehouseProductImageRemove"
                     ).hidden
                 );
 
@@ -8605,15 +8746,15 @@
                 const failedPatchRequests = requests.filter(
                     (item) => item.method === "PATCH"
                 );
-                const failedPayload = JSON.parse(
-                    failedPatchRequests[0].body
+                const failedPayload = Object.fromEntries(
+                    failedPatchRequests[0].body.entries()
                 );
                 result.patchOnly = (
                     failedPatchRequests.length === 1
                     && !requests.some((item) => item.method === "POST")
                 );
                 result.patchMinimal = (
-                    failedPayload.stock === 0
+                    failedPayload.stock === "0"
                     && !("article" in failedPayload)
                     && !("cell" in failedPayload)
                     && !("name" in failedPayload)
@@ -8634,12 +8775,63 @@
                 const successfulPatch = requests.filter(
                     (item) => item.method === "PATCH"
                 )[1];
-                const successfulPayload = JSON.parse(successfulPatch.body);
+                const successfulPayload = Object.fromEntries(
+                    successfulPatch.body.entries()
+                );
                 result.patchSuccess = (
                     successfulPayload.article === "NEW-ARTICLE"
-                    && successfulPayload.stock === 0
+                    && successfulPayload.stock === "0"
                     && !("cell" in successfulPayload)
                     && navigations.includes("Товар обновлён")
+                );
+
+                form.dataset.submitting = "0";
+                delete form.dataset.submitted;
+                submit.disabled = false;
+                window.setSharedCatalogComboboxValue(product, existing);
+                await wait(10);
+                const replacement = new DataTransfer();
+                replacement.items.add(new File([
+                    new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 1])
+                ], "replacement.png", {type: "image/png"}));
+                image.files = replacement.files;
+                image.dispatchEvent(new Event("change", {bubbles: true}));
+                result.photoPreview = (
+                    document.getElementById(
+                        "warehouseProductImageAction"
+                    ).value === "replace"
+                    && !document.getElementById(
+                        "warehouseProductImageCancel"
+                    ).hidden
+                );
+                closeWarehouseAddModal();
+                result.photoCancelOnClose = (
+                    document.getElementById(
+                        "warehouseProductImageAction"
+                    ).value === "keep"
+                    && image.files.length === 0
+                );
+                document.getElementById(
+                    "warehouseProductImageRemove"
+                ).click();
+                result.photoDeletePending = (
+                    document.getElementById(
+                        "warehouseProductImageAction"
+                    ).value === "remove"
+                    && document.getElementById(
+                        "warehouseProductImagePreview"
+                    ).hidden
+                );
+                document.getElementById(
+                    "warehouseProductImageCancel"
+                ).click();
+                result.photoDeleteCancelled = (
+                    document.getElementById(
+                        "warehouseProductImageAction"
+                    ).value === "keep"
+                    && !document.getElementById(
+                        "warehouseProductImagePreview"
+                    ).hidden
                 );
 
                 form.dataset.submitting = "0";
