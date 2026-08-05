@@ -5,6 +5,88 @@
             : null;
     }
 
+    function positionComboboxDropdown(combobox) {
+        const dropdown = combobox?.querySelector(
+            ".brand-combobox-dropdown"
+        );
+        const trigger = getComboboxTrigger(combobox);
+
+        if (!dropdown || !trigger || !combobox.classList.contains("open")) {
+            return;
+        }
+
+        const options = dropdown.querySelector(".brand-combobox-options");
+        const dialog = combobox.closest(".modal-dialog, .erp-modal-dialog");
+        const triggerRect = trigger.getBoundingClientRect();
+        const dialogRect = dialog?.getBoundingClientRect();
+        const edge = 8;
+        const gap = 7;
+        const leftBoundary = Math.max(edge, dialogRect?.left ?? edge);
+        const rightBoundary = Math.min(
+            window.innerWidth - edge,
+            dialogRect?.right ?? window.innerWidth - edge
+        );
+        const topBoundary = Math.max(edge, dialogRect?.top ?? edge);
+        const bottomBoundary = Math.min(
+            window.innerHeight - edge,
+            dialogRect?.bottom ?? window.innerHeight - edge
+        );
+        const width = Math.min(
+            triggerRect.width,
+            Math.max(0, rightBoundary - leftBoundary)
+        );
+        const left = Math.max(
+            leftBoundary,
+            Math.min(triggerRect.left, rightBoundary - width)
+        );
+        const roomBelow = bottomBoundary - triggerRect.bottom - gap;
+        const roomAbove = triggerRect.top - topBoundary - gap;
+        const openAbove = roomBelow < 220 && roomAbove > roomBelow;
+        const availableHeight = Math.max(
+            150,
+            Math.min(410, openAbove ? roomAbove : roomBelow)
+        );
+
+        dropdown.classList.add("is-viewport-positioned");
+        dropdown.style.left = left + "px";
+        dropdown.style.width = width + "px";
+        dropdown.style.right = "auto";
+        dropdown.style.top = openAbove ? "auto" : triggerRect.bottom + gap + "px";
+        dropdown.style.bottom = openAbove
+            ? window.innerHeight - triggerRect.top + gap + "px"
+            : "auto";
+
+        if (options) {
+            const dropdownChrome = Math.max(
+                62,
+                dropdown.offsetHeight - options.offsetHeight
+            );
+            options.style.maxHeight = Math.max(
+                88,
+                Math.min(340, availableHeight - dropdownChrome)
+            ) + "px";
+        }
+
+        dialog?.classList.add("catalog-combobox-open");
+    }
+
+    function resetComboboxDropdown(combobox) {
+        const dropdown = combobox?.querySelector(
+            ".brand-combobox-dropdown"
+        );
+        const dialog = combobox?.closest(".modal-dialog, .erp-modal-dialog");
+
+        if (dropdown) {
+            dropdown.classList.remove("is-viewport-positioned");
+            dropdown.removeAttribute("style");
+            dropdown.querySelector(".brand-combobox-options")
+                ?.style.removeProperty("max-height");
+        }
+        if (dialog && !dialog.querySelector("[data-brand-combobox].open")) {
+            dialog.classList.remove("catalog-combobox-open");
+        }
+    }
+
     window.setBrandDropdownOpen = function(combobox, isOpen) {
         if (!combobox) {
             return;
@@ -24,6 +106,7 @@
                 .forEach(function(openCombobox) {
                     if (openCombobox !== combobox) {
                         openCombobox.classList.remove("open");
+                        resetComboboxDropdown(openCombobox);
                         const openTrigger =
                             getComboboxTrigger(openCombobox);
 
@@ -38,6 +121,14 @@
         }
 
         combobox.classList.toggle("open", isOpen);
+
+        if (isOpen) {
+            window.requestAnimationFrame(function() {
+                positionComboboxDropdown(combobox);
+            });
+        } else {
+            resetComboboxDropdown(combobox);
+        }
 
         if (trigger) {
             trigger.setAttribute(
@@ -61,6 +152,15 @@
             }, 20);
         }
     };
+
+    window.addEventListener("resize", function() {
+        document.querySelectorAll("[data-brand-combobox].open")
+            .forEach(positionComboboxDropdown);
+    });
+    document.addEventListener("scroll", function() {
+        document.querySelectorAll("[data-brand-combobox].open")
+            .forEach(positionComboboxDropdown);
+    }, true);
 
     window.toggleBrandDropdown = function(event, combobox) {
         if (event) {
@@ -311,6 +411,17 @@
                     meta.textContent = option.meta;
                     details.append(meta, count);
                     copy.append(label, details);
+                    if (option.image) {
+                        const image = document.createElement("img");
+                        image.className = "catalog-combobox-option-image";
+                        image.src = option.image;
+                        image.alt = "";
+                        image.loading = "lazy";
+                        image.addEventListener("error", function() {
+                            image.remove();
+                        }, {once: true});
+                        button.append(image);
+                    }
                     button.append(copy);
                 } else {
                     button.append(label, count);
@@ -721,6 +832,9 @@
                 : kind === "category" && hideCategoryCount
                     ? ""
                     : sharedCatalogStockDisplay(item),
+            image: product
+                ? String(item.image_url || item.thumbnail_url || "")
+                : "",
             item,
         };
     }

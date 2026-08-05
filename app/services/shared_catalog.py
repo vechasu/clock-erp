@@ -503,7 +503,9 @@ class SharedCatalog:
                 "), p.category_id) AS category_id, "
                 "COALESCE(b.name, '') AS brand, "
                 "COALESCE(c.name, '') AS category, "
-                "COALESCE(p.cell, '') AS cell, p.stock, p.active "
+                "COALESCE(p.cell, '') AS cell, p.stock, p.active, "
+                "COALESCE(p.bitrix_thumbnail_url, "
+                "p.bitrix_primary_image_url, '') AS bitrix_image_url "
                 "FROM catalog_excel_products p "
                 "LEFT JOIN erp_brands b ON b.id = p.brand_id "
                 "LEFT JOIN erp_categories c ON c.id = p.category_id "
@@ -1001,5 +1003,19 @@ class SharedCatalog:
             "cell": row["cell"],
             "stock": stock,
             "stock_display": format_stock_value(stock),
+            "image_url": (
+                (
+                    row["bitrix_image_url"]
+                    if "bitrix_image_url" in row.keys()
+                    else ""
+                )
+                or (
+                    "/warehouse/product/{}/thumbnail".format(
+                        row["moysklad_product_id"]
+                    )
+                    if row["moysklad_product_id"]
+                    else ""
+                )
+            ),
             "active": bool(row["active"]),
         }
