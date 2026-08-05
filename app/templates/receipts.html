@@ -3869,7 +3869,8 @@
         const activeFilters = receiptAdvancedFilterDefinitions().filter(
             ({control}) => Boolean((control?.value || "").trim())
         );
-        const count = activeFilters.length;
+        const periodLabel = receiptPeriodFilterLabel();
+        const count = activeFilters.length + (periodLabel ? 1 : 0);
         const badge = document.getElementById("receiptAdvancedFilterCount");
         const trigger = document.querySelector(
             "#receiptAdvancedFilters > summary"
@@ -3908,6 +3909,31 @@
             container.appendChild(button);
         });
 
+        if (periodLabel) {
+            const button = document.createElement("button");
+            const text = document.createElement("span");
+            const remove = document.createElement("span");
+
+            button.className = "erp-filter-chip";
+            button.type = "button";
+            button.dataset.receiptFilter = "period";
+            button.setAttribute(
+                "aria-label",
+                "Снять фильтр " + periodLabel,
+            );
+            text.className = "erp-filter-chip-label";
+            text.textContent = periodLabel;
+            remove.className = "erp-filter-chip-remove";
+            remove.setAttribute("aria-hidden", "true");
+            remove.textContent = "×";
+            button.append(text, remove);
+            button.addEventListener("click", () => {
+                clearReceiptPeriodFilter();
+                filterReceipts();
+            });
+            container.appendChild(button);
+        }
+
         if (count >= 2) {
             const reset = document.createElement("button");
             reset.className = "erp-active-filters-reset";
@@ -3915,7 +3941,7 @@
             reset.textContent = "Сбросить всё";
             reset.addEventListener(
                 "click",
-                resetReceiptAdvancedFilters,
+                resetReceiptActiveFilters,
             );
             container.appendChild(reset);
         }
@@ -4064,13 +4090,49 @@
         filterReceipts();
     }
 
+    function resetReceiptActiveFilters() {
+        clearReceiptPeriodFilter();
+        resetReceiptAdvancedFilters();
+    }
+
+    function clearReceiptPeriodFilter() {
+        document.getElementById("receiptDateFrom").value = "";
+        document.getElementById("receiptDateTo").value = "";
+        receiptPeriodPicker?.updateLabel();
+    }
+
+    function receiptPeriodFilterLabel() {
+        const dateFrom = document.getElementById(
+            "receiptDateFrom"
+        )?.value || "";
+        const dateTo = document.getElementById(
+            "receiptDateTo"
+        )?.value || "";
+        const formatDate = (value) => value
+            .split("-")
+            .reverse()
+            .join(".");
+
+        if (dateFrom && dateTo) {
+            return "Период: " + formatDate(dateFrom)
+                + "–" + formatDate(dateTo);
+        }
+        if (dateFrom) {
+            return "Период: с " + formatDate(dateFrom);
+        }
+        if (dateTo) {
+            return "Период: до " + formatDate(dateTo);
+        }
+        return "";
+    }
+
     document.getElementById("receiptMobileSort")
         ?.addEventListener("change", (event) => {
             receiptSortKey = "";
             sortReceipts(event.target.value);
         });
 
-    window.initializeErpPeriodPicker(
+    const receiptPeriodPicker = window.initializeErpPeriodPicker(
         document.getElementById("receiptDateFilter"),
         {
             fromInput: document.getElementById(

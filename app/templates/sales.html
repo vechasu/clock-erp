@@ -3152,6 +3152,7 @@
         const activeCount = [
             appliedSaleState,
             appliedSaleType,
+            salesDateFrom?.value || salesDateTo?.value,
         ].filter(Boolean).length;
 
         salesFilterCount.textContent = (
@@ -3189,6 +3190,7 @@
                 manual: "Тип: Ручная",
                 automatic: "Тип: Автоматическая",
             }[appliedSaleType],
+            period: salesPeriodFilterLabel(),
         };
         const filters = Object.entries(labels).filter(
             ([, label]) => Boolean(label)
@@ -3214,9 +3216,13 @@
                 if (name === "sale_state") {
                     appliedSaleState = "";
                     salesStateFilter.value = "";
-                } else {
+                } else if (name === "sale_type") {
                     appliedSaleType = "";
                     salesTypeFilter.value = "";
+                } else {
+                    salesDateFrom.value = "";
+                    salesDateTo.value = "";
+                    updateSalesPeriodLabel();
                 }
                 updateSalesFilterSummary();
                 applySalesFilters();
@@ -3229,7 +3235,7 @@
             reset.className = "erp-active-filters-reset";
             reset.type = "button";
             reset.textContent = "Сбросить всё";
-            reset.addEventListener("click", resetSalesAdvancedFilters);
+            reset.addEventListener("click", resetSalesActiveFilters);
             container.appendChild(reset);
         }
 
@@ -3243,6 +3249,30 @@
         salesTypeFilter.value = "";
         updateSalesFilterSummary();
         applySalesFilters();
+    }
+
+    function resetSalesActiveFilters() {
+        salesDateFrom.value = "";
+        salesDateTo.value = "";
+        updateSalesPeriodLabel();
+        resetSalesAdvancedFilters();
+    }
+
+    function salesPeriodFilterLabel() {
+        const dateFrom = salesDateFrom?.value || "";
+        const dateTo = salesDateTo?.value || "";
+
+        if (dateFrom && dateTo) {
+            return "Период: " + displaySalesDate(dateFrom)
+                + "–" + displaySalesDate(dateTo);
+        }
+        if (dateFrom) {
+            return "Период: с " + displaySalesDate(dateFrom);
+        }
+        if (dateTo) {
+            return "Период: до " + displaySalesDate(dateTo);
+        }
+        return "";
     }
 
     function applySalesFilters() {
@@ -3418,6 +3448,7 @@
         salesDateFrom.value = "";
         salesDateTo.value = "";
         updateSalesPeriodLabel();
+        updateSalesFilterSummary();
         applySalesFilters();
     });
 
@@ -3593,6 +3624,7 @@
                 popoverManager: salesPopoverManager,
                 onChange() {
                     updateSalesPeriodLabel();
+                    updateSalesFilterSummary();
                     applySalesFilters();
                 },
             },

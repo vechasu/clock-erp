@@ -98,6 +98,66 @@ class ActiveFilterChipsTest(unittest.TestCase):
         for source in (self.warehouse, self.sales, self.receipts):
             self.assertIn('type="button"', source)
 
+    def test_period_is_one_logical_filter_in_every_section(self):
+        self.assertIn(
+            "bool(created_date_from or created_date_to)",
+            self.source("app/web.py"),
+        )
+        self.assertIn(
+            "salesDateFrom?.value || salesDateTo?.value",
+            self.sales,
+        )
+        self.assertIn(
+            "activeFilters.length + (periodLabel ? 1 : 0)",
+            self.receipts,
+        )
+
+    def test_period_labels_cover_both_open_ended_variants(self):
+        for source in (self.warehouse, self.sales, self.receipts):
+            with self.subTest(source=source[:20]):
+                self.assertIn("Период: с ", source)
+                self.assertIn("Период: до ", source)
+        self.assertIn('"–" + displaySalesDate(dateTo)', self.sales)
+        self.assertIn('"–" + formatDate(dateTo)', self.receipts)
+
+    def test_period_chip_clears_both_dates_only(self):
+        sales_period = self.sales.split(
+            'else {\n                    salesDateFrom.value = "";', 1
+        )[1].split("updateSalesFilterSummary();", 1)[0]
+        self.assertIn('salesDateTo.value = ""', sales_period)
+        self.assertNotIn("appliedSaleState", sales_period)
+
+        receipt_period = self.receipts.split(
+            'button.dataset.receiptFilter = "period";', 1
+        )[1].split("container.appendChild(button);", 1)[0]
+        self.assertIn("clearReceiptPeriodFilter();", receipt_period)
+        receipt_clear = self.receipts.split(
+            "function clearReceiptPeriodFilter()", 1
+        )[1].split("function receiptPeriodFilterLabel", 1)[0]
+        self.assertIn('"receiptDateFrom").value = ""', receipt_clear)
+        self.assertIn('"receiptDateTo").value = ""', receipt_clear)
+        self.assertIn("receiptPeriodPicker?.updateLabel()", receipt_clear)
+
+    def test_reset_all_includes_period_and_stock_but_not_search_or_sort(self):
+        warehouse_reset = self.warehouse.split(
+            "function resetWarehouseTableFilters()", 1
+        )[1].split("function clearWarehouseFilter", 1)[0]
+        for parameter in ("date_from", "date_to", "in_stock"):
+            self.assertIn('"{}"'.format(parameter), warehouse_reset)
+        for parameter in ('"q"', '"sort_by"', '"sort_dir"'):
+            self.assertNotIn(parameter, warehouse_reset)
+        self.assertIn("resetSalesActiveFilters", self.sales)
+        self.assertIn("resetReceiptActiveFilters", self.receipts)
+
+    def test_stock_chip_matches_visible_toggle_and_is_not_in_sales(self):
+        self.assertIn(
+            '<span class="erp-filter-chip-label">Только в наличии</span>',
+            self.warehouse,
+        )
+        self.assertIn('id="warehouseInStockToggle"', self.warehouse)
+        self.assertIn('in_stock: ["in_stock"]', self.warehouse)
+        self.assertNotIn('data-sales-filter="in_stock"', self.sales)
+
 
 if __name__ == "__main__":
     unittest.main()
