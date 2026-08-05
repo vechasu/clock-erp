@@ -25,10 +25,21 @@ class ReceiptsUiRegressionsTest(unittest.TestCase):
         self.assertNotIn("width: 100% !important", self.template)
         self.assertIn('let total = 112;', self.template)
 
-    def test_receipt_editor_is_a_product_style_modal_with_photo(self):
+    def test_receipt_editor_shows_existing_photo_without_edit_controls(self):
         self.assertIn('id="receiptEditModal"', self.template)
         self.assertIn("receipt-card-layout", self.template)
-        self.assertIn("data-receipt-edit-image", self.template)
+        self.assertIn('id="receiptEditCurrentImage"', self.template)
+        self.assertIn("data-receipt-edit-photo-placeholder", self.template)
+        self.assertNotIn("data-receipt-edit-image", self.template)
+        self.assertNotIn("receipt-edit-photo-field", self.template)
+
+    def test_only_a_new_inline_product_enables_receipt_photo_upload(self):
+        self.assertIn('id="receiptImageField"', self.template)
+        self.assertIn('id="receiptSelectedPhoto"', self.template)
+        self.assertIn("setReceiptNewProductPhotoMode(false)", self.template)
+        self.assertIn("setReceiptNewProductPhotoMode(true)", self.template)
+        self.assertIn('"shared-catalog:created"', self.template)
+        self.assertIn('"shared-catalog:created"', self.catalog_script)
 
     def test_receipt_editor_uses_full_width_and_closes_only_by_cross(self):
         self.assertIn(

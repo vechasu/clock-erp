@@ -65,6 +65,16 @@ class Stage2ProductsApiTest(unittest.TestCase):
         self.environment.stop()
         self.temp.cleanup()
 
+    def link_product_to_moysklad(self, product_id, remote_id="ms-product-1"):
+        database = CatalogDatabase(self.database_path)
+        with database.transaction() as connection:
+            connection.execute(
+                "UPDATE catalog_excel_products "
+                "SET moysklad_product_id = ? WHERE id = ?",
+                (remote_id, int(product_id)),
+            )
+        return remote_id
+
     def test_list_search_filter_sort_and_pagination(self):
         response = self.client.get(
             "/api/products?q=strap&brand=Alpha&sort_by=stock"
@@ -230,6 +240,148 @@ class Stage2ProductsApiTest(unittest.TestCase):
         self.assertEqual(response.get_json()["code"], "PRODUCT_IMAGE_UPLOAD_FAILED")
         after = self.client.get("/api/v1/products?page_size=50").get_json()["meta"]["total"]
         self.assertEqual(after, before)
+
+    def test_create_product_rejects_oversized_photo(self):
+        response = self.client.post(
+            "/api/v1/products",
+            data={
+                "name": "Oversized Photo Product",
+                "stock": "0",
+                "product_image": (
+                    BytesIO(
+                        b"\x89PNG\r\n\x1a\n"
+                        + b"x" * web.PRODUCT_IMAGE_MAX_BYTES
+                    ),
+                    "large.png",
+                    "image/png",
+                ),
+            },
+            content_type="multipart/form-data",
+        )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertIn("3 МБ", response.get_json()["message"])
+
+    def test_replace_existing_product_photo_and_fields_together(self):
+        product = self.client.get(
+            "/api/v1/products?page_size=1"
+        ).get_json()["data"][0]
+        remote_id = self.link_product_to_moysklad(product["id"])
+        with mock.patch.object(web, "MoySkladClient") as client_class:
+            remote = client_class.return_value
+            remote.upload_product_image.return_value = True
+            response = self.client.patch(
+                "/api/v1/products/{}".format(product["id"]),
+                data={
+                    "article": "PHOTO-UPDATED",
+                    "product_image_action": "replace",
+                    "product_image": (
+                        BytesIO(b"\x89PNG\r\n\x1a\nreplacement"),
+                        "../replacement.png",
+                        "image/png",
+                    ),
+                },
+                content_type="multipart/form-data",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["data"]["article"], "PHOTO-UPDATED")
+        self.assertEqual(
+            response.get_json()["meta"]["image_message"],
+            "Фото товара обновлено.",
+        )
+        remote.upload_product_image.assert_called_once_with(
+            remote_id,
+            "replacement.png",
+            b"\x89PNG\r\n\x1a\nreplacement",
+        )
+
+    def test_delete_existing_product_photo(self):
+        product = self.client.get(
+            "/api/v1/products?page_size=1"
+        ).get_json()["data"][0]
+        remote_id = self.link_product_to_moysklad(product["id"])
+        with mock.patch.object(web, "MoySkladClient") as client_class:
+            remote = client_class.return_value
+            remote.delete_product_images.return_value = True
+            response = self.client.patch(
+                "/api/v1/products/{}".format(product["id"]),
+                data={"product_image_action": "remove"},
+                content_type="multipart/form-data",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        remote.delete_product_images.assert_called_once_with(remote_id)
+        remote.upload_product_image.assert_not_called()
+
+    def test_saving_fields_without_photo_preserves_remote_image(self):
+        product = self.client.get(
+            "/api/v1/products?page_size=1"
+        ).get_json()["data"][0]
+        self.link_product_to_moysklad(product["id"])
+        with mock.patch.object(web, "MoySkladClient") as client_class:
+            response = self.client.patch(
+                "/api/v1/products/{}".format(product["id"]),
+                json={"article": "FIELDS-ONLY"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["data"]["article"], "FIELDS-ONLY")
+        client_class.assert_not_called()
+
+    def test_failed_photo_upload_preserves_old_image_and_fields(self):
+        product = self.client.get(
+            "/api/v1/products?page_size=1"
+        ).get_json()["data"][0]
+        self.link_product_to_moysklad(product["id"])
+        with mock.patch.object(web, "MoySkladClient") as client_class:
+            remote = client_class.return_value
+            remote.upload_product_image.return_value = False
+            response = self.client.patch(
+                "/api/v1/products/{}".format(product["id"]),
+                data={
+                    "article": "MUST-NOT-SAVE",
+                    "product_image_action": "replace",
+                    "product_image": (
+                        BytesIO(b"\xff\xd8\xffreplacement"),
+                        "replacement.jpg",
+                        "image/jpeg",
+                    ),
+                },
+                content_type="multipart/form-data",
+            )
+
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(
+            self.client.get(
+                "/api/v1/products/{}".format(product["id"])
+            ).get_json()["data"]["article"],
+            product["article"],
+        )
+        remote.delete_product_images.assert_not_called()
+
+    def test_invalid_replacement_does_not_touch_product(self):
+        product = self.client.get(
+            "/api/v1/products?page_size=1"
+        ).get_json()["data"][0]
+        self.link_product_to_moysklad(product["id"])
+        with mock.patch.object(web, "MoySkladClient") as client_class:
+            response = self.client.patch(
+                "/api/v1/products/{}".format(product["id"]),
+                data={
+                    "article": "MUST-NOT-SAVE",
+                    "product_image_action": "replace",
+                    "product_image": (
+                        BytesIO(b"not-an-image"),
+                        "spoof.png",
+                        "image/png",
+                    ),
+                },
+                content_type="multipart/form-data",
+            )
+
+        self.assertEqual(response.status_code, 422)
+        client_class.assert_not_called()
 
     def test_local_create_failure_rolls_back_remote_photo_product(self):
         duplicate_name = "Duplicate Photo Product"

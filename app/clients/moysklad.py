@@ -207,6 +207,17 @@ class MoySkladClient:
             },
         )
 
+    def delete_product_images(self, product_id):
+        product_id = str(product_id or "").strip()
+
+        if not product_id:
+            raise ValueError("Не указан ID товара")
+
+        return self.put(
+            f"/entity/product/{product_id}",
+            {"images": []},
+        )
+
     def get_products(self, limit=10):
         data = self.get("/entity/product", params={"limit": limit})
         if not data:

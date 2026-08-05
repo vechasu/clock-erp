@@ -1409,6 +1409,15 @@
                     result.data
                 );
                 combobox.dataset.sharedCatalogNewValue = "true";
+                combobox.dispatchEvent(
+                    new CustomEvent("shared-catalog:created", {
+                        bubbles: true,
+                        detail: {
+                            kind,
+                            item: result.data,
+                        },
+                    })
+                );
                 const search = combobox.querySelector(
                     ".brand-combobox-search"
                 );
