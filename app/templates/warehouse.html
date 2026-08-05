@@ -157,24 +157,6 @@
             background: #1d4ed8;
         }
 
-        .filter-pill {
-            display: inline-flex;
-            align-items: center;
-            gap: 10px;
-            background: #dbeafe;
-            color: #1d4ed8;
-            border-radius: 999px;
-            padding: 9px 12px;
-            font-size: 13px;
-            font-weight: 800;
-            margin-bottom: 18px;
-        }
-
-        .filter-pill a {
-            color: #1e3a8a;
-            text-decoration: none;
-        }
-
         .add-card,
         .search-card {
             margin-bottom: 10px;
@@ -2864,42 +2846,6 @@
             color: #ffffff;
         }
 
-        .warehouse-active-date {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            min-height: 30px;
-            padding: 0 6px 0 10px;
-            border-radius: 999px;
-            background: #eff6ff;
-            color: #1d4ed8;
-            font-size: 12px;
-            font-weight: 700;
-            white-space: nowrap;
-        }
-
-        .search-form .warehouse-active-date-clear {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            width: 20px;
-            height: 20px;
-            min-height: 20px;
-            padding: 0;
-            border: 0;
-            border-radius: 50%;
-            background: transparent;
-            color: #5477bd;
-            font-size: 15px;
-            line-height: 1;
-            cursor: pointer;
-        }
-
-        .search-form .warehouse-active-date-clear:hover {
-            background: #dbeafe;
-            color: #1d4ed8;
-        }
-
         #filterDrawer > div[style="margin-top: 16px;"] {
             margin-top: 10px !important;
         }
@@ -4254,22 +4200,82 @@
                 </div>
             </div>
 
-
-
-            {% if selected_category %}
-                <div class="filter-pill">
-                    Фильтр раздела: {{ selected_category }}
-                    <a href="/warehouse{% if query %}?q={{ query|urlencode }}{% endif %}">сбросить</a>
-                </div>
-            {% endif %}
-
-            {% if selected_cell %}
-                <div class="filter-pill">
-                    Фильтр ячейки: {{ selected_cell }}
-                    <a href="/warehouse{% if query %}?q={{ query|urlencode }}{% endif %}">сбросить</a>
-                </div>
-            {% endif %}
-
+            <div
+                id="warehouseActiveFilters"
+                class="erp-active-filters"
+                aria-label="Активные фильтры товаров"
+                {% if not warehouse_active_filter_count %}hidden{% endif %}
+            >
+                {% if selected_brand_id or selected_brand %}
+                    <button
+                        class="erp-filter-chip"
+                        type="button"
+                        data-warehouse-filter="brand"
+                        onclick="clearWarehouseFilter('brand')"
+                        aria-label="Снять фильтр Бренд: {{ selected_brand }}"
+                    >
+                        <span class="erp-filter-chip-label">Бренд: {{ selected_brand }}</span>
+                        <span class="erp-filter-chip-remove" aria-hidden="true">×</span>
+                    </button>
+                {% endif %}
+                {% if selected_category_id or selected_category %}
+                    <button
+                        class="erp-filter-chip"
+                        type="button"
+                        data-warehouse-filter="category"
+                        onclick="clearWarehouseFilter('category')"
+                        aria-label="Снять фильтр Категория: {{ selected_category }}"
+                    >
+                        <span class="erp-filter-chip-label">Категория: {{ selected_category }}</span>
+                        <span class="erp-filter-chip-remove" aria-hidden="true">×</span>
+                    </button>
+                {% endif %}
+                {% if selected_cell %}
+                    <button
+                        class="erp-filter-chip"
+                        type="button"
+                        data-warehouse-filter="cell"
+                        onclick="clearWarehouseFilter('cell')"
+                        aria-label="Снять фильтр Ячейка: {{ selected_cell }}"
+                    >
+                        <span class="erp-filter-chip-label">Ячейка: {{ selected_cell }}</span>
+                        <span class="erp-filter-chip-remove" aria-hidden="true">×</span>
+                    </button>
+                {% endif %}
+                {% if created_date_from or created_date_to %}
+                    <button
+                        class="erp-filter-chip"
+                        type="button"
+                        data-warehouse-filter="date"
+                        onclick="clearWarehouseFilter('date')"
+                        aria-label="Снять фильтр Период"
+                    >
+                        <span class="erp-filter-chip-label">
+                            Период: {{ created_date_from.split("-")|reverse|join(".") if created_date_from else "…" }} — {{ created_date_to.split("-")|reverse|join(".") if created_date_to else "…" }}
+                        </span>
+                        <span class="erp-filter-chip-remove" aria-hidden="true">×</span>
+                    </button>
+                {% endif %}
+                {% if in_stock %}
+                    <button
+                        class="erp-filter-chip"
+                        type="button"
+                        data-warehouse-filter="in_stock"
+                        onclick="clearWarehouseFilter('in_stock')"
+                        aria-label="Снять фильтр Наличие: Только в наличии"
+                    >
+                        <span class="erp-filter-chip-label">Наличие: Только в наличии</span>
+                        <span class="erp-filter-chip-remove" aria-hidden="true">×</span>
+                    </button>
+                {% endif %}
+                {% if warehouse_active_filter_count >= 2 %}
+                    <button
+                        class="erp-active-filters-reset"
+                        type="button"
+                        onclick="resetWarehouseTableFilters()"
+                    >Сбросить всё</button>
+                {% endif %}
+            </div>
 
             <div class="search-card erp-toolbar-card">
                 <form id="warehouseSearchForm" class="search-form erp-toolbar" method="get" action="/warehouse">
@@ -4360,20 +4366,6 @@
                             <span class="erp-filter-label">Фильтры</span>
                             {{ render_filter_count(warehouse_active_filter_count) }}
                         </button>
-                        {% if created_date_from or created_date_to %}
-                            <span class="warehouse-active-date">
-                                {{ created_date_from.split("-")|reverse|join(".") if created_date_from else "…" }}
-                                —
-                                {{ created_date_to.split("-")|reverse|join(".") if created_date_to else "…" }}
-                                <button
-                                    class="warehouse-active-date-clear"
-                                    type="button"
-                                    onclick="clearWarehouseDateRange()"
-                                    aria-label="Сбросить диапазон дат"
-                                    title="Сбросить диапазон дат"
-                                >×</button>
-                            </span>
-                        {% endif %}
                     </div>
 
                     <div class="warehouse-mobile-stock-controls">
@@ -4475,16 +4467,6 @@
                             </button>
                         </div>
                     </div>
-
-                    <button
-                        id="warehouseFilterReset"
-                        class="search-tool-button warehouse-reset-button erp-reset-action"
-                        type="button"
-                        onclick="resetWarehouseTableFilters()"
-                        {% if not warehouse_active_filter_count %}hidden{% endif %}
-                    >
-                        × Сбросить
-                    </button>
 
                 </form>
             </div>
@@ -6292,33 +6274,7 @@
                 url.pathname + url.search + url.hash
             );
 
-            syncWarehouseResetButton();
             loadWarehouseSearchResults("");
-        }
-
-        function hasWarehousePanelFilters(url) {
-            const params = url.searchParams;
-            const hasValue = (name) => Boolean((params.get(name) || "").trim());
-
-            return (
-                hasValue("brand")
-                || hasValue("brand_id")
-                || hasValue("category")
-                || hasValue("category_id")
-                || hasValue("cell")
-                || hasValue("date_from")
-                || hasValue("date_to")
-                || params.get("in_stock") === "1"
-            );
-        }
-
-        function syncWarehouseResetButton() {
-            const button = document.getElementById("warehouseFilterReset");
-            if (button) {
-                button.hidden = !hasWarehousePanelFilters(
-                    new URL(window.location.href)
-                );
-            }
         }
 
         function navigateWithWarehouseParams(url) {
@@ -6344,10 +6300,20 @@
             navigateWithWarehouseParams(url);
         }
 
-        function clearWarehouseDateRange() {
+        function clearWarehouseFilter(filterName) {
             const url = new URL(window.location.href);
-            url.searchParams.delete("date_from");
-            url.searchParams.delete("date_to");
+            const parameterNames = {
+                brand: ["brand", "brand_id"],
+                category: ["category", "category_id"],
+                cell: ["cell"],
+                date: ["date_from", "date_to"],
+                in_stock: ["in_stock"],
+            }[filterName] || [];
+
+            parameterNames.forEach((name) => {
+                url.searchParams.delete(name);
+            });
+            url.searchParams.delete("page");
             navigateWithWarehouseParams(url);
         }
 
@@ -6492,13 +6458,11 @@
                         url.pathname + url.search + url.hash
                     );
 
-                    syncWarehouseResetButton();
                     loadWarehouseSearchResults(query);
                 }, 275);
             });
 
             syncWarehouseSearchClear();
-            syncWarehouseResetButton();
             filterWarehouseRows();
         }
 

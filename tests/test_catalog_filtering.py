@@ -198,7 +198,23 @@ class CatalogFilteringTest(unittest.TestCase):
         self.assertEqual(in_stock["total"], 4)
         self.assertIn('id="warehouseInStockToggle"', template)
         self.assertIn('"in_stock",\n                "page"', template)
-        self.assertIn('params.get("in_stock") === "1"', template)
+        self.assertIn('in_stock: ["in_stock"]', template)
+
+    def test_warehouse_brand_and_category_render_two_active_filter_chips(self):
+        response = self.client.get(
+            "/warehouse?brand_id={}&category_id={}&per_page=200".format(
+                self.brand["id"],
+                self.category_id,
+            )
+        )
+        html = response.get_data(as_text=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(html.count('class="erp-filter-chip"'), 2)
+        self.assertIn("Бренд: 666 Barcelona", html)
+        self.assertIn("Категория: Наручные часы", html)
+        self.assertIn("Сбросить всё", html)
+        self.assertEqual(html.count('data-product-id="'), 120)
 
     def test_sales_and_receipts_return_complete_zero_stock_catalog(self):
         query = "brand_id={}&category_id={}&limit=200".format(

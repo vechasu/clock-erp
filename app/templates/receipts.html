@@ -1610,7 +1610,7 @@
                     <button
                         class="button button-secondary erp-reset-action receipt-filter-reset"
                         type="button"
-                        onclick="resetReceiptFilters()"
+                        onclick="resetReceiptAdvancedFilters()"
                     >
                         Сбросить фильтры
                     </button>
@@ -1775,6 +1775,13 @@
                 Отчёт
             </button>
         </div>
+
+        <div
+            id="receiptActiveFilters"
+            class="erp-active-filters"
+            aria-label="Активные фильтры прихода"
+            hidden
+        ></div>
 
         <section class="table-card">
             {% if receipts %}
@@ -3843,11 +3850,32 @@
             : 0;
     }
 
-    function updateReceiptAdvancedFilterCount(values) {
-        const count = values.filter((value) => Boolean(value)).length;
+    function receiptAdvancedFilterDefinitions() {
+        return [
+            ["receipt_document", "Документ", "receiptDocumentFilter"],
+            ["receipt_comment", "Комментарий", "receiptCommentFilter"],
+            ["receipt_brand", "Бренд", "receiptBrandFilter"],
+            ["receipt_category", "Категория", "receiptCategoryFilter"],
+            ["receipt_product", "Товар", "receiptProductFilter"],
+            ["receipt_status", "Статус", "receiptStatusFilter"],
+        ].map(([parameter, type, controlId]) => ({
+            parameter,
+            type,
+            control: document.getElementById(controlId),
+        }));
+    }
+
+    function updateReceiptAdvancedFilterCount() {
+        const activeFilters = receiptAdvancedFilterDefinitions().filter(
+            ({control}) => Boolean((control?.value || "").trim())
+        );
+        const count = activeFilters.length;
         const badge = document.getElementById("receiptAdvancedFilterCount");
         const trigger = document.querySelector(
             "#receiptAdvancedFilters > summary"
+        );
+        const container = document.getElementById(
+            "receiptActiveFilters"
         );
 
         if (badge) {
@@ -3856,6 +3884,43 @@
         }
 
         trigger?.classList.toggle("has-active-filters", count > 0);
+        container.replaceChildren();
+        activeFilters.forEach(({parameter, type, control}) => {
+            const button = document.createElement("button");
+            const text = document.createElement("span");
+            const remove = document.createElement("span");
+            const label = type + ": " + control.value;
+
+            button.className = "erp-filter-chip";
+            button.type = "button";
+            button.dataset.receiptFilter = parameter;
+            button.setAttribute("aria-label", "Снять фильтр " + label);
+            text.className = "erp-filter-chip-label";
+            text.textContent = label;
+            remove.className = "erp-filter-chip-remove";
+            remove.setAttribute("aria-hidden", "true");
+            remove.textContent = "×";
+            button.append(text, remove);
+            button.addEventListener("click", () => {
+                control.value = "";
+                filterReceipts();
+            });
+            container.appendChild(button);
+        });
+
+        if (count >= 2) {
+            const reset = document.createElement("button");
+            reset.className = "erp-active-filters-reset";
+            reset.type = "button";
+            reset.textContent = "Сбросить всё";
+            reset.addEventListener(
+                "click",
+                resetReceiptAdvancedFilters,
+            );
+            container.appendChild(reset);
+        }
+
+        container.hidden = count === 0;
     }
 
     function filterReceipts() {
@@ -3875,14 +3940,7 @@
         const product = document.getElementById("receiptProductFilter")?.value || "";
         const status = document.getElementById("receiptStatusFilter")?.value || "";
 
-        updateReceiptAdvancedFilterCount([
-            documentQuery,
-            commentQuery,
-            brand,
-            category,
-            product,
-            status,
-        ]);
+        updateReceiptAdvancedFilterCount();
 
         const dateFrom = (
             document.getElementById(
@@ -3980,20 +4038,29 @@
             url.searchParams.delete("date_to");
         }
 
+        receiptAdvancedFilterDefinitions().forEach(
+            ({parameter, control}) => {
+                const value = (control?.value || "").trim();
+                if (value) {
+                    url.searchParams.set(parameter, value);
+                } else {
+                    url.searchParams.delete(parameter);
+                }
+            }
+        );
+
         window.history.replaceState({}, "", url);
     }
 
-    function resetReceiptFilters() {
+    function resetReceiptAdvancedFilters() {
         [
-            "receiptSearch", "receiptDocumentFilter", "receiptCommentFilter",
+            "receiptDocumentFilter", "receiptCommentFilter",
             "receiptBrandFilter", "receiptCategoryFilter", "receiptProductFilter",
             "receiptStatusFilter",
         ].forEach((id) => {
             const control = document.getElementById(id);
             if (control) control.value = "";
         });
-        document.getElementById("receiptDateFrom").value = "";
-        document.getElementById("receiptDateTo").value = "";
         filterReceipts();
     }
 
@@ -4126,6 +4193,14 @@
         updateReceiptSortIndicators();
         filterReceipts();
     }
+    const receiptUrlFilters = new URL(window.location.href).searchParams;
+    receiptAdvancedFilterDefinitions().forEach(
+        ({parameter, control}) => {
+            if (control && receiptUrlFilters.has(parameter)) {
+                control.value = receiptUrlFilters.get(parameter) || "";
+            }
+        }
+    );
     filterReceipts();
     // RECEIPTS DATE FILTER SORT SCRIPT V1 END
 
