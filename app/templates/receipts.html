@@ -1510,6 +1510,9 @@
     <script
         src="{{ url_for('static', filename='js/period-picker.js') }}"
     ></script>
+    <script
+        src="{{ url_for('static', filename='js/toolbar-popover-coordinator.js') }}"
+    ></script>
     <script defer src="{{ url_for('static', filename='js/table-scroll-hint.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/erp-modal-shell.js') }}"></script>
 </head>
@@ -4811,6 +4814,188 @@
     }
     // RECEIPTS REPORT BUTTON SCRIPT V1 END
 </script>
+
+<script>
+    window.receiptToolbarPopovers = (
+        window.createErpToolbarPopoverCoordinator([
+            {
+                trigger: document.querySelector(
+                    "#receiptAdvancedFilters > summary"
+                ),
+                container: document.getElementById(
+                    "receiptAdvancedFilters"
+                ),
+                isOpen: () => document.getElementById(
+                    "receiptAdvancedFilters"
+                ).open,
+                close: () => {
+                    document.getElementById(
+                        "receiptAdvancedFilters"
+                    ).open = false;
+                },
+            },
+            {
+                trigger: document.getElementById(
+                    "receiptColumnSettingsTrigger"
+                ),
+                container: document.querySelector(
+                    ".receipt-column-settings"
+                ),
+                isOpen: () => !document.getElementById(
+                    "receiptColumnSettingsPanel"
+                ).hidden,
+                close: () => {
+                    document.getElementById(
+                        "receiptColumnSettingsPanel"
+                    ).hidden = true;
+                    document.getElementById(
+                        "receiptColumnSettingsTrigger"
+                    ).setAttribute("aria-expanded", "false");
+                },
+            },
+            {
+                trigger: document.querySelector(
+                    "#receiptDateFilter .warehouse-date-trigger"
+                ),
+                container: document.getElementById(
+                    "receiptDateFilter"
+                ),
+                isOpen: () => !document.querySelector(
+                    "#receiptDateFilter .warehouse-calendar-popup"
+                ).hidden,
+                close: () => {
+                    const root = document.getElementById(
+                        "receiptDateFilter"
+                    );
+                    root.classList.remove("is-open");
+                    root.querySelector(
+                        ".warehouse-calendar-popup"
+                    ).hidden = true;
+                    root.querySelector(
+                        ".warehouse-date-trigger"
+                    ).setAttribute("aria-expanded", "false");
+                },
+            },
+        ])
+    );
+</script>
+
+{% if config.TESTING and request.args.get("toolbar_popover_e2e") == "1" %}
+<script>
+    window.addEventListener("load", async () => {
+        const root = document.documentElement;
+        const wait = () => new Promise((resolve) =>
+            window.setTimeout(resolve, 40)
+        );
+        const filters = document.querySelector(
+            "#receiptAdvancedFilters > summary"
+        );
+        const filterPanel = document.getElementById(
+            "receiptAdvancedFilters"
+        );
+        const columns = document.getElementById(
+            "receiptColumnSettingsTrigger"
+        );
+        const columnsPanel = document.getElementById(
+            "receiptColumnSettingsPanel"
+        );
+        const period = document.querySelector(
+            "#receiptDateFilter .warehouse-date-trigger"
+        );
+        const periodPanel = document.querySelector(
+            "#receiptDateFilter .warehouse-calendar-popup"
+        );
+
+        function assert(condition, message) {
+            if (!condition) throw new Error(message);
+        }
+
+        function openCount() {
+            return Number(filterPanel.open)
+                + Number(!columnsPanel.hidden)
+                + Number(!periodPanel.hidden);
+        }
+
+        try {
+            filters.click();
+            await wait();
+            assert(openCount() === 1 && filterPanel.open, "filters-open");
+            document.getElementById("receiptDocumentFilter").value =
+                "PR-2026";
+            filterReceipts();
+            columns.click();
+            await wait();
+            assert(
+                openCount() === 1
+                && !columnsPanel.hidden
+                && !filterPanel.open,
+                "filters-then-columns"
+            );
+
+            filters.click();
+            await wait();
+            assert(
+                openCount() === 1
+                && filterPanel.open
+                && columnsPanel.hidden,
+                "columns-then-filters"
+            );
+            assert(
+                document.getElementById(
+                    "receiptDocumentFilter"
+                ).value === "PR-2026",
+                "filter-value-reset"
+            );
+
+            filters.click();
+            await wait();
+            assert(openCount() === 0, "repeat-close");
+
+            columns.click();
+            await wait();
+            document.dispatchEvent(new KeyboardEvent(
+                "keydown",
+                {key: "Escape", bubbles: true}
+            ));
+            await wait();
+            assert(openCount() === 0, "escape-close");
+
+            filters.click();
+            await wait();
+            document.querySelector("h1").click();
+            await wait();
+            assert(openCount() === 0, "outside-close");
+
+            period.click();
+            await wait();
+            columns.click();
+            await wait();
+            assert(
+                openCount() === 1
+                && !columnsPanel.hidden
+                && periodPanel.hidden,
+                "period-then-columns"
+            );
+            window.receiptToolbarPopovers.closeAll();
+
+            assert(
+                document.getElementById(
+                    "receiptDocumentFilter"
+                ).value === "PR-2026",
+                "filter-lost-after-close"
+            );
+            assert(
+                root.scrollWidth <= root.clientWidth + 1,
+                "page-horizontal-overflow"
+            );
+            root.dataset.toolbarPopoverE2e = "pass";
+        } catch (error) {
+            root.dataset.toolbarPopoverE2e =
+                "fail-" + error.message;
+        }
+    });
+</script>
+{% endif %}
 
 {% if config.TESTING and request.args.get("receipt_card_layout_e2e") == "1" %}
 <script>
