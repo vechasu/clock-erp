@@ -1,3 +1,4 @@
+import re
 import tempfile
 import unittest
 from io import BytesIO
@@ -143,6 +144,51 @@ class Stage2ProductsApiTest(unittest.TestCase):
             self.client.get("/api/products/{}".format(product_id)).status_code,
             404,
         )
+
+    def test_product_price_can_be_missing_zero_added_and_cleared(self):
+        page = (Path(web.app.root_path) / "templates" / "warehouse.html").read_text(
+            encoding="utf-8"
+        )
+        create_price = re.search(
+            r'<input[^>]+id="warehouseProductPrice"[^>]*>', page
+        ).group(0)
+        edit_price = re.search(
+            r'<input[^>]+id="editPrice"[^>]*>', page
+        ).group(0)
+        self.assertNotIn("required", create_price)
+        self.assertNotIn("required", edit_price)
+        missing = self.client.post(
+            "/api/products",
+            json={"name": "No Price", "brand": "Alpha", "category": "Часы"},
+        )
+        self.assertEqual(missing.status_code, 201)
+        product_id = missing.get_json()["data"]["id"]
+        self.assertIsNone(missing.get_json()["data"]["price"])
+        self.assertEqual(missing.get_json()["data"]["price_display"], "")
+
+        zero = self.client.patch(
+            "/api/products/{}".format(product_id), json={"price": 0}
+        )
+        self.assertEqual(zero.status_code, 200)
+        self.assertEqual(zero.get_json()["data"]["price"], 0)
+        self.assertIn("0", zero.get_json()["data"]["price_display"])
+
+        cleared = self.client.patch(
+            "/api/products/{}".format(product_id), json={"price": ""}
+        )
+        self.assertIsNone(cleared.get_json()["data"]["price"])
+        sorted_items = self.client.get(
+            "/api/products?sort_by=price&sort_dir=desc&page_size=50"
+        ).get_json()["data"]
+        self.assertIsNone(sorted_items[-1]["price"])
+        from openpyxl import load_workbook
+        workbook = load_workbook(
+            BytesIO(self.client.get("/warehouse/export.xlsx").data),
+            data_only=True,
+        )
+        rows = list(workbook.active.iter_rows(values_only=True))
+        no_price_row = next(row for row in rows if row[0] == "No Price")
+        self.assertIsNone(no_price_row[7])
 
     def test_create_product_with_photo_uses_existing_moysklad_storage(self):
         remote_id = "11111111-2222-4333-8444-555555555555"

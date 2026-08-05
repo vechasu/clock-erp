@@ -4883,6 +4883,10 @@
                                     placeholder="Например, 126610LN"
                                 >
                             </label>
+                            <label class="warehouse-add-field" for="warehouseProductPrice">
+                                <span>Цена</span>
+                                <input id="warehouseProductPrice" type="number" name="price" min="0" step="0.01" inputmode="decimal" placeholder="Не указана">
+                            </label>
                         </div>
                     </section>
 
@@ -5313,6 +5317,8 @@
                                                     data-id="{{ item.id|e }}"
                                                     data-name="{{ item.name|e }}"
                                                     data-article="{{ (item.article or '')|e }}"
+                                                    data-price="{{ item.price if item.price is not none else '' }}"
+                                                    data-price-display="{{ item.price_display|e }}"
                                                     data-brand="{{ item.brand|e }}"
                                                     data-brand-id="{{ item.brand_id or '' }}"
                                                     data-category="{{ item.category|e }}"
@@ -5718,6 +5724,12 @@
                 <div class="product-detail-label">Артикул</div>
                 <div id="detailArticle" class="product-detail-value">—</div>
                 <input id="editArticle" class="product-detail-input" type="text" name="article">
+            </div>
+
+            <div class="product-detail-card">
+                <div class="product-detail-label">Цена</div>
+                <div id="detailPrice" class="product-detail-value">—</div>
+                <input id="editPrice" class="product-detail-input" type="number" min="0" step="0.01" inputmode="decimal" name="price" placeholder="Не указана">
             </div>
 
             <div class="product-detail-card category-cell-form">
@@ -6545,6 +6557,8 @@
 
             document.getElementById("detailName").textContent = productName;
             document.getElementById("detailArticle").textContent = productArticle;
+            document.getElementById("detailPrice").textContent =
+                button.dataset.priceDisplay || "—";
             renderProductStock(productStock);
             document.getElementById("detailBrand").textContent = productBrand;
             document.getElementById("detailCategory").textContent = productCategory;
@@ -6578,6 +6592,7 @@
             const editableValues = {
                 editName: button.dataset.name || "",
                 editArticle: button.dataset.article || "",
+                editPrice: button.dataset.price ?? "",
                 editStock: productStock,
                 editCell: productCell,
             };

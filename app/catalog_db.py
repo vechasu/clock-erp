@@ -613,7 +613,7 @@ CREATE TABLE IF NOT EXISTS erp_sale_items (
     brand_id INTEGER REFERENCES erp_brands(id) ON DELETE RESTRICT,
     category_id INTEGER REFERENCES erp_categories(id) ON DELETE RESTRICT,
     quantity REAL NOT NULL CHECK (quantity > 0),
-    unit_price REAL NOT NULL CHECK (unit_price >= 0),
+    unit_price REAL CHECK (unit_price >= 0),
     returned_quantity REAL NOT NULL DEFAULT 0 CHECK (
         returned_quantity >= 0 AND returned_quantity <= quantity
     ),
@@ -660,7 +660,7 @@ CREATE TABLE IF NOT EXISTS erp_receipt_items (
     brand_id INTEGER REFERENCES erp_brands(id) ON DELETE RESTRICT,
     category_id INTEGER REFERENCES erp_categories(id) ON DELETE RESTRICT,
     quantity REAL NOT NULL CHECK (quantity > 0),
-    purchase_price REAL NOT NULL DEFAULT 0 CHECK (purchase_price >= 0),
+    purchase_price REAL CHECK (purchase_price >= 0),
     active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
     created_at TEXT NOT NULL
 );
@@ -790,6 +790,7 @@ class CatalogDatabase:
             self._ensure_excel_receipt_constraints(connection)
             self._ensure_excel_cardinality_columns(connection)
             self._ensure_receipt_constraints(connection)
+            self._ensure_optional_price_constraints(connection)
             self._ensure_shared_catalog(connection)
             self._ensure_stock_movement_constraints(connection)
 
@@ -1038,6 +1039,93 @@ class CatalogDatabase:
             "CREATE UNIQUE INDEX IF NOT EXISTS "
             "idx_erp_receipts_tenant_idempotency "
             "ON erp_receipts(tenant_id, idempotency_key)"
+        )
+
+    @staticmethod
+    def _ensure_optional_price_constraints(connection):
+        """Allow an unknown price while preserving real zero values."""
+        definitions = {
+            "erp_sale_items": (
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                "sale_id TEXT NOT NULL REFERENCES erp_sales(id) ON DELETE RESTRICT, "
+                "product_id INTEGER NOT NULL REFERENCES catalog_excel_products(id) ON DELETE RESTRICT, "
+                "brand_id INTEGER REFERENCES erp_brands(id) ON DELETE RESTRICT, "
+                "category_id INTEGER REFERENCES erp_categories(id) ON DELETE RESTRICT, "
+                "quantity REAL NOT NULL CHECK (quantity > 0), "
+                "unit_price REAL CHECK (unit_price >= 0), "
+                "returned_quantity REAL NOT NULL DEFAULT 0 CHECK (returned_quantity >= 0 AND returned_quantity <= quantity), "
+                "status TEXT NOT NULL DEFAULT 'completed' CHECK (status IN ('completed', 'partially_returned', 'returned')), "
+                "created_at TEXT NOT NULL, returned_at TEXT, return_reason TEXT"
+            ),
+            "erp_receipt_items": (
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                "receipt_id TEXT NOT NULL REFERENCES erp_receipts(id) ON DELETE RESTRICT, "
+                "product_id INTEGER NOT NULL REFERENCES catalog_excel_products(id) ON DELETE RESTRICT, "
+                "brand_id INTEGER REFERENCES erp_brands(id) ON DELETE RESTRICT, "
+                "category_id INTEGER REFERENCES erp_categories(id) ON DELETE RESTRICT, "
+                "quantity REAL NOT NULL CHECK (quantity > 0), "
+                "purchase_price REAL CHECK (purchase_price >= 0), "
+                "active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)), "
+                "created_at TEXT NOT NULL"
+            ),
+        }
+        columns = {
+            "erp_sale_items": "unit_price",
+            "erp_receipt_items": "purchase_price",
+        }
+        migrated = False
+        connection.commit()
+        connection.execute("PRAGMA foreign_keys = OFF")
+        try:
+            for table, definition in definitions.items():
+                info = connection.execute(
+                    "PRAGMA table_info({})".format(table)
+                ).fetchall()
+                price_column = columns[table]
+                price_info = next(
+                    (row for row in info if row["name"] == price_column),
+                    None,
+                )
+                if price_info is None or not price_info["notnull"]:
+                    continue
+                migrated = True
+                names = [row["name"] for row in info]
+                quoted = ", ".join('"{}"'.format(name) for name in names)
+                connection.execute("BEGIN IMMEDIATE")
+                connection.execute(
+                    "CREATE TABLE {}_migrating ({})".format(table, definition)
+                )
+                connection.execute(
+                    "INSERT INTO {0}_migrating ({1}) SELECT {1} FROM {0}".format(
+                        table,
+                        quoted,
+                    )
+                )
+                connection.execute("DROP TABLE {}".format(table))
+                connection.execute(
+                    "ALTER TABLE {}_migrating RENAME TO {}".format(table, table)
+                )
+                connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.execute("PRAGMA foreign_keys = ON")
+        if migrated and connection.execute("PRAGMA foreign_key_check").fetchall():
+            raise sqlite3.IntegrityError(
+                "Optional price migration created foreign key violations"
+            )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_erp_sale_items_sale ON erp_sale_items(sale_id, id)"
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_erp_sale_items_product ON erp_sale_items(product_id, created_at)"
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_erp_receipt_items_receipt ON erp_receipt_items(receipt_id, id)"
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_erp_receipt_items_product ON erp_receipt_items(product_id, created_at)"
         )
 
     @staticmethod

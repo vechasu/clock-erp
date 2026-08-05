@@ -2207,10 +2207,10 @@
                             class="control"
                             type="number"
                             name="unit_price"
-                            min="1"
+                            min="0"
                             step="0.01"
                             inputmode="decimal"
-                            required
+                            placeholder="Не указана"
                         >
                     </div>
 
@@ -5114,7 +5114,7 @@
                 ? saleDateValue + "T00:00"
                 : saleDateValue,
             quantity: sale.quantity_value || 1,
-            unit_price: sale.unit_price || "",
+            unit_price: sale.unit_price ?? "",
             order_number: sale.order_number || "",
             track_number: sale.track_number || "",
             delivery_cost: sale.delivery_cost || "",

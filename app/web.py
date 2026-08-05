@@ -11,6 +11,7 @@ import copy
 import base64
 import binascii
 import json
+import math
 import os
 import fcntl
 import uuid
@@ -1448,6 +1449,9 @@ def build_excel_warehouse_items(products):
                 or ""
             ),
             "gallery": product.get("gallery") or [],
+            "price": (
+                float(price) if price not in (None, "") else None
+            ),
             "price_display": price_display,
             # Legacy export field retained for compatibility. UI links use the
             # explicit admin/public fields below.
@@ -5455,7 +5459,7 @@ def parse_manual_sale_quantity(value):
 def parse_sale_price(value):
     from decimal import Decimal, InvalidOperation
 
-    raw_value = str(value or "").strip()
+    raw_value = str("" if value is None else value).strip()
 
     if not raw_value:
         return None
@@ -5473,10 +5477,19 @@ def parse_sale_price(value):
     except (InvalidOperation, ValueError):
         return None
 
-    if price < 1:
+    if not price.is_finite() or price < 0:
         return None
 
     return float(price.quantize(Decimal("0.01")))
+
+
+def validate_optional_sale_price(value):
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None
+    price = parse_sale_price(value)
+    if price is None:
+        raise ValueError("Цена продажи должна быть неотрицательным числом.")
+    return price
 
 
 def parse_sale_commission(value):
@@ -5509,12 +5522,13 @@ def parse_sale_commission(value):
 def calculate_sale_amount(unit_price, quantity):
     from decimal import Decimal, InvalidOperation
 
-    if unit_price is None:
-        return None
-
     try:
-        price = Decimal(str(unit_price))
         quantity_value = Decimal(str(quantity or 0))
+        if quantity_value == 0:
+            return 0.0
+        if unit_price is None:
+            return None
+        price = Decimal(str(unit_price))
         amount = price * quantity_value
     except (InvalidOperation, ValueError, TypeError):
         return None
@@ -6156,9 +6170,10 @@ def manual_sale_add():
     quantity = parse_manual_sale_quantity(request.form.get("quantity"))
 
     # === MANUAL SALE ADD PRICE V1 ===
-    unit_price = parse_sale_price(
-        request.form.get("unit_price")
-    )
+    try:
+        unit_price = validate_optional_sale_price(request.form.get("unit_price"))
+    except ValueError as error:
+        return redirect_to_sales(str(error), notice="error")
     total_amount = calculate_sale_amount(
         unit_price,
         quantity,
@@ -6171,13 +6186,6 @@ def manual_sale_add():
             notice="error",
         )
 
-    # === MANUAL SALE PRICE VALIDATION V1 ===
-    if unit_price is None:
-        return redirect_to_sales(
-            "Укажите цену продажи не меньше 1 ₽",
-            notice="error",
-        )
-    # === MANUAL SALE PRICE VALIDATION V1 END ===
 
     sale_source = normalize_manual_sale_source(
         request.form.get("source"),
@@ -6366,9 +6374,12 @@ def manual_sale_update():
     quantity = parse_manual_sale_quantity(request.form.get("quantity"))
 
     # === SALES PRICE EDIT AND TABLE V2 ===
-    unit_price = parse_sale_price(
-        request.form.get("unit_price")
-    )
+    try:
+        unit_price = validate_optional_sale_price(request.form.get("unit_price"))
+    except ValueError as error:
+        return respond_to_sales_action(
+            str(error), notice="error", status_code=400
+        )
 
     total_amount = calculate_sale_amount(
         unit_price,
@@ -6393,13 +6404,6 @@ def manual_sale_update():
     if quantity <= 0:
         return respond_to_sales_action(
             "Выберите количество от 1 до 25",
-            notice="error",
-            status_code=400,
-        )
-
-    if unit_price is None:
-        return respond_to_sales_action(
-            "Укажите цену продажи не меньше 1 ₽",
             notice="error",
             status_code=400,
         )
@@ -6756,9 +6760,12 @@ def automatic_sale_update():
         request.form.get("quantity")
     )
 
-    unit_price = parse_sale_price(
-        request.form.get("unit_price")
-    )
+    try:
+        unit_price = validate_optional_sale_price(request.form.get("unit_price"))
+    except ValueError as error:
+        return respond_to_sales_action(
+            str(error), notice="error", status_code=400
+        )
 
     total_amount = calculate_sale_amount(
         unit_price,
@@ -6800,13 +6807,6 @@ def automatic_sale_update():
     if quantity <= 0:
         return respond_to_sales_action(
             "Выберите количество от 1 до 25",
-            notice="error",
-            status_code=400,
-        )
-
-    if unit_price is None:
-        return respond_to_sales_action(
-            "Укажите цену продажи не меньше 1 ₽",
             notice="error",
             status_code=400,
         )
@@ -7689,9 +7689,12 @@ def build_sales_report_records(
         )
         sale.setdefault(
             "gross_total_amount",
-            sale.get("total_amount") or 0,
+            sale.get("total_amount"),
         )
-        sale.setdefault("returned_amount", 0)
+        sale.setdefault(
+            "returned_amount",
+            0 if float(sale.get("returned_quantity") or 0) == 0 else None,
+        )
         sale.setdefault("return_status", sale.get("order_status"))
         sale.setdefault("inventory_managed", False)
 
@@ -7905,24 +7908,23 @@ def build_sales_report_context():
         for sale in active_sales
     )
 
-    gross_revenue = sum(
-        float(
-            sale.get(
-                "gross_total_amount",
-                sale.get("total_amount") or 0,
-            )
-            or 0
-        )
-        for sale in active_sales
+    gross_values = [sale.get("gross_total_amount") for sale in active_sales]
+    return_values = [sale.get("returned_amount") for sale in active_sales]
+    total_values = [sale.get("total_amount") for sale in active_sales]
+    gross_revenue = (
+        sum(float(value) for value in gross_values)
+        if all(value is not None for value in gross_values)
+        else None
     )
-    returns_amount = sum(
-        float(sale.get("returned_amount") or 0)
-        for sale in active_sales
+    returns_amount = (
+        sum(float(value) for value in return_values)
+        if all(value is not None for value in return_values)
+        else None
     )
-    total_revenue = sum(
-        float(sale.get("total_amount") or 0)
-        for sale in active_sales
-        if sale.get("total_amount") is not None
+    total_revenue = (
+        sum(float(value) for value in total_values)
+        if all(value is not None for value in total_values)
+        else None
     )
     returned_sales = [
         sale
@@ -7978,17 +7980,11 @@ def build_sales_report_context():
             total_quantity
         ),
         "total_revenue": total_revenue,
-        "total_revenue_display": format_sale_money(
-            total_revenue
-        ),
+        "total_revenue_display": format_sale_money(total_revenue) or "—",
         "gross_revenue": gross_revenue,
-        "gross_revenue_display": format_sale_money(
-            gross_revenue
-        ),
+        "gross_revenue_display": format_sale_money(gross_revenue) or "—",
         "returns_amount": returns_amount,
-        "returns_amount_display": format_sale_money(
-            returns_amount
-        ),
+        "returns_amount_display": format_sale_money(returns_amount) or "—",
         "total_returned_sales": len(returned_sales),
         "total_returned_quantity": format_stock_number(
             sum(
@@ -9093,9 +9089,23 @@ def save_receipts(receipts):
 
 def parse_receipt_number(value, default=0):
     try:
-        return float(str(value or "").strip().replace(" ", "").replace(",", "."))
+        raw = "" if value is None else str(value)
+        return float(raw.strip().replace(" ", "").replace(",", "."))
     except (TypeError, ValueError):
         return default
+
+
+def optional_receipt_price(value):
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None
+    price = parse_receipt_number(value, None)
+    if price is None or not math.isfinite(price) or price < 0:
+        raise ValueError("Цена закупки должна быть неотрицательным числом.")
+    return round(price, 2)
+
+
+def optional_line_total(quantity, price):
+    return None if price is None else round(float(quantity) * price, 2)
 
 
 def receipt_quantity_value(value, default=0):
@@ -9820,6 +9830,9 @@ def receipts_import_preview():
             "quantity",
             "stock",
         },
+        "purchase_price": {
+            "цена закупки", "закупочная цена", "purchase price", "cost",
+        },
         "cell": {
             "ячейка",
             "ячейка склада",
@@ -10040,6 +10053,7 @@ def receipts_import_preview():
             row,
             "quantity",
         )
+        raw_purchase_price = read_row_value(row, "purchase_price")
         identifying_values = [
             name,
             article,
@@ -10062,7 +10076,10 @@ def receipts_import_preview():
             raw_quantity,
             default=0,
         )
-        purchase_price = 0
+        try:
+            purchase_price = optional_receipt_price(raw_purchase_price)
+        except ValueError:
+            purchase_price = None
 
         messages = []
         matched_products = {}
@@ -10221,10 +10238,7 @@ def receipts_import_preview():
             "cell": stringify_excel_value(cell),
             "quantity": quantity,
             "purchase_price": purchase_price,
-            "line_total": round(
-                quantity * purchase_price,
-                2,
-            ),
+            "line_total": optional_line_total(quantity, purchase_price),
             "current_stock": current_stock,
             "stock_after": (
                 current_stock + quantity
@@ -10260,25 +10274,22 @@ def receipts_import_preview():
                 existing_row.get("quantity"),
                 default=0,
             )
-            previous_amount = parse_receipt_number(
-                existing_row.get("line_total"),
-                default=0,
-            )
+            previous_amount = existing_row.get("line_total")
 
             combined_quantity = (
                 previous_quantity + quantity
             )
             combined_amount = (
-                previous_amount
-                + quantity * purchase_price
+                previous_amount + quantity * purchase_price
+                if previous_amount is not None and purchase_price is not None
+                else None
             )
 
             existing_row["quantity"] = (
                 combined_quantity
             )
-            existing_row["line_total"] = round(
-                combined_amount,
-                2,
+            existing_row["line_total"] = (
+                round(combined_amount, 2) if combined_amount is not None else None
             )
             existing_row["purchase_price"] = (
                 round(
@@ -10286,8 +10297,8 @@ def receipts_import_preview():
                     / combined_quantity,
                     2,
                 )
-                if combined_quantity
-                else 0
+                if combined_quantity and combined_amount is not None
+                else None
             )
             existing_row["stock_after"] = (
                 existing_row["current_stock"]
@@ -10356,15 +10367,11 @@ def receipts_import_preview():
         for row in importable_rows
     )
 
-    total_amount = round(
-        sum(
-            parse_receipt_number(
-                row.get("line_total"),
-                default=0,
-            )
-            for row in importable_rows
-        ),
-        2,
+    import_line_totals = [row.get("line_total") for row in importable_rows]
+    total_amount = (
+        round(sum(float(value) for value in import_line_totals), 2)
+        if all(value is not None for value in import_line_totals)
+        else None
     )
 
     columns = {
@@ -10592,7 +10599,7 @@ def receipt_create():
 
     product_ids = request.form.getlist("product_id")
     quantities = request.form.getlist("quantity")
-    purchase_prices = []
+    purchase_prices = request.form.getlist("purchase_price")
 
     if not import_rows:
         if not submitted_brand:
@@ -10679,7 +10686,9 @@ def receipt_create():
                 default=0,
             )
 
-            import_purchase_price = 0
+            import_purchase_price = optional_receipt_price(
+                import_row.get("purchase_price")
+            )
 
             if import_quantity <= 0:
                 return redirect(url_for(
@@ -11008,9 +11017,15 @@ def receipt_create():
         quantity = parse_receipt_number(
             quantities[index] if index < len(quantities) else 0
         )
-        purchase_price = parse_receipt_number(
-            purchase_prices[index] if index < len(purchase_prices) else 0
-        )
+        try:
+            purchase_price = optional_receipt_price(
+                purchase_prices[index] if index < len(purchase_prices) else None
+            )
+        except ValueError as error:
+            return redirect(url_for(
+                "receipts_page", notice="error", message=str(error),
+                open_receipt_modal="1",
+            ))
 
         if quantity <= 0:
             return redirect(url_for(
@@ -11070,7 +11085,7 @@ def receipt_create():
             "cell": product.get("cell") or "",
             "quantity": quantity,
             "purchase_price": purchase_price,
-            "line_total": round(quantity * purchase_price, 2),
+            "line_total": optional_line_total(quantity, purchase_price),
             "stock_before": stock_before,
             "stock_after": stock_before + quantity,
         })
@@ -11125,9 +11140,10 @@ def receipt_create():
 
         created_at = datetime.now().strftime("%Y-%m-%d %H:%M")
         total_quantity = sum(position["quantity"] for position in positions)
-        total_amount = round(
-            sum(position["line_total"] for position in positions),
-            2,
+        total_amount = (
+            round(sum(position["line_total"] for position in positions), 2)
+            if all(position["line_total"] is not None for position in positions)
+            else None
         )
 
         receipt = {
@@ -11148,9 +11164,7 @@ def receipt_create():
             "quantity": (
                 first_position.get("quantity") or 0
             ),
-            "purchase_price": (
-                first_position.get("purchase_price") or 0
-            ),
+            "purchase_price": first_position.get("purchase_price"),
             # Старые ключи оставлены пустыми для совместимости.
             "supplier": "",
             "invoice_number": "",
@@ -11500,15 +11514,19 @@ def receipt_update():
         or product.get("product_name")
         or old_product_name
     ).strip()
-    purchase_price = parse_receipt_number(
-        old_position.get("purchase_price")
-        if "purchase_price" in old_position
-        else receipt.get("purchase_price")
-    )
-    line_total = round(
-        quantity * purchase_price,
-        2,
-    )
+    try:
+        purchase_price = optional_receipt_price(
+            request.form.get("purchase_price")
+            if "purchase_price" in request.form
+            else (
+                old_position.get("purchase_price")
+                if "purchase_price" in old_position
+                else receipt.get("purchase_price")
+            )
+        )
+    except ValueError as error:
+        return redirect(url_for("receipts_page", notice="error", message=str(error)))
+    line_total = optional_line_total(quantity, purchase_price)
 
     updated_position = dict(old_position)
     updated_position.update({
@@ -11767,7 +11785,7 @@ def receipt_delete():
 def parse_analytics_date(value):
     from datetime import datetime
 
-    raw_value = str(value or "").strip()
+    raw_value = str("" if value is None else value).strip()
 
     if not raw_value:
         return None
@@ -11817,6 +11835,15 @@ def build_analytics_data(
         except (TypeError, ValueError):
             return 0.0
 
+    def optional_amount(value):
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return None
+        try:
+            number = float(str(value).replace(",", "."))
+        except (TypeError, ValueError):
+            return None
+        return max(0.0, number) if math.isfinite(number) else None
+
     filtered_sales = []
 
     for sale in sales_records if isinstance(sales_records, list) else []:
@@ -11834,7 +11861,7 @@ def build_analytics_data(
             "product_name": str(sale.get("product_name") or "Без названия"),
             "source": str(sale.get("source") or "Без источника"),
             "quantity": positive_number(sale.get("quantity_value")),
-            "amount": positive_number(sale.get("total_amount")),
+            "amount": optional_amount(sale.get("total_amount")),
         })
 
     filtered_receipts = []
@@ -11864,10 +11891,8 @@ def build_analytics_data(
             line_total = position.get("line_total")
 
             if line_total is None:
-                line_total = (
-                    quantity
-                    * positive_number(position.get("purchase_price"))
-                )
+                price = optional_amount(position.get("purchase_price"))
+                line_total = quantity * price if price is not None else None
 
             receipt_product_rows.append({
                 "product_key": str(
@@ -11879,7 +11904,7 @@ def build_analytics_data(
                     position.get("product_name") or "Без названия"
                 ),
                 "quantity": quantity,
-                "amount": positive_number(line_total),
+                "amount": optional_amount(line_total),
             })
 
     def aggregate_rows(rows, key_name, label_name):
@@ -11894,15 +11919,17 @@ def build_analytics_data(
                     "name": label,
                     "quantity": 0.0,
                     "amount": 0.0,
+                    "amount_known": True,
                     "operations": 0,
                 }
 
             aggregated[key]["quantity"] += positive_number(
                 row.get("quantity")
             )
-            aggregated[key]["amount"] += positive_number(
-                row.get("amount")
-            )
+            if row.get("amount") is None:
+                aggregated[key]["amount_known"] = False
+            elif aggregated[key]["amount_known"]:
+                aggregated[key]["amount"] += float(row["amount"])
             aggregated[key]["operations"] += 1
 
         result = sorted(
@@ -11913,7 +11940,9 @@ def build_analytics_data(
 
         for item in result:
             item["quantity_display"] = format_stock_number(item["quantity"])
-            item["amount_display"] = format_sale_money(item["amount"])
+            if not item.pop("amount_known"):
+                item["amount"] = None
+            item["amount_display"] = format_sale_money(item["amount"]) or "—"
             item["bar_width"] = (
                 round(item["quantity"] / max_quantity * 100, 1)
                 if max_quantity > 0
@@ -11953,14 +11982,20 @@ def build_analytics_data(
     products.sort(key=lambda item: (-item["stock"], item["name"].casefold()))
 
     sales_quantity = sum(row["quantity"] for row in filtered_sales)
-    sales_revenue = sum(row["amount"] for row in filtered_sales)
+    sales_revenue = (
+        sum(row["amount"] for row in filtered_sales)
+        if all(row["amount"] is not None for row in filtered_sales)
+        else None
+    )
     receipts_quantity = sum(
         positive_number(receipt.get("total_quantity"))
         for receipt in filtered_receipts
     )
-    receipts_amount = sum(
-        positive_number(receipt.get("total_amount"))
-        for receipt in filtered_receipts
+    receipt_amounts = [optional_amount(receipt.get("total_amount")) for receipt in filtered_receipts]
+    receipts_amount = (
+        sum(receipt_amounts)
+        if all(value is not None for value in receipt_amounts)
+        else None
     )
     total_stock = sum(item["stock"] for item in products)
 
@@ -11970,7 +12005,7 @@ def build_analytics_data(
         "sales": {
             "rows": len(filtered_sales),
             "quantity": format_stock_number(sales_quantity),
-            "revenue": format_sale_money(sales_revenue),
+            "revenue": format_sale_money(sales_revenue) or "—",
             "products": len(sales_by_product),
             "top_products": sales_by_product[:10],
             "sources": sales_by_source[:8],
@@ -11978,7 +12013,7 @@ def build_analytics_data(
         "receipts": {
             "operations": len(filtered_receipts),
             "quantity": format_stock_number(receipts_quantity),
-            "amount": format_sale_money(receipts_amount),
+            "amount": format_sale_money(receipts_amount) or "—",
             "products": len(receipts_by_product),
             "top_products": receipts_by_product[:10],
         },
@@ -12712,7 +12747,7 @@ def api_product_request_payload():
             key: request.form.get(key)
             for key in (
                 "name", "article", "brand", "category", "brand_id",
-                "category_id", "cell", "stock", "stock_reason",
+                "category_id", "cell", "stock", "stock_reason", "price",
             )
         }
         for key in ("brand_id", "category_id"):
@@ -12732,7 +12767,7 @@ def api_product_update_request_payload():
 
     allowed_names = (
         "name", "article", "brand", "category", "brand_id",
-        "category_id", "cell", "stock", "stock_reason",
+        "category_id", "cell", "stock", "stock_reason", "price",
     )
     payload = {
         key: request.form.get(key)
@@ -12846,6 +12881,7 @@ def api_products_collection():
                 category_id=payload.get("category_id"),
                 cell=payload.get("cell", ""),
                 stock=payload.get("stock", 0),
+                price=payload.get("price"),
                 enforce_unique=True,
                 moysklad_product_id=(
                     remote_product.get("id") if remote_product else None
@@ -13028,7 +13064,7 @@ def api_product_resource(product_id):
         )
         allowed_fields = {
             "name", "article", "brand", "category", "brand_id", "category_id",
-            "cell", "stock", "stock_reason",
+            "cell", "stock", "stock_reason", "price",
         }
         unknown_fields = set(payload) - allowed_fields
         if unknown_fields:
@@ -13518,8 +13554,15 @@ def serialize_api_receipt(
                 product.get("cell") if product else position.get("cell") or ""
             ),
             "quantity": receipt_quantity_value(position.get("quantity")),
-            "purchase_price": parse_receipt_number(position.get("purchase_price")),
-            "line_total": parse_receipt_number(position.get("line_total")),
+            "purchase_price": optional_receipt_price(position.get("purchase_price")),
+            "line_total": (
+                optional_receipt_price(position.get("line_total"))
+                if position.get("line_total") not in (None, "")
+                else optional_line_total(
+                    receipt_quantity_value(position.get("quantity")),
+                    optional_receipt_price(position.get("purchase_price")),
+                )
+            ),
             "stock_before": parse_receipt_number(position.get("stock_before")),
             "stock_after": parse_receipt_number(position.get("stock_after")),
         })
@@ -13564,11 +13607,10 @@ def serialize_api_receipt(
             ),
             "cell": str(product.get("cell") if product else ""),
             "quantity": receipt_quantity_value(receipt.get("quantity")),
-            "purchase_price": parse_receipt_number(receipt.get("purchase_price")),
-            "line_total": round(
-                parse_receipt_number(receipt.get("quantity"))
-                * parse_receipt_number(receipt.get("purchase_price")),
-                2,
+            "purchase_price": optional_receipt_price(receipt.get("purchase_price")),
+            "line_total": optional_line_total(
+                parse_receipt_number(receipt.get("quantity")),
+                optional_receipt_price(receipt.get("purchase_price")),
             ),
             "stock_before": 0,
             "stock_after": parse_receipt_number(receipt.get("quantity")),
@@ -13626,9 +13668,14 @@ def serialize_api_receipt(
             receipt.get("total_quantity"),
             sum(item["quantity"] for item in positions),
         ),
-        "total_amount": parse_receipt_number(
-            receipt.get("total_amount"),
-            sum(item["line_total"] for item in positions),
+        "total_amount": (
+            optional_receipt_price(receipt.get("total_amount"))
+            if receipt.get("total_amount") not in (None, "")
+            else (
+                round(sum(item["line_total"] for item in positions), 2)
+                if all(item["line_total"] is not None for item in positions)
+                else None
+            )
         ),
         "moysklad_document_id": str(receipt.get("moysklad_document_id") or ""),
         "moysklad_document_name": str(receipt.get("moysklad_document_name") or ""),
@@ -13745,7 +13792,7 @@ def build_api_receipt_positions(
                 )
             )
         quantity = parse_receipt_number(raw_quantity, -1)
-        purchase_price = parse_receipt_number(requested.get("purchase_price"), 0)
+        purchase_price = optional_receipt_price(requested.get("purchase_price"))
         if quantity <= 0 or not float(quantity).is_integer():
             raise ValueError(
                 "Количество в позиции {} должно быть целым положительным числом.".format(
@@ -13753,10 +13800,6 @@ def build_api_receipt_positions(
                 )
             )
         quantity = int(quantity)
-        if purchase_price < 0:
-            raise ValueError(
-                "Цена закупки в позиции {} не может быть отрицательной.".format(index)
-            )
         requested_brand = normalize_catalog_label(requested.get("brand"))
         requested_category = normalize_catalog_label(requested.get("category"))
         requested_brand_id = requested.get("brand_id")
@@ -13818,7 +13861,7 @@ def build_api_receipt_positions(
             "cell": product.get("cell") or "",
             "quantity": quantity,
             "purchase_price": purchase_price,
-            "line_total": round(quantity * purchase_price, 2),
+            "line_total": optional_line_total(quantity, purchase_price),
             "stock_before": stock_before,
             "stock_after": stock_before + quantity,
         })
@@ -13947,7 +13990,7 @@ def api_receipt_request_payload():
                 "purchase_price": (
                     purchase_prices[index]
                     if index < len(purchase_prices)
-                    else 0
+                    else ""
                 ),
             })
     payload["positions"] = positions
@@ -14346,7 +14389,11 @@ def api_receipts_collection():
             "positions": positions,
             "positions_count": len(positions),
             "total_quantity": sum(item["quantity"] for item in positions),
-            "total_amount": round(sum(item["line_total"] for item in positions), 2),
+            "total_amount": (
+                round(sum(item["line_total"] for item in positions), 2)
+                if all(item["line_total"] is not None for item in positions)
+                else None
+            ),
             "moysklad_document_id": str(document.get("id") or ""),
             "moysklad_document_name": str(document.get("name") or ""),
             "moysklad_document_url": str(
@@ -14502,10 +14549,17 @@ def api_receipts_collection():
     }
     if sort_by not in allowed_sort:
         sort_by = "receipt_date"
+    numeric_receipt_sort = {"total_quantity", "total_amount"}
     receipts.sort(
-        key=lambda item: (item.get(sort_by), item["id"]),
+        key=lambda item: (
+            float(item.get(sort_by) or 0)
+            if sort_by in numeric_receipt_sort
+            else str(item.get(sort_by) or "").casefold(),
+            item["id"],
+        ),
         reverse=sort_dir != "asc",
     )
+    receipts.sort(key=lambda item: item.get(sort_by) is None)
     total = len(receipts)
     page = api_positive_int(request.args.get("page"), 1, 1000000)
     page_size = api_positive_int(request.args.get("page_size"), 50, 200)
@@ -14523,7 +14577,11 @@ def api_receipts_collection():
         total_pages=pages,
         totals={
             "quantity": sum(item["total_quantity"] for item in receipts),
-            "amount": round(sum(item["total_amount"] for item in receipts), 2),
+            "amount": (
+                round(sum(item["total_amount"] for item in receipts), 2)
+                if all(item["total_amount"] is not None for item in receipts)
+                else None
+            ),
         },
         facets={
             "brands": sorted({item["brand"] for item in receipts if item["brand"]}),
@@ -14648,7 +14706,11 @@ def api_receipt_resource(receipt_id):
                     if "quantity" in payload
                     else old.get("quantity")
                 ),
-                "purchase_price": old.get("purchase_price"),
+                "purchase_price": (
+                    payload.get("purchase_price")
+                    if "purchase_price" in payload
+                    else old.get("purchase_price")
+                ),
             }]
         positions = build_api_receipt_positions(
             requested_positions,
@@ -14828,8 +14890,16 @@ def serialize_api_sale(sale):
             if sale.get("total_amount") is not None
             else None
         ),
-        "gross_total_amount": float(sale.get("gross_total_amount") or 0),
-        "returned_amount": float(sale.get("returned_amount") or 0),
+        "gross_total_amount": (
+            float(sale["gross_total_amount"])
+            if sale.get("gross_total_amount") is not None
+            else None
+        ),
+        "returned_amount": (
+            float(sale["returned_amount"])
+            if sale.get("returned_amount") is not None
+            else None
+        ),
         "order_status": str(sale.get("order_status") or "completed"),
         "order_status_label": str(
             sale.get("order_status_label")
@@ -14966,13 +15036,11 @@ def normalize_api_sale_payload(payload, existing=None, require_catalog=False):
     )
     if quantity <= 0:
         raise ValueError("Выберите количество от 1 до 25.")
-    unit_price = parse_sale_price(
+    unit_price = validate_optional_sale_price(
         payload.get("unit_price")
         if "unit_price" in payload
         else existing.get("unit_price")
     )
-    if unit_price is None:
-        raise ValueError("Укажите цену продажи не меньше 1 ₽.")
     if product is not None and quantity > float(product["stock"]):
         if not existing.get("inventory_managed"):
             raise InsufficientStockError(product["stock"])
@@ -15224,7 +15292,6 @@ def api_sales_collection():
     numeric_sort_fields = {"quantity_value", "total_amount"}
     sales.sort(
         key=lambda item: (
-            item.get(sort_by) is not None,
             (
                 float(item.get(sort_by) or 0)
                 if sort_by in numeric_sort_fields
@@ -15234,6 +15301,7 @@ def api_sales_collection():
         ),
         reverse=sort_dir != "asc",
     )
+    sales.sort(key=lambda item: item.get(sort_by) is None)
     total = len(sales)
     active = [sale for sale in sales if not sale.get("is_cancelled")]
     page = api_positive_int(request.args.get("page"), 1, 1000000)
@@ -15254,8 +15322,16 @@ def api_sales_collection():
             "active": len(active),
             "cancelled": total - len(active),
             "quantity": sum(float(item.get("net_quantity_value") or 0) for item in active),
-            "revenue": round(sum(float(item.get("total_amount") or 0) for item in active), 2),
-            "returned": round(sum(float(item.get("returned_amount") or 0) for item in active), 2),
+            "revenue": (
+                round(sum(float(item["total_amount"]) for item in active), 2)
+                if all(item.get("total_amount") is not None for item in active)
+                else None
+            ),
+            "returned": (
+                round(sum(float(item["returned_amount"]) for item in active), 2)
+                if all(item.get("returned_amount") is not None for item in active)
+                else None
+            ),
         },
         facets={
             "sources": sorted({

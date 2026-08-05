@@ -383,7 +383,7 @@ class ReceiptRecovery:
             prepared.append({
                 "product_id": product_id,
                 "quantity": source.get("quantity"),
-                "purchase_price": source.get("purchase_price") or 0,
+                "purchase_price": source.get("purchase_price"),
             })
         receipt["id"] = plan["receipt_id"] or str(uuid.uuid4())
         receipt["number"] = plan["receipt_number"]

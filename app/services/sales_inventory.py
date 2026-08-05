@@ -45,6 +45,20 @@ def positive_number(value, label):
     return number
 
 
+def optional_nonnegative_number(value, label):
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        raise SalesInventoryError("{} должна быть числом.".format(label))
+    if not math.isfinite(number) or number < 0:
+        raise SalesInventoryError(
+            "{} должна быть неотрицательной.".format(label)
+        )
+    return number
+
+
 class SalesInventory:
     def __init__(self, database=None):
         self.database = database or CatalogDatabase(cache_initialization=True)
@@ -76,14 +90,7 @@ class SalesInventory:
         failure_hook=None,
     ):
         quantity = positive_number(quantity, "Количество")
-        try:
-            unit_price = float(unit_price)
-        except (TypeError, ValueError):
-            raise SalesInventoryError("Цена продажи должна быть числом.")
-        if not math.isfinite(unit_price) or unit_price < 0:
-            raise SalesInventoryError(
-                "Цена продажи должна быть неотрицательной."
-            )
+        unit_price = optional_nonnegative_number(unit_price, "Цена продажи")
 
         try:
             product_id = int(product_id)
@@ -382,14 +389,7 @@ class SalesInventory:
     ):
         sale_id = str(sale_id or "").strip()
         quantity = positive_number(quantity, "Количество")
-        try:
-            unit_price = float(unit_price)
-        except (TypeError, ValueError):
-            raise SalesInventoryError("Цена продажи должна быть числом.")
-        if not math.isfinite(unit_price) or unit_price < 0:
-            raise SalesInventoryError(
-                "Цена продажи должна быть неотрицательной."
-            )
+        unit_price = optional_nonnegative_number(unit_price, "Цена продажи")
         idempotency_key = str(idempotency_key or "").strip() or None
         updated_at = now_iso()
         self.initialize()
@@ -722,7 +722,7 @@ class SalesInventory:
             )
             connection.execute(
                 "UPDATE erp_sale_items SET unit_price = ? WHERE sale_id = ?",
-                (float(unit_price), sale_id),
+                (optional_nonnegative_number(unit_price, "Цена продажи"), sale_id),
             )
         return self.get_sale(sale_id)
 
@@ -847,7 +847,11 @@ class SalesInventory:
             "created_at": row["created_at"],
             "product_id": str(row["product_id"]),
             "quantity": quantity,
-            "unit_price": float(row["unit_price"]),
+            "unit_price": (
+                float(row["unit_price"])
+                if row["unit_price"] is not None
+                else None
+            ),
             "status": inventory_status,
             "order_status": (
                 inventory_status

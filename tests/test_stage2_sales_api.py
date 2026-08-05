@@ -1,6 +1,8 @@
 import json
+import re
 import tempfile
 import unittest
+from io import BytesIO
 from pathlib import Path
 from unittest import mock
 
@@ -151,6 +153,71 @@ class Stage2SalesApiTest(unittest.TestCase):
         self.assertEqual(blocked.status_code, 409)
         self.assertEqual(blocked.get_json()["code"], "SALE_NOT_EDITABLE")
 
+    def test_optional_price_supports_all_channels_and_distinguishes_zero(self):
+        page = (Path(web.app.root_path) / "templates" / "sales.html").read_text(
+            encoding="utf-8"
+        )
+        price_input = re.search(
+            r'<input[^>]+id="unit_price"[^>]*>', page
+        ).group(0)
+        self.assertNotIn("required", price_input)
+        created_ids = []
+        for index, source in enumerate(("Tictactoy", "WB", "Amazon"), start=1):
+            response = self.client.post(
+                "/api/sales",
+                json={
+                    "created_at": "2026-07-30",
+                    "source": source,
+                    "product_id": str(self.product["id"]),
+                    "quantity": 1,
+                    "order_number": "NO-PRICE-{}".format(index),
+                },
+            )
+            self.assertEqual(response.status_code, 201)
+            sale = response.get_json()["data"]
+            self.assertIsNone(sale["unit_price"])
+            self.assertIsNone(sale["total_amount"])
+            created_ids.append(sale["id"])
+
+        listing = self.client.get("/api/sales?sort_by=total_amount").get_json()
+        self.assertIsNone(listing["meta"]["totals"]["revenue"])
+        reopened = self.client.get(
+            "/api/sales/{}".format(created_ids[0])
+        ).get_json()["data"]
+        self.assertIsNone(reopened["unit_price"])
+
+        cleared = self.client.patch(
+            "/api/sales/{}".format(created_ids[0]),
+            json={"unit_price": ""},
+        )
+        self.assertEqual(cleared.status_code, 200)
+        self.assertIsNone(cleared.get_json()["data"]["unit_price"])
+        zero = self.client.patch(
+            "/api/sales/{}".format(created_ids[0]),
+            json={"unit_price": 0},
+        )
+        self.assertEqual(zero.get_json()["data"]["unit_price"], 0)
+        self.assertEqual(zero.get_json()["data"]["total_amount"], 0)
+        from openpyxl import load_workbook
+        projected_product = web.build_excel_warehouse_items([
+            ExcelProductCatalog(CatalogDatabase(self.database_path)).get_product(
+                self.product["id"]
+            )
+        ])
+        with mock.patch.object(
+            web, "get_warehouse_items", return_value=projected_product
+        ):
+            workbook = load_workbook(
+                BytesIO(self.client.get("/sales/report.xlsx").data),
+                data_only=True,
+            )
+            pdf_status = self.client.get("/sales/report.pdf").status_code
+        rows = list(workbook.active.iter_rows(values_only=True))
+        header = rows[3]
+        price_index = header.index("Цена")
+        unknown_row = next(row for row in rows[4:] if row[1] == "NO-PRICE-2")
+        self.assertIsNone(unknown_row[price_index])
+        self.assertEqual(pdf_status, 200)
     def test_insufficient_stock_and_invalid_payload_are_structured(self):
         insufficient = self.create_sale(quantity=6)
         self.assertEqual(insufficient.status_code, 409)
