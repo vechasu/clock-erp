@@ -25,6 +25,20 @@
     border-radius: 14px;
     background: #ffffff;
     box-shadow: 0 16px 40px rgba(15, 23, 42, 0.14);
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+}
+
+.brand-combobox-dropdown.is-viewport-positioned {
+    position: fixed;
+    margin: 0;
+    max-width: none;
+}
+
+.modal-dialog.catalog-combobox-open,
+.erp-modal-dialog.catalog-combobox-open {
+    overflow: hidden;
 }
 
 .brand-combobox.open .brand-combobox-dropdown {
@@ -152,7 +166,8 @@
 
 .filter-combobox .brand-combobox-options {
     display: block;
-    max-height: 270px;
+    width: 100%;
+    max-height: 340px;
     overflow-x: hidden;
     overflow-y: auto;
 }
@@ -162,8 +177,8 @@
     width: 100%;
     min-height: 40px;
     align-items: center;
-    justify-content: space-between;
-    gap: 18px;
+    justify-content: flex-start;
+    gap: 10px;
     margin: 0;
     padding: 9px 11px;
     border: 0;
@@ -174,17 +189,17 @@
     font-weight: 650;
     line-height: 1.35;
     text-align: left;
-    white-space: nowrap;
+    white-space: normal;
     box-shadow: none;
 }
 
-.filter-combobox .brand-combobox-option span:first-child {
+.filter-combobox .brand-combobox-option > .brand-combobox-option-label {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
-.filter-combobox .brand-combobox-option span:last-child {
+.filter-combobox .brand-combobox-option > .catalog-combobox-option-count {
     flex: 0 0 auto;
     margin-left: auto;
     color: inherit;
@@ -197,6 +212,8 @@
     flex-direction: column;
     align-items: flex-start;
     gap: 3px;
+    margin: 0;
+    overflow: hidden;
 }
 
 .filter-combobox
@@ -213,7 +230,7 @@
     width: 100%;
     min-width: 0;
     align-items: baseline;
-    justify-content: space-between;
+    justify-content: flex-start;
     gap: 12px;
     color: #64748b;
     font-size: 11px;
@@ -227,6 +244,7 @@
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .filter-combobox
@@ -240,8 +258,26 @@
 .catalog-combobox-option-details
 .catalog-combobox-option-count {
     flex: 0 0 auto;
-    margin-left: auto;
+    margin-left: 0;
     white-space: nowrap;
+}
+
+.filter-combobox .catalog-combobox-option-image {
+    width: 44px;
+    height: 44px;
+    flex: 0 0 44px;
+    object-fit: cover;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background: #f8fafc;
+}
+
+.filter-combobox .catalog-combobox-option-copy
+.brand-combobox-option-label {
+    width: 100%;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    text-overflow: ellipsis;
 }
 
 .filter-combobox .brand-combobox-option:hover,
@@ -412,7 +448,7 @@
 
 @media (max-width: 560px) {
     .brand-combobox-dropdown {
-        max-width: calc(100vw - 42px);
+        max-width: 100%;
     }
 
     .catalog-create-modal {

@@ -36,6 +36,17 @@ class CatalogComboboxStructureTest(unittest.TestCase):
             script,
         )
         self.assertIn("catalog-combobox-option-details", script)
+        self.assertIn("catalog-combobox-option-image", script)
+        self.assertIn("positionComboboxDropdown", script)
+        stylesheet = (
+            PROJECT_ROOT / "app/static/css/catalog-combobox.css"
+        ).read_text(encoding="utf-8")
+        self.assertIn("max-height: 340px", stylesheet)
+        self.assertIn("width: 44px", stylesheet)
+        self.assertNotIn(
+            ".brand-combobox-option span:last-child",
+            stylesheet,
+        )
 
     def test_all_active_sections_use_the_same_product_renderer(self):
         for template in ("warehouse.html", "sales.html", "receipts.html"):
