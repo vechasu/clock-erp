@@ -5544,6 +5544,12 @@ def build_sale_optional_fields(form, existing=None):
     from datetime import datetime
 
     existing = existing if isinstance(existing, dict) else {}
+
+    def value_or_existing(field, default=""):
+        if field in form:
+            return form.get(field)
+        return existing.get(field, default)
+
     source_key = normalize_sales_source_key(
         form.get("source") or existing.get("source")
     )
@@ -5564,7 +5570,7 @@ def build_sale_optional_fields(form, existing=None):
         ) or 0
 
     delivery_cost = parse_sale_commission(
-        form.get("delivery_cost")
+        value_or_existing("delivery_cost", 0)
     )
 
     if delivery_cost is None:
@@ -5607,9 +5613,11 @@ def build_sale_optional_fields(form, existing=None):
         cancelled_at = ""
 
     return {
-        "recipient": str(form.get("recipient") or "").strip(),
+        "recipient": str(
+            value_or_existing("recipient") or ""
+        ).strip(),
         "recipient_name": str(
-            form.get("recipient_name") or ""
+            value_or_existing("recipient_name") or ""
         ).strip(),
         "payment_method": str(
             (
@@ -5627,7 +5635,7 @@ def build_sale_optional_fields(form, existing=None):
         "order_status": order_status,
         "cancelled_at": cancelled_at,
         "sticker_number": str(
-            form.get("sticker_number") or ""
+            value_or_existing("sticker_number") or ""
         ).strip(),
         "delivery_cost": delivery_cost,
         "country": (
@@ -5663,7 +5671,7 @@ def build_sale_optional_fields(form, existing=None):
             or ""
         ).strip(),
         "invoice_number": str(
-            form.get("invoice_number") or ""
+            value_or_existing("invoice_number") or ""
         ).strip(),
     }
 
@@ -6207,16 +6215,25 @@ def manual_sale_update():
         sale["quantity"] = quantity
         sale["unit_price"] = unit_price
         sale["total_amount"] = total_amount
-        sale["order_number"] = (
-            request.form.get("order_number") or ""
+        sale["order_number"] = str(
+            request.form.get("order_number")
+            if "order_number" in request.form
+            else sale.get("order_number")
+            or ""
         ).strip()
-        sale["track_number"] = (
-            request.form.get("track_number") or ""
+        sale["track_number"] = str(
+            request.form.get("track_number")
+            if "track_number" in request.form
+            else sale.get("track_number")
+            or ""
         ).strip()
         sale["region"] = location_fields["region"]
         sale["city"] = location_fields["city"]
-        sale["note"] = (
-            request.form.get("note") or ""
+        sale["note"] = str(
+            request.form.get("note")
+            if "note" in request.form
+            else sale.get("note")
+            or ""
         ).strip()
         sale.update(optional_fields)
 
@@ -6567,6 +6584,7 @@ def automatic_sale_update():
         )
 
     overrides[operation_id] = {
+        **existing_override,
         "created_at": created_at,
         "source": updated_source,
         "product_name": product_name,
@@ -6576,16 +6594,25 @@ def automatic_sale_update():
         "quantity": quantity,
         "unit_price": unit_price,
         "total_amount": total_amount,
-        "order_number": (
-            request.form.get("order_number") or ""
+        "order_number": str(
+            request.form.get("order_number")
+            if "order_number" in request.form
+            else existing_record.get("order_number")
+            or ""
         ).strip(),
-        "track_number": (
-            request.form.get("track_number") or ""
+        "track_number": str(
+            request.form.get("track_number")
+            if "track_number" in request.form
+            else existing_record.get("track_number")
+            or ""
         ).strip(),
         "region": location_fields["region"],
         "city": location_fields["city"],
-        "note": (
-            request.form.get("note") or ""
+        "note": str(
+            request.form.get("note")
+            if "note" in request.form
+            else existing_record.get("note")
+            or ""
         ).strip(),
         **optional_fields,
     }
