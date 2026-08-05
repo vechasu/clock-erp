@@ -1366,14 +1366,6 @@
                         </div>
                     </div>
 
-                    <button
-                        id="clearSalesDateFilter"
-                        class="sales-date-clear erp-reset-action"
-                        type="button"
-                        hidden
-                    >
-                        Сбросить
-                    </button>
                 </div>
 
                 <div class="sales-filter-settings">
@@ -1575,6 +1567,13 @@
                     </select>
                 </label>
             </div>
+
+            <div
+                id="salesActiveFilters"
+                class="erp-active-filters"
+                aria-label="Активные фильтры продаж"
+                hidden
+            ></div>
 
             <section class="table-card erp-table-card">
                 <div
@@ -2648,9 +2647,6 @@
     );
     const salesDateFrom = document.getElementById("salesDateFrom");
     const salesDateTo = document.getElementById("salesDateTo");
-    const clearSalesDateFilter = document.getElementById(
-        "clearSalesDateFilter"
-    );
     const clearSalesPeriod = document.getElementById(
         "clearSalesPeriod"
     );
@@ -3177,6 +3173,76 @@
                 ? "Фильтры. " + activeFilterLabel(activeCount)
                 : "Фильтры",
         );
+        renderSalesActiveFilters();
+    }
+
+    function renderSalesActiveFilters() {
+        const container = document.getElementById(
+            "salesActiveFilters"
+        );
+        const labels = {
+            sale_state: {
+                active: "Состояние: Не отменено",
+                cancelled: "Состояние: Отменено",
+            }[appliedSaleState],
+            sale_type: {
+                manual: "Тип: Ручная",
+                automatic: "Тип: Автоматическая",
+            }[appliedSaleType],
+        };
+        const filters = Object.entries(labels).filter(
+            ([, label]) => Boolean(label)
+        );
+
+        container.replaceChildren();
+        filters.forEach(([name, label]) => {
+            const button = document.createElement("button");
+            const text = document.createElement("span");
+            const remove = document.createElement("span");
+
+            button.className = "erp-filter-chip";
+            button.type = "button";
+            button.dataset.salesFilter = name;
+            button.setAttribute("aria-label", "Снять фильтр " + label);
+            text.className = "erp-filter-chip-label";
+            text.textContent = label;
+            remove.className = "erp-filter-chip-remove";
+            remove.setAttribute("aria-hidden", "true");
+            remove.textContent = "×";
+            button.append(text, remove);
+            button.addEventListener("click", () => {
+                if (name === "sale_state") {
+                    appliedSaleState = "";
+                    salesStateFilter.value = "";
+                } else {
+                    appliedSaleType = "";
+                    salesTypeFilter.value = "";
+                }
+                updateSalesFilterSummary();
+                applySalesFilters();
+            });
+            container.appendChild(button);
+        });
+
+        if (filters.length >= 2) {
+            const reset = document.createElement("button");
+            reset.className = "erp-active-filters-reset";
+            reset.type = "button";
+            reset.textContent = "Сбросить всё";
+            reset.addEventListener("click", resetSalesAdvancedFilters);
+            container.appendChild(reset);
+        }
+
+        container.hidden = filters.length === 0;
+    }
+
+    function resetSalesAdvancedFilters() {
+        appliedSaleState = "";
+        appliedSaleType = "";
+        salesStateFilter.value = "";
+        salesTypeFilter.value = "";
+        updateSalesFilterSummary();
+        applySalesFilters();
     }
 
     function applySalesFilters() {
@@ -3245,12 +3311,6 @@
         });
 
         updateVisibleStats(visibleRows);
-        clearSalesDateFilter.hidden =
-            !query
-            && !selectedFrom
-            && !selectedTo
-            && !appliedSaleState
-            && !appliedSaleType;
         clearSalesPeriod.hidden =
             !selectedFrom && !selectedTo;
         clearSalesSearch?.classList.toggle(
@@ -3353,11 +3413,6 @@
         updateSalesFilterSummary();
         applySalesFilters();
     }
-
-    clearSalesDateFilter?.addEventListener(
-        "click",
-        resetAllSalesFilters,
-    );
 
     clearSalesPeriod?.addEventListener("click", () => {
         salesDateFrom.value = "";

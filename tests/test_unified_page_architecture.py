@@ -82,7 +82,7 @@ class UnifiedPageArchitectureTest(unittest.TestCase):
             "receiptStatusFilter",
         ):
             self.assertIn('id="{}"'.format(control_id), panel)
-        self.assertIn("resetReceiptFilters()", panel)
+        self.assertIn("resetReceiptAdvancedFilters()", panel)
         self.assertIn('id="receiptAdvancedFilterCount"', panel)
         self.assertIn("updateReceiptAdvancedFilterCount", receipts)
         self.assertIn('placeholder="Поиск"', receipts)

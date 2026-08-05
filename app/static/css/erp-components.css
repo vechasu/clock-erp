@@ -111,6 +111,75 @@
     font-size: 13px;
 }
 
+.erp-active-filters {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin: 0 0 8px;
+}
+
+.erp-active-filters[hidden] {
+    display: none;
+}
+
+.erp-filter-chip {
+    display: inline-flex;
+    min-width: 0;
+    max-width: 100%;
+    min-height: 30px;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 9px 5px 10px;
+    border: 0;
+    border-radius: 999px;
+    background: #dbeafe;
+    color: var(--erp-primary-hover);
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.25;
+    text-align: left;
+}
+
+.erp-filter-chip:hover {
+    background: #bfdbfe;
+}
+
+.erp-filter-chip:focus-visible,
+.erp-active-filters-reset:focus-visible {
+    outline: 0;
+    box-shadow: var(--erp-focus-ring);
+}
+
+.erp-filter-chip-label {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.erp-filter-chip-remove {
+    flex: 0 0 auto;
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.erp-active-filters-reset {
+    min-height: 30px;
+    padding: 4px 5px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--erp-primary);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.erp-active-filters-reset:hover {
+    background: #eff6ff;
+    color: var(--erp-primary-hover);
+}
+
 .erp-workspace-metrics,
 .warehouse-page .erp-workspace-metrics,
 .sales-page .erp-workspace-metrics,
