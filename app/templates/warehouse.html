@@ -4251,7 +4251,13 @@
                         aria-label="Снять фильтр Период"
                     >
                         <span class="erp-filter-chip-label">
-                            Период: {{ created_date_from.split("-")|reverse|join(".") if created_date_from else "…" }} — {{ created_date_to.split("-")|reverse|join(".") if created_date_to else "…" }}
+                            {% if created_date_from and created_date_to %}
+                                Период: {{ created_date_from.split("-")|reverse|join(".") }}–{{ created_date_to.split("-")|reverse|join(".") }}
+                            {% elif created_date_from %}
+                                Период: с {{ created_date_from.split("-")|reverse|join(".") }}
+                            {% else %}
+                                Период: до {{ created_date_to.split("-")|reverse|join(".") }}
+                            {% endif %}
                         </span>
                         <span class="erp-filter-chip-remove" aria-hidden="true">×</span>
                     </button>
@@ -4262,9 +4268,9 @@
                         type="button"
                         data-warehouse-filter="in_stock"
                         onclick="clearWarehouseFilter('in_stock')"
-                        aria-label="Снять фильтр Наличие: Только в наличии"
+                        aria-label="Снять фильтр Только в наличии"
                     >
-                        <span class="erp-filter-chip-label">Наличие: Только в наличии</span>
+                        <span class="erp-filter-chip-label">Только в наличии</span>
                         <span class="erp-filter-chip-remove" aria-hidden="true">×</span>
                     </button>
                 {% endif %}

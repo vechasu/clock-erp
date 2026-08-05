@@ -216,6 +216,40 @@ class CatalogFilteringTest(unittest.TestCase):
         self.assertIn("Сбросить всё", html)
         self.assertEqual(html.count('data-product-id="'), 120)
 
+    def test_warehouse_period_chip_variants_and_stock_chip(self):
+        variants = (
+            (
+                "date_from=2026-08-01&date_to=2026-08-05",
+                "Период: 01.08.2026–05.08.2026",
+            ),
+            ("date_from=2026-08-01", "Период: с 01.08.2026"),
+            ("date_to=2026-08-05", "Период: до 05.08.2026"),
+        )
+
+        for query, label in variants:
+            with self.subTest(label=label):
+                response = self.client.get("/warehouse?" + query)
+                html = " ".join(response.get_data(as_text=True).split())
+
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(html.count('class="erp-filter-chip"'), 1)
+                self.assertIn(label, html)
+
+        response = self.client.get(
+            "/warehouse?brand_id={}&category_id={}&in_stock=1&per_page=200".format(
+                self.brand["id"],
+                self.category_id,
+            )
+        )
+        html = response.get_data(as_text=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(html.count('class="erp-filter-chip"'), 3)
+        self.assertIn("Только в наличии", html)
+        self.assertIn('id="warehouseInStockToggle"', html)
+        self.assertIn("checked", html)
+        self.assertEqual(html.count('data-product-id="'), 4)
+
     def test_sales_and_receipts_return_complete_zero_stock_catalog(self):
         query = "brand_id={}&category_id={}&limit=200".format(
             self.brand["id"],
