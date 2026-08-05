@@ -114,6 +114,13 @@ class CatalogComboboxBrowserTest(unittest.TestCase):
                 PROJECT_ROOT / "tests/fixtures/catalog_combobox_e2e.html"
             )
 
+        @app.route("/cascade")
+        def cascade_fixture():
+            return send_file(
+                PROJECT_ROOT
+                / "tests/fixtures/catalog_cascade_uncategorized_e2e.html"
+            )
+
         server = make_server("127.0.0.1", 0, app)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         try:
@@ -149,6 +156,34 @@ class CatalogComboboxBrowserTest(unittest.TestCase):
                     self.assertIn(
                         'data-catalog-combobox-e2e="pass"',
                         result.stdout,
+                    )
+
+                    cascade = subprocess.run(
+                        [
+                            chrome,
+                            "--headless=new",
+                            "--no-sandbox",
+                            "--disable-gpu",
+                            "--disable-dev-shm-usage",
+                            f"--user-data-dir={profile}",
+                            f"--window-size={width},{height}",
+                            "--virtual-time-budget=3500",
+                            "--dump-dom",
+                            f"http://127.0.0.1:{server.server_port}/cascade",
+                        ],
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                        timeout=30,
+                    )
+                    self.assertEqual(
+                        cascade.returncode,
+                        0,
+                        cascade.stderr[-2000:],
+                    )
+                    self.assertIn(
+                        'data-catalog-cascade-e2e="pass"',
+                        cascade.stdout,
                     )
         finally:
             server.shutdown()

@@ -743,9 +743,15 @@
         );
     }
 
+    function sharedCatalogIdValue(value) {
+        return value === null || value === undefined
+            ? ""
+            : String(value);
+    }
+
     function selectedSharedCatalogId(combobox) {
-        return String(
-            sharedCatalogIdInput(combobox)?.value || ""
+        return sharedCatalogIdValue(
+            sharedCatalogIdInput(combobox)?.value
         );
     }
 
@@ -811,7 +817,7 @@
         const product = kind === "product";
         return {
             value: product
-                ? String(item.id || "")
+                ? sharedCatalogIdValue(item.id)
                 : String(item.name || ""),
             label: product
                 ? sharedCatalogProductLabel(item)
@@ -866,7 +872,7 @@
         }
 
         const kind = combobox.dataset.sharedCatalogKind;
-        const itemId = String(item.id || "");
+        const itemId = sharedCatalogIdValue(item.id);
         const primaryValue = kind === "product"
             ? itemId
             : String(item.name || "");
@@ -969,8 +975,11 @@
         );
 
         if (
-            (kind === "category" && !brandId && !categoryWithoutBrand)
-            || (kind === "product" && (!brandId || !categoryId))
+            (kind === "category" && brandId === "" && !categoryWithoutBrand)
+            || (
+                kind === "product"
+                && (brandId === "" || categoryId === "")
+            )
         ) {
             clearSharedCatalogOptions(
                 combobox,
@@ -991,13 +1000,15 @@
         if (query) {
             parameters.set("q", query);
         }
-        if (kind !== "brand" && brandId) {
+        if (kind !== "brand" && brandId !== "") {
             parameters.set("brand_id", brandId);
         }
         if (kind === "category") {
             parameters.set(
                 "category_scope",
-                !brandId || newBrandUsesGlobalCategories ? "all" : "brand"
+                brandId === "" || newBrandUsesGlobalCategories
+                    ? "all"
+                    : "brand"
             );
         }
         if (kind === "product") {
@@ -1050,7 +1061,7 @@
                 selectedId
                 && selectedItem
                 && !items.some(
-                    (item) => String(item.id || "") === selectedId
+                    (item) => sharedCatalogIdValue(item.id) === selectedId
                 )
             ) {
                 availableItems = [selectedItem, ...items];
@@ -1205,12 +1216,19 @@
                     return;
                 }
 
-                const id = String(
-                    values?.[kind + "Id"] || ""
+                let id = sharedCatalogIdValue(
+                    values?.[kind + "Id"]
                 );
                 const label = String(
                     values?.[kind + "Label"] || ""
                 );
+                if (
+                    kind === "category"
+                    && id === ""
+                    && label.trim() === "Без категории"
+                ) {
+                    id = "0";
+                }
                 const primary = kind === "product" ? id : label;
                 const idInput = sharedCatalogIdInput(combobox);
 
@@ -1235,12 +1253,20 @@
         setCascadeFieldDisabled(
             scope,
             "category",
-            categoryNeedsBrand(scope) && !values?.brandId
+            categoryNeedsBrand(scope)
+            && selectedSharedCatalogId(
+                sharedCatalogCombobox(scope, "brand")
+            ) === ""
         );
         setCascadeFieldDisabled(
             scope,
             "product",
-            !values?.brandId || !values?.categoryId
+            selectedSharedCatalogId(
+                sharedCatalogCombobox(scope, "brand")
+            ) === ""
+            || selectedSharedCatalogId(
+                sharedCatalogCombobox(scope, "category")
+            ) === ""
         );
     };
 
