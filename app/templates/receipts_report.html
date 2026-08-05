@@ -175,6 +175,11 @@
             width: 12%;
         }
 
+        .col-price,
+        .col-total {
+            width: 10%;
+        }
+
         .document-number,
         .product-name {
             font-weight: 800;
@@ -312,6 +317,9 @@
                                     &#1050;-&#1074;&#1086;
                                 </th>
 
+                                <th class="col-price">Цена закупки</th>
+                                <th class="col-total">Сумма</th>
+
                                 <th class="col-status">
                                     &#1057;&#1090;&#1072;&#1090;&#1091;&#1089;
                                 </th>
@@ -355,6 +363,14 @@
 
                                     <td class="col-quantity">
                                         {{ receipt.total_quantity or 0 }}
+                                    </td>
+
+                                    <td class="col-price">
+                                        {% if position and position.purchase_price is not none %}{{ position.purchase_price }} ₽{% else %}—{% endif %}
+                                    </td>
+
+                                    <td class="col-total">
+                                        {% if receipt.total_amount is not none %}{{ receipt.total_amount }} ₽{% else %}—{% endif %}
                                     </td>
 
                                     <td class="col-status">

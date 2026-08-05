@@ -380,9 +380,9 @@ class SalesReceiptsEnhancementsTest(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(
             saved_receipts[0]["positions"][0]["purchase_price"],
-            0,
+            None,
         )
-        self.assertEqual(saved_receipts[0]["total_amount"], 0)
+        self.assertIsNone(saved_receipts[0]["total_amount"])
 
     def test_receipt_update_without_purchase_price_preserves_history(self):
         fake_client = FakeMoySkladClient()
@@ -457,7 +457,7 @@ class SalesReceiptsEnhancementsTest(unittest.TestCase):
         )
         self.assertEqual(saved_receipts[0]["total_amount"], 1000)
 
-    def test_receipt_ui_and_report_do_not_expose_purchase_price(self):
+    def test_receipt_ui_exposes_optional_purchase_price(self):
         old_receipt = {
             "id": "receipt-1",
             "number": "ПР-0001",
@@ -490,15 +490,12 @@ class SalesReceiptsEnhancementsTest(unittest.TestCase):
             page = self.client.get("/receipts").get_data(
                 as_text=True
             )
-            report = self.client.get(
-                "/receipts/report"
-            ).get_data(as_text=True)
-
-        for rendered in (page, report):
-            self.assertNotIn("Закупочная цена", rendered)
-            self.assertNotIn("Закупочная стоимость", rendered)
-            self.assertNotIn("purchase_price", rendered)
-            self.assertNotIn(">Сумма<", rendered)
+            report = self.client.get("/receipts/report").get_data(as_text=True)
+        self.assertIn("Цена закупки", page)
+        self.assertIn('name="purchase_price"', page)
+        self.assertNotIn('name="purchase_price" required', page)
+        self.assertIn("Цена закупки", report)
+        self.assertIn("500.0 ₽", report)
 
 
 if __name__ == "__main__":

@@ -461,8 +461,15 @@ class MoySkladClient:
                 quantity = float(
                     position.get("quantity") or 0
                 )
-                purchase_price = float(
-                    position.get("purchase_price") or 0
+                raw_purchase_price = position.get("purchase_price")
+                purchase_price = (
+                    None
+                    if raw_purchase_price is None
+                    or (
+                        isinstance(raw_purchase_price, str)
+                        and not raw_purchase_price.strip()
+                    )
+                    else float(raw_purchase_price)
                 )
             except (TypeError, ValueError):
                 raise ValueError(
@@ -481,17 +488,14 @@ class MoySkladClient:
                     "больше нуля"
                 )
 
-            if purchase_price < 0:
+            if purchase_price is not None and purchase_price < 0:
                 raise ValueError(
                     "Закупочная цена не может быть "
                     "отрицательной"
                 )
 
-            prepared_positions.append({
+            prepared_position = {
                 "quantity": quantity,
-                "price": int(
-                    round(purchase_price * 100)
-                ),
                 "overhead": 0,
                 "reason": (
                     position.get("reason")
@@ -503,7 +507,10 @@ class MoySkladClient:
                         product_id
                     )
                 },
-            })
+            }
+            if purchase_price is not None:
+                prepared_position["price"] = int(round(purchase_price * 100))
+            prepared_positions.append(prepared_position)
 
         if not prepared_positions:
             raise ValueError(

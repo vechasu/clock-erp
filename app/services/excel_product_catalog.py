@@ -58,6 +58,20 @@ PRODUCT_MUTABLE_COLUMNS = (
     "updated_at",
 )
 
+UNSET = object()
+
+
+def optional_price_text(value):
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None
+    try:
+        price = float(str(value).replace(",", "."))
+    except (TypeError, ValueError):
+        raise ValueError("Цена должна быть числом.")
+    if not math.isfinite(price) or price < 0:
+        raise ValueError("Цена должна быть неотрицательным числом.")
+    return "{:g}".format(price)
+
 
 class BatchBlockedError(ValueError):
     def __init__(self, message, blocked_rows=None):
@@ -703,7 +717,7 @@ class ExcelProductCatalog:
             "stock": "p.stock",
             "cell": "COALESCE(p.cell, '')",
             "created_at": "p.created_at",
-            "price": "CAST(COALESCE(NULLIF(p.bitrix_price_amount, ''), '0') AS REAL)",
+            "price": "CAST(NULLIF(p.bitrix_price_amount, '') AS REAL)",
             "match_status": "p.match_status",
         }
         sort_by = sort_by if sort_by in allowed_sort_fields else "name"
@@ -838,8 +852,14 @@ class ExcelProductCatalog:
                 "ON cp.id = p.bitrix_catalog_product_id" + where_sql,
                 parameters,
             ).fetchone())
-            order_sql = " ORDER BY {} {}".format(
-                allowed_sort_fields[sort_by], sort_dir.upper()
+            missing_price_sql = (
+                "CASE WHEN NULLIF(p.bitrix_price_amount, '') IS NULL THEN 1 ELSE 0 END, "
+                if sort_by == "price" else ""
+            )
+            order_sql = " ORDER BY {}{} {}".format(
+                missing_price_sql,
+                allowed_sort_fields[sort_by],
+                sort_dir.upper(),
             )
             rows = connection.execute(
                 select_sql + where_sql + order_sql + ", p.excel_row ASC, p.id ASC LIMIT ? OFFSET ?",
@@ -969,7 +989,7 @@ class ExcelProductCatalog:
 
     def create_product(
             self, name, article="", brand="", category="", cell="", stock=0,
-            brand_id=None, category_id=None, enforce_unique=False,
+            brand_id=None, category_id=None, price=None, enforce_unique=False,
             moysklad_product_id=None):
         name = text(name)
         if not name:
@@ -1040,6 +1060,10 @@ class ExcelProductCatalog:
             ).fetchone()[0]
             source_key = "manual:{}".format(uuid.uuid4())
             enrichment = _empty_enrichment()
+            enrichment["bitrix_price_amount"] = optional_price_text(price)
+            enrichment["bitrix_price_currency"] = (
+                "RUB" if enrichment["bitrix_price_amount"] is not None else None
+            )
             columns = (
                 "source_key", "created_batch_id", "current_batch_id", "active",
                 "raw_excel_json", "excel_row", "excel_name_raw", "normalized_name",
@@ -1056,7 +1080,7 @@ class ExcelProductCatalog:
                 source_key, batch["id"], batch["id"], 1,
                 _json({"source": "manual", "name": name, "article": article,
                        "brand": brand, "category": category, "cell": cell,
-                       "stock": stock}),
+                       "stock": stock, "price": enrichment["bitrix_price_amount"]}),
                 excel_row, name, normalize_text(name), article or None,
                 article_quality(article), brand, category or None,
                 brand_row["id"] if brand_row else None,
@@ -1088,7 +1112,7 @@ class ExcelProductCatalog:
 
     def update_product(self, product_id, name=None, article=None, brand=None,
                        category=None, cell=None, stock=None, stock_reason="",
-                       brand_id=None, category_id=None):
+                       brand_id=None, category_id=None, price=UNSET):
         self.database.initialize()
         with self.database.transaction() as connection:
             product = connection.execute(
@@ -1175,6 +1199,12 @@ class ExcelProductCatalog:
                 )
             if cell is not None:
                 values["cell"] = text(cell) or None
+            if price is not UNSET:
+                values["bitrix_price_amount"] = optional_price_text(price)
+                if values["bitrix_price_amount"] is not None:
+                    values["bitrix_price_currency"] = (
+                        values.get("bitrix_price_currency") or "RUB"
+                    )
             stock_before = float(values["stock"] or 0)
             if stock is not None:
                 try:
@@ -1192,6 +1222,7 @@ class ExcelProductCatalog:
                 "excel_brand": values["excel_brand"],
                 "category": values["excel_category"],
                 "cell": values["cell"],
+                "price": values.get("bitrix_price_amount"),
             })
             values["raw_excel_json"] = _json(raw_excel)
             values["updated_at"] = utc_now()

@@ -126,6 +126,31 @@ class Stage2ReceiptsApiTest(unittest.TestCase):
         self.assertEqual(catalog["meta"]["total"], 1)
         self.assertEqual(catalog["data"][0]["id"], "ms-2")
 
+    def test_missing_price_is_null_and_mixed_total_is_unknown(self):
+        response = self.create_receipt([{
+            "product_id": "ms-1",
+            "brand": "Casio",
+            "category": "Часы",
+            "quantity": 1,
+            "purchase_price": "",
+        }, {
+            "product_id": "ms-2",
+            "brand": "Vechasu",
+            "category": "Ремешки",
+            "quantity": 2,
+            "purchase_price": 0,
+        }])
+        self.assertEqual(response.status_code, 201)
+        receipt = response.get_json()["data"]
+        self.assertIsNone(receipt["positions"][0]["purchase_price"])
+        self.assertIsNone(receipt["positions"][0]["line_total"])
+        self.assertEqual(receipt["positions"][1]["purchase_price"], 0)
+        self.assertEqual(receipt["positions"][1]["line_total"], 0)
+        self.assertIsNone(receipt["total_amount"])
+        listing = self.client.get(
+            "/api/receipts?sort_by=total_amount"
+        ).get_json()
+        self.assertIsNone(listing["meta"]["totals"]["amount"])
     def test_patch_keeps_product_identity_and_delete_preserves_history(self):
         receipt_id = self.create_receipt().get_json()["data"]["id"]
         rejected = self.client.patch(

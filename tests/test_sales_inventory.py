@@ -90,6 +90,18 @@ class SalesInventoryTest(unittest.TestCase):
         self.assertEqual(movement["stock_after"], 2)
         self.assertEqual(movement["sale_id"], "sale-1")
 
+    def test_unknown_and_zero_prices_remain_distinct(self):
+        product = self.create_product(stock=3)
+        unknown = self.inventory.create_sale(
+            self.payload(product, "sale-null"), product["id"], 1, None
+        )
+        zero = self.inventory.create_sale(
+            self.payload(product, "sale-zero"), product["id"], 1, 0
+        )
+        self.assertIsNone(unknown["unit_price"])
+        self.assertEqual(zero["unit_price"], 0)
+        self.assertEqual(self.stock(product["id"]), 1)
+
     def test_multi_quantity_and_insufficient_stock(self):
         product = self.create_product(stock=3)
         self.inventory.create_sale(

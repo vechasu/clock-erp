@@ -51,9 +51,11 @@ def positive_integer(value, label):
     return int(number)
 
 
-def nonnegative_number(value, label):
+def optional_nonnegative_number(value, label):
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None
     try:
-        number = float(value or 0)
+        number = float(value)
     except (TypeError, ValueError):
         raise ReceiptInventoryError("{} должно быть числом.".format(label))
     if not math.isfinite(number) or number < 0:
@@ -772,7 +774,7 @@ class ReceiptInventory:
                     position.get("quantity"),
                     "Количество",
                 ),
-                "purchase_price": nonnegative_number(
+                "purchase_price": optional_nonnegative_number(
                     position.get("purchase_price"),
                     "Цена закупки",
                 ),

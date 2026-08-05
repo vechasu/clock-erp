@@ -1945,6 +1945,8 @@
                                     </button>
                                 </th>
 
+                                <th data-column-key="purchase-price">Цена закупки</th>
+
                                 <th class="col-status" data-column-key="status">
                                     <button
                                         class="receipt-sort-button"
@@ -1994,6 +1996,7 @@
                                     data-product-id="{{ receipt_product_id }}"
                                     data-product-image="{{ receipt.product_image_url or '' }}"
                                     data-quantity="{{ receipt.total_quantity or 0 }}"
+                                    data-purchase-price="{{ receipt_position.purchase_price if receipt_position and receipt_position.purchase_price is not none else '' }}"
                                     data-status="{{ receipt.status_label or 'Проведён' }}"
                                 >
                                     <td class="col-date" data-column-key="date">
@@ -2074,6 +2077,12 @@
                                             {{ receipt.total_quantity }}
                                         </span>
 
+                                    </td>
+
+                                    <td data-column-key="purchase-price">
+                                        {% if receipt_position and receipt_position.purchase_price is not none %}
+                                            {{ receipt_position.purchase_price }} ₽
+                                        {% else %}—{% endif %}
                                     </td>
 
                                     <td class="col-status" data-column-key="status">
@@ -2312,6 +2321,11 @@
                             value="{{ today }}"
                             required
                         >
+                    </div>
+
+                    <div class="field">
+                        <label for="receipt_purchase_price">Цена закупки</label>
+                        <input class="control" id="receipt_purchase_price" name="purchase_price" type="number" inputmode="decimal" min="0" step="0.01" placeholder="Не указана">
                     </div>
 
                     <div class="field">
@@ -2562,6 +2576,10 @@
                         <label class="receipt-card-field receipt-card-quantity-field">
                             <span>Количество *</span>
                             <input class="control" type="number" name="quantity" min="1" step="1" required>
+                        </label>
+                        <label class="receipt-card-field">
+                            <span>Цена закупки</span>
+                            <input class="control" type="number" name="purchase_price" min="0" step="0.01" inputmode="decimal" placeholder="Не указана">
                         </label>
                         <div class="receipt-card-field">
                             <span>Бренд</span>
@@ -4395,6 +4413,8 @@
             row.dataset.document || "";
         receiptEditModalForm.querySelector('[name="quantity"]').value =
             row.dataset.quantity || "1";
+        receiptEditModalForm.querySelector('[name="purchase_price"]').value =
+            row.dataset.purchasePrice ?? "";
         receiptEditModalForm.querySelector('[name="comment"]').value =
             row.dataset.comment || "";
         receiptEditModalForm.querySelector(

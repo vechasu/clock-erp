@@ -575,6 +575,30 @@ class UnifiedCatalogInventoryTest(unittest.TestCase):
         self.assertTrue(preserved["active"])
         self.assertEqual(preserved["stock"], 29)
 
+    def test_receipt_without_price_posts_stock_and_stores_null(self):
+        product = self.create_product(name="Unknown Cost Product")
+        receipt = self.receipts.create_receipt(
+            {
+                "id": "receipt-without-price",
+                "number": "PR-NO-PRICE",
+                "receipt_date": "2026-08-06",
+            },
+            [{"product_id": product["id"], "quantity": 3}],
+        )
+        self.assertEqual(self.stock(product["id"]), 3)
+        self.assertIsNone(receipt["items"][0]["purchase_price"])
+        with self.database.connect() as connection:
+            sale_price = next(
+                row for row in connection.execute("PRAGMA table_info(erp_sale_items)")
+                if row["name"] == "unit_price"
+            )
+            receipt_price = next(
+                row for row in connection.execute("PRAGMA table_info(erp_receipt_items)")
+                if row["name"] == "purchase_price"
+            )
+        self.assertEqual(sale_price["notnull"], 0)
+        self.assertEqual(receipt_price["notnull"], 0)
+
     def test_posted_edit_uses_delta_and_cancel_keeps_reverse_history(self):
         product = self.create_product(name="Editable Receipt Product")
         receipt = {
