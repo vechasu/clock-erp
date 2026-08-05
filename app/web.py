@@ -4895,10 +4895,22 @@ SALE_FORM_STATUS_LABELS = {
     "returned": "Возврат",
 }
 
+SALE_COMMISSION_CASH_CODE = "cash"
+SALE_COMMISSION_CASH_LABEL = "Оплата наличными (0)"
+SALE_COMMISSION_SBP_VALUE = "Оплата по СБП (0)"
+SALE_COMMISSION_LABELS = {
+    SALE_COMMISSION_CASH_CODE: SALE_COMMISSION_CASH_LABEL,
+}
+SALE_ZERO_COMMISSION_VALUES = {
+    SALE_COMMISSION_CASH_CODE,
+    SALE_COMMISSION_SBP_VALUE,
+}
+
 SALE_COMMISSION_OPTIONS = [
     "Оплата по Робокассе (0,9675 × 0,94)",
     "Оплата в пункте выдачи СДЭК (0,91)",
-    "Оплата по СБП (0)",
+    SALE_COMMISSION_SBP_VALUE,
+    SALE_COMMISSION_CASH_CODE,
     "Оплата иностранной картой (0,97)",
 ]
 
@@ -5133,6 +5145,23 @@ def build_sale_combobox_options(values, value_labels=None):
         }
         for value in values
     ]
+
+
+def normalize_sale_commission_value(value):
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def get_sale_commission_label(value):
+    normalized = normalize_sale_commission_value(value)
+    return SALE_COMMISSION_LABELS.get(normalized, normalized)
+
+
+def get_sale_commission_amount(value, amount):
+    if normalize_sale_commission_value(value) in SALE_ZERO_COMMISSION_VALUES:
+        return 0
+    return parse_sale_commission(amount) or 0
 
 
 def get_sale_country_options():
@@ -5827,11 +5856,29 @@ def build_sale_optional_fields(form, existing=None):
         form.get("source") or existing.get("source")
     )
     supports_commission = source_key == "tictactoy"
+    commission_source = (
+        form.get("commission")
+        if supports_commission and "commission" in form
+        else existing.get("commission")
+    )
+    commission = normalize_sale_commission_value(commission_source)
+    if (
+        supports_commission
+        and commission
+        and commission not in SALE_COMMISSION_OPTIONS
+    ):
+        raise ValueError("Выберите комиссию из списка")
+
     if supports_commission:
-        commission_amount = parse_sale_commission(
+        commission_amount_source = (
             form.get("commission_amount")
             if "commission_amount" in form
             else existing.get("commission_amount")
+        )
+        commission_amount = (
+            0
+            if commission in SALE_ZERO_COMMISSION_VALUES
+            else parse_sale_commission(commission_amount_source)
         )
         if commission_amount is None:
             raise ValueError(
@@ -5858,22 +5905,6 @@ def build_sale_optional_fields(form, existing=None):
             else existing.get("order_status")
         )
     )
-    commission = str(
-        (
-            form.get("commission")
-            if supports_commission and "commission" in form
-            else existing.get("commission")
-        )
-        or ""
-    ).strip()
-
-    if (
-        supports_commission
-        and commission
-        and commission not in SALE_COMMISSION_OPTIONS
-    ):
-        raise ValueError("Выберите комиссию из списка")
-
     was_cancelled = sale_is_cancelled(existing)
 
     if order_status == "cancelled":
@@ -7375,22 +7406,29 @@ def build_sales_report_records(
                 or operation.get("payment_method")
                 or ""
             ),
-            "commission": str(
+            "commission_value": normalize_sale_commission_value(
                 override.get("commission")
-                or operation.get("commission")
-                or ""
+                if override.get("commission") is not None
+                else operation.get("commission")
             ),
-            "commission_amount": (
-                parse_sale_commission(
-                    override.get("commission_amount")
-                )
-                or 0
+            "commission": get_sale_commission_label(
+                override.get("commission")
+                if override.get("commission") is not None
+                else operation.get("commission")
+            ),
+            "commission_amount": get_sale_commission_amount(
+                override.get("commission")
+                if override.get("commission") is not None
+                else operation.get("commission"),
+                override.get("commission_amount"),
             ),
             "commission_display": format_sale_money(
-                parse_sale_commission(
-                    override.get("commission_amount")
+                get_sale_commission_amount(
+                    override.get("commission")
+                    if override.get("commission") is not None
+                    else operation.get("commission"),
+                    override.get("commission_amount"),
                 )
-                or 0
             ),
             "commission_type": "fixed_rub",
             "order_status": normalize_sale_status(
@@ -7593,20 +7631,21 @@ def build_sales_report_records(
             "payment_method": str(
                 stored_sale.get("payment_method") or ""
             ),
-            "commission": str(
-                stored_sale.get("commission") or ""
+            "commission_value": normalize_sale_commission_value(
+                stored_sale.get("commission")
             ),
-            "commission_amount": (
-                parse_sale_commission(
-                    stored_sale.get("commission_amount")
-                )
-                or 0
+            "commission": get_sale_commission_label(
+                stored_sale.get("commission")
+            ),
+            "commission_amount": get_sale_commission_amount(
+                stored_sale.get("commission"),
+                stored_sale.get("commission_amount"),
             ),
             "commission_display": format_sale_money(
-                parse_sale_commission(
-                    stored_sale.get("commission_amount")
+                get_sale_commission_amount(
+                    stored_sale.get("commission"),
+                    stored_sale.get("commission_amount"),
                 )
-                or 0
             ),
             "commission_type": "fixed_rub",
             "order_status": return_status,
@@ -8672,22 +8711,29 @@ def build_legacy_sales_page():
                 or operation.get("payment_method")
                 or ""
             ),
-            "commission": str(
+            "commission_value": normalize_sale_commission_value(
                 override.get("commission")
-                or operation.get("commission")
-                or ""
+                if override.get("commission") is not None
+                else operation.get("commission")
             ),
-            "commission_amount": (
-                parse_sale_commission(
-                    override.get("commission_amount")
-                )
-                or 0
+            "commission": get_sale_commission_label(
+                override.get("commission")
+                if override.get("commission") is not None
+                else operation.get("commission")
+            ),
+            "commission_amount": get_sale_commission_amount(
+                override.get("commission")
+                if override.get("commission") is not None
+                else operation.get("commission"),
+                override.get("commission_amount"),
             ),
             "commission_display": format_sale_money(
-                parse_sale_commission(
-                    override.get("commission_amount")
+                get_sale_commission_amount(
+                    override.get("commission")
+                    if override.get("commission") is not None
+                    else operation.get("commission"),
+                    override.get("commission_amount"),
                 )
-                or 0
             ),
             "order_status": normalize_sale_status(
                 override.get("order_status")
@@ -8778,18 +8824,21 @@ def build_legacy_sales_page():
             "recipient": stored_sale.get("recipient") or "",
             "recipient_name": stored_sale.get("recipient_name") or "",
             "payment_method": stored_sale.get("payment_method") or "",
-            "commission": stored_sale.get("commission") or "",
-            "commission_amount": (
-                parse_sale_commission(
-                    stored_sale.get("commission_amount")
-                )
-                or 0
+            "commission_value": normalize_sale_commission_value(
+                stored_sale.get("commission")
+            ),
+            "commission": get_sale_commission_label(
+                stored_sale.get("commission")
+            ),
+            "commission_amount": get_sale_commission_amount(
+                stored_sale.get("commission"),
+                stored_sale.get("commission_amount"),
             ),
             "commission_display": format_sale_money(
-                parse_sale_commission(
-                    stored_sale.get("commission_amount")
+                get_sale_commission_amount(
+                    stored_sale.get("commission"),
+                    stored_sale.get("commission_amount"),
                 )
-                or 0
             ),
             "order_status": normalize_sale_status(
                 stored_sale.get("order_status")
@@ -8864,7 +8913,8 @@ def build_legacy_sales_page():
             SALE_FORM_STATUS_LABELS,
         ),
         sale_commission_options=build_sale_combobox_options(
-            SALE_COMMISSION_OPTIONS
+            SALE_COMMISSION_OPTIONS,
+            SALE_COMMISSION_LABELS,
         ),
         sale_platform_options=build_sale_combobox_options(
             get_sale_platform_options(sales)
@@ -8984,7 +9034,8 @@ def sales_page():
             SALE_FORM_STATUS_LABELS,
         ),
         sale_commission_options=build_sale_combobox_options(
-            SALE_COMMISSION_OPTIONS
+            SALE_COMMISSION_OPTIONS,
+            SALE_COMMISSION_LABELS,
         ),
         sale_platform_options=build_sale_combobox_options(
             get_sale_platform_options(all_sales)
@@ -14809,9 +14860,20 @@ def serialize_api_sale(sale):
         "sticker_number": str(sale.get("sticker_number") or ""),
     }
     if normalize_sales_source_key(sale.get("source")) == "tictactoy":
-        result["commission"] = str(sale.get("commission") or "")
+        commission_value = normalize_sale_commission_value(
+            sale.get("commission_value")
+            if sale.get("commission_value") is not None
+            else sale.get("commission")
+        )
+        result["commission"] = commission_value
+        result["commission_display"] = get_sale_commission_label(
+            commission_value
+        )
         result["commission_amount"] = float(
-            sale.get("commission_amount") or 0
+            get_sale_commission_amount(
+                commission_value,
+                sale.get("commission_amount"),
+            )
         )
     return result
 

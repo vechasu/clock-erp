@@ -5082,7 +5082,7 @@
         );
         window.setBrandComboboxValue(
             saleCommissionCombobox,
-            sale.commission || "",
+            sale.commission_value ?? sale.commission ?? "",
         );
         window.setBrandComboboxValue(
             salePlatformCombobox,
@@ -6048,6 +6048,64 @@
                 || quantityInput.value !== "3"
             ) {
                 throw new Error("values-lost-after-escape");
+            }
+
+            modal.querySelector(
+                '[data-sale-source="tictactoy"]'
+            ).click();
+            const commission = document.getElementById(
+                "saleCommission"
+            );
+            const cashOptions = Array.from(
+                commission.querySelectorAll(
+                    '.brand-combobox-option[data-brand="cash"]'
+                )
+            );
+            if (
+                cashOptions.length !== 1
+                || cashOptions[0].textContent.trim()
+                    !== "Оплата наличными (0)"
+            ) {
+                throw new Error("cash-option");
+            }
+            commission.querySelector(
+                ".brand-combobox-trigger"
+            ).click();
+            const commissionSearch = commission.querySelector(
+                ".brand-combobox-search"
+            );
+            commissionSearch.value = "наличными";
+            commissionSearch.dispatchEvent(
+                new Event("input", {bubbles: true})
+            );
+            const visibleCommissionOptions = Array.from(
+                commission.querySelectorAll(
+                    ".brand-combobox-option:not([hidden])"
+                )
+            );
+            if (
+                visibleCommissionOptions.length !== 1
+                || visibleCommissionOptions[0].dataset.brand !== "cash"
+            ) {
+                throw new Error("cash-search");
+            }
+            visibleCommissionOptions[0].click();
+            if (
+                commission.querySelector(
+                    ".brand-combobox-hidden"
+                ).value !== "cash"
+                || commission.querySelector(
+                    ".brand-combobox-value"
+                ).textContent.trim() !== "Оплата наличными (0)"
+            ) {
+                throw new Error("cash-selection");
+            }
+            if (
+                document.documentElement.scrollWidth
+                    > document.documentElement.clientWidth
+                || modal.scrollWidth > modal.clientWidth
+            ) {
+                throw new Error("horizontal-overflow");
             }
 
             closeButton.click();

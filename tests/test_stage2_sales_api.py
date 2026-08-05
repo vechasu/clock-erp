@@ -248,6 +248,106 @@ class Stage2SalesApiTest(unittest.TestCase):
         )
         self.assertFalse(listing["data"][0].get("delivery_method"))
 
+    def test_cash_commission_is_distinct_zero_value_and_survives_editing(self):
+        response = self.client.post(
+            "/api/sales",
+            json={
+                "created_at": "2026-07-30",
+                "source": "Tictactoy",
+                "product_id": str(self.product["id"]),
+                "quantity": 1,
+                "unit_price": 900,
+                "order_number": "CASH-1",
+                "commission": web.SALE_COMMISSION_CASH_CODE,
+                "commission_amount": 125,
+            },
+        )
+        self.assertEqual(response.status_code, 201)
+        sale = response.get_json()["data"]
+        self.assertEqual(sale["commission"], "cash")
+        self.assertEqual(
+            sale["commission_display"],
+            "Оплата наличными (0)",
+        )
+        self.assertEqual(sale["commission_amount"], 0)
+
+        listed = self.client.get(
+            "/api/v1/sales?q=наличными&source=tictactoy"
+        ).get_json()
+        self.assertEqual(listed["meta"]["total"], 1)
+        self.assertEqual(listed["data"][0]["commission"], "cash")
+
+        reopened = self.client.get(
+            "/api/sales/{}".format(sale["id"])
+        ).get_json()["data"]
+        self.assertEqual(reopened["commission"], "cash")
+        self.assertEqual(reopened["commission_amount"], 0)
+
+        updated = self.client.patch(
+            "/api/sales/{}".format(sale["id"]),
+            json={
+                "created_at": "2026-07-30",
+                "source": "Tictactoy",
+                "product_id": str(self.product["id"]),
+                "quantity": 1,
+                "unit_price": 950,
+                "commission": "cash",
+                "commission_amount": 50,
+            },
+        )
+        self.assertEqual(updated.status_code, 200)
+        edited = updated.get_json()["data"]
+        self.assertEqual(edited["commission"], "cash")
+        self.assertEqual(edited["commission_amount"], 0)
+
+    def test_cash_and_sbp_are_separate_without_changing_legacy_options(self):
+        self.assertEqual(web.SALE_COMMISSION_OPTIONS.count("cash"), 1)
+        sbp_index = web.SALE_COMMISSION_OPTIONS.index(
+            web.SALE_COMMISSION_SBP_VALUE
+        )
+        self.assertEqual(
+            web.SALE_COMMISSION_OPTIONS[sbp_index + 1],
+            "cash",
+        )
+        self.assertNotEqual("cash", web.SALE_COMMISSION_SBP_VALUE)
+        self.assertEqual(
+            web.SALE_COMMISSION_OPTIONS,
+            [
+                "Оплата по Робокассе (0,9675 × 0,94)",
+                "Оплата в пункте выдачи СДЭК (0,91)",
+                "Оплата по СБП (0)",
+                "cash",
+                "Оплата иностранной картой (0,97)",
+            ],
+        )
+        options = web.build_sale_combobox_options(
+            web.SALE_COMMISSION_OPTIONS,
+            web.SALE_COMMISSION_LABELS,
+        )
+        cash_options = [
+            option for option in options
+            if option["name"] == "Оплата наличными (0)"
+        ]
+        self.assertEqual(cash_options, [{
+            "name": "Оплата наличными (0)",
+            "value": "cash",
+            "count": "",
+        }])
+
+        sbp = web.build_sale_optional_fields({
+            "source": "Tictactoy",
+            "commission": web.SALE_COMMISSION_SBP_VALUE,
+            "commission_amount": 125,
+        })
+        cash = web.build_sale_optional_fields({
+            "source": "Tictactoy",
+            "commission": "cash",
+            "commission_amount": 125,
+        })
+        self.assertEqual(sbp["commission_amount"], 0)
+        self.assertEqual(cash["commission_amount"], 0)
+        self.assertNotEqual(sbp["commission"], cash["commission"])
+
     def test_location_catalog_is_available_for_cascading_selects(self):
         with mock.patch.object(
             web,
