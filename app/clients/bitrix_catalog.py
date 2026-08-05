@@ -22,6 +22,10 @@ class BitrixCatalogReadOnlyError(RuntimeError):
     """An error whose text never includes credentials or URL query strings."""
 
 
+class BitrixCatalogWriteError(RuntimeError):
+    """A sanitized error raised when Bitrix rejects an image mutation."""
+
+
 def _safe_url(url):
     parsed = urlsplit(str(url or ""))
     return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", ""))
@@ -190,25 +194,37 @@ def select_sale_price(prices):
 
 def _normalize_images(raw_product, base_url):
     images = []
-    seen = set()
+    seen_ids = set()
+    seen_urls = set()
+
+    def append_image(value, kind):
+        image = normalize_image(value, base_url, len(images), kind)
+        image_id = _text(image.get("id"))
+        normalized_url = _safe_url(image.get("url")).casefold()
+        if (
+            not image.get("url")
+            or (image_id and image_id in seen_ids)
+            or (normalized_url and normalized_url in seen_urls)
+        ):
+            return
+        if image_id:
+            seen_ids.add(image_id)
+        if normalized_url:
+            seen_urls.add(normalized_url)
+        images.append(image)
+
     sources = (
         ("preview", _first(raw_product, "preview_image", "PREVIEW_PICTURE")),
         ("detail", _first(raw_product, "detail_image", "DETAIL_PICTURE")),
     )
     for kind, value in sources:
         if value:
-            image = normalize_image(value, base_url, len(images), kind)
-            if image["url"] and image["url"] not in seen:
-                seen.add(image["url"])
-                images.append(image)
+            append_image(value, kind)
     gallery = _first(raw_product, "images", "IMAGES", "gallery", "MORE_PHOTO") or []
     if not isinstance(gallery, list):
         gallery = [gallery]
     for value in gallery:
-        image = normalize_image(value, base_url, len(images), "gallery")
-        if image["url"] and image["url"] not in seen:
-            seen.add(image["url"])
-            images.append(image)
+        append_image(value, "gallery")
     return images
 
 
@@ -421,6 +437,23 @@ class BitrixCatalogReadOnlyClient:
             "generated_at": _text(payload.get("generated_at")),
         }
 
+    def get_product(self, product_id):
+        product_id = _text(product_id)
+        if not product_id.isdigit() or int(product_id) < 1:
+            raise ValueError("Bitrix product ID must be a positive integer")
+        payload = self._get_json({
+            "product_id": product_id,
+            "include_inactive": 1,
+        })
+        rows = payload.get("products") or payload.get("items") or []
+        if not isinstance(rows, list):
+            raise BitrixCatalogReadOnlyError(
+                "Bitrix catalog products is not an array"
+            )
+        if not rows:
+            return None
+        return normalize_product(rows[0], self.base_url)
+
     def iter_products(self, limit=100, max_items=None, updated_from=None, include_inactive=False):
         page = 1
         yielded = 0
@@ -459,3 +492,65 @@ class BitrixCatalogReadOnlyClient:
     @staticmethod
     def get_image_links(product):
         return [image.get("original_url") for image in product.get("images", []) if image.get("original_url")]
+
+
+class BitrixCatalogClient(BitrixCatalogReadOnlyClient):
+    """Authenticated catalog client; image writes always use saved Bitrix IDs."""
+
+    def mutate_product_image(self, product_id, action, image=None, file_id=None):
+        product_id = _text(product_id)
+        file_id = _text(file_id)
+        if not product_id.isdigit() or int(product_id) < 1:
+            raise ValueError("Bitrix product ID must be a positive integer")
+        if action not in {"add", "replace", "remove"}:
+            raise ValueError("Unsupported Bitrix image action")
+        if action in {"add", "replace"} and not image:
+            raise ValueError("Image content is required")
+
+        headers = {"Accept": "application/json"}
+        if self.token:
+            headers["Authorization"] = "Bearer {}".format(self.token)
+        data = {"product_id": product_id, "action": action}
+        if file_id:
+            data["file_id"] = file_id
+        files = None
+        if image:
+            files = {
+                "image": (
+                    image["filename"],
+                    image["content"],
+                    image.get("mime_type") or "application/octet-stream",
+                )
+            }
+        try:
+            self.request_count += 1
+            response = self.session.post(
+                self.export_url,
+                data=data,
+                files=files,
+                headers=headers,
+                timeout=self.timeout,
+            )
+        except (requests.Timeout, requests.ConnectionError) as error:
+            raise BitrixCatalogWriteError(
+                "Bitrix image request timed out"
+            ) from error
+        if response.status_code in {401, 403}:
+            raise BitrixCatalogWriteError("Bitrix image access denied")
+        try:
+            payload = response.json()
+        except ValueError as error:
+            raise BitrixCatalogWriteError(
+                "Bitrix image endpoint returned non-JSON data"
+            ) from error
+        if response.status_code >= 400 or not payload.get("ok"):
+            code = _text(payload.get("error")) or "request_failed"
+            raise BitrixCatalogWriteError(
+                "Bitrix image operation failed: {}".format(code)
+            )
+        product = self.get_product(product_id)
+        if product is None:
+            raise BitrixCatalogWriteError(
+                "Bitrix product disappeared after image operation"
+            )
+        return product, payload

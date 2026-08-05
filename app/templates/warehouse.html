@@ -4133,9 +4133,57 @@
             background: #f8faff;
         }
 
+        #editDrawer .product-photo-editor {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid #edf0f5;
+        }
+
+        #editDrawer .product-photo-editor[hidden] {
+            display: none;
+        }
+
+        #editDrawer .product-photo-editor button {
+            min-height: 36px;
+            padding: 0 12px;
+            border: 1px solid #d6deea;
+            border-radius: 10px;
+            background: #ffffff;
+            color: #26344b;
+            font: inherit;
+            font-size: 12px;
+            font-weight: 800;
+            cursor: pointer;
+        }
+
+        #editDrawer .product-photo-editor button:hover {
+            border-color: #9fb0c6;
+            background: #f7f9fc;
+        }
+
+        #editDrawer .product-photo-editor .is-danger {
+            color: #b42318;
+        }
+
+        #editDrawer .product-photo-editor-status {
+            flex: 1 0 100%;
+            min-width: 0;
+            color: #667085;
+            font-size: 12px;
+            line-height: 1.4;
+            overflow-wrap: anywhere;
+        }
+
+        #editDrawer .product-photo-editor-status.is-error {
+            color: #b42318;
+        }
+
         #editDrawer .product-inline-actions {
             align-items: center;
-            flex-wrap: nowrap;
+            flex-wrap: wrap;
             gap: 8px;
             margin-top: 14px;
         }
@@ -4143,10 +4191,11 @@
         #editDrawer .product-inline-actions button,
         #editDrawer .product-inline-actions .moysklad-link {
             display: inline-flex;
+            flex: 0 0 auto;
             align-items: center;
             justify-content: center;
             width: auto;
-            min-width: 0;
+            min-width: max-content;
             height: 40px;
             min-height: 40px;
             margin: 0;
@@ -4156,6 +4205,15 @@
             font-weight: 800;
             line-height: 1;
             vertical-align: middle;
+            white-space: nowrap;
+        }
+
+        #editDrawer .product-inline-actions button[type="submit"] {
+            min-width: 96px;
+        }
+
+        #editDrawer .product-inline-actions .cancel-button {
+            min-width: 82px;
         }
 
         #editDrawer .product-inline-actions [data-edit-start],
@@ -4291,6 +4349,10 @@
             #editDrawer .product-inline-actions button,
             #editDrawer .product-inline-actions .moysklad-link {
                 justify-content: center;
+            }
+
+            #editDrawer .product-photo-editor button {
+                flex: 1 1 120px;
             }
         }
 
@@ -5610,6 +5672,23 @@
         <div class="product-card-layout">
         <div id="detailGallerySection" class="product-card-media">
             <div id="detailGallery" class="product-gallery"></div>
+            <div id="detailPhotoEditor" class="product-photo-editor" hidden>
+                <input
+                    id="detailPhotoInput"
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+                    hidden
+                >
+                <button id="detailPhotoAdd" type="button">Добавить фото</button>
+                <button id="detailPhotoReplace" type="button">Заменить</button>
+                <button id="detailPhotoRemove" class="is-danger" type="button">Удалить</button>
+                <div
+                    id="detailPhotoEditorStatus"
+                    class="product-photo-editor-status"
+                    role="status"
+                    aria-live="polite"
+                ></div>
+            </div>
         </div>
 
         <div class="product-card-info">
@@ -5759,6 +5838,18 @@
                 const signedDifference = `${
                     difference > 0 ? "+" : ""
                 }${difference}`;
+
+                if (operation.type === "product_photo") {
+                    return `
+                        <div style="padding: 10px 0; border-bottom: 1px solid #e5e7eb;">
+                            <strong>${label}</strong><br>
+                            <span>${createdAt}</span>
+                            ${source ? `<br><span>Источник: ${source}</span>` : ""}
+                            ${userName ? `<br><span>Пользователь: ${userName}</span>` : ""}
+                            ${operationReason ? `<br><span>${operationReason}</span>` : ""}
+                        </div>
+                    `;
+                }
 
                 return `
                     <div style="padding: 10px 0; border-bottom: 1px solid #e5e7eb;">
@@ -6192,8 +6283,131 @@
             productGalleryLightboxReturnFocus = null;
         }
 
+        let detailGalleryItems = [];
+        let detailGalleryOriginalItems = [];
+        let detailGallerySelectedIndex = 0;
+        let detailPhotoPreviewUrl = "";
+        let detailOpenButton = null;
+
+        function detailGalleryUrls() {
+            return detailGalleryItems.map(function(image) {
+                return image.original_url || image.url || "";
+            }).filter(Boolean);
+        }
+
+        function renderDetailProductGallery() {
+            const galleryElement = document.getElementById("detailGallery");
+            const productName = document.getElementById("detailName").textContent;
+            const productId = document.getElementById("editProductId").value;
+            const urls = detailGalleryUrls();
+            galleryElement.replaceChildren();
+            detailGallerySelectedIndex = Math.max(
+                0,
+                Math.min(detailGallerySelectedIndex, urls.length - 1)
+            );
+            if (!urls.length) {
+                const placeholder = document.createElement("div");
+                placeholder.className = "product-gallery-empty";
+                placeholder.innerHTML = (
+                    "<div><strong>Нет фотографии</strong>"
+                    + "Изображение товара пока не добавлено</div>"
+                );
+                galleryElement.appendChild(placeholder);
+                return;
+            }
+            const mainButton = document.createElement("button");
+            const mainImage = document.createElement("img");
+            mainButton.type = "button";
+            mainButton.className = "product-gallery-main";
+            mainButton.setAttribute("aria-label", "Открыть фотографию на весь экран");
+            mainImage.src = urls[detailGallerySelectedIndex];
+            mainImage.alt = productName;
+            mainImage.decoding = "async";
+            mainButton.appendChild(mainImage);
+            mainButton.addEventListener("click", function() {
+                openProductGalleryLightbox(
+                    urls,
+                    productName,
+                    detailGallerySelectedIndex,
+                    mainButton,
+                    productId
+                );
+            });
+            galleryElement.appendChild(mainButton);
+            if (urls.length > 1) {
+                const counter = document.createElement("div");
+                counter.className = "product-gallery-counter";
+                counter.textContent = (detailGallerySelectedIndex + 1)
+                    + " из " + urls.length;
+                galleryElement.appendChild(counter);
+                const thumbnails = document.createElement("div");
+                thumbnails.className = "product-gallery-thumbnails";
+                urls.forEach(function(imageUrl, index) {
+                    const button = document.createElement("button");
+                    const image = document.createElement("img");
+                    button.type = "button";
+                    button.className = "product-gallery-thumbnail"
+                        + (index === detailGallerySelectedIndex ? " is-active" : "");
+                    button.setAttribute("aria-current", String(index === detailGallerySelectedIndex));
+                    button.setAttribute("aria-label", "Показать фотографию " + (index + 1));
+                    image.src = imageUrl;
+                    image.alt = productName;
+                    image.loading = "lazy";
+                    image.decoding = "async";
+                    button.appendChild(image);
+                    button.addEventListener("click", function() {
+                        detailGallerySelectedIndex = index;
+                        renderDetailProductGallery();
+                        syncDetailPhotoActions();
+                    });
+                    thumbnails.appendChild(button);
+                });
+                galleryElement.appendChild(thumbnails);
+            }
+        }
+
+        function setDetailPhotoStatus(message, isError = false) {
+            const status = document.getElementById("detailPhotoEditorStatus");
+            status.textContent = message || "";
+            status.classList.toggle("is-error", isError);
+        }
+
+        function syncDetailPhotoActions() {
+            const form = document.getElementById("inlineProductForm");
+            const hasImage = Boolean(detailGalleryItems.length);
+            document.getElementById("detailPhotoAdd").hidden = (
+                form.dataset.photoSource === "moysklad" && hasImage
+            );
+            document.getElementById("detailPhotoReplace").hidden = !hasImage;
+            document.getElementById("detailPhotoRemove").hidden = !hasImage;
+        }
+
+        function resetDetailPhotoChanges(restoreGallery = true) {
+            const form = document.getElementById("inlineProductForm");
+            const input = document.getElementById("detailPhotoInput");
+            if (detailPhotoPreviewUrl) {
+                URL.revokeObjectURL(detailPhotoPreviewUrl);
+                detailPhotoPreviewUrl = "";
+            }
+            input.value = "";
+            input.dataset.requestedAction = "";
+            form.dataset.photoAction = "keep";
+            form.dataset.photoFileId = "";
+            if (restoreGallery) {
+                detailGalleryItems = detailGalleryOriginalItems.map(item => ({...item}));
+                detailGallerySelectedIndex = 0;
+                renderDetailProductGallery();
+            }
+            setDetailPhotoStatus("");
+            syncDetailPhotoActions();
+        }
+
         function startInlineProductEdit() {
-            document.getElementById("inlineProductForm").classList.add("is-editing");
+            const form = document.getElementById("inlineProductForm");
+            form.classList.add("is-editing");
+            const editor = document.getElementById("detailPhotoEditor");
+            editor.hidden = form.dataset.photoEditable !== "true";
+            if (!editor.hidden) syncDetailPhotoActions();
         }
 
         document.getElementById("inlineProductForm").addEventListener("click", function(event) {
@@ -6230,8 +6444,81 @@
                 categoryId: form.dataset.originalCategoryId || "",
                 categoryLabel: form.dataset.originalCategory || "",
             });
+            resetDetailPhotoChanges(true);
+            document.getElementById("detailPhotoEditor").hidden = true;
             form.classList.remove("is-editing");
         }
+
+        function stageDetailPhotoSelection(action) {
+            const input = document.getElementById("detailPhotoInput");
+            input.dataset.requestedAction = action;
+            input.click();
+        }
+
+        document.getElementById("detailPhotoAdd").addEventListener("click", function() {
+            stageDetailPhotoSelection("add");
+        });
+        document.getElementById("detailPhotoReplace").addEventListener("click", function() {
+            stageDetailPhotoSelection("replace");
+        });
+        document.getElementById("detailPhotoRemove").addEventListener("click", function() {
+            const selected = detailGalleryItems[detailGallerySelectedIndex] || {};
+            if (!window.confirm("Удалить выбранную фотографию после нажатия «Сохранить»?")) {
+                return;
+            }
+            const form = document.getElementById("inlineProductForm");
+            form.dataset.photoAction = "remove";
+            form.dataset.photoFileId = selected.external_file_id || "";
+            detailGalleryItems.splice(detailGallerySelectedIndex, 1);
+            detailGallerySelectedIndex = Math.max(0, detailGallerySelectedIndex - 1);
+            renderDetailProductGallery();
+            syncDetailPhotoActions();
+            setDetailPhotoStatus("Удаление будет выполнено после сохранения.");
+        });
+
+        document.getElementById("detailPhotoInput").addEventListener("change", function(event) {
+            const input = event.currentTarget;
+            const file = input.files && input.files[0];
+            if (!file) return;
+            const allowed = ["image/jpeg", "image/png", "image/webp"];
+            if (!allowed.includes(file.type) || file.size > 3 * 1024 * 1024) {
+                input.value = "";
+                setDetailPhotoStatus(
+                    file.size > 3 * 1024 * 1024
+                        ? "Файл слишком большой. Максимальный размер — 3 МБ."
+                        : "Поддерживаются только JPEG, PNG и WEBP.",
+                    true
+                );
+                return;
+            }
+            if (detailPhotoPreviewUrl) URL.revokeObjectURL(detailPhotoPreviewUrl);
+            detailPhotoPreviewUrl = URL.createObjectURL(file);
+            const action = input.dataset.requestedAction || "replace";
+            const form = document.getElementById("inlineProductForm");
+            const selected = detailGalleryItems[detailGallerySelectedIndex] || {};
+            form.dataset.photoAction = action;
+            form.dataset.photoFileId = action === "replace"
+                ? (selected.external_file_id || "")
+                : "";
+            const preview = {
+                original_url: detailPhotoPreviewUrl,
+                external_file_id: form.dataset.photoFileId,
+                pending: true,
+            };
+            if (action === "add") {
+                detailGalleryItems.push(preview);
+                detailGallerySelectedIndex = detailGalleryItems.length - 1;
+            } else {
+                detailGalleryItems[detailGallerySelectedIndex] = preview;
+            }
+            renderDetailProductGallery();
+            syncDetailPhotoActions();
+            setDetailPhotoStatus(
+                action === "add"
+                    ? "Новое фото будет добавлено после сохранения."
+                    : "Замена будет выполнена после сохранения."
+            );
+        });
 
         async function openEditDrawer(button) {
             warehouseDrawerReturnFocus = button;
@@ -6248,84 +6535,13 @@
             const productCellSourceLabel = button.dataset.cellSourceLabel || "";
             const bitrixAdminUrl = button.dataset.bitrixAdminUrl || "";
             const publicProductUrl = button.dataset.publicProductUrl || "";
-            const galleryElement = document.getElementById("detailGallery");
-            let galleryUrls = [];
             const thumbnailUrl = button.dataset.thumbnailUrl || "";
             const productId = button.dataset.id || button.dataset.productId || "";
-            let selectedGalleryIndex = 0;
-
-            function renderProductGallery() {
-                galleryElement.replaceChildren();
-
-                if (!galleryUrls.length) {
-                    const placeholder = document.createElement("div");
-                    placeholder.className = "product-gallery-empty";
-                    placeholder.innerHTML = (
-                        "<div><strong>Нет фотографии</strong>"
-                        + "Изображение товара пока не добавлено</div>"
-                    );
-                    galleryElement.appendChild(placeholder);
-                    return;
-                }
-
-                const mainButton = document.createElement("button");
-                const mainImage = document.createElement("img");
-                mainButton.type = "button";
-                mainButton.className = "product-gallery-main";
-                mainButton.setAttribute("aria-label", "Открыть фотографию на весь экран");
-                mainImage.src = galleryUrls[selectedGalleryIndex];
-                mainImage.alt = productName;
-                mainImage.decoding = "async";
-                mainButton.appendChild(mainImage);
-                mainButton.addEventListener("click", function() {
-                    openProductGalleryLightbox(
-                        galleryUrls,
-                        productName,
-                        selectedGalleryIndex,
-                        mainButton,
-                        productId
-                    );
-                });
-                galleryElement.appendChild(mainButton);
-
-                if (galleryUrls.length > 1) {
-                    const counter = document.createElement("div");
-                    counter.className = "product-gallery-counter";
-                    counter.textContent = (
-                        (selectedGalleryIndex + 1)
-                        + " из " + galleryUrls.length
-                    );
-                    galleryElement.appendChild(counter);
-                    const thumbnails = document.createElement("div");
-                    thumbnails.className = "product-gallery-thumbnails";
-                    galleryUrls.forEach(function(imageUrl, index) {
-                        const button = document.createElement("button");
-                        const image = document.createElement("img");
-                        button.type = "button";
-                        button.className = "product-gallery-thumbnail"
-                            + (index === selectedGalleryIndex ? " is-active" : "");
-                        button.setAttribute(
-                            "aria-current",
-                            index === selectedGalleryIndex ? "true" : "false"
-                        );
-                        button.setAttribute("aria-label", "Показать фотографию " + (index + 1));
-                        image.src = imageUrl;
-                        image.alt = productName;
-                        image.loading = "lazy";
-                        image.decoding = "async";
-                        button.appendChild(image);
-                        button.addEventListener("click", function() {
-                            selectedGalleryIndex = index;
-                            renderProductGallery();
-                        });
-                        thumbnails.appendChild(button);
-                    });
-                    galleryElement.appendChild(thumbnails);
-                }
-            }
-
-            galleryUrls = thumbnailUrl ? [thumbnailUrl] : [];
-            renderProductGallery();
+            detailOpenButton = button;
+            detailGalleryItems = thumbnailUrl ? [{original_url: thumbnailUrl}] : [];
+            detailGalleryOriginalItems = detailGalleryItems.map(item => ({...item}));
+            detailGallerySelectedIndex = 0;
+            renderDetailProductGallery();
 
             document.getElementById("detailName").textContent = productName;
             document.getElementById("detailArticle").textContent = productArticle;
@@ -6380,6 +6596,11 @@
             inlineProductForm.dataset.originalCategoryId =
                 button.dataset.categoryId || "";
             inlineProductForm.dataset.originalCategory = productCategory;
+            inlineProductForm.dataset.detailUrl = button.dataset.detailUrl || "";
+            inlineProductForm.dataset.photoAction = "keep";
+            inlineProductForm.dataset.photoFileId = "";
+            inlineProductForm.dataset.photoEditable = "false";
+            inlineProductForm.dataset.photoSource = "";
             window.restoreSharedCatalogCascade(
                 inlineProductForm,
                 {
@@ -6390,6 +6611,8 @@
                 }
             );
             inlineProductForm.classList.remove("is-editing");
+            document.getElementById("detailPhotoEditor").hidden = true;
+            setDetailPhotoStatus("");
 
             document.getElementById("drawerBackdrop").classList.add("open");
             document.getElementById("editDrawer").classList.add("open");
@@ -6414,18 +6637,85 @@
                     ) {
                         return;
                     }
-                    galleryUrls = (detail.gallery || [])
-                        .map(function(image) {
-                            return image.original_url || image.url || "";
-                        })
-                        .filter(Boolean);
-                    selectedGalleryIndex = 0;
-                    renderProductGallery();
+                    detailGalleryItems = (detail.gallery || []).map(item => ({...item}));
+                    detailGalleryOriginalItems = detailGalleryItems.map(item => ({...item}));
+                    detailGallerySelectedIndex = 0;
+                    inlineProductForm.dataset.photoEditable = String(Boolean(detail.editable));
+                    inlineProductForm.dataset.photoSource = detail.source || "";
+                    renderDetailProductGallery();
+                    syncDetailPhotoActions();
+                    if (detail.gallery_error) {
+                        setDetailPhotoStatus(detail.gallery_error, true);
+                    }
                 } catch (error) {
                     console.error(error);
                 }
             }
         }
+
+        document.getElementById("inlineProductForm").addEventListener("submit", async function(event) {
+            event.preventDefault();
+            const form = event.currentTarget;
+            if (!form.classList.contains("is-editing")) return;
+            const productId = document.getElementById("editProductId").value;
+            const body = new FormData(form);
+            const photoAction = form.dataset.photoAction || "keep";
+            body.set("product_image_action", photoAction);
+            body.set("bitrix_image_file_id", form.dataset.photoFileId || "");
+            const imageInput = document.getElementById("detailPhotoInput");
+            if (imageInput.files && imageInput.files[0]) {
+                body.set("product_image", imageInput.files[0], imageInput.files[0].name);
+            }
+            setDetailPhotoStatus("Сохраняем изменения…");
+            try {
+                const response = await fetch("/api/products/" + encodeURIComponent(productId), {
+                    method: "PATCH",
+                    body: body,
+                    headers: {"X-Requested-With": "XMLHttpRequest"},
+                });
+                const payload = await response.json();
+                if (!response.ok) {
+                    if (payload.fields && Array.isArray(payload.fields.gallery)) {
+                        detailGalleryItems = payload.fields.gallery.map(item => ({...item}));
+                        detailGalleryOriginalItems = detailGalleryItems.map(item => ({...item}));
+                        detailGallerySelectedIndex = 0;
+                        renderDetailProductGallery();
+                    }
+                    throw new Error(payload.message || "Не удалось сохранить карточку.");
+                }
+                const detailUrl = form.dataset.detailUrl || "";
+                warehousePhotoGalleryCache.delete(detailUrl);
+                if (detailUrl) {
+                    const detailResponse = await fetch(detailUrl, {
+                        headers: {"X-Requested-With": "XMLHttpRequest"}
+                    });
+                    if (detailResponse.ok) {
+                        const detail = await detailResponse.json();
+                        detailGalleryItems = (detail.gallery || []).map(item => ({...item}));
+                        detailGalleryOriginalItems = detailGalleryItems.map(item => ({...item}));
+                        detailGallerySelectedIndex = 0;
+                        renderDetailProductGallery();
+                        const firstUrl = detailGalleryUrls()[0] || "";
+                        if (detailOpenButton) {
+                            detailOpenButton.dataset.thumbnailUrl = firstUrl;
+                            const row = detailOpenButton.closest("tr");
+                            const thumbnailButton = row && row.querySelector(
+                                ".warehouse-product-thumb-button"
+                            );
+                            const thumbnailImage = thumbnailButton && thumbnailButton.querySelector("img");
+                            if (thumbnailButton) thumbnailButton.dataset.thumbnailUrl = firstUrl;
+                            if (thumbnailImage && firstUrl) thumbnailImage.src = firstUrl;
+                        }
+                    }
+                }
+                resetDetailPhotoChanges(false);
+                document.getElementById("detailPhotoEditor").hidden = true;
+                form.classList.remove("is-editing");
+                setDetailPhotoStatus(payload.meta?.image_message || "Карточка обновлена.");
+            } catch (error) {
+                setDetailPhotoStatus(error.message || "Не удалось сохранить карточку.", true);
+            }
+        });
 
         function filterBrandOptions(value) {
             const select = document.getElementById("brandSelect");
@@ -6461,6 +6751,10 @@
 
         function closeAllDrawers(restoreFocus = true) {
             const ids = ["drawerBackdrop", "filterDrawer", "warehouseMapDrawer", "editDrawer"];
+
+            if (document.getElementById("inlineProductForm")?.classList.contains("is-editing")) {
+                cancelInlineProductEdit();
+            }
 
             ids.forEach(function(id) {
                 const element = document.getElementById(id);
@@ -9444,6 +9738,72 @@
                 document.documentElement.dataset.warehousePhotoPreviewE2e =
                     "fail-" + error.message;
                 document.documentElement.dataset.warehousePhotoPreviewResult =
+                    JSON.stringify(result);
+            } finally {
+                window.fetch = originalFetch;
+            }
+        });
+    </script>
+    {% endif %}
+    {% if config.TESTING and request.args.get("warehouse_bitrix_photo_e2e") == "1" %}
+    <script>
+        window.addEventListener("load", async function() {
+            const result = {};
+            const wait = milliseconds => new Promise(resolve =>
+                window.setTimeout(resolve, milliseconds)
+            );
+            const originalFetch = window.fetch;
+            let writeRequests = 0;
+            try {
+                window.fetch = async function(url, options = {}) {
+                    if (String(options.method || "GET").toUpperCase() !== "GET") {
+                        writeRequests += 1;
+                    }
+                    return originalFetch(url, options);
+                };
+                const openButton = document.querySelector(
+                    '.erp-table-action-view[data-detail-url^="/warehouse/product/"]'
+                );
+                if (!openButton) throw new Error("missing-card-button");
+                await openEditDrawer(openButton);
+                startInlineProductEdit();
+                await wait(80);
+                const editor = document.getElementById("detailPhotoEditor");
+                const saveButton = document.querySelector(
+                    '#inlineProductForm button[type="submit"]'
+                );
+                result.fullGallery = detailGalleryItems.length === 2;
+                result.controlsVisible = (
+                    !editor.hidden
+                    && !document.getElementById("detailPhotoAdd").hidden
+                    && !document.getElementById("detailPhotoReplace").hidden
+                    && !document.getElementById("detailPhotoRemove").hidden
+                );
+                result.noHorizontalOverflow = (
+                    document.documentElement.scrollWidth
+                    <= document.documentElement.clientWidth + 1
+                    && document.getElementById("editDrawer").scrollWidth
+                    <= document.getElementById("editDrawer").clientWidth + 1
+                );
+                result.actionTextFits = saveButton.scrollWidth <= saveButton.clientWidth + 1;
+                cancelInlineProductEdit();
+                result.cancelHasNoWrite = writeRequests === 0;
+                result.cancelHidesControls = editor.hidden;
+                document.documentElement.dataset.warehouseBitrixPhotoE2e =
+                    Object.values(result).every(Boolean) ? "pass" : "fail";
+                document.documentElement.dataset.warehouseBitrixPhotoResult =
+                    JSON.stringify(result);
+                document.documentElement.dataset.warehouseBitrixPhotoMetrics =
+                    JSON.stringify({
+                        saveClientWidth: saveButton.clientWidth,
+                        saveScrollWidth: saveButton.scrollWidth,
+                        saveMinWidth: getComputedStyle(saveButton).minWidth,
+                        saveFlex: getComputedStyle(saveButton).flex,
+                    });
+            } catch (error) {
+                document.documentElement.dataset.warehouseBitrixPhotoE2e =
+                    "fail-" + error.message;
+                document.documentElement.dataset.warehouseBitrixPhotoResult =
                     JSON.stringify(result);
             } finally {
                 window.fetch = originalFetch;

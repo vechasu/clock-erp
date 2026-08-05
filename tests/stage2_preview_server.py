@@ -47,6 +47,44 @@ ExcelProductBatchService(CatalogDatabase(PREVIEW_ROOT / "catalog.db")).apply(
     "stage2-preview.xlsx",
 )
 
+fixture_image_one = (
+    "data:image/gif;base64,"
+    "R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=="
+)
+fixture_image_two = (
+    "data:image/gif;base64,"
+    "R0lGODlhAQABAIAAAAD/AP///ywAAAAAAQABAAACAUwAOw=="
+)
+with CatalogDatabase(PREVIEW_ROOT / "catalog.db").transaction() as connection:
+    first_id = connection.execute(
+        "SELECT id FROM catalog_excel_products ORDER BY id LIMIT 1"
+    ).fetchone()[0]
+    connection.execute(
+        "UPDATE catalog_excel_products SET bitrix_external_product_id = ?, "
+        "bitrix_primary_image_url = ?, bitrix_thumbnail_url = ?, "
+        "bitrix_gallery_json = ? WHERE id = ?",
+        (
+            "204699", fixture_image_one, fixture_image_one,
+            '[{"original_url":"' + fixture_image_one + '"},'
+            '{"original_url":"' + fixture_image_two + '"}]',
+            first_id,
+        ),
+    )
+
+
+def fixture_live_bitrix_product(product, force=False):
+    return {
+        "external_product_id": "204699",
+        "images": [
+            {"original_url": fixture_image_one, "kind": "preview"},
+            {"original_url": fixture_image_two, "kind": "gallery"},
+        ],
+    }
+
+
+web._live_bitrix_product = fixture_live_bitrix_product
+web.persist_live_bitrix_gallery = lambda product, live: product
+
 projected_products = web.get_excel_warehouse_items()
 warehouse_items = [
     {
@@ -56,10 +94,7 @@ warehouse_items = [
     }
     for item in projected_products
 ]
-warehouse_items[0]["thumbnail_url"] = (
-    "data:image/gif;base64,"
-    "R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=="
-)
+warehouse_items[0]["thumbnail_url"] = fixture_image_one
 
 receipt_positions = [
     {
