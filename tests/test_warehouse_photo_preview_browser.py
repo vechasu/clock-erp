@@ -47,10 +47,8 @@ class WarehousePhotoPreviewBrowserTest(unittest.TestCase):
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-        url = (
-            "http://127.0.0.1:{}/app/products"
-            "?warehouse_photo_preview_e2e=1"
-        ).format(port)
+        base_url = "http://127.0.0.1:{}/app/products".format(port)
+        url = base_url + "?warehouse_photo_preview_e2e=1"
         try:
             for _attempt in range(100):
                 try:
@@ -63,30 +61,37 @@ class WarehousePhotoPreviewBrowserTest(unittest.TestCase):
                 self.fail("Stage 2 preview server did not start")
 
             for width, height in ((1440, 900), (390, 844), (320, 568)):
-                with self.subTest(width=width), tempfile.TemporaryDirectory() as profile:
-                    result = subprocess.run(
-                        [
-                            chrome,
-                            "--headless=new",
-                            "--no-sandbox",
-                            "--disable-gpu",
-                            "--disable-dev-shm-usage",
-                            "--user-data-dir={}".format(profile),
-                            "--window-size={},{}".format(width, height),
-                            "--virtual-time-budget=3000",
-                            "--dump-dom",
-                            url,
-                        ],
-                        check=False,
-                        capture_output=True,
-                        text=True,
-                        timeout=30,
-                    )
-                    self.assertEqual(result.returncode, 0, result.stderr[-2000:])
-                    self.assertIn(
-                        'data-warehouse-photo-preview-e2e="pass"',
-                        result.stdout,
-                    )
+                scenarios = (
+                    ("viewer", url, 'data-warehouse-photo-preview-e2e="pass"'),
+                    (
+                        "card-editor",
+                        base_url + "?warehouse_bitrix_photo_e2e=1",
+                        'data-warehouse-bitrix-photo-e2e="pass"',
+                    ),
+                )
+                for scenario, scenario_url, expected in scenarios:
+                    with self.subTest(width=width, scenario=scenario), \
+                            tempfile.TemporaryDirectory() as profile:
+                        result = subprocess.run(
+                            [
+                                chrome,
+                                "--headless=new",
+                                "--no-sandbox",
+                                "--disable-gpu",
+                                "--disable-dev-shm-usage",
+                                "--user-data-dir={}".format(profile),
+                                "--window-size={},{}".format(width, height),
+                                "--virtual-time-budget=3000",
+                                "--dump-dom",
+                                scenario_url,
+                            ],
+                            check=False,
+                            capture_output=True,
+                            text=True,
+                            timeout=30,
+                        )
+                        self.assertEqual(result.returncode, 0, result.stderr[-2000:])
+                        self.assertIn(expected, result.stdout)
         finally:
             server.terminate()
             try:

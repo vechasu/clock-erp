@@ -42,6 +42,8 @@ readonly REMOTE_NAME="origin"
 readonly PROJECT_DIR="/opt/clock-erp"
 readonly SERVICE_NAME="clock-erp"
 readonly BACKUP_DIR="/opt/clock-erp-backups"
+readonly BITRIX_ENDPOINT_SOURCE="$PROJECT_DIR/bitrix/catalog-export.php"
+readonly BITRIX_ENDPOINT_TARGET="/var/www/admin/data/www/tictactoy.ru/api/catalog-export.php"
 SERVICE_STOPPED=0
 readonly HEALTHCHECK_URLS=(
     "http://127.0.0.1:5000/register"
@@ -51,6 +53,8 @@ readonly HEALTHCHECK_URLS=(
 PREVIOUS_COMMIT=""
 DEPLOY_UPDATED=0
 BACKUP_STAGE=""
+BITRIX_ENDPOINT_BACKUP=""
+BITRIX_ENDPOINT_UPDATED=0
 
 cleanup_backup_stage() {
     if [[ -z "$BACKUP_STAGE" ]]; then
@@ -79,6 +83,12 @@ rollback() {
     cleanup_backup_stage
 
     printf 'DEPLOY_ERROR: deployment failed with exit code %s\n' "$exit_code" >&2
+
+    if [[ "$BITRIX_ENDPOINT_UPDATED" == "1" && -f "$BITRIX_ENDPOINT_BACKUP" ]]; then
+        install -o admin -g admin -m 0640 \
+            "$BITRIX_ENDPOINT_BACKUP" "$BITRIX_ENDPOINT_TARGET"
+        printf 'ROLLBACK_OK: restored Bitrix catalog endpoint\n' >&2
+    fi
 
     if [[ "$DEPLOY_UPDATED" == "1" && -n "$PREVIOUS_COMMIT" ]]; then
         local rollback_status
@@ -225,6 +235,17 @@ print(
     f"{len(template_files)} templates"
 )
 PYTHON_CHECK
+
+if [[ -f "$BITRIX_ENDPOINT_SOURCE" && -f "$BITRIX_ENDPOINT_TARGET" ]]; then
+    /opt/php81/bin/php -l "$BITRIX_ENDPOINT_SOURCE" >/dev/null
+    BITRIX_ENDPOINT_BACKUP="$BACKUP_DIR/bitrix-catalog-export-$(date +%Y%m%d-%H%M%S).php"
+    cp -p "$BITRIX_ENDPOINT_TARGET" "$BITRIX_ENDPOINT_BACKUP"
+    chmod 600 "$BITRIX_ENDPOINT_BACKUP"
+    install -o admin -g admin -m 0640 \
+        "$BITRIX_ENDPOINT_SOURCE" "$BITRIX_ENDPOINT_TARGET"
+    BITRIX_ENDPOINT_UPDATED=1
+    printf 'BITRIX_BACKUP_PATH=%s\n' "$BITRIX_ENDPOINT_BACKUP"
+fi
 
 if [[ -f instance/repair_cases.json ]]; then
     mkdir -p "$BACKUP_DIR/repair-data"

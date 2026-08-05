@@ -936,6 +936,37 @@ class ExcelProductCatalog:
             ).fetchone()
         return self._prepare_product(dict(row)) if row else None
 
+    def update_bitrix_images(self, product_id, external_product_id,
+                             primary_url, thumbnail_url, gallery):
+        """Persist a verified Bitrix gallery without touching catalog or stock."""
+        external_product_id = text(external_product_id)
+        if not external_product_id:
+            raise ValueError("Bitrix product ID is required")
+        self.database.initialize()
+        with self.database.transaction() as connection:
+            row = connection.execute(
+                "SELECT bitrix_external_product_id "
+                "FROM catalog_excel_products WHERE id = ? AND active = 1",
+                (int(product_id),),
+            ).fetchone()
+            if row is None:
+                raise ValueError("Товар не найден.")
+            if text(row["bitrix_external_product_id"]) != external_product_id:
+                raise ValueError("Связь товара с Bitrix изменилась.")
+            connection.execute(
+                "UPDATE catalog_excel_products SET "
+                "bitrix_primary_image_url = ?, bitrix_thumbnail_url = ?, "
+                "bitrix_gallery_json = ?, updated_at = ? WHERE id = ?",
+                (
+                    text(primary_url) or None,
+                    text(thumbnail_url) or None,
+                    json.dumps(gallery or [], ensure_ascii=False, sort_keys=True),
+                    utc_now(),
+                    int(product_id),
+                ),
+            )
+        return self.get_product(product_id)
+
     def create_product(
             self, name, article="", brand="", category="", cell="", stock=0,
             brand_id=None, category_id=None, enforce_unique=False,

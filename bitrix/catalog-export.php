@@ -2,11 +2,13 @@
 
 declare(strict_types=1);
 
-const CATALOG_EXPORT_API_VERSION = '1.0';
+const CATALOG_EXPORT_API_VERSION = '1.1';
 const CATALOG_EXPORT_IBLOCK_ID = 5;
 const CATALOG_EXPORT_DEFAULT_LIMIT = 100;
 const CATALOG_EXPORT_MAX_LIMIT = 200;
 const CATALOG_EXPORT_BASE_URL = 'https://www.tictactoy.ru';
+const CATALOG_EXPORT_GALLERY_PROPERTY = 'GALLERY';
+const CATALOG_EXPORT_MAX_IMAGE_BYTES = 3145728;
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
@@ -56,8 +58,8 @@ function configuredToken(): string
     return is_string($configToken) ? $configToken : '';
 }
 
-if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET') {
-    header('Allow: GET');
+if (!in_array(($_SERVER['REQUEST_METHOD'] ?? 'GET'), array('GET', 'POST'), true)) {
+    header('Allow: GET, POST');
     exportError('method_not_allowed', 405);
 }
 
@@ -189,6 +191,239 @@ function propertyDefinitions(): array
         $result[(int) $property['ID']] = $property;
     }
     return $result;
+}
+
+function imageProductId(): int
+{
+    $raw = (string) ($_POST['product_id'] ?? '');
+    if (!preg_match('/^[1-9][0-9]*$/', $raw)) {
+        exportError('invalid_product_id', 400);
+    }
+    return (int) $raw;
+}
+
+function productImageFields(int $productId): array
+{
+    $row = CIBlockElement::GetList(
+        array(),
+        array(
+            'ID' => $productId,
+            'IBLOCK_ID' => CATALOG_EXPORT_IBLOCK_ID,
+            'CHECK_PERMISSIONS' => 'N',
+        ),
+        false,
+        false,
+        array('ID', 'PREVIEW_PICTURE', 'DETAIL_PICTURE')
+    )->Fetch();
+    if (!is_array($row)) {
+        exportError('product_not_found', 404);
+    }
+    return $row;
+}
+
+function galleryFileIds(int $productId): array
+{
+    $result = array();
+    $cursor = CIBlockElement::GetProperty(
+        CATALOG_EXPORT_IBLOCK_ID,
+        $productId,
+        array('SORT' => 'ASC', 'ID' => 'ASC'),
+        array('CODE' => CATALOG_EXPORT_GALLERY_PROPERTY)
+    );
+    while ($row = $cursor->Fetch()) {
+        $fileId = (int) ($row['VALUE'] ?? 0);
+        if ($fileId > 0) {
+            $result[] = $fileId;
+        }
+    }
+    return array_values(array_unique($result));
+}
+
+function setGalleryFileIds(int $productId, array $fileIds): void
+{
+    $values = array();
+    foreach (array_values(array_unique(array_map('intval', $fileIds))) as $fileId) {
+        if ($fileId > 0) {
+            $values[] = $fileId;
+        }
+    }
+    CIBlockElement::SetPropertyValuesEx(
+        $productId,
+        CATALOG_EXPORT_IBLOCK_ID,
+        array(CATALOG_EXPORT_GALLERY_PROPERTY => $values)
+    );
+    if (galleryFileIds($productId) !== $values) {
+        throw new RuntimeException('gallery_update_not_confirmed');
+    }
+}
+
+function validatedImageUpload(): array
+{
+    $file = $_FILES['image'] ?? null;
+    if (!is_array($file) || (int) ($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+        exportError('image_required', 400);
+    }
+    $size = (int) ($file['size'] ?? 0);
+    $temporaryPath = (string) ($file['tmp_name'] ?? '');
+    if ($size < 1 || $size > CATALOG_EXPORT_MAX_IMAGE_BYTES || !is_uploaded_file($temporaryPath)) {
+        exportError($size > CATALOG_EXPORT_MAX_IMAGE_BYTES ? 'image_too_large' : 'invalid_image', 422);
+    }
+    $finfo = new finfo(FILEINFO_MIME_TYPE);
+    $mimeType = (string) $finfo->file($temporaryPath);
+    $extensions = array(
+        'image/jpeg' => 'jpg',
+        'image/png' => 'png',
+        'image/webp' => 'webp',
+    );
+    if (!isset($extensions[$mimeType])) {
+        exportError('unsupported_image_type', 422);
+    }
+    $baseName = pathinfo((string) ($file['name'] ?? 'product'), PATHINFO_FILENAME);
+    $baseName = preg_replace('/[^A-Za-z0-9._-]+/', '-', $baseName);
+    $file['name'] = trim((string) $baseName, '.-') . '.' . $extensions[$mimeType];
+    if ($file['name'] === '.' . $extensions[$mimeType]) {
+        $file['name'] = 'product.' . $extensions[$mimeType];
+    }
+    $file['type'] = $mimeType;
+    $file['MODULE_ID'] = 'iblock';
+    return $file;
+}
+
+function updateElementImageField(int $productId, string $field, array $file): int
+{
+    if (!in_array($field, array('PREVIEW_PICTURE', 'DETAIL_PICTURE'), true)) {
+        throw new InvalidArgumentException('unsupported_image_field');
+    }
+    $element = new CIBlockElement();
+    if (!$element->Update($productId, array($field => $file))) {
+        throw new RuntimeException('element_image_update_failed');
+    }
+    $fields = productImageFields($productId);
+    $fileId = (int) ($fields[$field] ?? 0);
+    if ($fileId < 1) {
+        throw new RuntimeException('element_image_update_not_confirmed');
+    }
+    return $fileId;
+}
+
+function clearElementImageField(int $productId, string $field): void
+{
+    $element = new CIBlockElement();
+    if (!$element->Update($productId, array($field => array('del' => 'Y')))) {
+        throw new RuntimeException('element_image_delete_failed');
+    }
+    $fields = productImageFields($productId);
+    if ((int) ($fields[$field] ?? 0) > 0) {
+        throw new RuntimeException('element_image_delete_not_confirmed');
+    }
+}
+
+function handleImageMutation(array $properties): void
+{
+    $productId = imageProductId();
+    $fields = productImageFields($productId);
+    $definition = null;
+    foreach ($properties as $property) {
+        if ((string) ($property['CODE'] ?? '') === CATALOG_EXPORT_GALLERY_PROPERTY) {
+            $definition = $property;
+            break;
+        }
+    }
+    if (!is_array($definition)
+        || (string) ($definition['PROPERTY_TYPE'] ?? '') !== 'F'
+        || (string) ($definition['MULTIPLE'] ?? '') !== 'Y') {
+        exportError('gallery_property_unavailable', 503);
+    }
+    $action = (string) ($_POST['action'] ?? '');
+    if (!in_array($action, array('add', 'replace', 'remove'), true)) {
+        exportError('invalid_action', 400);
+    }
+    $galleryIds = galleryFileIds($productId);
+    $previewId = (int) ($fields['PREVIEW_PICTURE'] ?? 0);
+    $detailId = (int) ($fields['DETAIL_PICTURE'] ?? 0);
+    $targetId = (int) ($_POST['file_id'] ?? 0);
+    if ($targetId < 1) {
+        $targetId = $previewId ?: ($detailId ?: (int) ($galleryIds[0] ?? 0));
+    }
+
+    $affectedFileId = $targetId;
+    if ($action === 'add') {
+        $savedFileId = (int) CFile::SaveFile(validatedImageUpload(), 'iblock');
+        if ($savedFileId < 1) {
+            throw new RuntimeException('image_save_failed');
+        }
+        try {
+            $galleryIds[] = $savedFileId;
+            setGalleryFileIds($productId, $galleryIds);
+        } catch (Throwable $error) {
+            CFile::Delete($savedFileId);
+            throw $error;
+        }
+        $affectedFileId = $savedFileId;
+    } elseif ($action === 'replace') {
+        if ($targetId < 1) {
+            exportError('image_not_found', 404);
+        }
+        $upload = validatedImageUpload();
+        if ($targetId === $previewId || $targetId === $detailId) {
+            $field = $targetId === $previewId ? 'PREVIEW_PICTURE' : 'DETAIL_PICTURE';
+            $affectedFileId = updateElementImageField($productId, $field, $upload);
+        } else {
+            $position = array_search($targetId, $galleryIds, true);
+            if ($position === false) {
+                exportError('image_not_found', 404);
+            }
+            $savedFileId = (int) CFile::SaveFile($upload, 'iblock');
+            if ($savedFileId < 1) {
+                throw new RuntimeException('image_save_failed');
+            }
+            try {
+                $galleryIds[$position] = $savedFileId;
+                setGalleryFileIds($productId, $galleryIds);
+            } catch (Throwable $error) {
+                CFile::Delete($savedFileId);
+                throw $error;
+            }
+            CFile::Delete($targetId);
+            $affectedFileId = $savedFileId;
+        }
+    } else {
+        if ($targetId < 1) {
+            exportError('image_not_found', 404);
+        }
+        if ($targetId === $previewId) {
+            if ($galleryIds !== array()) {
+                $promotedId = array_shift($galleryIds);
+                $promotion = CFile::MakeFileArray(
+                    (string) $_SERVER['DOCUMENT_ROOT'] . CFile::GetPath($promotedId)
+                );
+                if (!is_array($promotion)) {
+                    throw new RuntimeException('image_promotion_failed');
+                }
+                updateElementImageField($productId, 'PREVIEW_PICTURE', $promotion);
+                setGalleryFileIds($productId, $galleryIds);
+                CFile::Delete($promotedId);
+            } else {
+                clearElementImageField($productId, 'PREVIEW_PICTURE');
+            }
+        } elseif ($targetId === $detailId) {
+            clearElementImageField($productId, 'DETAIL_PICTURE');
+        } else {
+            $position = array_search($targetId, $galleryIds, true);
+            if ($position === false) {
+                exportError('image_not_found', 404);
+            }
+            array_splice($galleryIds, $position, 1);
+            setGalleryFileIds($productId, $galleryIds);
+            CFile::Delete($targetId);
+        }
+    }
+    exportResponse(array(
+        'ok' => true,
+        'action' => $action,
+        'product_id' => (string) $productId,
+        'affected_file_id' => (string) $affectedFileId,
+    ));
 }
 
 function categoryMap(): array
@@ -398,6 +633,9 @@ function metaResponse(array $properties, array $categories): array
 try {
     $properties = propertyDefinitions();
     $categories = categoryMap();
+    if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
+        handleImageMutation($properties);
+    }
     if (isset($_GET['mode']) && (string) $_GET['mode'] !== 'meta') {
         exportError('invalid_mode', 400);
     }
@@ -414,6 +652,12 @@ try {
         'IBLOCK_ID' => CATALOG_EXPORT_IBLOCK_ID,
         'CHECK_PERMISSIONS' => 'N',
     );
+    if (isset($_GET['product_id']) && (string) $_GET['product_id'] !== '') {
+        if (!preg_match('/^[1-9][0-9]*$/', (string) $_GET['product_id'])) {
+            exportError('invalid_product_id', 400);
+        }
+        $filter['ID'] = (int) $_GET['product_id'];
+    }
     if (!$includeInactive) {
         $filter['ACTIVE'] = 'Y';
     }
@@ -568,10 +812,21 @@ try {
         $normalizedProperties = array();
         $images = array();
         $imageSort = 0;
-        foreach (array('PREVIEW_PICTURE' => 'preview', 'DETAIL_PICTURE' => 'detail') as $field => $type) {
+        $primaryImageField = (int) $rawProduct['DETAIL_PICTURE'] > 0
+            ? 'DETAIL_PICTURE'
+            : 'PREVIEW_PICTURE';
+        $elementImageFields = $primaryImageField === 'DETAIL_PICTURE'
+            ? array('DETAIL_PICTURE' => 'detail', 'PREVIEW_PICTURE' => 'preview')
+            : array('PREVIEW_PICTURE' => 'preview', 'DETAIL_PICTURE' => 'detail');
+        foreach ($elementImageFields as $field => $type) {
             $fileId = (int) $rawProduct[$field];
             if ($fileId > 0 && isset($files[$fileId])) {
-                $images[] = imageRecord($files[$fileId], $type, $imageSort++, $type === 'detail');
+                $images[] = imageRecord(
+                    $files[$fileId],
+                    $type,
+                    $imageSort++,
+                    $field === $primaryImageField
+                );
             }
         }
 

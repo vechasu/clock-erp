@@ -19,10 +19,15 @@ import requests
 from io import BytesIO
 from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache, wraps
-from urllib.parse import parse_qsl, urlencode
+from urllib.parse import parse_qsl, urlencode, urlsplit
 from app.clients.moysklad import MoySkladClient
 from app.catalog_db import CatalogDatabase
-from app.clients.bitrix_catalog import BitrixCatalogReadOnlyClient, BitrixCatalogReadOnlyError
+from app.clients.bitrix_catalog import (
+    BitrixCatalogClient,
+    BitrixCatalogReadOnlyClient,
+    BitrixCatalogReadOnlyError,
+    BitrixCatalogWriteError,
+)
 from app.services.bitrix_catalog_importer import BitrixCatalogImporter
 from app.services.brand_values import normalize_brand
 from app.services.catalog_reader import CatalogReader
@@ -141,7 +146,8 @@ def redirect_retired_frontend():
     if (
         target is None
         and request.path.startswith("/warehouse/product/")
-        and not request.path.endswith("/thumbnail")
+        and request.path.count("/") == 3
+        and request.headers.get("X-Requested-With") != "XMLHttpRequest"
     ):
         target = "/app/products"
 
@@ -1394,6 +1400,23 @@ def build_excel_warehouse_items(products):
                 format_stock_number(price), "₽" if currency == "RUB" else currency
             )
         stock = float(product.get("stock") or 0)
+        stored_bitrix_images = product.get("gallery") or []
+        first_bitrix_file_id = next((
+            bitrix_image_file_id(image)
+            for image in stored_bitrix_images
+            if bitrix_image_file_id(image)
+        ), "")
+        bitrix_thumbnail = (
+            "/warehouse/product/{}/image/{}".format(
+                product["id"], first_bitrix_file_id
+            )
+            if product.get("bitrix_external_product_id")
+            and first_bitrix_file_id
+            else (
+                product.get("bitrix_thumbnail_url")
+                or product.get("bitrix_primary_image_url")
+            )
+        )
         item = {
             "id": product["id"],
             "name": product.get("excel_name_raw") or "",
@@ -1414,8 +1437,7 @@ def build_excel_warehouse_items(products):
             "created_at": created_at,
             "created_at_display": created_at_display,
             "thumbnail_url": (
-                product.get("bitrix_thumbnail_url")
-                or product.get("bitrix_primary_image_url")
+                bitrix_thumbnail
                 or (
                     "/warehouse/product/{}/thumbnail".format(
                         product.get("moysklad_product_id")
@@ -1926,43 +1948,164 @@ def warehouse_export_pdf():
     return response
 
 
-def warehouse_product_gallery(product):
-    urls = []
-    for image in product.get("gallery") or []:
-        if isinstance(image, dict):
-            url = next((
-                str(image.get(key) or "").strip()
-                for key in (
-                    "original_url", "url", "download_url", "thumbnail_url",
-                )
-                if image.get(key)
-            ), "")
-        else:
-            url = str(image or "").strip()
-        if url and url not in urls:
-            urls.append(url)
+BITRIX_GALLERY_CACHE = {}
+BITRIX_GALLERY_CACHE_TTL = 60
+BITRIX_IMAGE_PROXY_MAX_BYTES = 10 * 1024 * 1024
 
-    if not urls:
+
+def bitrix_image_file_id(image):
+    if not isinstance(image, dict):
+        return ""
+    value = (
+        image.get("external_file_id")
+        or image.get("file_id")
+        or image.get("id")
+        or ""
+    )
+    value = str(value).strip()
+    return value if value.isdigit() and int(value) > 0 else ""
+
+
+def bitrix_image_source_url(image):
+    if not isinstance(image, dict):
+        return str(image or "").strip()
+    return next((
+        str(image.get(key) or "").strip()
+        for key in (
+            "original_url", "url", "download_url", "thumbnail_url",
+        )
+        if image.get(key)
+    ), "")
+
+
+def normalized_bitrix_gallery(product, images=None):
+    product_id = int(product.get("id") or 0)
+    result = []
+    seen_ids = set()
+    seen_urls = set()
+    for index, raw_image in enumerate(
+        images if images is not None else (product.get("gallery") or [])
+    ):
+        image = raw_image if isinstance(raw_image, dict) else {
+            "original_url": raw_image,
+        }
+        source_url = bitrix_image_source_url(image)
+        file_id = bitrix_image_file_id(image)
+        normalized_url = source_url.split("?", 1)[0].split("#", 1)[0].lower()
+        if (
+            (file_id and file_id in seen_ids)
+            or (normalized_url and normalized_url in seen_urls)
+        ):
+            continue
+        if not source_url:
+            continue
+        if file_id:
+            seen_ids.add(file_id)
+        if normalized_url:
+            seen_urls.add(normalized_url)
+        result.append({
+            "external_file_id": file_id,
+            "kind": str(
+                image.get("kind")
+                or image.get("image_type")
+                or image.get("type")
+                or "gallery"
+            ),
+            "is_primary": bool(image.get("is_primary")) or index == 0,
+            "order": int(image.get("order") or image.get("sort") or index),
+            "original_url": (
+                "/warehouse/product/{}/image/{}".format(product_id, file_id)
+                if product_id and file_id
+                else source_url
+            ),
+        })
+    return result
+
+
+def _live_bitrix_product(product, force=False):
+    external_id = str(product.get("bitrix_external_product_id") or "").strip()
+    if not external_id.isdigit() or int(external_id) < 1:
+        return None
+    cached = BITRIX_GALLERY_CACHE.get(external_id)
+    if (
+        not force
+        and cached
+        and time.monotonic() - cached[0] < BITRIX_GALLERY_CACHE_TTL
+    ):
+        return cached[1]
+    client = BitrixCatalogClient(
+        os.getenv("BITRIX_CATALOG_URL", ""),
+        os.getenv("BITRIX_CATALOG_TOKEN"),
+    )
+    live_product = client.get_product(external_id)
+    if live_product is not None:
+        BITRIX_GALLERY_CACHE[external_id] = (time.monotonic(), live_product)
+    return live_product
+
+
+def persist_live_bitrix_gallery(product, live_product):
+    images = list(live_product.get("images") or [])
+    primary = next((image for image in images if image.get("is_primary")), None)
+    if primary is None and images:
+        primary = images[0]
+    preview = next(
+        (image for image in images if image.get("kind") == "preview"),
+        primary,
+    )
+    return ExcelProductCatalog().update_bitrix_images(
+        product["id"],
+        product["bitrix_external_product_id"],
+        bitrix_image_source_url(primary or {}),
+        bitrix_image_source_url(preview or {}),
+        images,
+    )
+
+
+def warehouse_product_gallery_items(product, live_product=None):
+    if str(product.get("bitrix_external_product_id") or "").strip():
+        images = (
+            live_product.get("images")
+            if live_product is not None
+            else product.get("gallery")
+        ) or []
+        items = normalized_bitrix_gallery(product, images)
+        if items:
+            return items
+
+    legacy_urls = []
+    for image in product.get("gallery") or []:
+        url = bitrix_image_source_url(image)
+        if url and url not in legacy_urls:
+            legacy_urls.append(url)
+    if not legacy_urls:
         primary_url = str(
             product.get("bitrix_primary_image_url")
             or product.get("bitrix_thumbnail_url")
             or ""
         ).strip()
         if primary_url:
-            urls.append(primary_url)
+            legacy_urls.append(primary_url)
+    if legacy_urls:
+        return [{"original_url": url} for url in legacy_urls]
 
-    if not urls:
-        moysklad_product_id = str(
-            product.get("moysklad_product_id") or ""
-        ).strip()
-        if moysklad_product_id:
-            urls.append(
-                "/warehouse/product/{}/thumbnail".format(
-                    moysklad_product_id
-                )
-            )
+    moysklad_product_id = str(
+        product.get("moysklad_product_id") or ""
+    ).strip()
+    if moysklad_product_id:
+        return [{
+            "external_file_id": "",
+            "kind": "moysklad",
+            "is_primary": True,
+            "order": 0,
+            "original_url": "/warehouse/product/{}/thumbnail".format(
+                moysklad_product_id
+            ),
+        }]
+    return []
 
-    return urls
+
+def warehouse_product_gallery(product):
+    return [image["original_url"] for image in warehouse_product_gallery_items(product)]
 
 
 @app.route("/warehouse/product/<int:product_id>")
@@ -1970,13 +2113,78 @@ def warehouse_product_detail(product_id):
     product = ExcelProductCatalog().get_product(product_id)
     if product is None:
         abort(404)
+    live_product = None
+    gallery_error = ""
+    if str(product.get("bitrix_external_product_id") or "").strip():
+        try:
+            live_product = _live_bitrix_product(product)
+            if live_product is not None:
+                product = persist_live_bitrix_gallery(product, live_product)
+        except (BitrixCatalogReadOnlyError, ValueError, OSError):
+            app.logger.exception(
+                "Не удалось обновить Bitrix-галерею товара %s",
+                product_id,
+            )
+            gallery_error = "Не удалось обновить галерею из Bitrix."
     return jsonify({
         "id": product["id"],
-        "gallery": [
-            {"original_url": url}
-            for url in warehouse_product_gallery(product)
-        ],
+        "source": (
+            "bitrix"
+            if product.get("bitrix_external_product_id")
+            else "moysklad"
+        ),
+        "editable": bool(
+            product.get("bitrix_external_product_id")
+            or product.get("moysklad_product_id")
+        ),
+        "gallery": warehouse_product_gallery_items(product, live_product),
+        "gallery_error": gallery_error,
     })
+
+
+@app.route("/warehouse/product/<int:product_id>/image/<file_id>")
+def warehouse_bitrix_product_image(product_id, file_id):
+    if not str(file_id or "").isdigit():
+        abort(404)
+    product = ExcelProductCatalog().get_product(product_id)
+    if product is None or not product.get("bitrix_external_product_id"):
+        abort(404)
+    image = next((
+        candidate
+        for candidate in product.get("gallery") or []
+        if bitrix_image_file_id(candidate) == str(file_id)
+    ), None)
+    if image is None:
+        abort(404)
+    source_url = bitrix_image_source_url(image)
+    source = urlsplit(source_url)
+    catalog_source = urlsplit(os.getenv("BITRIX_CATALOG_URL", ""))
+    if (
+        source.scheme != "https"
+        or not source.hostname
+        or source.hostname != catalog_source.hostname
+        or not source.path.startswith("/upload/")
+    ):
+        abort(404)
+    try:
+        response = requests.get(source_url, timeout=(3.05, 15))
+        response.raise_for_status()
+    except requests.RequestException:
+        app.logger.exception(
+            "Не удалось получить Bitrix-файл %s товара %s",
+            file_id,
+            product_id,
+        )
+        abort(502)
+    content = response.content
+    if not content or len(content) > BITRIX_IMAGE_PROXY_MAX_BYTES:
+        abort(502)
+    mimetype = str(response.headers.get("Content-Type") or "").split(";", 1)[0]
+    if mimetype not in {"image/jpeg", "image/png", "image/webp"}:
+        abort(502)
+    result = Response(content, mimetype=mimetype)
+    result.headers["Cache-Control"] = "private, max-age=300"
+    return result
 
 
 @app.route("/warehouse/product/<product_id>/thumbnail")
@@ -2560,6 +2768,10 @@ def get_stock_operations_for_product(product_id, limit=10):
 
 
 def get_catalog_stock_history(product_id=None, limit=5000):
+    photo_operations = [
+        operation for operation in load_stock_operations()
+        if operation.get("type") == "product_photo"
+    ]
     manual_operations = (
         ExcelProductCatalog().list_manual_stock_operations(
             limit=limit
@@ -2652,9 +2864,15 @@ def get_catalog_stock_history(product_id=None, limit=5000):
             if str(operation.get("product_id") or "")
             == product_id
         ]
+        photo_operations = [
+            operation
+            for operation in photo_operations
+            if str(operation.get("product_id") or "") == product_id
+        ]
 
     return sorted(
-        manual_operations + catalog_operations + sales_movements,
+        manual_operations + catalog_operations + sales_movements
+        + photo_operations,
         key=lambda operation: str(
             operation.get("created_at") or ""
         ),
@@ -10141,9 +10359,11 @@ def read_product_image_upload(uploaded_file, allow_webp=False):
     if content.startswith(b"\xff\xd8\xff"):
         extension = ".jpg"
         allowed_mimetypes = {"image/jpeg", "image/jpg"}
+        detected_mimetype = "image/jpeg"
     elif content.startswith(b"\x89PNG\r\n\x1a\n"):
         extension = ".png"
         allowed_mimetypes = {"image/png"}
+        detected_mimetype = "image/png"
     elif (
         allow_webp
         and len(content) >= 12
@@ -10152,6 +10372,7 @@ def read_product_image_upload(uploaded_file, allow_webp=False):
     ):
         extension = ".webp"
         allowed_mimetypes = {"image/webp"}
+        detected_mimetype = "image/webp"
     else:
         supported = "JPEG, PNG и WEBP" if allow_webp else "JPEG и PNG"
         raise ValueError("Недопустимый формат изображения. Поддерживаются {}.".format(supported))
@@ -10169,6 +10390,7 @@ def read_product_image_upload(uploaded_file, allow_webp=False):
     return {
         "filename": filename[:255],
         "content": content,
+        "mime_type": detected_mimetype,
     }
 
 
@@ -12442,7 +12664,7 @@ def api_product_request_payload():
 
 def api_product_update_request_payload():
     if request.mimetype != "multipart/form-data":
-        return api_json_payload(), None, "keep"
+        return api_json_payload(), None, "keep", ""
 
     allowed_names = (
         "name", "article", "brand", "category", "brand_id",
@@ -12473,7 +12695,36 @@ def api_product_update_request_payload():
         raise ValueError("Выберите фотографию товара.")
     if image and action == "keep":
         action = "replace"
-    return payload, image, action
+    file_id = str(request.form.get("bitrix_image_file_id") or "").strip()
+    if file_id and (not file_id.isdigit() or int(file_id) < 1):
+        raise ValueError("Некорректный Bitrix ID фотографии.")
+    return payload, image, action, file_id
+
+
+def record_product_photo_operation(product, action, affected_file_id):
+    user = current_auth_user() or {}
+    labels = {
+        "add": "Фото добавлено",
+        "replace": "Фото заменено",
+        "remove": "Фото удалено",
+    }
+    add_stock_operation({
+        "id": str(uuid.uuid4()),
+        "created_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "product_id": str(product.get("id") or ""),
+        "product_name": product.get("excel_name_raw") or product.get("bitrix_name") or "",
+        "type": "product_photo",
+        "label": labels.get(action, "Фото изменено"),
+        "quantity": 0,
+        "stock_before": None,
+        "stock_after": None,
+        "diff": 0,
+        "source": "Bitrix",
+        "reason": "Bitrix ID файла: {}".format(affected_file_id or "—"),
+        "status": "success",
+        "user_name": user.get("name") or user.get("email") or "",
+        "bitrix_file_id": str(affected_file_id or ""),
+    })
 
 
 def rollback_remote_product(client, product):
@@ -12708,7 +12959,7 @@ def api_product_resource(product_id):
         return api_success({"id": product_id, "deleted": True})
 
     try:
-        payload, product_image, image_action = (
+        payload, product_image, image_action, bitrix_image_file_id = (
             api_product_update_request_payload()
         )
         allowed_fields = {
@@ -12732,43 +12983,107 @@ def api_product_resource(product_id):
         remote_product_id = str(
             product.get("moysklad_product_id") or ""
         ).strip()
+        bitrix_product_id = str(
+            product.get("bitrix_external_product_id") or ""
+        ).strip()
         image_message = ""
         if image_action != "keep":
-            if not remote_product_id:
+            if bitrix_product_id:
+                image_client = BitrixCatalogClient(
+                    os.getenv("BITRIX_CATALOG_URL", ""),
+                    os.getenv("BITRIX_CATALOG_TOKEN"),
+                )
+                try:
+                    live_product, mutation = image_client.mutate_product_image(
+                        bitrix_product_id,
+                        image_action,
+                        image=product_image,
+                        file_id=bitrix_image_file_id,
+                    )
+                    BITRIX_GALLERY_CACHE[bitrix_product_id] = (
+                        time.monotonic(), live_product
+                    )
+                    product = persist_live_bitrix_gallery(
+                        product, live_product
+                    )
+                    affected_file_id = str(
+                        mutation.get("affected_file_id")
+                        or bitrix_image_file_id
+                        or ""
+                    )
+                    record_product_photo_operation(
+                        product, image_action, affected_file_id
+                    )
+                    image_message = {
+                        "add": "Фото добавлено в Bitrix.",
+                        "replace": "Фото заменено в Bitrix.",
+                        "remove": "Фото удалено из Bitrix.",
+                    }[image_action]
+                except (BitrixCatalogWriteError, BitrixCatalogReadOnlyError):
+                    app.logger.exception(
+                        "Products API failed to update Bitrix image for %s",
+                        product_id,
+                    )
+                    actual_gallery = []
+                    try:
+                        actual = _live_bitrix_product(product, force=True)
+                        if actual is not None:
+                            product = persist_live_bitrix_gallery(
+                                product, actual
+                            )
+                            actual_gallery = warehouse_product_gallery_items(
+                                product, actual
+                            )
+                    except Exception:
+                        app.logger.exception(
+                            "Products API failed to reread Bitrix gallery for %s",
+                            product_id,
+                        )
+                    return api_error(
+                        "PRODUCT_IMAGE_UPLOAD_FAILED",
+                        (
+                            "Bitrix не выполнил операцию с фотографией. "
+                            "Показано актуальное доступное состояние галереи."
+                        ),
+                        502,
+                        {"gallery": actual_gallery},
+                    )
+            elif not remote_product_id:
                 return api_error(
                     "PRODUCT_IMAGE_STORAGE_UNAVAILABLE",
-                    "У товара нет связанной карточки в МойСклад.",
+                    "У товара нет связанной карточки в Bitrix или МойСклад.",
                     422,
                 )
-            image_client = MoySkladClient()
-            try:
-                if image_action == "remove":
-                    image_result = image_client.delete_product_images(
-                        remote_product_id
+            else:
+                image_client = MoySkladClient()
+                try:
+                    if image_action == "remove":
+                        image_result = image_client.delete_product_images(
+                            remote_product_id
+                        )
+                        image_message = "Фото товара удалено."
+                    else:
+                        image_result = image_client.upload_product_image(
+                            remote_product_id,
+                            product_image["filename"],
+                            product_image["content"],
+                        )
+                        image_message = "Фото товара обновлено."
+                except Exception:
+                    app.logger.exception(
+                        "Products API failed to update image for %s",
+                        product_id,
                     )
-                    image_message = "Фото товара удалено."
-                else:
-                    image_result = image_client.upload_product_image(
-                        remote_product_id,
-                        product_image["filename"],
-                        product_image["content"],
+                    image_result = None
+                if not image_result:
+                    return api_error(
+                        "PRODUCT_IMAGE_UPLOAD_FAILED",
+                        (
+                            "Не удалось изменить фотографию. "
+                            "Прежнее изображение и данные товара сохранены."
+                        ),
+                        502,
                     )
-                    image_message = "Фото товара обновлено."
-            except Exception:
-                app.logger.exception(
-                    "Products API failed to update image for %s",
-                    product_id,
-                )
-                image_result = None
-            if not image_result:
-                return api_error(
-                    "PRODUCT_IMAGE_UPLOAD_FAILED",
-                    (
-                        "Не удалось изменить фотографию. "
-                        "Прежнее изображение и данные товара сохранены."
-                    ),
-                    502,
-                )
         updated = (
             catalog_service.update_product(product_id, **payload)
             if payload
