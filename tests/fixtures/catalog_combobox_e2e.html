@@ -191,8 +191,9 @@
                     ".catalog-combobox-option-details"
                 ).getBoundingClientRect();
                 result.fullWidth = Math.abs(
-                    optionBox.width - optionsBox.width
-                ) <= 1;
+                    optionBox.left - optionsBox.left
+                ) <= 1 && optionBox.right <= optionsBox.right + 1
+                    && optionsBox.width - optionBox.width <= 20;
                 result.equalEdges = Math.abs(
                     searchBox.left - optionsBox.left
                 ) <= 1 && Math.abs(
