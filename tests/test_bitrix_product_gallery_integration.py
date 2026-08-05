@@ -142,13 +142,13 @@ class BitrixProductGalleryIntegrationTest(unittest.TestCase):
             "gallery": [],
             "moysklad_product_id": None,
         }
-        persisted = dict(stored, gallery=[
+        live_gallery = [
             {"id": "44610", "url": "https://www.tictactoy.ru/upload/main.jpg"},
             {"id": "44611", "url": "https://www.tictactoy.ru/upload/one.jpg"},
             {"id": "44612", "url": "https://www.tictactoy.ru/upload/two.jpg"},
-        ])
+        ]
         live = {
-            "images": persisted["gallery"],
+            "images": live_gallery,
             "external_product_id": "204699",
         }
         catalog = mock.Mock()
@@ -158,7 +158,7 @@ class BitrixProductGalleryIntegrationTest(unittest.TestCase):
             headers={"X-Requested-With": "XMLHttpRequest"},
         ), mock.patch.object(web, "ExcelProductCatalog", return_value=catalog), \
                 mock.patch.object(web, "_live_bitrix_product", return_value=live) as fetch, \
-                mock.patch.object(web, "persist_live_bitrix_gallery", return_value=persisted):
+                mock.patch.object(web, "persist_live_bitrix_gallery") as persist:
             response = web.warehouse_product_detail(9037)
         payload = response.get_json()
         self.assertEqual(len(payload["gallery"]), 3)
@@ -169,6 +169,38 @@ class BitrixProductGalleryIntegrationTest(unittest.TestCase):
             "/warehouse/product/9037/image/44612",
         )
         fetch.assert_called_once_with(stored)
+        persist.assert_not_called()
+
+    def test_proxy_accepts_live_file_without_persisting_on_get(self):
+        product = {
+            "id": 9037,
+            "bitrix_external_product_id": "204699",
+            "gallery": [],
+        }
+        live = {"images": [{
+            "id": "44613",
+            "url": "https://www.tictactoy.ru/upload/live.jpg",
+        }]}
+        catalog = mock.Mock()
+        catalog.get_product.return_value = product
+        with web.app.test_request_context(
+            "/warehouse/product/9037/image/44613"
+        ), mock.patch.dict(
+            "os.environ",
+            {"BITRIX_CATALOG_URL": "https://www.tictactoy.ru/api/catalog-export.php"},
+        ), mock.patch.object(
+            web, "ExcelProductCatalog", return_value=catalog
+        ), mock.patch.object(
+            web, "_live_bitrix_product", return_value=live
+        ) as fetch, mock.patch.object(
+            web, "persist_live_bitrix_gallery"
+        ) as persist, mock.patch.object(
+            web.requests, "get", return_value=FakeImageResponse()
+        ):
+            response = web.warehouse_bitrix_product_image(9037, "44613")
+        self.assertEqual(response.status_code, 200)
+        fetch.assert_called_once_with(product)
+        persist.assert_not_called()
 
     def test_lazy_xhr_is_not_redirected_but_legacy_navigation_is(self):
         with web.app.test_request_context(
@@ -226,7 +258,9 @@ class BitrixProductGalleryIntegrationTest(unittest.TestCase):
             ), mock.patch.dict(
                 "os.environ",
                 {"BITRIX_CATALOG_URL": "https://www.tictactoy.ru/api/catalog-export.php"},
-            ), mock.patch.object(web, "ExcelProductCatalog", return_value=catalog):
+            ), mock.patch.object(
+                web, "ExcelProductCatalog", return_value=catalog
+            ), mock.patch.object(web, "_live_bitrix_product", return_value=None):
                 with self.assertRaises(Exception) as raised:
                     web.warehouse_bitrix_product_image(9037, file_id)
                 self.assertEqual(raised.exception.code, 404)
