@@ -144,7 +144,7 @@ class ToolbarPopoverBrowserTest(unittest.TestCase):
                             'data-toolbar-popover-e2e="pass"',
                         )
 
-            for path, marker in (
+            modal_paths = (
                 (
                     "/app/sales?sales_modal_e2e=1",
                     'data-sales-modal-e2e="pass"',
@@ -153,14 +153,25 @@ class ToolbarPopoverBrowserTest(unittest.TestCase):
                     "/app/receipts?receipts_modal_e2e=1",
                     'data-receipts-modal-e2e="pass"',
                 ),
-            ):
-                with self.subTest(path=path):
+            )
+            for path, marker in modal_paths:
+                with self.subTest(path=path, width=1440):
                     self.run_chrome(
                         chrome,
                         f"http://127.0.0.1:{port}{path}",
                         1440,
                         900,
                         marker,
+                    )
+            for width, height in ((390, 844), (320, 568)):
+                with self.subTest(path="sales", width=width):
+                    self.run_chrome(
+                        chrome,
+                        f"http://127.0.0.1:{port}"
+                        "/app/sales?sales_modal_e2e=1",
+                        width,
+                        height,
+                        'data-sales-modal-e2e="pass"',
                     )
         finally:
             server.terminate()
