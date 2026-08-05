@@ -2118,8 +2118,6 @@ def warehouse_product_detail(product_id):
     if str(product.get("bitrix_external_product_id") or "").strip():
         try:
             live_product = _live_bitrix_product(product)
-            if live_product is not None:
-                product = persist_live_bitrix_gallery(product, live_product)
         except (BitrixCatalogReadOnlyError, ValueError, OSError):
             app.logger.exception(
                 "Не удалось обновить Bitrix-галерею товара %s",
@@ -2154,6 +2152,21 @@ def warehouse_bitrix_product_image(product_id, file_id):
         for candidate in product.get("gallery") or []
         if bitrix_image_file_id(candidate) == str(file_id)
     ), None)
+    if image is None:
+        try:
+            live_product = _live_bitrix_product(product)
+        except (BitrixCatalogReadOnlyError, ValueError, OSError):
+            app.logger.exception(
+                "Не удалось проверить Bitrix-файл %s товара %s",
+                file_id,
+                product_id,
+            )
+            abort(502)
+        image = next((
+            candidate
+            for candidate in (live_product or {}).get("images") or []
+            if bitrix_image_file_id(candidate) == str(file_id)
+        ), None)
     if image is None:
         abort(404)
     source_url = bitrix_image_source_url(image)
