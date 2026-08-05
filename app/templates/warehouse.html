@@ -9762,7 +9762,7 @@
                     return originalFetch(url, options);
                 };
                 const openButton = document.querySelector(
-                    '[data-detail-url^="/warehouse/product/"]'
+                    '.erp-table-action-view[data-detail-url^="/warehouse/product/"]'
                 );
                 if (!openButton) throw new Error("missing-card-button");
                 await openEditDrawer(openButton);
