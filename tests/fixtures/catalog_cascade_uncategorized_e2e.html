@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/static/css/catalog-combobox.css">
+    <style>
+        * { box-sizing: border-box; }
+        body { margin: 0; padding: 16px; font-family: Arial, sans-serif; }
+        .fixture { display: grid; gap: 12px; width: min(640px, 100%); }
+        .fixture > * { min-width: 0; }
+        .brand-combobox-dropdown { position: relative; top: 0; margin-top: 7px; }
+    </style>
+</head>
+<body>
+    <form class="fixture" data-shared-catalog-scope>
+        <div id="cascadeBrand" class="brand-combobox filter-combobox"
+             data-brand-combobox data-shared-catalog-kind="brand"
+             data-prefix-search="false" data-search-enabled="true"
+             data-clear-selection-on-search-clear="true" data-all-label="Выберите бренд">
+            <input class="brand-combobox-hidden" name="brand" type="hidden">
+            <input class="catalog-combobox-id" name="brand_id" type="hidden">
+            <button class="brand-combobox-trigger" type="button"><span class="brand-combobox-value">Выберите бренд</span><span>▾</span></button>
+            <div class="brand-combobox-dropdown"><div class="brand-combobox-search-wrap"><input class="brand-combobox-search" data-brand-search-input></div><div class="brand-combobox-options"><div class="brand-combobox-empty" data-brand-empty hidden></div></div></div>
+        </div>
+        <div id="cascadeCategory" class="brand-combobox filter-combobox"
+             data-brand-combobox data-shared-catalog-kind="category"
+             data-prefix-search="false" data-search-enabled="true"
+             data-clear-selection-on-search-clear="true" data-all-label="Сначала выберите бренд">
+            <input class="brand-combobox-hidden" name="category" type="hidden" disabled>
+            <input class="catalog-combobox-id" name="category_id" type="hidden" disabled>
+            <button class="brand-combobox-trigger" type="button" disabled><span class="brand-combobox-value">Сначала выберите бренд</span><span>▾</span></button>
+            <div class="brand-combobox-dropdown"><div class="brand-combobox-search-wrap"><input class="brand-combobox-search" data-brand-search-input></div><div class="brand-combobox-options"><div class="brand-combobox-empty" data-brand-empty hidden></div></div></div>
+        </div>
+        <div id="cascadeProduct" class="brand-combobox filter-combobox"
+             data-brand-combobox data-shared-catalog-kind="product"
+             data-prefix-search="false" data-search-enabled="true"
+             data-clear-selection-on-search-clear="true" data-all-label="Сначала выберите бренд и категорию">
+            <input class="brand-combobox-hidden" name="product_id" type="hidden" disabled>
+            <button class="brand-combobox-trigger" type="button" disabled><span class="brand-combobox-value">Сначала выберите бренд и категорию</span><span>▾</span></button>
+            <div class="brand-combobox-dropdown"><div class="brand-combobox-search-wrap"><input class="brand-combobox-search" data-brand-search-input></div><div class="brand-combobox-options"><div class="brand-combobox-empty" data-brand-empty hidden></div></div></div>
+        </div>
+    </form>
+
+    <script src="/static/js/catalog-combobox.js"></script>
+    <script>
+        window.addEventListener("load", async function() {
+            const root = document.documentElement;
+            const result = {};
+            const requests = [];
+            const brands = [
+                {id: 1, name: "666 Barcelona"},
+                {id: 2, name: "Другой бренд"},
+            ];
+            const categories = [
+                {id: 10, name: "Часы", brand_id: 1},
+                {id: 0, name: "Без категории", brand_id: 1},
+                {id: 20, name: "Аксессуары", brand_id: 2},
+            ];
+            const products = [
+                {id: 101, name: "Обычный первый", article: "NORMAL-1", stock: 1, brand_id: 1, category_id: 10},
+                {id: 102, name: "Обычный последний", article: "NORMAL-2", stock: 2, brand_id: 1, category_id: 10},
+                ...Array.from({length: 12}, (_, index) => ({
+                    id: 200 + index,
+                    name: index === 0 ? "Без категории первый" : index === 11 ? "Без категории последний" : "Без категории товар " + index,
+                    article: "UNCAT-" + index,
+                    stock: index,
+                    brand_id: 1,
+                    category_id: null,
+                })),
+                {id: 301, name: "Чужая категория", article: "WRONG-CATEGORY", stock: 3, brand_id: 1, category_id: 99},
+                {id: 401, name: "Чужой бренд", article: "WRONG-BRAND", stock: 4, brand_id: 2, category_id: null},
+            ];
+            const brand = document.getElementById("cascadeBrand");
+            const category = document.getElementById("cascadeCategory");
+            const product = document.getElementById("cascadeProduct");
+            const optionItems = (combobox) => Array.from(combobox.querySelectorAll(".brand-combobox-option:not([hidden])"));
+            const choose = async (combobox, id) => {
+                await window.loadSharedCatalogOptions(combobox, "");
+                const option = optionItems(combobox).find((candidate) => JSON.parse(candidate.dataset.catalogItem).id === id);
+                option.click();
+            };
+
+            try {
+                window.fetch = async function(url) {
+                    const target = new URL(url, window.location.origin);
+                    requests.push(target.href);
+                    const type = target.searchParams.get("type");
+                    const brandId = target.searchParams.get("brand_id");
+                    const categoryId = target.searchParams.get("category_id");
+                    const query = (target.searchParams.get("q") || "").toLocaleLowerCase("ru");
+                    let data = type === "brand" ? brands : type === "category" ? categories.filter((item) => String(item.brand_id) === brandId) : products.filter((item) => (
+                        String(item.brand_id) === brandId
+                        && (categoryId === "0" ? item.category_id === null : String(item.category_id) === categoryId)
+                        && (!query || (item.name + " " + item.article).toLocaleLowerCase("ru").includes(query))
+                    ));
+                    return {ok: true, json: async () => ({data, meta: {total: data.length}})};
+                };
+
+                result.trulyUnselected = product.querySelector(".brand-combobox-trigger").disabled;
+                await choose(brand, 1);
+                result.brandEnablesCategory = !category.querySelector(".brand-combobox-trigger").disabled;
+
+                await choose(category, 10);
+                result.normalCategory = !product.querySelector(".brand-combobox-trigger").disabled;
+                await window.loadSharedCatalogOptions(product, "");
+                let options = optionItems(product);
+                options[0].click();
+                product.querySelector(".brand-combobox-trigger").click();
+                await window.loadSharedCatalogOptions(product, "");
+                options = optionItems(product);
+                options.at(-1).click();
+                result.normalFirstLast = product.querySelector(".brand-combobox-hidden").value === "102";
+
+                await choose(category, 0);
+                result.zeroIsSelected = category.querySelector(".catalog-combobox-id").value === "0";
+                result.uncategorizedEnablesProduct = !product.querySelector(".brand-combobox-trigger").disabled;
+                result.categoryChangeResetsProduct = product.querySelector(".brand-combobox-hidden").value === "";
+                await window.loadSharedCatalogOptions(product, "");
+                options = optionItems(product);
+                result.strictFilter = options.length === 12 && options.every((option) => {
+                    const item = JSON.parse(option.dataset.catalogItem);
+                    return item.brand_id === 1 && item.category_id === null;
+                });
+                result.zeroSentToApi = requests.at(-1).includes("brand_id=1") && requests.at(-1).includes("category_id=0");
+                options[0].click();
+                product.querySelector(".brand-combobox-trigger").click();
+                await window.loadSharedCatalogOptions(product, "");
+                optionItems(product).at(-1).click();
+                result.uncategorizedFirstLast = product.querySelector(".brand-combobox-hidden").value === "211";
+
+                await window.loadSharedCatalogOptions(product, "UNCAT-4");
+                result.articleSearch = optionItems(product).length === 1;
+                await window.loadSharedCatalogOptions(product, "товар 5");
+                result.nameSearch = optionItems(product).length === 1;
+
+                await choose(category, 10);
+                await choose(category, 0);
+                result.toggleCategories = category.querySelector(".catalog-combobox-id").value === "0" && !product.querySelector(".brand-combobox-trigger").disabled;
+
+                await choose(brand, 2);
+                result.brandChangeResets = category.querySelector(".catalog-combobox-id").value === "" && product.querySelector(".brand-combobox-hidden").value === "" && product.querySelector(".brand-combobox-trigger").disabled;
+                await window.loadSharedCatalogOptions(category, "");
+                result.noUncategorizedProducts = !optionItems(category).some((option) => JSON.parse(option.dataset.catalogItem).id === 0);
+
+                const dropdown = product.querySelector(".brand-combobox-dropdown");
+                result.noOverflow = root.scrollWidth <= root.clientWidth && dropdown.scrollWidth <= dropdown.clientWidth;
+                root.dataset.catalogCascadeE2e = Object.values(result).every(Boolean) ? "pass" : "fail";
+                root.dataset.catalogCascadeE2eResult = JSON.stringify(result);
+            } catch (error) {
+                root.dataset.catalogCascadeE2e = "fail";
+                root.dataset.catalogCascadeE2eError = error.message;
+                root.dataset.catalogCascadeE2eResult = JSON.stringify(result);
+            }
+        });
+    </script>
+</body>
+</html>

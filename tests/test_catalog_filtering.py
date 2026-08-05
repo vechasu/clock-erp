@@ -135,7 +135,7 @@ class CatalogFilteringTest(unittest.TestCase):
                     article,
                     "code_like",
                     "666 Barcelona" if brand_id == self.brand["id"] else prefix,
-                    "Наручные часы",
+                    "Наручные часы" if category_id is not None else "",
                     brand_id,
                     category_id,
                     1 if offset < positive_count else 0,
@@ -363,6 +363,83 @@ class CatalogFilteringTest(unittest.TestCase):
         self.assertEqual(len(response), 1)
         selected_id = response[0]["id"]
         self.assertEqual(self.shared.get_product(selected_id)["id"], selected_id)
+
+    def test_uncategorized_products_are_filtered_by_selected_brand(self):
+        self._insert_products(
+            count=2,
+            brand_id=self.brand["id"],
+            category_id=None,
+            prefix="Barcelona без категории",
+        )
+        self._insert_products(
+            count=1,
+            brand_id=self.other_brand["id"],
+            category_id=None,
+            prefix="Другой без категории",
+        )
+
+        response = self.client.get(
+            "/api/v1/catalog/options?type=product&limit=200"
+            "&brand_id={}&category_id=0".format(self.brand["id"])
+        ).get_json()
+        names = [item["name"] for item in response["data"]]
+
+        self.assertEqual(response["meta"]["total"], 2)
+        self.assertEqual(
+            names,
+            [
+                "Barcelona без категории 00000",
+                "Barcelona без категории 00001",
+            ],
+        )
+        self.assertNotIn("Другой без категории 00000", names)
+        self.assertFalse(any(name.startswith("Barcelona 0") for name in names))
+
+    def test_uncategorized_option_is_only_returned_for_a_brand_that_uses_it(self):
+        without_uncategorized = self.client.get(
+            "/api/v1/catalog/options?type=category&category_scope=brand"
+            "&brand_id={}&limit=200".format(self.other_brand["id"])
+        ).get_json()["data"]
+        self.assertNotIn(0, [item["id"] for item in without_uncategorized])
+
+        self._insert_products(
+            count=1,
+            brand_id=self.brand["id"],
+            category_id=None,
+            prefix="Без категории",
+        )
+        with_uncategorized = self.client.get(
+            "/api/v1/catalog/options?type=category&category_scope=brand"
+            "&brand_id={}&limit=200".format(self.brand["id"])
+        ).get_json()["data"]
+        uncategorized = [item for item in with_uncategorized if item["id"] == 0]
+
+        self.assertEqual(len(uncategorized), 1)
+        self.assertEqual(uncategorized[0]["name"], "Без категории")
+
+    def test_uncategorized_product_search_uses_name_and_article(self):
+        self._insert_products(
+            count=2,
+            brand_id=self.brand["id"],
+            category_id=None,
+            prefix="Uncategorized search",
+        )
+        base = (
+            "/api/v1/catalog/options?type=product&limit=200"
+            "&brand_id={}&category_id=0&q=".format(self.brand["id"])
+        )
+
+        by_name = self.client.get(base + "search%2000001").get_json()["data"]
+        by_article = self.client.get(
+            base + "UNCATEGORIZED%20SEARCH-00000"
+        ).get_json()["data"]
+
+        self.assertEqual([item["name"] for item in by_name], [
+            "Uncategorized search 00001",
+        ])
+        self.assertEqual([item["name"] for item in by_article], [
+            "Uncategorized search 00000",
+        ])
 
 
 if __name__ == "__main__":

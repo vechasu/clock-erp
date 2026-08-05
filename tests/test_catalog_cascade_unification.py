@@ -28,6 +28,16 @@ class CatalogCascadeUnificationTest(unittest.TestCase):
         self.assertIn("clearSharedCatalogCombobox(category)", source)
         self.assertIn("clearSharedCatalogCombobox(product)", source)
 
+    def test_uncategorized_zero_id_is_not_treated_as_an_empty_selection(self):
+        source = self.source("app/static/js/catalog-combobox.js")
+        self.assertIn("function sharedCatalogIdValue(value)", source)
+        self.assertIn(
+            'value === null || value === undefined',
+            source,
+        )
+        self.assertIn('categoryId === ""', source)
+        self.assertNotIn("String(item.id || \"\")", source)
+
     def test_global_category_backend_contract_is_preserved(self):
         source = self.source("app/services/shared_catalog.py")
         self.assertIn("normalized_name", source)
