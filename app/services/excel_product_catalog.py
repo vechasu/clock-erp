@@ -753,8 +753,19 @@ class ExcelProductCatalog:
             )
             parameters.extend([category, category, category])
         if category_id not in (None, ""):
-            where.append("p.category_id = ?")
-            parameters.append(int(category_id))
+            selected_category_id = int(category_id)
+            if selected_category_id == 0:
+                where.append("p.category_id IS NULL")
+            else:
+                where.append(
+                    "p.category_id IN ("
+                    "SELECT matching.id FROM erp_categories matching "
+                    "WHERE matching.active = 1 "
+                    "AND matching.normalized_name = ("
+                    "SELECT selected.normalized_name "
+                    "FROM erp_categories selected WHERE selected.id = ?))"
+                )
+                parameters.append(selected_category_id)
         if product_id not in (None, ""):
             where.append("p.id = ?")
             parameters.append(int(product_id))
@@ -783,8 +794,12 @@ class ExcelProductCatalog:
             where.append("COALESCE(p.excel_brand, '') = ?")
             parameters.append(brand)
         if brand_id not in (None, ""):
-            where.append("p.brand_id = ?")
-            parameters.append(int(brand_id))
+            selected_brand_id = int(brand_id)
+            if selected_brand_id == 0:
+                where.append("p.brand_id IS NULL")
+            else:
+                where.append("p.brand_id = ?")
+                parameters.append(selected_brand_id)
         where_sql = " WHERE " + " AND ".join(where)
         brand_facet_where_sql = (
             " WHERE " + " AND ".join(brand_facet_where)
