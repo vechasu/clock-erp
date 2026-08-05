@@ -4152,6 +4152,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/erp-components.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-combobox.css') }}">
     <script src="{{ url_for('static', filename='js/catalog-combobox.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/toolbar-popover-coordinator.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/table-scroll-hint.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/erp-modal-shell.js') }}"></script>
 </head>
@@ -5568,6 +5569,7 @@
         }
 
         function openFilterDrawer() {
+            window.warehouseToolbarPopovers?.closeAll();
             warehouseDrawerReturnFocus = document.activeElement;
             closeAllDrawers(false);
             document.getElementById("drawerBackdrop").classList.add("open");
@@ -8026,6 +8028,188 @@
                 document.documentElement.dataset.bulkUiE2eError = (
                     error.message
                 );
+            }
+        });
+    </script>
+    {% endif %}
+
+    <script>
+        window.warehouseToolbarPopovers = (
+            window.createErpToolbarPopoverCoordinator([
+                {
+                    trigger: document.getElementById(
+                        "warehouseColumnSettingsTrigger"
+                    ),
+                    container: document.querySelector(
+                        ".warehouse-column-settings"
+                    ),
+                    isOpen: () => !document.getElementById(
+                        "warehouseColumnSettingsPanel"
+                    ).hidden,
+                    close: () => {
+                        document.getElementById(
+                            "warehouseColumnSettingsPanel"
+                        ).hidden = true;
+                        document.getElementById(
+                            "warehouseColumnSettingsTrigger"
+                        ).setAttribute("aria-expanded", "false");
+                    },
+                },
+                {
+                    trigger: document.getElementById(
+                        "warehouseMoreTrigger"
+                    ),
+                    container: document.getElementById(
+                        "warehouseMoreMenu"
+                    ),
+                    isOpen: () => document.getElementById(
+                        "warehouseMoreMenu"
+                    ).classList.contains("is-open"),
+                    close: () => setWarehouseMoreMenuOpen(false),
+                },
+                {
+                    trigger: document.querySelector(
+                        "#warehouseDateFilter .warehouse-date-trigger"
+                    ),
+                    container: document.getElementById(
+                        "warehouseDateFilter"
+                    ),
+                    isOpen: () => !document.querySelector(
+                        "#warehouseDateFilter .warehouse-calendar-popup"
+                    ).hidden,
+                    close: () => {
+                        const root = document.getElementById(
+                            "warehouseDateFilter"
+                        );
+                        root.classList.remove("is-open");
+                        root.querySelector(
+                            ".warehouse-calendar-popup"
+                        ).hidden = true;
+                        root.querySelector(
+                            ".warehouse-date-trigger"
+                        ).setAttribute("aria-expanded", "false");
+                    },
+                },
+            ])
+        );
+    </script>
+
+    {% if config.TESTING and request.args.get("toolbar_popover_e2e") == "1" %}
+    <script>
+        window.addEventListener("load", async function() {
+            const root = document.documentElement;
+            const wait = () => new Promise((resolve) =>
+                window.setTimeout(resolve, 40)
+            );
+            const more = document.getElementById("warehouseMoreTrigger");
+            const columns = document.getElementById(
+                "warehouseColumnSettingsTrigger"
+            );
+            const columnsPanel = document.getElementById(
+                "warehouseColumnSettingsPanel"
+            );
+            const period = document.querySelector(
+                "#warehouseDateFilter .warehouse-date-trigger"
+            );
+            const periodPanel = document.querySelector(
+                "#warehouseDateFilter .warehouse-calendar-popup"
+            );
+            const filters = document.getElementById(
+                "warehouseFilterTrigger"
+            );
+            const initialSearch = window.location.search;
+
+            function assert(condition, message) {
+                if (!condition) throw new Error(message);
+            }
+
+            function openCount() {
+                return Number(document.getElementById(
+                    "warehouseMoreMenu"
+                ).classList.contains("is-open"))
+                    + Number(!columnsPanel.hidden)
+                    + Number(!periodPanel.hidden)
+                    + Number(document.getElementById(
+                        "filterDrawer"
+                    ).classList.contains("open"));
+            }
+
+            try {
+                more.click();
+                await wait();
+                assert(openCount() === 1, "more-open");
+                columns.click();
+                await wait();
+                assert(
+                    openCount() === 1
+                    && !columnsPanel.hidden
+                    && !document.getElementById(
+                        "warehouseMoreMenu"
+                    ).classList.contains("is-open"),
+                    "more-then-columns"
+                );
+
+                columns.click();
+                await wait();
+                assert(openCount() === 0, "repeat-close");
+
+                columns.click();
+                await wait();
+                const optionalColumn = columnsPanel.querySelector(
+                    'input:not([disabled])'
+                );
+                optionalColumn.click();
+                const savedColumnState = optionalColumn.checked;
+                document.dispatchEvent(new KeyboardEvent(
+                    "keydown",
+                    {key: "Escape", bubbles: true}
+                ));
+                await wait();
+                assert(openCount() === 0, "escape-close");
+                columns.click();
+                await wait();
+                assert(
+                    optionalColumn.checked === savedColumnState,
+                    "column-setting-reset"
+                );
+                optionalColumn.click();
+                document.querySelector("h1").click();
+                await wait();
+                assert(openCount() === 0, "outside-close");
+
+                period.click();
+                await wait();
+                more.click();
+                await wait();
+                assert(
+                    openCount() === 1
+                    && periodPanel.hidden,
+                    "period-then-more"
+                );
+
+                filters.click();
+                await wait();
+                assert(
+                    openCount() === 1
+                    && document.getElementById(
+                        "filterDrawer"
+                    ).classList.contains("open"),
+                    "more-then-filters"
+                );
+                closeAllDrawers(false);
+
+                assert(
+                    window.location.search === initialSearch,
+                    "filters-reset"
+                );
+                assert(
+                    root.scrollWidth <= root.clientWidth + 1,
+                    "page-horizontal-overflow"
+                );
+                root.dataset.toolbarPopoverE2e = "pass";
+            } catch (error) {
+                root.dataset.toolbarPopoverE2e =
+                    "fail-" + error.message;
             }
         });
     </script>
