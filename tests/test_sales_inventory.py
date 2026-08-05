@@ -210,6 +210,30 @@ class SalesInventoryTest(unittest.TestCase):
             [-1, -1, 1],
         )
 
+    def test_update_quantity_three_to_one_and_three_to_five_uses_only_delta(self):
+        product = self.create_product(stock=10)
+        sale = self.inventory.create_sale(
+            self.payload(product), product["id"], 3, 1000,
+        )
+        self.assertEqual(self.stock(product["id"]), 7)
+
+        decreased = self.inventory.update_sale(
+            "sale-1", {**sale, "quantity": 1}, 1, 1000,
+        )
+        self.assertEqual(self.stock(product["id"]), 9)
+
+        increased = self.inventory.update_sale(
+            "sale-1", {**decreased, "quantity": 5}, 5, 1000,
+        )
+        self.assertEqual(increased["quantity"], 5)
+        self.assertEqual(self.stock(product["id"]), 5)
+        self.assertEqual(
+            [item["diff"] for item in reversed(
+                self.inventory.list_movements(product["id"])
+            )],
+            [-3, 2, -4],
+        )
+
     def test_replace_with_insufficient_stock_rolls_back_both_products(self):
         old_product = self.create_product(stock=4)
         new_product = self.create_product(
@@ -505,7 +529,7 @@ class SalesInventoryWebTest(SalesInventoryTest):
             1000,
         )
 
-    def update_sale_form(self, sale, **changes):
+    def update_sale_form(self, sale, idempotency_key="", **changes):
         data = {
             "sale_id": sale["id"],
             "source": sale["source"],
@@ -523,10 +547,75 @@ class SalesInventoryWebTest(SalesInventoryTest):
             for key, value in data.items()
             if value is not None
         }
+        headers = {"X-Requested-With": "XMLHttpRequest"}
+        if idempotency_key:
+            headers["Idempotency-Key"] = idempotency_key
         return self.client.post(
             "/sales/manual/update",
             data=data,
-            headers={"X-Requested-With": "XMLHttpRequest"},
+            headers=headers,
+        )
+
+    def create_channel_sale(self, source, **metadata):
+        payload = self.payload(
+            self.product,
+            "sale-channel-{}".format(source.casefold()),
+        )
+        payload.update({
+            "source": source,
+            "created_at": "2026-08-04T14:14",
+            "order_status": "completed",
+            "metadata_marker": "сохранить",
+            **metadata,
+        })
+        return self.inventory.create_sale(
+            payload,
+            self.product["id"],
+            1,
+            1000,
+        )
+
+    def assert_channel_metadata_preserved(self, source, **metadata):
+        sale = self.create_channel_sale(source, **metadata)
+        movements_before = self.inventory.list_movements(self.product["id"])
+        response = self.update_sale_form(sale, note="Изменено")
+
+        self.assertEqual(response.status_code, 200)
+        stored = self.inventory.get_sale(sale["id"])
+        self.assertEqual(stored["source"], source)
+        self.assertEqual(stored["note"], "Изменено")
+        self.assertEqual(stored["metadata_marker"], "сохранить")
+        for key, value in metadata.items():
+            self.assertEqual(stored[key], value)
+        self.assertEqual(
+            self.inventory.list_movements(self.product["id"]),
+            movements_before,
+        )
+
+    def test_tictactoy_edit_preserves_channel_metadata(self):
+        self.assert_channel_metadata_preserved(
+            "Tictactoy",
+            delivery_cost=350,
+            commission="Оплата по СБП (0)",
+            track_number="TT-ТРЕК",
+            country="Россия",
+            region="Москва",
+            city="Москва",
+        )
+
+    def test_wildberries_edit_preserves_channel_metadata(self):
+        self.assert_channel_metadata_preserved(
+            "Wildberries",
+            sticker_number="WB-СТИКЕР",
+        )
+
+    def test_amazon_edit_preserves_channel_metadata(self):
+        self.assert_channel_metadata_preserved(
+            "Amazon",
+            recipient_name="Иван Иванов",
+            platform="Amazon.de",
+            country="Германия",
+            invoice_number="AMZ-ТРЕК",
         )
 
     def test_manual_update_returns_json_and_preserves_inventory_for_all_channels(self):
@@ -590,6 +679,56 @@ class SalesInventoryWebTest(SalesInventoryTest):
         self.assertEqual(
             [movement["diff"] for movement in reversed(movements)],
             [-1, -1, 1],
+        )
+
+    def test_repeated_http_update_with_same_key_does_not_repeat_stock_change(self):
+        sale = self.create_managed_sale(quantity=1)
+        first = self.update_sale_form(
+            sale,
+            idempotency_key="sale-edit:sale-web:qa",
+            quantity="2",
+        )
+        second = self.update_sale_form(
+            sale,
+            idempotency_key="sale-edit:sale-web:qa",
+            quantity="2",
+        )
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(self.stock(self.product["id"]), 1)
+        self.assertEqual(
+            len(self.inventory.list_movements(self.product["id"])),
+            2,
+        )
+
+    def test_manual_update_replaces_product_atomically(self):
+        replacement = self.create_product(
+            stock=5,
+            name="Часы Replacement",
+            article="ARTICLE-REPLACEMENT",
+        )
+        sale = self.create_managed_sale(quantity=2)
+
+        response = self.update_sale_form(
+            sale,
+            product_id=str(replacement["id"]),
+            product_name=replacement["display_name"],
+            quantity="3",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        stored = self.inventory.get_sale(sale["id"])
+        self.assertEqual(stored["product_id"], str(replacement["id"]))
+        self.assertEqual(self.stock(self.product["id"]), 3)
+        self.assertEqual(self.stock(replacement["id"]), 2)
+        self.assertEqual(
+            len(self.inventory.list_movements(self.product["id"])),
+            2,
+        )
+        self.assertEqual(
+            len(self.inventory.list_movements(replacement["id"])),
+            1,
         )
 
     def test_manual_update_error_is_json_and_rolls_back(self):
@@ -679,6 +818,12 @@ class SalesInventoryWebTest(SalesInventoryTest):
         self.assertIn('saleDateValue + "T00:00"', template)
         self.assertIn('setSaleFormError(\n                error.message', template)
         self.assertIn('manualSaleModal.classList.add("is-open")', template)
+        self.assertIn("if (saleEditSavePending)", template)
+        self.assertIn('"Idempotency-Key": saleEditIdempotencyKey', template)
+        self.assertIn(
+            '"Не удалось сохранить изменения: ошибка сервера"',
+            template,
+        )
         self.assertNotIn(
             'catch (error) {\n            closeManualSaleModal()',
             template,

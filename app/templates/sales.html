@@ -4450,6 +4450,14 @@
     const saleFormError = document.getElementById("saleFormError");
     let manualSaleReturnFocus = null;
     let editingSale = null;
+    let saleEditSavePending = false;
+    let saleEditIdempotencyKey = "";
+
+    function createSaleEditIdempotencyKey(saleId) {
+        const randomPart = window.crypto?.randomUUID?.()
+            || Math.random().toString(36).slice(2);
+        return ["sale-edit", saleId || "unknown", randomPart].join(":");
+    }
 
     function setSaleFormError(message = "") {
         saleFormError.textContent = message;
@@ -4875,6 +4883,8 @@
         manualSaleReturnFocus = button;
         resetModalView();
         editingSale = sale;
+        saleEditSavePending = false;
+        saleEditIdempotencyKey = createSaleEditIdempotencyKey(sale.id);
         const sourceKey = sale.source_key || "tictactoy";
         showSaleForm(sourceKey);
         manualSaleForm.dataset.editing = "1";
@@ -4969,6 +4979,7 @@
             "Категория: " + (sale.category || "—"),
         ].join(" · ");
         manualSaleModal.classList.add("is-open");
+        manualSaleModal.setAttribute("aria-hidden", "false");
         document.body.classList.add("modal-open");
         requestAnimationFrame(() => {
             manualSaleModal.querySelector(
@@ -5077,6 +5088,10 @@
         }
 
         event.preventDefault();
+        if (saleEditSavePending) {
+            return;
+        }
+        saleEditSavePending = true;
         setSaleFormError();
         saleSubmitButton.disabled = true;
         manualSaleForm.setAttribute("aria-busy", "true");
@@ -5088,6 +5103,7 @@
                     method: "POST",
                     headers: {
                         "X-Requested-With": "XMLHttpRequest",
+                        "Idempotency-Key": saleEditIdempotencyKey,
                     },
                     body: new FormData(manualSaleForm),
                 },
@@ -5098,7 +5114,8 @@
                 result = JSON.parse(responseText);
             } catch (_error) {
                 throw new Error(
-                    "Сервер вернул некорректный ответ. Повторите запрос."
+                    "Не удалось сохранить изменения: ошибка сервера"
+                    + " (HTTP " + response.status + ")."
                 );
             }
 
@@ -5119,6 +5136,7 @@
                 block: "nearest",
             });
         } finally {
+            saleEditSavePending = false;
             saleSubmitButton.disabled = false;
             manualSaleForm.removeAttribute("aria-busy");
         }
