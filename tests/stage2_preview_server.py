@@ -56,6 +56,10 @@ warehouse_items = [
     }
     for item in projected_products
 ]
+warehouse_items[0]["thumbnail_url"] = (
+    "data:image/gif;base64,"
+    "R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=="
+)
 
 receipt_positions = [
     {
@@ -160,6 +164,9 @@ preview_sales = [
 
 web.CATALOG_TAXONOMY_PATH = PREVIEW_ROOT / "catalog_taxonomy.json"
 web.get_warehouse_items = lambda *args, **kwargs: [dict(item) for item in warehouse_items]
+web.get_excel_warehouse_items = lambda *args, **kwargs: [
+    dict(item) for item in warehouse_items
+]
 web.load_receipts = lambda: [dict(receipt) for receipt in preview_receipts]
 web.build_sales_report_records = lambda warehouse_items=None: [
     dict(sale) for sale in preview_sales
