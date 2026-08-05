@@ -400,16 +400,14 @@ class SharedCatalog:
             result.append(self._category(prepared))
         return result
 
-    def list_products(
-        self,
+    @staticmethod
+    def _product_filter_sql(
         query="",
         brand_id=None,
         category_id=None,
-        limit=50,
         include_archived=False,
         in_stock=False,
     ):
-        self.database.initialize()
         where = []
         parameters = []
         if not include_archived:
@@ -442,7 +440,52 @@ class SharedCatalog:
             pattern = "%{}%".format(query)
             parameters.extend([pattern, pattern, pattern])
         where_sql = " WHERE " + " AND ".join(where) if where else ""
-        parameters.append(max(1, min(int(limit), 100)))
+        return where_sql, parameters
+
+    def count_products(
+        self,
+        query="",
+        brand_id=None,
+        category_id=None,
+        include_archived=False,
+        in_stock=False,
+    ):
+        self.database.initialize()
+        where_sql, parameters = self._product_filter_sql(
+            query=query,
+            brand_id=brand_id,
+            category_id=category_id,
+            include_archived=include_archived,
+            in_stock=in_stock,
+        )
+        with self.database.connect() as connection:
+            return int(connection.execute(
+                "SELECT COUNT(*) FROM catalog_excel_products p "
+                "LEFT JOIN erp_categories c ON c.id = p.category_id "
+                "LEFT JOIN catalog_products cp "
+                "ON cp.id = p.bitrix_catalog_product_id"
+                + where_sql,
+                parameters,
+            ).fetchone()[0])
+
+    def list_products(
+        self,
+        query="",
+        brand_id=None,
+        category_id=None,
+        limit=50,
+        include_archived=False,
+        in_stock=False,
+    ):
+        self.database.initialize()
+        where_sql, parameters = self._product_filter_sql(
+            query=query,
+            brand_id=brand_id,
+            category_id=category_id,
+            include_archived=include_archived,
+            in_stock=in_stock,
+        )
+        parameters.append(max(1, min(int(limit), 200)))
         with self.database.connect() as connection:
             rows = connection.execute(
                 "SELECT p.id, p.excel_name_raw AS name, "

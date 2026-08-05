@@ -4326,6 +4326,18 @@
                     </div>
 
                     <div class="warehouse-filter-actions">
+                        <label class="zero-stock-toggle" for="warehouseInStockToggle">
+                            <span class="zero-stock-toggle-text">Только в наличии</span>
+                            <span class="toggle-switch">
+                                <input
+                                    id="warehouseInStockToggle"
+                                    type="checkbox"
+                                    {% if in_stock %}checked{% endif %}
+                                    onchange="toggleWarehouseInStock(event, this)"
+                                >
+                                <span class="toggle-slider" aria-hidden="true"></span>
+                            </span>
+                        </label>
                         <button
                             id="warehouseFilterTrigger"
                             class="search-tool-button erp-secondary-action erp-filter-trigger{% if warehouse_active_filter_count %} is-active{% endif %}"
@@ -6296,6 +6308,7 @@
                 || hasValue("cell")
                 || hasValue("date_from")
                 || hasValue("date_to")
+                || params.get("in_stock") === "1"
             );
         }
 
@@ -6325,6 +6338,7 @@
                 "cell",
                 "date_from",
                 "date_to",
+                "in_stock",
                 "page"
             ].forEach(name => url.searchParams.delete(name));
             navigateWithWarehouseParams(url);

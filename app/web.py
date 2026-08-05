@@ -1583,6 +1583,7 @@ def warehouse_page():
         bool(selected_category_id or selected_category),
         bool(selected_cell),
         bool(created_date_from or created_date_to),
+        in_stock,
     ))
     warehouse_active_filter_label = format_active_filter_label(
         warehouse_active_filter_count
@@ -12816,7 +12817,7 @@ def api_catalog_options():
     catalog = SharedCatalog()
     kind = (request.args.get("type") or "product").strip()
     query = request.args.get("q") or ""
-    limit = api_positive_int(request.args.get("limit"), 50, 100)
+    limit = api_positive_int(request.args.get("limit"), 50, 200)
     try:
         if kind == "brand":
             items = catalog.list_brands(query=query, limit=limit)
@@ -12854,7 +12855,20 @@ def api_catalog_options():
             {**item, "count": item.get("product_count", 0)}
             for item in items
         ]
-    return api_success(items, total=len(items), limit=limit)
+    total = (
+        catalog.count_products(
+            query=query,
+            brand_id=request.args.get("brand_id"),
+            category_id=request.args.get("category_id"),
+            in_stock=(
+                (request.args.get("in_stock") or "").strip().lower()
+                in {"1", "true", "yes"}
+            ),
+        )
+        if kind == "product"
+        else len(items)
+    )
+    return api_success(items, total=total, limit=limit)
 
 
 @app.route("/api/catalog/duplicates", methods=["GET"])
@@ -13092,7 +13106,7 @@ def receipt_api_catalog_items(
         query="",
         brand_id=None,
         category_id=None,
-        limit=100,
+        limit=200,
         allow_legacy=False,
         shared_catalog=None):
     shared_catalog = shared_catalog or SharedCatalog()
@@ -13586,7 +13600,7 @@ def api_receipts_catalog():
         query=query,
         brand_id=request.args.get("brand_id"),
         category_id=request.args.get("category_id"),
-        limit=api_positive_int(request.args.get("limit"), 50, 100),
+        limit=api_positive_int(request.args.get("limit"), 50, 200),
         allow_legacy=not request.path.startswith("/api/v1/"),
     )
     if query:
@@ -13603,8 +13617,18 @@ def api_receipts_catalog():
         items = [item for item in items if item["category"] == category]
     if product_id:
         items = [item for item in items if item["id"] == product_id]
-    limit = api_positive_int(request.args.get("limit"), 50, 100)
-    return api_success(items[:limit], total=len(items))
+    limit = api_positive_int(request.args.get("limit"), 50, 200)
+    total = len(items)
+    if (
+        request.path.startswith("/api/v1/")
+        and not any((brand, category, product_id))
+    ):
+        total = SharedCatalog().count_products(
+            query=query,
+            brand_id=request.args.get("brand_id"),
+            category_id=request.args.get("category_id"),
+        )
+    return api_success(items[:limit], total=total, limit=limit)
 
 
 @app.route("/api/receipts", methods=["GET", "POST"])
@@ -14362,7 +14386,7 @@ def find_api_sale(sale_id):
 
 
 def api_sale_catalog_items():
-    return SharedCatalog().list_products(limit=100, in_stock=True)
+    return SharedCatalog().list_products(limit=200)
 
 
 def normalize_api_sale_payload(payload, existing=None, require_catalog=False):
@@ -14490,15 +14514,20 @@ def normalize_api_sale_payload(payload, existing=None, require_catalog=False):
 @app.route("/api/sales/catalog", methods=["GET"])
 @app.route("/api/v1/sales/catalog", methods=["GET"])
 def api_sales_catalog():
-    limit = api_positive_int(request.args.get("limit"), 50, 100)
+    limit = api_positive_int(request.args.get("limit"), 50, 200)
     items = SharedCatalog().list_products(
         query=request.args.get("q") or "",
         brand_id=request.args.get("brand_id"),
         category_id=request.args.get("category_id"),
         limit=limit,
-        in_stock=True,
+        in_stock=False,
     )
-    return api_success(items, total=len(items), limit=limit)
+    total = SharedCatalog().count_products(
+        query=request.args.get("q") or "",
+        brand_id=request.args.get("brand_id"),
+        category_id=request.args.get("category_id"),
+    )
+    return api_success(items, total=total, limit=limit)
 
 
 @app.route("/api/sales/sources", methods=["GET"])

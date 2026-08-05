@@ -870,7 +870,7 @@
         requestControllers.set(combobox, controller);
         const parameters = new URLSearchParams({
             type: kind,
-            limit: "100",
+            limit: "200",
         });
         const query = String(rawQuery || "").trim();
 
