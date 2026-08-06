@@ -565,6 +565,91 @@ class SalesInventoryTest(unittest.TestCase):
         )
         self.assertEqual(created["id"], "sale-2")
 
+    def test_external_order_uniqueness_is_serialized_without_partial_index(self):
+        product = self.create_product(stock=5)
+
+        def create(sale_id):
+            return self.inventory.create_sale(
+                self.payload(product, sale_id),
+                product["id"],
+                1,
+                1000,
+                enforce_external_unique=True,
+            )
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            created = list(executor.map(create, ("sale-race-1", "sale-race-2")))
+
+        self.assertEqual(created[0]["id"], created[1]["id"])
+        self.assertEqual(self.stock(product["id"]), 4)
+        with self.database.connect() as connection:
+            active = connection.execute(
+                "SELECT COUNT(*) AS count FROM erp_sales "
+                "WHERE source = ? AND external_order_id = ? "
+                "AND cancelled_at IS NULL AND deleted_at IS NULL",
+                ("Tictactoy", "125"),
+            ).fetchone()
+        self.assertEqual(active["count"], 1)
+
+    def test_schema_replaces_legacy_unique_index_without_partial_index(self):
+        product = self.create_product(stock=5)
+        with self.database.transaction() as connection:
+            connection.execute(
+                "DROP INDEX IF EXISTS idx_erp_sales_source_external"
+            )
+            connection.execute(
+                "CREATE UNIQUE INDEX idx_erp_sales_source_external "
+                "ON erp_sales(source, external_order_id)"
+            )
+        CatalogDatabase(
+            self.database_path,
+            cache_initialization=False,
+        ).initialize()
+        with self.database.connect() as connection:
+            index = connection.execute(
+                "SELECT sql FROM sqlite_master WHERE type = 'index' "
+                "AND name = 'idx_erp_sales_source_external'"
+            ).fetchone()
+            index_list = connection.execute(
+                "PRAGMA index_list(erp_sales)"
+            ).fetchall()
+            unique_by_name = {
+                row["name"]: row["unique"] for row in index_list
+            }
+        self.assertIsNotNone(index)
+        self.assertNotIn(" WHERE ", (index["sql"] or "").upper())
+        self.assertEqual(unique_by_name["idx_erp_sales_source_external"], 0)
+
+        first = self.inventory.create_sale(
+            self.payload(product, "sale-active-1"),
+            product["id"],
+            1,
+            1000,
+            enforce_external_unique=True,
+        )
+        with self.database.transaction() as connection:
+            connection.execute(
+                "INSERT INTO erp_sales ("
+                "id, source, external_order_id, status, created_at, "
+                "metadata_json, inserted_at, updated_at"
+                ") SELECT ?, source, external_order_id, status, created_at, "
+                "metadata_json, inserted_at, updated_at FROM erp_sales WHERE id = ?",
+                ("sale-existing-duplicate", first["id"]),
+            )
+        CatalogDatabase(
+            self.database_path,
+            cache_initialization=False,
+        ).initialize()
+        repeated = self.inventory.create_sale(
+            self.payload(product, "sale-active-3"),
+            product["id"],
+            1,
+            1000,
+            enforce_external_unique=True,
+        )
+        self.assertIn(repeated["id"], {first["id"], "sale-existing-duplicate"})
+        self.assertEqual(self.stock(product["id"]), 4)
+
     def test_list_sales_loads_cancellation_plans_without_n_plus_one(self):
         product = self.create_product(stock=10)
         for index in range(5):

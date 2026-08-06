@@ -544,7 +544,8 @@ class SalesInventory:
             if updated_external_id:
                 duplicate = connection.execute(
                     "SELECT id FROM erp_sales "
-                    "WHERE source = ? AND external_order_id = ? AND id <> ?",
+                    "WHERE source = ? AND external_order_id = ? AND id <> ? "
+                    "AND cancelled_at IS NULL AND deleted_at IS NULL",
                     (updated_source, updated_external_id, sale_id),
                 ).fetchone()
                 if duplicate is not None:

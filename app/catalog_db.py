@@ -1279,18 +1279,16 @@ class CatalogDatabase:
             "SELECT sql FROM sqlite_master WHERE type = 'index' "
             "AND name = 'idx_erp_sales_source_external'"
         ).fetchone()
-        if (
-            external_index is None
-            or "cancelled_at IS NULL" not in (external_index["sql"] or "")
-        ):
+        if external_index is not None and "UNIQUE" in (
+            external_index["sql"] or ""
+        ).upper():
             connection.execute(
                 "DROP INDEX IF EXISTS idx_erp_sales_source_external"
             )
-            connection.execute(
-                "CREATE UNIQUE INDEX idx_erp_sales_source_external "
-                "ON erp_sales(source, external_order_id) "
-                "WHERE cancelled_at IS NULL AND deleted_at IS NULL"
-            )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_erp_sales_source_external "
+            "ON erp_sales(source, external_order_id)"
+        )
         connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_catalog_stock_movements_receipt "
             "ON catalog_stock_movements(receipt_id, created_at)"
