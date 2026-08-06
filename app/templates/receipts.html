@@ -4046,7 +4046,7 @@
         const product = document.getElementById("receiptProductFilter")?.value || "";
         const status = document.getElementById("receiptStatusFilter")?.value || "";
 
-        const url = new URL(window.location.href);
+        const navigationUrl = new URL(window.location.href);
         const values = {
             q: rawQuery,
             receipt_document: rawDocumentQuery,
@@ -4059,11 +4059,11 @@
             date_to: document.getElementById("receiptDateTo")?.value || "",
         };
         Object.entries(values).forEach(([key, value]) => {
-            if (value) url.searchParams.set(key, value);
-            else url.searchParams.delete(key);
+            if (value) navigationUrl.searchParams.set(key, value);
+            else navigationUrl.searchParams.delete(key);
         });
-        url.searchParams.delete("page");
-        window.location.assign(url.pathname + url.search);
+        navigationUrl.searchParams.delete("page");
+        window.location.assign(navigationUrl.pathname + navigationUrl.search);
         return;
 
         updateReceiptAdvancedFilterCount();
