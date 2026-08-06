@@ -1523,6 +1523,99 @@ def format_active_filter_label(count):
     return f"Активно {count} фильтров"
 
 
+ERP_PER_PAGE_OPTIONS = (25, 50, 100)
+
+
+def parse_erp_pagination():
+    try:
+        page = max(1, int(request.args.get("page", "1")))
+    except (TypeError, ValueError):
+        page = 1
+    try:
+        per_page = int(request.args.get("per_page", "50"))
+    except (TypeError, ValueError):
+        per_page = 50
+    if per_page not in ERP_PER_PAGE_OPTIONS:
+        per_page = 50
+    return page, per_page
+
+
+def build_erp_pagination(endpoint, total, page, per_page):
+    pages = max(1, (total + per_page - 1) // per_page)
+    page = min(max(1, page), pages)
+    arguments = request.args.to_dict(flat=True)
+    arguments["per_page"] = str(per_page)
+
+    def page_url(number):
+        query = dict(arguments)
+        query["page"] = str(number)
+        return url_for(endpoint, **query)
+
+    numbers = {1, pages, max(1, page - 1), page, min(pages, page + 1)}
+    if page <= 3:
+        numbers.update(range(1, min(3, pages) + 1))
+    if page >= pages - 2:
+        numbers.update(range(max(1, pages - 2), pages + 1))
+    items = []
+    previous = None
+    for number in sorted(numbers):
+        if previous is not None and number - previous > 1:
+            items.append(None)
+        items.append({"number": number, "url": page_url(number)})
+        previous = number
+
+    state_args = [
+        (key, value)
+        for key, value in request.args.items()
+        if key not in {"page", "per_page"} and value != ""
+    ]
+    return {
+        "page": page,
+        "per_page": per_page,
+        "per_page_options": ERP_PER_PAGE_OPTIONS,
+        "pages": pages,
+        "total": total,
+        "start": (page - 1) * per_page + 1 if total else 0,
+        "end": min(page * per_page, total),
+        "items": items,
+        "previous_url": page_url(page - 1) if page > 1 else None,
+        "next_url": page_url(page + 1) if page < pages else None,
+        "state_args": state_args,
+    }
+
+
+def paginate_erp_records(records, page, per_page):
+    total = len(records)
+    pages = max(1, (total + per_page - 1) // per_page)
+    page = min(max(1, page), pages)
+    offset = (page - 1) * per_page
+    return records[offset:offset + per_page], page
+
+
+def sort_erp_records(records, field, direction, numeric_fields=()):
+    numeric_fields = set(numeric_fields)
+
+    def identifier(item):
+        return str(item.get("id") or item.get("number") or "")
+
+    def normalized(item):
+        value = item.get(field)
+        if value is None or str(value).strip() == "":
+            return None
+        if field in numeric_fields:
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return None
+        return str(value).strip().casefold()
+
+    ordered = sorted(records, key=identifier)
+    present = [item for item in ordered if normalized(item) is not None]
+    missing = [item for item in ordered if normalized(item) is None]
+    present.sort(key=normalized, reverse=direction == "desc")
+    return present + missing
+
+
 @app.route("/warehouse")
 @app.route("/app/products")
 def warehouse_page():
@@ -1563,15 +1656,7 @@ def warehouse_page():
     in_stock = request.args.get("in_stock", "").strip() == "1"
     sort_by = request.args.get("sort_by", "name").strip()
     sort_dir = request.args.get("sort_dir", "asc").strip()
-    try:
-        page = max(1, int(request.args.get("page", "1")))
-    except (TypeError, ValueError):
-        page = 1
-    try:
-        requested_per_page = int(request.args.get("per_page", "50"))
-    except (TypeError, ValueError):
-        requested_per_page = 50
-    per_page = requested_per_page if requested_per_page in {50, 100, 200} else 50
+    page, per_page = parse_erp_pagination()
 
     allowed_sort_fields = {
         "name",
@@ -1691,46 +1776,10 @@ def warehouse_page():
     total_stock = float(catalog["stats"]["total_stock"] or 0)
     total_reserve = 0
     total_available = total_stock
-    pages = catalog["pages"]
     page = catalog["page"]
-    page_start = (page - 1) * per_page + 1 if catalog["total"] else 0
-    page_end = min(page * per_page, catalog["total"])
-    pagination_arguments = request.args.to_dict(flat=True)
-    pagination_arguments["per_page"] = str(per_page)
-
-    def page_url(target_page):
-        arguments = dict(pagination_arguments)
-        arguments["page"] = str(target_page)
-        return url_for("warehouse_page", **arguments)
-
-    previous_page_url = page_url(page - 1) if page > 1 else None
-    next_page_url = page_url(page + 1) if page < pages else None
-    pagination_page_count = pages or 1
-    pagination_page_numbers = {
-        1,
-        pagination_page_count,
-        max(1, page - 1),
-        page,
-        min(pagination_page_count, page + 1),
-    }
-    if page <= 3:
-        pagination_page_numbers.update(
-            range(1, min(3, pagination_page_count) + 1)
-        )
-    if page >= pagination_page_count - 2:
-        pagination_page_numbers.update(
-            range(max(1, pagination_page_count - 2), pagination_page_count + 1)
-        )
-    pagination_items = []
-    previous_number = None
-    for page_number in sorted(pagination_page_numbers):
-        if previous_number is not None and page_number - previous_number > 1:
-            pagination_items.append(None)
-        pagination_items.append({
-            "number": page_number,
-            "url": page_url(page_number),
-        })
-        previous_number = page_number
+    pagination = build_erp_pagination(
+        "warehouse_page", catalog["total"], page, per_page
+    )
     export_arguments = request.args.to_dict(flat=True)
     export_arguments.pop("page", None)
     export_arguments.pop("per_page", None)
@@ -1773,13 +1822,11 @@ def warehouse_page():
             total_available=total_available,
             page=page,
             per_page=per_page,
-            pages=pages,
-            page_start=page_start,
-            page_end=page_end,
+            pages=pagination["pages"],
+            page_start=pagination["start"],
+            page_end=pagination["end"],
             total_found=catalog["total"],
-            previous_page_url=previous_page_url,
-            next_page_url=next_page_url,
-            pagination_items=pagination_items,
+            pagination=pagination,
             warehouse_export_xlsx_url=url_for(
                 "warehouse_export_xlsx",
                 **export_arguments
@@ -1796,6 +1843,9 @@ def warehouse_page():
             warehouse_table_ui_e2e=(
                 app.testing
                 and request.args.get("table_ui_e2e") == "1"
+            ),
+            pagination_e2e=(
+                app.testing and request.args.get("pagination_e2e") == "1"
             ),
         )
     )
@@ -9099,7 +9149,6 @@ def build_legacy_sales_page():
         float(sale.get("quantity_value") or 0)
         for sale in active_sales
     )
-
     unique_orders = set()
 
     for sale in active_sales:
@@ -9194,12 +9243,6 @@ def sales_page():
         filters,
     )
 
-    for sale in sales:
-        sale["search_text"] = build_sales_search_text(
-            sale,
-            active_source,
-        )
-
     active_sales = [
         sale
         for sale in sales
@@ -9214,6 +9257,37 @@ def sales_page():
         float(sale.get("quantity_value") or 0)
         for sale in active_sales
     )
+    total_filtered_sales = len(sales)
+    total_cancelled_sales = total_filtered_sales - len(active_sales)
+    page, per_page = parse_erp_pagination()
+    allowed_sort_fields = {
+        column["key"] for column in get_sales_columns(active_source)
+    }
+    sort_field = (request.args.get("sort") or "created_at").strip()
+    sort_direction = (request.args.get("sort_dir") or "desc").strip()
+    if sort_field not in allowed_sort_fields:
+        sort_field = "created_at"
+    if sort_direction not in {"asc", "desc"}:
+        sort_direction = "desc"
+    sort_value_fields = {
+        "quantity_display": "quantity_value",
+        "unit_price_display": "unit_price",
+        "delivery_cost_display": "delivery_cost",
+    }
+    sales = sort_erp_records(
+        sales,
+        sort_value_fields.get(sort_field, sort_field),
+        sort_direction,
+        numeric_fields={
+            "quantity_value", "unit_price", "delivery_cost",
+        },
+    )
+    sales, page = paginate_erp_records(sales, page, per_page)
+    pagination = build_erp_pagination(
+        "sales_page", total_filtered_sales, page, per_page
+    )
+    for sale in sales:
+        sale["search_text"] = build_sales_search_text(sale, active_source)
     preserved_filters = {
         key: (request.args.get(key) or "").strip()
         for key in (
@@ -9226,6 +9300,7 @@ def sales_page():
             "category_id",
             "product_id",
             "status",
+            "per_page",
         )
     }
 
@@ -9260,6 +9335,7 @@ def sales_page():
     return render_template(
         "sales.html",
         sales=sales,
+        pagination=pagination,
         source_tabs=source_tabs,
         active_source=active_source,
         active_source_label=(
@@ -9269,7 +9345,7 @@ def sales_page():
         ),
         sales_columns=get_sales_columns(active_source),
         total_sales=len(active_sales),
-        total_cancelled=len(sales) - len(active_sales),
+        total_cancelled=total_cancelled_sales,
         total_orders=len(unique_orders),
         total_quantity=format_stock_number(
             total_quantity
@@ -9298,6 +9374,8 @@ def sales_page():
         ),
         tictactoy_location_data=get_tictactoy_location_catalog(),
         preserved_filters=preserved_filters,
+        sales_sort_field=sort_field,
+        sales_sort_direction=sort_direction,
         sales_filters=filters,
         sales_filter_options=filter_options,
         sales_filter_catalog=build_sales_filter_catalog(
@@ -9305,6 +9383,9 @@ def sales_page():
         ),
         notice=(request.args.get("notice") or "").strip(),
         message=(request.args.get("message") or "").strip(),
+        pagination_e2e=(
+            app.testing and request.args.get("pagination_e2e") == "1"
+        ),
     )
 
 
@@ -9728,40 +9809,7 @@ def receipt_catalog_create():
 @app.route("/app/receipts")
 def receipts_page():
     from datetime import datetime
-    from flask import request
-
-    stored_receipts = load_receipts()
-    receipt_legacy_links = SharedCatalog().legacy_links(
-        "receipt",
-        [receipt.get("id") for receipt in stored_receipts],
-    )
-    receipt_product_ids = {
-        str(position.get("product_id"))
-        for receipt in stored_receipts
-        for position in (receipt.get("positions") or [])
-        if isinstance(position, dict) and position.get("product_id")
-    }
-    receipt_product_ids.update(
-        str(receipt.get("product_id"))
-        for receipt in stored_receipts
-        if receipt.get("product_id")
-    )
-    receipt_product_ids.update(receipt_legacy_links.values())
-    receipt_catalog_lookup = SharedCatalog().products_by_ids(
-        receipt_product_ids,
-        include_archived=True,
-    )
-    receipts = [
-        {
-            **receipt,
-            **serialize_api_receipt(
-                receipt,
-                catalog_lookup=receipt_catalog_lookup,
-                legacy_links=receipt_legacy_links,
-            ),
-        }
-        for receipt in stored_receipts
-    ]
+    all_receipts = [dict(item) for item in api_receipt_records()]
 
     date_from = (
         request.args.get("date_from") or ""
@@ -9773,33 +9821,118 @@ def receipts_page():
     if date_from and date_to and date_from > date_to:
         date_from, date_to = date_to, date_from
 
+    receipt_filters = {
+        "q": (request.args.get("q") or "").strip(),
+        "receipt_document": (
+            request.args.get("receipt_document") or ""
+        ).strip(),
+        "receipt_comment": (
+            request.args.get("receipt_comment") or ""
+        ).strip(),
+        "receipt_brand": (
+            request.args.get("receipt_brand") or ""
+        ).strip(),
+        "receipt_category": (
+            request.args.get("receipt_category") or ""
+        ).strip(),
+        "receipt_product": (
+            request.args.get("receipt_product") or ""
+        ).strip(),
+        "receipt_status": (
+            request.args.get("receipt_status") or ""
+        ).strip(),
+    }
+    receipts = []
+    for receipt in all_receipts:
+        receipt_date = str(
+            receipt.get("receipt_date") or receipt.get("created_at") or ""
+        )[:10]
+        search_text = " ".join([
+            str(receipt.get("number") or ""),
+            str(receipt.get("note") or ""),
+            str(receipt.get("brand") or ""),
+            str(receipt.get("category") or ""),
+            str(receipt.get("product_name") or ""),
+        ]).casefold()
+        if date_from and receipt_date < date_from:
+            continue
+        if date_to and receipt_date > date_to:
+            continue
+        if receipt_filters["q"].casefold() not in search_text:
+            continue
+        if receipt_filters["receipt_document"].casefold() not in str(
+                receipt.get("number") or "").casefold():
+            continue
+        if receipt_filters["receipt_comment"].casefold() not in str(
+                receipt.get("note") or "").casefold():
+            continue
+        if (receipt_filters["receipt_brand"]
+                and receipt.get("brand") != receipt_filters["receipt_brand"]):
+            continue
+        if (receipt_filters["receipt_category"] and receipt.get("category")
+                != receipt_filters["receipt_category"]):
+            continue
+        if (receipt_filters["receipt_product"] and receipt.get("product_name")
+                != receipt_filters["receipt_product"]):
+            continue
+        if (receipt_filters["receipt_status"] and receipt.get("status_label")
+                != receipt_filters["receipt_status"]):
+            continue
+        receipts.append(receipt)
+
+    filtered_total = len(receipts)
     total_quantity = sum(
         parse_receipt_number(receipt.get("total_quantity"))
         for receipt in receipts
     )
+    sort_key = (request.args.get("sort") or "date").strip()
+    sort_direction = (request.args.get("sort_dir") or "desc").strip()
+    sort_fields = {
+        "date": "receipt_date", "document": "number", "brand": "brand",
+        "category": "category", "product": "product_name",
+        "quantity": "total_quantity", "status": "status_label",
+    }
+    if sort_key not in sort_fields:
+        sort_key = "date"
+    if sort_direction not in {"asc", "desc"}:
+        sort_direction = "desc"
+    receipts = sort_erp_records(
+        receipts, sort_fields[sort_key], sort_direction,
+        numeric_fields={"total_quantity"},
+    )
+    page, per_page = parse_erp_pagination()
+    receipts, page = paginate_erp_records(receipts, page, per_page)
+    pagination = build_erp_pagination(
+        "receipts_page", filtered_total, page, per_page
+    )
+
     return render_template(
         "receipts.html",
         receipts=receipts,
         receipt_date_from=date_from,
         receipt_date_to=date_to,
         today=datetime.now().strftime("%Y-%m-%d"),
-        total_receipts=len(receipts),
+        total_receipts=filtered_total,
         total_quantity=format_stock_number(total_quantity),
         receipt_filter_brands=sorted({
             str(receipt.get("brand") or "").strip()
-            for receipt in receipts
+            for receipt in all_receipts
             if str(receipt.get("brand") or "").strip()
         }),
         receipt_filter_categories=sorted({
             str(receipt.get("category") or "").strip()
-            for receipt in receipts
+            for receipt in all_receipts
             if str(receipt.get("category") or "").strip()
         }),
         receipt_filter_products=sorted({
             str(receipt.get("product_name") or "").strip()
-            for receipt in receipts
+            for receipt in all_receipts
             if str(receipt.get("product_name") or "").strip()
         }),
+        receipt_filters=receipt_filters,
+        receipt_sort_key=sort_key,
+        receipt_sort_direction=sort_direction,
+        pagination=pagination,
         notice=(request.args.get("notice") or "").strip(),
         message=(request.args.get("message") or "").strip(),
         open_receipt_modal=(
@@ -9807,6 +9940,9 @@ def receipts_page():
                 "open_receipt_modal"
             )
             == "1"
+        ),
+        pagination_e2e=(
+            app.testing and request.args.get("pagination_e2e") == "1"
         ),
     )
 

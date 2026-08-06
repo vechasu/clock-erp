@@ -202,7 +202,7 @@ class CatalogFilteringTest(unittest.TestCase):
 
     def test_warehouse_brand_and_category_render_two_active_filter_chips(self):
         response = self.client.get(
-            "/warehouse?brand_id={}&category_id={}&per_page=200".format(
+            "/warehouse?brand_id={}&category_id={}&per_page=100".format(
                 self.brand["id"],
                 self.category_id,
             )
@@ -214,7 +214,7 @@ class CatalogFilteringTest(unittest.TestCase):
         self.assertIn("Бренд: 666 Barcelona", html)
         self.assertIn("Категория: Наручные часы", html)
         self.assertIn("Сбросить всё", html)
-        self.assertEqual(html.count('data-product-id="'), 120)
+        self.assertEqual(html.count('data-product-id="'), 100)
 
     def test_warehouse_period_chip_variants_and_stock_chip(self):
         variants = (
@@ -236,7 +236,7 @@ class CatalogFilteringTest(unittest.TestCase):
                 self.assertIn(label, html)
 
         response = self.client.get(
-            "/warehouse?brand_id={}&category_id={}&in_stock=1&per_page=200".format(
+            "/warehouse?brand_id={}&category_id={}&in_stock=1&per_page=100".format(
                 self.brand["id"],
                 self.category_id,
             )

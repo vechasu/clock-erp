@@ -42,6 +42,17 @@ ExcelProductBatchService(CatalogDatabase(PREVIEW_ROOT / "catalog.db")).apply(
         product_result(3, "Tissot PRX Powermatic 80", "T137.407", "Tissot", "Часы", 3, "A-05"),
         product_result(4, "Ремешок Cordura Black", "STRAP-CB", "Vechasu", "Ремешки", 12, "B-12"),
         product_result(5, "Футляр для часов", "CASE-01", "Vechasu", "Аксессуары", 0, "C-03"),
+    ] + [
+        product_result(
+            row,
+            "Тестовый товар {:03d}".format(row),
+            "PAGE-{:03d}".format(row),
+            "Pagination",
+            "Тест",
+            row % 9,
+            "P-{:03d}".format(row),
+        )
+        for row in range(6, 122)
     ],
     "d" * 64,
     "stage2-preview.xlsx",
@@ -214,12 +225,42 @@ preview_sales = [
     sale_record("preview-sale-4", "ORDER-EMPTY", empty_article_product, "Tictactoy", "2026-07-27T13:05:59", 1, 5000),
 ]
 
+preview_sales.extend([
+    sale_record(
+        "preview-sale-{}".format(index),
+        "PAGE-{:04d}".format(index),
+        warehouse_items[index % len(warehouse_items)],
+        ("Tictactoy", "Wildberries", "Amazon")[index % 3],
+        "2026-06-{:02d}T09:00:00".format((index % 28) + 1),
+        1,
+        1000 + index,
+    )
+    for index in range(5, 125)
+])
+
+preview_receipts.extend([
+    {
+        **preview_receipts[0],
+        "id": "preview-receipt-{}".format(index),
+        "number": "PAGE-{:04d}".format(index),
+        "created_at": "2026-06-{:02d}T09:00:00".format((index % 28) + 1),
+        "receipt_date": "2026-06-{:02d}".format((index % 28) + 1),
+        "note": "Страница {:03d}".format(index),
+    }
+    for index in range(2, 122)
+])
+
 web.CATALOG_TAXONOMY_PATH = PREVIEW_ROOT / "catalog_taxonomy.json"
 web.get_warehouse_items = lambda *args, **kwargs: [dict(item) for item in warehouse_items]
-web.get_excel_warehouse_items = lambda *args, **kwargs: [
-    dict(item) for item in warehouse_items
-]
+web.get_excel_warehouse_items = lambda *args, **kwargs: (
+    web.build_excel_warehouse_items(kwargs["catalog"]["items"])
+    if kwargs.get("catalog")
+    else [dict(item) for item in warehouse_items]
+)
 web.load_receipts = lambda: [dict(receipt) for receipt in preview_receipts]
+web.api_receipt_records = lambda: tuple(
+    dict(receipt) for receipt in preview_receipts
+)
 web.build_sales_report_records = lambda warehouse_items=None: [
     dict(sale) for sale in preview_sales
 ]
