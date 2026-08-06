@@ -778,7 +778,7 @@
             white-space: nowrap;
         }
 
-        .sales-table td > span:not(.source-badge) {
+        .sales-table td > span:not(.source-badge):not(.erp-datetime-cell) {
             display: block;
             width: 100%;
             overflow: hidden;
@@ -1148,11 +1148,15 @@
     ></script>
     <script defer src="{{ url_for('static', filename='js/table-scroll-hint.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/erp-modal-shell.js') }}"></script>
+    {% if config.TESTING and request.args.get("datetime_e2e") == "1" %}
+        <script defer src="{{ url_for('static', filename='js/datetime-cell-e2e.js') }}"></script>
+    {% endif %}
 </head>
 
 <body class="sales-page">
 {% from "_catalog_combobox.html" import render_catalog_combobox %}
 {% from "_filter_count.html" import render_filter_count %}
+{% from "_datetime_cell.html" import render_erp_datetime %}
 <div class="app">
     {% include "_sidebar.html" %}
 
@@ -1726,11 +1730,8 @@
                                                 >
                                                     {{ value or "—" }}
                                                 </span>
-                                            {% elif column.key == "created_at" and value|length >= 10 %}
-                                                <span class="sale-date-cell">
-                                                    {{ value[8:10] }}.{{ value[5:7] }}.{{ value[:4] }}
-                                                    {% if value|length >= 16 %}<small>{{ value[11:16] }}</small>{% endif %}
-                                                </span>
+                                            {% elif column.key == "created_at" %}
+                                                {{ render_erp_datetime(value) }}
                                             {% elif column.key == "product_name" %}
                                                 <span
                                                     class="{% if sale.is_manual %}manual-view-value{% else %}automatic-view-value{% endif %} product-name erp-product-primary"
@@ -1876,12 +1877,7 @@
                         <div class="mobile-erp-card-header">
                             <div>
                                 <div class="sales-mobile-date">
-                                    {% if sale.created_at|length >= 10 %}
-                                        {{ sale.created_at[8:10] }}.{{ sale.created_at[5:7] }}.{{ sale.created_at[:4] }}
-                                        {% if sale.created_at|length >= 16 %} · {{ sale.created_at[11:16] }}{% endif %}
-                                    {% else %}
-                                        {{ sale.created_at or "—" }}
-                                    {% endif %}
+                                    {{ render_erp_datetime(sale.created_at) }}
                                 </div>
                                 <div class="mobile-erp-card-title">
                                     {{ sale.product_name or "Товар не указан" }}

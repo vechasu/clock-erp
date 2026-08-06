@@ -1,0 +1,24 @@
+{% macro render_erp_datetime(value, time_value="", placeholder="—") -%}
+    {% set datetime_value = (value or "")|string %}
+    {% set time_source = (time_value or datetime_value)|string %}
+    {% if datetime_value %}
+        {% if datetime_value|length >= 10 and datetime_value[4:5] == "-" and datetime_value[7:8] == "-" %}
+            {% set date_display = datetime_value[8:10] ~ "." ~ datetime_value[5:7] ~ "." ~ datetime_value[:4] %}
+        {% elif datetime_value|length >= 10 and datetime_value[2:3] == "." and datetime_value[5:6] == "." %}
+            {% set date_display = datetime_value[:10] %}
+        {% else %}
+            {% set date_display = datetime_value %}
+        {% endif %}
+        {% if time_source|length >= 16 and time_source[10:11] in ["T", " "] %}
+            {% set time_display = time_source[11:16] %}
+        {% else %}
+            {% set time_display = "" %}
+        {% endif %}
+        <span class="erp-datetime-cell">
+            <span class="erp-datetime-date">{{ date_display }}</span>
+            {% if time_display %}<span class="erp-datetime-time">{{ time_display }}</span>{% endif %}
+        </span>
+    {% else %}
+        <span class="erp-muted-value">{{ placeholder }}</span>
+    {% endif %}
+{%- endmacro %}

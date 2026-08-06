@@ -627,22 +627,45 @@
     font-weight: var(--erp-type-row-primary-weight);
 }
 
-.sale-date-cell,
-.receipt-date-stack {
+.erp-datetime-cell {
     display: inline-flex;
     flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    min-width: 10ch;
     gap: 2px;
+    overflow: visible;
+    color: #172033;
     font-size: var(--erp-type-table-cell-size);
     font-weight: var(--erp-type-table-cell-weight);
     font-variant-numeric: tabular-nums;
+    line-height: 1.2;
+    text-align: left;
+    text-overflow: clip;
+    vertical-align: middle;
+    white-space: nowrap;
 }
 
-.sale-date-cell small,
-.receipt-date-time,
+.erp-datetime-date {
+    color: inherit;
+    font: inherit;
+    white-space: nowrap;
+}
+
+.erp-datetime-time,
 .erp-muted-value {
     color: #8794a7;
     font-size: var(--erp-type-secondary-size);
     font-weight: var(--erp-type-secondary-weight);
+}
+
+.warehouse-products-table td[data-column-key="created"],
+.sales-table td.col-created_at,
+.receipts-table td.col-date {
+    overflow: visible;
+    vertical-align: middle;
+    text-align: left;
+    text-overflow: clip;
 }
 
 .warehouse-products-table td[data-column-key="price"],
@@ -3717,14 +3740,26 @@ select.erp-control {
         grid-row: 4;
     }
 
-    .warehouse-products-table td[data-column-key="article"],
-    .warehouse-products-table td[data-column-key="created"] {
+    .warehouse-products-table td[data-column-key="article"] {
         display: none !important;
+    }
+
+    .warehouse-products-table td[data-column-key="created"] {
+        grid-column: 2 / 4;
+        grid-row: 4;
+        margin-top: 2px;
+        color: #64748b;
+    }
+
+    .warehouse-products-table td[data-column-key="stock"],
+    .warehouse-products-table td[data-column-key="cell"],
+    .warehouse-products-table td[data-column-key="price"] {
+        grid-row: 5;
     }
 
     .warehouse-products-table td[data-column-key="actions"] {
         grid-column: 1 / 4;
-        grid-row: 5;
+        grid-row: 6;
         padding-top: 2px !important;
     }
 
@@ -4029,14 +4064,6 @@ select.erp-control {
 
     .receipts-table .receipt-row > .col-date::before {
         display: none;
-    }
-
-    .receipt-date-desktop {
-        display: none;
-    }
-
-    .receipts-table .receipt-date-mobile {
-        display: inline;
     }
 
     .receipts-table .receipt-row > .col-document {

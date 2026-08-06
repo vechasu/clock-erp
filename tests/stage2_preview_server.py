@@ -208,10 +208,10 @@ empty_article_product = {
 }
 
 preview_sales = [
-    sale_record("preview-sale-1", "ORDER-1042", long_article_product, "Tictactoy", "2026-07-30", 1, 14990),
-    sale_record("preview-sale-2", "WB-8831", zero_article_product, "Wildberries", "2026-07-29", 2, 1490),
-    sale_record("preview-sale-3", "AMZ-2201", warehouse_items[1], "Amazon", "2026-07-28", 1, 24990),
-    sale_record("preview-sale-4", "ORDER-EMPTY", empty_article_product, "Tictactoy", "2026-07-27", 1, 5000),
+    sale_record("preview-sale-1", "ORDER-1042", long_article_product, "Tictactoy", "2026-07-30T10:30:45", 1, 14990),
+    sale_record("preview-sale-2", "WB-8831", zero_article_product, "Wildberries", "2026-07-29T11:40:50", 2, 1490),
+    sale_record("preview-sale-3", "AMZ-2201", warehouse_items[1], "Amazon", "2026-07-28T12:50:55", 1, 24990),
+    sale_record("preview-sale-4", "ORDER-EMPTY", empty_article_product, "Tictactoy", "2026-07-27T13:05:59", 1, 5000),
 ]
 
 web.CATALOG_TAXONOMY_PATH = PREVIEW_ROOT / "catalog_taxonomy.json"
