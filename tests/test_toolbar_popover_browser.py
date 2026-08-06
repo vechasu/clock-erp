@@ -243,6 +243,25 @@ class ToolbarPopoverBrowserTest(unittest.TestCase):
                         height,
                         'data-sales-filters-e2e="pass"',
                     )
+
+            datetime_paths = (
+                "/app/products?datetime_e2e=1",
+                "/app/sales?source=all&datetime_e2e=1",
+                "/app/sales?source=tictactoy&datetime_e2e=1",
+                "/app/sales?source=wildberries&datetime_e2e=1",
+                "/app/sales?source=amazon&datetime_e2e=1",
+                "/app/receipts?datetime_e2e=1",
+            )
+            for width, height in ((1440, 900), (390, 844), (320, 568)):
+                for path in datetime_paths:
+                    with self.subTest(path=path, width=width):
+                        self.run_chrome(
+                            chrome,
+                            f"http://127.0.0.1:{port}{path}",
+                            width,
+                            height,
+                            'data-datetime-e2e="pass"',
+                        )
         finally:
             server.terminate()
             try:

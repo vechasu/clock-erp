@@ -4373,11 +4373,15 @@
     <script src="{{ url_for('static', filename='js/toolbar-popover-coordinator.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/table-scroll-hint.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/erp-modal-shell.js') }}"></script>
+    {% if config.TESTING and request.args.get("datetime_e2e") == "1" %}
+        <script defer src="{{ url_for('static', filename='js/datetime-cell-e2e.js') }}"></script>
+    {% endif %}
 </head>
 <body class="warehouse-page">
     {% from "_catalog_combobox.html" import render_catalog_combobox %}
     {% from "_filter_count.html" import render_filter_count %}
     {% from "_navigation_icons.html" import navigation_icon %}
+    {% from "_datetime_cell.html" import render_erp_datetime %}
     <div class="app">
         {% include "_sidebar.html" %}
 
@@ -5286,7 +5290,7 @@
                                     </td>
 
                                     <td class="created-column" data-column-key="created">
-                                        {{ item.created_at_display }}
+                                        {{ render_erp_datetime(item.created_at_display) }}
                                     </td>
 
                                     <td data-column-key="cell">
@@ -5301,10 +5305,6 @@
                                                     <div class="mobile-erp-detail-row">
                                                         <span>Артикул</span>
                                                         <span>{{ item.article or "—" }}</span>
-                                                    </div>
-                                                    <div class="mobile-erp-detail-row">
-                                                        <span>Добавлено</span>
-                                                        <span>{{ item.created_at_display or "—" }}</span>
                                                     </div>
                                                 </div>
                                             </details>

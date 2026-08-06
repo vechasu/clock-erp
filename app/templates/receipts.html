@@ -952,23 +952,6 @@
             background: #f8fafc;
         }
 
-        .receipt-date-stack {
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
-        }
-
-        .receipt-date-primary {
-            color: #172033;
-            font-weight: 700;
-        }
-
-        .receipt-date-time {
-            color: #94a3b8;
-            font-size: 11px;
-            font-weight: 500;
-        }
-
         .receipts-table th[data-column-key] {
             position: relative;
             user-select: none;
@@ -1552,10 +1535,14 @@
     ></script>
     <script defer src="{{ url_for('static', filename='js/table-scroll-hint.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/erp-modal-shell.js') }}"></script>
+    {% if config.TESTING and request.args.get("datetime_e2e") == "1" %}
+        <script defer src="{{ url_for('static', filename='js/datetime-cell-e2e.js') }}"></script>
+    {% endif %}
 </head>
 
 <body class="receipts-page">
 {% from "_catalog_combobox.html" import render_catalog_combobox %}
+{% from "_datetime_cell.html" import render_erp_datetime %}
 <div class="app">
     {% include "_sidebar.html" %}
 
@@ -2002,24 +1989,8 @@
                                     <td class="col-date" data-column-key="date">
                                         {% set receipt_date_value = receipt.receipt_date or receipt.created_at or "" %}
                                         {% set receipt_created_value = receipt.created_at or "" %}
-                                        <span class="receipt-view-value receipt-date-desktop receipt-date-stack">
-                                            <span class="receipt-date-primary">
-                                                {% if receipt_date_value|length >= 10 %}
-                                                    {{ receipt_date_value[8:10] }}.{{ receipt_date_value[5:7] }}.{{ receipt_date_value[:4] }}
-                                                {% else %}
-                                                    {{ receipt_date_value or "—" }}
-                                                {% endif %}
-                                            </span>
-                                            {% if receipt_created_value|length >= 16 %}
-                                                <span class="receipt-date-time">{{ receipt_created_value[11:16] }}</span>
-                                            {% endif %}
-                                        </span>
-                                        <span class="receipt-view-value mobile-erp-only receipt-date-mobile">
-                                            {% if receipt_date_value|length >= 10 %}
-                                                {{ receipt_date_value[8:10] }}.{{ receipt_date_value[5:7] }}.{{ receipt_date_value[:4] }}
-                                            {% else %}
-                                                {{ receipt_date_value or "—" }}
-                                            {% endif %}
+                                        <span class="receipt-view-value">
+                                            {{ render_erp_datetime(receipt_date_value, receipt_created_value) }}
                                         </span>
 
                                     </td>

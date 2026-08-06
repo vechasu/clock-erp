@@ -62,7 +62,14 @@ class ReceiptsUiRegressionsTest(unittest.TestCase):
         self.assertNotIn('event.key === "Escape"', editor_script)
 
     def test_date_has_a_secondary_time_and_search_has_no_long_hint(self):
-        self.assertIn("receipt-date-time", self.template)
+        self.assertIn(
+            'from "_datetime_cell.html" import render_erp_datetime',
+            self.template,
+        )
+        self.assertIn(
+            "render_erp_datetime(receipt_date_value, receipt_created_value)",
+            self.template,
+        )
         self.assertIn('placeholder="Поиск"', self.template)
         self.assertNotIn(
             'placeholder="Поиск по документу, бренду, категории или товару"',
