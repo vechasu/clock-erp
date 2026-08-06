@@ -845,7 +845,8 @@ body.modal-open {
 }
 
 .source-choice-panel {
-    display: flex;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 8px;
     margin-bottom: 18px;
     padding: 4px;
@@ -855,38 +856,84 @@ body.modal-open {
 }
 
 .source-choice-panel.is-hidden {
-    display: flex;
+    display: grid;
 }
 
 .source-choice {
-    min-height: 38px;
-    flex: 1 1 0;
-    padding: 0 12px;
-    border: 1px solid transparent;
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    min-height: 48px;
+    padding: 8px 10px;
+    border: 1px solid #dbe4ee;
     border-radius: 9px;
-    background: transparent;
+    background: #ffffff;
     color: #526173;
     font-size: 13px;
-    font-weight: 700;
+    font-weight: 800;
     box-shadow: none;
+    transition:
+        background-color 140ms ease,
+        border-color 140ms ease,
+        color 140ms ease,
+        transform 140ms ease,
+        box-shadow 140ms ease;
+}
+
+.source-choice:not(.is-active):hover {
+    border-color: #cbd5e1;
+    background: #f8fafc;
+    color: #0f172a;
+}
+
+.source-choice.is-active {
+    border-width: 2px;
+    font-weight: 900;
+    transform: translateY(-1px);
+    box-shadow: 0 3px 8px rgba(15, 23, 42, 0.08);
+}
+
+.source-choice.is-active::before {
+    margin-right: 5px;
+    content: "\2713";
+    font-size: 12px;
+    font-weight: 900;
 }
 
 .source-choice--tictactoy.is-active {
-    border-color: #bfdbfe;
-    background: #eaf2ff;
-    color: #1d4ed8;
+    border-color: #3b82f6 !important;
+    background: #eff6ff !important;
+    color: #1d4ed8 !important;
 }
 
 .source-choice--wildberries.is-active {
-    border-color: #ddd6fe;
-    background: #f3efff;
-    color: #6d28d9;
+    border-color: #a855f7 !important;
+    background: #faf5ff !important;
+    color: #7e22ce !important;
 }
 
 .source-choice--amazon.is-active {
-    border-color: #fed7aa;
-    background: #fff4e6;
-    color: #c2410c;
+    border-color: #f59e0b !important;
+    background: #fff7ed !important;
+    color: #c2410c !important;
+}
+
+@media (max-width: 400px) {
+    .source-choice-panel {
+        gap: 6px;
+        padding: 3px;
+    }
+
+    .source-choice {
+        min-height: 46px;
+        padding: 7px 4px;
+        font-size: 12px;
+    }
+
+    .source-choice.is-active::before {
+        margin-right: 3px;
+        font-size: 11px;
+    }
 }
 
 .modal[data-erp-modal-shell] .form-actions,

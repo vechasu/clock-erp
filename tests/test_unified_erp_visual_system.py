@@ -107,7 +107,11 @@ class UnifiedErpVisualSystemTest(unittest.TestCase):
         for source_key in ("tictactoy", "wildberries", "amazon"):
             self.assertIn(f'data-sale-source="{source_key}"', modal)
         self.assertIn("vechasu-sales-last-source", source)
-        self.assertIn("Object.hasOwn(sourceLabels, preferredSource)", source)
+        self.assertIn(
+            "Object.hasOwn(sourceLabels, activeSalesSource)",
+            source,
+        )
+        self.assertIn("clearSaleFormSource()", source)
         self.assertIn("button.classList.toggle(\"is-active\", active)", source)
         for section in ("Товар", "Продажа", "Данные канала", "Дополнительно"):
             self.assertIn(section, modal)
