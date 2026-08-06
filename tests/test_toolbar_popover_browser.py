@@ -47,6 +47,24 @@ class ToolbarPopoverStructureTest(unittest.TestCase):
             )[1].split("])", 1)[0],
         )
 
+    def test_sales_channel_selection_has_neutral_all_state(self):
+        sales = self.source("app/templates/sales.html")
+
+        self.assertIn('id="saleFormFields"', sales)
+        self.assertIn("function clearSaleFormSource()", sales)
+        self.assertIn(
+            '"Выберите канал, в который будет добавлена продажа."',
+            sales,
+        )
+        self.assertIn(
+            '"Добавить продажу в " + sourceLabels[sourceKey]',
+            sales,
+        )
+        self.assertNotIn(
+            'localStorage.getItem(\n                    "vechasu-sales-last-source"',
+            sales,
+        )
+
 
 class ToolbarPopoverBrowserTest(unittest.TestCase):
     @staticmethod
@@ -188,6 +206,22 @@ class ToolbarPopoverBrowserTest(unittest.TestCase):
                             width,
                             height,
                             'data-sales-article-e2e="pass"',
+                        )
+
+            for width, height in ((1440, 900), (390, 844), (320, 568)):
+                for source in ("all", "tictactoy", "wildberries", "amazon"):
+                    with self.subTest(
+                        path="sales-channel",
+                        source=source,
+                        width=width,
+                    ):
+                        self.run_chrome(
+                            chrome,
+                            f"http://127.0.0.1:{port}/app/sales"
+                            f"?source={source}&sales_channel_e2e=1",
+                            width,
+                            height,
+                            'data-sales-channel-e2e="pass"',
                         )
         finally:
             server.terminate()

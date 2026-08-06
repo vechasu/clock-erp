@@ -885,32 +885,18 @@
             padding: 20px 22px 22px;
         }
 
-        .source-choice-panel {
-            display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 12px;
-        }
-
-        .source-choice {
-            min-height: 84px;
-            padding: 14px;
-            border: 1px solid #dbe4ee;
-            border-radius: 13px;
-            background: #f8fafc;
-            color: #172033;
-            font-weight: 850;
-        }
-
-        .source-choice:hover {
-            border-color: #93c5fd;
-            background: #eff6ff;
-            color: #1d4ed8;
-        }
-
         .manual-form-grid {
             display: grid;
             grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: 12px;
+            min-width: 0;
+            margin: 0;
+            padding: 0;
+            border: 0;
+        }
+
+        .manual-form-grid:disabled {
+            opacity: 0.58;
         }
 
         .field {
@@ -1109,7 +1095,6 @@
                 width: 100%;
             }
 
-            .source-choice-panel,
             .manual-form-grid {
                 grid-template-columns: 1fr;
             }
@@ -1140,11 +1125,16 @@
                 grid-column: 1 / -1;
                 white-space: normal !important;
             }
+
         }
     </style>
     <link
         rel="stylesheet"
-        href="{{ url_for('static', filename='css/erp-components.css') }}"
+        href="{{ url_for(
+            'static',
+            filename='css/erp-components.css',
+            v='sales-channel-v1'
+        ) }}"
     >
     <link
         rel="stylesheet"
@@ -2115,7 +2105,7 @@
                     value="{{ preserved_filters.sort_dir }}"
                 >
 
-                <div class="manual-form-grid">
+                <fieldset id="saleFormFields" class="manual-form-grid">
                     <p
                         id="saleFormError"
                         class="sale-form-error"
@@ -2500,7 +2490,7 @@
                             Добавить продажу
                         </button>
                     </div>
-                </div>
+                </fieldset>
             </form>
         </div>
     </div>
@@ -4598,6 +4588,9 @@
     const saleSourceInput = document.getElementById(
         "saleSource"
     );
+    const saleFormFields = document.getElementById(
+        "saleFormFields"
+    );
     const modalTitle = document.getElementById(
         "manualSaleModalTitle"
     );
@@ -4647,12 +4640,21 @@
     }
 
     function showSaleForm(sourceKey) {
+        const isEditing = manualSaleForm.dataset.editing === "1";
         saleSourceInput.value = sourceLabels[sourceKey];
+        saleFormFields.disabled = false;
         manualSaleForm.classList.remove("is-hidden");
-        modalTitle.textContent = "Добавить продажу";
+        modalTitle.textContent = isEditing
+            ? "Редактировать продажу"
+            : "Добавить продажу";
         modalDescription.textContent =
             "Источник: " + sourceLabels[sourceKey]
             + ". Он сохранится вместе с продажей.";
+        if (!isEditing) {
+            saleSubmitButton.textContent =
+                "Добавить продажу в " + sourceLabels[sourceKey];
+        }
+        saleSubmitButton.disabled = false;
         sourceChoicePanel
             .querySelectorAll("[data-sale-source]")
             .forEach((button) => {
@@ -4683,6 +4685,32 @@
             });
     }
 
+    function clearSaleFormSource() {
+        saleSourceInput.value = "";
+        saleFormFields.disabled = true;
+        modalTitle.textContent = "Добавить продажу";
+        modalDescription.textContent =
+            "Выберите канал, в который будет добавлена продажа.";
+        saleSubmitButton.textContent = "Выберите канал";
+        saleSubmitButton.disabled = true;
+        sourceChoicePanel
+            .querySelectorAll("[data-sale-source]")
+            .forEach((button) => {
+                button.classList.remove("is-active");
+                button.setAttribute("aria-pressed", "false");
+            });
+        document
+            .querySelectorAll("[data-source-fields]")
+            .forEach((section) => {
+                section.classList.add("is-hidden");
+                section
+                    .querySelectorAll("input, select, textarea")
+                    .forEach((control) => {
+                        control.disabled = true;
+                    });
+            });
+    }
+
     function resetModalView() {
         manualSaleForm.reset();
         manualSaleForm.action = "{{ url_for('manual_sale_add') }}";
@@ -4692,27 +4720,17 @@
         saleEditId.disabled = true;
         saleEditId.removeAttribute("name");
         saleEditId.value = "";
-        saleSubmitButton.textContent = "Добавить продажу";
         document.getElementById("product_id").value = "";
         document.getElementById("productMeta").textContent =
             "Баркод, артикул и остаток появятся после выбора товара.";
         resetProductFilters();
         resetSaleChoiceFields();
 
-        let preferredSource = activeSalesSource;
-        if (!Object.hasOwn(sourceLabels, preferredSource)) {
-            try {
-                preferredSource = localStorage.getItem(
-                    "vechasu-sales-last-source"
-                ) || "tictactoy";
-            } catch (_error) {
-                preferredSource = "tictactoy";
-            }
+        if (Object.hasOwn(sourceLabels, activeSalesSource)) {
+            showSaleForm(activeSalesSource);
+        } else {
+            clearSaleFormSource();
         }
-        if (!Object.hasOwn(sourceLabels, preferredSource)) {
-            preferredSource = "tictactoy";
-        }
-        showSaleForm(preferredSource);
 
         const today = new Date();
         const offset = today.getTimezoneOffset() * 60000;
@@ -6153,6 +6171,223 @@
         } catch (error) {
             root.dataset.salesModalE2e =
                 "fail-" + error.message;
+        }
+    });
+</script>
+{% endif %}
+{% if config.TESTING and request.args.get("sales_channel_e2e") == "1" %}
+<script>
+    window.addEventListener("load", async () => {
+        const root = document.documentElement;
+
+        try {
+            const openButton = document.getElementById(
+                "openManualSaleModal"
+            );
+            const modal = document.getElementById("manualSaleModal");
+            const form = document.getElementById("manualSaleForm");
+            const fields = document.getElementById("saleFormFields");
+            const description = document.getElementById(
+                "manualSaleModalDescription"
+            );
+            const sourceInput = document.getElementById("saleSource");
+            const submitButton = form?.querySelector(
+                '.form-actions button[type="submit"]'
+            );
+            const buttons = Array.from(
+                modal?.querySelectorAll("[data-sale-source]") || []
+            );
+            const expectedLabels = {
+                tictactoy: "Tictactoy",
+                wildberries: "Wildberries",
+                amazon: "Amazon",
+            };
+            const expectedColors = {
+                tictactoy: ["rgb(239, 246, 255)", "rgb(59, 130, 246)"],
+                wildberries: ["rgb(250, 245, 255)", "rgb(168, 85, 247)"],
+                amazon: ["rgb(255, 247, 237)", "rgb(245, 158, 11)"],
+            };
+
+            if (
+                !openButton
+                || !modal
+                || !form
+                || !fields
+                || !submitButton
+                || buttons.length !== 3
+            ) {
+                throw new Error("missing-elements");
+            }
+
+            openButton.click();
+            await new Promise((resolve) =>
+                window.setTimeout(resolve, 320)
+            );
+            const source = new URL(
+                window.location.href
+            ).searchParams.get("source") || "all";
+            const activeButtons = () => buttons.filter(
+                (button) => button.getAttribute("aria-pressed") === "true"
+            );
+            const assertSelected = (sourceKey, checkStyle = true) => {
+                const label = expectedLabels[sourceKey];
+                const active = activeButtons();
+                const selected = buttons.find(
+                    (button) => button.dataset.saleSource === sourceKey
+                );
+                const style = window.getComputedStyle(selected);
+                const marker = window.getComputedStyle(
+                    selected,
+                    "::before"
+                ).content;
+                const activeSection = form.querySelector(
+                    '[data-source-fields="' + sourceKey + '"]'
+                );
+
+                const checks = {
+                    activeCount: active.length === 1,
+                    activeButton: active[0] === selected,
+                    activeClass: selected.classList.contains("is-active"),
+                    sourceValue: sourceInput.value === label,
+                    fieldsEnabled: !fields.disabled,
+                    submitEnabled: !submitButton.disabled,
+                    description: description.textContent.trim()
+                        === "Источник: " + label
+                            + ". Он сохранится вместе с продажей.",
+                    submitText: submitButton.textContent.trim()
+                        === "Добавить продажу в " + label,
+                    style: !(
+                        checkStyle
+                        && (
+                            style.borderTopWidth !== "2px"
+                            || style.backgroundColor
+                                !== expectedColors[sourceKey][0]
+                            || style.borderTopColor
+                                !== expectedColors[sourceKey][1]
+                        )
+                    ),
+                    marker: marker.includes("✓"),
+                    sectionVisible: !activeSection.classList.contains(
+                        "is-hidden"
+                    ),
+                };
+                const failedChecks = Object.entries(checks)
+                    .filter(([, passed]) => !passed)
+                    .map(([name]) => name);
+                if (failedChecks.length) {
+                    throw new Error(
+                        "selected-" + sourceKey + "-"
+                        + failedChecks.join("-")
+                    );
+                }
+
+                form.querySelectorAll("[data-source-fields]")
+                    .forEach((section) => {
+                        const isActive = section === activeSection;
+                        if (
+                            section.classList.contains("is-hidden")
+                                === isActive
+                            || Array.from(
+                                section.querySelectorAll(
+                                    "input, select, textarea"
+                                )
+                            ).some((control) =>
+                                control.disabled === isActive
+                            )
+                        ) {
+                            throw new Error("source-fields-" + sourceKey);
+                        }
+                    });
+            };
+
+            if (source === "all") {
+                if (
+                    activeButtons().length
+                    || sourceInput.value
+                    || !fields.disabled
+                    || !submitButton.disabled
+                    || submitButton.textContent.trim() !== "Выберите канал"
+                    || description.textContent.trim()
+                        !== "Выберите канал, в который будет добавлена продажа."
+                    || !Array.from(
+                        fields.querySelectorAll(
+                            "input, select, textarea, button"
+                        )
+                    ).every((control) => control.matches(":disabled"))
+                ) {
+                    throw new Error("all-neutral");
+                }
+            } else {
+                assertSelected(source);
+            }
+
+            const dateInput = document.getElementById("created_at");
+            buttons.find(
+                (button) => button.dataset.saleSource === "tictactoy"
+            ).click();
+            await new Promise((resolve) =>
+                window.setTimeout(resolve, 700)
+            );
+            assertSelected("tictactoy", false);
+            dateInput.value = "2026-08-06T12:30";
+            document.getElementById("delivery_cost").value = "321";
+
+            buttons.find(
+                (button) => button.dataset.saleSource === "wildberries"
+            ).click();
+            await new Promise((resolve) =>
+                window.setTimeout(resolve, 700)
+            );
+            assertSelected("wildberries", false);
+            if (
+                dateInput.value !== "2026-08-06T12:30"
+                || new FormData(form).has("delivery_cost")
+                || new FormData(form).get("source") !== "Wildberries"
+            ) {
+                throw new Error("switch-to-wildberries");
+            }
+            document.getElementById(
+                "wildberries_sticker_number"
+            ).value = "WB-TEST";
+
+            buttons.find(
+                (button) => button.dataset.saleSource === "amazon"
+            ).click();
+            await new Promise((resolve) =>
+                window.setTimeout(resolve, 700)
+            );
+            assertSelected("amazon", false);
+            if (
+                dateInput.value !== "2026-08-06T12:30"
+                || new FormData(form).has("sticker_number")
+                || new FormData(form).get("source") !== "Amazon"
+            ) {
+                throw new Error("switch-to-amazon");
+            }
+
+            const buttonRects = buttons.map(
+                (button) => button.getBoundingClientRect()
+            );
+            const modalRect = modal.querySelector(
+                ".modal-dialog"
+            ).getBoundingClientRect();
+            if (
+                buttonRects.some((rect) =>
+                    Math.abs(rect.width - buttonRects[0].width) > 1
+                    || Math.abs(rect.top - buttonRects[0].top) > 1
+                    || rect.left < modalRect.left - 1
+                    || rect.right > modalRect.right + 1
+                )
+                || submitButton.scrollWidth > submitButton.clientWidth + 1
+                || root.scrollWidth > root.clientWidth
+                || modal.scrollWidth > modal.clientWidth
+            ) {
+                throw new Error("responsive-layout");
+            }
+
+            root.dataset.salesChannelE2e = "pass";
+        } catch (error) {
+            root.dataset.salesChannelE2e = "fail-" + error.message;
         }
     });
 </script>
