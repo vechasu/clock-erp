@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -107,7 +108,14 @@ class ToolbarPopoverBrowserTest(unittest.TestCase):
                 timeout=35,
             )
         self.assertEqual(result.returncode, 0, result.stderr[-2000:])
-        self.assertIn(marker, result.stdout)
+        if marker not in result.stdout:
+            error = re.search(
+                r'data-sales-filters-e2e-error="([^"]*)"',
+                result.stdout,
+            )
+            self.fail(
+                error.group(1) if error else result.stderr[-2000:]
+            )
 
     def test_toolbar_popovers_and_locked_modals(self):
         if sys.platform == "darwin":
