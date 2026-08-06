@@ -7876,7 +7876,7 @@ def get_sale_filter_identifier(sale, id_field, label_field):
         return ""
 
     return "snapshot:{}:{}".format(
-        id_field.removesuffix("_id"),
+        id_field[:-3] if id_field.endswith("_id") else id_field,
         label.casefold(),
     )
 
