@@ -2821,14 +2821,14 @@
                 viewportTop + viewportHeight;
 
             if (
-                viewportWidth <= 560
+                window.innerWidth <= 560
                 && panel.classList.contains("sales-filter-panel")
             ) {
-                panel.style.left = viewportLeft + "px";
+                panel.style.left = "0px";
                 panel.style.top = "auto";
                 panel.style.bottom = "0px";
-                panel.style.width = viewportWidth + "px";
-                panel.style.maxWidth = viewportWidth + "px";
+                panel.style.width = window.innerWidth + "px";
+                panel.style.maxWidth = window.innerWidth + "px";
                 panel.style.maxHeight = Math.floor(
                     Math.min(viewportHeight * 0.88, viewportHeight)
                 ) + "px";
