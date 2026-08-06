@@ -1433,7 +1433,18 @@
                                     ></path>
                                 </svg>
                             </span>
-                            <span>Фильтры</span>
+                            <span id="salesFilterTriggerLabel">
+                                Фильтры{% set filter_count = [
+                                    sales_filters.brand_id,
+                                    sales_filters.category_id,
+                                    sales_filters.product_id,
+                                    sales_filters.status,
+                                    sales_filters.source
+                                        if active_source == 'all'
+                                        and sales_filters.source != 'all'
+                                        else ''
+                                ] | select | list | length %}{% if filter_count %} · {{ filter_count }}{% endif %}
+                            </span>
                             {{ render_filter_count(
                                 0,
                                 "salesFilterCount",
@@ -1458,7 +1469,7 @@
                                     Фильтры
                                 </p>
                                 <p class="sales-filter-panel-help">
-                                    Отберите продажи по состоянию и типу.
+                                    Отберите продажи по данным сохранённых продаж.
                                 </p>
                             </div>
                             <button
@@ -1471,28 +1482,50 @@
 
                         <div class="sales-filter-fields">
                             <label class="sales-filter-field">
-                                <span>Состояние</span>
-                                <select id="salesStateFilter">
-                                    <option value="">Все продажи</option>
-                                    <option value="active">
-                                        Не отменено
-                                    </option>
-                                    <option value="cancelled">
-                                        Отменено
-                                    </option>
+                                <span>Бренд</span>
+                                <select id="salesBrandFilter">
+                                    <option value="">Все бренды</option>
+                                    {% for option in sales_filter_options.brands %}
+                                        <option value="{{ option.value }}">{{ option.label }}</option>
+                                    {% endfor %}
                                 </select>
                             </label>
 
                             <label class="sales-filter-field">
-                                <span>Тип продажи</span>
-                                <select id="salesTypeFilter">
-                                    <option value="">Все типы</option>
-                                    <option value="manual">Ручная</option>
-                                    <option value="automatic">
-                                        Автоматическая
-                                    </option>
+                                <span>Категория</span>
+                                <select id="salesCategoryFilter">
+                                    <option value="">Все категории</option>
                                 </select>
                             </label>
+
+                            <label class="sales-filter-field">
+                                <span>Товар</span>
+                                <select id="salesProductFilter">
+                                    <option value="">Все товары</option>
+                                </select>
+                            </label>
+
+                            <label class="sales-filter-field">
+                                <span>Статус</span>
+                                <select id="salesStatusFilter">
+                                    <option value="">Все статусы</option>
+                                    {% for option in sales_filter_options.statuses %}
+                                        <option value="{{ option.value }}">{{ option.label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </label>
+
+                            {% if active_source == "all" %}
+                                <label class="sales-filter-field sales-filter-field-wide">
+                                    <span>Источник</span>
+                                    <select id="salesSourceFilter">
+                                        <option value="">Все источники</option>
+                                        {% for option in sales_filter_options.sources %}
+                                            <option value="{{ option.value }}">{{ option.label }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </label>
+                            {% endif %}
                         </div>
 
                         <div class="sales-filter-panel-actions">
@@ -2725,12 +2758,23 @@
     const salesFilterCount = document.getElementById(
         "salesFilterCount"
     );
-    const salesStateFilter = document.getElementById(
-        "salesStateFilter"
-    );
-    const salesTypeFilter = document.getElementById(
-        "salesTypeFilter"
-    );
+    const salesBrandFilter = document.getElementById("salesBrandFilter");
+    const salesCategoryFilter = document.getElementById("salesCategoryFilter");
+    const salesProductFilter = document.getElementById("salesProductFilter");
+    const salesStatusFilter = document.getElementById("salesStatusFilter");
+    const salesSourceFilter = document.getElementById("salesSourceFilter");
+    const salesFilterCatalog = {{ sales_filter_catalog | tojson }};
+    const appliedSalesFilters = {
+        brand_id: {{ sales_filters.brand_id | tojson }},
+        category_id: {{ sales_filters.category_id | tojson }},
+        product_id: {{ sales_filters.product_id | tojson }},
+        status: {{ sales_filters.status | tojson }},
+        source: {{ (
+            sales_filters.source
+            if active_source == "all" and sales_filters.source != "all"
+            else ""
+        ) | tojson }},
+    };
     const salesPopoverManager = (() => {
         const viewportPadding = 16;
         const popoverGap = 8;
@@ -2776,6 +2820,26 @@
             const viewportBottom =
                 viewportTop + viewportHeight;
 
+            if (
+                viewportWidth <= 560
+                && panel.classList.contains("sales-filter-panel")
+            ) {
+                panel.style.left = viewportLeft + "px";
+                panel.style.top = "auto";
+                panel.style.bottom = "0px";
+                panel.style.width = viewportWidth + "px";
+                panel.style.maxWidth = viewportWidth + "px";
+                panel.style.maxHeight = Math.floor(
+                    Math.min(viewportHeight * 0.88, viewportHeight)
+                ) + "px";
+                panel.style.overflowY = "auto";
+                panel.dataset.salesPopoverPlacement = "sheet";
+                panel.style.visibility = "visible";
+                return;
+            }
+
+            panel.style.bottom = "auto";
+            panel.style.width = "";
             panel.style.maxWidth =
                 Math.max(0, viewportWidth - viewportPadding * 2)
                 + "px";
@@ -2985,6 +3049,27 @@
         });
 
         document.addEventListener("keydown", (event) => {
+            if (
+                event.key === "Tab"
+                && activeEntry
+                && window.innerWidth <= 560
+                && activeEntry.panel.classList.contains("sales-filter-panel")
+            ) {
+                const controls = Array.from(
+                    activeEntry.panel.querySelectorAll(
+                        "button:not([disabled]), select:not([disabled]), input:not([disabled])"
+                    )
+                ).filter((control) => control.offsetParent !== null);
+                const first = controls[0];
+                const last = controls.at(-1);
+                if (event.shiftKey && document.activeElement === first) {
+                    event.preventDefault();
+                    last?.focus();
+                } else if (!event.shiftKey && document.activeElement === last) {
+                    event.preventDefault();
+                    first?.focus();
+                }
+            }
             if (event.key === "Escape" && activeEntry) {
                 activeEntry.api.close({returnFocus: true});
             }
@@ -3030,12 +3115,9 @@
     );
     const salesTable = document.querySelector(".sales-table");
     const salesTableBody = salesTable?.querySelector("tbody");
-    const storageKey = "vechasu-sales-filters-v1";
     const salesColumnDefinitions = {{ sales_columns | tojson }};
 
     let salesFilterEmptyRow = null;
-    let appliedSaleState = "";
-    let appliedSaleType = "";
 
     if (salesTableBody && saleRows.length) {
         salesFilterEmptyRow = document.createElement("tr");
@@ -3067,441 +3149,134 @@
         salesTableBody.appendChild(salesFilterEmptyRow);
     }
 
-    function formatQuantity(value) {
-        const number = Number(value || 0);
+    const urlFilters = new URL(window.location.href).searchParams;
+    salesSearch.value = urlFilters.get("q") ?? "";
+    salesDateFrom.value = urlFilters.get("date_from") ?? "";
+    salesDateTo.value = urlFilters.get("date_to") ?? "";
 
-        if (!Number.isFinite(number)) {
-            return "0";
-        }
-
-        return Number.isInteger(number)
-            ? String(number)
-            : String(number).replace(".", ",");
-    }
-
-    function updateVisibleStats(visibleRows) {
-        const activeRows = visibleRows.filter(
-            (row) => row.dataset.cancelled !== "1"
-        );
-        const cancelledCount =
-            visibleRows.length - activeRows.length;
-        const orders = new Set(
-            activeRows
-                .map((row) => (row.dataset.order || "").trim())
-                .filter(Boolean)
-        );
-        const quantity = activeRows.reduce(
-            (total, row) =>
-                total + Number(row.dataset.quantity || 0),
-            0,
-        );
-
-        document.getElementById("statSales").textContent =
-            String(activeRows.length);
-        document.getElementById("statOrders").textContent =
-            String(orders.size);
-        document.getElementById("statQuantity").textContent =
-            formatQuantity(quantity);
-        document.getElementById("statCancelled").textContent =
-            String(cancelledCount);
-    }
-
-    function syncFilterUrls(selectedFrom, selectedTo) {
+    function navigateSales(changes = {}) {
         const url = new URL(window.location.href);
-        [
-            ["q", salesSearch?.value || ""],
-            ["date_from", selectedFrom],
-            ["date_to", selectedTo],
-            ["sale_state", appliedSaleState],
-            ["sale_type", appliedSaleType],
-        ].forEach(([name, value]) => {
-            if (value) {
-                url.searchParams.set(name, value);
+        Object.entries(changes).forEach(([name, value]) => {
+            if (value !== null && value !== undefined && String(value) !== "") {
+                url.searchParams.set(name, String(value));
             } else {
                 url.searchParams.delete(name);
             }
         });
-        url.searchParams.set("source", activeSalesSource);
-        window.history.replaceState({}, "", url);
+        url.searchParams.delete("page");
+        window.location.assign(url.pathname + url.search);
+    }
 
-        document
-            .querySelectorAll("[data-source-tab]")
-            .forEach((tab) => {
-                const tabUrl = new URL(
-                    tab.getAttribute("href"),
-                    window.location.origin,
-                );
+    function optionLabel(field, value) {
+        if (!value) return "";
+        if (field === "status") {
+            return salesStatusFilter.querySelector(`option[value="${CSS.escape(value)}"]`)?.textContent.trim() || value;
+        }
+        if (field === "source") {
+            return salesSourceFilter?.querySelector(`option[value="${CSS.escape(value)}"]`)?.textContent.trim() || value;
+        }
+        const key = field;
+        const labelKey = {brand_id: "brand", category_id: "category", product_id: "product"}[field];
+        return salesFilterCatalog.find((item) => String(item[key]) === String(value))?.[labelKey] || value;
+    }
 
-                [
-                    "q",
-                    "date_from",
-                    "date_to",
-                    "sale_state",
-                    "sale_type",
-                    "sort",
-                    "sort_dir",
-                ].forEach((name) => {
-                    const value = url.searchParams.get(name);
-
-                    if (value) {
-                        tabUrl.searchParams.set(name, value);
-                    } else {
-                        tabUrl.searchParams.delete(name);
-                    }
-                });
-
-                tab.setAttribute(
-                    "href",
-                    tabUrl.pathname + tabUrl.search,
-                );
-            });
-
-        const reportUrl = new URL(
-            "/sales/report",
-            window.location.origin,
-        );
-        reportUrl.searchParams.set("source", activeSalesSource);
-
-        ["q", "date_from", "date_to", "sale_type"].forEach((name) => {
-            const value = url.searchParams.get(name);
-
-            if (value) {
-                reportUrl.searchParams.set(name, value);
-            }
+    function populateSelect(select, placeholder, items, value) {
+        select.replaceChildren(new Option(placeholder, ""));
+        const seen = new Set();
+        items.forEach((item) => {
+            if (item.value === "" || seen.has(item.value)) return;
+            seen.add(item.value);
+            select.add(new Option(item.label, item.value));
         });
-
-        salesReportLink.href =
-            reportUrl.pathname + reportUrl.search;
-
-        document.getElementById("returnSearch").value =
-            salesSearch?.value || "";
-        document.getElementById("returnDateFrom").value =
-            selectedFrom;
-        document.getElementById("returnDateTo").value =
-            selectedTo;
+        select.value = value;
+        if (value !== "" && select.value !== value) {
+            select.add(new Option(optionLabel(select.id.includes("Brand") ? "brand_id" : select.id.includes("Category") ? "category_id" : "product_id", value), value));
+            select.value = value;
+        }
     }
 
-    function activeFilterLabel(activeCount) {
-        const lastTwoDigits = activeCount % 100;
-        const lastDigit = activeCount % 10;
-
-        if (lastDigit === 1 && lastTwoDigits !== 11) {
-            return `Активен ${activeCount} фильтр`;
-        }
-
-        if (
-            [2, 3, 4].includes(lastDigit)
-            && ![12, 13, 14].includes(lastTwoDigits)
-        ) {
-            return `Активно ${activeCount} фильтра`;
-        }
-
-        return `Активно ${activeCount} фильтров`;
+    function cascadeOptions(values) {
+        const categories = salesFilterCatalog
+            .filter((item) => !values.brand_id || String(item.brand_id) === String(values.brand_id))
+            .map((item) => ({value: String(item.category_id), label: item.category}));
+        const products = salesFilterCatalog
+            .filter((item) => !values.brand_id || String(item.brand_id) === String(values.brand_id))
+            .filter((item) => !values.category_id || String(item.category_id) === String(values.category_id))
+            .map((item) => ({value: String(item.product_id), label: item.product}));
+        populateSelect(salesCategoryFilter, "Все категории", categories, values.category_id);
+        populateSelect(salesProductFilter, "Все товары", products, values.product_id);
     }
 
-    function updateSalesFilterSummary() {
-        const activeCount = [
-            appliedSaleState,
-            appliedSaleType,
-            salesDateFrom?.value || salesDateTo?.value,
-        ].filter(Boolean).length;
+    function setDraft(values) {
+        salesBrandFilter.value = values.brand_id;
+        salesStatusFilter.value = values.status;
+        if (salesSourceFilter) salesSourceFilter.value = values.source;
+        cascadeOptions(values);
+    }
 
-        salesFilterCount.textContent = (
-            activeCount > 9 ? "9+" : String(activeCount)
-        );
-        salesFilterCount.hidden = activeCount === 0;
-        salesFilterTrigger.classList.toggle(
-            "is-active",
-            activeCount > 0,
-        );
-        salesFilterTrigger.title = (
-            activeCount
-                ? activeFilterLabel(activeCount)
-                : "Фильтры"
-        );
-        salesFilterTrigger.setAttribute(
-            "aria-label",
-            activeCount
-                ? "Фильтры. " + activeFilterLabel(activeCount)
-                : "Фильтры",
-        );
-        renderSalesActiveFilters();
+    function draftValues() {
+        return {
+            brand_id: salesBrandFilter.value,
+            category_id: salesCategoryFilter.value,
+            product_id: salesProductFilter.value,
+            status: salesStatusFilter.value,
+            source: salesSourceFilter?.value ?? "",
+        };
     }
 
     function renderSalesActiveFilters() {
-        const container = document.getElementById(
-            "salesActiveFilters"
-        );
-        const labels = {
-            sale_state: {
-                active: "Состояние: Не отменено",
-                cancelled: "Состояние: Отменено",
-            }[appliedSaleState],
-            sale_type: {
-                manual: "Тип: Ручная",
-                automatic: "Тип: Автоматическая",
-            }[appliedSaleType],
-            period: salesPeriodFilterLabel(),
-        };
-        const filters = Object.entries(labels).filter(
-            ([, label]) => Boolean(label)
-        );
-
+        const container = document.getElementById("salesActiveFilters");
+        const names = {brand_id: "Бренд", category_id: "Категория", product_id: "Товар", status: "Статус", source: "Источник"};
+        const filters = Object.entries(appliedSalesFilters).filter(([, value]) => value !== "");
         container.replaceChildren();
-        filters.forEach(([name, label]) => {
+        filters.forEach(([name, value]) => {
+            const label = `${names[name]}: ${optionLabel(name, value)}`;
             const button = document.createElement("button");
-            const text = document.createElement("span");
-            const remove = document.createElement("span");
-
             button.className = "erp-filter-chip";
             button.type = "button";
-            button.dataset.salesFilter = name;
-            button.setAttribute("aria-label", "Снять фильтр " + label);
-            text.className = "erp-filter-chip-label";
-            text.textContent = label;
-            remove.className = "erp-filter-chip-remove";
-            remove.setAttribute("aria-hidden", "true");
-            remove.textContent = "×";
-            button.append(text, remove);
+            button.title = label;
+            button.setAttribute("aria-label", `Снять фильтр ${label}`);
+            button.innerHTML = '<span class="erp-filter-chip-label"></span><span class="erp-filter-chip-remove" aria-hidden="true">×</span>';
+            button.firstElementChild.textContent = label;
             button.addEventListener("click", () => {
-                if (name === "sale_state") {
-                    appliedSaleState = "";
-                    salesStateFilter.value = "";
-                } else if (name === "sale_type") {
-                    appliedSaleType = "";
-                    salesTypeFilter.value = "";
-                } else {
-                    salesDateFrom.value = "";
-                    salesDateTo.value = "";
-                    updateSalesPeriodLabel();
-                }
-                updateSalesFilterSummary();
-                applySalesFilters();
+                const changes = {[name]: ""};
+                if (name === "brand_id") Object.assign(changes, {category_id: "", product_id: ""});
+                if (name === "category_id") changes.product_id = "";
+                if (name === "source") Object.assign(changes, {tab: "", source: "all"});
+                navigateSales(changes);
             });
             container.appendChild(button);
         });
-
-        if (filters.length >= 2) {
+        if (filters.length) {
             const reset = document.createElement("button");
             reset.className = "erp-active-filters-reset";
             reset.type = "button";
-            reset.textContent = "Сбросить всё";
-            reset.addEventListener("click", resetSalesActiveFilters);
+            reset.textContent = "Сбросить";
+            reset.addEventListener("click", () => navigateSales({brand_id: "", category_id: "", product_id: "", status: "", tab: "", source: activeSalesSource === "all" ? "all" : activeSalesSource}));
             container.appendChild(reset);
         }
-
         container.hidden = filters.length === 0;
+        const count = filters.length;
+        document.getElementById("salesFilterTriggerLabel").textContent = count ? `Фильтры · ${count}` : "Фильтры";
+        salesFilterCount.hidden = true;
+        salesFilterTrigger.classList.toggle("is-active", count > 0);
     }
 
-    function resetSalesAdvancedFilters() {
-        appliedSaleState = "";
-        appliedSaleType = "";
-        salesStateFilter.value = "";
-        salesTypeFilter.value = "";
-        updateSalesFilterSummary();
-        applySalesFilters();
-    }
+    renderSalesActiveFilters();
+    setDraft(appliedSalesFilters);
 
-    function resetSalesActiveFilters() {
-        salesDateFrom.value = "";
-        salesDateTo.value = "";
-        updateSalesPeriodLabel();
-        resetSalesAdvancedFilters();
-    }
-
-    function salesPeriodFilterLabel() {
-        const dateFrom = salesDateFrom?.value || "";
-        const dateTo = salesDateTo?.value || "";
-
-        if (dateFrom && dateTo) {
-            return "Период: " + displaySalesDate(dateFrom)
-                + "–" + displaySalesDate(dateTo);
-        }
-        if (dateFrom) {
-            return "Период: с " + displaySalesDate(dateFrom);
-        }
-        if (dateTo) {
-            return "Период: до " + displaySalesDate(dateTo);
-        }
-        return "";
-    }
-
-    function applySalesFilters() {
-        const query = (
-            salesSearch?.value || ""
-        ).toLocaleLowerCase("ru").trim();
-        const selectedFrom = salesDateFrom?.value || "";
-        const selectedTo = salesDateTo?.value || "";
-        let dateFrom = selectedFrom;
-        let dateTo = selectedTo;
-
-        if (dateFrom && !dateTo) {
-            dateTo = dateFrom;
-        }
-        if (!dateFrom && dateTo) {
-            dateFrom = dateTo;
-        }
-        if (dateFrom && dateTo && dateFrom > dateTo) {
-            [dateFrom, dateTo] = [dateTo, dateFrom];
-        }
-
-        const visibleRows = [];
-
-        saleRows.forEach((row) => {
-            const searchableText = (
-                row.dataset.search || ""
-            ).toLocaleLowerCase("ru");
-            const rowDate = row.dataset.sortDate || "";
-            const matchesSearch =
-                !query || searchableText.includes(query);
-            const matchesDate =
-                !dateFrom
-                || (
-                    rowDate
-                    && rowDate >= dateFrom
-                    && rowDate <= dateTo
-                );
-            const matchesState =
-                !appliedSaleState
-                || (
-                    appliedSaleState === "cancelled"
-                        ? row.dataset.cancelled === "1"
-                        : row.dataset.cancelled !== "1"
-                );
-            const matchesType =
-                !appliedSaleType
-                || row.dataset.saleType === appliedSaleType;
-            const visible =
-                matchesSearch
-                && matchesDate
-                && matchesState
-                && matchesType;
-
-            row.hidden = !visible;
-            const mobileCard = salesMobileCardById.get(
-                row.dataset.saleId
-            );
-
-            if (mobileCard) {
-                mobileCard.hidden = !visible;
-            }
-
-            if (visible) {
-                visibleRows.push(row);
-            }
-        });
-
-        updateVisibleStats(visibleRows);
-        clearSalesPeriod.hidden =
-            !selectedFrom && !selectedTo;
-        clearSalesSearch?.classList.toggle(
-            "is-hidden",
-            !query,
-        );
-
-        if (salesFilterEmptyRow) {
-            salesFilterEmptyRow.hidden =
-                visibleRows.length !== 0;
-        }
-
-        if (salesMobileFilterEmpty) {
-            salesMobileFilterEmpty.hidden =
-                visibleRows.length !== 0;
-        }
-
-        syncFilterUrls(selectedFrom, selectedTo);
-
-        try {
-            const stored = JSON.parse(
-                localStorage.getItem(storageKey) || "{}"
-            );
-            stored[activeSalesSource] = {
-                search: salesSearch?.value || "",
-                dateFrom: selectedFrom,
-                dateTo: selectedTo,
-                saleState: appliedSaleState,
-                saleType: appliedSaleType,
-            };
-            localStorage.setItem(
-                storageKey,
-                JSON.stringify(stored),
-            );
-        } catch (error) {
-            // Фильтрация продолжит работать без localStorage.
-        }
-    }
-
-    const urlFilters = new URL(
-        window.location.href
-    ).searchParams;
-    let storedFilters = {};
-
-    try {
-        storedFilters = JSON.parse(
-            localStorage.getItem(storageKey) || "{}"
-        )[activeSalesSource] || {};
-    } catch (error) {
-        // Используем фильтры из URL или пустые значения.
-    }
-
-    function filterValue(name, storedName, allowedValues = null) {
-        const value = urlFilters.has(name)
-            ? urlFilters.get(name) || ""
-            : storedFilters[storedName] || "";
-
-        return !allowedValues || allowedValues.includes(value)
-            ? value
-            : "";
-    }
-
-    salesSearch.value = filterValue("q", "search");
-    salesDateFrom.value = filterValue("date_from", "dateFrom");
-    salesDateTo.value = filterValue("date_to", "dateTo");
-    appliedSaleState = filterValue(
-        "sale_state",
-        "saleState",
-        ["", "active", "cancelled"],
-    );
-    appliedSaleType = filterValue(
-        "sale_type",
-        "saleType",
-        ["", "manual", "automatic"],
-    );
-    salesStateFilter.value = appliedSaleState;
-    salesTypeFilter.value = appliedSaleType;
-    updateSalesFilterSummary();
-
-    salesSearch?.addEventListener(
-        "input",
-        applySalesFilters,
-    );
-
-    clearSalesSearch?.addEventListener("click", () => {
-        salesSearch.value = "";
-        salesSearch.focus();
-        applySalesFilters();
+    let searchTimer = 0;
+    salesSearch?.addEventListener("input", () => {
+        clearTimeout(searchTimer);
+        clearSalesSearch?.classList.toggle("is-hidden", !salesSearch.value.trim());
+        searchTimer = window.setTimeout(() => navigateSales({q: salesSearch.value.trim()}), 450);
     });
+    clearSalesSearch?.addEventListener("click", () => navigateSales({q: ""}));
+    clearSalesPeriod?.addEventListener("click", () => navigateSales({date_from: "", date_to: ""}));
 
     function resetAllSalesFilters() {
-        salesSearch.value = "";
-        salesDateFrom.value = "";
-        salesDateTo.value = "";
-        appliedSaleState = "";
-        appliedSaleType = "";
-        salesStateFilter.value = "";
-        salesTypeFilter.value = "";
-        updateSalesPeriodLabel();
-        updateSalesFilterSummary();
-        applySalesFilters();
+        navigateSales({q: "", date_from: "", date_to: "", brand_id: "", category_id: "", product_id: "", status: "", tab: "", source: activeSalesSource === "all" ? "all" : activeSalesSource});
     }
-
-    clearSalesPeriod?.addEventListener("click", () => {
-        salesDateFrom.value = "";
-        salesDateTo.value = "";
-        updateSalesPeriodLabel();
-        updateSalesFilterSummary();
-        applySalesFilters();
-    });
 
     const salesFilterPopover = salesPopoverManager.register({
         trigger: salesFilterTrigger,
@@ -3518,11 +3293,10 @@
             return;
         }
 
-        salesStateFilter.value = appliedSaleState;
-        salesTypeFilter.value = appliedSaleType;
+        setDraft(appliedSalesFilters);
         salesFilterPopover.open();
         requestAnimationFrame(() => {
-            salesStateFilter.focus();
+            salesBrandFilter.focus();
         });
     });
 
@@ -3531,21 +3305,33 @@
     });
 
     salesFilterApply.addEventListener("click", () => {
-        appliedSaleState = salesStateFilter.value;
-        appliedSaleType = salesTypeFilter.value;
-        updateSalesFilterSummary();
-        applySalesFilters();
-        closeSalesFilterPanel(true);
+        const values = draftValues();
+        const changes = {...values};
+        if (activeSalesSource === "all") {
+            changes.tab = values.source ? "all" : "";
+            changes.source = values.source || "all";
+        } else {
+            delete changes.source;
+        }
+        navigateSales(changes);
     });
 
     salesFilterReset.addEventListener("click", () => {
-        salesStateFilter.value = "";
-        salesTypeFilter.value = "";
-        appliedSaleState = "";
-        appliedSaleType = "";
-        updateSalesFilterSummary();
-        applySalesFilters();
-        closeSalesFilterPanel(true);
+        setDraft({brand_id: "", category_id: "", product_id: "", status: "", source: ""});
+    });
+
+    salesBrandFilter.addEventListener("change", () => {
+        const values = draftValues();
+        values.category_id = "";
+        values.product_id = "";
+        cascadeOptions(values);
+        salesPopoverManager.reposition();
+    });
+    salesCategoryFilter.addEventListener("change", () => {
+        const values = draftValues();
+        values.product_id = "";
+        cascadeOptions(values);
+        salesPopoverManager.reposition();
     });
 
     document.addEventListener("click", (event) => {
@@ -3675,8 +3461,10 @@
                 popoverManager: salesPopoverManager,
                 onChange() {
                     updateSalesPeriodLabel();
-                    updateSalesFilterSummary();
-                    applySalesFilters();
+                    navigateSales({
+                        date_from: salesDateFrom.value,
+                        date_to: salesDateTo.value,
+                    });
                 },
             },
         );
@@ -4568,7 +4356,8 @@
 
     updateSalesPeriodLabel();
     initializeSalesDateFilter();
-    applySalesFilters();
+    clearSalesPeriod.hidden = !salesDateFrom.value && !salesDateTo.value;
+    clearSalesSearch?.classList.toggle("is-hidden", !salesSearch.value.trim());
 
     const manualSaleModal = document.getElementById(
         "manualSaleModal"
@@ -6960,11 +6749,11 @@
                 return (
                     panel.parentElement?.id === "salesPopoverRoot"
                     && style.position === "fixed"
-                    && bounds.left >= 15
-                    && bounds.top >= 15
-                    && bounds.right <= window.innerWidth - 15
-                    && bounds.bottom <= window.innerHeight - 15
-                    && ["top", "bottom"].includes(
+                    && bounds.left >= (window.innerWidth <= 560 ? 0 : 15)
+                    && bounds.top >= 0
+                    && bounds.right <= window.innerWidth
+                    && bounds.bottom <= window.innerHeight
+                    && ["top", "bottom", "sheet"].includes(
                         panel.dataset.salesPopoverPlacement
                     )
                     && (
@@ -7013,46 +6802,7 @@
                 throw new Error("popovers");
             }
 
-            resetAllSalesFilters();
-            const filterTrigger = document.getElementById(
-                "salesFilterTrigger"
-            );
-            filterTrigger.click();
-            document.getElementById("salesTypeFilter").value =
-                "manual";
-            document.getElementById("salesFilterApply").click();
-            const filterApplied = (
-                document.getElementById(
-                    "salesFilterCount"
-                ).textContent === "1"
-                && !document.getElementById(
-                    "salesFilterCount"
-                ).hidden
-                && new URL(window.location.href)
-                    .searchParams.get("sale_type") === "manual"
-                && saleRows.some((row) => !row.hidden)
-                && saleRows.every(
-                    (row) =>
-                        row.hidden
-                        || row.dataset.saleType === "manual"
-                )
-            );
-            filterTrigger.click();
-            document.getElementById("salesFilterReset").click();
-            const filterReset = (
-                document.getElementById(
-                    "salesFilterCount"
-                ).hidden
-                && !new URL(window.location.href)
-                    .searchParams.has("sale_type")
-                && saleRows.every((row) => !row.hidden)
-            );
-
-            if (
-                duplicateIds.length
-                || !filterApplied
-                || !filterReset
-            ) {
+            if (duplicateIds.length) {
                 throw new Error("filters");
             }
 
@@ -7123,6 +6873,50 @@
             document.documentElement.dataset
                 .salesColumnsE2eError = error.message;
             sessionStorage.removeItem(phaseKey);
+        }
+    });
+</script>
+{% endif %}
+{% if config.TESTING and request.args.get("sales_filters_e2e") == "1" %}
+<script>
+    window.addEventListener("load", () => {
+        try {
+            const trigger = document.getElementById("salesFilterTrigger");
+            const panel = document.getElementById("salesFilterPanel");
+            const brand = document.getElementById("salesBrandFilter");
+            const category = document.getElementById("salesCategoryFilter");
+            const product = document.getElementById("salesProductFilter");
+            const appliedBrand = brand.value;
+
+            if (!trigger.textContent.includes("Фильтры · 1")) throw new Error("count");
+            trigger.click();
+            const initialCategoryValues = Array.from(category.options).map((option) => option.value);
+            brand.value = "";
+            brand.dispatchEvent(new Event("change", {bubbles: true}));
+            if (category.value !== "" || product.value !== "" || category.options.length < initialCategoryValues.length) throw new Error("cascade");
+            document.getElementById("salesFilterClose").click();
+            trigger.click();
+            if (brand.value !== appliedBrand) throw new Error("draft");
+
+            document.querySelector(".warehouse-date-trigger").click();
+            trigger.click();
+            if (!document.querySelector(".warehouse-calendar-popup").hidden) throw new Error("period-exclusion");
+            document.getElementById("salesColumnSettingsTrigger").click();
+            if (!panel.hidden) throw new Error("columns-exclusion");
+            trigger.click();
+            document.dispatchEvent(new KeyboardEvent("keydown", {key: "Escape", bubbles: true}));
+            if (!panel.hidden || document.activeElement !== trigger) throw new Error("escape-focus");
+
+            trigger.click();
+            const bounds = panel.getBoundingClientRect();
+            const mobile = window.innerWidth <= 560;
+            if (mobile && (panel.dataset.salesPopoverPlacement !== "sheet" || Math.abs(bounds.width - window.innerWidth) > 1)) throw new Error("sheet");
+            if (!mobile && (bounds.width < 530 || bounds.width > 560)) throw new Error("desktop-width");
+            if (document.documentElement.scrollWidth > document.documentElement.clientWidth) throw new Error("overflow");
+            document.documentElement.dataset.salesFiltersE2e = "pass";
+        } catch (error) {
+            document.documentElement.dataset.salesFiltersE2e = "fail";
+            document.documentElement.dataset.salesFiltersE2eError = error.message;
         }
     });
 </script>

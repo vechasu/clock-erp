@@ -268,7 +268,7 @@
 
         <a
             class="back-link"
-            href="{{ url_for('sales_page', source=active_source, q=filters.q, date_from=filters.date_from, date_to=filters.date_to) }}"
+            href="{{ url_for('sales_page', source=active_source, tab=filters.tab, q=filters.q, date_from=filters.date_from, date_to=filters.date_to, brand_id=filters.brand_id, category_id=filters.category_id, product_id=filters.product_id, status=filters.status) }}"
         >
             ← Вернуться к продажам
         </a>
@@ -284,6 +284,14 @@
             name="source"
             value="{{ active_source }}"
         >
+        {% if filters.tab %}
+            <input type="hidden" name="tab" value="{{ filters.tab }}">
+        {% endif %}
+        {% for name in ("brand_id", "category_id", "product_id", "status") %}
+            {% if filters[name] %}
+                <input type="hidden" name="{{ name }}" value="{{ filters[name] }}">
+            {% endif %}
+        {% endfor %}
 
         <div class="filter-grid">
             <div class="field">
@@ -330,13 +338,13 @@
             </button>
             <a
                 class="button button-excel"
-                href="{{ url_for('sales_report_excel', source=active_source, q=filters.q, date_from=filters.date_from, date_to=filters.date_to) }}"
+                href="{{ url_for('sales_report_excel', source=active_source, tab=filters.tab, q=filters.q, date_from=filters.date_from, date_to=filters.date_to, brand_id=filters.brand_id, category_id=filters.category_id, product_id=filters.product_id, status=filters.status) }}"
             >
                 Скачать XLSX
             </a>
             <a
                 class="button button-pdf"
-                href="{{ url_for('sales_report_pdf', source=active_source, q=filters.q, date_from=filters.date_from, date_to=filters.date_to) }}"
+                href="{{ url_for('sales_report_pdf', source=active_source, tab=filters.tab, q=filters.q, date_from=filters.date_from, date_to=filters.date_to, brand_id=filters.brand_id, category_id=filters.category_id, product_id=filters.product_id, status=filters.status) }}"
             >
                 Скачать PDF
             </a>

@@ -223,6 +223,18 @@ class ToolbarPopoverBrowserTest(unittest.TestCase):
                             height,
                             'data-sales-channel-e2e="pass"',
                         )
+
+            for width, height in ((1440, 900), (390, 844), (320, 568)):
+                with self.subTest(path="sales-filters", width=width):
+                    self.run_chrome(
+                        chrome,
+                        f"http://127.0.0.1:{port}/app/sales"
+                        "?source=all&brand_id=snapshot%3Abrand%3Acasio"
+                        "&sales_filters_e2e=1",
+                        width,
+                        height,
+                        'data-sales-filters-e2e="pass"',
+                    )
         finally:
             server.terminate()
             try:
