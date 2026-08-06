@@ -218,6 +218,141 @@ class Stage2SalesApiTest(unittest.TestCase):
         unknown_row = next(row for row in rows[4:] if row[1] == "NO-PRICE-2")
         self.assertIsNone(unknown_row[price_index])
         self.assertEqual(pdf_status, 200)
+
+    def test_article_snapshot_search_sort_tabs_and_exports(self):
+        from openpyxl import load_workbook
+
+        created_ids = []
+        for index, source in enumerate(
+            ("Tictactoy", "WB", "Amazon"),
+            start=1,
+        ):
+            response = self.client.post(
+                "/api/sales",
+                json={
+                    "created_at": "2026-08-06",
+                    "source": source,
+                    "product_id": str(self.product["id"]),
+                    "quantity": 1,
+                    "unit_price": 1000,
+                    "order_number": "ARTICLE-{}".format(index),
+                },
+            )
+            self.assertEqual(response.status_code, 201)
+            created = response.get_json()["data"]
+            self.assertEqual(created["article"], "GA-2100")
+            created_ids.append(created["id"])
+
+        ExcelProductCatalog(
+            CatalogDatabase(self.database_path)
+        ).update_product(
+            self.product["id"],
+            article="CHANGED-LATER",
+        )
+        web._cached_api_sales_records.cache_clear()
+
+        reopened = self.client.get(
+            "/api/sales/{}".format(created_ids[0])
+        ).get_json()["data"]
+        self.assertEqual(reopened["article"], "GA-2100")
+
+        searched = self.client.get(
+            "/api/sales?q=ga-2100&page_size=10"
+        ).get_json()
+        self.assertEqual(searched["meta"]["total"], 3)
+        sorted_sales = self.client.get(
+            "/api/sales?sort_by=article&sort_dir=asc&page_size=10"
+        ).get_json()
+        self.assertEqual(sorted_sales["meta"]["sort_by"], "article")
+        self.assertTrue(all(
+            item["article"] == "GA-2100"
+            for item in sorted_sales["data"]
+        ))
+
+        for source in ("all", "tictactoy", "wildberries", "amazon"):
+            columns = [
+                column["key"]
+                for column in web.get_sales_columns(source)
+            ]
+            self.assertEqual(
+                columns.index("article"),
+                columns.index("product_name") + 1,
+            )
+        wb_columns = [
+            column["key"]
+            for column in web.get_sales_columns("wildberries")
+        ]
+        self.assertIn("barcode", wb_columns)
+
+        projected_product = web.build_excel_warehouse_items([
+            ExcelProductCatalog(CatalogDatabase(self.database_path)).get_product(
+                self.product["id"]
+            )
+        ])
+        with mock.patch.object(
+            web, "get_warehouse_items", return_value=projected_product
+        ):
+            workbook = load_workbook(
+                BytesIO(self.client.get("/sales/report.xlsx").data),
+                data_only=True,
+            )
+            pdf_status = self.client.get("/sales/report.pdf").status_code
+        rows = list(workbook.active.iter_rows(values_only=True))
+        headers = rows[3]
+        article_index = headers.index("Артикул")
+        product_index = headers.index("Товар")
+        self.assertEqual(article_index, product_index + 1)
+        self.assertEqual(rows[4][article_index], "GA-2100")
+        self.assertEqual(pdf_status, 200)
+
+    def test_article_history_fallback_values_and_bulk_lookup(self):
+        warehouse_items = [{
+            "id": "10",
+            "name": "Одинаковое имя",
+            "article": "КИРИЛЛИЦА-ДЛИННЫЙ-АРТИКУЛ-2026",
+            "barcode": "WB-BARCODE",
+            "brand": "Brand",
+            "category": "Category",
+        }]
+        base_sale = {
+            "created_at": "2026-08-06",
+            "source": "Tictactoy",
+            "product_name": "Одинаковое имя",
+            "quantity": 1,
+            "unit_price": 100,
+        }
+        stored_sales = [
+            {**base_sale, "id": "historical", "product_id": "10"},
+            {**base_sale, "id": "zero", "product_id": "10", "article": "0"},
+            {**base_sale, "id": "empty", "product_id": "10", "article": ""},
+            {**base_sale, "id": "wrong-link", "product_id": "999"},
+        ]
+        original_builder = web.build_sales_product_metadata_lookup
+        with mock.patch.object(
+            web,
+            "build_sales_product_metadata_lookup",
+            wraps=original_builder,
+        ) as lookup_builder:
+            records = web.build_sales_report_records(
+                warehouse_items=warehouse_items,
+                operations=[],
+                stored_manual_sales=stored_sales,
+                automatic_overrides={},
+            )
+        lookup_builder.assert_called_once_with(warehouse_items)
+        by_id = {record["id"]: record for record in records}
+        self.assertEqual(
+            by_id["historical"]["article"],
+            "КИРИЛЛИЦА-ДЛИННЫЙ-АРТИКУЛ-2026",
+        )
+        self.assertEqual(by_id["zero"]["article"], "0")
+        self.assertEqual(by_id["empty"]["article"], "")
+        self.assertEqual(by_id["wrong-link"]["article"], "")
+
+        template = (
+            Path(web.app.root_path) / "templates" / "sales.html"
+        ).read_text(encoding="utf-8")
+        self.assertNotRegex(template, r'name=["\']article["\']')
     def test_insufficient_stock_and_invalid_payload_are_structured(self):
         insufficient = self.create_sale(quantity=6)
         self.assertEqual(insufficient.status_code, 409)

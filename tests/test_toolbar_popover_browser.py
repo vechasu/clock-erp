@@ -173,6 +173,22 @@ class ToolbarPopoverBrowserTest(unittest.TestCase):
                         height,
                         'data-sales-modal-e2e="pass"',
                     )
+
+            for width, height in ((1440, 900), (390, 844), (320, 568)):
+                for source in ("all", "tictactoy", "wildberries", "amazon"):
+                    with self.subTest(
+                        path="sales-article",
+                        source=source,
+                        width=width,
+                    ):
+                        self.run_chrome(
+                            chrome,
+                            f"http://127.0.0.1:{port}/app/sales"
+                            f"?source={source}&sales_article_e2e=1",
+                            width,
+                            height,
+                            'data-sales-article-e2e="pass"',
+                        )
         finally:
             server.terminate()
             try:

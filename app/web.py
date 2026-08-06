@@ -4820,6 +4820,7 @@ SALES_TABLE_COLUMNS = {
         ("brand", "Бренд"),
         ("category", "Категория"),
         ("product_name", "Товар"),
+        ("article", "Артикул"),
         ("quantity_display", "Количество"),
         ("unit_price_display", "Цена"),
         ("commission", "Комиссия"),
@@ -4832,6 +4833,7 @@ SALES_TABLE_COLUMNS = {
         ("brand", "Бренд"),
         ("category", "Категория"),
         ("product_name", "Товар"),
+        ("article", "Артикул"),
         ("quantity_display", "Количество"),
         ("unit_price_display", "Цена продажи"),
         ("commission", "Комиссия"),
@@ -4851,6 +4853,7 @@ SALES_TABLE_COLUMNS = {
         ("brand", "Бренд"),
         ("category", "Категория"),
         ("product_name", "Товар"),
+        ("article", "Артикул"),
         ("sticker_number", "Номер стикера"),
         ("order_number", "Номер заказа"),
         ("quantity_display", "Количество"),
@@ -4864,6 +4867,7 @@ SALES_TABLE_COLUMNS = {
         ("brand", "Бренд"),
         ("category", "Категория"),
         ("product_name", "Товар"),
+        ("article", "Артикул"),
         ("quantity_display", "Количество"),
         ("unit_price_display", "Цена"),
         ("order_status_label", "Статус"),
@@ -5670,6 +5674,14 @@ def build_sales_search_text(sale, source_key):
     )
 
 
+def sale_snapshot_text(record, field, fallback=""):
+    if isinstance(record, dict) and field in record:
+        value = record.get(field)
+    else:
+        value = fallback
+    return "" if value is None else str(value).strip()
+
+
 def get_sales_export_value(sale, column_key):
     if column_key == "quantity_display":
         return sale.get("quantity_value") or 0
@@ -5710,6 +5722,7 @@ def resolve_sale_product_metadata(
     fallback_brand="",
     fallback_category="",
     fallback_barcode="",
+    fallback_article="",
 ):
     shared_product = SharedCatalog().get_product(product_id)
     if shared_product is not None:
@@ -5717,6 +5730,7 @@ def resolve_sale_product_metadata(
             "product_name": shared_product.get("name") or "",
             "brand": shared_product.get("brand") or "",
             "category": shared_product.get("category") or "",
+            "article": sale_snapshot_text(shared_product, "article"),
             "barcode": (
                 shared_product.get("barcode")
                 or shared_product.get("article")
@@ -5735,6 +5749,7 @@ def resolve_sale_product_metadata(
             "product_name": str(product_name or "").strip(),
             "brand": str(fallback_brand or "").strip(),
             "category": str(fallback_category or "").strip(),
+            "article": sale_snapshot_text({}, "article", fallback_article),
             "barcode": str(fallback_barcode or "").strip(),
             "brand_id": None,
             "category_id": None,
@@ -5742,18 +5757,24 @@ def resolve_sale_product_metadata(
 
     product_id = str(product_id or "").strip()
     product_name_key = str(product_name or "").strip().casefold()
-    metadata = (
-        lookup["by_id"].get(product_id)
-        or lookup["by_name"].get(product_name_key)
-    )
+    metadata_by_id = lookup["by_id"].get(product_id)
+    metadata = metadata_by_id or lookup["by_name"].get(product_name_key)
 
     if metadata:
-        return metadata
+        return {
+            **metadata,
+            "article": (
+                metadata.get("article", "")
+                if metadata_by_id is not None
+                else sale_snapshot_text({}, "article", fallback_article)
+            ),
+        }
 
     return {
         "product_name": str(product_name or "").strip(),
         "brand": str(fallback_brand or "").strip(),
         "category": str(fallback_category or "").strip(),
+        "article": sale_snapshot_text({}, "article", fallback_article),
         "barcode": str(fallback_barcode or "").strip(),
         "brand_id": None,
         "category_id": None,
@@ -6311,6 +6332,7 @@ def manual_sale_add():
         "source": sale_source,
         "product_id": product_id,
         "product_name": catalog_product["name"],
+        "article": sale_snapshot_text(catalog_product, "article"),
         "barcode": catalog_product["barcode"],
         "brand": catalog_product["brand"],
         "category": catalog_product["category"],
@@ -6434,6 +6456,7 @@ def manual_sale_update():
                 status_code=410,
             )
 
+        previous_product_id = str(sale.get("product_id") or "").strip()
         product_id = str(
             request.form.get("product_id")
             or sale.get("product_id")
@@ -6445,6 +6468,7 @@ def manual_sale_update():
             fallback_brand=sale.get("brand"),
             fallback_category=sale.get("category"),
             fallback_barcode=sale.get("barcode"),
+            fallback_article=sale.get("article"),
         )
         product_name = (
             product_metadata.get("product_name") or product_name
@@ -6515,6 +6539,11 @@ def manual_sale_update():
         sale["source"] = updated_source
         sale["product_id"] = product_id
         sale["product_name"] = product_name
+        if product_id != previous_product_id or "article" not in sale:
+            sale["article"] = sale_snapshot_text(
+                product_metadata,
+                "article",
+            )
         sale["barcode"] = product_metadata.get("barcode") or ""
         sale["brand"] = product_metadata.get("brand") or ""
         sale["category"] = product_metadata.get("category") or ""
@@ -6848,6 +6877,11 @@ def automatic_sale_update():
             existing_override.get("barcode")
             or operation.get("barcode")
         ),
+        fallback_article=(
+            existing_override.get("article")
+            if "article" in existing_override
+            else operation.get("article")
+        ),
     )
     product_name = (
         product_metadata.get("product_name") or product_name
@@ -6892,6 +6926,15 @@ def automatic_sale_update():
         "created_at": created_at,
         "source": updated_source,
         "product_name": product_name,
+        "article": (
+            sale_snapshot_text(existing_override, "article")
+            if "article" in existing_override
+            else sale_snapshot_text(
+                operation,
+                "article",
+                product_metadata.get("article"),
+            )
+        ),
         "barcode": product_metadata.get("barcode") or "",
         "brand": product_metadata.get("brand") or "",
         "category": product_metadata.get("category") or "",
@@ -7091,6 +7134,7 @@ def build_sales_product_metadata_lookup(items):
         product_name = str(item.get("name") or "").strip()
         metadata = {
             "product_name": product_name,
+            "article": sale_snapshot_text(item, "article"),
             "barcode": str(
                 item.get("barcode")
                 or item.get("code")
@@ -7115,19 +7159,28 @@ def build_sales_product_metadata_lookup(items):
 def get_sales_product_metadata(lookup, product_id, product_name):
     product_id = str(product_id or "").strip()
     product_name = str(product_name or "").strip().casefold()
+    metadata_by_id = lookup["by_id"].get(product_id)
+    metadata = metadata_by_id or lookup["by_name"].get(product_name)
 
-    return (
-        lookup["by_id"].get(product_id)
-        or lookup["by_name"].get(product_name)
-        or {
+    if metadata is None:
+        return {
             "product_name": "",
+            "article": "",
             "barcode": "",
             "brand": "",
             "category": "",
             "brand_id": None,
             "category_id": None,
         }
-    )
+
+    return {
+        **metadata,
+        "article": (
+            metadata.get("article", "")
+            if metadata_by_id is not None
+            else ""
+        ),
+    }
 
 
 def build_sales_report_records(
@@ -7251,6 +7304,15 @@ def build_sales_report_records(
                 or override.get("product_name")
                 or operation.get("product_name")
                 or ""
+            ),
+            "article": (
+                sale_snapshot_text(override, "article")
+                if "article" in override
+                else sale_snapshot_text(
+                    operation,
+                    "article",
+                    product_metadata.get("article"),
+                )
             ),
             "barcode": str(
                 product_metadata.get("barcode")
@@ -7519,6 +7581,11 @@ def build_sales_report_records(
                 product_metadata.get("product_name")
                 or stored_sale.get("product_name")
                 or ""
+            ),
+            "article": sale_snapshot_text(
+                stored_sale,
+                "article",
+                product_metadata.get("article"),
             ),
             "barcode": str(
                 product_metadata.get("barcode")
@@ -8164,6 +8231,7 @@ def sales_report_excel():
         "brand": 20,
         "category": 26,
         "product_name": 36,
+        "article": 22,
         "quantity_display": 14,
         "unit_price_display": 18,
         "delivery_cost_display": 20,
@@ -8417,6 +8485,7 @@ def sales_report_pdf():
 
     column_weights = {
         "product_name": 1.8,
+        "article": 1.25,
         "category": 1.4,
         "platform": 1.3,
         "note": 1.8,
@@ -14858,6 +14927,7 @@ def serialize_api_sale(sale):
         "order_number": str(sale.get("order_number") or ""),
         "product_id": str(sale.get("product_id") or ""),
         "product_name": str(sale.get("product_name") or ""),
+        "article": sale_snapshot_text(sale, "article"),
         "barcode": str(sale.get("barcode") or ""),
         "brand": str(sale.get("brand") or ""),
         "category": str(sale.get("category") or ""),
@@ -15078,6 +15148,15 @@ def normalize_api_sale_payload(payload, existing=None, require_catalog=False):
         "source": source,
         "product_id": product_id,
         "product_name": product_name,
+        "article": (
+            sale_snapshot_text(existing, "article")
+            if (
+                "article" in existing
+                and product_id
+                == str(existing.get("product_id") or "").strip()
+            )
+            else sale_snapshot_text(product or {}, "article")
+        ),
         "barcode": str(
             (product or {}).get("barcode")
             or payload.get("barcode")
@@ -15284,7 +15363,7 @@ def api_sales_collection():
         or "desc"
     ).strip()
     allowed_sort = {
-        "created_at", "order_number", "product_name", "quantity_value",
+        "created_at", "order_number", "product_name", "article", "quantity_value",
         "total_amount", "source", "order_status",
     }
     if sort_by not in allowed_sort:

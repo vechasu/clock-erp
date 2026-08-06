@@ -151,6 +151,7 @@ def sale_record(identifier, order_number, product, source, date, quantity, unit_
         "order_number": order_number,
         "product_id": str(product["id"]),
         "product_name": product["name"],
+        "article": str(product.get("article") or ""),
         "barcode": product.get("code") or "",
         "brand": product["brand"],
         "category": product["category"],
@@ -192,9 +193,25 @@ def sale_record(identifier, order_number, product, source, date, quantity, unit_
     }
 
 
+long_article_product = {
+    **warehouse_items[0],
+    "article": "КИРИЛЛИЧЕСКИЙ-АРТИКУЛ-ОЧЕНЬ-ДЛИННЫЙ-2026",
+}
+zero_article_product = {
+    **warehouse_items[2],
+    "article": "0",
+    "code": "WB-BARCODE-8831",
+}
+empty_article_product = {
+    **warehouse_items[1],
+    "article": "",
+}
+
 preview_sales = [
-    sale_record("preview-sale-1", "ORDER-1042", warehouse_items[0], "Tictactoy", "2026-07-30", 1, 14990),
-    sale_record("preview-sale-2", "WB-8831", warehouse_items[2], "Wildberries", "2026-07-29", 2, 1490),
+    sale_record("preview-sale-1", "ORDER-1042", long_article_product, "Tictactoy", "2026-07-30", 1, 14990),
+    sale_record("preview-sale-2", "WB-8831", zero_article_product, "Wildberries", "2026-07-29", 2, 1490),
+    sale_record("preview-sale-3", "AMZ-2201", warehouse_items[1], "Amazon", "2026-07-28", 1, 24990),
+    sale_record("preview-sale-4", "ORDER-EMPTY", empty_article_product, "Tictactoy", "2026-07-27", 1, 5000),
 ]
 
 web.CATALOG_TAXONOMY_PATH = PREVIEW_ROOT / "catalog_taxonomy.json"
