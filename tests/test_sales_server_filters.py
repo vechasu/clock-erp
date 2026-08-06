@@ -112,6 +112,18 @@ class SalesServerFiltersTest(unittest.TestCase):
         self.assertEqual(historical["brand"], "Исторический бренд")
         self.assertEqual(historical["category"], "Удалённая категория")
 
+    def test_snapshot_identifier_is_compatible_with_production_python(self):
+        self.assertEqual(
+            web.get_sale_filter_identifier(
+                {"brand": "Luch"}, "brand_id", "brand"
+            ),
+            "snapshot:brand:luch",
+        )
+        source = (web.PROJECT_ROOT / "app" / "web.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn(".removesuffix(", source)
+
     def test_dependent_options_do_not_mix_brands_or_categories(self):
         options = web.build_sales_filter_options(
             self.sales,
