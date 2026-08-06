@@ -34,7 +34,7 @@ class ActiveFilterChipsTest(unittest.TestCase):
             "{% if warehouse_active_filter_count >= 2 %}",
             self.warehouse,
         )
-        self.assertIn("if (filters.length >= 2)", self.sales)
+        self.assertIn("if (filters.length)", self.sales)
         self.assertIn("if (count >= 2)", self.receipts)
 
     def test_active_filter_rows_hide_when_empty(self):
@@ -56,14 +56,17 @@ class ActiveFilterChipsTest(unittest.TestCase):
         self.assertNotIn("filter-pill", self.warehouse)
 
     def test_filter_badges_update_from_the_same_active_values(self):
-        self.assertIn("updateSalesFilterSummary();", self.sales)
         self.assertIn("renderSalesActiveFilters();", self.sales)
+        self.assertIn('`Фильтры · ${count}`', self.sales)
         self.assertIn("updateReceiptAdvancedFilterCount();", self.receipts)
         self.assertIn("badge.textContent = String(count)", self.receipts)
 
     def test_removing_filters_updates_url_rows_and_statistics(self):
-        self.assertIn("syncFilterUrls(selectedFrom, selectedTo)", self.sales)
-        self.assertIn("updateVisibleStats(visibleRows)", self.sales)
+        self.assertIn("navigateSales(changes)", self.sales)
+        self.assertIn(
+            "filter_sales_report_records(all_sales, filters)",
+            self.source("app/web.py"),
+        )
         self.assertIn("window.history.replaceState({}, \"\", url)", self.receipts)
         self.assertIn('"receiptStatDocuments"', self.receipts)
         self.assertIn('"receiptStatQuantity"', self.receipts)
@@ -103,29 +106,24 @@ class ActiveFilterChipsTest(unittest.TestCase):
             "bool(created_date_from or created_date_to)",
             self.source("app/web.py"),
         )
-        self.assertIn(
-            "salesDateFrom?.value || salesDateTo?.value",
-            self.sales,
-        )
+        self.assertNotIn("period: salesPeriodFilterLabel()", self.sales)
         self.assertIn(
             "activeFilters.length + (periodLabel ? 1 : 0)",
             self.receipts,
         )
 
     def test_period_labels_cover_both_open_ended_variants(self):
-        for source in (self.warehouse, self.sales, self.receipts):
+        for source in (self.warehouse, self.receipts):
             with self.subTest(source=source[:20]):
                 self.assertIn("Период: с ", source)
                 self.assertIn("Период: до ", source)
-        self.assertIn('"–" + displaySalesDate(dateTo)', self.sales)
         self.assertIn('"–" + formatDate(dateTo)', self.receipts)
 
     def test_period_chip_clears_both_dates_only(self):
-        sales_period = self.sales.split(
-            'else {\n                    salesDateFrom.value = "";', 1
-        )[1].split("updateSalesFilterSummary();", 1)[0]
-        self.assertIn('salesDateTo.value = ""', sales_period)
-        self.assertNotIn("appliedSaleState", sales_period)
+        self.assertIn(
+            'navigateSales({date_from: "", date_to: ""})',
+            self.sales,
+        )
 
         receipt_period = self.receipts.split(
             'button.dataset.receiptFilter = "period";', 1
@@ -146,7 +144,10 @@ class ActiveFilterChipsTest(unittest.TestCase):
             self.assertIn('"{}"'.format(parameter), warehouse_reset)
         for parameter in ('"q"', '"sort_by"', '"sort_dir"'):
             self.assertNotIn(parameter, warehouse_reset)
-        self.assertIn("resetSalesActiveFilters", self.sales)
+        self.assertIn(
+            'navigateSales({brand_id: "", category_id: "", product_id: "", status: ""',
+            self.sales,
+        )
         self.assertIn("resetReceiptActiveFilters", self.receipts)
 
     def test_stock_chip_matches_visible_toggle_and_is_not_in_sales(self):

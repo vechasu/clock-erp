@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -107,7 +108,14 @@ class ToolbarPopoverBrowserTest(unittest.TestCase):
                 timeout=35,
             )
         self.assertEqual(result.returncode, 0, result.stderr[-2000:])
-        self.assertIn(marker, result.stdout)
+        if marker not in result.stdout:
+            error = re.search(
+                r'data-sales-filters-e2e-error="([^"]*)"',
+                result.stdout,
+            )
+            self.fail(
+                error.group(1) if error else result.stderr[-2000:]
+            )
 
     def test_toolbar_popovers_and_locked_modals(self):
         if sys.platform == "darwin":
@@ -223,6 +231,18 @@ class ToolbarPopoverBrowserTest(unittest.TestCase):
                             height,
                             'data-sales-channel-e2e="pass"',
                         )
+
+            for width, height in ((1440, 900), (390, 844), (320, 568)):
+                with self.subTest(path="sales-filters", width=width):
+                    self.run_chrome(
+                        chrome,
+                        f"http://127.0.0.1:{port}/app/sales"
+                        "?source=all&brand_id=snapshot%3Abrand%3Acasio"
+                        "&sales_filters_e2e=1",
+                        width,
+                        height,
+                        'data-sales-filters-e2e="pass"',
+                    )
         finally:
             server.terminate()
             try:

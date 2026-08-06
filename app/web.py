@@ -7299,11 +7299,14 @@ def build_sales_report_records(
             "product_id": str(
                 operation.get("product_id") or ""
             ),
-            "product_name": str(
-                product_metadata.get("product_name")
-                or override.get("product_name")
-                or operation.get("product_name")
-                or ""
+            "product_name": sale_snapshot_text(
+                override,
+                "product_name",
+                sale_snapshot_text(
+                    operation,
+                    "product_name",
+                    product_metadata.get("product_name"),
+                ),
             ),
             "article": (
                 sale_snapshot_text(override, "article")
@@ -7320,26 +7323,40 @@ def build_sales_report_records(
                 or operation.get("barcode")
                 or ""
             ),
-            "brand": str(
-                product_metadata.get("brand")
-                or override.get("brand")
-                or operation.get("brand")
-                or ""
+            "brand": sale_snapshot_text(
+                override,
+                "brand",
+                sale_snapshot_text(
+                    operation,
+                    "brand",
+                    product_metadata.get("brand"),
+                ),
             ),
-            "category": str(
-                product_metadata.get("category")
-                or override.get("category")
-                or operation.get("category")
-                or ""
+            "category": sale_snapshot_text(
+                override,
+                "category",
+                sale_snapshot_text(
+                    operation,
+                    "category",
+                    product_metadata.get("category"),
+                ),
             ),
-            "brand_id": (
-                product_metadata.get("brand_id")
-                or operation.get("brand_id")
-            ),
-            "category_id": (
-                product_metadata.get("category_id")
-                or operation.get("category_id")
-            ),
+            "brand_id": next((
+                value for value in (
+                    override.get("brand_id"),
+                    operation.get("brand_id"),
+                    product_metadata.get("brand_id"),
+                )
+                if value is not None and str(value).strip() != ""
+            ), None),
+            "category_id": next((
+                value for value in (
+                    override.get("category_id"),
+                    operation.get("category_id"),
+                    product_metadata.get("category_id"),
+                )
+                if value is not None and str(value).strip() != ""
+            ), None),
             "quantity_value": quantity_number,
             "quantity_display": format_stock_number(
                 quantity_number
@@ -7577,10 +7594,10 @@ def build_sales_report_records(
             "product_id": str(
                 stored_sale.get("product_id") or ""
             ),
-            "product_name": str(
-                product_metadata.get("product_name")
-                or stored_sale.get("product_name")
-                or ""
+            "product_name": sale_snapshot_text(
+                stored_sale,
+                "product_name",
+                product_metadata.get("product_name"),
             ),
             "article": sale_snapshot_text(
                 stored_sale,
@@ -7592,24 +7609,30 @@ def build_sales_report_records(
                 or stored_sale.get("barcode")
                 or ""
             ),
-            "brand": str(
-                product_metadata.get("brand")
-                or stored_sale.get("brand")
-                or ""
+            "brand": sale_snapshot_text(
+                stored_sale,
+                "brand",
+                product_metadata.get("brand"),
             ),
-            "category": str(
-                product_metadata.get("category")
-                or stored_sale.get("category")
-                or ""
+            "category": sale_snapshot_text(
+                stored_sale,
+                "category",
+                product_metadata.get("category"),
             ),
-            "brand_id": (
-                stored_sale.get("brand_id")
-                or product_metadata.get("brand_id")
-            ),
-            "category_id": (
-                stored_sale.get("category_id")
-                or product_metadata.get("category_id")
-            ),
+            "brand_id": next((
+                value for value in (
+                    stored_sale.get("brand_id"),
+                    product_metadata.get("brand_id"),
+                )
+                if value is not None and str(value).strip() != ""
+            ), None),
+            "category_id": next((
+                value for value in (
+                    stored_sale.get("category_id"),
+                    product_metadata.get("category_id"),
+                )
+                if value is not None and str(value).strip() != ""
+            ), None),
             "quantity_value": quantity_number,
             "quantity_display": format_stock_number(
                 quantity_number
@@ -7775,27 +7798,26 @@ def build_sales_report_records(
 
 
 def get_sales_report_filters():
+    def query_text(name):
+        value = request.args.get(name)
+        return "" if value is None else str(value).strip()
+
     filters = {
-        "q": (
-            request.args.get("q") or ""
-        ).strip(),
-        "date_from": (
-            request.args.get("date_from") or ""
-        ).strip(),
-        "date_to": (
-            request.args.get("date_to") or ""
-        ).strip(),
-        "sale_type": (
-            request.args.get("sale_type") or ""
-        ).strip(),
+        "q": query_text("q"),
+        "date_from": query_text("date_from"),
+        "date_to": query_text("date_to"),
+        "sale_type": query_text("sale_type"),
+        "tab": query_text("tab"),
         "source": (
             get_active_sales_source(
                 request.args.get("source")
             )
         ),
-        "product": (
-            request.args.get("product") or ""
-        ).strip(),
+        "brand_id": query_text("brand_id"),
+        "category_id": query_text("category_id"),
+        "product_id": query_text("product_id"),
+        "status": query_text("status"),
+        "product": query_text("product"),
         "order_number": (
             request.args.get("order_number") or ""
         ).strip(),
@@ -7832,7 +7854,125 @@ def get_sales_report_filters():
     else:
         filters["order_status"] = ""
 
+    if filters["status"]:
+        filters["status"] = normalize_sale_status_filter(
+            filters["status"]
+        )
+        if filters["status"] not in SALE_STATUS_LABELS:
+            filters["status"] = ""
+
     return filters
+
+
+def get_sale_filter_identifier(sale, id_field, label_field):
+    value = sale.get(id_field)
+
+    if value is not None and str(value).strip() != "":
+        return str(value).strip()
+
+    label = str(sale.get(label_field) or "").strip()
+
+    if not label:
+        return ""
+
+    return "snapshot:{}:{}".format(
+        id_field.removesuffix("_id"),
+        label.casefold(),
+    )
+
+
+def build_sales_filter_catalog(sales):
+    catalog = []
+    seen = set()
+
+    for sale in sales:
+        brand_id = get_sale_filter_identifier(
+            sale, "brand_id", "brand"
+        )
+        category_id = get_sale_filter_identifier(
+            sale, "category_id", "category"
+        )
+        product_id = get_sale_filter_identifier(
+            sale, "product_id", "product_name"
+        )
+        brand_label = str(sale.get("brand") or "").strip()
+        category_label = str(sale.get("category") or "").strip()
+        product_label = str(sale.get("product_name") or "").strip()
+
+        if category_id == "0" and not category_label:
+            category_label = "Без категории"
+
+        key = (
+            brand_id, category_id, product_id,
+            brand_label, category_label, product_label,
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        catalog.append({
+            "brand_id": brand_id,
+            "brand": brand_label or "Без бренда",
+            "category_id": category_id,
+            "category": category_label or "Без категории",
+            "product_id": product_id,
+            "product": product_label or "Товар без названия",
+        })
+
+    return sorted(
+        catalog,
+        key=lambda item: (
+            item["brand"].casefold(),
+            item["category"].casefold(),
+            item["product"].casefold(),
+        ),
+    )
+
+
+def build_sales_filter_options(sales, filters):
+    catalog = build_sales_filter_catalog(sales)
+    brand_id = str(filters.get("brand_id") or "")
+    category_id = str(filters.get("category_id") or "")
+
+    def unique_options(items, value_key, label_key):
+        values = {}
+        for item in items:
+            value = item[value_key]
+            if value != "":
+                values.setdefault(value, item[label_key])
+        return [
+            {"value": value, "label": label}
+            for value, label in sorted(
+                values.items(),
+                key=lambda pair: pair[1].casefold(),
+            )
+        ]
+
+    category_items = [
+        item for item in catalog
+        if not brand_id or item["brand_id"] == brand_id
+    ]
+    product_items = [
+        item for item in category_items
+        if not category_id or item["category_id"] == category_id
+    ]
+    return {
+        "brands": unique_options(catalog, "brand_id", "brand"),
+        "categories": unique_options(
+            category_items, "category_id", "category"
+        ),
+        "products": unique_options(
+            product_items, "product_id", "product"
+        ),
+        "statuses": [
+            {"value": value, "label": label}
+            for value, label in SALE_STATUS_LABELS.items()
+        ],
+        "sources": [
+            {"value": tab["key"], "label": tab["label"]}
+            for tab in SALES_SOURCE_TABS
+            if tab["key"] != "all"
+        ],
+    }
 
 
 def filter_sales_report_records(sales, filters):
@@ -7887,6 +8027,30 @@ def filter_sales_report_records(sales, filters):
         ):
             continue
 
+        if (
+            filters.get("brand_id")
+            and get_sale_filter_identifier(
+                sale, "brand_id", "brand"
+            ) != filters["brand_id"]
+        ):
+            continue
+
+        if (
+            filters.get("category_id")
+            and get_sale_filter_identifier(
+                sale, "category_id", "category"
+            ) != filters["category_id"]
+        ):
+            continue
+
+        if (
+            filters.get("product_id")
+            and get_sale_filter_identifier(
+                sale, "product_id", "product_name"
+            ) != filters["product_id"]
+        ):
+            continue
+
         if search_query:
             search_text = build_sales_search_text(
                 sale,
@@ -7918,6 +8082,13 @@ def filter_sales_report_records(sales, filters):
             filters.get("order_status")
             and normalize_sale_status(sale.get("order_status"))
             != filters["order_status"]
+        ):
+            continue
+
+        if (
+            filters.get("status")
+            and normalize_sale_status(sale.get("order_status"))
+            != filters["status"]
         ):
             continue
 
@@ -9002,12 +9173,25 @@ def sales_page():
     all_sales = build_sales_report_records(
         warehouse_items=all_warehouse_items
     )
+    requested_tab = request.args.get("tab")
     active_source = get_active_sales_source(
-        request.args.get("source")
+        requested_tab if requested_tab is not None
+        else request.args.get("source")
     )
-    sales = filter_sales_by_source(
+    filters = get_sales_report_filters()
+    filters["source"] = (
+        filters["source"]
+        if active_source == "all" and requested_tab == "all"
+        else active_source
+    )
+    sales = filter_sales_report_records(all_sales, filters)
+    option_source_sales = filter_sales_by_source(
         all_sales,
-        active_source,
+        filters["source"] if active_source != "all" else "all",
+    )
+    filter_options = build_sales_filter_options(
+        option_source_sales,
+        filters,
     )
 
     for sale in sales:
@@ -9038,6 +9222,10 @@ def sales_page():
             "date_to",
             "sort",
             "sort_dir",
+            "brand_id",
+            "category_id",
+            "product_id",
+            "status",
         )
     }
 
@@ -9061,15 +9249,12 @@ def sales_page():
         for tab in SALES_SOURCE_TABS
     ]
     report_query = {
-        "source": active_source,
+        "source": filters["source"],
+        **({"tab": "all"} if active_source == "all" else {}),
         **{
             key: value
             for key, value in preserved_filters.items()
-            if value and key in {
-                "q",
-                "date_from",
-                "date_to",
-            }
+            if value and key not in {"sort", "sort_dir"}
         },
     }
     return render_template(
@@ -9113,6 +9298,11 @@ def sales_page():
         ),
         tictactoy_location_data=get_tictactoy_location_catalog(),
         preserved_filters=preserved_filters,
+        sales_filters=filters,
+        sales_filter_options=filter_options,
+        sales_filter_catalog=build_sales_filter_catalog(
+            option_source_sales
+        ),
         notice=(request.args.get("notice") or "").strip(),
         message=(request.args.get("message") or "").strip(),
     )
