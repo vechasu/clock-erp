@@ -52,6 +52,7 @@ from app.services.product_classification import (
     ProductClassificationRepair,
 )
 from app.services.sales_inventory import (
+    CancellationConflictError,
     InsufficientStockError,
     ReturnConflictError,
     SalesInventory,
@@ -4953,6 +4954,13 @@ SALE_FORM_STATUS_LABELS = {
     "returned": "Возврат",
 }
 
+SALE_CANCELLATION_REASONS = {
+    "input_error": "Ошибка ввода",
+    "duplicate": "Дубль",
+    "customer_refused": "Клиент отказался",
+    "other": "Другое",
+}
+
 SALE_COMMISSION_CASH_CODE = "cash"
 SALE_COMMISSION_CASH_LABEL = "Оплата наличными (0)"
 SALE_COMMISSION_SBP_VALUE = "Оплата по СБП (0)"
@@ -6441,6 +6449,13 @@ def manual_sale_add():
 def manual_sale_update():
     require_csrf_when_authenticated()
 
+    return respond_to_sales_action(
+        "Проведённую продажу нельзя редактировать. "
+        "Отмените её и создайте новую.",
+        notice="error",
+        status_code=409,
+    )
+
     sale_id = (request.form.get("sale_id") or "").strip()
     product_name = (request.form.get("product_name") or "").strip()
     quantity = parse_manual_sale_quantity(request.form.get("quantity"))
@@ -6680,6 +6695,13 @@ def manual_sale_delete():
     from datetime import datetime
     from flask import request, redirect, url_for
 
+    require_csrf_when_authenticated()
+    return respond_to_sales_action(
+        "Сначала отмените продажу, чтобы восстановить остаток.",
+        notice="error",
+        status_code=409,
+    )
+
     sale_id = (request.form.get("sale_id") or "").strip()
     sales = load_manual_sales()
     sale = next(
@@ -6730,6 +6752,14 @@ def manual_sale_delete():
 def sale_status_update():
     from datetime import datetime
     from flask import redirect, request, url_for
+
+    require_csrf_when_authenticated()
+    return respond_to_sales_action(
+        "Проведённую продажу нельзя редактировать. "
+        "Отмените её и создайте новую.",
+        notice="error",
+        status_code=409,
+    )
 
     sale_id = (request.form.get("sale_id") or "").strip()
     sale_type = (request.form.get("sale_type") or "manual").strip()
@@ -6826,6 +6856,13 @@ def sale_status_update():
 @app.route("/sales/automatic/update", methods=["POST"])
 def automatic_sale_update():
     require_csrf_when_authenticated()
+
+    return respond_to_sales_action(
+        "Проведённую продажу нельзя редактировать. "
+        "Отмените её и создайте новую.",
+        notice="error",
+        status_code=409,
+    )
 
     operation_id = (
         request.form.get("operation_id") or ""
@@ -7021,103 +7058,173 @@ def automatic_sale_update():
     )
 
 
-@app.route("/sales/delete", methods=["POST"])
-def sale_delete():
-    from datetime import datetime
+def _sales_action_record(sale_id, sale_type):
+    if sale_type == "manual":
+        return next((
+            item for item in load_manual_sales()
+            if str(item.get("id") or "") == sale_id
+        ), None)
+    if sale_type == "automatic":
+        return next((
+            item for item in build_sales_report_records()
+            if item.get("sale_type") == "automatic"
+            and str(item.get("id") or "") == sale_id
+        ), None)
+    return None
 
+
+@app.route("/sales/cancel", methods=["POST"])
+def sale_cancel():
     require_csrf_when_authenticated()
     sale_id = str(request.form.get("sale_id") or "").strip()
     sale_type = str(request.form.get("sale_type") or "").strip()
-
+    reason_code = str(request.form.get("cancellation_reason") or "").strip()
+    comment = str(request.form.get("cancellation_comment") or "").strip()
+    reason = SALE_CANCELLATION_REASONS.get(reason_code)
     if not sale_id:
         return respond_to_sales_action(
-            "Продажа не найдена",
+            "Продажа не найдена", notice="error", status_code=400,
+        )
+    if reason is None:
+        return respond_to_sales_action(
+            "Выберите причину отмены.", notice="error", status_code=400,
+        )
+    if reason_code == "other" and not comment:
+        return respond_to_sales_action(
+            "Укажите комментарий для причины «Другое».",
             notice="error",
             status_code=400,
         )
 
-    deleted_at = datetime.now().strftime("%Y-%m-%d %H:%M")
+    managed = SalesInventory().get_sale(sale_id)
+    if managed is not None:
+        try:
+            SalesInventory().cancel_sale(
+                sale_id,
+                reason=reason,
+                comment=comment,
+                user_name=current_sales_user_name(),
+                idempotency_key=(
+                    request.headers.get("Idempotency-Key")
+                    or "sale-cancel:{}".format(sale_id)
+                ),
+            )
+        except CancellationConflictError as error:
+            return respond_to_sales_action(
+                str(error), notice="error", status_code=409,
+            )
+        except Exception:
+            app.logger.exception("Transactional sale cancellation failed")
+            return respond_to_sales_action(
+                "Продажа не отменена. Остаток не изменён.",
+                notice="error",
+                status_code=500,
+            )
+        _cached_api_sales_records.cache_clear()
+        return respond_to_sales_action("Продажа отменена")
 
+    record = _sales_action_record(sale_id, sale_type)
+    if record is None:
+        return respond_to_sales_action(
+            "Продажа не найдена", notice="error", status_code=404,
+        )
+    if record.get("is_cancelled") or sale_is_cancelled(record):
+        return respond_to_sales_action("Продажа отменена")
+    if record.get("return_status") == "returned":
+        return respond_to_sales_action(
+            "Возвращённую продажу нельзя отменить.",
+            notice="error",
+            status_code=409,
+        )
+    cancelled_at = datetime.now().strftime("%Y-%m-%d %H:%M")
+    cancellation = {
+        "order_status": "cancelled",
+        "cancelled_at": cancelled_at,
+        "cancellation_reason": reason,
+        "cancellation_comment": comment,
+        "cancelled_by": current_sales_user_name(),
+    }
     if sale_type == "manual":
         sales = load_manual_sales()
-        sale = next(
-            (
-                item
-                for item in sales
-                if str(item.get("id") or "") == sale_id
-            ),
-            None,
+        stored = next(
+            item for item in sales if str(item.get("id") or "") == sale_id
         )
-
-        if sale is None:
-            return respond_to_sales_action(
-                "Ручная продажа не найдена",
-                notice="error",
-                status_code=404,
-            )
-
-        if sale.get("inventory_managed"):
-            try:
-                SalesInventory().delete_sale(
-                    sale_id,
-                    reason="Удаление продажи",
-                    user_name=current_sales_user_name(),
-                    idempotency_key="sale-delete:{}".format(sale_id),
-                )
-            except SalesInventoryError as error:
-                return respond_to_sales_action(
-                    str(error), notice="error", status_code=409,
-                )
-            return respond_to_sales_action("Продажа удалена")
-
-        if sale.get("deleted_at"):
-            return respond_to_sales_action(
-                "Продажа уже удалена",
-                notice="error",
-                status_code=410,
-            )
-
-        sale["deleted_at"] = deleted_at
+        stored.update(cancellation)
         save_manual_sales(sales)
-    elif sale_type == "automatic":
-        operation_exists = any(
-            str(operation.get("id") or "") == sale_id
-            and str(operation.get("source") or "") == "Заказ Битрикс"
-            and str(operation.get("type") or "") in {"writeoff", "loss"}
-            for operation in load_stock_operations()
-        )
-
-        if not operation_exists:
-            return respond_to_sales_action(
-                "Автоматическая продажа не найдена",
-                notice="error",
-                status_code=404,
-            )
-
+    else:
         overrides = load_automatic_sales_overrides()
-        override = overrides.get(sale_id)
-
-        if not isinstance(override, dict):
-            override = {}
-
-        if override.get("deleted_at"):
-            return respond_to_sales_action(
-                "Продажа уже удалена",
-                notice="error",
-                status_code=410,
-            )
-
-        override["deleted_at"] = deleted_at
+        override = overrides.get(sale_id) or {}
+        override.update(cancellation)
         overrides[sale_id] = override
         save_automatic_sales_overrides(overrides)
-    else:
+    _cached_api_sales_records.cache_clear()
+    return respond_to_sales_action("Продажа отменена")
+
+
+@app.route("/sales/delete", methods=["POST"])
+def sale_delete():
+    require_csrf_when_authenticated()
+    sale_id = str(request.form.get("sale_id") or "").strip()
+    sale_type = str(request.form.get("sale_type") or "").strip()
+    if not sale_id:
         return respond_to_sales_action(
-            "Неизвестный тип продажи",
-            notice="error",
-            status_code=400,
+            "Продажа не найдена", notice="error", status_code=400,
         )
 
-    return respond_to_sales_action("Продажа удалена")
+    managed = SalesInventory().get_sale(sale_id)
+    if managed is not None:
+        try:
+            SalesInventory().delete_sale(
+                sale_id,
+                user_name=current_sales_user_name(),
+            )
+        except CancellationConflictError as error:
+            return respond_to_sales_action(
+                str(error), notice="error", status_code=409,
+            )
+        _cached_api_sales_records.cache_clear()
+        return respond_to_sales_action("Запись удалена")
+
+    if sale_type == "automatic":
+        deleted_override = load_automatic_sales_overrides().get(sale_id) or {}
+        if deleted_override.get("deleted_at"):
+            return respond_to_sales_action("Запись удалена")
+
+    record = _sales_action_record(sale_id, sale_type)
+    if record is None:
+        return respond_to_sales_action(
+            "Продажа не найдена", notice="error", status_code=404,
+        )
+    if not (record.get("is_cancelled") or sale_is_cancelled(record)):
+        return respond_to_sales_action(
+            "Сначала отмените продажу, чтобы восстановить остаток.",
+            notice="error",
+            status_code=409,
+        )
+    deleted_at = datetime.now().strftime("%Y-%m-%d %H:%M")
+    if sale_type == "manual":
+        sales = load_manual_sales()
+        stored = next(
+            item for item in sales if str(item.get("id") or "") == sale_id
+        )
+        if not stored.get("deleted_at"):
+            stored["deleted_at"] = deleted_at
+            stored["deleted_by"] = current_sales_user_name()
+            save_manual_sales(sales)
+    elif sale_type == "automatic":
+        overrides = load_automatic_sales_overrides()
+        override = overrides.get(sale_id) or {}
+        if not override.get("deleted_at"):
+            override["deleted_at"] = deleted_at
+            override["deleted_by"] = current_sales_user_name()
+            overrides[sale_id] = override
+            save_automatic_sales_overrides(overrides)
+    else:
+        return respond_to_sales_action(
+            "Неизвестный тип продажи", notice="error", status_code=400,
+        )
+    _cached_api_sales_records.cache_clear()
+    return respond_to_sales_action("Запись удалена")
 
 
 @app.route("/sales/return", methods=["POST"])
@@ -7573,6 +7680,16 @@ def build_sales_report_records(
             "cancelled_at": str(
                 override.get("cancelled_at") or ""
             ),
+            "cancellation_reason": str(
+                override.get("cancellation_reason") or ""
+            ),
+            "cancellation_comment": str(
+                override.get("cancellation_comment") or ""
+            ),
+            "cancelled_by": str(override.get("cancelled_by") or ""),
+            "cancellation_quantity": 0,
+            "cancellation_safe": True,
+            "cancellation_has_movements": False,
             "sticker_number": str(
                 override.get("sticker_number") or ""
             ),
@@ -7599,6 +7716,7 @@ def build_sales_report_records(
             stored_sale.get("status")
             or stored_sale.get("order_status")
         )
+        is_cancelled = sale_is_cancelled(stored_sale)
         unit_price = parse_sale_price(
             stored_sale.get("unit_price")
         )
@@ -7788,13 +7906,29 @@ def build_sales_report_records(
                 )
             ),
             "commission_type": "fixed_rub",
-            "order_status": return_status,
+            "order_status": "cancelled" if is_cancelled else return_status,
             "order_status_label": SALE_STATUS_LABELS[
-                return_status
+                "cancelled" if is_cancelled else return_status
             ],
-            "is_cancelled": sale_is_cancelled(stored_sale),
+            "is_cancelled": is_cancelled,
             "cancelled_at": str(
                 stored_sale.get("cancelled_at") or ""
+            ),
+            "cancellation_reason": str(
+                stored_sale.get("cancellation_reason") or ""
+            ),
+            "cancellation_comment": str(
+                stored_sale.get("cancellation_comment") or ""
+            ),
+            "cancelled_by": str(stored_sale.get("cancelled_by") or ""),
+            "cancellation_quantity": float(
+                stored_sale.get("cancellation_quantity") or 0
+            ),
+            "cancellation_safe": bool(
+                stored_sale.get("cancellation_safe", True)
+            ),
+            "cancellation_has_movements": bool(
+                stored_sale.get("cancellation_has_movements")
             ),
             "sticker_number": str(
                 stored_sale.get("sticker_number") or ""
@@ -15772,32 +15906,28 @@ def api_sale_resource(sale_id):
                 return api_success({
                     "id": str(sale_id),
                     "deleted": True,
-                    "stock_restored": True,
+                    "stock_restored": False,
                 })
         return api_error("SALE_NOT_FOUND", "Продажа не найдена.", 404)
     if request.method == "GET":
         return api_success(serialize_api_sale(record))
     require_csrf_when_authenticated()
+    if request.method == "PATCH":
+        return api_error(
+            "SALE_NOT_EDITABLE",
+            "Проведённую продажу нельзя редактировать. "
+            "Отмените её и создайте новую.",
+            409,
+        )
     if request.method == "DELETE":
         if record.get("sale_type") == "manual":
             if record.get("inventory_managed"):
-                if not request.path.startswith("/api/v1/"):
-                    return api_error(
-                        "SALE_NOT_EDITABLE",
-                        "Проведённую продажу удалить нельзя. Используйте возврат.",
-                        409,
-                    )
                 try:
                     SalesInventory().delete_sale(
                         sale_id,
-                        reason="Удаление или отмена продажи",
                         user_name=current_sales_user_name(),
-                        idempotency_key=(
-                            request.headers.get("Idempotency-Key")
-                            or "sale-delete:{}".format(sale_id)
-                        ),
                     )
-                except (SalesInventoryError, ReturnConflictError) as error:
+                except CancellationConflictError as error:
                     return api_error("SALE_NOT_EDITABLE", str(error), 409)
                 except Exception:
                     app.logger.exception("Sales API transactional delete failed")
@@ -15809,7 +15939,7 @@ def api_sale_resource(sale_id):
                 return api_success({
                     "id": str(sale_id),
                     "deleted": True,
-                    "stock_restored": True,
+                    "stock_restored": False,
                 })
             sales = load_manual_sales()
             stored = next(
@@ -15821,12 +15951,26 @@ def api_sale_resource(sale_id):
             )
             if stored is None:
                 return api_error("SALE_NOT_FOUND", "Продажа не найдена.", 404)
+            if not sale_is_cancelled(stored):
+                return api_error(
+                    "SALE_NOT_EDITABLE",
+                    "Сначала отмените продажу, чтобы восстановить остаток.",
+                    409,
+                )
             stored["deleted_at"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+            stored["deleted_by"] = current_sales_user_name()
             save_manual_sales(sales)
         elif record.get("sale_type") == "automatic":
+            if not record.get("is_cancelled"):
+                return api_error(
+                    "SALE_NOT_EDITABLE",
+                    "Сначала отмените продажу, чтобы восстановить остаток.",
+                    409,
+                )
             overrides = load_automatic_sales_overrides()
             override = overrides.get(str(sale_id)) or {}
             override["deleted_at"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+            override["deleted_by"] = current_sales_user_name()
             overrides[str(sale_id)] = override
             save_automatic_sales_overrides(overrides)
         else:
@@ -15890,6 +16034,83 @@ def api_sale_resource(sale_id):
         return api_error("SALE_SOURCE_UNSUPPORTED", "Источник продажи не поддержан.", 409)
     updated = find_api_sale(sale_id)
     return api_success(serialize_api_sale(updated or {**record, **normalized}))
+
+
+@app.route("/api/sales/<sale_id>/cancel", methods=["POST"])
+@app.route("/api/v1/sales/<sale_id>/cancel", methods=["POST"])
+def api_sale_cancel(sale_id):
+    require_csrf_when_authenticated()
+    try:
+        payload = api_json_payload()
+        reason_code = str(payload.get("reason") or "").strip()
+        comment = str(payload.get("comment") or "").strip()
+        reason = SALE_CANCELLATION_REASONS.get(reason_code)
+        if reason is None:
+            raise ValueError("Выберите причину отмены.")
+        if reason_code == "other" and not comment:
+            raise ValueError("Укажите комментарий для причины «Другое».")
+        managed = SalesInventory().get_sale(sale_id)
+        if managed is not None:
+            sale = SalesInventory().cancel_sale(
+                sale_id=sale_id,
+                reason=reason,
+                comment=comment,
+                user_name=current_sales_user_name(),
+                idempotency_key=(
+                    request.headers.get("Idempotency-Key")
+                    or payload.get("idempotency_key")
+                    or "sale-cancel:{}".format(sale_id)
+                ),
+            )
+        else:
+            record = find_api_sale(sale_id)
+            if record is None:
+                raise CancellationConflictError("Продажа не найдена.")
+            if record.get("return_status") == "returned" and not record.get("is_cancelled"):
+                raise CancellationConflictError(
+                    "Возвращённую продажу нельзя отменить."
+                )
+            cancellation = {
+                "order_status": "cancelled",
+                "cancelled_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "cancellation_reason": reason,
+                "cancellation_comment": comment,
+                "cancelled_by": current_sales_user_name(),
+            }
+            if record.get("sale_type") == "manual":
+                sales = load_manual_sales()
+                stored = next(
+                    item for item in sales
+                    if str(item.get("id") or "") == str(sale_id)
+                )
+                stored.update(cancellation)
+                save_manual_sales(sales)
+                sale = {**record, **cancellation, "is_cancelled": True}
+            elif record.get("sale_type") == "automatic":
+                overrides = load_automatic_sales_overrides()
+                override = overrides.get(str(sale_id)) or {}
+                override.update(cancellation)
+                overrides[str(sale_id)] = override
+                save_automatic_sales_overrides(overrides)
+                sale = {**record, **cancellation, "is_cancelled": True}
+            else:
+                raise CancellationConflictError(
+                    "Источник продажи не поддержан."
+                )
+    except CancellationConflictError as error:
+        return api_error("SALE_CANCEL_CONFLICT", str(error), 409)
+    except (SalesInventoryError, ValueError) as error:
+        return api_error("SALE_VALIDATION_FAILED", str(error), 422)
+    except Exception:
+        app.logger.exception("Sales API transactional cancellation failed")
+        return api_error(
+            "SALE_CANCEL_FAILED",
+            "Продажа не отменена. Остаток не изменён.",
+            500,
+        )
+    _cached_api_sales_records.cache_clear()
+    updated = find_api_sale(sale["id"])
+    return api_success(serialize_api_sale(updated or sale), 200)
 
 
 @app.route("/api/sales/<sale_id>/returns", methods=["POST"])

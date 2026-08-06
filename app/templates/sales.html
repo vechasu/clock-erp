@@ -344,8 +344,8 @@
         }
 
         .sale-row.is-cancelled td {
-            background: #fff1f2;
-            color: #7f1d1d;
+            background: #f8fafc;
+            color: #64748b;
         }
 
         .sale-row.is-returned td {
@@ -374,6 +374,19 @@
         .sales-return-badge.is-partial {
             background: #ffedd5;
             color: #c2410c;
+        }
+
+        .sales-cancelled-badge {
+            display: inline-flex;
+            min-height: 24px;
+            align-items: center;
+            padding: 3px 9px;
+            border-radius: 999px;
+            background: #e2e8f0;
+            color: #475569;
+            font-size: 11px;
+            font-weight: 800;
+            white-space: nowrap;
         }
 
         .sales-table .col-created_at {
@@ -504,6 +517,65 @@
             color: #c2410c;
         }
 
+        .sales-row-cancel {
+            background: #fee2e2;
+            color: #b91c1c;
+        }
+
+        .sales-row-cancel:hover,
+        .sales-row-cancel:focus-visible {
+            background: #fecaca;
+        }
+
+        .sales-action-menu {
+            position: relative;
+        }
+
+        .sales-action-menu summary {
+            display: inline-flex;
+            width: 28px;
+            height: 28px;
+            align-items: center;
+            justify-content: center;
+            border-radius: 7px;
+            background: #f1f5f9;
+            color: #475569;
+            cursor: pointer;
+            font-size: 18px;
+            list-style: none;
+        }
+
+        .sales-action-menu summary::-webkit-details-marker {
+            display: none;
+        }
+
+        .sales-action-menu button {
+            position: absolute;
+            z-index: 20;
+            top: calc(100% + 4px);
+            right: 0;
+            min-width: 150px;
+            padding: 9px 12px;
+            border: 1px solid #fecaca;
+            border-radius: 9px;
+            background: #ffffff;
+            color: #b91c1c;
+            font-weight: 750;
+            text-align: left;
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.14);
+        }
+
+        .sales-action-menu--mobile button {
+            right: auto;
+            left: 0;
+        }
+
+        .sales-mobile-card.is-cancelled {
+            border-color: #cbd5e1;
+            background: #f8fafc;
+            color: #64748b;
+        }
+
         .sales-row-return:hover,
         .sales-row-return:focus-visible {
             background: #ffedd5;
@@ -530,6 +602,59 @@
             grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: 10px;
             margin-bottom: 18px;
+        }
+
+        .sales-confirm-dialog {
+            width: min(560px, calc(100vw - 24px));
+        }
+
+        .sales-cancellation-summary {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+            margin-bottom: 16px;
+        }
+
+        .sales-cancellation-summary div {
+            min-width: 0;
+            padding: 11px;
+            border-radius: 10px;
+            background: #f8fafc;
+        }
+
+        .sales-cancellation-summary span {
+            display: block;
+            margin-bottom: 4px;
+            color: #64748b;
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        .sales-cancellation-summary strong {
+            display: block;
+            overflow-wrap: anywhere;
+            color: #172033;
+            font-size: 13px;
+        }
+
+        .sales-marketplace-warning {
+            padding: 10px 12px;
+            border: 1px solid #fed7aa;
+            border-radius: 10px;
+            background: #fff7ed;
+            color: #9a3412;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        @media (max-width: 390px) {
+            .sales-cancellation-summary {
+                grid-template-columns: minmax(0, 1fr);
+            }
+
+            .sales-confirm-dialog .form-actions {
+                grid-template-columns: minmax(0, 1fr);
+            }
         }
 
         .sales-return-summary div {
@@ -1710,7 +1835,7 @@
                         <tbody>
                             {% for sale in sales %}
                                 <tr
-                                    class="sale-row{% if sale.is_manual %} manual-row{% else %} automatic-row{% endif %}{% if sale.return_status == 'returned' %} is-returned{% elif sale.return_status == 'partially_returned' %} is-partially-returned{% elif sale.is_cancelled %} is-cancelled{% endif %}"
+                                    class="sale-row{% if sale.is_manual %} manual-row{% else %} automatic-row{% endif %}{% if sale.is_cancelled %} is-cancelled{% elif sale.return_status == 'returned' %} is-returned{% elif sale.return_status == 'partially_returned' %} is-partially-returned{% endif %}"
                                     data-sale-id="{{ sale.id }}"
                                     data-search="{{ sale.search_text }}"
                                     data-sort-date="{{ sale.created_at[:10] }}"
@@ -1740,6 +1865,10 @@
                                                     class="{% if sale.is_manual %}manual-view-value{% else %}automatic-view-value{% endif %} product-name erp-product-primary"
                                                 >
                                                     {{ value or "—" }}
+                                                </span>
+                                            {% elif column.key == "order_status_label" and sale.is_cancelled %}
+                                                <span class="sales-cancelled-badge">
+                                                    Отменена
                                                 </span>
                                             {% elif column.key == "order_status_label" and sale.return_status == "returned" %}
                                                 <span class="sales-return-badge">
@@ -1773,28 +1902,17 @@
                                         data-system-column="actions"
                                     >
                                         <div class="sales-row-actions">
-                                            <button
-                                                class="sales-row-action sales-row-edit"
-                                                type="button"
-                                                title="Редактировать продажу"
-                                                aria-label="Редактировать продажу"
-                                                data-sale="{{ sale|tojson|forceescape }}"
-                                                onclick="openSaleEditor(this)"
-                                            >
-                                                <svg
-                                                    viewBox="0 0 24 24"
-                                                    fill="none"
-                                                    stroke="currentColor"
-                                                    stroke-width="2"
-                                                    stroke-linecap="round"
-                                                    stroke-linejoin="round"
-                                                    aria-hidden="true"
-                                                >
-                                                    <path d="M12 20h9"></path>
-                                                    <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
-                                                </svg>
-                                            </button>
-                                            {% if sale.inventory_managed and sale.return_available_quantity > 0 %}
+                                            {% if not sale.is_cancelled and sale.return_status != 'returned' %}
+                                                <button
+                                                    class="sales-row-action sales-row-cancel"
+                                                    type="button"
+                                                    title="Отменить продажу"
+                                                    aria-label="Отменить продажу"
+                                                    data-sale="{{ sale|tojson|forceescape }}"
+                                                    onclick="openCancellationModal(this)"
+                                                >↶</button>
+                                            {% endif %}
+                                            {% if not sale.is_cancelled and sale.inventory_managed and sale.return_available_quantity > 0 %}
                                                 <button
                                                     class="sales-row-action sales-row-return"
                                                     type="button"
@@ -1803,39 +1921,23 @@
                                                     data-sale="{{ sale|tojson|forceescape }}"
                                                     onclick="openReturnModal(this)"
                                                 >↩</button>
-                                            {% elif sale.inventory_managed %}
+                                            {% elif not sale.is_cancelled and sale.inventory_managed %}
                                                 <span
                                                     class="sales-row-action sales-row-return is-complete"
                                                     title="Возврат оформлен"
                                                     aria-label="Возврат оформлен"
                                                 >✓</span>
                                             {% endif %}
-                                            <button
-                                                    class="sales-row-action sales-row-delete"
-                                                    type="button"
-                                                    title="Удалить продажу"
-                                                    aria-label="Удалить продажу"
-                                                    data-sale-id="{{ sale.id }}"
-                                                    data-sale-type="{{ sale.sale_type }}"
-                                                    data-sale-label="{{ sale.order_number or sale.product_name or sale.id }}"
-                                                    onclick="deleteSale(this)"
-                                                >
-                                                    <svg
-                                                        viewBox="0 0 24 24"
-                                                        fill="none"
-                                                        stroke="currentColor"
-                                                        stroke-width="2"
-                                                        stroke-linecap="round"
-                                                        stroke-linejoin="round"
-                                                        aria-hidden="true"
-                                                    >
-                                                        <path d="M3 6h18"></path>
-                                                        <path d="M8 6V4h8v2"></path>
-                                                        <path d="M19 6l-1 14H6L5 6"></path>
-                                                        <path d="M10 11v6"></path>
-                                                        <path d="M14 11v6"></path>
-                                                    </svg>
-                                                </button>
+                                            {% if sale.is_cancelled %}
+                                                <details class="sales-action-menu">
+                                                    <summary aria-label="Другие действия">⋯</summary>
+                                                    <button
+                                                        type="button"
+                                                        data-sale="{{ sale|tojson|forceescape }}"
+                                                        onclick="openSaleDeleteModal(this)"
+                                                    >Удалить запись</button>
+                                                </details>
+                                            {% endif %}
                                         </div>
                                     </td>
                                 </tr>
@@ -1874,7 +1976,7 @@
             >
                 {% for sale in sales %}
                     <article
-                        class="mobile-erp-card sales-mobile-card{% if sale.return_status == 'returned' %} is-returned{% elif sale.return_status == 'partially_returned' %} is-partially-returned{% elif sale.is_cancelled %} is-cancelled{% endif %}"
+                        class="mobile-erp-card sales-mobile-card{% if sale.is_cancelled %} is-cancelled{% elif sale.return_status == 'returned' %} is-returned{% elif sale.return_status == 'partially_returned' %} is-partially-returned{% endif %}"
                         data-sale-id="{{ sale.id }}"
                     >
                         <div class="mobile-erp-card-header">
@@ -1902,7 +2004,9 @@
                             Артикул: {{ sale.article or "—" }}
                         </div>
 
-                        {% if sale.return_status == "returned" %}
+                        {% if sale.is_cancelled %}
+                            <span class="sales-cancelled-badge">Отменена</span>
+                        {% elif sale.return_status == "returned" %}
                             <span class="sales-return-badge">Возврат</span>
                         {% elif sale.return_status == "partially_returned" %}
                             <span class="sales-return-badge is-partial">
@@ -1961,17 +2065,15 @@
                         </details>
 
                         <div class="mobile-erp-card-actions">
-                            <button
-                                class="sales-mobile-edit"
-                                type="button"
-                                title="Редактировать продажу"
-                                aria-label="Редактировать продажу"
-                                data-sale="{{ sale|tojson|forceescape }}"
-                                onclick="openSaleEditor(this)"
-                            >
-                                Редактировать
-                            </button>
-                            {% if sale.inventory_managed and sale.return_available_quantity > 0 %}
+                            {% if not sale.is_cancelled and sale.return_status != 'returned' %}
+                                <button
+                                    class="sales-mobile-delete sales-row-cancel"
+                                    type="button"
+                                    data-sale="{{ sale|tojson|forceescape }}"
+                                    onclick="openCancellationModal(this)"
+                                >Отменить продажу</button>
+                            {% endif %}
+                            {% if not sale.is_cancelled and sale.inventory_managed and sale.return_available_quantity > 0 %}
                                 <button
                                     class="sales-mobile-delete sales-row-return"
                                     type="button"
@@ -1980,23 +2082,19 @@
                                 >
                                     Оформить возврат
                                 </button>
-                            {% elif sale.inventory_managed %}
+                            {% elif not sale.is_cancelled and sale.inventory_managed %}
                                 <span class="sales-return-badge">
                                     Возврат оформлен
                                 </span>
-                            {% else %}
-                                <button
-                                    class="sales-mobile-delete sales-row-delete"
-                                    type="button"
-                                    title="Удалить продажу"
-                                    aria-label="Удалить продажу"
-                                    data-sale-id="{{ sale.id }}"
-                                    data-sale-type="{{ sale.sale_type }}"
-                                    data-sale-label="{{ sale.order_number or sale.product_name or sale.id }}"
-                                    onclick="deleteSale(this)"
-                                >
-                                    Удалить
-                                </button>
+                            {% elif sale.is_cancelled %}
+                                <details class="sales-action-menu sales-action-menu--mobile">
+                                    <summary aria-label="Другие действия">⋯</summary>
+                                    <button
+                                        type="button"
+                                        data-sale="{{ sale|tojson|forceescape }}"
+                                        onclick="openSaleDeleteModal(this)"
+                                    >Удалить запись</button>
+                                </details>
                             {% endif %}
                         </div>
                     </article>
@@ -2095,7 +2193,6 @@
                     name="csrf_token"
                     value="{{ csrf_token() }}"
                 >
-                <input id="saleEditId" type="hidden" disabled>
                 <input id="saleSource" type="hidden" name="source">
                 <input
                     id="product_name"
@@ -2529,6 +2626,86 @@
     </div>
 </div>
 
+<div id="saleCancellationModal" class="modal" aria-hidden="true" data-erp-modal-shell data-erp-modal-lock>
+    <div class="modal-dialog sales-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="saleCancellationTitle">
+        <div class="modal-header">
+            <div>
+                <h2 id="saleCancellationTitle">Отменить продажу?</h2>
+                <p>Операция сохранится в истории ERP.</p>
+            </div>
+            <button class="modal-close" type="button" aria-label="Закрыть" onclick="closeCancellationModal()">×</button>
+        </div>
+        <form id="saleCancellationForm" method="post" action="{{ url_for('sale_cancel') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input id="cancelSaleId" type="hidden" name="sale_id">
+            <input id="cancelSaleType" type="hidden" name="sale_type">
+            <div class="modal-body">
+                <div class="sales-cancellation-summary">
+                    <div><span>Источник</span><strong id="cancelSaleSource">—</strong></div>
+                    <div><span>Дата</span><strong id="cancelSaleDate">—</strong></div>
+                    <div><span>Номер заказа</span><strong id="cancelSaleNumber">—</strong></div>
+                    <div><span>Товар</span><strong id="cancelSaleProduct">—</strong></div>
+                    <div><span>Количество</span><strong id="cancelSaleQuantity">—</strong></div>
+                    <div><span>На склад вернётся</span><strong id="cancelStockQuantity">—</strong></div>
+                </div>
+                <p id="cancelMarketplaceWarning" class="sales-marketplace-warning" hidden>
+                    Отмена действует только в ERP и не изменяет заказ на площадке.
+                </p>
+                <div class="field">
+                    <label for="cancellationReason">Причина отмены</label>
+                    <select id="cancellationReason" class="control" name="cancellation_reason" required>
+                        <option value="">Выберите причину</option>
+                        <option value="input_error">Ошибка ввода</option>
+                        <option value="duplicate">Дубль</option>
+                        <option value="customer_refused">Клиент отказался</option>
+                        <option value="other">Другое</option>
+                    </select>
+                </div>
+                <div id="cancellationCommentField" class="field" hidden>
+                    <label for="cancellationComment">Комментарий</label>
+                    <textarea id="cancellationComment" class="control" name="cancellation_comment" rows="3"></textarea>
+                </div>
+                <p id="cancellationFormError" class="sale-form-error" role="alert" hidden></p>
+                <div class="form-actions">
+                    <button class="button button-muted" type="button" onclick="closeCancellationModal()">Не отменять</button>
+                    <button id="confirmSaleCancellation" class="button button-danger" type="submit">Отменить продажу</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div id="saleDeleteModal" class="modal" aria-hidden="true" data-erp-modal-shell data-erp-modal-lock>
+    <div class="modal-dialog sales-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="saleDeleteTitle">
+        <div class="modal-header">
+            <div>
+                <h2 id="saleDeleteTitle">Удалить отменённую запись?</h2>
+                <p>Запись исчезнет из обычных таблиц, KPI и отчётов. Склад повторно изменён не будет.</p>
+            </div>
+            <button class="modal-close" type="button" aria-label="Закрыть" onclick="closeSaleDeleteModal()">×</button>
+        </div>
+        <form id="saleDeleteForm" method="post" action="{{ url_for('sale_delete') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input id="deleteSaleId" type="hidden" name="sale_id">
+            <input id="deleteSaleType" type="hidden" name="sale_type">
+            <div class="modal-body">
+                <div class="sales-cancellation-summary">
+                    <div><span>Источник</span><strong id="deleteSaleSource">—</strong></div>
+                    <div><span>Дата</span><strong id="deleteSaleDate">—</strong></div>
+                    <div><span>Номер заказа</span><strong id="deleteSaleNumber">—</strong></div>
+                    <div><span>Товар</span><strong id="deleteSaleProduct">—</strong></div>
+                    <div class="field-wide"><span>Причина отмены</span><strong id="deleteCancellationReason">—</strong></div>
+                </div>
+                <p id="deleteSaleError" class="sale-form-error" role="alert" hidden></p>
+                <div class="form-actions">
+                    <button class="button button-muted" type="button" onclick="closeSaleDeleteModal()">Не удалять</button>
+                    <button id="confirmSaleDelete" class="button button-danger" type="submit">Удалить запись</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
 <div
     id="saleReturnModal"
     class="modal"
@@ -2696,6 +2873,167 @@
         saleReturnFocus?.focus();
         saleReturnFocus = null;
     }
+
+    const saleCancellationModal = document.getElementById(
+        "saleCancellationModal"
+    );
+    const saleCancellationForm = document.getElementById(
+        "saleCancellationForm"
+    );
+    const cancellationReason = document.getElementById(
+        "cancellationReason"
+    );
+    const cancellationComment = document.getElementById(
+        "cancellationComment"
+    );
+    const cancellationCommentField = document.getElementById(
+        "cancellationCommentField"
+    );
+    let cancellationReturnFocus = null;
+
+    window.openCancellationModal = function (button) {
+        const sale = JSON.parse(button.dataset.sale || "{}");
+        if (!sale.id || sale.is_cancelled) {
+            return;
+        }
+        cancellationReturnFocus = button;
+        saleCancellationForm.reset();
+        document.getElementById("cancelSaleId").value = sale.id;
+        document.getElementById("cancelSaleType").value =
+            sale.sale_type || "manual";
+        document.getElementById("cancelSaleSource").textContent =
+            sale.source || "—";
+        document.getElementById("cancelSaleDate").textContent =
+            String(sale.created_at || "").slice(0, 16) || "—";
+        document.getElementById("cancelSaleNumber").textContent =
+            sale.order_number || "—";
+        document.getElementById("cancelSaleProduct").textContent =
+            sale.product_name || "—";
+        document.getElementById("cancelSaleQuantity").textContent =
+            (sale.quantity_display || sale.quantity_value || "—") + " шт.";
+        const stockQuantity = Number(sale.cancellation_quantity || 0);
+        document.getElementById("cancelStockQuantity").textContent =
+            stockQuantity + (stockQuantity === 1 ? " единица" : " единиц");
+        document.getElementById("cancelMarketplaceWarning").hidden =
+            !["wildberries", "amazon"].includes(sale.source_key);
+        cancellationCommentField.hidden = true;
+        cancellationComment.required = false;
+        const error = document.getElementById("cancellationFormError");
+        error.hidden = true;
+        error.textContent = "";
+        saleCancellationModal.classList.add("is-open");
+        saleCancellationModal.setAttribute("aria-hidden", "false");
+        document.body.classList.add("modal-open");
+        requestAnimationFrame(() => cancellationReason.focus());
+    };
+
+    window.closeCancellationModal = function () {
+        saleCancellationModal.classList.remove("is-open");
+        saleCancellationModal.setAttribute("aria-hidden", "true");
+        document.body.classList.remove("modal-open");
+        cancellationReturnFocus?.focus();
+        cancellationReturnFocus = null;
+    };
+
+    cancellationReason?.addEventListener("change", () => {
+        const isOther = cancellationReason.value === "other";
+        cancellationCommentField.hidden = !isOther;
+        cancellationComment.required = isOther;
+        if (!isOther) {
+            cancellationComment.value = "";
+        }
+    });
+
+    saleCancellationForm?.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        if (!saleCancellationForm.reportValidity()) {
+            return;
+        }
+        const submit = document.getElementById("confirmSaleCancellation");
+        const error = document.getElementById("cancellationFormError");
+        submit.disabled = true;
+        submit.textContent = "Отмена…";
+        try {
+            const response = await fetch(saleCancellationForm.action, {
+                method: "POST",
+                headers: {"X-Requested-With": "XMLHttpRequest"},
+                body: new FormData(saleCancellationForm),
+            });
+            const result = await response.json();
+            if (!response.ok || !result.ok) {
+                throw new Error(result.message || "Не удалось отменить продажу");
+            }
+            reloadSalesWithNotice(result.message || "Продажа отменена");
+        } catch (requestError) {
+            error.textContent = requestError.message;
+            error.hidden = false;
+            submit.disabled = false;
+            submit.textContent = "Отменить продажу";
+        }
+    });
+
+    const saleDeleteModal = document.getElementById("saleDeleteModal");
+    const saleDeleteForm = document.getElementById("saleDeleteForm");
+    let deleteReturnFocus = null;
+
+    window.openSaleDeleteModal = function (button) {
+        const sale = JSON.parse(button.dataset.sale || "{}");
+        if (!sale.id || !sale.is_cancelled) {
+            return;
+        }
+        deleteReturnFocus = button;
+        document.getElementById("deleteSaleId").value = sale.id;
+        document.getElementById("deleteSaleType").value =
+            sale.sale_type || "manual";
+        document.getElementById("deleteSaleSource").textContent =
+            sale.source || "—";
+        document.getElementById("deleteSaleDate").textContent =
+            String(sale.created_at || "").slice(0, 16) || "—";
+        document.getElementById("deleteSaleNumber").textContent =
+            sale.order_number || "—";
+        document.getElementById("deleteSaleProduct").textContent =
+            sale.product_name || "—";
+        document.getElementById("deleteCancellationReason").textContent =
+            sale.cancellation_reason || "—";
+        document.getElementById("deleteSaleError").hidden = true;
+        saleDeleteModal.classList.add("is-open");
+        saleDeleteModal.setAttribute("aria-hidden", "false");
+        document.body.classList.add("modal-open");
+        requestAnimationFrame(() => saleDeleteModal.querySelector(".modal-close")?.focus());
+    };
+
+    window.closeSaleDeleteModal = function () {
+        saleDeleteModal.classList.remove("is-open");
+        saleDeleteModal.setAttribute("aria-hidden", "true");
+        document.body.classList.remove("modal-open");
+        deleteReturnFocus?.focus();
+        deleteReturnFocus = null;
+    };
+
+    saleDeleteForm?.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const submit = document.getElementById("confirmSaleDelete");
+        const error = document.getElementById("deleteSaleError");
+        submit.disabled = true;
+        submit.textContent = "Удаление…";
+        try {
+            const response = await fetch(saleDeleteForm.action, {
+                method: "POST",
+                headers: {"X-Requested-With": "XMLHttpRequest"},
+                body: new FormData(saleDeleteForm),
+            });
+            const result = await response.json();
+            if (!response.ok || !result.ok) {
+                throw new Error(result.message || "Не удалось удалить запись");
+            }
+            reloadSalesWithNotice(result.message || "Запись удалена");
+        } catch (requestError) {
+            error.textContent = requestError.message;
+            error.hidden = false;
+            submit.disabled = false;
+            submit.textContent = "Удалить запись";
+        }
+    });
 
     saleReturnModal?.addEventListener("click", (event) => {
         if (event.target === saleReturnModal) {
@@ -4410,21 +4748,11 @@
     const modalDescription = document.getElementById(
         "manualSaleModalDescription"
     );
-    const saleEditId = document.getElementById("saleEditId");
     const saleSubmitButton = manualSaleForm.querySelector(
         '.form-actions button[type="submit"]'
     );
     const saleFormError = document.getElementById("saleFormError");
     let manualSaleReturnFocus = null;
-    let editingSale = null;
-    let saleEditSavePending = false;
-    let saleEditIdempotencyKey = "";
-
-    function createSaleEditIdempotencyKey(saleId) {
-        const randomPart = window.crypto?.randomUUID?.()
-            || Math.random().toString(36).slice(2);
-        return ["sale-edit", saleId || "unknown", randomPart].join(":");
-    }
 
     function setSaleFormError(message = "") {
         saleFormError.textContent = message;
@@ -4453,20 +4781,15 @@
     }
 
     function showSaleForm(sourceKey) {
-        const isEditing = manualSaleForm.dataset.editing === "1";
         saleSourceInput.value = sourceLabels[sourceKey];
         saleFormFields.disabled = false;
         manualSaleForm.classList.remove("is-hidden");
-        modalTitle.textContent = isEditing
-            ? "Редактировать продажу"
-            : "Добавить продажу";
+        modalTitle.textContent = "Добавить продажу";
         modalDescription.textContent =
             "Источник: " + sourceLabels[sourceKey]
             + ". Он сохранится вместе с продажей.";
-        if (!isEditing) {
-            saleSubmitButton.textContent =
-                "Добавить продажу в " + sourceLabels[sourceKey];
-        }
+        saleSubmitButton.textContent =
+            "Добавить продажу в " + sourceLabels[sourceKey];
         saleSubmitButton.disabled = false;
         sourceChoicePanel
             .querySelectorAll("[data-sale-source]")
@@ -4527,12 +4850,7 @@
     function resetModalView() {
         manualSaleForm.reset();
         manualSaleForm.action = "{{ url_for('manual_sale_add') }}";
-        manualSaleForm.dataset.editing = "0";
-        editingSale = null;
         setSaleFormError();
-        saleEditId.disabled = true;
-        saleEditId.removeAttribute("name");
-        saleEditId.value = "";
         document.getElementById("product_id").value = "";
         document.getElementById("productMeta").textContent =
             "Баркод, артикул и остаток появятся после выбора товара.";
@@ -4895,206 +5213,10 @@
 
     resetProductFilters();
 
-    window.openSaleEditor = function (button) {
-        let sale;
-
-        try {
-            sale = JSON.parse(button.dataset.sale || "{}");
-        } catch (error) {
-            return;
-        }
-
-        manualSaleReturnFocus = button;
-        resetModalView();
-        editingSale = sale;
-        saleEditSavePending = false;
-        saleEditIdempotencyKey = createSaleEditIdempotencyKey(sale.id);
-        const sourceKey = sale.source_key || "tictactoy";
-        showSaleForm(sourceKey);
-        manualSaleForm.dataset.editing = "1";
-        manualSaleForm.action = sale.is_manual
-            ? "{{ url_for('manual_sale_update') }}"
-            : "{{ url_for('automatic_sale_update') }}";
-        saleEditId.disabled = false;
-        saleEditId.name = sale.is_manual
-            ? "sale_id"
-            : "operation_id";
-        saleEditId.value = sale.id || "";
-        saleSubmitButton.textContent = "Сохранить изменения";
-        modalTitle.textContent = "Редактировать продажу";
-        modalDescription.textContent =
-            "Проверьте данные и сохраните изменения.";
-
-        window.restoreSharedCatalogCascade(
-            manualSaleForm,
-            {
-                brandId: sale.brand_id || "",
-                brandLabel: sale.brand || "",
-                categoryId: sale.category_id || "",
-                categoryLabel: sale.category || "",
-                productId: sale.product_id || "",
-                productLabel: sale.product_name || "",
-            }
-        );
-        const editableStatus = ["shipped", "returned"].includes(
-            sale.order_status
-        ) ? sale.order_status : "";
-        window.setBrandComboboxValue(
-            saleStatusCombobox,
-            editableStatus,
-            sale.order_status_label || saleStatusLabels[editableStatus],
-        );
-        window.setBrandComboboxValue(
-            saleCommissionCombobox,
-            sale.commission_value ?? sale.commission ?? "",
-        );
-        window.setBrandComboboxValue(
-            salePlatformCombobox,
-            sale.platform || "",
-        );
-        if (sourceKey === "amazon") {
-            window.setBrandComboboxValue(
-                saleCountryCombobox,
-                sale.country || "",
-            );
-        } else if (sourceKey === "tictactoy") {
-            window.setBrandComboboxValue(
-                tictactoyCountryCombobox,
-                sale.country || "",
-            );
-            refreshTictactoyRegions(
-                sale.region || "",
-                sale.city || "",
-            );
-        }
-        productIdInput.value = sale.product_id || "";
-        productNameInput.value = sale.product_name || "";
-
-        const saleDateValue = String(sale.created_at || "")
-            .replace(" ", "T")
-            .slice(0, 16);
-        const fieldValues = {
-            created_at: /^\d{4}-\d{2}-\d{2}$/.test(saleDateValue)
-                ? saleDateValue + "T00:00"
-                : saleDateValue,
-            quantity: sale.quantity_value || 1,
-            unit_price: sale.unit_price ?? "",
-            order_number: sale.order_number || "",
-            track_number: sale.track_number || "",
-            delivery_cost: sale.delivery_cost || "",
-            sticker_number: sale.sticker_number || "",
-            recipient_name: sale.recipient_name || "",
-            invoice_number: sale.invoice_number || "",
-            note: sale.note || "",
-        };
-
-        Object.entries(fieldValues).forEach(([name, value]) => {
-            manualSaleForm
-                .querySelectorAll('[name="' + name + '"]')
-                .forEach((control) => {
-                    if (!control.disabled) {
-                        control.value = value;
-                    }
-                });
-        });
-
-        productMeta.textContent = [
-            "Бренд: " + (sale.brand || "—"),
-            "Категория: " + (sale.category || "—"),
-        ].join(" · ");
-        manualSaleModal.classList.add("is-open");
-        manualSaleModal.setAttribute("aria-hidden", "false");
-        document.body.classList.add("modal-open");
-        requestAnimationFrame(() => {
-            manualSaleModal.querySelector(
-                ".modal-close"
-            )?.focus();
-        });
-    };
-
-    window.openMobileSaleEditor = window.openSaleEditor;
-
-    window.deleteSale = async function (button) {
-        const saleLabel = button.dataset.saleLabel || "";
-        const confirmation = saleLabel
-            ? (
-                "Удалить продажу «"
-                + saleLabel
-                + "»? Запись исчезнет из раздела «Продажи»."
-            )
-            : "Удалить эту продажу?";
-
-        if (!window.confirm(confirmation)) {
-            return;
-        }
-
-        button.disabled = true;
-        button.setAttribute("aria-busy", "true");
-        const data = new FormData();
-        data.set("sale_id", button.dataset.saleId || "");
-        data.set("sale_type", button.dataset.saleType || "");
-        data.set(
-            "csrf_token",
-            manualSaleForm.elements.csrf_token?.value || "",
-        );
-
-        try {
-            const response = await fetch(
-                "{{ url_for('sale_delete') }}",
-                {
-                    method: "POST",
-                    headers: {
-                        "X-Requested-With": "XMLHttpRequest",
-                    },
-                    body: data,
-                },
-            );
-            const responseText = await response.text();
-            let result;
-            try {
-                result = JSON.parse(responseText);
-            } catch (_error) {
-                throw new Error(
-                    "Сервер вернул некорректный ответ. Повторите запрос."
-                );
-            }
-
-            if (!response.ok || !result.ok) {
-                throw new Error(
-                    result.message || "Не удалось удалить продажу"
-                );
-            }
-
-            reloadSalesWithNotice(
-                result.message || "Продажа удалена"
-            );
-        } catch (error) {
-            window.alert(
-                error.message || "Не удалось удалить продажу"
-            );
-            button.disabled = false;
-            button.removeAttribute("aria-busy");
-            button.focus();
-        }
-    };
-
     manualSaleForm.addEventListener("submit", async (event) => {
-        const isEditing =
-            manualSaleForm.dataset.editing === "1";
         const selectedProduct = sharedSelectedSaleProduct;
-        const keepsOriginalProduct = (
-            isEditing
-            && editingSale
-            && String(productIdInput.value || "")
-                === String(editingSale.product_id || "")
-        );
 
-        if (
-            (
-                !selectedProduct
-            )
-            && !keepsOriginalProduct
-        ) {
+        if (!selectedProduct) {
             event.preventDefault();
             window.setBrandDropdownOpen(
                 saleProductCombobox,
@@ -5106,64 +5228,6 @@
         }
 
         rememberSalesPosition();
-
-        if (!isEditing) {
-            return;
-        }
-
-        event.preventDefault();
-        if (saleEditSavePending) {
-            return;
-        }
-        saleEditSavePending = true;
-        setSaleFormError();
-        saleSubmitButton.disabled = true;
-        manualSaleForm.setAttribute("aria-busy", "true");
-
-        try {
-            const response = await fetch(
-                manualSaleForm.action,
-                {
-                    method: "POST",
-                    headers: {
-                        "X-Requested-With": "XMLHttpRequest",
-                        "Idempotency-Key": saleEditIdempotencyKey,
-                    },
-                    body: new FormData(manualSaleForm),
-                },
-            );
-            const responseText = await response.text();
-            let result;
-            try {
-                result = JSON.parse(responseText);
-            } catch (_error) {
-                throw new Error(
-                    "Не удалось сохранить изменения: ошибка сервера"
-                    + " (HTTP " + response.status + ")."
-                );
-            }
-
-            if (!response.ok || !result.ok) {
-                throw new Error(
-                    result.message || "Не удалось сохранить изменения"
-                );
-            }
-
-            reloadSalesWithNotice(
-                result.message || "Изменения сохранены"
-            );
-        } catch (error) {
-            setSaleFormError(
-                error.message || "Не удалось сохранить изменения"
-            );
-            saleFormError.scrollIntoView({
-                block: "nearest",
-            });
-        } finally {
-            saleEditSavePending = false;
-            saleSubmitButton.disabled = false;
-            manualSaleForm.removeAttribute("aria-busy");
-        }
     });
 
     const savedSalesScrollValue = sessionStorage.getItem(
@@ -5517,39 +5581,6 @@
                     throw new Error("region-search-clear");
                 }
 
-                const editButton = document.createElement("button");
-                editButton.type = "button";
-                editButton.dataset.sale = JSON.stringify({
-                    source_key: "tictactoy",
-                    source: "Tictactoy",
-                    is_manual: true,
-                    id: "edit-tictactoy-region-e2e",
-                    country: "Россия",
-                    region: "Москва",
-                    city: "Москва",
-                });
-                document.body.appendChild(editButton);
-                window.openSaleEditor(editButton);
-                await new Promise((resolve) =>
-                    window.setTimeout(resolve, 120)
-                );
-
-                tictactoyRegion.querySelector(
-                    ".brand-combobox-trigger"
-                ).click();
-                await new Promise((resolve) =>
-                    window.setTimeout(resolve, 120)
-                );
-                const editRegions = getVisibleTictactoyRegionValues();
-
-                if (
-                    editRegions[0] !== "Москва"
-                    || editRegions[1] !== "Санкт-Петербург"
-                    || new Set(editRegions).size
-                        !== editRegions.length
-                ) {
-                    throw new Error("region-edit-order");
-                }
             };
 
             document.querySelector(
@@ -6673,10 +6704,7 @@
                 && actionCells.every(
                     (cell) =>
                         cell.querySelector(
-                            ".sales-row-edit"
-                        )
-                        && cell.querySelector(
-                            ".sales-row-delete"
+                            ".sales-row-cancel, .sales-action-menu"
                         )
                         && cell === cell.parentElement.lastElementChild
                 )
@@ -6941,6 +6969,75 @@
         } catch (error) {
             document.documentElement.dataset.salesFiltersE2e = "fail";
             document.documentElement.dataset.salesFiltersE2eError = error.message;
+        }
+    });
+</script>
+{% endif %}
+{% if config.TESTING and request.args.get("sales_cancel_e2e") == "1" %}
+<script>
+    window.addEventListener("load", async () => {
+        const root = document.documentElement;
+        const visible = (selector) => Array.from(
+            document.querySelectorAll(selector)
+        ).find((element) => element.getClientRects().length > 0);
+        try {
+            const cancelButton = visible(".sales-row-cancel");
+            if (!cancelButton) throw new Error("cancel-missing");
+            cancelButton.click();
+            await new Promise((resolve) => setTimeout(resolve, 80));
+            const cancelModal = document.getElementById("saleCancellationModal");
+            if (!cancelModal.classList.contains("is-open")) {
+                throw new Error("cancel-modal");
+            }
+            const sourceKey = JSON.parse(cancelButton.dataset.sale).source_key;
+            const warning = document.getElementById("cancelMarketplaceWarning");
+            if (warning.hidden === ["wildberries", "amazon"].includes(sourceKey)) {
+                throw new Error("marketplace-warning");
+            }
+            cancelModal.dispatchEvent(new MouseEvent("click", {bubbles: true}));
+            document.dispatchEvent(new KeyboardEvent("keydown", {
+                key: "Escape", bubbles: true,
+            }));
+            if (!cancelModal.classList.contains("is-open")) {
+                throw new Error("unsafe-close");
+            }
+            const reason = document.getElementById("cancellationReason");
+            reason.value = "other";
+            reason.dispatchEvent(new Event("change", {bubbles: true}));
+            const comment = document.getElementById("cancellationComment");
+            if (comment.parentElement.hidden || !comment.required) {
+                throw new Error("other-comment");
+            }
+            window.closeCancellationModal();
+
+            const menuSummary = visible(".sales-action-menu summary");
+            if (!menuSummary) throw new Error("delete-menu");
+            menuSummary.click();
+            const deleteButton = visible(".sales-action-menu button");
+            if (!deleteButton) throw new Error("delete-menu");
+            deleteButton.click();
+            await new Promise((resolve) => setTimeout(resolve, 80));
+            const deleteModal = document.getElementById("saleDeleteModal");
+            if (
+                !deleteModal.classList.contains("is-open")
+                || document.getElementById("deleteCancellationReason")
+                    .textContent.trim() !== "Дубль"
+            ) {
+                throw new Error("delete-modal");
+            }
+            if (
+                document.documentElement.scrollWidth
+                    > document.documentElement.clientWidth
+                || cancelModal.scrollWidth > cancelModal.clientWidth
+                || deleteModal.scrollWidth > deleteModal.clientWidth
+            ) {
+                throw new Error("overflow");
+            }
+            window.closeSaleDeleteModal();
+            root.dataset.salesCancelE2e = "pass";
+        } catch (error) {
+            root.dataset.salesCancelE2e = "fail";
+            root.dataset.salesCancelE2eError = error.message;
         }
     });
 </script>

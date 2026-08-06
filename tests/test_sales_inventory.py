@@ -2,12 +2,14 @@ import os
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from pathlib import Path
 from unittest import mock
 
 from app.catalog_db import CatalogDatabase
 from app.services.excel_product_catalog import ExcelProductCatalog
 from app.services.sales_inventory import (
+    CancellationConflictError,
     InsufficientStockError,
     ReturnConflictError,
     SalesInventory,
@@ -313,15 +315,17 @@ class SalesInventoryTest(unittest.TestCase):
         self.assertEqual(shipped["order_status"], "shipped")
         self.assertEqual(self.stock(new_product["id"]), 2)
 
-    def test_delete_restores_stock_once_and_hides_sale(self):
+    def test_cancel_restores_stock_then_soft_delete_does_not_change_it(self):
         product = self.create_product(stock=3)
         self.inventory.create_sale(
             self.payload(product), product["id"], 2, 1000,
         )
 
-        first = self.inventory.delete_sale(
-            "sale-1", idempotency_key="sale-delete:sale-1",
+        cancelled = self.inventory.cancel_sale(
+            "sale-1", reason="Ошибка ввода", idempotency_key="cancel:sale-1",
         )
+        self.assertEqual(self.stock(product["id"]), 3)
+        first = self.inventory.delete_sale("sale-1")
         second = self.inventory.delete_sale(
             "sale-1", idempotency_key="sale-delete:sale-1",
         )
@@ -438,6 +442,155 @@ class SalesInventoryTest(unittest.TestCase):
 
         self.assertCountEqual(results, ["ok", "conflict"])
         self.assertEqual(self.stock(product["id"]), 1)
+
+    def test_cancellation_uses_net_movements_after_partial_return(self):
+        product = self.create_product(stock=5)
+        self.inventory.create_sale(
+            self.payload(product), product["id"], 3, 1000,
+        )
+        self.inventory.return_sale("sale-1", 1, reason="Возврат клиента")
+
+        cancelled = self.inventory.cancel_sale(
+            "sale-1",
+            reason="Ошибка ввода",
+            comment="Исправим новой продажей",
+            user_name="Тест",
+        )
+
+        self.assertEqual(self.stock(product["id"]), 5)
+        self.assertEqual(cancelled["order_status"], "cancelled")
+        self.assertEqual(cancelled["cancellation_reason"], "Ошибка ввода")
+        self.assertEqual(cancelled["cancellation_comment"], "Исправим новой продажей")
+        self.assertEqual(cancelled["cancelled_by"], "Тест")
+        self.assertEqual(cancelled["created_at"], "2026-07-29")
+        self.assertEqual(
+            [item["diff"] for item in reversed(self.inventory.list_movements(product["id"]))],
+            [-3, 1, 2],
+        )
+
+    def test_fully_returned_sale_cannot_be_cancelled(self):
+        product = self.create_product(stock=2)
+        self.inventory.create_sale(self.payload(product), product["id"], 1, 1000)
+        self.inventory.return_sale("sale-1", 1)
+        with self.assertRaisesRegex(CancellationConflictError, "Возвращённую"):
+            self.inventory.cancel_sale("sale-1", reason="Дубль")
+        self.assertEqual(self.stock(product["id"]), 2)
+
+    def test_legacy_managed_sale_without_movement_cancels_without_stock_change(self):
+        product = self.create_product(stock=2)
+        self.inventory.create_sale(self.payload(product), product["id"], 1, 1000)
+        with self.database.transaction() as connection:
+            connection.execute(
+                "DELETE FROM catalog_stock_movements WHERE sale_id = ?",
+                ("sale-1",),
+            )
+        cancelled = self.inventory.cancel_sale("sale-1", reason="Дубль")
+        self.assertEqual(cancelled["order_status"], "cancelled")
+        self.assertEqual(self.stock(product["id"]), 1)
+        self.assertEqual(self.inventory.list_movements(product["id"]), [])
+
+    def test_contradictory_movements_block_cancellation(self):
+        product = self.create_product(stock=2)
+        self.inventory.create_sale(self.payload(product), product["id"], 1, 1000)
+        with self.database.transaction() as connection:
+            connection.execute(
+                "UPDATE catalog_stock_movements SET quantity_delta = 1 "
+                "WHERE sale_id = ?",
+                ("sale-1",),
+            )
+        with self.assertRaisesRegex(CancellationConflictError, "безопасно"):
+            self.inventory.cancel_sale("sale-1", reason="Ошибка ввода")
+        self.assertEqual(self.stock(product["id"]), 1)
+        self.assertEqual(self.inventory.get_sale("sale-1")["order_status"], "completed")
+
+    def test_cancellation_rolls_back_and_repeated_request_is_noop(self):
+        product = self.create_product(stock=3)
+        self.inventory.create_sale(self.payload(product), product["id"], 2, 1000)
+        with self.assertRaisesRegex(RuntimeError, "forced"):
+            self.inventory.cancel_sale(
+                "sale-1",
+                reason="Ошибка ввода",
+                failure_hook=lambda _connection: (_ for _ in ()).throw(RuntimeError("forced")),
+            )
+        self.assertEqual(self.stock(product["id"]), 1)
+        self.assertEqual(len(self.inventory.list_movements(product["id"])), 1)
+        first = self.inventory.cancel_sale("sale-1", reason="Ошибка ввода")
+        second = self.inventory.cancel_sale("sale-1", reason="Ошибка ввода")
+        self.assertEqual(first["cancelled_at"], second["cancelled_at"])
+        self.assertEqual(self.stock(product["id"]), 3)
+        self.assertEqual(len(self.inventory.list_movements(product["id"])), 2)
+
+    def test_active_delete_is_blocked_and_soft_delete_never_changes_stock(self):
+        product = self.create_product(stock=3)
+        self.inventory.create_sale(self.payload(product), product["id"], 1, 1000)
+        with self.assertRaisesRegex(CancellationConflictError, "Сначала отмените"):
+            self.inventory.delete_sale("sale-1")
+        self.inventory.cancel_sale("sale-1", reason="Дубль")
+        stock_before_delete = self.stock(product["id"])
+        movements_before_delete = self.inventory.list_movements(product["id"])
+        first = self.inventory.delete_sale("sale-1", user_name="Тест")
+        second = self.inventory.delete_sale("sale-1", user_name="Тест")
+        self.assertEqual(first["deleted_at"], second["deleted_at"])
+        self.assertEqual(self.stock(product["id"]), stock_before_delete)
+        self.assertEqual(self.inventory.list_movements(product["id"]), movements_before_delete)
+        self.assertEqual(self.inventory.list_sales(), [])
+        self.assertIsNotNone(self.inventory.get_sale("sale-1"))
+
+    def test_cancel_inactive_historical_product_and_reuse_order_number(self):
+        product = self.create_product(stock=3)
+        self.inventory.create_sale(
+            self.payload(product), product["id"], 1, 1000,
+            enforce_external_unique=True,
+        )
+        with self.database.transaction() as connection:
+            connection.execute(
+                "UPDATE catalog_excel_products SET active = 0 WHERE id = ?",
+                (product["id"],),
+            )
+        self.inventory.cancel_sale("sale-1", reason="Ошибка ввода")
+        with self.database.transaction() as connection:
+            stored_stock = connection.execute(
+                "SELECT stock FROM catalog_excel_products WHERE id = ?",
+                (product["id"],),
+            ).fetchone()["stock"]
+            self.assertEqual(stored_stock, 3)
+            connection.execute(
+                "UPDATE catalog_excel_products SET active = 1 WHERE id = ?",
+                (product["id"],),
+            )
+        replacement = self.payload(product, "sale-2")
+        created = self.inventory.create_sale(
+            replacement, product["id"], 1, 1000,
+            enforce_external_unique=True,
+        )
+        self.assertEqual(created["id"], "sale-2")
+
+    def test_list_sales_loads_cancellation_plans_without_n_plus_one(self):
+        product = self.create_product(stock=10)
+        for index in range(5):
+            self.inventory.create_sale(
+                self.payload(product, "query-sale-{}".format(index)),
+                product["id"],
+                1,
+                1000,
+            )
+        statements = []
+        original_connect = self.database.connect
+
+        @contextmanager
+        def traced_connect():
+            with original_connect() as connection:
+                connection.set_trace_callback(statements.append)
+                yield connection
+
+        with mock.patch.object(self.database, "connect", traced_connect):
+            sales = self.inventory.list_sales()
+        movement_queries = [
+            statement for statement in statements
+            if "FROM catalog_stock_movements" in statement
+        ]
+        self.assertEqual(len(sales), 5)
+        self.assertEqual(len(movement_queries), 1)
 
 
 class SalesInventoryWebTest(SalesInventoryTest):
@@ -568,6 +721,27 @@ class SalesInventoryWebTest(SalesInventoryTest):
             headers=headers,
         )
 
+    def cancel_sale_form(
+        self, sale, reason="input_error", comment="", sale_type="manual"
+    ):
+        return self.client.post(
+            "/sales/cancel",
+            data={
+                "sale_id": sale["id"],
+                "sale_type": sale_type,
+                "cancellation_reason": reason,
+                "cancellation_comment": comment,
+            },
+            headers={"X-Requested-With": "XMLHttpRequest"},
+        )
+
+    def delete_sale_form(self, sale, sale_type="manual"):
+        return self.client.post(
+            "/sales/delete",
+            data={"sale_id": sale["id"], "sale_type": sale_type},
+            headers={"X-Requested-With": "XMLHttpRequest"},
+        )
+
     def create_channel_sale(self, source, **metadata):
         payload = self.payload(
             self.product,
@@ -587,15 +761,19 @@ class SalesInventoryWebTest(SalesInventoryTest):
             1000,
         )
 
-    def assert_channel_metadata_preserved(self, source, **metadata):
+    def assert_channel_edit_blocked(self, source, **metadata):
         sale = self.create_channel_sale(source, **metadata)
         movements_before = self.inventory.list_movements(self.product["id"])
         response = self.update_sale_form(sale, note="Изменено")
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.get_json()["message"], (
+            "Проведённую продажу нельзя редактировать. "
+            "Отмените её и создайте новую."
+        ))
         stored = self.inventory.get_sale(sale["id"])
         self.assertEqual(stored["source"], source)
-        self.assertEqual(stored["note"], "Изменено")
+        self.assertNotEqual(stored.get("note"), "Изменено")
         self.assertEqual(stored["metadata_marker"], "сохранить")
         for key, value in metadata.items():
             self.assertEqual(stored[key], value)
@@ -604,8 +782,8 @@ class SalesInventoryWebTest(SalesInventoryTest):
             movements_before,
         )
 
-    def test_tictactoy_edit_preserves_channel_metadata(self):
-        self.assert_channel_metadata_preserved(
+    def test_tictactoy_edit_is_blocked(self):
+        self.assert_channel_edit_blocked(
             "Tictactoy",
             delivery_cost=350,
             commission="Оплата по СБП (0)",
@@ -615,14 +793,14 @@ class SalesInventoryWebTest(SalesInventoryTest):
             city="Москва",
         )
 
-    def test_wildberries_edit_preserves_channel_metadata(self):
-        self.assert_channel_metadata_preserved(
+    def test_wildberries_edit_is_blocked(self):
+        self.assert_channel_edit_blocked(
             "Wildberries",
             sticker_number="WB-СТИКЕР",
         )
 
-    def test_amazon_edit_preserves_channel_metadata(self):
-        self.assert_channel_metadata_preserved(
+    def test_amazon_edit_is_blocked(self):
+        self.assert_channel_edit_blocked(
             "Amazon",
             recipient_name="Иван Иванов",
             platform="Amazon.de",
@@ -630,7 +808,7 @@ class SalesInventoryWebTest(SalesInventoryTest):
             invoice_number="AMZ-ТРЕК",
         )
 
-    def test_manual_update_returns_json_and_preserves_inventory_for_all_channels(self):
+    def test_manual_update_is_blocked_for_all_channels(self):
         initial_stock = self.stock(self.product["id"])
         sales = [
             self.create_managed_sale(source, sale_id="sale-{}".format(index))
@@ -647,16 +825,15 @@ class SalesInventoryWebTest(SalesInventoryTest):
                     sale,
                     note="QA {}".format(sale["source"]),
                 )
-                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.status_code, 409)
                 self.assertEqual(response.content_type, "application/json")
-                self.assertEqual(response.get_json(), {
-                    "ok": True,
-                    "message": "Изменения сохранены",
-                })
+                self.assertFalse(response.get_json()["ok"])
                 stored = self.inventory.get_sale(sale["id"])
                 self.assertEqual(stored["id"], sale["id"])
                 self.assertEqual(stored["source"], sale["source"])
-                self.assertEqual(stored["note"], "QA {}".format(sale["source"]))
+                self.assertNotEqual(
+                    stored.get("note"), "QA {}".format(sale["source"])
+                )
 
         self.assertEqual(self.stock(self.product["id"]), initial_stock - 3)
         self.assertEqual(
@@ -666,34 +843,28 @@ class SalesInventoryWebTest(SalesInventoryTest):
         self.assertEqual(len(self.inventory.list_sales()), 3)
         page = self.client.get("/app/sales?source=all")
         self.assertEqual(page.status_code, 200)
-        page_text = page.get_data(as_text=True)
-        for source in ("Tictactoy", "Wildberries", "Amazon"):
-            self.assertIn("QA {}".format(source), page_text)
+        self.assertNotIn("Редактировать продажу", page.get_data(as_text=True))
 
-    def test_manual_update_quantity_is_delta_based_and_idempotent(self):
+    def test_manual_update_quantity_is_blocked(self):
         sale = self.create_managed_sale(quantity=1)
 
         increased = self.update_sale_form(sale, quantity="2")
-        self.assertEqual(increased.status_code, 200)
-        self.assertEqual(self.stock(self.product["id"]), 1)
+        self.assertEqual(increased.status_code, 409)
+        self.assertEqual(self.stock(self.product["id"]), 2)
 
         sale = self.inventory.get_sale(sale["id"])
         decreased = self.update_sale_form(sale, quantity="1")
-        self.assertEqual(decreased.status_code, 200)
+        self.assertEqual(decreased.status_code, 409)
         self.assertEqual(self.stock(self.product["id"]), 2)
 
         sale = self.inventory.get_sale(sale["id"])
         repeated = self.update_sale_form(sale, quantity="1")
-        self.assertEqual(repeated.status_code, 200)
+        self.assertEqual(repeated.status_code, 409)
         self.assertEqual(self.stock(self.product["id"]), 2)
         movements = self.inventory.list_movements(self.product["id"])
-        self.assertEqual(len(movements), 3)
-        self.assertEqual(
-            [movement["diff"] for movement in reversed(movements)],
-            [-1, -1, 1],
-        )
+        self.assertEqual(len(movements), 1)
 
-    def test_repeated_http_update_with_same_key_does_not_repeat_stock_change(self):
+    def test_repeated_http_update_with_same_key_stays_blocked(self):
         sale = self.create_managed_sale(quantity=1)
         first = self.update_sale_form(
             sale,
@@ -706,15 +877,15 @@ class SalesInventoryWebTest(SalesInventoryTest):
             quantity="2",
         )
 
-        self.assertEqual(first.status_code, 200)
-        self.assertEqual(second.status_code, 200)
-        self.assertEqual(self.stock(self.product["id"]), 1)
+        self.assertEqual(first.status_code, 409)
+        self.assertEqual(second.status_code, 409)
+        self.assertEqual(self.stock(self.product["id"]), 2)
         self.assertEqual(
             len(self.inventory.list_movements(self.product["id"])),
-            2,
+            1,
         )
 
-    def test_manual_update_replaces_product_atomically(self):
+    def test_manual_update_cannot_replace_product(self):
         replacement = self.create_product(
             stock=5,
             name="Часы Replacement",
@@ -729,21 +900,21 @@ class SalesInventoryWebTest(SalesInventoryTest):
             quantity="3",
         )
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 409)
         stored = self.inventory.get_sale(sale["id"])
-        self.assertEqual(stored["product_id"], str(replacement["id"]))
-        self.assertEqual(self.stock(self.product["id"]), 3)
-        self.assertEqual(self.stock(replacement["id"]), 2)
+        self.assertEqual(stored["product_id"], str(self.product["id"]))
+        self.assertEqual(self.stock(self.product["id"]), 1)
+        self.assertEqual(self.stock(replacement["id"]), 5)
         self.assertEqual(
             len(self.inventory.list_movements(self.product["id"])),
-            2,
+            1,
         )
         self.assertEqual(
             len(self.inventory.list_movements(replacement["id"])),
-            1,
+            0,
         )
 
-    def test_manual_update_error_is_json_and_rolls_back(self):
+    def test_manual_update_is_rejected_before_inventory_service(self):
         sale = self.create_managed_sale(quantity=1)
         stock_before = self.stock(self.product["id"])
         movements_before = self.inventory.list_movements(self.product["id"])
@@ -759,12 +930,9 @@ class SalesInventoryWebTest(SalesInventoryTest):
                 note="Не должно сохраниться",
             )
 
-        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.status_code, 409)
         self.assertEqual(response.content_type, "application/json")
-        self.assertEqual(response.get_json(), {
-            "ok": False,
-            "message": "Изменения не сохранены. Остаток не изменён.",
-        })
+        self.assertIn("нельзя редактировать", response.get_json()["message"])
         stored = self.inventory.get_sale(sale["id"])
         self.assertEqual(stored["quantity"], 1)
         self.assertEqual(stored.get("note") or "", "")
@@ -774,7 +942,7 @@ class SalesInventoryWebTest(SalesInventoryTest):
             movements_before,
         )
 
-    def test_manual_update_insufficient_stock_is_json_and_rolls_back(self):
+    def test_manual_update_never_reaches_stock_validation(self):
         sale = self.create_managed_sale(quantity=1)
         stock_before = self.stock(self.product["id"])
         movements_before = self.inventory.list_movements(self.product["id"])
@@ -784,10 +952,7 @@ class SalesInventoryWebTest(SalesInventoryTest):
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.content_type, "application/json")
         self.assertFalse(response.get_json()["ok"])
-        self.assertIn(
-            "Недостаточно товара на складе",
-            response.get_json()["message"],
-        )
+        self.assertIn("нельзя редактировать", response.get_json()["message"])
         self.assertEqual(self.inventory.get_sale(sale["id"])["quantity"], 1)
         self.assertEqual(self.stock(self.product["id"]), stock_before)
         self.assertEqual(
@@ -795,11 +960,11 @@ class SalesInventoryWebTest(SalesInventoryTest):
             movements_before,
         )
 
-    def test_manual_update_preserves_source_when_source_field_is_missing(self):
+    def test_manual_update_without_source_is_still_blocked(self):
         sale = self.create_managed_sale(source="Amazon")
         response = self.update_sale_form(sale, source=None, note="No drift")
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 409)
         self.assertEqual(
             self.inventory.get_sale(sale["id"])["source"],
             "Amazon",
@@ -821,25 +986,115 @@ class SalesInventoryWebTest(SalesInventoryTest):
         with self.assertRaisesRegex(ValueError, "корректную дату"):
             web.validate_sale_form_date("2026-02-30T14:14")
 
-    def test_sale_editor_keeps_values_and_server_errors_in_the_open_modal(self):
+    def test_sale_editor_is_removed_from_frontend(self):
         template = (
             Path(web.app.root_path) / "templates" / "sales.html"
         ).read_text(encoding="utf-8")
 
-        self.assertIn('const sourceKey = sale.source_key || "tictactoy";', template)
-        self.assertIn('saleDateValue + "T00:00"', template)
-        self.assertIn('setSaleFormError(\n                error.message', template)
-        self.assertIn('manualSaleModal.classList.add("is-open")', template)
-        self.assertIn("if (saleEditSavePending)", template)
-        self.assertIn('"Idempotency-Key": saleEditIdempotencyKey', template)
-        self.assertIn(
-            '"Не удалось сохранить изменения: ошибка сервера"',
-            template,
+        self.assertNotIn("openSaleEditor", template)
+        self.assertNotIn("sales-row-edit", template)
+        self.assertNotIn("sales-mobile-edit", template)
+        self.assertIn("openCancellationModal", template)
+        self.assertIn("Удалить отменённую запись?", template)
+
+    def test_cancel_all_channels_without_external_api_calls(self):
+        for index, source in enumerate(
+            ("Tictactoy", "Wildberries", "Amazon"), start=1
+        ):
+            sale = self.create_managed_sale(
+                source=source, sale_id="cancel-channel-{}".format(index)
+            )
+            stock_before = self.stock(self.product["id"])
+            with mock.patch("app.web.requests.request") as external_request:
+                response = self.cancel_sale_form(sale)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.get_json()["message"], "Продажа отменена")
+            self.assertEqual(self.stock(self.product["id"]), stock_before + 1)
+            self.assertEqual(
+                self.inventory.get_sale(sale["id"])["order_status"],
+                "cancelled",
+            )
+            external_request.assert_not_called()
+
+    def test_cancellation_reason_validation_and_other_comment(self):
+        sale = self.create_managed_sale(sale_id="cancel-reason")
+        missing = self.cancel_sale_form(sale, reason="")
+        self.assertEqual(missing.status_code, 400)
+        other_missing = self.cancel_sale_form(sale, reason="other")
+        self.assertEqual(other_missing.status_code, 400)
+        accepted = self.cancel_sale_form(
+            sale, reason="other", comment="Неверно оформлено"
         )
+        self.assertEqual(accepted.status_code, 200)
+        stored = self.inventory.get_sale(sale["id"])
+        self.assertEqual(stored["cancellation_reason"], "Другое")
+        self.assertEqual(stored["cancellation_comment"], "Неверно оформлено")
+
+    def test_delete_requires_cancellation_and_is_soft(self):
+        sale = self.create_managed_sale(sale_id="soft-delete")
+        blocked = self.delete_sale_form(sale)
+        self.assertEqual(blocked.status_code, 409)
+        self.assertIn("Сначала отмените", blocked.get_json()["message"])
+        self.cancel_sale_form(sale, reason="duplicate")
+        stock_before = self.stock(self.product["id"])
+        deleted = self.delete_sale_form(sale)
+        repeated = self.delete_sale_form(sale)
+        self.assertEqual(deleted.status_code, 200)
+        self.assertEqual(repeated.status_code, 200)
+        self.assertEqual(self.stock(self.product["id"]), stock_before)
         self.assertNotIn(
-            'catch (error) {\n            closeManualSaleModal()',
-            template,
+            "ORDER-soft-delete",
+            self.client.get("/app/sales?source=all").get_data(as_text=True),
         )
+        self.assertTrue(self.inventory.get_sale(sale["id"])["deleted_at"])
+
+    def test_api_patch_is_blocked_and_cancel_is_separate_from_return(self):
+        sale = self.create_managed_sale(sale_id="api-block")
+        patched = self.client.patch(
+            "/api/v1/sales/{}".format(sale["id"]),
+            json={"quantity": 2},
+        )
+        self.assertEqual(patched.status_code, 409)
+        self.assertIn("нельзя редактировать", patched.get_json()["message"])
+        cancelled = self.client.post(
+            "/api/v1/sales/{}/cancel".format(sale["id"]),
+            json={"reason": "customer_refused"},
+        )
+        self.assertEqual(cancelled.status_code, 200)
+        movements = self.inventory.list_movements(self.product["id"])
+        self.assertEqual(movements[0]["type"], "cancellation")
+        self.assertNotIn("return", [item["type"] for item in movements])
+
+    def test_actions_render_in_every_source_without_edit_controls(self):
+        for index, source in enumerate(
+            ("Tictactoy", "Wildberries", "Amazon"), start=1
+        ):
+            self.create_managed_sale(
+                source=source, sale_id="render-source-{}".format(index)
+            )
+        for source in ("all", "tictactoy", "wildberries", "amazon"):
+            page = self.client.get("/app/sales?source={}".format(source))
+            self.assertEqual(page.status_code, 200)
+            text = page.get_data(as_text=True)
+            self.assertNotIn("Редактировать продажу", text)
+            self.assertNotIn("openSaleEditor", text)
+            self.assertIn("Отменить продажу", text)
+
+    def test_cancelled_row_has_delete_menu_and_marketplace_warning(self):
+        sale = self.create_managed_sale(
+            source="Wildberries", sale_id="cancelled-ui"
+        )
+        self.cancel_sale_form(sale, reason="duplicate")
+        text = self.client.get(
+            "/app/sales?source=wildberries&status=cancelled"
+        ).get_data(as_text=True)
+        self.assertIn("Отменена", text)
+        self.assertIn("Удалить запись", text)
+        self.assertIn(
+            "Отмена действует только в ERP и не изменяет заказ на площадке.",
+            text,
+        )
+        self.assertNotIn("Редактировать продажу", text)
 
     def test_legacy_sale_is_not_written_off_during_schema_migration(self):
         self.manual_sales_path.write_text(
