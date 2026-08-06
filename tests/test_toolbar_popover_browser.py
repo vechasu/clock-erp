@@ -66,6 +66,18 @@ class ToolbarPopoverStructureTest(unittest.TestCase):
             sales,
         )
 
+    def test_main_tables_use_one_server_pagination_component(self):
+        pagination = self.source("app/templates/_pagination.html")
+        e2e = self.source("app/static/js/pagination-e2e.js")
+        for template in ("warehouse.html", "sales.html", "receipts.html"):
+            source = self.source("app/templates/" + template)
+            self.assertIn("render_erp_pagination", source)
+        self.assertIn('name="per_page"', pagination)
+        self.assertIn('aria-current="page"', pagination)
+        self.assertIn('aria-disabled="true"', pagination)
+        self.assertIn("horizontal-overflow", e2e)
+        self.assertIn("mobile-target", e2e)
+
 
 class ToolbarPopoverBrowserTest(unittest.TestCase):
     @staticmethod
@@ -262,6 +274,33 @@ class ToolbarPopoverBrowserTest(unittest.TestCase):
                             height,
                             'data-datetime-e2e="pass"',
                         )
+
+            pagination_paths = (
+                "/app/products?pagination_e2e=1&page=2&per_page=25",
+                "/app/sales?pagination_e2e=1&source=all&page=2&per_page=25",
+                "/app/receipts?pagination_e2e=1&page=2&per_page=25",
+            )
+            for width, height in ((1440, 900), (390, 844), (320, 568)):
+                for path in pagination_paths:
+                    with self.subTest(path=path, width=width):
+                        self.run_chrome(
+                            chrome,
+                            f"http://127.0.0.1:{port}{path}",
+                            width,
+                            height,
+                            'data-pagination-e2e="pass"',
+                        )
+
+            for source in ("tictactoy", "wildberries", "amazon"):
+                with self.subTest(path="sales-pagination", source=source):
+                    self.run_chrome(
+                        chrome,
+                        f"http://127.0.0.1:{port}/app/sales"
+                        f"?pagination_e2e=1&source={source}&per_page=25",
+                        1440,
+                        900,
+                        'data-pagination-e2e="pass"',
+                    )
         finally:
             server.terminate()
             try:

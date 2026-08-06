@@ -1,0 +1,44 @@
+{% macro render_erp_pagination(pagination, label) %}
+<div id="erpPagination" class="erp-table-pagination" data-erp-pagination>
+    <div class="erp-pagination-summary">
+        <span>{{ pagination.start }}–{{ pagination.end }} из {{ "{:,}".format(pagination.total).replace(",", " ") }}</span>
+        <span class="erp-pagination-mobile-page">Страница {{ pagination.page }} из {{ pagination.pages }}</span>
+    </div>
+    <nav class="erp-pagination-pages" aria-label="{{ label }}">
+        {% if pagination.previous_url %}
+            <a class="erp-pagination-step" href="{{ pagination.previous_url }}" aria-label="Предыдущая страница">‹<span>Назад</span></a>
+        {% else %}
+            <span class="erp-pagination-step is-disabled" aria-label="Предыдущая страница" aria-disabled="true">‹<span>Назад</span></span>
+        {% endif %}
+        <span class="erp-pagination-numbers">
+            {% for item in pagination["items"] %}
+                {% if item is none %}
+                    <span class="erp-pagination-ellipsis" aria-hidden="true">…</span>
+                {% elif item.number == pagination.page %}
+                    <span class="erp-pagination-number is-active" aria-current="page">{{ item.number }}</span>
+                {% else %}
+                    <a class="erp-pagination-number" href="{{ item.url }}" aria-label="Страница {{ item.number }}">{{ item.number }}</a>
+                {% endif %}
+            {% endfor %}
+        </span>
+        {% if pagination.next_url %}
+            <a class="erp-pagination-step" href="{{ pagination.next_url }}" aria-label="Следующая страница"><span>Вперёд</span>›</a>
+        {% else %}
+            <span class="erp-pagination-step is-disabled" aria-label="Следующая страница" aria-disabled="true"><span>Вперёд</span>›</span>
+        {% endif %}
+    </nav>
+    <form class="erp-pagination-size" method="get">
+        {% for key, value in pagination.state_args %}
+            <input type="hidden" name="{{ key }}" value="{{ value }}">
+        {% endfor %}
+        <label>
+            <select name="per_page" aria-label="Количество строк на странице" onchange="this.form.submit()">
+                {% for option in pagination.per_page_options %}
+                    <option value="{{ option }}"{% if option == pagination.per_page %} selected{% endif %}>{{ option }}</option>
+                {% endfor %}
+            </select>
+            <span>на странице</span>
+        </label>
+    </form>
+</div>
+{% endmacro %}

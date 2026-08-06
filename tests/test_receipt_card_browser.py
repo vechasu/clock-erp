@@ -73,20 +73,11 @@ class ReceiptCardBrowserTest(unittest.TestCase):
         original_auth_testing = web.app.config.get("AUTH_TESTING")
         web.app.testing = True
         web.app.config["AUTH_TESTING"] = False
-        catalog = mock.Mock()
-        catalog.legacy_links.return_value = {}
-        catalog.products_by_ids.return_value = {}
         patchers = [
             mock.patch.object(
                 web,
-                "load_receipts",
-                return_value=[self.long_receipt()],
-            ),
-            mock.patch.object(web, "SharedCatalog", return_value=catalog),
-            mock.patch.object(
-                web,
-                "serialize_api_receipt",
-                side_effect=lambda item, **_kwargs: dict(item),
+                "api_receipt_records",
+                return_value=(self.long_receipt(),),
             ),
         ]
         for patcher in patchers:

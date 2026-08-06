@@ -1,3 +1,4 @@
+{% from "_pagination.html" import render_erp_pagination %}
 <!doctype html>
 <html lang="ru">
 <head>
@@ -5374,49 +5375,7 @@
                     <div class="empty">Товары не найдены</div>
                 {% endif %}
             </div>
-            <div class="warehouse-table-footer">
-                <div class="warehouse-results-range">
-                    <span id="warehouseResultStart">{{ page_start }}</span>–<span id="warehouseResultEnd">{{ page_end }}</span>
-                    из
-                    <span id="warehouseResultTotal">{{ "{:,}".format(total_found).replace(",", " ") }}</span>
-                </div>
-                <nav class="warehouse-pagination pagination" aria-label="Страницы товаров">
-                    {% if previous_page_url %}
-                        <a href="{{ previous_page_url }}" aria-label="Предыдущая страница">‹</a>
-                    {% else %}
-                        <span class="is-disabled" aria-hidden="true">‹</span>
-                    {% endif %}
-                    {% for pagination_item in pagination_items %}
-                        {% if pagination_item is none %}
-                            <span class="warehouse-pagination-ellipsis" aria-hidden="true">…</span>
-                        {% elif pagination_item.number == page %}
-                            <span class="active" aria-current="page">{{ pagination_item.number }}</span>
-                        {% else %}
-                            <a
-                                href="{{ pagination_item.url }}"
-                                aria-label="Страница {{ pagination_item.number }}"
-                            >{{ pagination_item.number }}</a>
-                        {% endif %}
-                    {% endfor %}
-                    {% if next_page_url %}
-                        <a href="{{ next_page_url }}" aria-label="Следующая страница">›</a>
-                    {% else %}
-                        <span class="is-disabled" aria-hidden="true">›</span>
-                    {% endif %}
-                </nav>
-                <label class="warehouse-page-size">
-                    <select
-                        id="warehousePageSize"
-                        aria-label="Количество товаров на странице"
-                        onchange="changeWarehousePageSize(this.value)"
-                    >
-                        {% for option in (50, 100, 200) %}
-                            <option value="{{ option }}" {% if per_page == option %}selected{% endif %}>{{ option }}</option>
-                        {% endfor %}
-                    </select>
-                    <span>на странице</span>
-                </label>
-            </div>
+            {{ render_erp_pagination(pagination, "Страницы товаров") }}
             </div>
         </main>
     </div>
@@ -7126,13 +7085,6 @@
             loadWarehouseSearchResults(
                 warehouseSearchInput ? warehouseSearchInput.value.trim() : ""
             );
-        }
-
-        function changeWarehousePageSize(value) {
-            const url = new URL(window.location.href);
-            url.searchParams.set("per_page", value);
-            url.searchParams.delete("page");
-            navigateWithWarehouseParams(url);
         }
 
         if (warehouseSearchInput) {
@@ -9827,4 +9779,5 @@
     </script>
     {% endif %}
 </body>
+{% if pagination_e2e %}<script src="{{ url_for('static', filename='js/pagination-e2e.js') }}"></script>{% endif %}
 </html>

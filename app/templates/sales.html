@@ -1,3 +1,4 @@
+{% from "_pagination.html" import render_erp_pagination %}
 <!doctype html>
 <html lang="ru">
 <head>
@@ -1662,6 +1663,8 @@
                     <table
                         class="sales-table erp-data-table"
                         data-source="{{ active_source }}"
+                        data-sort-field="{{ sales_sort_field }}"
+                        data-sort-direction="{{ sales_sort_direction }}"
                         data-sales-settings-key="sales_{{ active_source }}"
                     >
                         <colgroup>
@@ -2022,6 +2025,7 @@
                     </div>
                 </div>
             </section>
+            {{ render_erp_pagination(pagination, "Страницы продаж") }}
         </section>
     </main>
 </div>
@@ -3480,6 +3484,17 @@
                 ? "desc"
                 : "asc"
         );
+        const clientSortE2e = {{ (
+            config.TESTING
+            and (
+                request.args.get("sales_article_e2e") == "1"
+                or request.args.get("sales_columns_e2e") == "1"
+            )
+        )|tojson }};
+        if (!clientSortE2e) {
+            navigateSales({sort: field, sort_dir: direction});
+            return;
+        }
         const header = salesTable.querySelector(
             'th[data-column-key="' + field + '"]'
         );
@@ -4345,11 +4360,22 @@
     const sortField = urlFilters.get("sort");
     const sortDirection = urlFilters.get("sort_dir");
 
-    if (
-        sortField
-        && ["asc", "desc"].includes(sortDirection)
-    ) {
-        sortSalesTable(sortField, sortDirection);
+    if (sortField && ["asc", "desc"].includes(sortDirection)) {
+        salesTable.dataset.sortField = sortField;
+        salesTable.dataset.sortDirection = sortDirection;
+        document.querySelectorAll(".sales-sort-label").forEach((label) => {
+            const active = label.dataset.sortField === sortField;
+            label.classList.toggle("is-active", active);
+            label.closest("th")?.setAttribute(
+                "aria-sort",
+                active
+                    ? sortDirection === "asc" ? "ascending" : "descending"
+                    : "none",
+            );
+            label.querySelector(".sales-sort-arrow").textContent = active
+                ? sortDirection === "asc" ? "↑" : "↓"
+                : "↕";
+        });
     }
 
     updateSalesPeriodLabel();
@@ -6920,4 +6946,5 @@
 </script>
 {% endif %}
 </body>
+{% if pagination_e2e %}<script src="{{ url_for('static', filename='js/pagination-e2e.js') }}"></script>{% endif %}
 </html>

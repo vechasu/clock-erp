@@ -1,3 +1,4 @@
+{% from "_pagination.html" import render_erp_pagination %}
 <!doctype html>
 <html lang="ru">
 <head>
@@ -1594,7 +1595,8 @@
                 id="receiptSearch"
                 type="search"
                 placeholder="Поиск"
-                oninput="filterReceipts()"
+                value="{{ receipt_filters.q }}"
+                oninput="scheduleReceiptFilter()"
             >
 
             <details class="receipt-filter-settings" id="receiptAdvancedFilters">
@@ -1613,25 +1615,25 @@
                 <div class="receipt-advanced-filter-panel">
                     <div class="receipt-advanced-filter-grid">
                         <input class="search erp-control" id="receiptDocumentFilter" type="search"
-                            placeholder="Номер документа" oninput="filterReceipts()">
+                            value="{{ receipt_filters.receipt_document }}" placeholder="Номер документа" oninput="scheduleReceiptFilter()">
                         <input class="search erp-control" id="receiptCommentFilter" type="search"
-                            placeholder="Комментарий" oninput="filterReceipts()">
+                            value="{{ receipt_filters.receipt_comment }}" placeholder="Комментарий" oninput="scheduleReceiptFilter()">
                         <select class="control erp-control" id="receiptBrandFilter" onchange="filterReceipts()">
                             <option value="">Все бренды</option>
-                            {% for value in receipt_filter_brands %}<option value="{{ value }}">{{ value }}</option>{% endfor %}
+                            {% for value in receipt_filter_brands %}<option value="{{ value }}"{% if receipt_filters.receipt_brand == value %} selected{% endif %}>{{ value }}</option>{% endfor %}
                         </select>
                         <select class="control erp-control" id="receiptCategoryFilter" onchange="filterReceipts()">
                             <option value="">Все категории</option>
-                            {% for value in receipt_filter_categories %}<option value="{{ value }}">{{ value }}</option>{% endfor %}
+                            {% for value in receipt_filter_categories %}<option value="{{ value }}"{% if receipt_filters.receipt_category == value %} selected{% endif %}>{{ value }}</option>{% endfor %}
                         </select>
                         <select class="control erp-control" id="receiptProductFilter" onchange="filterReceipts()">
                             <option value="">Все товары</option>
-                            {% for value in receipt_filter_products %}<option value="{{ value }}">{{ value }}</option>{% endfor %}
+                            {% for value in receipt_filter_products %}<option value="{{ value }}"{% if receipt_filters.receipt_product == value %} selected{% endif %}>{{ value }}</option>{% endfor %}
                         </select>
                         <select class="control erp-control" id="receiptStatusFilter" onchange="filterReceipts()">
                             <option value="">Все статусы</option>
-                            <option value="Проведён">Проведён</option>
-                            <option value="Отменён">Отменён</option>
+                            <option value="Проведён"{% if receipt_filters.receipt_status == 'Проведён' %} selected{% endif %}>Проведён</option>
+                            <option value="Отменён"{% if receipt_filters.receipt_status == 'Отменён' %} selected{% endif %}>Отменён</option>
                         </select>
                     </div>
                     <button
@@ -1649,10 +1651,10 @@
                 for="receiptMobileSort"
             >
                 <select id="receiptMobileSort" aria-label="Сортировка приходов">
-                    <option value="date">По дате</option>
-                    <option value="product">По товару</option>
-                    <option value="brand">По бренду</option>
-                    <option value="quantity">По количеству</option>
+                    <option value="date"{% if receipt_sort_key == 'date' %} selected{% endif %}>По дате</option>
+                    <option value="product"{% if receipt_sort_key == 'product' %} selected{% endif %}>По товару</option>
+                    <option value="brand"{% if receipt_sort_key == 'brand' %} selected{% endif %}>По бренду</option>
+                    <option value="quantity"{% if receipt_sort_key == 'quantity' %} selected{% endif %}>По количеству</option>
                 </select>
             </label>
 
@@ -2180,6 +2182,7 @@
                     Приходов пока нет. Нажмите «Новый приход».
                 </div>
             {% endif %}
+            {{ render_erp_pagination(pagination, "Страницы приходов") }}
         </section>
     </main>
 </div>
@@ -3895,8 +3898,14 @@
     }
 
     // RECEIPTS DATE FILTER SORT SCRIPT V1
-    let receiptSortKey = "";
-    let receiptSortDirection = "asc";
+    let receiptSortKey = {{ receipt_sort_key|tojson }};
+    let receiptSortDirection = {{ receipt_sort_direction|tojson }};
+    let receiptFilterTimer = null;
+
+    function scheduleReceiptFilter() {
+        window.clearTimeout(receiptFilterTimer);
+        receiptFilterTimer = window.setTimeout(filterReceipts, 350);
+    }
 
     function getReceiptRows() {
         return Array.from(
@@ -4018,21 +4027,52 @@
     }
 
     function filterReceipts() {
-        const query = (
+        const rawQuery = (
             document.getElementById(
                 "receiptSearch"
             ).value || ""
-        ).trim().toLowerCase();
-        const documentQuery = (
+        ).trim();
+        const query = rawQuery.toLowerCase();
+        const rawDocumentQuery = (
             document.getElementById("receiptDocumentFilter")?.value || ""
-        ).trim().toLowerCase();
-        const commentQuery = (
+        ).trim();
+        const documentQuery = rawDocumentQuery.toLowerCase();
+        const rawCommentQuery = (
             document.getElementById("receiptCommentFilter")?.value || ""
-        ).trim().toLowerCase();
+        ).trim();
+        const commentQuery = rawCommentQuery.toLowerCase();
         const brand = document.getElementById("receiptBrandFilter")?.value || "";
         const category = document.getElementById("receiptCategoryFilter")?.value || "";
         const product = document.getElementById("receiptProductFilter")?.value || "";
         const status = document.getElementById("receiptStatusFilter")?.value || "";
+
+        const clientFilterE2e = {{ (
+            config.TESTING
+            and request.args.get("toolbar_popover_e2e") == "1"
+        )|tojson }};
+        const navigationUrl = new URL(window.location.href);
+        const values = {
+            q: rawQuery,
+            receipt_document: rawDocumentQuery,
+            receipt_comment: rawCommentQuery,
+            receipt_brand: brand,
+            receipt_category: category,
+            receipt_product: product,
+            receipt_status: status,
+            date_from: document.getElementById("receiptDateFrom")?.value || "",
+            date_to: document.getElementById("receiptDateTo")?.value || "",
+        };
+        Object.entries(values).forEach(([key, value]) => {
+            if (value) navigationUrl.searchParams.set(key, value);
+            else navigationUrl.searchParams.delete(key);
+        });
+        if (!clientFilterE2e) {
+            navigationUrl.searchParams.delete("page");
+            window.location.assign(
+                navigationUrl.pathname + navigationUrl.search
+            );
+            return;
+        }
 
         updateReceiptAdvancedFilterCount();
 
@@ -4272,6 +4312,13 @@
                 : "asc";
         }
 
+        const url = new URL(window.location.href);
+        url.searchParams.set("sort", receiptSortKey);
+        url.searchParams.set("sort_dir", receiptSortDirection);
+        url.searchParams.delete("page");
+        window.location.assign(url.pathname + url.search);
+        return;
+
         const body = document.getElementById(
             "receiptsTableBody"
         );
@@ -4331,7 +4378,8 @@
             }
         }
     );
-    filterReceipts();
+    updateReceiptAdvancedFilterCount();
+    updateReceiptSortIndicators();
     // RECEIPTS DATE FILTER SORT SCRIPT V1 END
 
     receiptImportModal.addEventListener(
@@ -5301,4 +5349,5 @@
 {% endif %}
 
 </body>
+{% if pagination_e2e %}<script src="{{ url_for('static', filename='js/pagination-e2e.js') }}"></script>{% endif %}
 </html>
