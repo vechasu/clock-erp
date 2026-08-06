@@ -6320,14 +6320,18 @@
                 throw new Error("long-cyrillic-article");
             }
             if (source === "wildberries") {
-                const barcodeCell = rows[0].querySelector(
+                const zeroArticleRow = rows.find((row) =>
+                    row.querySelector('[data-column-key="article"]')
+                        ?.dataset.sortValue === "0"
+                );
+                const barcodeCell = zeroArticleRow?.querySelector(
                     '[data-column-key="barcode"]'
                 );
                 if (
                     barcodeCell?.dataset.sortValue
                         !== "WB-BARCODE-8831"
                     || barcodeCell.dataset.sortValue
-                        === articleValues[0]
+                        === "0"
                 ) {
                     throw new Error("wb-barcode");
                 }
