@@ -390,6 +390,20 @@
             width: 150px;
         }
 
+        .sales-table .col-article {
+            min-width: 120px;
+            width: 144px;
+        }
+
+        .sales-mobile-article {
+            max-width: 100%;
+            overflow: hidden;
+            color: #64748b;
+            font-size: 12px;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
         .sales-table .col-product_name {
             min-width: 240px;
             width: 280px;
@@ -1859,6 +1873,12 @@
                             {{ sale.brand or "Без бренда" }}
                             {% if sale.category %} · {{ sale.category }}{% endif %}
                         </div>
+                        <div
+                            class="sales-mobile-article"
+                            title="{{ sale.article or '—' }}"
+                        >
+                            Артикул: {{ sale.article or "—" }}
+                        </div>
 
                         {% if sale.return_status == "returned" %}
                             <span class="sales-return-badge">Возврат</span>
@@ -1902,7 +1922,7 @@
                             <summary>Подробнее</summary>
                             <div class="mobile-erp-detail-grid">
                                 {% for column in sales_columns %}
-                                    {% if column.key not in ["created_at", "source", "brand", "category", "product_name", "quantity_display", "unit_price_display"] %}
+                                    {% if column.key not in ["created_at", "source", "brand", "category", "product_name", "article", "quantity_display", "unit_price_display"] %}
                                         <div class="mobile-erp-detail-row">
                                             <span>{{ column.label }}</span>
                                             <span>
@@ -3859,6 +3879,7 @@
             "order_number",
             "source",
             "product_name",
+            "article",
             "brand",
             "category",
             "quantity_display",
@@ -3904,6 +3925,7 @@
             brand: 104,
             category: 132,
             product_name: 300,
+            article: 144,
             quantity_display: 96,
             unit_price_display: 124,
             commission: 260,
@@ -3928,6 +3950,7 @@
             brand: 108,
             category: 148,
             product_name: 280,
+            article: 150,
             quantity_display: 104,
             unit_price_display: 138,
             commission: 260,
@@ -3943,7 +3966,7 @@
             country: 140,
             invoice_number: 160,
         };
-        const settingsVersion = 5;
+        const settingsVersion = 6;
         const minimumWidth = 76;
         const minimumWidths = {
             created_at: 108,
@@ -3954,6 +3977,7 @@
             brand: 90,
             category: 108,
             product_name: 220,
+            article: 108,
             quantity_display: 90,
             unit_price_display: 112,
             commission: 220,
@@ -4001,6 +4025,10 @@
 
         function sanitizeOrder(value) {
             const order = [];
+            const sourceHasArticle = (
+                Array.isArray(value)
+                && value.includes("article")
+            );
 
             if (Array.isArray(value)) {
                 value.forEach((key) => {
@@ -4018,6 +4046,11 @@
                     order.push(key);
                 }
             });
+            if (!sourceHasArticle && order.includes("article")) {
+                order.splice(order.indexOf("article"), 1);
+                const productIndex = order.indexOf("product_name");
+                order.splice(productIndex + 1, 0, "article");
+            }
             return [
                 ...pinnedColumns.filter(
                     (key) => order.includes(key)
@@ -6124,6 +6157,154 @@
     });
 </script>
 {% endif %}
+{% if config.TESTING and request.args.get("sales_article_e2e") == "1" %}
+<script>
+    window.addEventListener("load", () => {
+        const root = document.documentElement;
+
+        try {
+            const table = document.querySelector(".sales-table");
+            const wrap = table?.closest(".table-wrap");
+            const headerKeys = Array.from(
+                table?.querySelectorAll("thead th[data-column-key]") || []
+            ).map((cell) => cell.dataset.columnKey);
+            const productIndex = headerKeys.indexOf("product_name");
+            const articleIndex = headerKeys.indexOf("article");
+            const rows = Array.from(
+                table?.querySelectorAll("tbody .sale-row") || []
+            );
+            const articleCells = rows.map((row) =>
+                row.querySelector('[data-column-key="article"]')
+            );
+            const tableVisible = Boolean(table?.getClientRects().length);
+
+            if (
+                !table
+                || !wrap
+                || !rows.length
+                || articleIndex !== productIndex + 1
+                || articleCells.some((cell) => !cell)
+            ) {
+                throw new Error("structure");
+            }
+
+            articleCells.forEach((cell) => {
+                const value = cell.dataset.sortValue || "";
+                const expectedTitle = value || "";
+                const style = window.getComputedStyle(cell);
+                const nextCell = cell.nextElementSibling;
+
+                if (
+                    cell.title !== expectedTitle
+                    || style.overflow !== "hidden"
+                    || style.textOverflow !== "ellipsis"
+                    || style.whiteSpace !== "nowrap"
+                ) {
+                    throw new Error("article-cell");
+                }
+
+                if (tableVisible && nextCell) {
+                    const articleRect = cell.getBoundingClientRect();
+                    const nextRect = nextCell.getBoundingClientRect();
+                    if (articleRect.right > nextRect.left + 0.5) {
+                        throw new Error("overlap");
+                    }
+                }
+            });
+
+            const articleValues = articleCells.map((cell) =>
+                cell.dataset.sortValue
+            );
+            const source = new URL(
+                window.location.href
+            ).searchParams.get("source");
+            if (
+                !articleValues.includes("0")
+                && source === "wildberries"
+            ) {
+                throw new Error("zero-article");
+            }
+            if (
+                !articleCells.some((cell) =>
+                    cell.textContent.trim() === "—"
+                )
+                && source === "tictactoy"
+            ) {
+                throw new Error("empty-article");
+            }
+            if (
+                source === "tictactoy"
+                && !articleValues.some((value) =>
+                    value.startsWith("КИРИЛЛИЧЕСКИЙ-АРТИКУЛ")
+                )
+            ) {
+                throw new Error("long-cyrillic-article");
+            }
+            if (source === "wildberries") {
+                const barcodeCell = rows[0].querySelector(
+                    '[data-column-key="barcode"]'
+                );
+                if (
+                    barcodeCell?.dataset.sortValue
+                        !== "WB-BARCODE-8831"
+                    || barcodeCell.dataset.sortValue
+                        === articleValues[0]
+                ) {
+                    throw new Error("wb-barcode");
+                }
+            }
+
+            window.sortSalesTable("article", "asc");
+            const articleHeader = table.querySelector(
+                'th[data-column-key="article"]'
+            );
+            const sortedArticleValues = Array.from(
+                table.querySelectorAll("tbody .sale-row")
+            ).map((row) =>
+                row.querySelector('[data-column-key="article"]')
+                    ?.dataset.sortValue || ""
+            );
+            if (
+                articleHeader?.getAttribute("aria-sort")
+                    !== "ascending"
+                || (
+                    sortedArticleValues.includes("")
+                    && sortedArticleValues.at(-1) !== ""
+                )
+            ) {
+                throw new Error("article-sort");
+            }
+
+            const mobileArticles = Array.from(
+                document.querySelectorAll(".sales-mobile-article")
+            );
+            if (
+                mobileArticles.length !== rows.length
+                || mobileArticles.some((item) =>
+                    item.getBoundingClientRect().left
+                        < item.closest(".sales-mobile-card")
+                            .getBoundingClientRect().left - 0.5
+                    || item.getBoundingClientRect().right
+                        > item.closest(".sales-mobile-card")
+                            .getBoundingClientRect().right + 0.5
+                )
+            ) {
+                throw new Error("mobile-article");
+            }
+            if (
+                root.scrollWidth > root.clientWidth
+                || window.getComputedStyle(wrap).overflowX === "visible"
+            ) {
+                throw new Error("horizontal-overflow");
+            }
+
+            root.dataset.salesArticleE2e = "pass";
+        } catch (error) {
+            root.dataset.salesArticleE2e = "fail-" + error.message;
+        }
+    });
+</script>
+{% endif %}
 {% if config.TESTING and request.args.get("sales_columns_e2e") == "1" %}
 <script>
     window.addEventListener("load", () => {
@@ -6140,6 +6321,7 @@
             "order_number",
             "source",
             "product_name",
+            "article",
             "brand",
             "category",
             "quantity_display",
@@ -6212,7 +6394,7 @@
                 );
                 const headers = getHeaders();
                 const restoredCorrectly = (
-                    restored.version === 5
+                    restored.version === 6
                     && restored.order[0] === "created_at"
                     && restored.order[1] === "order_number"
                     && restored.order[2] === "unit_price_display"
@@ -6224,6 +6406,8 @@
                         === "created_at"
                     && headers[1].dataset.columnKey
                         === "order_number"
+                    && getHeaderKeys().indexOf("article")
+                        === getHeaderKeys().indexOf("product_name") + 1
                     && headers.find(
                         (cell) =>
                             cell.dataset.columnKey
