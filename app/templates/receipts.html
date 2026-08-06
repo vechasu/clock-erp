@@ -4046,6 +4046,10 @@
         const product = document.getElementById("receiptProductFilter")?.value || "";
         const status = document.getElementById("receiptStatusFilter")?.value || "";
 
+        const clientFilterE2e = {{ (
+            config.TESTING
+            and request.args.get("toolbar_popover_e2e") == "1"
+        )|tojson }};
         const navigationUrl = new URL(window.location.href);
         const values = {
             q: rawQuery,
@@ -4062,9 +4066,13 @@
             if (value) navigationUrl.searchParams.set(key, value);
             else navigationUrl.searchParams.delete(key);
         });
-        navigationUrl.searchParams.delete("page");
-        window.location.assign(navigationUrl.pathname + navigationUrl.search);
-        return;
+        if (!clientFilterE2e) {
+            navigationUrl.searchParams.delete("page");
+            window.location.assign(
+                navigationUrl.pathname + navigationUrl.search
+            );
+            return;
+        }
 
         updateReceiptAdvancedFilterCount();
 
