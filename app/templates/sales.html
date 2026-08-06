@@ -3617,10 +3617,12 @@
         document.getElementById(
             "returnSortDirection"
         ).value = direction;
-        syncFilterUrls(
-            salesDateFrom?.value || "",
-            salesDateTo?.value || "",
-        );
+        document.querySelectorAll("[data-source-tab]").forEach((tab) => {
+            const tabUrl = new URL(tab.href);
+            tabUrl.searchParams.set("sort", field);
+            tabUrl.searchParams.set("sort_dir", direction);
+            tab.href = tabUrl.pathname + tabUrl.search;
+        });
     }
 
     window.sortSalesTable = sortSalesTable;
