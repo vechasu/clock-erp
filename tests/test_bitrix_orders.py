@@ -158,7 +158,7 @@ class BitrixOrdersDryRunSafetyTest(unittest.TestCase):
         self.assertIsNone(warning)
         self.assertEqual(request_get.call_count, 2)
         self.assertEqual(
-            [call.kwargs["params"] for call in request_get.call_args_list],
+            [call[1]["params"] for call in request_get.call_args_list],
             [{"limit": 1000, "offset": 0}, {"limit": 1000, "offset": 1000}],
         )
 
