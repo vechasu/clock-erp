@@ -137,8 +137,8 @@ class Stage2SalesApiTest(unittest.TestCase):
                 "note": "Updated",
             },
         )
-        self.assertEqual(updated.status_code, 200)
-        self.assertEqual(updated.get_json()["data"]["total_amount"], 2500)
+        self.assertEqual(updated.status_code, 409)
+        self.assertEqual(updated.get_json()["code"], "SALE_NOT_EDITABLE")
         self.assertEqual(self.stock(), 3)
 
         returned = self.client.post(
@@ -187,17 +187,16 @@ class Stage2SalesApiTest(unittest.TestCase):
         self.assertIsNone(reopened["unit_price"])
 
         cleared = self.client.patch(
-            "/api/sales/{}".format(created_ids[0]),
-            json={"unit_price": ""},
+            "/api/sales/{}".format(created_ids[0]), json={"unit_price": ""}
         )
-        self.assertEqual(cleared.status_code, 200)
-        self.assertIsNone(cleared.get_json()["data"]["unit_price"])
-        zero = self.client.patch(
-            "/api/sales/{}".format(created_ids[0]),
-            json={"unit_price": 0},
-        )
-        self.assertEqual(zero.get_json()["data"]["unit_price"], 0)
-        self.assertEqual(zero.get_json()["data"]["total_amount"], 0)
+        self.assertEqual(cleared.status_code, 409)
+        zero = self.client.post("/api/sales", json={
+            "created_at": "2026-07-30", "source": "Tictactoy",
+            "product_id": str(self.product["id"]), "quantity": 1,
+            "unit_price": 0, "order_number": "ZERO-PRICE",
+        }).get_json()["data"]
+        self.assertEqual(zero["unit_price"], 0)
+        self.assertEqual(zero["total_amount"], 0)
         from openpyxl import load_workbook
         projected_product = web.build_excel_warehouse_items([
             ExcelProductCatalog(CatalogDatabase(self.database_path)).get_product(
@@ -371,7 +370,7 @@ class Stage2SalesApiTest(unittest.TestCase):
         self.assertEqual(invalid.status_code, 422)
         self.assertEqual(invalid.get_json()["code"], "SALE_VALIDATION_FAILED")
 
-    def test_v1_patch_and_delete_are_json_transactional_and_idempotent(self):
+    def test_v1_patch_is_blocked_then_cancel_and_delete_are_idempotent(self):
         created = self.create_sale().get_json()["data"]
         updated = self.client.patch(
             "/api/v1/sales/{}".format(created["id"]),
@@ -384,10 +383,21 @@ class Stage2SalesApiTest(unittest.TestCase):
                 "order_number": "ORDER-1",
             },
         )
-        self.assertEqual(updated.status_code, 200)
+        self.assertEqual(updated.status_code, 409)
         self.assertEqual(updated.content_type, "application/json")
-        self.assertEqual(updated.get_json()["data"]["created_at"], "2026-07-30T14:35")
-        self.assertEqual(self.stock(), 2)
+        self.assertEqual(self.stock(), 3)
+
+        cancellation = self.client.post(
+            "/api/v1/sales/{}/cancel".format(created["id"]),
+            json={"reason": "input_error"},
+        )
+        repeated_cancellation = self.client.post(
+            "/api/v1/sales/{}/cancel".format(created["id"]),
+            json={"reason": "input_error"},
+        )
+        self.assertEqual(cancellation.status_code, 200)
+        self.assertEqual(repeated_cancellation.status_code, 200)
+        self.assertEqual(self.stock(), 5)
 
         first = self.client.delete("/api/v1/sales/{}".format(created["id"]))
         second = self.client.delete("/api/v1/sales/{}".format(created["id"]))
@@ -450,7 +460,7 @@ class Stage2SalesApiTest(unittest.TestCase):
         )
         self.assertFalse(listing["data"][0].get("delivery_method"))
 
-    def test_cash_commission_is_distinct_zero_value_and_survives_editing(self):
+    def test_cash_commission_is_distinct_zero_value_and_survives_reopening(self):
         response = self.client.post(
             "/api/sales",
             json={
@@ -497,10 +507,12 @@ class Stage2SalesApiTest(unittest.TestCase):
                 "commission_amount": 50,
             },
         )
-        self.assertEqual(updated.status_code, 200)
-        edited = updated.get_json()["data"]
-        self.assertEqual(edited["commission"], "cash")
-        self.assertEqual(edited["commission_amount"], 0)
+        self.assertEqual(updated.status_code, 409)
+        unchanged = self.client.get(
+            "/api/sales/{}".format(sale["id"])
+        ).get_json()["data"]
+        self.assertEqual(unchanged["commission"], "cash")
+        self.assertEqual(unchanged["commission_amount"], 0)
 
     def test_cash_and_sbp_are_separate_without_changing_legacy_options(self):
         self.assertEqual(web.SALE_COMMISSION_OPTIONS.count("cash"), 1)
@@ -598,6 +610,19 @@ class Stage2SalesApiTest(unittest.TestCase):
             {"manual", "automatic"},
         )
 
+        for sale_id, sale_type in (
+            ("legacy-1", "manual"), ("automatic-1", "automatic")
+        ):
+            cancelled = self.client.post(
+                "/sales/cancel",
+                data={
+                    "sale_id": sale_id,
+                    "sale_type": sale_type,
+                    "cancellation_reason": "duplicate",
+                },
+                headers={"X-Requested-With": "XMLHttpRequest"},
+            )
+            self.assertEqual(cancelled.status_code, 200)
         legacy_deleted = self.client.delete("/api/sales/legacy-1")
         automatic_deleted = self.client.delete("/api/sales/automatic-1")
         self.assertEqual(legacy_deleted.status_code, 200)

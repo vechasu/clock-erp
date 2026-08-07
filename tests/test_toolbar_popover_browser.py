@@ -256,6 +256,20 @@ class ToolbarPopoverBrowserTest(unittest.TestCase):
                         'data-sales-filters-e2e="pass"',
                     )
 
+            for width, height in ((1440, 900), (390, 844), (320, 568)):
+                for source in ("all", "tictactoy", "wildberries", "amazon"):
+                    with self.subTest(
+                        path="sales-cancellation", source=source, width=width,
+                    ):
+                        self.run_chrome(
+                            chrome,
+                            f"http://127.0.0.1:{port}/app/sales"
+                            f"?source={source}&sales_cancel_e2e=1",
+                            width,
+                            height,
+                            'data-sales-cancel-e2e="pass"',
+                        )
+
             datetime_paths = (
                 "/app/products?datetime_e2e=1",
                 "/app/sales?source=all&datetime_e2e=1",

@@ -1,4 +1,5 @@
 import os
+import json
 import sqlite3
 import threading
 from contextlib import contextmanager
@@ -596,6 +597,12 @@ CREATE TABLE IF NOT EXISTS erp_sales (
     created_at TEXT NOT NULL,
     returned_at TEXT,
     return_reason TEXT,
+    cancelled_at TEXT,
+    cancellation_reason TEXT,
+    cancellation_comment TEXT,
+    cancelled_by TEXT,
+    deleted_at TEXT,
+    deleted_by TEXT,
     user_name TEXT,
     metadata_json TEXT NOT NULL DEFAULT '{}',
     inserted_at TEXT NOT NULL,
@@ -939,6 +946,7 @@ class CatalogDatabase:
                     connection.execute(
                         "ALTER TABLE {} ADD COLUMN {} {}".format(table, column, definition)
                     )
+
                     migrated = True
         if migrated:
             linked = connection.execute(
@@ -1156,6 +1164,12 @@ class CatalogDatabase:
             "erp_sales": (
                 ("external_order_id", "TEXT"),
                 ("idempotency_key", "TEXT"),
+                ("cancelled_at", "TEXT"),
+                ("cancellation_reason", "TEXT"),
+                ("cancellation_comment", "TEXT"),
+                ("cancelled_by", "TEXT"),
+                ("deleted_at", "TEXT"),
+                ("deleted_by", "TEXT"),
             ),
             "catalog_stock_movements": (
                 ("receipt_id", "TEXT REFERENCES erp_receipts(id) ON DELETE RESTRICT"),
@@ -1189,6 +1203,37 @@ class CatalogDatabase:
                             definition,
                         )
                     )
+
+        legacy_sales = connection.execute(
+            "SELECT id, metadata_json, returned_at, updated_at, "
+            "cancelled_at, deleted_at FROM erp_sales "
+            "WHERE cancelled_at IS NULL OR deleted_at IS NULL"
+        ).fetchall()
+        for sale in legacy_sales:
+            try:
+                metadata = json.loads(sale["metadata_json"] or "{}")
+            except (TypeError, ValueError):
+                metadata = {}
+            cancelled_at = sale["cancelled_at"]
+            if (
+                not cancelled_at
+                and str(metadata.get("order_status") or "") == "cancelled"
+            ):
+                cancelled_at = (
+                    metadata.get("cancelled_at")
+                    or sale["returned_at"]
+                    or sale["updated_at"]
+                )
+            deleted_at = sale["deleted_at"] or metadata.get("deleted_at")
+            if (
+                cancelled_at != sale["cancelled_at"]
+                or deleted_at != sale["deleted_at"]
+            ):
+                connection.execute(
+                    "UPDATE erp_sales SET cancelled_at = ?, deleted_at = ? "
+                    "WHERE id = ?",
+                    (cancelled_at, deleted_at, sale["id"]),
+                )
 
         connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_catalog_excel_products_brand_id "
@@ -1230,8 +1275,18 @@ class CatalogDatabase:
             "UPDATE erp_sales SET external_order_id = NULL "
             "WHERE trim(COALESCE(external_order_id, '')) = ''"
         )
+        external_index = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'index' "
+            "AND name = 'idx_erp_sales_source_external'"
+        ).fetchone()
+        if external_index is not None and "UNIQUE" in (
+            external_index["sql"] or ""
+        ).upper():
+            connection.execute(
+                "DROP INDEX IF EXISTS idx_erp_sales_source_external"
+            )
         connection.execute(
-            "CREATE UNIQUE INDEX IF NOT EXISTS idx_erp_sales_source_external "
+            "CREATE INDEX IF NOT EXISTS idx_erp_sales_source_external "
             "ON erp_sales(source, external_order_id)"
         )
         connection.execute(

@@ -183,6 +183,11 @@ def sale_record(identifier, order_number, product, source, date, quantity, unit_
         "order_status_label": "Выполнен",
         "is_cancelled": False,
         "cancelled_at": "",
+        "cancellation_reason": "",
+        "cancellation_comment": "",
+        "cancellation_quantity": quantity,
+        "cancellation_safe": True,
+        "cancellation_has_movements": True,
         "track_number": "TRACK-{}".format(order_number[-2:]),
         "delivery_method": "СДЭК",
         "delivery_cost": 450,
@@ -224,6 +229,27 @@ preview_sales = [
     sale_record("preview-sale-3", "AMZ-2201", warehouse_items[1], "Amazon", "2026-07-28T12:50:55", 1, 24990),
     sale_record("preview-sale-4", "ORDER-EMPTY", empty_article_product, "Tictactoy", "2026-07-27T13:05:59", 1, 5000),
 ]
+
+for index, source in enumerate(("Tictactoy", "Wildberries", "Amazon"), start=1):
+    cancelled = sale_record(
+        "preview-cancelled-{}".format(index),
+        "CANCELLED-{}".format(index),
+        warehouse_items[index - 1],
+        source,
+        "2026-08-0{}T12:00:00".format(index),
+        1,
+        1000,
+    )
+    cancelled.update({
+        "order_status": "cancelled",
+        "order_status_label": "Отменён",
+        "is_cancelled": True,
+        "cancelled_at": "2026-08-04T12:00:00",
+        "cancellation_reason": "Дубль",
+        "cancellation_quantity": 0,
+        "return_status": "returned",
+    })
+    preview_sales.append(cancelled)
 
 preview_sales.extend([
     sale_record(

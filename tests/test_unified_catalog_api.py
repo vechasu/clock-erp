@@ -218,13 +218,18 @@ class UnifiedCatalogApiTest(unittest.TestCase):
                 "order_number": "ORDER-API-1",
             },
         )
-        self.assertEqual(edited.status_code, 200)
-        self.assertEqual(self.stock(), 8)
+        self.assertEqual(edited.status_code, 409)
+        self.assertEqual(self.stock(), 7)
 
-        cancelled = self.client.delete(
-            "/api/v1/sales/{}".format(sale["id"])
+        cancelled = self.client.post(
+            "/api/v1/sales/{}/cancel".format(sale["id"]),
+            json={"reason": "input_error"},
         )
         self.assertEqual(cancelled.status_code, 200)
+        deleted = self.client.delete(
+            "/api/v1/sales/{}".format(sale["id"])
+        )
+        self.assertEqual(deleted.status_code, 200)
         self.assertEqual(self.stock(), 10)
 
         changed_payload = self.receipt_payload(quantity=6)
@@ -317,6 +322,10 @@ class UnifiedCatalogApiTest(unittest.TestCase):
         ).get_json()["data"]
         self.assertEqual(brand_stock(), 7)
 
+        self.client.post(
+            "/api/v1/sales/{}/cancel".format(sale["id"]),
+            json={"reason": "input_error"},
+        )
         self.client.delete("/api/v1/sales/{}".format(sale["id"]))
         self.assertEqual(brand_stock(), 10)
         self.client.delete("/api/v1/receipts/{}".format(receipt["id"]))

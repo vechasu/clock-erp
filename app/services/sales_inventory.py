@@ -26,6 +26,10 @@ class ReturnConflictError(SalesInventoryError):
     pass
 
 
+class CancellationConflictError(SalesInventoryError):
+    pass
+
+
 def now_iso():
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
@@ -120,7 +124,8 @@ class SalesInventory:
             existing = connection.execute(
                 "SELECT id FROM erp_sales WHERE id = ? "
                 "OR (? IS NOT NULL AND idempotency_key = ?) "
-                "OR (? IS NOT NULL AND source = ? AND external_order_id = ?) "
+                "OR (? IS NOT NULL AND source = ? AND external_order_id = ? "
+                "AND cancelled_at IS NULL AND deleted_at IS NULL) "
                 "LIMIT 1",
                 (
                     sale_id,
@@ -539,7 +544,8 @@ class SalesInventory:
             if updated_external_id:
                 duplicate = connection.execute(
                     "SELECT id FROM erp_sales "
-                    "WHERE source = ? AND external_order_id = ? AND id <> ?",
+                    "WHERE source = ? AND external_order_id = ? AND id <> ? "
+                    "AND cancelled_at IS NULL AND deleted_at IS NULL",
                     (updated_source, updated_external_id, sale_id),
                 ).fetchone()
                 if duplicate is not None:
@@ -594,23 +600,125 @@ class SalesInventory:
         self,
         sale_id,
         reason="",
+        comment="",
         user_name="",
         idempotency_key="",
+        failure_hook=None,
     ):
-        sale = self.get_sale(sale_id)
-        if sale is None:
-            raise ReturnConflictError("Продажа не найдена.")
-        remaining = float(sale.get("return_available_quantity") or 0)
-        if remaining <= 0:
-            return sale
-        return self.return_sale(
-            sale_id,
-            remaining,
-            reason=reason or "Отмена продажи",
-            user_name=user_name,
-            idempotency_key=idempotency_key,
-            movement_type="cancellation",
+        sale_id = str(sale_id or "").strip()
+        reason = str(reason or "").strip()
+        comment = str(comment or "").strip()
+        user_name = str(user_name or "").strip()
+        cancelled_at = now_iso()
+        base_key = str(idempotency_key or "").strip() or (
+            "sale-cancel:{}".format(sale_id)
         )
+
+        self.initialize()
+        with self.database.transaction() as connection:
+            sale = connection.execute(
+                "SELECT * FROM erp_sales WHERE id = ?", (sale_id,)
+            ).fetchone()
+            items = connection.execute(
+                "SELECT * FROM erp_sale_items WHERE sale_id = ? ORDER BY id",
+                (sale_id,),
+            ).fetchall()
+            if sale is None or not items:
+                raise CancellationConflictError("Продажа не найдена.")
+            if sale["deleted_at"]:
+                raise CancellationConflictError("Продажа уже удалена.")
+            if sale["cancelled_at"]:
+                return self._sale_from_connection(connection, sale_id)
+            if str(sale["status"] or "") == "returned":
+                raise CancellationConflictError(
+                    "Возвращённую продажу нельзя отменить."
+                )
+
+            plan = self._movement_plan_from_connection(connection, sale_id)
+            if not plan["safe"]:
+                raise CancellationConflictError(
+                    "Не удалось безопасно определить складское движение "
+                    "этой продажи. Остаток не изменён, продажа не отменена."
+                )
+
+            item_by_product = {
+                int(item["product_id"]): item for item in items
+            }
+            for index, reversal in enumerate(plan["reversals"]):
+                product_id = reversal["product_id"]
+                quantity = reversal["quantity"]
+                product = connection.execute(
+                    "SELECT stock FROM catalog_excel_products WHERE id = ?",
+                    (product_id,),
+                ).fetchone()
+                if product is None:
+                    raise CancellationConflictError(
+                        "Не удалось безопасно восстановить остаток товара. "
+                        "Продажа не отменена."
+                    )
+                stock_before = float(product["stock"] or 0)
+                stock_after = stock_before + quantity
+                connection.execute(
+                    "UPDATE catalog_excel_products SET stock = ?, "
+                    "stock_source = 'sale_cancel', updated_at = ? WHERE id = ?",
+                    (stock_after, cancelled_at, product_id),
+                )
+                item = item_by_product.get(product_id) or items[0]
+                movement_key = "{}:{}".format(base_key, index)
+                connection.execute(
+                    "INSERT INTO catalog_stock_movements ("
+                    "id, product_id, movement_type, quantity_delta, "
+                    "stock_before, stock_after, sale_id, sale_item_id, "
+                    "idempotency_key, source, user_name, comment, created_at"
+                    ") VALUES (?, ?, 'cancellation', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        str(uuid.uuid4()), product_id, quantity, stock_before,
+                        stock_after, sale_id, item["id"], movement_key,
+                        sale["source"], user_name or None,
+                        "Отмена продажи №{}: {}{}".format(
+                            self._sale_number(sale),
+                            reason,
+                            ": {}".format(comment) if comment else "",
+                        ),
+                        cancelled_at,
+                    ),
+                )
+
+            metadata = self._metadata(sale)
+            metadata.update({
+                "order_status": "cancelled",
+                "cancelled_at": cancelled_at,
+                "cancellation_reason": reason,
+                "cancellation_comment": comment,
+                "cancelled_by": user_name,
+            })
+            connection.execute(
+                "UPDATE erp_sale_items SET returned_quantity = quantity, "
+                "status = 'returned', returned_at = ?, return_reason = ? "
+                "WHERE sale_id = ?",
+                (cancelled_at, reason or "Отмена продажи", sale_id),
+            )
+            cursor = connection.execute(
+                "UPDATE erp_sales SET status = 'returned', returned_at = ?, "
+                "return_reason = ?, cancelled_at = ?, cancellation_reason = ?, "
+                "cancellation_comment = ?, cancelled_by = ?, metadata_json = ?, "
+                "updated_at = ? WHERE id = ? AND cancelled_at IS NULL "
+                "AND deleted_at IS NULL",
+                (
+                    cancelled_at, reason or "Отмена продажи", cancelled_at,
+                    reason or None, comment or None, user_name or None,
+                    json.dumps(metadata, ensure_ascii=False, sort_keys=True),
+                    cancelled_at, sale_id,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise CancellationConflictError(
+                    "Продажа уже была изменена другим запросом."
+                )
+            if failure_hook:
+                failure_hook(connection)
+
+        return self.get_sale(sale_id)
 
     def delete_sale(
         self,
@@ -621,7 +729,6 @@ class SalesInventory:
     ):
         sale_id = str(sale_id or "").strip()
         deleted_at = now_iso()
-        idempotency_key = str(idempotency_key or "").strip() or None
         self.initialize()
         with self.database.transaction() as connection:
             sale = connection.execute(
@@ -633,57 +740,20 @@ class SalesInventory:
             ).fetchone()
             if sale is None or item is None:
                 raise ReturnConflictError("Продажа не найдена.")
-            try:
-                metadata = json.loads(sale["metadata_json"] or "{}")
-            except (TypeError, ValueError):
-                metadata = {}
-            if metadata.get("deleted_at"):
+            metadata = self._metadata(sale)
+            if sale["deleted_at"] or metadata.get("deleted_at"):
                 return self._sale_from_connection(connection, sale_id)
-            remaining = max(
-                float(item["quantity"])
-                - float(item["returned_quantity"] or 0),
-                0,
-            )
-            if remaining > 0:
-                product = connection.execute(
-                    "SELECT stock FROM catalog_excel_products "
-                    "WHERE id = ? AND active = 1", (item["product_id"],)
-                ).fetchone()
-                if product is None:
-                    raise ReturnConflictError("Товар не найден.")
-                connection.execute(
-                    "UPDATE catalog_excel_products SET stock = stock + ?, "
-                    "stock_source = 'sale_cancel', updated_at = ? WHERE id = ?",
-                    (remaining, deleted_at, item["product_id"]),
-                )
-                connection.execute(
-                    "INSERT INTO catalog_stock_movements ("
-                    "id, product_id, movement_type, quantity_delta, stock_after, "
-                    "sale_id, sale_item_id, idempotency_key, source, user_name, "
-                    "comment, created_at) VALUES (?, ?, 'cancellation', ?, ?, "
-                    "?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        str(uuid.uuid4()), item["product_id"], remaining,
-                        float(product["stock"]) + remaining, sale_id, item["id"],
-                        idempotency_key, sale["source"],
-                        str(user_name or "") or None,
-                        reason or "Удаление продажи", deleted_at,
-                    ),
+            if not sale["cancelled_at"]:
+                raise CancellationConflictError(
+                    "Сначала отмените продажу, чтобы восстановить остаток."
                 )
             metadata["deleted_at"] = deleted_at
-            metadata["order_status"] = "cancelled"
-            metadata["cancelled_at"] = deleted_at
+            metadata["deleted_by"] = str(user_name or "")
             connection.execute(
-                "UPDATE erp_sale_items SET returned_quantity = quantity, "
-                "status = 'returned', returned_at = ?, return_reason = ? "
-                "WHERE id = ?",
-                (deleted_at, reason or "Удаление продажи", item["id"]),
-            )
-            connection.execute(
-                "UPDATE erp_sales SET status = 'returned', returned_at = ?, "
-                "return_reason = ?, metadata_json = ?, updated_at = ? WHERE id = ?",
+                "UPDATE erp_sales SET deleted_at = ?, deleted_by = ?, "
+                "metadata_json = ?, updated_at = ? WHERE id = ?",
                 (
-                    deleted_at, reason or "Удаление продажи",
+                    deleted_at, str(user_name or "") or None,
                     json.dumps(metadata, ensure_ascii=False, sort_keys=True),
                     deleted_at, sale_id,
                 ),
@@ -743,7 +813,10 @@ class SalesInventory:
             "WHERE s.id = ? ORDER BY i.id LIMIT 1",
             (str(sale_id),),
         ).fetchone()
-        return cls._sale_payload(row) if row else None
+        if row is None:
+            return None
+        plan = cls._movement_plan_from_connection(connection, sale_id)
+        return cls._sale_payload(row, plan)
 
     def list_sales(self, sale_id=None):
         if not self.exists():
@@ -756,17 +829,78 @@ class SalesInventory:
             "FROM erp_sales s JOIN erp_sale_items i ON i.sale_id = s.id"
         )
         parameters = ()
+        query += " WHERE s.deleted_at IS NULL"
         if sale_id is not None:
-            query += " WHERE s.id = ?"
+            query += " AND s.id = ?"
             parameters = (str(sale_id),)
         query += " ORDER BY s.inserted_at DESC, i.id"
         with self.database.connect() as connection:
             rows = connection.execute(query, parameters).fetchall()
+            plans = self._movement_plans_from_connection(
+                connection,
+                [row["id"] for row in rows],
+            )
         return [
-            payload
-            for payload in (self._sale_payload(row) for row in rows)
+            payload for payload in (
+                self._sale_payload(row, plans.get(row["id"])) for row in rows
+            )
             if not payload.get("deleted_at")
         ]
+
+    @classmethod
+    def _movement_plans_from_connection(cls, connection, sale_ids):
+        sale_ids = list(dict.fromkeys(str(value) for value in sale_ids if value))
+        if not sale_ids:
+            return {}
+        placeholders = ",".join("?" for _value in sale_ids)
+        rows = connection.execute(
+            "SELECT sale_id, product_id, SUM(quantity_delta) AS net_delta, "
+            "COUNT(*) AS movement_count FROM catalog_stock_movements "
+            "WHERE sale_id IN ({}) GROUP BY sale_id, product_id".format(
+                placeholders
+            ),
+            sale_ids,
+        ).fetchall()
+        grouped = {sale_id: [] for sale_id in sale_ids}
+        for row in rows:
+            grouped.setdefault(str(row["sale_id"]), []).append(row)
+        return {
+            sale_id: cls._movement_plan_from_rows(grouped.get(sale_id, []))
+            for sale_id in sale_ids
+        }
+
+    @classmethod
+    def _movement_plan_from_connection(cls, connection, sale_id):
+        return cls._movement_plans_from_connection(
+            connection, [sale_id]
+        ).get(str(sale_id), cls._movement_plan_from_rows([]))
+
+    @staticmethod
+    def _movement_plan_from_rows(rows):
+        reversals = []
+        safe = True
+        for row in rows:
+            net_delta = float(row["net_delta"] or 0)
+            if net_delta > 0.000001:
+                safe = False
+            elif net_delta < -0.000001:
+                reversals.append({
+                    "product_id": int(row["product_id"]),
+                    "quantity": -net_delta,
+                })
+        return {
+            "safe": safe,
+            "reversals": reversals,
+            "quantity": sum(item["quantity"] for item in reversals),
+            "movement_count": sum(int(row["movement_count"] or 0) for row in rows),
+        }
+
+    @staticmethod
+    def _metadata(sale):
+        try:
+            return json.loads(sale["metadata_json"] or "{}")
+        except (TypeError, ValueError):
+            return {}
 
     def list_movements(self, product_id=None, limit=5000):
         if not self.exists():
@@ -832,15 +966,17 @@ class SalesInventory:
         return str(payload.get("order_number") or sale["id"])
 
     @staticmethod
-    def _sale_payload(row):
-        try:
-            payload = json.loads(row["metadata_json"] or "{}")
-        except (TypeError, ValueError):
-            payload = {}
+    def _sale_payload(row, movement_plan=None):
+        payload = SalesInventory._metadata(row)
         quantity = float(row["quantity"])
         returned_quantity = float(row["returned_quantity"] or 0)
         stored_order_status = str(payload.get("order_status") or "completed")
         inventory_status = str(row["status"] or "completed")
+        cancelled_at = row["cancelled_at"] or payload.get("cancelled_at") or ""
+        deleted_at = row["deleted_at"] or payload.get("deleted_at") or ""
+        movement_plan = movement_plan or {
+            "safe": True, "quantity": 0, "movement_count": 0,
+        }
         payload.update({
             "id": row["id"],
             "source": row["source"],
@@ -854,7 +990,9 @@ class SalesInventory:
             ),
             "status": inventory_status,
             "order_status": (
-                inventory_status
+                "cancelled"
+                if cancelled_at
+                else inventory_status
                 if inventory_status in {"partially_returned", "returned"}
                 and stored_order_status != "cancelled"
                 else stored_order_status
@@ -874,6 +1012,25 @@ class SalesInventory:
                 or row["return_reason"]
                 or ""
             ),
+            "cancelled_at": cancelled_at,
+            "cancellation_reason": (
+                row["cancellation_reason"]
+                or payload.get("cancellation_reason")
+                or ""
+            ),
+            "cancellation_comment": (
+                row["cancellation_comment"]
+                or payload.get("cancellation_comment")
+                or ""
+            ),
+            "cancelled_by": (
+                row["cancelled_by"] or payload.get("cancelled_by") or ""
+            ),
+            "deleted_at": deleted_at,
+            "deleted_by": row["deleted_by"] or payload.get("deleted_by") or "",
+            "cancellation_quantity": movement_plan["quantity"],
+            "cancellation_safe": movement_plan["safe"],
+            "cancellation_has_movements": bool(movement_plan["movement_count"]),
             "inventory_managed": True,
             "automatic_stock_applied": True,
         })
