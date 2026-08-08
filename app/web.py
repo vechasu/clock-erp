@@ -1845,6 +1845,10 @@ def warehouse_page():
                 app.testing
                 and request.args.get("table_ui_e2e") == "1"
             ),
+            warehouse_delete_feedback_e2e=(
+                app.testing
+                and request.args.get("delete_feedback_e2e") == "1"
+            ),
             pagination_e2e=(
                 app.testing and request.args.get("pagination_e2e") == "1"
             ),
@@ -3152,7 +3156,7 @@ def warehouse_archive_product():
         if is_ajax:
             return jsonify(ok=True, message="Товар удалён")
         return redirect(url_for(
-            "warehouse_page", notice="success", message="Товар удалён"
+            "warehouse_page", notice="danger", message="Товар удалён"
         ))
     except (ProductDeleteBlockedError, TypeError, ValueError) as error:
         if is_ajax:
