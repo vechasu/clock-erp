@@ -6,87 +6,16 @@
 <section class="auth-card" aria-labelledby="register-title">
     <header class="auth-card-header">
         <h2 id="register-title">Создать аккаунт</h2>
-        <p>
-            Регистрация доступна сотрудникам TicTacToy
-            по одноразовому приглашению администратора.
-        </p>
+        <p>Регистрация доступна только для разрешённых email TicTacToy.</p>
     </header>
 
-    <div class="auth-progress" aria-label="Заполнение формы">
-        <span>Данные аккаунта</span>
-        <span class="auth-progress-track" aria-hidden="true">
-            <span class="auth-progress-value" id="registerProgress"></span>
-        </span>
-        <span id="registerProgressText">1 из 3</span>
-    </div>
-
-    {% if errors.invitation %}
-        <div class="auth-alert" role="alert">
-            {{ errors.invitation }}
-        </div>
-    {% elif invitation %}
-        <div class="invitation-confirmed" role="status">
-            Приглашение подтверждено. Роль:
-            {{ "Администратор" if invitation.role == "admin" else "Сотрудник" }}.
-        </div>
+    {% if errors.form %}
+        <div class="auth-alert" role="alert">{{ errors.form }}</div>
     {% endif %}
 
-    <form
-        class="auth-form"
-        id="registerForm"
-        method="post"
-        action="{{ url_for('auth.register', next=request.args.get('next', '')) }}"
-        novalidate
-    >
+    <form class="auth-form" id="registerForm" method="post" novalidate>
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-
         <div class="auth-grid">
-            <div class="auth-field">
-                <label class="auth-label" for="first_name">Имя</label>
-                <input
-                    class="auth-input"
-                    id="first_name"
-                    name="first_name"
-                    type="text"
-                    value="{{ values.get('first_name', '') }}"
-                    maxlength="80"
-                    autocomplete="given-name"
-                    required
-                    {% if errors.first_name %}
-                        aria-invalid="true"
-                        aria-describedby="first_name_error"
-                    {% endif %}
-                >
-                {% if errors.first_name %}
-                    <p class="auth-error" id="first_name_error" role="alert">
-                        {{ errors.first_name }}
-                    </p>
-                {% endif %}
-            </div>
-
-            <div class="auth-field">
-                <label class="auth-label" for="last_name">Фамилия</label>
-                <input
-                    class="auth-input"
-                    id="last_name"
-                    name="last_name"
-                    type="text"
-                    value="{{ values.get('last_name', '') }}"
-                    maxlength="80"
-                    autocomplete="family-name"
-                    required
-                    {% if errors.last_name %}
-                        aria-invalid="true"
-                        aria-describedby="last_name_error"
-                    {% endif %}
-                >
-                {% if errors.last_name %}
-                    <p class="auth-error" id="last_name_error" role="alert">
-                        {{ errors.last_name }}
-                    </p>
-                {% endif %}
-            </div>
-
             <div class="auth-field auth-field-wide">
                 <label class="auth-label" for="email">Email</label>
                 <input
@@ -99,245 +28,63 @@
                     autocomplete="email"
                     inputmode="email"
                     required
-                    {% if invitation and invitation.email %}readonly{% endif %}
-                    {% if errors.email %}
-                        aria-invalid="true"
-                        aria-describedby="email_error"
-                    {% endif %}
+                    {% if errors.email %}aria-invalid="true" aria-describedby="email_error"{% endif %}
                 >
-                {% if errors.email %}
-                    <p class="auth-error" id="email_error" role="alert">
-                        {{ errors.email }}
-                    </p>
-                {% elif invitation and invitation.email %}
-                    <p class="auth-hint">
-                        Email закреплён за этим приглашением.
-                    </p>
-                {% endif %}
+                {% if errors.email %}<p class="auth-error" id="email_error" role="alert">{{ errors.email }}</p>{% endif %}
             </div>
 
-            <div class="auth-field">
-                <label class="auth-label" for="password">Пароль</label>
-                <div class="auth-input-wrap">
-                    <input
-                        class="auth-input auth-input-password"
-                        id="password"
-                        name="password"
-                        type="password"
-                        maxlength="128"
-                        autocomplete="new-password"
-                        required
-                        aria-describedby="password_hint{% if errors.password %} password_error{% endif %}"
-                        {% if errors.password %}aria-invalid="true"{% endif %}
-                    >
-                    <button
-                        class="password-toggle"
-                        type="button"
-                        data-password-toggle="password"
-                        aria-label="Показать пароль"
-                        aria-pressed="false"
-                    >
-                        Показать
-                    </button>
-                </div>
-                <p class="auth-hint" id="password_hint">
-                    Не менее 8 символов. Можно использовать парольную фразу.
-                </p>
-                {% if errors.password %}
-                    <p class="auth-error" id="password_error" role="alert">
-                        {{ errors.password }}
-                    </p>
-                {% endif %}
-            </div>
-
-            <div class="auth-field">
-                <label class="auth-label" for="password_confirmation">
-                    Повтор пароля
-                </label>
-                <div class="auth-input-wrap">
-                    <input
-                        class="auth-input auth-input-password"
-                        id="password_confirmation"
-                        name="password_confirmation"
-                        type="password"
-                        maxlength="128"
-                        autocomplete="new-password"
-                        required
-                        {% if errors.password_confirmation %}
-                            aria-invalid="true"
-                            aria-describedby="password_confirmation_error"
-                        {% endif %}
-                    >
-                    <button
-                        class="password-toggle"
-                        type="button"
-                        data-password-toggle="password_confirmation"
-                        aria-label="Показать повтор пароля"
-                        aria-pressed="false"
-                    >
-                        Показать
-                    </button>
-                </div>
-                {% if errors.password_confirmation %}
-                    <p
-                        class="auth-error"
-                        id="password_confirmation_error"
-                        role="alert"
-                    >
-                        {{ errors.password_confirmation }}
-                    </p>
-                {% endif %}
-            </div>
-
-            {% if not invitation %}
+            {% for field_id, label in (("password", "Пароль"), ("password_confirmation", "Повтор пароля")) %}
                 <div class="auth-field auth-field-wide">
-                    <label class="auth-label" for="invitation_code">
-                        Код приглашения
-                    </label>
-                    <input
-                        class="auth-input"
-                        id="invitation_code"
-                        name="invitation_code"
-                        type="text"
-                        maxlength="128"
-                        autocomplete="off"
-                        autocapitalize="none"
-                        spellcheck="false"
-                        aria-describedby="invitation_hint"
-                        required
-                    >
-                    <p class="auth-hint" id="invitation_hint">
-                        Вставьте одноразовый код, полученный от администратора.
-                    </p>
+                    <label class="auth-label" for="{{ field_id }}">{{ label }}</label>
+                    <div class="auth-input-wrap">
+                        <input
+                            class="auth-input auth-input-password"
+                            id="{{ field_id }}"
+                            name="{{ field_id }}"
+                            type="password"
+                            maxlength="128"
+                            autocomplete="new-password"
+                            required
+                            {% if errors.get(field_id) %}aria-invalid="true" aria-describedby="{{ field_id }}_error"{% endif %}
+                        >
+                        <button class="password-toggle" type="button" data-password-toggle="{{ field_id }}" aria-pressed="false">Показать</button>
+                    </div>
+                    {% if field_id == "password" and not errors.password %}<p class="auth-hint">Не менее 8 символов.</p>{% endif %}
+                    {% if errors.get(field_id) %}<p class="auth-error" id="{{ field_id }}_error" role="alert">{{ errors.get(field_id) }}</p>{% endif %}
                 </div>
-            {% endif %}
-
-            <label class="auth-terms">
-                <input
-                    type="checkbox"
-                    name="terms"
-                    value="1"
-                    required
-                    {% if values.get('terms') == '1' %}checked{% endif %}
-                    {% if errors.terms %}aria-invalid="true"{% endif %}
-                >
-                <span>
-                    Я согласен с правилами использования внутренней системы
-                    и обработкой персональных данных для работы в TicTacToy.
-                    {% if errors.terms %}
-                        <span class="auth-error" role="alert">
-                            {{ errors.terms }}
-                        </span>
-                    {% endif %}
-                </span>
-            </label>
+            {% endfor %}
         </div>
 
         <div class="auth-actions">
-            <button
-                class="auth-submit"
-                id="registerSubmit"
-                type="submit"
-                {% if rate_limited %}disabled{% endif %}
-            >
-                Создать аккаунт
-            </button>
+            <button class="auth-submit" id="registerSubmit" type="submit" {% if rate_limited %}disabled{% endif %}>Создать аккаунт</button>
         </div>
-        <div class="auth-live" id="registerLive" aria-live="polite"></div>
     </form>
 
-    <p class="auth-switch">
-        Уже есть аккаунт?
-        <a href="{{ url_for('auth.login', next=request.args.get('next', '')) }}">
-            Войти
-        </a>
-    </p>
+    <p class="auth-switch">Уже есть аккаунт? <a href="{{ url_for('auth.login') }}">Войти</a></p>
 </section>
 
 <script>
-    (() => {
-        const hashInvitation = new URLSearchParams(
-            window.location.hash.slice(1)
-        ).get("invite");
-        if (hashInvitation) {
-            const invitationForm = document.createElement("form");
-            invitationForm.method = "post";
-            invitationForm.action = "{{ url_for('auth.accept_invitation') }}";
-
-            const invitationFields = {
-                csrf_token: {{ csrf_token()|tojson }},
-                invitation_token: hashInvitation,
-                next: {{ request.args.get('next', '')|tojson }}
-            };
-            Object.entries(invitationFields).forEach(([name, value]) => {
-                const field = document.createElement("input");
-                field.type = "hidden";
-                field.name = name;
-                field.value = value;
-                invitationForm.appendChild(field);
-            });
-
-            history.replaceState(
-                null,
-                "",
-                `${window.location.pathname}${window.location.search}`
-            );
-            document.body.appendChild(invitationForm);
-            invitationForm.submit();
-            return;
-        }
-
-        const form = document.getElementById("registerForm");
-        const submit = document.getElementById("registerSubmit");
-        const live = document.getElementById("registerLive");
-        const progress = document.getElementById("registerProgress");
-        const progressText = document.getElementById("registerProgressText");
-
-        document.querySelectorAll("[data-password-toggle]").forEach((button) => {
-            button.addEventListener("click", () => {
-                const input = document.getElementById(button.dataset.passwordToggle);
-                const show = input.type === "password";
-                input.type = show ? "text" : "password";
-                button.textContent = show ? "Скрыть" : "Показать";
-                button.setAttribute("aria-pressed", String(show));
-                button.setAttribute(
-                    "aria-label",
-                    show ? "Скрыть пароль" : "Показать пароль"
-                );
-            });
+(() => {
+    document.querySelectorAll("[data-password-toggle]").forEach((button) => {
+        button.addEventListener("click", () => {
+            const input = document.getElementById(button.dataset.passwordToggle);
+            const show = input.type === "password";
+            input.type = show ? "text" : "password";
+            button.textContent = show ? "Скрыть" : "Показать";
+            button.setAttribute("aria-pressed", String(show));
         });
-
-        const updateProgress = () => {
-            const identityFields = ["first_name", "last_name", "email"];
-            const identityReady = identityFields.every((id) => {
-                return document.getElementById(id)?.value.trim();
-            });
-            const passwordReady =
-                document.getElementById("password")?.value.length >= 8
-                && document.getElementById("password_confirmation")?.value;
-            const step = passwordReady ? 3 : identityReady ? 2 : 1;
-            progress.style.width = `${step * 33.333}%`;
-            progressText.textContent = `${step} из 3`;
-        };
-
-        form.addEventListener("input", updateProgress);
-        form.addEventListener("submit", () => {
-            if (form.dataset.submitting === "1") {
-                return;
-            }
-            form.dataset.submitting = "1";
-            submit.disabled = true;
-            submit.textContent = "Создаём аккаунт…";
-            live.textContent = "Форма отправлена. Создаём аккаунт.";
-        });
-        updateProgress();
-
-        if (new URLSearchParams(window.location.search).has("registration_ui_e2e")) {
-            document.body.dataset.registrationUiE2e =
-                document.documentElement.scrollWidth <= window.innerWidth
-                    ? "pass"
-                    : "fail";
-        }
-    })();
+    });
+    const form = document.getElementById("registerForm");
+    const submit = document.getElementById("registerSubmit");
+    form.addEventListener("submit", () => {
+        if (form.dataset.submitting === "1") return;
+        form.dataset.submitting = "1";
+        submit.disabled = true;
+        submit.textContent = "Отправляем…";
+    });
+    if (new URLSearchParams(window.location.search).has("registration_ui_e2e")) {
+        document.body.dataset.registrationUiE2e = document.documentElement.scrollWidth <= window.innerWidth ? "pass" : "fail";
+    }
+})();
 </script>
 {% endblock %}

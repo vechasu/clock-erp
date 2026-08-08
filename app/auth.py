@@ -1,11 +1,15 @@
 import hashlib
 import hmac
+import json
+import logging
 import os
 import re
 import secrets
+import smtplib
 import sqlite3
 import time
 from datetime import datetime, timedelta
+from email.message import EmailMessage
 from functools import wraps
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -23,6 +27,7 @@ from flask import (
     session,
     url_for,
 )
+from flask.sessions import SessionInterface, SessionMixin
 from werkzeug.security import check_password_hash, generate_password_hash
 
 
@@ -32,6 +37,10 @@ EMAIL_PATTERN = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,189}\.[^@\s]{2,63}$")
 PUBLIC_ENDPOINTS = {
     "auth.login",
     "auth.register",
+    "auth.verify_email",
+    "auth.resend_verification",
+    "auth.forgot_password",
+    "auth.reset_password",
     "auth.accept_invitation",
     "auth.registration_success",
     "static",
@@ -49,6 +58,9 @@ COMMON_PASSWORDS = {
     "tictactoy",
 }
 PASSWORD_HASH_METHOD = "pbkdf2:sha256:600000"
+TOKEN_EMAIL_VERIFICATION = "email_verification"
+TOKEN_PASSWORD_RESET = "password_reset"
+LOGGER = logging.getLogger(__name__)
 
 
 class RegistrationError(Exception):
@@ -64,6 +76,18 @@ def normalize_email(value):
 
 def invitation_digest(token):
     return hashlib.sha256(str(token or "").strip().encode("utf-8")).hexdigest()
+
+
+def token_digest(token):
+    return invitation_digest(token)
+
+
+def allowed_emails(value):
+    return {
+        normalize_email(item)
+        for item in str(value or "").split(",")
+        if normalize_email(item)
+    }
 
 
 def safe_next_url(value, default="/"):
@@ -176,7 +200,63 @@ class AuthStore:
 
                 CREATE INDEX IF NOT EXISTS auth_attempts_bucket_time
                     ON auth_attempts(bucket, attempted_at);
+
+                CREATE TABLE IF NOT EXISTS auth_tokens (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    token_hash TEXT NOT NULL UNIQUE,
+                    token_type TEXT NOT NULL,
+                    expires_at INTEGER NOT NULL,
+                    used_at INTEGER,
+                    created_at INTEGER NOT NULL,
+                    FOREIGN KEY (user_id) REFERENCES users(id)
+                );
+
+                CREATE INDEX IF NOT EXISTS auth_tokens_user_type
+                    ON auth_tokens(user_id, token_type, created_at);
+
+                CREATE TABLE IF NOT EXISTS auth_sessions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_hash TEXT NOT NULL UNIQUE,
+                    user_id INTEGER,
+                    data TEXT NOT NULL,
+                    expires_at INTEGER NOT NULL,
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL,
+                    FOREIGN KEY (user_id) REFERENCES users(id)
+                );
+
+                CREATE INDEX IF NOT EXISTS auth_sessions_expiry
+                    ON auth_sessions(expires_at);
+
+                CREATE INDEX IF NOT EXISTS auth_sessions_user
+                    ON auth_sessions(user_id);
                 """
+            )
+            columns = {
+                row[1] for row in connection.execute("PRAGMA table_info(users)")
+            }
+            email_verification_added = "email_verified_at" not in columns
+            additions = (
+                ("email_verified_at", "INTEGER"),
+                ("updated_at", "INTEGER"),
+                ("session_version", "INTEGER NOT NULL DEFAULT 1"),
+                ("last_login_at", "INTEGER"),
+            )
+            for name, definition in additions:
+                if name not in columns:
+                    connection.execute(
+                        "ALTER TABLE users ADD COLUMN {} {}".format(
+                            name,
+                            definition,
+                        )
+                    )
+            if email_verification_added:
+                connection.execute(
+                    "UPDATE users SET email_verified_at = created_at"
+                )
+            connection.execute(
+                "UPDATE users SET updated_at = COALESCE(updated_at, created_at)"
             )
         try:
             os.chmod(self.path, 0o600)
@@ -193,7 +273,9 @@ class AuthStore:
         with self.connect() as connection:
             row = connection.execute(
                 """
-                SELECT id, first_name, last_name, email, role, active, created_at
+                SELECT id, first_name, last_name, email, role, active,
+                       created_at, email_verified_at, updated_at,
+                       session_version, last_login_at
                 FROM users
                 WHERE id = ? AND active = 1
                 """,
@@ -212,12 +294,30 @@ class AuthStore:
                 (normalize_email(email),),
             ).fetchone()
 
-        if row is None or not check_password_hash(
-            row["password_hash"],
-            str(password or ""),
+        if (
+            row is None
+            or row["email_verified_at"] is None
+            or not check_password_hash(
+                row["password_hash"],
+                str(password or ""),
+            )
         ):
             return None
+        now = int(time.time())
+        with self.connect() as connection:
+            connection.execute(
+                "UPDATE users SET last_login_at = ?, updated_at = ? WHERE id = ?",
+                (now, now, row["id"]),
+            )
         return self.get_user(row["id"])
+
+    def get_user_by_email(self, email):
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM users WHERE email_normalized = ? AND active = 1",
+                (normalize_email(email),),
+            ).fetchone()
+        return self._row_dict(row)
 
     def create_initial_admin(
         self,
@@ -237,9 +337,10 @@ class AuthStore:
                     """
                     INSERT INTO users (
                         first_name, last_name, email, email_normalized,
-                        password_hash, role, created_at
+                        password_hash, role, created_at, email_verified_at,
+                        updated_at, session_version
                     )
-                    VALUES (?, ?, ?, ?, ?, 'admin', ?)
+                    VALUES (?, ?, ?, ?, ?, 'admin', ?, ?, ?, 1)
                     """,
                     (
                         first_name.strip(),
@@ -250,6 +351,8 @@ class AuthStore:
                             password,
                             method=PASSWORD_HASH_METHOD,
                         ),
+                        now,
+                        now,
                         now,
                     ),
                 )
@@ -474,6 +577,194 @@ class AuthStore:
 
         return self.get_user(user_id)
 
+    def create_allowed_user(self, email, password):
+        normalized = normalize_email(email)
+        now = int(time.time())
+        token = secrets.token_urlsafe(32)
+        digest = token_digest(token)
+        try:
+            with self.connect() as connection:
+                connection.execute("BEGIN IMMEDIATE")
+                user_count = connection.execute(
+                    "SELECT COUNT(*) FROM users"
+                ).fetchone()[0]
+                role = "admin" if user_count == 0 else "employee"
+                cursor = connection.execute(
+                    """
+                    INSERT INTO users (
+                        first_name, last_name, email, email_normalized,
+                        password_hash, role, active, created_at, updated_at,
+                        session_version
+                    )
+                    VALUES ('', '', ?, ?, ?, ?, 1, ?, ?, 1)
+                    """,
+                    (
+                        str(email).strip(),
+                        normalized,
+                        generate_password_hash(
+                            password,
+                            method=PASSWORD_HASH_METHOD,
+                        ),
+                        role,
+                        now,
+                        now,
+                    ),
+                )
+                user_id = cursor.lastrowid
+                connection.execute(
+                    """
+                    INSERT INTO auth_tokens (
+                        user_id, token_hash, token_type, expires_at, created_at
+                    )
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        user_id,
+                        digest,
+                        TOKEN_EMAIL_VERIFICATION,
+                        now + 24 * 3600,
+                        now,
+                    ),
+                )
+                connection.commit()
+        except sqlite3.IntegrityError as error:
+            raise RegistrationError(
+                "email",
+                "Аккаунт с таким email уже существует.",
+            ) from error
+        return self.get_user_by_email(normalized), token
+
+    def create_token(self, user_id, token_type, lifetime_seconds):
+        token = secrets.token_urlsafe(32)
+        digest = token_digest(token)
+        now = int(time.time())
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(
+                """
+                UPDATE auth_tokens
+                SET used_at = ?
+                WHERE user_id = ? AND token_type = ? AND used_at IS NULL
+                """,
+                (now, user_id, token_type),
+            )
+            connection.execute(
+                """
+                INSERT INTO auth_tokens (
+                    user_id, token_hash, token_type, expires_at, created_at
+                )
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (user_id, digest, token_type, now + lifetime_seconds, now),
+            )
+            connection.commit()
+        return token
+
+    def token_record(self, token, token_type):
+        with self.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT auth_tokens.*, users.email
+                FROM auth_tokens
+                JOIN users ON users.id = auth_tokens.user_id
+                WHERE token_hash = ? AND token_type = ?
+                """,
+                (token_digest(token), token_type),
+            ).fetchone()
+        return self._row_dict(row)
+
+    def verify_email(self, token):
+        digest = token_digest(token)
+        now = int(time.time())
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                """
+                SELECT * FROM auth_tokens
+                WHERE token_hash = ? AND token_type = ?
+                """,
+                (digest, TOKEN_EMAIL_VERIFICATION),
+            ).fetchone()
+            if (
+                row is None
+                or row["used_at"] is not None
+                or row["expires_at"] <= now
+            ):
+                connection.rollback()
+                return False
+            claimed = connection.execute(
+                """
+                UPDATE auth_tokens SET used_at = ?
+                WHERE id = ? AND used_at IS NULL AND expires_at > ?
+                """,
+                (now, row["id"], now),
+            )
+            if claimed.rowcount != 1:
+                connection.rollback()
+                return False
+            connection.execute(
+                """
+                UPDATE users
+                SET email_verified_at = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (now, now, row["user_id"]),
+            )
+            connection.commit()
+        return True
+
+    def reset_password(self, token, password):
+        digest = token_digest(token)
+        now = int(time.time())
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                """
+                SELECT * FROM auth_tokens
+                WHERE token_hash = ? AND token_type = ?
+                """,
+                (digest, TOKEN_PASSWORD_RESET),
+            ).fetchone()
+            if (
+                row is None
+                or row["used_at"] is not None
+                or row["expires_at"] <= now
+            ):
+                connection.rollback()
+                return False
+            claimed = connection.execute(
+                """
+                UPDATE auth_tokens SET used_at = ?
+                WHERE id = ? AND used_at IS NULL AND expires_at > ?
+                """,
+                (now, row["id"], now),
+            )
+            if claimed.rowcount != 1:
+                connection.rollback()
+                return False
+            connection.execute(
+                """
+                UPDATE users
+                SET password_hash = ?, session_version = session_version + 1,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    generate_password_hash(
+                        password,
+                        method=PASSWORD_HASH_METHOD,
+                    ),
+                    now,
+                    row["user_id"],
+                ),
+            )
+            connection.execute(
+                "DELETE FROM auth_sessions WHERE user_id = ?",
+                (row["user_id"],),
+            )
+            connection.commit()
+        return True
+
     def check_rate_limit(self, bucket, limit, window_seconds):
         now = int(time.time())
         cutoff = now - int(window_seconds)
@@ -505,6 +796,146 @@ class AuthStore:
             )
             connection.commit()
         return True
+
+
+class ServerSideSession(dict, SessionMixin):
+    def __init__(self, initial=None, sid=None, new=False):
+        dict.__init__(self, initial or {})
+        self.sid = sid or secrets.token_urlsafe(32)
+        self.new = new
+        self.modified = False
+
+
+class SQLiteSessionInterface(SessionInterface):
+    session_class = ServerSideSession
+
+    def __init__(self, initialized_path=None):
+        self._initialized_paths = set()
+        if initialized_path:
+            self._initialized_paths.add(str(initialized_path))
+
+    @staticmethod
+    def _hash(sid):
+        return hashlib.sha256(sid.encode("utf-8")).hexdigest()
+
+    def _connect(self, app=None):
+        application = app or current_app
+        connection = sqlite3.connect(
+            application.config["AUTH_DATABASE"],
+            timeout=15,
+            isolation_level=None,
+        )
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA busy_timeout = 15000")
+        return connection
+
+    def open_session(self, app, request):
+        cookie_name = app.config.get("SESSION_COOKIE_NAME", "session")
+        sid = request.cookies.get(cookie_name, "")
+        if not sid or len(sid) > 128:
+            return self.session_class(new=True)
+        now = int(time.time())
+        try:
+            database_path = str(app.config["AUTH_DATABASE"])
+            if database_path not in self._initialized_paths:
+                AuthStore(database_path)
+                self._initialized_paths.add(database_path)
+            with self._connect(app) as connection:
+                row = connection.execute(
+                    """
+                    SELECT data FROM auth_sessions
+                    WHERE session_hash = ? AND expires_at > ?
+                    """,
+                    (self._hash(sid), now),
+                ).fetchone()
+        except sqlite3.Error:
+            LOGGER.exception("Не удалось открыть серверную сессию ERP")
+            return self.session_class(new=True)
+        if row is None:
+            return self.session_class(new=True)
+        try:
+            data = json.loads(row["data"])
+        except (TypeError, ValueError):
+            data = {}
+        return self.session_class(data, sid=sid)
+
+    def save_session(self, app, session_object, response):
+        cookie_name = app.config.get("SESSION_COOKIE_NAME", "session")
+        domain = app.config.get("SESSION_COOKIE_DOMAIN")
+        path = app.config.get("SESSION_COOKIE_PATH") or "/"
+        session_hash = self._hash(session_object.sid)
+        if not session_object:
+            with self._connect(app) as connection:
+                connection.execute(
+                    "DELETE FROM auth_sessions WHERE session_hash = ?",
+                    (session_hash,),
+                )
+            response.delete_cookie(cookie_name, domain=domain, path=path)
+            return
+
+        now = int(time.time())
+        lifetime = int(app.permanent_session_lifetime.total_seconds())
+        expires_at = now + lifetime
+        payload = json.dumps(dict(session_object), ensure_ascii=False)
+        user_id = session_object.get("user_id")
+        with self._connect(app) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(
+                "DELETE FROM auth_sessions WHERE expires_at <= ?",
+                (now,),
+            )
+            connection.execute(
+                """
+                INSERT OR REPLACE INTO auth_sessions (
+                    session_hash, user_id, data, expires_at, created_at,
+                    updated_at
+                )
+                VALUES (
+                    ?, ?, ?, ?,
+                    COALESCE((
+                        SELECT created_at FROM auth_sessions
+                        WHERE session_hash = ?
+                    ), ?), ?
+                )
+                """,
+                (
+                    session_hash,
+                    user_id,
+                    payload,
+                    expires_at,
+                    session_hash,
+                    now,
+                    now,
+                ),
+            )
+            connection.commit()
+        response.set_cookie(
+            cookie_name,
+            session_object.sid,
+            expires=datetime.utcfromtimestamp(expires_at),
+            httponly=True,
+            secure=app.config.get("SESSION_COOKIE_SECURE", False),
+            samesite=app.config.get("SESSION_COOKIE_SAMESITE", "Lax"),
+            domain=domain,
+            path=path,
+        )
+
+    def destroy(self, sid):
+        if not sid:
+            return
+        with self._connect() as connection:
+            connection.execute(
+                "DELETE FROM auth_sessions WHERE session_hash = ?",
+                (self._hash(sid),),
+            )
+
+
+def regenerate_session():
+    old_sid = getattr(session, "sid", None)
+    current_app.session_interface.destroy(old_sid)
+    session.clear()
+    session.sid = secrets.token_urlsafe(32)
+    session.modified = True
 
 
 def get_auth_store():
@@ -585,37 +1016,10 @@ def _rate_allowed(scope, session_limit, window=900):
     return session_allowed and office_allowed
 
 
-def _validate_registration(form, invitation):
-    values = {
-        "first_name": str(form.get("first_name") or "").strip(),
-        "last_name": str(form.get("last_name") or "").strip(),
-        "email": str(form.get("email") or "").strip(),
-    }
+def _validate_password(form):
     password = str(form.get("password") or "")
     password_confirmation = str(form.get("password_confirmation") or "")
     errors = {}
-
-    if not values["first_name"]:
-        errors["first_name"] = "Укажите имя."
-    elif len(values["first_name"]) > 80:
-        errors["first_name"] = "Имя не должно быть длиннее 80 символов."
-
-    if not values["last_name"]:
-        errors["last_name"] = "Укажите фамилию."
-    elif len(values["last_name"]) > 80:
-        errors["last_name"] = "Фамилия не должна быть длиннее 80 символов."
-
-    if len(values["email"]) > 254 or not EMAIL_PATTERN.fullmatch(
-        values["email"]
-    ):
-        errors["email"] = "Введите корректный email."
-    elif (
-        invitation
-        and invitation["email_normalized"]
-        and invitation["email_normalized"] != normalize_email(values["email"])
-    ):
-        errors["email"] = "Используйте email, указанный в приглашении."
-
     if len(password) < 8:
         errors["password"] = "Пароль должен содержать не менее 8 символов."
     elif len(password) > 128:
@@ -625,11 +1029,97 @@ def _validate_registration(form, invitation):
 
     if password != password_confirmation:
         errors["password_confirmation"] = "Пароли не совпадают."
+    return password, errors
 
-    if form.get("terms") != "1":
-        errors["terms"] = "Подтвердите согласие с правилами и обработкой данных."
 
-    return values, password, errors
+def _validate_registration(form):
+    email = str(form.get("email") or "").strip()
+    password, errors = _validate_password(form)
+    normalized = normalize_email(email)
+    if len(email) > 254 or not EMAIL_PATTERN.fullmatch(email):
+        errors["email"] = "Введите корректный email."
+    elif normalized not in current_app.config["TICTACTOY_ALLOWED_EMAILS"]:
+        errors["email"] = "Регистрация для этого email недоступна."
+    return {"email": email}, password, errors
+
+
+def _auth_link(path):
+    public_url = current_app.config.get("APP_PUBLIC_URL", "").rstrip("/")
+    if public_url:
+        return public_url + path
+    return request.url_root.rstrip("/") + path
+
+
+def _send_auth_email(recipient, subject, body, development_link):
+    outbox = current_app.config.get("AUTH_EMAIL_OUTBOX")
+    if outbox is not None:
+        outbox.append({
+            "to": recipient,
+            "subject": subject,
+            "body": body,
+            "link": development_link,
+        })
+        return True
+
+    host = current_app.config.get("SMTP_HOST", "")
+    sender = current_app.config.get("SMTP_FROM", "")
+    if not host or not sender:
+        if current_app.debug and current_app.config.get("AUTH_DEV_EMAIL_LOG"):
+            LOGGER.warning("DEV auth link: %s", development_link)
+            return True
+        LOGGER.error("Письмо авторизации не отправлено: SMTP не настроен")
+        return False
+
+    message = EmailMessage()
+    message["Subject"] = subject
+    message["From"] = sender
+    message["To"] = recipient
+    message.set_content(body)
+    try:
+        smtp = smtplib.SMTP(
+            host,
+            current_app.config.get("SMTP_PORT", 587),
+            timeout=15,
+        )
+        try:
+            if current_app.config.get("SMTP_USE_TLS", True):
+                smtp.starttls()
+            username = current_app.config.get("SMTP_USERNAME", "")
+            password = current_app.config.get("SMTP_PASSWORD", "")
+            if username:
+                smtp.login(username, password)
+            smtp.send_message(message)
+        finally:
+            smtp.quit()
+    except Exception as error:
+        LOGGER.error(
+            "Ошибка отправки письма авторизации через SMTP: %s",
+            type(error).__name__,
+        )
+        return False
+    return True
+
+
+def _send_verification(user, token):
+    link = _auth_link("/verify-email/" + token)
+    return _send_auth_email(
+        user["email"],
+        "Подтверждение email — TicTacToy ERP",
+        "Подтвердите email, открыв одноразовую ссылку (действует 24 часа):\n\n"
+        + link,
+        link,
+    )
+
+
+def _send_password_reset(user, token):
+    link = _auth_link("/reset-password/" + token)
+    return _send_auth_email(
+        user["email"],
+        "Восстановление пароля — TicTacToy ERP",
+        "Установите новый пароль по одноразовой ссылке (действует 30 минут):\n\n"
+        + link,
+        link,
+    )
 
 
 @auth.route("/register", methods=["GET", "POST"])
@@ -637,85 +1127,42 @@ def register():
     if current_auth_user():
         return redirect("/")
 
-    store = get_auth_store()
-    next_url = safe_next_url(
-        request.values.get("next"),
-        session.get("_auth_next", "/"),
-    )
-    session["_auth_next"] = next_url
-
-    pending_hash = session.get("_pending_invitation")
-    invitation = store.get_invitation(pending_hash)
-    if invitation and invitation["status"] != "active":
-        invitation = None
-        session.pop("_pending_invitation", None)
-
     values = {}
-    if invitation and invitation["email"]:
-        values["email"] = invitation["email"]
-
     errors = {}
-    register_error = session.pop("_register_error", None)
-    if register_error:
-        errors["invitation"] = register_error
-
     if request.method == "POST":
-        require_csrf()
         if not _rate_allowed(
             "registration",
             current_app.config.get("REGISTRATION_RATE_LIMIT", 8),
         ):
             return render_template(
                 "register.html",
-                errors={"invitation": "Слишком много попыток. Попробуйте позже."},
+                errors={"form": "Слишком много попыток. Попробуйте позже."},
                 values=request.form,
-                invitation=invitation,
                 rate_limited=True,
             ), 429
-
-        submitted_code = str(request.form.get("invitation_code") or "").strip()
-        if not invitation and submitted_code:
-            pending_hash = invitation_digest(submitted_code)
-            invitation = store.get_invitation(pending_hash)
-            if invitation and invitation["status"] == "active":
-                session["_pending_invitation"] = pending_hash
-            else:
-                invitation = None
-
-        values, password, errors = _validate_registration(
-            request.form,
-            invitation,
-        )
-        if not invitation:
-            errors["invitation"] = (
-                "Приглашение недействительно или срок его действия истёк."
-            )
+        values, password, errors = _validate_registration(request.form)
 
         if not errors:
             try:
-                user = store.register_user(
-                    pending_hash,
-                    values["first_name"],
-                    values["last_name"],
-                    values["email"],
-                    password,
+                user, token = get_auth_store().create_allowed_user(
+                    values["email"], password
                 )
             except RegistrationError as error:
                 errors[error.field] = error.message
             else:
-                target = safe_next_url(session.get("_auth_next"), "/")
-                session.clear()
-                session["user_id"] = user["id"]
-                session.permanent = True
-                session["_registration_target"] = target
-                csrf_token()
-                return redirect(url_for("auth.registration_success"))
+                _send_verification(user, token)
+                return render_template(
+                    "auth_message.html",
+                    title="Подтвердите email",
+                    message="Мы отправили ссылку подтверждения на указанный email.",
+                    action_url=url_for("auth.login"),
+                    action_label="Перейти ко входу",
+                )
 
     return render_template(
         "register.html",
         errors=errors,
         values=values,
-        invitation=invitation,
         rate_limited=False,
     )
 
@@ -750,12 +1197,80 @@ def accept_invitation():
 
 @auth.route("/register/success")
 def registration_success():
-    if not current_auth_user():
-        return redirect(url_for("auth.login"))
+    return redirect(url_for("auth.login"))
+
+
+@auth.route("/verify-email/<token>")
+def verify_email(token):
+    verified = get_auth_store().verify_email(token)
     return render_template(
-        "registration_success.html",
-        target=safe_next_url(session.pop("_registration_target", "/"), "/"),
+        "auth_message.html",
+        title="Email подтверждён" if verified else "Ссылка недействительна",
+        message=(
+            "Теперь вы можете войти в TicTacToy ERP."
+            if verified
+            else "Ссылка уже использована или срок её действия истёк."
+        ),
+        action_url=url_for("auth.login"),
+        action_label="Войти",
+    ), 200 if verified else 400
+
+
+@auth.post("/resend-verification")
+def resend_verification():
+    if _rate_allowed(
+        "verification-resend",
+        current_app.config.get("PASSWORD_RESET_RATE_LIMIT", 5),
+    ):
+        user = get_auth_store().get_user_by_email(request.form.get("email"))
+        if user and user["email_verified_at"] is None:
+            token = get_auth_store().create_token(
+                user["id"], TOKEN_EMAIL_VERIFICATION, 24 * 3600
+            )
+            _send_verification(user, token)
+    return redirect(url_for("auth.login", notice="verification-sent"))
+
+
+@auth.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password():
+    sent = False
+    if request.method == "POST":
+        if _rate_allowed(
+            "password-reset",
+            current_app.config.get("PASSWORD_RESET_RATE_LIMIT", 5),
+        ):
+            user = get_auth_store().get_user_by_email(request.form.get("email"))
+            if user and user["email_verified_at"] is not None:
+                token = get_auth_store().create_token(
+                    user["id"], TOKEN_PASSWORD_RESET, 30 * 60
+                )
+                _send_password_reset(user, token)
+        sent = True
+    return render_template("forgot_password.html", sent=sent)
+
+
+@auth.route("/reset-password/<token>", methods=["GET", "POST"])
+def reset_password(token):
+    record = get_auth_store().token_record(token, TOKEN_PASSWORD_RESET)
+    valid = bool(
+        record
+        and record["used_at"] is None
+        and record["expires_at"] > int(time.time())
     )
+    errors = {}
+    if request.method == "POST" and valid:
+        password, errors = _validate_password(request.form)
+        if not errors:
+            if get_auth_store().reset_password(token, password):
+                regenerate_session()
+                return redirect(url_for("auth.login", notice="password-changed"))
+            valid = False
+    return render_template(
+        "reset_password.html",
+        token=token,
+        valid=valid,
+        errors=errors,
+    ), 200 if valid else 400
 
 
 @auth.route("/login", methods=["GET", "POST"])
@@ -766,9 +1281,9 @@ def login():
     next_url = safe_next_url(request.values.get("next"), "/")
     error = ""
     email = ""
+    notice = request.args.get("notice", "")
 
     if request.method == "POST":
-        require_csrf()
         email = str(request.form.get("email") or "").strip()
         if not _rate_allowed(
             "login",
@@ -781,15 +1296,28 @@ def login():
                 next_url=next_url,
             ), 429
 
-        user = get_auth_store().authenticate(
+        store = get_auth_store()
+        user = store.authenticate(
             email,
             request.form.get("password"),
         )
         if user is None:
-            error = "Неверный email или пароль."
+            candidate = store.get_user_by_email(email)
+            if (
+                candidate
+                and candidate["email_verified_at"] is None
+                and check_password_hash(
+                    candidate["password_hash"],
+                    str(request.form.get("password") or ""),
+                )
+            ):
+                error = "Сначала подтвердите email по ссылке из письма."
+            else:
+                error = "Неверный email или пароль."
         else:
-            session.clear()
+            regenerate_session()
             session["user_id"] = user["id"]
+            session["session_version"] = user["session_version"]
             session.permanent = True
             csrf_token()
             return redirect(next_url)
@@ -799,12 +1327,13 @@ def login():
         error=error,
         email=email,
         next_url=next_url,
+        notice=notice,
     )
 
 
 @auth.post("/logout")
 def logout():
-    require_csrf()
+    regenerate_session()
     session.clear()
     return redirect(url_for("auth.login"))
 
@@ -865,16 +1394,9 @@ def revoke_invitation(invitation_id):
 
 
 def settings_invitation_context():
-    user = current_auth_user()
-    if not user or user["role"] != "admin":
-        return {
-            "can_manage_invitations": False,
-            "invitations": [],
-            "invitation_roles": ALLOWED_ROLES,
-        }
     return {
-        "can_manage_invitations": True,
-        "invitations": get_auth_store().list_invitations(),
+        "can_manage_invitations": False,
+        "invitations": [],
         "invitation_roles": ALLOWED_ROLES,
     }
 
@@ -889,39 +1411,74 @@ def configure_auth(app, project_root):
         os.getenv("ERP_AUTH_DATABASE", "").strip()
         or str(project_root / "instance" / "auth.db"),
     )
+    app.config["TICTACTOY_ALLOWED_EMAILS"] = allowed_emails(
+        os.getenv("TICTACTOY_ALLOWED_EMAILS", "")
+    )
+    app.config["SMTP_HOST"] = os.getenv("SMTP_HOST", "").strip()
+    try:
+        app.config["SMTP_PORT"] = int(os.getenv("SMTP_PORT", "587") or 587)
+    except ValueError:
+        app.config["SMTP_PORT"] = 587
+    app.config["SMTP_USERNAME"] = os.getenv("SMTP_USERNAME", "").strip()
+    app.config["SMTP_PASSWORD"] = os.getenv("SMTP_PASSWORD", "")
+    app.config["SMTP_FROM"] = os.getenv("SMTP_FROM", "").strip()
+    app.config["SMTP_USE_TLS"] = (
+        os.getenv("SMTP_USE_TLS", "true").strip().lower()
+        in ("1", "true", "yes", "on")
+    )
+    app.config["APP_PUBLIC_URL"] = os.getenv("APP_PUBLIC_URL", "").strip()
+    app.config["AUTH_DEV_EMAIL_LOG"] = (
+        os.getenv("AUTH_DEV_EMAIL_LOG", "false").strip().lower()
+        in ("1", "true", "yes", "on")
+    )
     app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(hours=12)
     app.config["SESSION_COOKIE_HTTPONLY"] = True
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
     app.config["SESSION_COOKIE_SECURE"] = (
         os.getenv("ERP_SESSION_COOKIE_SECURE", "1").strip() != "0"
     )
+    AuthStore(app.config["AUTH_DATABASE"])
+    app.session_interface = SQLiteSessionInterface(app.config["AUTH_DATABASE"])
     app.register_blueprint(auth)
 
     @app.before_request
     def load_user_and_protect_erp():
         g.current_user = get_auth_store().get_user(session.get("user_id"))
-        if session.get("user_id") and not g.current_user:
+        if (
+            current_app.config.get("AUTH_TESTING")
+            and g.current_user
+            and session.get("session_version") is None
+        ):
+            session["session_version"] = g.current_user["session_version"]
+        if (
+            session.get("user_id")
+            and (
+                not g.current_user
+                or session.get("session_version")
+                != g.current_user.get("session_version")
+            )
+        ):
             session.clear()
+            g.current_user = None
 
         if not auth_is_enabled():
             return None
-        if request.endpoint in PUBLIC_ENDPOINTS:
-            return None
-        if g.current_user:
-            return None
-        if request.path.startswith("/api/"):
-            return jsonify({
-                "code": "AUTH_REQUIRED",
-                "message": "Требуется авторизация.",
-            }), 401
-        if request.path == "/":
-            return redirect(url_for("auth.register"))
-        return redirect(
-            url_for(
-                "auth.login",
-                next=safe_next_url(request.full_path.rstrip("?"), "/"),
+        is_public = request.endpoint in PUBLIC_ENDPOINTS
+        if not is_public and not g.current_user:
+            if request.path.startswith("/api/"):
+                return jsonify({
+                    "code": "AUTH_REQUIRED",
+                    "message": "Требуется авторизация.",
+                }), 401
+            return redirect(
+                url_for(
+                    "auth.login",
+                    next=safe_next_url(request.full_path.rstrip("?"), "/"),
+                )
             )
-        )
+        if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+            require_csrf()
+        return None
 
     @app.context_processor
     def inject_auth_context():

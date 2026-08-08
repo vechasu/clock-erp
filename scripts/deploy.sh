@@ -256,9 +256,20 @@ if [[ -f instance/repair_cases.json ]]; then
         --apply
 fi
 
-if [[ -f instance/catalog.db ]]; then
+if [[ -f instance/auth.db ]]; then
     systemctl stop "$SERVICE_NAME"
     SERVICE_STOPPED=1
+    "$PYTHON_BIN" scripts/migrate_auth_mvp.py \
+        --database instance/auth.db \
+        --backup-dir "$BACKUP_DIR/auth-migrations" \
+        --apply
+fi
+
+if [[ -f instance/catalog.db ]]; then
+    if [[ "$SERVICE_STOPPED" != "1" ]]; then
+        systemctl stop "$SERVICE_NAME"
+        SERVICE_STOPPED=1
+    fi
     "$PYTHON_BIN" scripts/migrate_unified_catalog.py \
         --database instance/catalog.db \
         --backup-dir "$BACKUP_DIR/catalog-migrations" \
