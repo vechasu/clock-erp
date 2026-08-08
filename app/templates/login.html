@@ -12,6 +12,11 @@
     {% if error %}
         <div class="auth-alert" role="alert">{{ error }}</div>
     {% endif %}
+    {% if notice == "password-changed" %}
+        <div class="invitation-confirmed" role="status">Пароль изменён. Войдите с новым паролем.</div>
+    {% elif notice == "verification-sent" %}
+        <div class="invitation-confirmed" role="status">Если аккаунт ожидает подтверждения, мы отправили новое письмо.</div>
+    {% endif %}
 
     <form class="auth-form" method="post" novalidate>
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -63,6 +68,14 @@
         </div>
     </form>
 
+    <p class="auth-switch"><a href="{{ url_for('auth.forgot_password') }}">Забыли пароль?</a></p>
+
+    <form id="resendVerificationForm" method="post" action="{{ url_for('auth.resend_verification') }}" class="auth-switch">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="email" value="{{ email }}">
+        <button class="auth-link-button" type="submit">Отправить письмо подтверждения повторно</button>
+    </form>
+
     <p class="auth-switch">
         Нет аккаунта?
         <a href="{{ url_for('auth.register', next=next_url) }}">
@@ -84,6 +97,15 @@
                 "aria-label",
                 show ? "Скрыть пароль" : "Показать пароль"
             );
+        });
+        const form = button.closest("form");
+        form.addEventListener("submit", () => {
+            const submit = form.querySelector("[type='submit']");
+            submit.disabled = true;
+            submit.textContent = "Входим…";
+        });
+        document.getElementById("resendVerificationForm").addEventListener("submit", function () {
+            this.querySelector("[name='email']").value = document.getElementById("email").value;
         });
     })();
 </script>
