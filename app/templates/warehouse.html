@@ -71,6 +71,21 @@
             font-size: 15px;
             font-weight: 800;
             border: 1px solid transparent;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            overflow-wrap: anywhere;
+        }
+
+        .notice-icon {
+            width: 20px;
+            height: 20px;
+            flex: 0 0 20px;
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
         }
 
         .notice-success {
@@ -79,7 +94,8 @@
             border-color: #bbf7d0;
         }
 
-        .notice-error {
+        .notice-error,
+        .notice-danger {
             background: #fee2e2;
             color: #991b1b;
             border-color: #fecaca;
@@ -4408,7 +4424,18 @@
                 <div
                     id="pageNotice"
                     class="notice notice-{{ request.args.get('notice') }}"
+                    role="status"
+                    aria-live="polite"
                 >
+                    {% if request.args.get("notice") == "danger" %}
+                        <svg class="notice-icon" viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M3 6h18"></path>
+                            <path d="M8 6V4h8v2"></path>
+                            <path d="M19 6l-1 14H6L5 6"></path>
+                            <path d="M10 11v6"></path>
+                            <path d="M14 11v6"></path>
+                        </svg>
+                    {% endif %}
                     {{ request.args.get("message") }}
                 </div>
             {% endif %}
@@ -8526,6 +8553,41 @@
 
 
     <script>
+        function showWarehouseNotice(message, variant) {
+            const existing = document.getElementById("pageNotice");
+            if (existing) {
+                existing.remove();
+            }
+
+            const notice = document.createElement("div");
+            notice.id = "pageNotice";
+            notice.className = "notice notice-" + variant;
+            notice.setAttribute("role", "status");
+            notice.setAttribute("aria-live", "polite");
+
+            if (variant === "danger") {
+                notice.innerHTML = [
+                    '<svg class="notice-icon" viewBox="0 0 24 24" aria-hidden="true">',
+                    '<path d="M3 6h18"></path>',
+                    '<path d="M8 6V4h8v2"></path>',
+                    '<path d="M19 6l-1 14H6L5 6"></path>',
+                    '<path d="M10 11v6"></path>',
+                    '<path d="M14 11v6"></path>',
+                    '</svg>'
+                ].join("");
+            }
+
+            const text = document.createElement("span");
+            text.textContent = message;
+            notice.appendChild(text);
+
+            const header = document.querySelector(".erp-workspace-header");
+            if (header) {
+                header.insertAdjacentElement("afterend", notice);
+            }
+            hideWarehouseNotice();
+        }
+
         async function archiveWarehouseProduct(event, form) {
             event.preventDefault();
 
@@ -8653,6 +8715,11 @@
                     }
                 }
 
+                showWarehouseNotice(
+                    data.message || "Товар удалён",
+                    "danger"
+                );
+
                 return false;
             } catch (error) {
                 form.dataset.submitting = "0";
@@ -8669,6 +8736,62 @@
             }
         }
     </script>
+
+    {% if warehouse_delete_feedback_e2e %}
+    <script>
+        window.addEventListener("load", async function() {
+            const row = Array.from(
+                document.querySelectorAll('tr[data-product-id]')
+            ).find(function(candidate) {
+                return Number(candidate.dataset.stock || 0) === 0;
+            });
+            const form = row ? row.querySelector('form[action="/warehouse/archive"]') : null;
+
+            if (!row || !form) {
+                document.body.dataset.warehouseDeleteFeedbackE2eError =
+                    "Не найден товар с нулевым остатком";
+                return;
+            }
+
+            const deletedProductId = row.dataset.productId;
+            window.confirm = function() { return true; };
+            window.fetch = async function() {
+                return {
+                    ok: true,
+                    json: async function() {
+                        return { ok: true, message: "Товар удалён" };
+                    }
+                };
+            };
+            await archiveWarehouseProduct(
+                { preventDefault: function() {} },
+                form
+            );
+
+            const notice = document.getElementById("pageNotice");
+            const removed = !document.querySelector(
+                'tr[data-product-id="' + deletedProductId + '"]'
+            );
+            const fitsViewport = notice
+                && notice.getBoundingClientRect().right <= window.innerWidth
+                && notice.getBoundingClientRect().left >= 0;
+
+            if (
+                notice
+                && notice.textContent.trim() === "Товар удалён"
+                && notice.classList.contains("notice-danger")
+                && notice.querySelector(".notice-icon")
+                && removed
+                && fitsViewport
+            ) {
+                document.body.dataset.warehouseDeleteFeedbackE2e = "pass";
+            } else {
+                document.body.dataset.warehouseDeleteFeedbackE2eError =
+                    "Некорректное уведомление или строка осталась в таблице";
+            }
+        });
+    </script>
+    {% endif %}
 
 
     <script>
