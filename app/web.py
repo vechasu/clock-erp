@@ -4980,13 +4980,23 @@ SALES_TABLE_COLUMNS = {
     ],
 }
 
+SALE_STATUS_PRESENTATIONS = {
+    "processing": {"label": "В обработке", "tone": "neutral"},
+    "shipped": {"label": "Отправлен", "tone": "neutral"},
+    "completed": {"label": "Завершён успешно", "tone": "success"},
+    "refusal": {"label": "Отказ", "tone": "danger"},
+    "cancelled": {"label": "Отменён", "tone": "warning"},
+    "partially_returned": {
+        "label": "Частичный возврат", "tone": "warning",
+    },
+    "returned": {"label": "Возврат", "tone": "danger"},
+    "deleted": {"label": "Удалён", "tone": "destructive"},
+}
+
 SALE_STATUS_LABELS = {
-    "processing": "В обработке",
-    "shipped": "Отправлен",
-    "completed": "Завершён",
-    "cancelled": "Отменён",
-    "partially_returned": "Частичный возврат",
-    "returned": "Возврат",
+    value: presentation["label"]
+    for value, presentation in SALE_STATUS_PRESENTATIONS.items()
+    if value not in {"refusal", "deleted"}
 }
 
 SALE_STATUS_ALIAS_MAP = {
@@ -5330,11 +5340,63 @@ def get_sale_platform_options(sales=None):
 def normalize_sale_status(value):
     status = str(value or "completed").strip().lower()
     status = SALE_STATUS_ALIAS_MAP.get(status, status)
-    return status if status in SALE_STATUS_LABELS else "completed"
+    return status
+
+
+def get_sale_status_presentation(sale_or_status):
+    sale = sale_or_status if isinstance(sale_or_status, dict) else {}
+    raw_status = (
+        sale.get("order_status") or sale.get("status")
+        if sale
+        else sale_or_status
+    )
+    normalized = normalize_sale_status(raw_status)
+    cancellation_reason = str(
+        sale.get("cancellation_reason") or ""
+    ).strip().casefold()
+
+    if sale.get("deleted_at"):
+        display_status = "deleted"
+    elif (
+        normalized == "cancelled"
+        and cancellation_reason in {"customer_refused", "клиент отказался"}
+    ):
+        display_status = "refusal"
+    else:
+        display_status = normalized
+
+    presentation = SALE_STATUS_PRESENTATIONS.get(display_status)
+    if presentation is None:
+        raw_label = str(raw_status or "").strip()
+        presentation = {
+            "label": raw_label or "Неизвестный статус",
+            "tone": "neutral",
+        }
+
+    tone = presentation["tone"]
+    return {
+        "value": display_status,
+        "raw_value": str(raw_status or "").strip(),
+        "label": presentation["label"],
+        "tone": tone,
+        "css_class": "sale-status-badge--{}".format(tone),
+    }
+
+
+def decorate_sale_status(sale):
+    presentation = get_sale_status_presentation(sale)
+    sale.update({
+        "order_status_display": presentation["value"],
+        "order_status_label": presentation["label"],
+        "order_status_tone": presentation["tone"],
+        "order_status_class": presentation["css_class"],
+    })
+    return sale
 
 
 def normalize_sale_status_filter(value):
-    return normalize_sale_status(value)
+    status = normalize_sale_status(value)
+    return status if status in {*SALE_STATUS_LABELS, "refusal"} else ""
 
 
 def sale_is_cancelled(sale):
@@ -6231,8 +6293,9 @@ def respond_to_sales_action(
         == "XMLHttpRequest"
     ):
         return jsonify(
-            ok=notice == "success",
+            ok=notice != "error",
             message=message,
+            notice=notice,
         ), status_code
 
     return redirect_to_sales(
@@ -7289,12 +7352,16 @@ def sale_delete():
                 str(error), notice="error", status_code=409,
             )
         _cached_api_sales_records.cache_clear()
-        return respond_to_sales_action("Запись удалена")
+        return respond_to_sales_action(
+            "Продажа удалена", notice="destructive",
+        )
 
     if sale_type == "automatic":
         deleted_override = load_automatic_sales_overrides().get(sale_id) or {}
         if deleted_override.get("deleted_at"):
-            return respond_to_sales_action("Запись удалена")
+            return respond_to_sales_action(
+                "Продажа удалена", notice="destructive",
+            )
 
     record = _sales_action_record(sale_id, sale_type)
     if record is None:
@@ -7330,7 +7397,9 @@ def sale_delete():
             "Неизвестный тип продажи", notice="error", status_code=400,
         )
     _cached_api_sales_records.cache_clear()
-    return respond_to_sales_action("Запись удалена")
+    return respond_to_sales_action(
+        "Продажа удалена", notice="destructive",
+    )
 
 
 @app.route("/sales/return", methods=["POST"])
@@ -7776,9 +7845,9 @@ def build_sales_report_records(
             "order_status": normalize_sale_status(
                 override.get("order_status")
             ),
-            "order_status_label": SALE_STATUS_LABELS[
-                normalize_sale_status(override.get("order_status"))
-            ],
+            "order_status_label": get_sale_status_presentation(
+                override
+            )["label"],
             "is_cancelled": (
                 normalize_sale_status(override.get("order_status"))
                 == "cancelled"
@@ -8013,9 +8082,12 @@ def build_sales_report_records(
             ),
             "commission_type": "fixed_rub",
             "order_status": "cancelled" if is_cancelled else return_status,
-            "order_status_label": SALE_STATUS_LABELS[
-                "cancelled" if is_cancelled else return_status
-            ],
+            "order_status_label": get_sale_status_presentation({
+                **stored_sale,
+                "order_status": (
+                    "cancelled" if is_cancelled else return_status
+                ),
+            })["label"],
             "is_cancelled": is_cancelled,
             "cancelled_at": str(
                 stored_sale.get("cancelled_at") or ""
@@ -8044,6 +8116,7 @@ def build_sales_report_records(
     sales = manual_sales + automatic_sales
 
     for sale in sales:
+        decorate_sale_status(sale)
         if normalize_sales_source_key(sale.get("source")) == "amazon":
             sale["country"] = normalize_amazon_country(
                 sale.get("country")
@@ -8148,7 +8221,7 @@ def get_sales_report_filters():
         filters["status"] = normalize_sale_status_filter(
             filters["status"]
         )
-        if filters["status"] not in SALE_STATUS_LABELS:
+        if filters["status"] not in {*SALE_STATUS_LABELS, "refusal"}:
             filters["status"] = ""
 
     return filters
@@ -8254,8 +8327,9 @@ def build_sales_filter_options(sales, filters):
             product_items, "product_id", "product"
         ),
         "statuses": [
-            {"value": value, "label": label}
-            for value, label in SALE_STATUS_LABELS.items()
+            {"value": value, "label": presentation["label"]}
+            for value, presentation in SALE_STATUS_PRESENTATIONS.items()
+            if value != "deleted"
         ],
         "sources": [
             {"value": tab["key"], "label": tab["label"]}
@@ -8377,7 +8451,7 @@ def filter_sales_report_records(sales, filters):
 
         if (
             filters.get("status")
-            and normalize_sale_status(sale.get("order_status"))
+            and get_sale_status_presentation(sale)["value"]
             != filters["status"]
         ):
             continue
@@ -9264,9 +9338,9 @@ def build_legacy_sales_page():
             "order_status": normalize_sale_status(
                 override.get("order_status")
             ),
-            "order_status_label": SALE_STATUS_LABELS[
-                normalize_sale_status(override.get("order_status"))
-            ],
+            "order_status_label": get_sale_status_presentation(
+                override
+            )["label"],
             "is_cancelled": (
                 normalize_sale_status(override.get("order_status"))
                 == "cancelled"
@@ -9369,9 +9443,9 @@ def build_legacy_sales_page():
             "order_status": normalize_sale_status(
                 stored_sale.get("order_status")
             ),
-            "order_status_label": SALE_STATUS_LABELS[
-                normalize_sale_status(stored_sale.get("order_status"))
-            ],
+            "order_status_label": get_sale_status_presentation(
+                stored_sale
+            )["label"],
             "is_cancelled": sale_is_cancelled(stored_sale),
             "cancelled_at": stored_sale.get("cancelled_at") or "",
             "sticker_number": stored_sale.get("sticker_number") or "",
@@ -9381,6 +9455,8 @@ def build_legacy_sales_page():
         })
 
     sales = manual_sales + automatic_sales
+    for sale in sales:
+        decorate_sale_status(sale)
 
     active_sales = [
         sale for sale in sales if not sale.get("is_cancelled")
@@ -15561,6 +15637,7 @@ API_SALE_TEXT_FIELDS = (
 
 
 def serialize_api_sale(sale):
+    status_presentation = get_sale_status_presentation(sale)
     result = {
         "id": str(sale.get("id") or ""),
         "sale_type": str(sale.get("sale_type") or ""),
@@ -15617,13 +15694,10 @@ def serialize_api_sale(sale):
             else None
         ),
         "order_status": str(sale.get("order_status") or "completed"),
-        "order_status_label": str(
-            sale.get("order_status_label")
-            or SALE_STATUS_LABELS.get(
-                normalize_sale_status(sale.get("order_status")),
-                "",
-            )
-        ),
+        "order_status_display": status_presentation["value"],
+        "order_status_label": status_presentation["label"],
+        "order_status_tone": status_presentation["tone"],
+        "order_status_class": status_presentation["css_class"],
         "is_cancelled": bool(sale.get("is_cancelled")),
         "cancelled_at": str(sale.get("cancelled_at") or ""),
         "track_number": str(sale.get("track_number") or ""),
@@ -15996,7 +16070,10 @@ def api_sales_collection():
     if date_to:
         sales = [item for item in sales if str(item.get("created_at") or "")[:10] <= date_to]
     if status:
-        sales = [item for item in sales if item.get("order_status") == status]
+        sales = [
+            item for item in sales
+            if get_sale_status_presentation(item)["value"] == status
+        ]
     if sale_type:
         sales = [item for item in sales if item.get("sale_type") == sale_type]
     if brand:

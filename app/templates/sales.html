@@ -65,7 +65,8 @@
             color: #166534;
         }
 
-        .notice-error {
+        .notice-error,
+        .notice-destructive {
             border: 1px solid #fca5a5;
             background: #fee2e2;
             color: #991b1b;
@@ -387,6 +388,71 @@
             font-size: 11px;
             font-weight: 800;
             white-space: nowrap;
+        }
+
+        .sale-status-badge {
+            display: inline-flex;
+            max-width: 100%;
+            min-height: 24px;
+            align-items: center;
+            gap: 6px;
+            padding: 3px 9px;
+            overflow: hidden;
+            border: 1px solid transparent;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 800;
+            line-height: 1.35;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .sale-status-badge::before {
+            width: 6px;
+            height: 6px;
+            flex: 0 0 6px;
+            border-radius: 50%;
+            background: currentColor;
+            content: "";
+        }
+
+        .sale-status-badge--success {
+            border-color: #bbf7d0;
+            background: #f0fdf4;
+            color: #166534;
+        }
+
+        .sale-status-badge--danger {
+            border-color: #fecaca;
+            background: #fef2f2;
+            color: #b91c1c;
+        }
+
+        .sale-status-badge--warning {
+            border-color: #fed7aa;
+            background: #fff7ed;
+            color: #c2410c;
+        }
+
+        .sale-status-badge--destructive {
+            border-color: #fecdd3;
+            background: #fff1f2;
+            color: #9f1239;
+            opacity: 0.82;
+        }
+
+        .sale-status-badge--neutral {
+            border-color: var(--erp-border);
+            background: var(--erp-surface-muted);
+            color: var(--erp-muted);
+        }
+
+        .sale-modal-title-row {
+            display: flex;
+            min-width: 0;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 8px;
         }
 
         .sales-table .col-created_at {
@@ -904,7 +970,7 @@
             white-space: nowrap;
         }
 
-        .sales-table td > span:not(.source-badge):not(.erp-datetime-cell) {
+        .sales-table td > span:not(.source-badge):not(.sale-status-badge):not(.erp-datetime-cell) {
             display: block;
             width: 100%;
             overflow: hidden;
@@ -1866,18 +1932,11 @@
                                                 >
                                                     {{ value or "—" }}
                                                 </span>
-                                            {% elif column.key == "order_status_label" and sale.is_cancelled %}
-                                                <span class="sales-cancelled-badge">
-                                                    Отменена
-                                                </span>
-                                            {% elif column.key == "order_status_label" and sale.return_status == "returned" %}
-                                                <span class="sales-return-badge">
-                                                    Возврат
-                                                </span>
-                                            {% elif column.key == "order_status_label" and sale.return_status == "partially_returned" %}
-                                                <span class="sales-return-badge is-partial">
-                                                    Частичный возврат: {{ sale.returned_quantity_display }} из {{ sale.quantity_display }}
-                                                </span>
+                                            {% elif column.key == "order_status_label" %}
+                                                <span
+                                                    class="sale-status-badge {{ sale.order_status_class }}"
+                                                    data-sale-status="{{ sale.order_status_display }}"
+                                                >{{ sale.order_status_label }}</span>
                                             {% elif column.key in ["unit_price_display", "delivery_cost_display"] %}
                                                 <span
                                                     class="sales-number-value{% if not value %} erp-muted-value{% endif %}"
@@ -2014,15 +2073,10 @@
                             Артикул: {{ sale.article or "—" }}
                         </div>
 
-                        {% if sale.is_cancelled %}
-                            <span class="sales-cancelled-badge">Отменена</span>
-                        {% elif sale.return_status == "returned" %}
-                            <span class="sales-return-badge">Возврат</span>
-                        {% elif sale.return_status == "partially_returned" %}
-                            <span class="sales-return-badge is-partial">
-                                Частичный возврат: {{ sale.returned_quantity_display }} из {{ sale.quantity_display }}
-                            </span>
-                        {% endif %}
+                        <span
+                            class="sale-status-badge {{ sale.order_status_class }}"
+                            data-sale-status="{{ sale.order_status_display }}"
+                        >{{ sale.order_status_label }}</span>
 
                         <div class="mobile-erp-card-kpis">
                             <div class="mobile-erp-card-kpi">
@@ -2159,9 +2213,16 @@
     <div class="modal-dialog">
         <div class="modal-header">
             <div>
-                <h2 id="manualSaleModalTitle">
-                    Добавить продажу
-                </h2>
+                <div class="sale-modal-title-row">
+                    <h2 id="manualSaleModalTitle">
+                        Добавить продажу
+                    </h2>
+                    <span
+                        id="saleModalStatusBadge"
+                        class="sale-status-badge sale-status-badge--neutral"
+                        hidden
+                    ></span>
+                </div>
                 <p id="manualSaleModalDescription">
                     Заполните данные продажи и выберите канал.
                 </p>
@@ -3047,7 +3108,10 @@
             if (!response.ok || !result.ok) {
                 throw new Error(result.message || "Не удалось удалить запись");
             }
-            reloadSalesWithNotice(result.message || "Запись удалена");
+            reloadSalesWithNotice(
+                result.message || "Продажа удалена",
+                result.notice || "destructive",
+            );
         } catch (requestError) {
             error.textContent = requestError.message;
             error.hidden = false;
@@ -4769,6 +4833,9 @@
     const modalDescription = document.getElementById(
         "manualSaleModalDescription"
     );
+    const saleModalStatusBadge = document.getElementById(
+        "saleModalStatusBadge"
+    );
     const saleEditId = document.getElementById("saleEditId");
     const saleSubmitButton = manualSaleForm.querySelector(
         '.form-actions button[type="submit"]'
@@ -4817,8 +4884,24 @@
         saleFormFields.disabled = false;
         manualSaleForm.classList.remove("is-hidden");
         modalTitle.textContent = isEditing
-            ? "Редактировать данные продажи"
+            ? "Продажа #" + (
+                editingSale?.order_number || editingSale?.id || "—"
+            )
             : "Добавить продажу";
+        saleModalStatusBadge.hidden = !isEditing;
+        if (isEditing) {
+            saleModalStatusBadge.className = [
+                "sale-status-badge",
+                editingSale.order_status_class
+                    || "sale-status-badge--neutral",
+            ].join(" ");
+            saleModalStatusBadge.textContent =
+                editingSale.order_status_label || "Неизвестный статус";
+        } else {
+            saleModalStatusBadge.className =
+                "sale-status-badge sale-status-badge--neutral";
+            saleModalStatusBadge.textContent = "";
+        }
         modalDescription.textContent =
             isEditing
                 ? "Товар, бренд, категория, название, количество и цена защищены. Для их изменения отмените проведение и проведите продажу заново."

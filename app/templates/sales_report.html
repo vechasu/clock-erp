@@ -220,6 +220,33 @@
             color: #9a3412;
         }
 
+        .sale-status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 3px 8px;
+            border: 1px solid transparent;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 800;
+            white-space: nowrap;
+        }
+
+        .sale-status-badge::before {
+            width: 6px;
+            height: 6px;
+            flex: 0 0 6px;
+            border-radius: 50%;
+            background: currentColor;
+            content: "";
+        }
+
+        .sale-status-badge--success { border-color: #bbf7d0; background: #f0fdf4; color: #166534; }
+        .sale-status-badge--danger { border-color: #fecaca; background: #fef2f2; color: #b91c1c; }
+        .sale-status-badge--warning { border-color: #fed7aa; background: #fff7ed; color: #c2410c; }
+        .sale-status-badge--destructive { border-color: #fecdd3; background: #fff1f2; color: #9f1239; opacity: 0.82; }
+        .sale-status-badge--neutral { border-color: #e2e8f0; background: #f8fafc; color: #64748b; }
+
         .money-cell {
             text-align: right;
             font-variant-numeric: tabular-nums;
@@ -403,7 +430,11 @@
                         {% for column in report_columns %}
                             {% set value = sale[column.key] %}
                             <td{% if column.key in ['unit_price_display', 'delivery_cost_display'] %} class="money-cell"{% endif %}>
-                                {% if column.key == "note" %}
+                                {% if column.key == "order_status_label" %}
+                                    <span class="sale-status-badge {{ sale.order_status_class }}">
+                                        {{ sale.order_status_label }}
+                                    </span>
+                                {% elif column.key == "note" %}
                                     {{ value or "" }}
                                 {% else %}
                                     {{ value or "—" }}

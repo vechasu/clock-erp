@@ -150,7 +150,7 @@ preview_receipts = [
 
 def sale_record(identifier, order_number, product, source, date, quantity, unit_price):
     total = quantity * unit_price
-    return {
+    return web.decorate_sale_status({
         "id": identifier,
         "sale_type": "manual",
         "sale_type_label": "Ручная",
@@ -180,7 +180,7 @@ def sale_record(identifier, order_number, product, source, date, quantity, unit_
         "total_amount_display": "{} ₽".format(total),
         "returned_amount": 0,
         "order_status": "completed",
-        "order_status_label": "Выполнен",
+        "order_status_label": "Завершён успешно",
         "is_cancelled": False,
         "cancelled_at": "",
         "cancellation_reason": "",
@@ -206,7 +206,7 @@ def sale_record(identifier, order_number, product, source, date, quantity, unit_
         "platform": "",
         "invoice_number": "",
         "sticker_number": "",
-    }
+    })
 
 
 long_article_product = {
@@ -249,7 +249,27 @@ for index, source in enumerate(("Tictactoy", "Wildberries", "Amazon"), start=1):
         "cancellation_quantity": 0,
         "return_status": "returned",
     })
+    web.decorate_sale_status(cancelled)
     preview_sales.append(cancelled)
+
+refusal = sale_record(
+    "preview-refusal",
+    "REFUSAL-1",
+    warehouse_items[0],
+    "Tictactoy",
+    "2026-07-31T13:00:00",
+    1,
+    1200,
+)
+refusal.update({
+    "order_status": "cancelled",
+    "is_cancelled": True,
+    "cancelled_at": "2026-07-31T13:05:00",
+    "cancellation_reason": "Клиент отказался",
+    "return_status": "returned",
+})
+web.decorate_sale_status(refusal)
+preview_sales.append(refusal)
 
 preview_sales.extend([
     sale_record(
