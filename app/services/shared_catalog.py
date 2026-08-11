@@ -23,8 +23,12 @@ def display_name(value):
     return str(value or "").strip()
 
 
+def catalog_name(value):
+    return " ".join(display_name(value).split())
+
+
 def normalized_name(value):
-    return display_name(value).casefold()
+    return catalog_name(value).casefold()
 
 
 def normalized_stock_value(value):
@@ -81,7 +85,7 @@ def ensure_brand(connection, name=None, brand_id=None, create=True):
             raise CatalogReferenceError("Бренд не найден.")
         return row
 
-    name = display_name(name)
+    name = catalog_name(name)
     key = normalized_name(name)
     if not key:
         return None
@@ -135,7 +139,7 @@ def ensure_category(
             raise CatalogReferenceError("Категория не найдена.")
         return row
 
-    name = display_name(name)
+    name = catalog_name(name)
     key = normalized_name(name)
     if not key:
         return None
@@ -642,7 +646,7 @@ class SharedCatalog:
         return products
 
     def create_brand(self, name):
-        name = display_name(name)
+        name = catalog_name(name)
         if not name:
             raise ValueError("Название бренда обязательно.")
         self.database.initialize()
@@ -698,7 +702,7 @@ class SharedCatalog:
         return self.get_product(product_id)
 
     def create_category(self, brand_id, name):
-        name = display_name(name)
+        name = catalog_name(name)
         if not name:
             raise ValueError("Название категории обязательно.")
         self.database.initialize()
@@ -750,7 +754,7 @@ class SharedCatalog:
             return prepared
 
     def rename_brand(self, brand_id, name):
-        name = display_name(name)
+        name = catalog_name(name)
         if not name:
             raise ValueError("Название бренда обязательно.")
         self.database.initialize()
@@ -801,7 +805,7 @@ class SharedCatalog:
             )
 
     def rename_category(self, category_id, name):
-        name = display_name(name)
+        name = catalog_name(name)
         if not name:
             raise ValueError("Название категории обязательно.")
         self.database.initialize()
@@ -977,6 +981,11 @@ class SharedCatalog:
             ),
             "stock_total": stock_total,
             "stock_display": format_stock_value(stock_total),
+            "used_by_brand": bool(
+                row["used_by_brand"]
+                if "used_by_brand" in row.keys()
+                else False
+            ),
         }
 
     @staticmethod

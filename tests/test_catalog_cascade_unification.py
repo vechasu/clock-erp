@@ -44,6 +44,38 @@ class CatalogCascadeUnificationTest(unittest.TestCase):
         self.assertIn("list_category_options", source)
         self.assertIn("create_category", source)
 
+    def test_product_and_receipt_creation_use_global_category_options(self):
+        for page in (
+            "app/templates/warehouse.html",
+            "app/templates/receipts.html",
+        ):
+            with self.subTest(page=page):
+                self.assertIn(
+                    'data-global-category-options="true"',
+                    self.source(page),
+                )
+        self.assertNotIn(
+            'data-global-category-options="true"',
+            self.source("app/templates/sales.html"),
+        )
+
+    def test_taxonomy_create_action_is_sticky_and_exact_match_safe(self):
+        template = self.source("app/templates/_catalog_combobox.html")
+        script = self.source("app/static/js/catalog-combobox.js")
+        stylesheet = self.source("app/static/css/catalog-combobox.css")
+        options_markup = template.split('role="listbox"', 1)[1]
+        action_position = options_markup.index("catalog-combobox-action")
+        option_position = options_markup.index("{% if include_all %}")
+
+        self.assertLess(action_position, option_position)
+        self.assertIn("position: sticky", stylesheet)
+        self.assertIn("exactMatch", script)
+        self.assertIn("catalogInlineCreating", script)
+        self.assertIn("Категории этого бренда", script)
+        self.assertIn("Другие категории", script)
+        self.assertIn('"новый бренд"', script)
+        self.assertIn('"новую категорию"', script)
+
     def test_base_templates_are_active_and_stage2_pages_are_absent(self):
         for name in ("warehouse.html", "sales.html", "receipts.html"):
             self.assertTrue((ROOT / "app" / "templates" / name).exists())

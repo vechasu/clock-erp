@@ -1012,6 +1012,37 @@ class UnifiedCatalogApiTest(unittest.TestCase):
             ).fetchone()[0]
         self.assertEqual(count, 1)
 
+        repeated_spaces = self.client.post(
+            "/api/v1/categories",
+            json={
+                "brand_id": brand["id"],
+                "name": "Наручные     часы",
+            },
+        )
+        self.assertEqual(repeated_spaces.status_code, 409)
+        self.assertEqual(
+            repeated_spaces.get_json()["fields"]["existing"]["id"],
+            self.product["category_id"],
+        )
+
+    def test_brand_creation_normalizes_repeated_spaces(self):
+        created = self.client.post(
+            "/api/v1/brands",
+            json={"name": "Maxim   Watch"},
+        )
+        duplicate = self.client.post(
+            "/api/v1/brands",
+            json={"name": "  maxim watch  "},
+        )
+
+        self.assertEqual(created.status_code, 201)
+        self.assertEqual(created.get_json()["data"]["name"], "Maxim Watch")
+        self.assertEqual(duplicate.status_code, 409)
+        self.assertEqual(
+            duplicate.get_json()["fields"]["existing"]["id"],
+            created.get_json()["data"]["id"],
+        )
+
     def test_category_options_prioritize_used_then_offer_global_values(self):
         other_brand = self.client.post(
             "/api/v1/brands",
@@ -1033,6 +1064,13 @@ class UnifiedCatalogApiTest(unittest.TestCase):
         option_ids = [item["id"] for item in options]
         self.assertEqual(option_ids[0], self.product["category_id"])
         self.assertIn(other_category["id"], option_ids)
+        self.assertTrue(options[0]["used_by_brand"])
+        self.assertFalse(
+            next(
+                item for item in options
+                if item["id"] == other_category["id"]
+            )["used_by_brand"]
+        )
 
     def test_visible_sections_use_base_layout_and_retired_ui_redirects_safely(self):
         redirects = {
