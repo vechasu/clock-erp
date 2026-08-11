@@ -1875,6 +1875,10 @@ def warehouse_page():
                 app.testing
                 and request.args.get("delete_feedback_e2e") == "1"
             ),
+            warehouse_force_delete_e2e=(
+                app.testing
+                and request.args.get("force_delete_e2e") == "1"
+            ),
             pagination_e2e=(
                 app.testing and request.args.get("pagination_e2e") == "1"
             ),
@@ -3202,6 +3206,7 @@ def warehouse_update_stock():
 @app.route("/warehouse/archive", methods=["POST"])
 def warehouse_archive_product():
     product_id = request.form.get("product_id", "").strip()
+    force = _product_force_delete_requested(request.form)
     is_ajax = (
         request.headers.get("X-Requested-With")
         == "XMLHttpRequest"
@@ -3221,7 +3226,21 @@ def warehouse_archive_product():
         ))
 
     try:
-        ExcelProductCatalog().archive_product(product_id)
+        if force:
+            _validate_product_force_delete(request.form)
+        result = ExcelProductCatalog().delete_product(
+            product_id,
+            force=force,
+            actor_id=_product_delete_identity(),
+        )
+        app.logger.info(
+            "product_delete product_id=%s actor_id=%s mode=%s stock=%s",
+            product_id,
+            _product_delete_identity() or "anonymous",
+            "force" if force else "normal",
+            result["stock"],
+        )
+        _invalidate_deleted_product_caches()
         if is_ajax:
             return jsonify(ok=True, message="Товар удалён")
         return redirect(url_for(
@@ -6039,7 +6058,8 @@ def get_sale_catalog_product(product_id, items=None):
     if not product_id:
         return None
 
-    shared_product = SharedCatalog().get_product(product_id)
+    shared_catalog = SharedCatalog()
+    shared_product = shared_catalog.get_product(product_id)
     if (
         shared_product is not None
         and float(shared_product.get("stock") or 0) > 0
@@ -6053,6 +6073,13 @@ def get_sale_catalog_product(product_id, items=None):
                 or ""
             ),
         }
+
+    historical_product = shared_catalog.get_product(
+        product_id,
+        include_archived=True,
+    )
+    if historical_product is not None and not historical_product.get("active"):
+        return None
 
     catalog_items = build_sales_catalog_items(
         get_excel_warehouse_items()
@@ -12858,35 +12885,37 @@ def _products_redirect_with_notice(return_to, notice, message):
     )
 
 
-def _excel_product_external_references(product_id):
-    product_id = str(int(product_id))
-    references = []
-    if any(
-        str(item.get("product_id") or "") == product_id
-        for item in load_manual_sales()
-        if isinstance(item, dict)
-    ):
-        references.append("продажа")
-    if any(
-        str(item.get("product_id") or "") == product_id
-        for item in load_stock_operations()
-        if isinstance(item, dict)
-    ):
-        references.append("складская операция")
-    for receipt in load_receipts():
-        if not isinstance(receipt, dict):
-            continue
-        if str(receipt.get("product_id") or "") == product_id:
-            references.append("приход")
-            break
-        if any(
-            str(position.get("product_id") or "") == product_id
-            for position in receipt.get("positions") or []
-            if isinstance(position, dict)
-        ):
-            references.append("приход")
-            break
-    return references
+def _product_delete_identity():
+    user = current_auth_user() or {}
+    return str(user.get("id") or user.get("email") or "").strip()
+
+
+def _invalidate_deleted_product_caches():
+    WAREHOUSE_CACHE["items"] = []
+    WAREHOUSE_CACHE["loaded_at"] = 0
+
+
+def _product_force_delete_allowed():
+    user = current_auth_user() or {}
+    return str(user.get("role") or "").strip() == "admin"
+
+
+def _product_force_delete_requested(payload):
+    return str((payload or {}).get("force") or "").strip().lower() in {
+        "1", "true", "yes", "on",
+    }
+
+
+def _validate_product_force_delete(payload):
+    if not _product_force_delete_allowed():
+        abort(403)
+    confirmation = str(
+        (payload or {}).get("force_confirmation") or ""
+    ).strip()
+    if confirmation != "УДАЛИТЬ":
+        raise ProductDeleteBlockedError(
+            "Для принудительного удаления введите УДАЛИТЬ."
+        )
 
 
 @app.route("/products")
@@ -12988,11 +13017,23 @@ def excel_product_delete(product_id):
         return _products_redirect_with_notice(
             return_to, "error", "Удаление отменено: требуется явное подтверждение."
         )
+    force = _product_force_delete_requested(request.form)
     try:
-        ExcelProductCatalog().delete_product(
+        if force:
+            _validate_product_force_delete(request.form)
+        result = ExcelProductCatalog().delete_product(
             product_id,
-            external_references=_excel_product_external_references(product_id),
+            force=force,
+            actor_id=_product_delete_identity(),
         )
+        app.logger.info(
+            "product_delete product_id=%s actor_id=%s mode=%s stock=%s",
+            product_id,
+            _product_delete_identity() or "anonymous",
+            "force" if force else "normal",
+            result["stock"],
+        )
+        _invalidate_deleted_product_caches()
     except ProductDeleteBlockedError as error:
         return _products_redirect_with_notice(return_to, "error", str(error))
     except (TypeError, ValueError):
@@ -13839,8 +13880,24 @@ def api_product_resource(product_id):
         return api_success(serialize_api_product(product))
     require_csrf_when_authenticated()
     if request.method == "DELETE":
+        payload = request.get_json(silent=True) or {}
+        force = _product_force_delete_requested(payload)
         try:
-            catalog_service.archive_product(product_id)
+            if force:
+                _validate_product_force_delete(payload)
+            result = catalog_service.delete_product(
+                product_id,
+                force=force,
+                actor_id=_product_delete_identity(),
+            )
+            app.logger.info(
+                "product_delete product_id=%s actor_id=%s mode=%s stock=%s",
+                product_id,
+                _product_delete_identity() or "anonymous",
+                "force" if force else "normal",
+                result["stock"],
+            )
+            _invalidate_deleted_product_caches()
         except ProductDeleteBlockedError as error:
             return api_error("PRODUCT_REFERENCED", str(error), 409)
         except ValueError as error:
@@ -14543,7 +14600,7 @@ def receipt_api_catalog_items(
     ]
     if shared_items or not allow_legacy:
         return shared_items
-    return [
+    legacy_items = [
         {
             "id": str(item.get("id") or ""),
             "name": str(item.get("name") or ""),
@@ -14568,7 +14625,17 @@ def receipt_api_catalog_items(
         }
         for item in get_warehouse_items(force=force)
         if isinstance(item, dict) and item.get("id")
-    ][:max(1, min(int(limit), 200))]
+    ]
+    filtered_legacy_items = []
+    for item in legacy_items:
+        historical = shared_catalog.get_product(
+            item["id"],
+            include_archived=True,
+        )
+        if historical is not None and not historical.get("active"):
+            continue
+        filtered_legacy_items.append(item)
+    return filtered_legacy_items[:max(1, min(int(limit), 200))]
 
 
 def validate_api_receipt_date(value):

@@ -49,7 +49,7 @@ class WarehouseDeleteFeedbackTest(unittest.TestCase):
         self.assertIn("notice=danger", redirect_response.location)
         redirect_query = parse_qs(urlparse(redirect_response.location).query)
         self.assertEqual(redirect_query["message"], ["Товар удалён"])
-        self.assertEqual(catalog_class.return_value.archive_product.call_count, 2)
+        self.assertEqual(catalog_class.return_value.delete_product.call_count, 2)
 
         source = (PROJECT_ROOT / "app/templates/warehouse.html").read_text(
             encoding="utf-8"

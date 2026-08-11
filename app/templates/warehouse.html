@@ -101,6 +101,117 @@
             border-color: #fecaca;
         }
 
+        .warehouse-force-delete-dialog {
+            width: min(520px, calc(100vw - 32px));
+            margin: auto;
+            padding: 0;
+            border: 0;
+            border-radius: 18px;
+            color: #172033;
+            box-shadow: 0 24px 64px rgba(15, 23, 42, 0.28);
+        }
+
+        .warehouse-force-delete-dialog::backdrop {
+            background: rgba(15, 23, 42, 0.58);
+        }
+
+        .warehouse-force-delete-content {
+            padding: 24px;
+        }
+
+        .warehouse-force-delete-content h2 {
+            margin: 0 0 16px;
+            color: #991b1b;
+            font-size: 22px;
+        }
+
+        .warehouse-force-delete-product {
+            margin-bottom: 14px;
+            padding: 14px;
+            border: 1px solid #fecaca;
+            border-radius: 12px;
+            background: #fff7f7;
+        }
+
+        .warehouse-force-delete-product strong,
+        .warehouse-force-delete-product span {
+            display: block;
+        }
+
+        .warehouse-force-delete-product span {
+            margin-top: 4px;
+            color: #475569;
+            font-size: 13px;
+        }
+
+        .warehouse-force-delete-warning {
+            margin: 0 0 16px;
+            line-height: 1.5;
+        }
+
+        .warehouse-force-delete-confirmation {
+            display: grid;
+            gap: 7px;
+            margin-bottom: 20px;
+            font-weight: 750;
+        }
+
+        .warehouse-force-delete-confirmation input {
+            min-height: 44px;
+            padding: 0 12px;
+            border: 1px solid #cbd5e1;
+            border-radius: 10px;
+            font: inherit;
+        }
+
+        .warehouse-force-delete-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+
+        .warehouse-force-delete-actions button {
+            min-height: 42px;
+            padding: 0 16px;
+            border: 0;
+            border-radius: 10px;
+            font-weight: 800;
+            cursor: pointer;
+        }
+
+        .warehouse-force-delete-cancel {
+            background: #e2e8f0;
+            color: #172033;
+        }
+
+        .warehouse-force-delete-submit {
+            background: #b91c1c;
+            color: #fff;
+        }
+
+        .warehouse-force-delete-submit:disabled {
+            cursor: not-allowed;
+            opacity: 0.45;
+        }
+
+        @media (max-width: 390px) {
+            .warehouse-force-delete-dialog {
+                width: calc(100vw - 20px);
+            }
+
+            .warehouse-force-delete-content {
+                padding: 18px;
+            }
+
+            .warehouse-force-delete-actions {
+                flex-direction: column-reverse;
+            }
+
+            .warehouse-force-delete-actions button {
+                width: 100%;
+            }
+        }
+
         .stats {
             display: grid;
             grid-template-columns: minmax(0, 1fr) minmax(280px, 0.65fr);
@@ -5372,7 +5483,19 @@
                                                     method="post"
                                                     action="/warehouse/archive"
                                                     onsubmit="return archiveWarehouseProduct(event, this)"
+                                                    data-product-name="{{ item.name|e }}"
+                                                    data-product-article="{{ (item.article or '')|e }}"
+                                                    data-product-brand="{{ (item.brand or '')|e }}"
+                                                    data-product-category="{{ (item.category or '')|e }}"
+                                                    data-product-stock="{{ item.stock_display|e }}"
+                                                    data-product-stock-value="{{ item.stock }}"
+                                                    data-can-force-delete="{{ '1' if (current_user and current_user.role == 'admin') or warehouse_force_delete_e2e else '0' }}"
                                                 >
+                                                    <input
+                                                        type="hidden"
+                                                        name="csrf_token"
+                                                        value="{{ csrf_token() }}"
+                                                    >
                                                     <input type="hidden" name="product_id" value="{{ item.id }}">
                                                     <button
                                                         class="erp-table-action erp-table-action-delete"
@@ -5409,6 +5532,49 @@
             </div>
         </main>
     </div>
+
+    <dialog
+        id="warehouseForceDeleteDialog"
+        class="warehouse-force-delete-dialog"
+        aria-labelledby="warehouseForceDeleteTitle"
+    >
+        <div class="warehouse-force-delete-content">
+            <h2 id="warehouseForceDeleteTitle">Принудительное удаление товара</h2>
+            <div class="warehouse-force-delete-product">
+                <strong id="warehouseForceDeleteName"></strong>
+                <span id="warehouseForceDeleteArticle"></span>
+                <span id="warehouseForceDeleteBrand"></span>
+                <span id="warehouseForceDeleteCategory"></span>
+                <span id="warehouseForceDeleteStock"></span>
+            </div>
+            <p class="warehouse-force-delete-warning">
+                Товар будет окончательно удалён из активного каталога и больше не будет
+                доступен для новых продаж и приходов. Исторические операции сохранятся.
+            </p>
+            <label class="warehouse-force-delete-confirmation">
+                Введите УДАЛИТЬ для подтверждения
+                <input
+                    id="warehouseForceDeleteConfirmation"
+                    type="text"
+                    autocomplete="off"
+                    spellcheck="false"
+                >
+            </label>
+            <div class="warehouse-force-delete-actions">
+                <button
+                    class="warehouse-force-delete-cancel"
+                    type="button"
+                    onclick="closeWarehouseForceDelete()"
+                >Отмена</button>
+                <button
+                    id="warehouseForceDeleteSubmit"
+                    class="warehouse-force-delete-submit"
+                    type="button"
+                    disabled
+                >Принудительно удалить</button>
+            </div>
+        </div>
+    </dialog>
 
     <div id="drawerBackdrop" class="drawer-backdrop" onclick="closeAllDrawers()"></div>
 
@@ -8830,6 +8996,60 @@
             hideWarehouseNotice();
         }
 
+        let warehouseForceDeleteForm = null;
+
+        function closeWarehouseForceDelete() {
+            const dialog = document.getElementById(
+                "warehouseForceDeleteDialog"
+            );
+            warehouseForceDeleteForm = null;
+            if (dialog && dialog.open) {
+                dialog.close();
+            }
+        }
+
+        function openWarehouseForceDelete(form) {
+            const dialog = document.getElementById(
+                "warehouseForceDeleteDialog"
+            );
+            const confirmation = document.getElementById(
+                "warehouseForceDeleteConfirmation"
+            );
+            const submit = document.getElementById(
+                "warehouseForceDeleteSubmit"
+            );
+            if (!dialog || !confirmation || !submit) {
+                return false;
+            }
+            warehouseForceDeleteForm = form;
+            document.getElementById("warehouseForceDeleteName").textContent =
+                form.dataset.productName || "Товар";
+            document.getElementById("warehouseForceDeleteArticle").textContent =
+                "Артикул: " + (form.dataset.productArticle || "—");
+            document.getElementById("warehouseForceDeleteBrand").textContent =
+                "Бренд: " + (form.dataset.productBrand || "—");
+            document.getElementById("warehouseForceDeleteCategory").textContent =
+                "Категория: " + (form.dataset.productCategory || "—");
+            document.getElementById("warehouseForceDeleteStock").textContent =
+                "Остаток: " + (form.dataset.productStock || "0") + " шт.";
+            confirmation.value = "";
+            submit.disabled = true;
+            confirmation.oninput = function() {
+                submit.disabled = confirmation.value.trim() !== "УДАЛИТЬ";
+            };
+            submit.onclick = async function() {
+                if (submit.disabled || !warehouseForceDeleteForm) {
+                    return;
+                }
+                const selectedForm = warehouseForceDeleteForm;
+                closeWarehouseForceDelete();
+                await submitWarehouseProductDelete(selectedForm, true);
+            };
+            dialog.showModal();
+            confirmation.focus();
+            return false;
+        }
+
         async function archiveWarehouseProduct(event, form) {
             event.preventDefault();
 
@@ -8837,13 +9057,26 @@
                 return false;
             }
 
-            const confirmed = confirm(
-                "Удалить товар из каталога?"
-            );
-
-            if (!confirmed) {
+            const stock = Number(form.dataset.productStockValue || 0);
+            if (Number.isFinite(stock) && stock !== 0) {
+                if (form.dataset.canForceDelete === "1") {
+                    return openWarehouseForceDelete(form);
+                }
+                showWarehouseNotice(
+                    "Товар с ненулевым остатком нельзя удалить",
+                    "error"
+                );
                 return false;
             }
+
+            if (!confirm("Удалить товар из каталога?")) {
+                return false;
+            }
+
+            return submitWarehouseProductDelete(form, false);
+        }
+
+        async function submitWarehouseProductDelete(form, force) {
 
             form.dataset.submitting = "1";
 
@@ -8865,9 +9098,14 @@
             const row = form.closest("tr");
 
             try {
+                const formData = new FormData(form);
+                if (force) {
+                    formData.set("force", "1");
+                    formData.set("force_confirmation", "УДАЛИТЬ");
+                }
                 const response = await fetch(form.action, {
                     method: "POST",
-                    body: new FormData(form),
+                    body: formData,
                     headers: {
                         "X-Requested-With": "XMLHttpRequest"
                     }

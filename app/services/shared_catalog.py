@@ -734,7 +734,7 @@ class SharedCatalog:
         with self.database.transaction() as connection:
             occupied = connection.execute(
                 "SELECT id FROM catalog_excel_products "
-                "WHERE moysklad_product_id = ? AND id <> ?",
+                "WHERE active = 1 AND moysklad_product_id = ? AND id <> ?",
                 (moysklad_product_id, product_id),
             ).fetchone()
             if occupied is not None:

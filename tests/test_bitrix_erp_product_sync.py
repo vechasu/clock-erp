@@ -153,6 +153,25 @@ class BitrixERPProductSyncTest(unittest.TestCase):
         self.assertEqual(count, 1)
         self.assertEqual(tuple(card), (0, "bitrix_catalog", "1"))
 
+    def test_deleted_product_is_not_recreated_by_bitrix_sync(self):
+        self.run_sync([product()])
+        card = self.one_card()
+        ExcelProductCatalog(self.database).delete_product(card["id"])
+
+        report = self.run_sync([product()])
+
+        with self.database.connect() as connection:
+            cards = connection.execute(
+                "SELECT id, active, deleted_at, deleted_stock "
+                "FROM catalog_excel_products ORDER BY id"
+            ).fetchall()
+        self.assertEqual(len(cards), 1)
+        self.assertEqual(cards[0]["active"], 0)
+        self.assertTrue(cards[0]["deleted_at"])
+        self.assertEqual(cards[0]["deleted_stock"], 0)
+        self.assertEqual(report["created"], 0)
+        self.assertEqual(report["skipped"], 1)
+
     def test_matches_by_bitrix_id_then_xml_id(self):
         self.create_excel_cards([
             excel_result(2, "Existing", "Brand", 3),

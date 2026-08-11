@@ -7,7 +7,6 @@ Bitrix or MoySklad clients and therefore cannot change either external system.
 import json
 import math
 import re
-import sqlite3
 import uuid
 from datetime import datetime, timezone
 
@@ -87,7 +86,7 @@ def ensure_unique_article(connection, article, exclude_product_id=None):
         parameters.append(int(exclude_product_id))
     duplicate = connection.execute(
         "SELECT id, excel_name_raw FROM catalog_excel_products "
-        "WHERE trim(COALESCE(excel_article, '')) = ? "
+        "WHERE active = 1 AND trim(COALESCE(excel_article, '')) = ? "
         + exclusion
         + "ORDER BY id LIMIT 1",
         parameters,
@@ -444,6 +443,14 @@ class ExcelProductBatchService:
                 )
 
             for result, source_key in zip(results, source_keys):
+                deleted_product = connection.execute(
+                    "SELECT id FROM catalog_excel_products "
+                    "WHERE deleted_at IS NOT NULL AND deleted_source_key = ? "
+                    "ORDER BY id DESC LIMIT 1",
+                    (source_key,),
+                ).fetchone()
+                if deleted_product is not None:
+                    continue
                 product = connection.execute(
                     "SELECT * FROM catalog_excel_products WHERE source_key = ?",
                     (source_key,),
@@ -1311,55 +1318,58 @@ class ExcelProductCatalog:
                 (utc_now(), int(product_id)),
             )
 
-    def delete_product(self, product_id, external_references=None):
-        """Delete only an unreferenced zero-stock card.
+    def delete_product(
+            self, product_id, external_references=None, force=False,
+            actor_id=""):
+        """Permanently remove a card from the active catalog via tombstone.
 
-        Existing batch, receipt, stock and match records are audit data. They
-        must never be cascaded or detached just to remove a card from the UI.
+        Related sales, receipts and movements keep their foreign keys and
+        snapshots.  A deleted source key is released so a later product is a
+        genuinely new card instead of resurrecting this row.
         """
-        external_references = list(external_references or [])
+        del external_references
         self.database.initialize()
-        try:
-            with self.database.transaction() as connection:
-                product = connection.execute(
-                    "SELECT * FROM catalog_excel_products WHERE id = ? AND active = 1",
-                    (int(product_id),),
-                ).fetchone()
-                if product is None:
-                    raise ValueError("Товар не найден.")
+        with self.database.transaction() as connection:
+            product = connection.execute(
+                "SELECT * FROM catalog_excel_products WHERE id = ? AND active = 1",
+                (int(product_id),),
+            ).fetchone()
+            if product is None:
+                raise ValueError("Товар не найден.")
 
-                references = list(external_references)
-                reference_checks = (
-                    ("приход", "catalog_excel_receipt_rows"),
-                    ("операция прихода", "catalog_excel_receipt_operations"),
-                    ("строка batch-аудита", "catalog_excel_batch_rows"),
-                    ("складская операция", "catalog_excel_stock_operations"),
-                    ("история сопоставления", "catalog_excel_match_audit"),
+            stock = float(product["stock"] or 0)
+            if stock != 0 and not force:
+                raise ProductDeleteBlockedError(
+                    "Товар с ненулевым остатком нельзя удалить."
                 )
-                for label, table in reference_checks:
-                    count = connection.execute(
-                        "SELECT COUNT(*) FROM {} WHERE product_id = ?".format(table),
-                        (int(product_id),),
-                    ).fetchone()[0]
-                    if count:
-                        references.append(label)
 
-                if float(product["stock"] or 0) != 0:
-                    references.append("ненулевой остаток")
-                if references:
-                    raise ProductDeleteBlockedError(
-                        "Товар нельзя удалить: сохранены связанные данные ({0}).".format(
-                            ", ".join(sorted(set(references)))
-                        )
-                    )
-
-                connection.execute(
-                    "DELETE FROM catalog_excel_products WHERE id = ?", (int(product_id),)
-                )
-        except sqlite3.IntegrityError:
-            raise ProductDeleteBlockedError(
-                "Товар нельзя удалить: он используется в связанных документах или аудите."
+            deleted_at = utc_now()
+            source_key = str(product["source_key"])
+            tombstone_source_key = "deleted:{}:{}".format(
+                int(product_id), uuid.uuid4().hex
             )
+            connection.execute(
+                "UPDATE catalog_excel_products SET active = 0, "
+                "source_key = ?, deleted_source_key = ?, deleted_at = ?, "
+                "deleted_by = ?, deleted_stock = ?, delete_mode = ?, "
+                "updated_at = ? WHERE id = ? AND active = 1",
+                (
+                    tombstone_source_key,
+                    source_key,
+                    deleted_at,
+                    str(actor_id or "") or None,
+                    stock,
+                    "force" if force else "normal",
+                    deleted_at,
+                    int(product_id),
+                ),
+            )
+        return {
+            "id": int(product_id),
+            "stock": stock,
+            "force": bool(force),
+            "deleted_at": deleted_at,
+        }
 
     def confirm_match(self, product_id, catalog_product_id):
         return self._change_match(product_id, "confirm_bitrix", catalog_product_id)

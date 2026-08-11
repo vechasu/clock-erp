@@ -453,6 +453,23 @@ class ExcelReceiptImportService:
                 raise ExcelDraftBlockedError(
                     "Каждая строка прихода должна иметь точное соответствие Bitrix."
                 )
+            deleted_match = next(
+                (
+                    result
+                    for result in matches
+                    if connection.execute(
+                        "SELECT 1 FROM catalog_excel_products "
+                        "WHERE deleted_at IS NOT NULL "
+                        "AND bitrix_catalog_product_id = ? LIMIT 1",
+                        (int(result["product_id"]),),
+                    ).fetchone()
+                ),
+                None,
+            )
+            if deleted_match is not None:
+                raise ExcelDraftBlockedError(
+                    "Удалённый товар нельзя использовать в новом приходе."
+                )
 
             prior_batch = connection.execute(
                 "SELECT id FROM catalog_excel_batches WHERE file_sha256 = ? "
