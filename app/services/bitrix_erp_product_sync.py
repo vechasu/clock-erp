@@ -202,6 +202,9 @@ class BitrixERPProductSync:
         validation = self._validate(product)
         if validation:
             return validation
+        deleted = self._deleted_product(connection, product)
+        if deleted is not None:
+            return self._deleted_result(product, deleted)
         match = self._match(connection, product)
         if match["status"] == "ambiguous":
             return self._conflict_result(product, match)
@@ -226,6 +229,9 @@ class BitrixERPProductSync:
         validation = self._validate(product)
         if validation:
             return validation
+        deleted = self._deleted_product(connection, product)
+        if deleted is not None:
+            return self._deleted_result(product, deleted)
         catalog_product = connection.execute(
             "SELECT id FROM catalog_products "
             "WHERE external_source = 'bitrix' AND external_product_id = ?",
@@ -276,6 +282,31 @@ class BitrixERPProductSync:
             "error": "missing_product_id" if not product_id else "missing_name",
         }
 
+    @staticmethod
+    def _deleted_product(connection, product):
+        external_id = _text(product.get("external_product_id"))
+        xml_id = _text(product.get("external_xml_id")).casefold()
+        return connection.execute(
+            "SELECT id FROM catalog_excel_products "
+            "WHERE deleted_at IS NOT NULL AND ("
+            "bitrix_external_product_id = ? OR deleted_source_key = ? "
+            "OR (? <> '' AND lower(trim(COALESCE(bitrix_xml_id, ''))) = ?)"
+            ") ORDER BY id DESC LIMIT 1",
+            (external_id, "bitrix:" + external_id, xml_id, xml_id),
+        ).fetchone()
+
+    @staticmethod
+    def _deleted_result(product, deleted):
+        return {
+            "status": "skipped",
+            "match_method": "deleted_tombstone",
+            "external_product_id": _text(product.get("external_product_id")),
+            "name": _text(product.get("name")),
+            "erp_product_id": deleted["id"],
+            "candidate_ids": [deleted["id"]],
+            "error": "product_deleted",
+        }
+
     def _match(self, connection, product):
         product_id = _text(product.get("external_product_id"))
         xml_id = _text(product.get("external_xml_id")).casefold()
@@ -289,7 +320,7 @@ class BitrixERPProductSync:
                 product_id,
                 connection.execute(
                     "SELECT * FROM catalog_excel_products "
-                    "WHERE bitrix_external_product_id = ? ORDER BY id",
+                    "WHERE active = 1 AND bitrix_external_product_id = ? ORDER BY id",
                     (product_id,),
                 ).fetchall(),
             ),
@@ -298,7 +329,8 @@ class BitrixERPProductSync:
                 xml_id,
                 connection.execute(
                     "SELECT * FROM catalog_excel_products "
-                    "WHERE lower(trim(COALESCE(bitrix_xml_id, ''))) = ? ORDER BY id",
+                    "WHERE active = 1 "
+                    "AND lower(trim(COALESCE(bitrix_xml_id, ''))) = ? ORDER BY id",
                     (xml_id,),
                 ).fetchall() if xml_id else [],
             ),
@@ -308,7 +340,8 @@ class BitrixERPProductSync:
                 [
                     row for row in connection.execute(
                         "SELECT * FROM catalog_excel_products "
-                        "WHERE lower(trim(COALESCE(excel_article, ''))) = ? ORDER BY id",
+                        "WHERE active = 1 "
+                        "AND lower(trim(COALESCE(excel_article, ''))) = ? ORDER BY id",
                         (sku.casefold(),),
                     ).fetchall()
                     if reliable_article(row["excel_article"])
@@ -320,7 +353,7 @@ class BitrixERPProductSync:
                 [
                     row for row in connection.execute(
                         "SELECT * FROM catalog_excel_products "
-                        "WHERE normalized_name = ? ORDER BY id",
+                        "WHERE active = 1 AND normalized_name = ? ORDER BY id",
                         (name,),
                     ).fetchall()
                     if brand and name

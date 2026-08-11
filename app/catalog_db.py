@@ -357,6 +357,11 @@ CREATE TABLE IF NOT EXISTS catalog_excel_products (
     bitrix_properties_json TEXT NOT NULL DEFAULT '[]',
     bitrix_active INTEGER CHECK (bitrix_active IN (0, 1)),
     moysklad_sync_status TEXT NOT NULL DEFAULT 'not_linked',
+    deleted_at TEXT,
+    deleted_by TEXT,
+    deleted_stock REAL,
+    delete_mode TEXT CHECK (delete_mode IN ('normal', 'force')),
+    deleted_source_key TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -796,6 +801,7 @@ class CatalogDatabase:
             connection.executescript(SCHEMA)
             self._ensure_excel_receipt_constraints(connection)
             self._ensure_excel_cardinality_columns(connection)
+            self._ensure_product_deletion_columns(connection)
             self._ensure_receipt_constraints(connection)
             self._ensure_optional_price_constraints(connection)
             self._ensure_shared_catalog(connection)
@@ -965,6 +971,34 @@ class CatalogDatabase:
                         row["row_count"],
                         row["bitrix_catalog_product_id"],
                     ),
+                )
+
+    @staticmethod
+    def _ensure_product_deletion_columns(connection):
+        """Add irreversible catalog tombstone metadata without rewriting rows."""
+        definitions = (
+            ("deleted_at", "TEXT"),
+            ("deleted_by", "TEXT"),
+            ("deleted_stock", "REAL"),
+            (
+                "delete_mode",
+                "TEXT CHECK (delete_mode IN ('normal', 'force'))",
+            ),
+            ("deleted_source_key", "TEXT"),
+        )
+        existing = {
+            row[1]
+            for row in connection.execute(
+                "PRAGMA table_info(catalog_excel_products)"
+            )
+        }
+        for column, definition in definitions:
+            if column not in existing:
+                connection.execute(
+                    "ALTER TABLE catalog_excel_products ADD COLUMN {} {}".format(
+                        column,
+                        definition,
+                    )
                 )
 
     @staticmethod

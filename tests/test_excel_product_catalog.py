@@ -567,9 +567,14 @@ class ExcelProductCatalogTest(unittest.TestCase):
             ])
         self.assertEqual(groups, [{"name": "Ремень", "count": 3}])
 
-    def test_product_delete_requires_confirmation_and_blocks_audit_links(self):
+    def test_product_delete_requires_confirmation_and_preserves_audit_links(self):
         self.apply_initial()
         product_id = self.catalog.list_products(query="Watch X1")["items"][0]["id"]
+        with self.database.transaction() as connection:
+            connection.execute(
+                "UPDATE catalog_excel_products SET stock = 0 WHERE id = ?",
+                (product_id,),
+            )
         from app import web
         web.app.config["TESTING"] = True
         empty_references = (
@@ -594,10 +599,10 @@ class ExcelProductCatalogTest(unittest.TestCase):
             "%D1%82%D1%80%D0%B5%D0%B1%D1%83%D0%B5%D1%82%D1%81%D1%8F",
             missing_confirmation.headers["Location"],
         )
-        self.assertIn("notice=error", blocked.headers["Location"])
-        self.assertIsNotNone(self.catalog.get_product(product_id))
+        self.assertIn("notice=success", blocked.headers["Location"])
+        self.assertIsNone(self.catalog.get_product(product_id))
 
-    def test_product_delete_removes_only_unreferenced_zero_stock_card(self):
+    def test_product_delete_tombstones_zero_stock_card_with_external_history(self):
         self.service.apply(
             [result(2, "Unused zero", 0)], "5" * 64, "unused-zero.xlsx"
         )
@@ -609,34 +614,21 @@ class ExcelProductCatalogTest(unittest.TestCase):
             )
         from app import web
         web.app.config["TESTING"] = True
-        related_payloads = (
-            ([{"product_id": str(product_id)}], [], []),
-            ([], [{"product_id": str(product_id)}], []),
-            ([], [], [{"positions": [{"product_id": str(product_id)}]}]),
-        )
-        for sales, operations, receipts in related_payloads:
-            with self.subTest(
-                sales=bool(sales), operations=bool(operations), receipts=bool(receipts)
-            ), mock.patch.dict(
-                "os.environ", {"CATALOG_DATABASE_PATH": str(self.path)}
-            ), mock.patch.object(
-                web, "load_manual_sales", return_value=sales
-            ), mock.patch.object(
-                web, "load_stock_operations", return_value=operations
-            ), mock.patch.object(
-                web, "load_receipts", return_value=receipts
-            ):
-                blocked = web.app.test_client().post(
-                    "/products/{}/delete".format(product_id),
-                    data={"return_to": "/products", "confirm_delete": "1"},
-                )
-            self.assertEqual(blocked.status_code, 302)
-            self.assertIn("notice=error", blocked.headers["Location"])
-            self.assertIsNotNone(self.catalog.get_product(product_id))
         with mock.patch.dict("os.environ", {"CATALOG_DATABASE_PATH": str(self.path)}), \
-                mock.patch.object(web, "load_manual_sales", return_value=[]), \
-                mock.patch.object(web, "load_stock_operations", return_value=[]), \
-                mock.patch.object(web, "load_receipts", return_value=[]), \
+                mock.patch.object(
+                    web, "load_manual_sales",
+                    return_value=[{"product_id": str(product_id)}],
+                ), \
+                mock.patch.object(
+                    web, "load_stock_operations",
+                    return_value=[{"product_id": str(product_id)}],
+                ), \
+                mock.patch.object(
+                    web, "load_receipts",
+                    return_value=[{
+                        "positions": [{"product_id": str(product_id)}],
+                    }],
+                ), \
                 mock.patch.object(web, "MoySkladClient") as moysklad, \
                 mock.patch.object(web, "BitrixCatalogReadOnlyClient") as bitrix:
             response = web.app.test_client().post(
