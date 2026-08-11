@@ -214,11 +214,15 @@ class AuditJournal:
             escaped = str(query).casefold().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
             parameters.append("%{}%".format(escaped))
         try:
-            parsed_from = datetime.fromisoformat(str(date_from)[:10]).date()
+            parsed_from = datetime.strptime(
+                str(date_from)[:10], "%Y-%m-%d"
+            ).date()
         except (TypeError, ValueError):
             parsed_from = None
         try:
-            parsed_to = datetime.fromisoformat(str(date_to)[:10]).date()
+            parsed_to = datetime.strptime(
+                str(date_to)[:10], "%Y-%m-%d"
+            ).date()
         except (TypeError, ValueError):
             parsed_to = None
         if parsed_from:

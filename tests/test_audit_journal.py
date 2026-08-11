@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
 from unittest import mock
 
@@ -9,6 +10,14 @@ from app.services.audit_journal import AuditJournal, whitelisted_changes
 from app.services.excel_product_catalog import ExcelProductCatalog
 from app.services.receipt_inventory import ReceiptInventory
 from app.services.sales_inventory import SalesInventory
+
+
+class Python36Datetime:
+    """Datetime surface available on production Python 3.6."""
+
+    strptime = staticmethod(datetime.strptime)
+    combine = staticmethod(datetime.combine)
+    now = staticmethod(datetime.now)
 
 
 class AuditJournalTest(unittest.TestCase):
@@ -257,6 +266,29 @@ class AuditJournalUiTest(unittest.TestCase):
         ])
         self.assertEqual(self.client.post("/api/journal").status_code, 405)
         self.assertEqual(self.client.delete("/api/journal/1").status_code, 405)
+
+    def test_python36_datetime_supports_empty_event_and_filtered_journal(self):
+        patches = (
+            mock.patch("app.services.audit_journal.datetime", Python36Datetime),
+            mock.patch.object(web, "datetime", Python36Datetime),
+        )
+        with patches[0], patches[1]:
+            self.assertEqual(self.client.get("/app/journal").status_code, 200)
+            self.assertEqual(
+                self.client.get(
+                    "/api/journal?entity_type=product&date_from=2026-08-01"
+                    "&date_to=2026-08-31&q=KLOK"
+                ).status_code,
+                200,
+            )
+            with self.database.transaction() as connection:
+                connection.execute("DELETE FROM erp_audit_events")
+            response = self.client.get("/app/journal")
+            self.assertEqual(response.status_code, 200)
+            self.assertIn(
+                "За выбранный период событий нет",
+                response.get_data(as_text=True),
+            )
 
     def test_deleted_object_detail_is_readable_without_broken_link(self):
         response = self.client.get("/api/journal/1")
