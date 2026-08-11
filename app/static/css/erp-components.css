@@ -4133,6 +4133,7 @@ select.erp-control {
     }
 
     .receipts-table .receipt-row {
+        position: relative;
         min-width: 0;
         display: grid;
         grid-template-columns: minmax(0, 1fr) auto;
@@ -4179,10 +4180,28 @@ select.erp-control {
         text-align: left;
     }
 
+    .receipts-table .receipt-row > .col-photo {
+        position: absolute !important;
+        top: 12px;
+        left: 12px;
+        width: 42px !important;
+        min-width: 42px !important;
+        max-width: 42px !important;
+        align-items: center;
+        justify-content: flex-start;
+        overflow: visible !important;
+    }
+
+    .receipts-table .receipt-row > .col-photo::before {
+        display: none;
+    }
+
     .receipts-table .receipt-row > .col-products {
         grid-column: 1 / -1;
         grid-row: 1;
         display: block;
+        min-height: 42px !important;
+        padding-left: 54px !important;
         color: #172033;
         font-size: 15px;
         font-weight: 850;

@@ -10179,6 +10179,27 @@ def receipt_catalog_create():
         ), 502
 
 
+def attach_receipt_product_thumbnails(receipts, shared_catalog=None):
+    """Add current catalog thumbnails to rendered receipt rows in one batch."""
+    product_ids = {
+        str(receipt.get("product_id") or "").strip()
+        for receipt in receipts
+        if str(receipt.get("product_id") or "").strip()
+    }
+    products = (shared_catalog or SharedCatalog()).products_by_ids(
+        product_ids,
+        include_archived=False,
+    )
+    for receipt in receipts:
+        product = products.get(
+            str(receipt.get("product_id") or "").strip()
+        )
+        receipt["product_thumbnail_url"] = (
+            str(product.get("image_url") or "") if product else ""
+        )
+    return receipts
+
+
 @app.route("/receipts")
 @app.route("/app/receipts")
 def receipts_page():
@@ -10279,6 +10300,7 @@ def receipts_page():
     )
     page, per_page = parse_erp_pagination()
     receipts, page = paginate_erp_records(receipts, page, per_page)
+    attach_receipt_product_thumbnails(receipts)
     pagination = build_erp_pagination(
         "receipts_page", filtered_total, page, per_page
     )
