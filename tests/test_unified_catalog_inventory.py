@@ -256,12 +256,16 @@ class UnifiedCatalogInventoryTest(unittest.TestCase):
 
         self.sales.update_sale(
             "sale-1",
-            sale_payload,
-            2,
+            {**sale_payload, "note": "Информационное обновление"},
+            3,
             1000,
             idempotency_key="sale-update-1",
         )
-        self.assertEqual(self.stock(product["id"]), 8)
+        self.assertEqual(self.stock(product["id"]), 7)
+        self.assertEqual(
+            self.sales.get_sale("sale-1")["note"],
+            "Информационное обновление",
+        )
 
         cancelled = self.sales.cancel_sale(
             "sale-1",
@@ -283,7 +287,7 @@ class UnifiedCatalogInventoryTest(unittest.TestCase):
         self.assertEqual(self.stock(product["id"]), 6)
 
         movements = self.sales.list_movements(product["id"])
-        self.assertEqual(len(movements), 5)
+        self.assertEqual(len(movements), 4)
         self.assertEqual(
             {item["type"] for item in movements},
             {"receipt", "sale", "manual_adjustment", "cancellation"},
