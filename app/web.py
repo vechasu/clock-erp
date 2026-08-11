@@ -6548,6 +6548,18 @@ def manual_sale_update():
                 status_code=410,
             )
 
+        try:
+            validate_performed_sale_update(
+                sale,
+                request.form.to_dict(),
+            )
+        except SalesInventoryError as error:
+            return respond_to_sales_action(
+                str(error),
+                notice="error",
+                status_code=409,
+            )
+
         previous_product_id = str(sale.get("product_id") or "").strip()
         product_id = str(
             request.form.get("product_id")

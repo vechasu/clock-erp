@@ -1076,6 +1076,35 @@ class SalesInventoryWebTest(SalesInventoryTest):
             movements_before,
         )
 
+    def test_legacy_manual_update_enforces_immutable_rule_atomically(self):
+        legacy = {
+            "id": "legacy-edit",
+            "created_at": "2026-08-04T14:14",
+            "source": "Tictactoy",
+            "product_id": str(self.product["id"]),
+            "product_name": self.product["display_name"],
+            "brand": self.product["display_brand"],
+            "category": self.product["display_category"],
+            "quantity": 1,
+            "unit_price": 1000,
+            "note": "Старое",
+            "inventory_managed": False,
+        }
+        web.save_manual_sales([legacy])
+
+        allowed = self.update_sale_form(legacy, note="Новое")
+        blocked = self.update_sale_form(
+            {**legacy, "note": "Новое"},
+            quantity="2",
+            note="Не сохранять",
+        )
+
+        self.assertEqual(allowed.status_code, 200)
+        self.assertEqual(blocked.status_code, 409)
+        stored = web.load_manual_sales()[0]
+        self.assertEqual(stored["quantity"], 1)
+        self.assertEqual(stored["note"], "Новое")
+
     def test_manual_update_without_source_is_still_blocked(self):
         sale = self.create_managed_sale(source="Amazon")
         response = self.update_sale_form(sale, source=None, note="No drift")
