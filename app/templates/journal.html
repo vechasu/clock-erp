@@ -140,7 +140,7 @@
             </header>
 
             <nav class="journal-tabs" aria-label="Раздел журнала">
-                {% for value, label in [("", "Все"), ("product", "Товары"), ("sale", "Продажи"), ("receipt", "Приход")] %}
+                {% for value, label in [("", "Все"), ("product", "Товары"), ("brand", "Бренды"), ("category", "Категории"), ("sale", "Продажи"), ("receipt", "Приход")] %}
                     <a class="journal-tab{% if filters.entity_type == value %} active{% endif %}" href="#" data-journal-tab="{{ value }}"{% if filters.entity_type == value %} aria-current="page"{% endif %}>{{ label }}</a>
                 {% endfor %}
             </nav>
@@ -174,6 +174,8 @@
                         <select class="journal-control" name="filter_entity_type" aria-label="Раздел">
                             <option value="">Все разделы</option>
                             <option value="product">Товары</option>
+                            <option value="brand">Бренды</option>
+                            <option value="category">Категории</option>
                             <option value="sale">Продажи</option>
                             <option value="receipt">Приход</option>
                         </select>

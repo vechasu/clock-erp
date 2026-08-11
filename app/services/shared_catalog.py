@@ -5,6 +5,7 @@ import re
 import unicodedata
 
 from app.catalog_db import CatalogDatabase
+from app.services.audit_journal import AuditJournal
 
 
 class DuplicateCatalogValueError(ValueError):
@@ -164,6 +165,12 @@ def ensure_category(
         ).fetchone()
         if row is None:
             raise CatalogReferenceError("Категория не найдена.")
+        if brand_id:
+            connection.execute(
+                "INSERT OR IGNORE INTO erp_brand_categories "
+                "(brand_id, category_id, created_at) VALUES (?, ?, ?)",
+                (int(brand_id), int(row["id"]), utc_now()),
+            )
         return row
 
     name = catalog_name(name)
@@ -187,6 +194,11 @@ def ensure_category(
                 "SELECT * FROM erp_categories WHERE id = ?",
                 (row["id"],),
             ).fetchone()
+        connection.execute(
+            "INSERT OR IGNORE INTO erp_brand_categories "
+            "(brand_id, category_id, created_at) VALUES (?, ?, ?)",
+            (int(brand_id), int(row["id"]), utc_now()),
+        )
         return row
     if not create:
         raise CatalogReferenceError("Категория не найдена.")
@@ -197,11 +209,17 @@ def ensure_category(
         "VALUES (?, ?, ?, 1, ?, ?)",
         (int(brand_id), name, key, now, now),
     )
-    return connection.execute(
+    row = connection.execute(
         "SELECT * FROM erp_categories "
         "WHERE normalized_name = ? ORDER BY id LIMIT 1",
         (key,),
     ).fetchone()
+    connection.execute(
+        "INSERT OR IGNORE INTO erp_brand_categories "
+        "(brand_id, category_id, created_at) VALUES (?, ?, ?)",
+        (int(brand_id), int(row["id"]), now),
+    )
+    return row
 
 
 def assign_product_taxonomy(
@@ -284,6 +302,103 @@ class SharedCatalog:
             ).fetchall()
         return [self._brand(row) for row in rows]
 
+    def list_brand_overviews(self, query="", limit=200):
+        """Load brands and their category aggregates in two batch queries."""
+        self.database.initialize()
+        query = catalog_search_key(query)
+        parameters = []
+        where = "WHERE b.active = 1"
+        if query:
+            where += " AND catalog_search_key(b.name) LIKE ? ESCAPE '\\'"
+            parameters.append(catalog_prefix_pattern(query))
+        parameters.append(max(1, min(int(limit), 500)))
+        with self.database.connect() as connection:
+            if query:
+                register_catalog_search(connection)
+            brand_rows = connection.execute(
+                "SELECT b.id, b.name, b.active, COUNT(p.id) AS product_count, "
+                "COALESCE(SUM(CASE WHEN p.stock != 0 THEN 1 ELSE 0 END), 0) "
+                "AS nonzero_count, COALESCE(SUM(p.stock), 0) AS stock_total "
+                "FROM erp_brands b LEFT JOIN catalog_excel_products p "
+                "ON p.brand_id = b.id AND p.active = 1 " + where +
+                " GROUP BY b.id ORDER BY b.name COLLATE NOCASE LIMIT ?",
+                parameters,
+            ).fetchall()
+            brand_ids = [int(row["id"]) for row in brand_rows]
+            category_rows = []
+            if brand_ids:
+                placeholders = ", ".join("?" for _ in brand_ids)
+                category_rows = connection.execute(
+                    "SELECT bc.brand_id, c.id, c.name, c.normalized_name, "
+                    "COUNT(p.id) AS product_count, "
+                    "COALESCE(SUM(CASE WHEN p.stock != 0 THEN 1 ELSE 0 END), 0) "
+                    "AS nonzero_count, COALESCE(SUM(p.stock), 0) AS stock_total "
+                    "FROM erp_brand_categories bc JOIN erp_categories c "
+                    "ON c.id = bc.category_id AND c.active = 1 "
+                    "LEFT JOIN catalog_excel_products p ON p.brand_id = bc.brand_id "
+                    "AND p.category_id = c.id AND p.active = 1 "
+                    "WHERE bc.brand_id IN ({}) GROUP BY bc.brand_id, c.id "
+                    "ORDER BY c.name COLLATE NOCASE".format(placeholders),
+                    brand_ids,
+                ).fetchall()
+        categories = {}
+        for row in category_rows:
+            categories.setdefault(int(row["brand_id"]), []).append({
+                "id": int(row["id"]),
+                "name": row["name"],
+                "product_count": int(row["product_count"]),
+                "nonzero_count": int(row["nonzero_count"]),
+                "stock_total": normalized_stock_value(row["stock_total"]),
+                "stock_display": format_stock_value(row["stock_total"]),
+            })
+        return [{
+            **self._brand(row),
+            "nonzero_count": int(row["nonzero_count"]),
+            "categories": categories.get(int(row["id"]), []),
+        } for row in brand_rows]
+
+    def get_brand_overview(self, brand_id):
+        try:
+            brand_id = int(brand_id)
+        except (TypeError, ValueError):
+            return None
+        return next((item for item in self.list_brand_overviews(limit=500)
+                     if item["id"] == brand_id), None)
+
+    def create_brand_category(self, brand_id, name, **actor):
+        self.database.initialize()
+        with self.database.transaction() as connection:
+            brand = ensure_brand(connection, brand_id=brand_id, create=False)
+            cleaned = catalog_name(name)
+            if not cleaned:
+                raise ValueError("Название категории обязательно.")
+            existing = connection.execute(
+                "SELECT c.* FROM erp_brand_categories bc "
+                "JOIN erp_categories c ON c.id = bc.category_id "
+                "WHERE bc.brand_id = ? AND c.active = 1 "
+                "AND c.normalized_name = ? LIMIT 1",
+                (int(brand_id), normalized_name(cleaned)),
+            ).fetchone()
+            if existing is not None:
+                raise DuplicateCatalogValueError(
+                    "Эта категория уже добавлена в бренд.", existing
+                )
+            category = ensure_category(
+                connection, brand["id"], name=cleaned, create=True
+            )
+            relation = connection.execute(
+                "SELECT created_at FROM erp_brand_categories "
+                "WHERE brand_id = ? AND category_id = ?",
+                (int(brand_id), int(category["id"])),
+            ).fetchone()
+            AuditJournal(self.database).record(
+                "category", category["id"], "created", category["name"],
+                metadata={"brand_id": int(brand_id), "brand": brand["name"]},
+                connection=connection, **actor
+            )
+            return {"id": int(category["id"]), "name": category["name"],
+                    "created_at": relation["created_at"]}
+
     def list_categories(
         self,
         brand_id=None,
@@ -358,7 +473,10 @@ class SharedCatalog:
                 "THEN p.stock ELSE 0 END), 0) AS selected_stock_total, "
                 "MAX(CASE WHEN p.brand_id = ? "
                 "OR (? = 0 AND p.brand_id IS NULL) "
-                "THEN 1 ELSE 0 END) AS used_by_brand "
+                "THEN 1 ELSE 0 END) OR EXISTS ("
+                "SELECT 1 FROM erp_brand_categories bc "
+                "WHERE bc.brand_id = ? AND bc.category_id = c.id"
+                ") AS used_by_brand "
                 "FROM erp_categories c "
                 "JOIN erp_brands b ON b.id = c.brand_id "
                 "LEFT JOIN catalog_excel_products p "
@@ -385,6 +503,7 @@ class SharedCatalog:
                 "ORDER BY used_by_brand DESC, "
                 "name COLLATE NOCASE, id",
                 [
+                    selected_brand_id,
                     selected_brand_id,
                     selected_brand_id,
                     selected_brand_id,
@@ -699,7 +818,7 @@ class SharedCatalog:
                 })
         return products
 
-    def create_brand(self, name):
+    def create_brand(self, name, **actor):
         name = catalog_name(name)
         if not name:
             raise ValueError("Название бренда обязательно.")
@@ -727,6 +846,10 @@ class SharedCatalog:
                     self._brand(existing),
                 )
             row = ensure_brand(connection, name=name)
+            AuditJournal(self.database).record(
+                "brand", row["id"], "created", row["name"],
+                after={"name": row["name"]}, connection=connection, **actor
+            )
             return self._brand(row)
 
     def set_moysklad_product_id(self, product_id, moysklad_product_id):
@@ -807,7 +930,7 @@ class SharedCatalog:
             prepared["brand_name"] = brand["name"]
             return prepared
 
-    def rename_brand(self, brand_id, name):
+    def rename_brand(self, brand_id, name, **actor):
         name = catalog_name(name)
         if not name:
             raise ValueError("Название бренда обязательно.")
@@ -841,6 +964,7 @@ class SharedCatalog:
                     "Такой бренд уже существует: {}.".format(duplicate["name"]),
                     self._brand(duplicate),
                 )
+            old_name = current["name"]
             connection.execute(
                 "UPDATE erp_brands SET name = ?, normalized_name = ?, "
                 "updated_at = ? WHERE id = ?",
@@ -848,8 +972,13 @@ class SharedCatalog:
             )
             connection.execute(
                 "UPDATE catalog_excel_products SET excel_brand = ?, updated_at = ? "
-                "WHERE brand_id = ?",
+                "WHERE brand_id = ? AND active = 1",
                 (name, utc_now(), current["id"]),
+            )
+            AuditJournal(self.database).record(
+                "brand", current["id"], "updated", name,
+                before={"name": old_name}, after={"name": name},
+                connection=connection, **actor
             )
             return self._brand(
                 connection.execute(

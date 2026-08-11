@@ -4531,6 +4531,11 @@
                 </div>
             </header>
 
+            <nav class="erp-section-tabs" aria-label="Раздел товаров">
+                <a class="erp-section-tab is-active" href="{{ url_for('warehouse_page') }}" aria-current="page">Товары</a>
+                <a class="erp-section-tab" href="{{ url_for('warehouse_page', view='brands') }}">Бренды</a>
+            </nav>
+
             {% if request.args.get("notice") and request.args.get("message") %}
                 <div
                     id="pageNotice"

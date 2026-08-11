@@ -1638,6 +1638,25 @@ def sort_erp_records(records, field, direction, numeric_fields=()):
 @app.route("/warehouse")
 @app.route("/app/products")
 def warehouse_page():
+    warehouse_view = (request.args.get("view") or "products").strip()
+    if warehouse_view == "brands":
+        shared_catalog = SharedCatalog()
+        brand_id = (request.args.get("brand_id") or "").strip()
+        brand = shared_catalog.get_brand_overview(brand_id) if brand_id else None
+        if brand_id and brand is None:
+            return redirect(url_for(
+                "warehouse_page", view="brands", notice="error",
+                message="Бренд не найден.",
+            ))
+        return render_template(
+            "warehouse_brands.html",
+            brands=shared_catalog.list_brand_overviews(
+                query=(request.args.get("q") or "").strip(), limit=500,
+            ),
+            brand=brand,
+            query=(request.args.get("q") or "").strip(),
+            can_force_delete=_product_force_delete_allowed(),
+        )
     query = request.args.get("q", "").strip()
     selected_category = request.args.get("category", "").strip()
     selected_brand = request.args.get("brand", "").strip()
@@ -12951,6 +12970,125 @@ def _validate_product_force_delete(payload):
         )
 
 
+def _brands_redirect(brand_id=None, notice="success", message=""):
+    arguments = {"view": "brands", "notice": notice, "message": message}
+    if brand_id is not None:
+        arguments["brand_id"] = int(brand_id)
+    return redirect(url_for("warehouse_page", **arguments))
+
+
+@app.route("/warehouse/brands", methods=["POST"])
+def warehouse_create_brand():
+    require_csrf_when_authenticated()
+    try:
+        brand = SharedCatalog().create_brand(
+            request.form.get("name"), **current_audit_actor()
+        )
+        return _brands_redirect(
+            brand["id"], message="Бренд создан."
+        )
+    except (DuplicateCatalogValueError, ValueError) as error:
+        return _brands_redirect(notice="error", message=str(error))
+
+
+@app.route("/warehouse/brands/<int:brand_id>/rename", methods=["POST"])
+def warehouse_rename_brand(brand_id):
+    require_csrf_when_authenticated()
+    try:
+        SharedCatalog().rename_brand(
+            brand_id, request.form.get("name"), **current_audit_actor()
+        )
+        return _brands_redirect(
+            brand_id, message="Бренд переименован."
+        )
+    except (DuplicateCatalogValueError, ValueError) as error:
+        return _brands_redirect(
+            brand_id, notice="error", message=str(error)
+        )
+
+
+@app.route("/warehouse/brands/<int:brand_id>/categories", methods=["POST"])
+def warehouse_create_brand_category(brand_id):
+    require_csrf_when_authenticated()
+    try:
+        SharedCatalog().create_brand_category(
+            brand_id, request.form.get("name"), **current_audit_actor()
+        )
+        return _brands_redirect(
+            brand_id, message="Категория добавлена в бренд."
+        )
+    except (DuplicateCatalogValueError, ValueError) as error:
+        return _brands_redirect(
+            brand_id, notice="error", message=str(error)
+        )
+
+
+@app.route("/warehouse/brands/<int:brand_id>/delete", methods=["POST"])
+def warehouse_delete_brand(brand_id):
+    require_csrf_when_authenticated()
+    catalog = SharedCatalog()
+    brand = catalog.get_brand_overview(brand_id)
+    if brand is None:
+        return _brands_redirect(notice="error", message="Бренд не найден.")
+    confirmation = (request.form.get("confirmation") or "").strip()
+    if confirmation not in {brand["name"], "УДАЛИТЬ"}:
+        return _brands_redirect(
+            brand_id, notice="error",
+            message="Введите точное название бренда или УДАЛИТЬ.",
+        )
+    force = _product_force_delete_requested(request.form)
+    try:
+        if force:
+            _validate_product_force_delete(request.form)
+        result = ExcelProductCatalog().delete_brand_catalog(
+            brand_id, force=force, **current_audit_actor()
+        )
+        _invalidate_deleted_product_caches()
+        return _brands_redirect(message="Бренд и {} товар(ов) удалены.".format(
+            result["products_deleted"]
+        ))
+    except (ProductDeleteBlockedError, ValueError) as error:
+        return _brands_redirect(brand_id, notice="error", message=str(error))
+
+
+@app.route(
+    "/warehouse/brands/<int:brand_id>/categories/<int:category_id>/delete",
+    methods=["POST"],
+)
+def warehouse_delete_brand_category(brand_id, category_id):
+    require_csrf_when_authenticated()
+    brand = SharedCatalog().get_brand_overview(brand_id)
+    category = next((item for item in (brand or {}).get("categories", [])
+                     if item["id"] == category_id), None)
+    if brand is None or category is None:
+        return _brands_redirect(
+            brand_id, notice="error", message="Категория бренда не найдена."
+        )
+    if category["product_count"] and (
+        request.form.get("confirmation") or ""
+    ).strip() != "УДАЛИТЬ":
+        return _brands_redirect(
+            brand_id, notice="error",
+            message="Для удаления товаров введите УДАЛИТЬ.",
+        )
+    force = _product_force_delete_requested(request.form)
+    try:
+        if force:
+            _validate_product_force_delete(request.form)
+        result = ExcelProductCatalog().delete_brand_catalog(
+            brand_id, category_id=category_id, force=force,
+            **current_audit_actor()
+        )
+        _invalidate_deleted_product_caches()
+        return _brands_redirect(
+            brand_id, message="Категория удалена из бренда; удалено товаров: {}.".format(
+                result["products_deleted"]
+            )
+        )
+    except (ProductDeleteBlockedError, ValueError) as error:
+        return _brands_redirect(brand_id, notice="error", message=str(error))
+
+
 @app.route("/products")
 def excel_products_page():
     target = url_for("warehouse_page")
@@ -13389,6 +13527,8 @@ def inject_sidebar_navigation():
 
 JOURNAL_ENTITY_LABELS = {
     "product": "Товары",
+    "brand": "Бренды",
+    "category": "Категории",
     "sale": "Продажи",
     "receipt": "Приход",
 }
@@ -13500,7 +13640,7 @@ def serialize_journal_event(event):
 
 def journal_query_arguments():
     entity_type = str(request.args.get("entity_type") or "").strip()
-    if entity_type not in {"product", "sale", "receipt"}:
+    if entity_type not in {"product", "brand", "category", "sale", "receipt"}:
         entity_type = ""
     return {
         "entity_type": entity_type,
@@ -13562,6 +13702,16 @@ def api_journal_event(event_id):
         elif event["entity_type"] == "receipt":
             if ReceiptInventory().get_receipt(event["entity_id"]):
                 object_url = "/app/receipts?receipt_id={}".format(event["entity_id"])
+        elif event["entity_type"] == "brand":
+            object_url = url_for(
+                "warehouse_page", view="brands", brand_id=event["entity_id"]
+            )
+        elif event["entity_type"] == "category":
+            brand_id = event.get("metadata", {}).get("brand_id")
+            if brand_id:
+                object_url = url_for(
+                    "warehouse_page", view="brands", brand_id=brand_id
+                )
     payload = serialize_journal_event(event)
     payload["object_url"] = object_url
     payload["object_deleted"] = not bool(object_url)

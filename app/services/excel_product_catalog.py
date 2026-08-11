@@ -1378,49 +1378,125 @@ class ExcelProductCatalog:
             ).fetchone()
             if product is None:
                 raise ValueError("Товар не найден.")
+            self._validate_products_for_delete([product], force)
+            result = self._delete_product_in_transaction(
+                connection, product, force=force, actor_id=actor_id,
+                actor_name=actor_name, actor_type=actor_type,
+            )
+        return result
 
-            stock = float(product["stock"] or 0)
-            if stock != 0 and not force:
+    @staticmethod
+    def _validate_products_for_delete(products, force):
+        blocked = [row for row in products if float(row["stock"] or 0) != 0]
+        if blocked and not force:
+            if len(products) == 1:
                 raise ProductDeleteBlockedError(
                     "Товар с ненулевым остатком нельзя удалить."
                 )
+            raise ProductDeleteBlockedError(
+                "Нельзя удалить: у {} товар(ов) ненулевой остаток."
+                .format(len(blocked))
+            )
 
-            deleted_at = utc_now()
-            source_key = str(product["source_key"])
-            tombstone_source_key = "deleted:{}:{}".format(
-                int(product_id), uuid.uuid4().hex
-            )
-            connection.execute(
-                "UPDATE catalog_excel_products SET active = 0, "
-                "source_key = ?, deleted_source_key = ?, deleted_at = ?, "
-                "deleted_by = ?, deleted_stock = ?, delete_mode = ?, "
-                "updated_at = ? WHERE id = ? AND active = 1",
-                (
-                    tombstone_source_key,
-                    source_key,
-                    deleted_at,
-                    str(actor_id or "") or None,
-                    stock,
-                    "force" if force else "normal",
-                    deleted_at,
-                    int(product_id),
-                ),
-            )
-            AuditJournal(self.database).record(
-                "product", product_id, "deleted",
-                product["excel_name_raw"], product["excel_article"] or "",
-                metadata={
-                    "article": product["excel_article"] or "",
-                    "force": bool(force), "stock": stock,
-                }, actor_id=actor_id, actor_name=actor_name,
-                actor_type=actor_type, connection=connection,
-            )
-        return {
-            "id": int(product_id),
-            "stock": stock,
-            "force": bool(force),
-            "deleted_at": deleted_at,
-        }
+    def _delete_product_in_transaction(
+            self, connection, product, force=False, actor_id="",
+            actor_name="", actor_type="user"):
+        product_id = int(product["id"])
+        stock = float(product["stock"] or 0)
+        deleted_at = utc_now()
+        source_key = str(product["source_key"])
+        connection.execute(
+            "UPDATE catalog_excel_products SET active = 0, source_key = ?, "
+            "deleted_source_key = ?, deleted_at = ?, deleted_by = ?, "
+            "deleted_stock = ?, delete_mode = ?, updated_at = ? "
+            "WHERE id = ? AND active = 1",
+            (
+                "deleted:{}:{}".format(product_id, uuid.uuid4().hex),
+                source_key, deleted_at, str(actor_id or "") or None, stock,
+                "force" if force else "normal", deleted_at, product_id,
+            ),
+        )
+        AuditJournal(self.database).record(
+            "product", product_id, "deleted", product["excel_name_raw"],
+            product["excel_article"] or "", metadata={
+                "article": product["excel_article"] or "",
+                "force": bool(force), "stock": stock,
+            }, actor_id=actor_id, actor_name=actor_name,
+            actor_type=actor_type, connection=connection,
+        )
+        return {"id": product_id, "stock": stock, "force": bool(force),
+                "deleted_at": deleted_at}
+
+    def delete_brand_catalog(
+            self, brand_id, category_id=None, force=False, actor_id="",
+            actor_name="", actor_type="user"):
+        """Atomically tombstone a brand/category product set and its relation."""
+        self.database.initialize()
+        with self.database.transaction() as connection:
+            brand = connection.execute(
+                "SELECT * FROM erp_brands WHERE id = ? AND active = 1",
+                (int(brand_id),),
+            ).fetchone()
+            if brand is None:
+                raise ValueError("Бренд не найден.")
+            category = None
+            parameters = [int(brand_id)]
+            product_where = "p.brand_id = ? AND p.active = 1"
+            if category_id not in (None, ""):
+                category = connection.execute(
+                    "SELECT c.* FROM erp_categories c "
+                    "JOIN erp_brand_categories bc ON bc.category_id = c.id "
+                    "WHERE bc.brand_id = ? AND c.id = ? AND c.active = 1",
+                    (int(brand_id), int(category_id)),
+                ).fetchone()
+                if category is None:
+                    raise ValueError("Категория бренда не найдена.")
+                product_where += " AND p.category_id = ?"
+                parameters.append(int(category_id))
+            products = connection.execute(
+                "SELECT p.* FROM catalog_excel_products p WHERE " +
+                product_where + " ORDER BY p.id",
+                parameters,
+            ).fetchall()
+            self._validate_products_for_delete(products, force)
+            for product in products:
+                self._delete_product_in_transaction(
+                    connection, product, force=force, actor_id=actor_id,
+                    actor_name=actor_name, actor_type=actor_type,
+                )
+            if category is not None:
+                connection.execute(
+                    "DELETE FROM erp_brand_categories "
+                    "WHERE brand_id = ? AND category_id = ?",
+                    (int(brand_id), int(category_id)),
+                )
+                AuditJournal(self.database).record(
+                    "category", category["id"], "deleted", category["name"],
+                    metadata={"brand_id": int(brand_id), "brand": brand["name"],
+                              "products_deleted": len(products),
+                              "force": bool(force)}, connection=connection,
+                    actor_id=actor_id, actor_name=actor_name,
+                    actor_type=actor_type,
+                )
+            else:
+                connection.execute(
+                    "DELETE FROM erp_brand_categories WHERE brand_id = ?",
+                    (int(brand_id),),
+                )
+                connection.execute(
+                    "UPDATE erp_brands SET active = 0, updated_at = ? WHERE id = ?",
+                    (utc_now(), int(brand_id)),
+                )
+                AuditJournal(self.database).record(
+                    "brand", brand["id"], "deleted", brand["name"],
+                    metadata={"products_deleted": len(products),
+                              "force": bool(force)}, connection=connection,
+                    actor_id=actor_id, actor_name=actor_name,
+                    actor_type=actor_type,
+                )
+        return {"brand_id": int(brand_id),
+                "category_id": int(category_id) if category is not None else None,
+                "products_deleted": len(products), "force": bool(force)}
 
     def confirm_match(self, product_id, catalog_product_id):
         return self._change_match(product_id, "confirm_bitrix", catalog_product_id)
