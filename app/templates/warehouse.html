@@ -6659,6 +6659,10 @@
             event.preventDefault();
             const form = event.currentTarget;
             if (!form.classList.contains("is-editing")) return;
+            if (form.dataset.submitting === "true") return;
+            form.dataset.submitting = "true";
+            const submitButton = form.querySelector('button[type="submit"]');
+            if (submitButton) submitButton.disabled = true;
             const productId = document.getElementById("editProductId").value;
             const body = new FormData(form);
             const photoAction = form.dataset.photoAction || "keep";
@@ -6716,6 +6720,9 @@
                 setDetailPhotoStatus(payload.meta?.image_message || "Карточка обновлена.");
             } catch (error) {
                 setDetailPhotoStatus(error.message || "Не удалось сохранить карточку.", true);
+            } finally {
+                form.dataset.submitting = "false";
+                if (submitButton) submitButton.disabled = false;
             }
         });
 

@@ -25,6 +25,10 @@ class BitrixCatalogReadOnlyError(RuntimeError):
 class BitrixCatalogWriteError(RuntimeError):
     """A sanitized error raised when Bitrix rejects an image mutation."""
 
+    def __init__(self, message, **context):
+        super().__init__(message)
+        self.context = context
+
 
 def _safe_url(url):
     parsed = urlsplit(str(url or ""))
@@ -43,6 +47,55 @@ def _first(data, *keys):
 
 def _text(value):
     return str(value or "").strip()
+
+
+def _image_ids(product):
+    return [
+        _text(image.get("id"))
+        for image in (product or {}).get("images", [])
+        if _text(image.get("id"))
+    ]
+
+
+def _image_source(product, file_id):
+    return next((
+        _text(image.get("kind")) or "gallery"
+        for image in (product or {}).get("images", [])
+        if _text(image.get("id")) == _text(file_id)
+    ), "gallery")
+
+
+def _verify_image_mutation(before, after, action, file_id, affected_file_id):
+    before_ids = _image_ids(before)
+    after_ids = _image_ids(after)
+    file_id = _text(file_id)
+    affected_file_id = _text(affected_file_id)
+
+    if action == "replace":
+        if file_id not in before_ids:
+            return "selected_file_missing_before_replace"
+        position = before_ids.index(file_id)
+        expected = list(before_ids)
+        expected[position] = affected_file_id
+        if not affected_file_id or affected_file_id == file_id:
+            return "replacement_file_id_did_not_change"
+        if after_ids != expected:
+            return "replacement_gallery_state_mismatch"
+    elif action == "add":
+        if (
+            not affected_file_id
+            or len(after_ids) != len(before_ids) + 1
+            or after_ids[:-1] != before_ids
+            or after_ids[-1] != affected_file_id
+        ):
+            return "added_image_not_confirmed"
+    elif action == "remove":
+        if file_id not in before_ids:
+            return "selected_file_missing_before_remove"
+        expected = [image_id for image_id in before_ids if image_id != file_id]
+        if file_id in after_ids or len(after_ids) != len(expected):
+            return "removed_image_still_present"
+    return ""
 
 
 def _number(value):
@@ -507,6 +560,18 @@ class BitrixCatalogClient(BitrixCatalogReadOnlyClient):
         if action in {"add", "replace"} and not image:
             raise ValueError("Image content is required")
 
+        before = self.get_product(product_id)
+        if before is None:
+            raise BitrixCatalogWriteError(
+                "Bitrix product is unavailable before image operation",
+                product_id=product_id,
+                action=action,
+                file_id=file_id,
+                source="gallery",
+                reason="product_missing_before_mutation",
+            )
+        source = _image_source(before, file_id)
+
         headers = {"Accept": "application/json"}
         if self.token:
             headers["Authorization"] = "Bearer {}".format(self.token)
@@ -533,24 +598,74 @@ class BitrixCatalogClient(BitrixCatalogReadOnlyClient):
             )
         except (requests.Timeout, requests.ConnectionError) as error:
             raise BitrixCatalogWriteError(
-                "Bitrix image request timed out"
+                "Bitrix image request timed out",
+                product_id=product_id,
+                action=action,
+                file_id=file_id,
+                source=source,
+                reason="request_timeout",
             ) from error
         if response.status_code in {401, 403}:
-            raise BitrixCatalogWriteError("Bitrix image access denied")
+            raise BitrixCatalogWriteError(
+                "Bitrix image access denied",
+                product_id=product_id,
+                action=action,
+                file_id=file_id,
+                source=source,
+                http_status=response.status_code,
+                reason="access_denied",
+            )
         try:
             payload = response.json()
         except ValueError as error:
             raise BitrixCatalogWriteError(
-                "Bitrix image endpoint returned non-JSON data"
+                "Bitrix image endpoint returned non-JSON data",
+                product_id=product_id,
+                action=action,
+                file_id=file_id,
+                source=source,
+                http_status=response.status_code,
+                reason="non_json_response",
             ) from error
         if response.status_code >= 400 or not payload.get("ok"):
             code = _text(payload.get("error")) or "request_failed"
             raise BitrixCatalogWriteError(
-                "Bitrix image operation failed: {}".format(code)
+                "Bitrix image operation failed: {}".format(code),
+                product_id=product_id,
+                action=action,
+                file_id=file_id,
+                source=source,
+                http_status=response.status_code,
+                response={"error": code},
+                reason=code,
             )
         product = self.get_product(product_id)
         if product is None:
             raise BitrixCatalogWriteError(
-                "Bitrix product disappeared after image operation"
+                "Bitrix product disappeared after image operation",
+                product_id=product_id,
+                action=action,
+                file_id=file_id,
+                source=source,
+                http_status=response.status_code,
+                reason="product_missing_after_mutation",
+            )
+        affected_file_id = _text(payload.get("affected_file_id"))
+        verification_error = _verify_image_mutation(
+            before, product, action, file_id, affected_file_id
+        )
+        if verification_error:
+            raise BitrixCatalogWriteError(
+                "Bitrix image operation was not confirmed",
+                product_id=product_id,
+                action=action,
+                file_id=file_id,
+                source=source,
+                http_status=response.status_code,
+                response={
+                    "ok": bool(payload.get("ok")),
+                    "affected_file_id": affected_file_id,
+                },
+                reason=verification_error,
             )
         return product, payload

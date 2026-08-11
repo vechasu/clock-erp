@@ -28,19 +28,23 @@ class FakeImageResponse:
 
 
 class FakeSession:
-    def __init__(self, get_payload, post_payload=None):
+    def __init__(self, get_payload, post_payload=None, post_status=200):
         self.get_payload = get_payload
         self.post_payload = post_payload or {"ok": True, "affected_file_id": "77"}
+        self.post_status = post_status
         self.get_calls = []
         self.post_calls = []
 
     def get(self, url, **kwargs):
         self.get_calls.append((url, kwargs))
-        return FakeResponse(self.get_payload)
+        payload = self.get_payload[
+            min(len(self.get_calls) - 1, len(self.get_payload) - 1)
+        ] if isinstance(self.get_payload, list) else self.get_payload
+        return FakeResponse(payload)
 
     def post(self, url, **kwargs):
         self.post_calls.append((url, kwargs))
-        return FakeResponse(self.post_payload)
+        return FakeResponse(self.post_payload, self.post_status)
 
 
 class BitrixProductGalleryIntegrationTest(unittest.TestCase):
@@ -81,12 +85,16 @@ class BitrixProductGalleryIntegrationTest(unittest.TestCase):
         self.assertNotIn("secret-token", repr(params))
 
     def test_write_keeps_token_in_header_and_rereads_gallery(self):
-        session = FakeSession({
-            "products": [{
+        session = FakeSession([
+            {"products": [{
+                "id": "204699",
+                "images": [{"id": "44610", "url": "/old.jpg"}],
+            }]},
+            {"products": [{
                 "id": "204699",
                 "images": [{"id": "77", "url": "/new.jpg"}],
-            }]
-        })
+            }]},
+        ])
         client = BitrixCatalogClient(
             "https://www.tictactoy.ru/api/catalog-export.php",
             token="secret-token",
@@ -108,14 +116,23 @@ class BitrixProductGalleryIntegrationTest(unittest.TestCase):
         self.assertNotIn("secret-token", repr(post["data"]))
         self.assertEqual(product["images"][0]["id"], "77")
         self.assertEqual(result["affected_file_id"], "77")
-        self.assertEqual(len(session.get_calls), 1)
+        self.assertEqual(len(session.get_calls), 2)
 
     def test_add_replace_and_remove_use_one_bitrix_product_endpoint(self):
         for action in ("add", "replace", "remove"):
             with self.subTest(action=action):
-                session = FakeSession({
-                    "products": [{"id": "204699", "images": []}]
-                })
+                before_images = (
+                    [] if action == "add"
+                    else [{"id": "44610", "url": "/old.jpg"}]
+                )
+                after_images = (
+                    [] if action == "remove"
+                    else [{"id": "77", "url": "/new.jpg"}]
+                )
+                session = FakeSession([
+                    {"products": [{"id": "204699", "images": before_images}]},
+                    {"products": [{"id": "204699", "images": after_images}]},
+                ])
                 client = BitrixCatalogClient(
                     "https://www.tictactoy.ru/api/catalog-export.php",
                     token="secret-token",
@@ -134,6 +151,98 @@ class BitrixProductGalleryIntegrationTest(unittest.TestCase):
                     "action": action,
                     "file_id": "44610",
                 })
+
+    def test_replace_preserves_four_photo_order_for_every_position(self):
+        before_ids = ["10", "11", "12", "13"]
+        for position in (0, 1, 3):
+            with self.subTest(position=position):
+                after_ids = list(before_ids)
+                after_ids[position] = "77"
+                session = FakeSession([
+                    {"products": [{
+                        "id": "204699",
+                        "images": [
+                            {"id": image_id, "url": "/{}.jpg".format(image_id)}
+                            for image_id in before_ids
+                        ],
+                    }]},
+                    {"products": [{
+                        "id": "204699",
+                        "images": [
+                            {"id": image_id, "url": "/{}.jpg".format(image_id)}
+                            for image_id in after_ids
+                        ],
+                    }]},
+                ])
+                client = BitrixCatalogClient(
+                    "https://www.tictactoy.ru/api/catalog-export.php",
+                    token="secret-token",
+                    session=session,
+                )
+                product, result = client.mutate_product_image(
+                    "204699",
+                    "replace",
+                    image={
+                        "filename": "new.jpg",
+                        "content": b"new",
+                        "mime_type": "image/jpeg",
+                    },
+                    file_id=before_ids[position],
+                )
+                self.assertEqual(
+                    [image["id"] for image in product["images"]], after_ids
+                )
+                self.assertEqual(result["affected_file_id"], "77")
+
+    def test_replace_rejects_http_success_when_gallery_did_not_change(self):
+        unchanged = {"products": [{
+            "id": "204699",
+            "images": [
+                {"id": "10", "url": "/10.jpg"},
+                {"id": "11", "url": "/11.jpg"},
+            ],
+        }]}
+        client = BitrixCatalogClient(
+            "https://www.tictactoy.ru/api/catalog-export.php",
+            session=FakeSession([unchanged, unchanged]),
+        )
+        with self.assertRaises(BitrixCatalogWriteError) as raised:
+            client.mutate_product_image(
+                "204699",
+                "replace",
+                image={"filename": "new.jpg", "content": b"new"},
+                file_id="11",
+            )
+        self.assertEqual(
+            raised.exception.context["reason"],
+            "replacement_gallery_state_mismatch",
+        )
+
+    def test_bitrix_error_does_not_report_replace_success(self):
+        before = {"products": [{
+            "id": "204699",
+            "images": [{"id": "10", "url": "/10.jpg"}],
+        }]}
+        client = BitrixCatalogClient(
+            "https://www.tictactoy.ru/api/catalog-export.php",
+            session=FakeSession(
+                before,
+                post_payload={"error": "image_save_failed"},
+                post_status=500,
+            ),
+        )
+        with self.assertRaises(BitrixCatalogWriteError) as raised:
+            client.mutate_product_image(
+                "204699",
+                "replace",
+                image={"filename": "new.jpg", "content": b"new"},
+                file_id="10",
+            )
+        self.assertEqual(raised.exception.context["http_status"], 500)
+        self.assertEqual(
+            raised.exception.context["response"],
+            {"error": "image_save_failed"},
+        )
 
     def test_lazy_endpoint_returns_all_live_bitrix_images_through_proxy(self):
         stored = {
@@ -298,6 +407,8 @@ class BitrixProductGalleryIntegrationTest(unittest.TestCase):
         self.assertIn('method: "PATCH"', template)
         self.assertIn("resetDetailPhotoChanges(true)", template)
         self.assertIn("warehousePhotoGalleryCache.delete(detailUrl)", template)
+        self.assertIn('form.dataset.submitting === "true"', template)
+        self.assertIn("submitButton.disabled = true", template)
 
     def test_endpoint_contract_uses_real_gallery_property_and_safe_file_rules(self):
         endpoint = Path("bitrix/catalog-export.php").read_text(encoding="utf-8")
@@ -309,8 +420,10 @@ class BitrixProductGalleryIntegrationTest(unittest.TestCase):
         self.assertIn("image/webp", endpoint)
         self.assertIn("CATALOG_EXPORT_MAX_IMAGE_BYTES", endpoint)
         self.assertIn("array_shift($galleryIds)", endpoint)
-        self.assertIn("setGalleryFileIds($productId, $galleryIds)", endpoint)
-        self.assertIn("CFile::Delete($targetId)", endpoint)
+        self.assertIn("galleryFileEntries($productId)", endpoint)
+        self.assertIn("'old_file' => (int) $entry['file_id']", endpoint)
+        self.assertIn("mutateGalleryFiles(", endpoint)
+        self.assertNotIn("$values[] = $fileId", endpoint)
         self.assertNotIn("MORE_PHOTO", endpoint)
 
 
