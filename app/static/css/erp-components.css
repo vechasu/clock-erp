@@ -2240,11 +2240,33 @@ select.erp-control {
 }
 
 .erp-table-card {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
     overflow: hidden;
     border: 1px solid var(--erp-border);
     border-radius: 16px;
     background: #ffffff;
     box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+}
+
+.warehouse-page #warehouseResults,
+.sales-page .sales-data-card,
+.table-card:has(.receipts-table) {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.sales-page .table-wrap:has(.sales-table),
+.table-card:has(.receipts-table) .table-wrap {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
 }
 
 .sales-data-card {

@@ -8185,12 +8185,16 @@
                         applyWarehouseTableWidths(table, view.widths);
                     }
                     function finishResize() {
+                        warehouseTableSuppressSortUntil = Date.now() + 350;
                         document.body.classList.remove("warehouse-table-interacting", "warehouse-column-resizing");
                         saveWarehouseTableView(view);
                         window.removeEventListener("pointermove", resizeColumn);
+                        window.removeEventListener("pointerup", finishResize);
+                        window.removeEventListener("pointercancel", finishResize);
                     }
                     window.addEventListener("pointermove", resizeColumn, { signal: viewSignal });
                     window.addEventListener("pointerup", finishResize, { once: true, signal: viewSignal });
+                    window.addEventListener("pointercancel", finishResize, { once: true, signal: viewSignal });
                 });
             });
 

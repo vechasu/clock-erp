@@ -4564,6 +4564,7 @@
                         }
 
                         function finishResize() {
+                            suppressSortUntil = Date.now() + 350;
                             handle.classList.remove("is-active");
                             document.body.classList.remove(
                                 "sales-table-interacting",
@@ -4574,6 +4575,14 @@
                                 "pointermove",
                                 resizeColumn,
                             );
+                            window.removeEventListener(
+                                "pointerup",
+                                finishResize,
+                            );
+                            window.removeEventListener(
+                                "pointercancel",
+                                finishResize,
+                            );
                         }
 
                         window.addEventListener(
@@ -4582,6 +4591,11 @@
                         );
                         window.addEventListener(
                             "pointerup",
+                            finishResize,
+                            {once: true},
+                        );
+                        window.addEventListener(
+                            "pointercancel",
                             finishResize,
                             {once: true},
                         );
@@ -7216,6 +7230,121 @@
             document.documentElement.dataset
                 .salesColumnsE2eError = error.message;
             sessionStorage.removeItem(phaseKey);
+        }
+    });
+</script>
+{% endif %}
+{% if config.TESTING and request.args.get("table_controls_e2e") == "1" %}
+<script>
+    window.addEventListener("load", () => {
+        const root = document.documentElement;
+        const table = document.querySelector(".sales-table");
+        const source = table.dataset.source;
+        const settingsKey = table.dataset.salesSettingsKey;
+        const phaseKey = "sales-table-controls-e2e-" + source;
+        const phase = sessionStorage.getItem(phaseKey) || "start";
+        const receiptKey = "vechasu-receipts-table-view-v1";
+        const warehouseKey = "vechasu.warehouse.table-view.v2";
+        const receiptSentinel = '{"widths":{"brand":166}}';
+        const warehouseSentinel = '{"widths":{"brand":177}}';
+
+        try {
+            if (phase === "start") {
+                localStorage.setItem(receiptKey, receiptSentinel);
+                localStorage.setItem(warehouseKey, warehouseSentinel);
+                localStorage.setItem(settingsKey, JSON.stringify({
+                    order: ["removed", "category", "created_at"],
+                    hidden: ["note", "removed"],
+                    widths: {
+                        category: -5,
+                        product_name: 99999,
+                        removed: 400,
+                    },
+                }));
+                sessionStorage.setItem(phaseKey, "verify");
+                window.location.reload();
+                return;
+            }
+
+            const view = window.salesColumnSettings.getView();
+            const headers = Array.from(
+                table.querySelectorAll("thead th[data-column-key]")
+            );
+            const headerKeys = headers.map(
+                (header) => header.dataset.columnKey
+            );
+            const wrap = table.closest(".table-wrap");
+            const category = table.querySelector(
+                'th[data-column-key="category"]'
+            );
+            const handle = category.querySelector(
+                ".sales-column-resize-handle"
+            );
+            const startWidth = Math.round(
+                category.getBoundingClientRect().width
+            );
+            const startX = category.getBoundingClientRect().right - 2;
+            const initialUrl = window.location.href;
+
+            handle.dispatchEvent(new PointerEvent("pointerdown", {
+                bubbles: true,
+                button: 0,
+                clientX: startX,
+            }));
+            window.dispatchEvent(new PointerEvent("pointermove", {
+                bubbles: true,
+                clientX: startX + 24,
+            }));
+            window.dispatchEvent(new PointerEvent("pointerup", {
+                bubbles: true,
+                clientX: startX + 24,
+            }));
+            category.querySelector(".sales-sort-label").click();
+
+            const resized = window.salesColumnSettings.getView();
+            document.getElementById("salesColumnSettingsTrigger").click();
+            const noteToggle = document.querySelector(
+                '[data-column-visibility-key="note"]'
+            );
+            noteToggle.click();
+            const hidden = window.salesColumnSettings.getView();
+            document.getElementById("salesColumnSettingsReset").click();
+            const reset = window.salesColumnSettings.getView();
+
+            if (
+                settingsKey !== "sales_" + source
+                || view.version !== 6
+                || view.order.includes("removed")
+                || !view.order.every((key) => headerKeys.includes(key))
+                || view.widths.product_name !== 520
+                || view.widths.category !== 108
+                || !view.hidden.includes("note")
+                || resized.widths.category !== startWidth + 24
+                || window.location.href !== initialUrl
+                || hidden.hidden.includes("note")
+                || reset.hidden.length
+                || reset.widths.category !== 132
+                || localStorage.getItem(receiptKey) !== receiptSentinel
+                || localStorage.getItem(warehouseKey) !== warehouseSentinel
+                || document.documentElement.scrollWidth
+                    > document.documentElement.clientWidth
+                || !["auto", "scroll"].includes(
+                    getComputedStyle(wrap).overflowX
+                )
+                || wrap.scrollWidth <= wrap.clientWidth
+                || document.querySelectorAll(
+                    ".sales-column-resize-handle"
+                ).length !== headers.length
+            ) {
+                throw new Error("contract");
+            }
+
+            sessionStorage.removeItem(phaseKey);
+            root.dataset.salesTableControlsE2e = "pass";
+        } catch (error) {
+            sessionStorage.removeItem(phaseKey);
+            root.dataset.salesTableControlsE2e = "fail";
+            root.dataset.salesTableControlsE2eError = error.message;
         }
     });
 </script>
