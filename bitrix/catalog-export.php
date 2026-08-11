@@ -221,7 +221,7 @@ function productImageFields(int $productId): array
     return $row;
 }
 
-function galleryFileIds(int $productId): array
+function galleryFileEntries(int $productId): array
 {
     $result = array();
     $cursor = CIBlockElement::GetProperty(
@@ -232,29 +232,94 @@ function galleryFileIds(int $productId): array
     );
     while ($row = $cursor->Fetch()) {
         $fileId = (int) ($row['VALUE'] ?? 0);
-        if ($fileId > 0) {
-            $result[] = $fileId;
+        $valueId = (int) ($row['PROPERTY_VALUE_ID'] ?? 0);
+        if ($fileId > 0 && $valueId > 0) {
+            $result[] = array(
+                'file_id' => $fileId,
+                'value_id' => $valueId,
+            );
         }
     }
-    return array_values(array_unique($result));
+    return $result;
 }
 
-function setGalleryFileIds(int $productId, array $fileIds): void
+function galleryFileIds(int $productId): array
 {
+    return array_values(array_map(
+        static function (array $entry): int {
+            return (int) $entry['file_id'];
+        },
+        galleryFileEntries($productId)
+    ));
+}
+
+function mutateGalleryFiles(
+    int $productId,
+    string $action,
+    int $targetId = 0,
+    ?array $upload = null
+): int {
+    $entries = galleryFileEntries($productId);
+    $beforeIds = array_values(array_map(
+        static function (array $entry): int {
+            return (int) $entry['file_id'];
+        },
+        $entries
+    ));
+    $targetPosition = $targetId > 0
+        ? array_search($targetId, $beforeIds, true)
+        : false;
+    if (in_array($action, array('replace', 'remove'), true) && $targetPosition === false) {
+        exportError('image_not_found', 404);
+    }
+
     $values = array();
-    foreach (array_values(array_unique(array_map('intval', $fileIds))) as $fileId) {
-        if ($fileId > 0) {
-            $values[] = $fileId;
+    foreach ($entries as $position => $entry) {
+        $valueId = (int) $entry['value_id'];
+        if ($action === 'replace' && $position === $targetPosition) {
+            $values[$valueId] = array('VALUE' => $upload);
+        } elseif ($action === 'remove' && $position === $targetPosition) {
+            $values[$valueId] = array('VALUE' => array('del' => 'Y'));
+        } else {
+            $values[$valueId] = array(
+                'VALUE' => array('old_file' => (int) $entry['file_id']),
+            );
         }
     }
+    if ($action === 'add') {
+        $values['n' . count($values)] = array('VALUE' => $upload);
+    }
+
     CIBlockElement::SetPropertyValuesEx(
         $productId,
         CATALOG_EXPORT_IBLOCK_ID,
         array(CATALOG_EXPORT_GALLERY_PROPERTY => $values)
     );
-    if (galleryFileIds($productId) !== $values) {
-        throw new RuntimeException('gallery_update_not_confirmed');
+
+    $afterIds = galleryFileIds($productId);
+    if ($action === 'add') {
+        if (count($afterIds) !== count($beforeIds) + 1
+            || array_slice($afterIds, 0, count($beforeIds)) !== $beforeIds) {
+            throw new RuntimeException('gallery_add_not_confirmed');
+        }
+        return (int) $afterIds[count($afterIds) - 1];
     }
+    if ($action === 'replace') {
+        if (count($afterIds) !== count($beforeIds)
+            || array_slice($afterIds, 0, $targetPosition) !== array_slice($beforeIds, 0, $targetPosition)
+            || array_slice($afterIds, $targetPosition + 1) !== array_slice($beforeIds, $targetPosition + 1)
+            || (int) $afterIds[$targetPosition] === $targetId) {
+            throw new RuntimeException('gallery_replace_not_confirmed');
+        }
+        return (int) $afterIds[$targetPosition];
+    }
+
+    $expectedIds = $beforeIds;
+    array_splice($expectedIds, $targetPosition, 1);
+    if ($afterIds !== $expectedIds) {
+        throw new RuntimeException('gallery_remove_not_confirmed');
+    }
+    return $targetId;
 }
 
 function validatedImageUpload(): array
@@ -348,18 +413,9 @@ function handleImageMutation(array $properties): void
 
     $affectedFileId = $targetId;
     if ($action === 'add') {
-        $savedFileId = (int) CFile::SaveFile(validatedImageUpload(), 'iblock');
-        if ($savedFileId < 1) {
-            throw new RuntimeException('image_save_failed');
-        }
-        try {
-            $galleryIds[] = $savedFileId;
-            setGalleryFileIds($productId, $galleryIds);
-        } catch (Throwable $error) {
-            CFile::Delete($savedFileId);
-            throw $error;
-        }
-        $affectedFileId = $savedFileId;
+        $affectedFileId = mutateGalleryFiles(
+            $productId, 'add', 0, validatedImageUpload()
+        );
     } elseif ($action === 'replace') {
         if ($targetId < 1) {
             exportError('image_not_found', 404);
@@ -369,23 +425,9 @@ function handleImageMutation(array $properties): void
             $field = $targetId === $previewId ? 'PREVIEW_PICTURE' : 'DETAIL_PICTURE';
             $affectedFileId = updateElementImageField($productId, $field, $upload);
         } else {
-            $position = array_search($targetId, $galleryIds, true);
-            if ($position === false) {
-                exportError('image_not_found', 404);
-            }
-            $savedFileId = (int) CFile::SaveFile($upload, 'iblock');
-            if ($savedFileId < 1) {
-                throw new RuntimeException('image_save_failed');
-            }
-            try {
-                $galleryIds[$position] = $savedFileId;
-                setGalleryFileIds($productId, $galleryIds);
-            } catch (Throwable $error) {
-                CFile::Delete($savedFileId);
-                throw $error;
-            }
-            CFile::Delete($targetId);
-            $affectedFileId = $savedFileId;
+            $affectedFileId = mutateGalleryFiles(
+                $productId, 'replace', $targetId, $upload
+            );
         }
     } else {
         if ($targetId < 1) {
@@ -401,21 +443,14 @@ function handleImageMutation(array $properties): void
                     throw new RuntimeException('image_promotion_failed');
                 }
                 updateElementImageField($productId, 'PREVIEW_PICTURE', $promotion);
-                setGalleryFileIds($productId, $galleryIds);
-                CFile::Delete($promotedId);
+                mutateGalleryFiles($productId, 'remove', $promotedId);
             } else {
                 clearElementImageField($productId, 'PREVIEW_PICTURE');
             }
         } elseif ($targetId === $detailId) {
             clearElementImageField($productId, 'DETAIL_PICTURE');
         } else {
-            $position = array_search($targetId, $galleryIds, true);
-            if ($position === false) {
-                exportError('image_not_found', 404);
-            }
-            array_splice($galleryIds, $position, 1);
-            setGalleryFileIds($productId, $galleryIds);
-            CFile::Delete($targetId);
+            mutateGalleryFiles($productId, 'remove', $targetId);
         }
     }
     exportResponse(array(
@@ -960,6 +995,13 @@ try {
         'products' => $products,
     ));
 } catch (Throwable $error) {
-    error_log('catalog-export: ' . get_class($error) . ' at export processing stage');
+    error_log(sprintf(
+        'catalog-export: class=%s product_id=%s action=%s file_id=%s reason=%s',
+        get_class($error),
+        preg_replace('/[^0-9]/', '', (string) ($_POST['product_id'] ?? '')),
+        preg_replace('/[^a-z]/', '', (string) ($_POST['action'] ?? '')),
+        preg_replace('/[^0-9]/', '', (string) ($_POST['file_id'] ?? '')),
+        preg_replace('/[^a-z0-9_ -]/i', '', $error->getMessage())
+    ));
     exportError('internal_error', 500);
 }

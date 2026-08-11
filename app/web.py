@@ -13686,10 +13686,22 @@ def api_product_resource(product_id):
                         "replace": "Фото заменено в Bitrix.",
                         "remove": "Фото удалено из Bitrix.",
                     }[image_action]
-                except (BitrixCatalogWriteError, BitrixCatalogReadOnlyError):
+                except (BitrixCatalogWriteError, BitrixCatalogReadOnlyError) as error:
+                    diagnostic = getattr(error, "context", {})
                     app.logger.exception(
-                        "Products API failed to update Bitrix image for %s",
+                        (
+                            "Bitrix image mutation failed product_id=%s "
+                            "element_id=%s action=%s file_id=%s source=%s "
+                            "http_status=%s response=%r reason=%s"
+                        ),
                         product_id,
+                        bitrix_product_id,
+                        image_action,
+                        bitrix_image_file_id,
+                        diagnostic.get("source", "unknown"),
+                        diagnostic.get("http_status", "unknown"),
+                        diagnostic.get("response", {}),
+                        diagnostic.get("reason", str(error)),
                     )
                     actual_gallery = []
                     try:
@@ -13709,7 +13721,7 @@ def api_product_resource(product_id):
                     return api_error(
                         "PRODUCT_IMAGE_UPLOAD_FAILED",
                         (
-                            "Bitrix не выполнил операцию с фотографией. "
+                            "Не удалось изменить фотографию. Bitrix отклонил изменение. "
                             "Показано актуальное доступное состояние галереи."
                         ),
                         502,
