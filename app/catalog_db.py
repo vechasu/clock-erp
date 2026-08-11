@@ -911,7 +911,7 @@ class CatalogDatabase:
 
     @staticmethod
     def _ensure_brand_category_relations(connection):
-        version = "2026-08-12-brand-category-relations-v1"
+        version = "2026-08-12-brand-category-relations-v2-no-zero"
         if connection.execute(
             "SELECT 1 FROM erp_schema_migrations WHERE version = ?",
             (version,),
@@ -919,9 +919,12 @@ class CatalogDatabase:
             return
         now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
         connection.execute(
+            "DELETE FROM erp_brand_categories WHERE category_id = 0"
+        )
+        connection.execute(
             "INSERT OR IGNORE INTO erp_brand_categories "
             "(brand_id, category_id, created_at) "
-            "SELECT brand_id, id, ? FROM erp_categories",
+            "SELECT brand_id, id, ? FROM erp_categories WHERE id <> 0",
             (now,),
         )
         connection.execute(
@@ -929,7 +932,7 @@ class CatalogDatabase:
             "(brand_id, category_id, created_at) "
             "SELECT DISTINCT brand_id, category_id, ? "
             "FROM catalog_excel_products WHERE active = 1 AND brand_id IS NOT NULL "
-            "AND category_id IS NOT NULL",
+            "AND category_id IS NOT NULL AND category_id <> 0",
             (now,),
         )
         connection.execute(

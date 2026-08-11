@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from app.catalog_db import CatalogDatabase
 from app.services.audit_journal import AuditJournal
@@ -115,8 +116,12 @@ class BrandManagementTest(unittest.TestCase):
         events = AuditJournal(self.database).list_events(limit=20)["events"]
         self.assertTrue(any(event["entity_type"] == "brand" for event in events))
         self.assertEqual(
-            len([event for event in events if event["entity_type"] == "product"]),
-            4,
+            len([
+                event for event in events
+                if event["entity_type"] == "product"
+                and event["action"] == "deleted"
+            ]),
+            0,
         )
 
     def test_category_delete_is_scoped_to_brand_and_keeps_global_category(self):
@@ -147,6 +152,160 @@ class BrandManagementTest(unittest.TestCase):
         self.assertEqual(category["active"], 1)
         self.assertIsNone(casio_link)
         self.assertIsNotNone(seiko_link)
+
+    def test_without_category_never_creates_relation_and_brand_delete_includes_it(self):
+        uncategorized = self.products.create_product(
+            name="No category", article="NO-CATEGORY", brand="Casio",
+            category="", category_id=0, stock=0,
+        )
+        normal = self.product("Normal", "NORMAL", "Casio", "Часы", 0)
+        overview = self.catalog.get_brand_overview(uncategorized["brand_id"])
+        self.assertEqual([item["name"] for item in overview["categories"]], ["Часы"])
+        with self.database.connect() as connection:
+            zero_links = connection.execute(
+                "SELECT COUNT(*) FROM erp_brand_categories WHERE category_id = 0"
+            ).fetchone()[0]
+        self.assertEqual(zero_links, 0)
+
+        self.products.delete_brand_catalog(
+            normal["brand_id"], category_id=normal["category_id"]
+        )
+        self.assertIsNotNone(self.products.get_product(uncategorized["id"]))
+        self.products.delete_brand_catalog(uncategorized["brand_id"])
+        self.assertIsNone(self.products.get_product(uncategorized["id"]))
+
+    def test_backfill_removes_and_never_recreates_zero_category_relation(self):
+        brand = self.catalog.create_brand("Casio")
+        with self.database.transaction() as connection:
+            connection.execute(
+                "INSERT INTO erp_categories "
+                "(id, brand_id, name, normalized_name, active, created_at, updated_at) "
+                "VALUES (0, ?, 'Без категории', 'без категории', 1, 'x', 'x')",
+                (brand["id"],),
+            )
+            connection.execute(
+                "INSERT INTO erp_brand_categories "
+                "(brand_id, category_id, created_at) VALUES (?, 0, 'x')",
+                (brand["id"],),
+            )
+            connection.execute(
+                "DELETE FROM erp_schema_migrations WHERE version = "
+                "'2026-08-12-brand-category-relations-v2-no-zero'"
+            )
+
+        self.database.initialize()
+
+        with self.database.connect() as connection:
+            self.assertEqual(connection.execute(
+                "SELECT COUNT(*) FROM erp_brand_categories WHERE category_id = 0"
+            ).fetchone()[0], 0)
+
+    def test_product_assignment_ensures_normal_relation_but_not_zero_relation(self):
+        product = self.products.create_product(
+            name="Assignable", article="ASSIGN", brand="Casio", category="",
+            stock=0,
+        )
+        category = self.catalog.create_brand_category(
+            product["brand_id"], "Ремешки"
+        )
+        with self.database.transaction() as connection:
+            connection.execute(
+                "DELETE FROM erp_brand_categories WHERE brand_id = ? "
+                "AND category_id = ?",
+                (product["brand_id"], category["id"]),
+            )
+        self.products.update_product(
+            product["id"], brand_id=product["brand_id"],
+            category_id=category["id"],
+        )
+        with self.database.connect() as connection:
+            self.assertIsNotNone(connection.execute(
+                "SELECT 1 FROM erp_brand_categories WHERE brand_id = ? "
+                "AND category_id = ?",
+                (product["brand_id"], category["id"]),
+            ).fetchone())
+        self.products.update_product(
+            product["id"], brand_id=product["brand_id"], category_id=0,
+        )
+        refreshed = self.products.get_product(product["id"])
+        self.assertIsNone(refreshed["category_id"])
+
+    def test_category_global_rename_propagates_and_duplicate_is_blocked(self):
+        casio = self.product("Casio Watch", "CW", "Casio", "Часы", 0)
+        seiko = self.product("Seiko Watch", "SW", "Seiko", "Часы", 0)
+        other = self.catalog.create_brand_category(casio["brand_id"], "Ремешки")
+
+        renamed = self.catalog.rename_category(
+            casio["category_id"], "Наручные часы"
+        )
+        self.assertEqual(renamed["name"], "Наручные часы")
+        self.assertEqual(
+            self.products.get_product(casio["id"])["excel_category"],
+            "Наручные часы",
+        )
+        self.assertEqual(
+            self.products.get_product(seiko["id"])["excel_category"],
+            "Наручные часы",
+        )
+        with self.assertRaises(DuplicateCatalogValueError):
+            self.catalog.rename_category(casio["category_id"], other["name"])
+
+    def test_brand_search_prioritizes_prefix_and_includes_middle_matches(self):
+        self.catalog.create_brand("Beta")
+        self.catalog.create_brand("Alpha")
+        self.catalog.create_brand("Gamma")
+
+        result = self.catalog.list_brand_overviews(query="a")
+
+        self.assertEqual(result[0]["name"], "Alpha")
+        self.assertEqual({item["name"] for item in result}, {"Alpha", "Beta", "Gamma"})
+
+    def test_bulk_failure_rolls_back_every_product(self):
+        first = self.product("First", "FIRST", "Casio", "Часы", 0)
+        second = self.product("Second", "SECOND", "Casio", "Часы", 0)
+        original = self.products._delete_product_in_transaction
+        calls = {"count": 0}
+
+        def fail_on_second(*args, **kwargs):
+            calls["count"] += 1
+            if calls["count"] == 2:
+                raise RuntimeError("forced bulk failure")
+            return original(*args, **kwargs)
+
+        with mock.patch.object(
+            self.products, "_delete_product_in_transaction",
+            side_effect=fail_on_second,
+        ):
+            with self.assertRaises(RuntimeError):
+                self.products.delete_brand_catalog(first["brand_id"])
+
+        self.assertIsNotNone(self.products.get_product(first["id"]))
+        self.assertIsNotNone(self.products.get_product(second["id"]))
+
+    def test_delete_retry_is_safe_and_does_not_duplicate_batch_event(self):
+        product = self.product("Watch", "WATCH", "Casio", "Часы", 0)
+        self.products.delete_brand_catalog(
+            product["brand_id"], category_id=product["category_id"]
+        )
+        with self.assertRaises(ValueError):
+            self.products.delete_brand_catalog(
+                product["brand_id"], category_id=product["category_id"]
+            )
+        events = AuditJournal(self.database).list_events(
+            entity_type="category", action="deleted", limit=20,
+        )["events"]
+        self.assertEqual(len(events), 1)
+
+    def test_brands_template_uses_live_search_without_search_button(self):
+        source = (
+            Path(__file__).resolve().parents[1]
+            / "app" / "templates" / "warehouse_brands.html"
+        ).read_text(encoding="utf-8")
+        self.assertIn("setTimeout(loadBrands,200)", source)
+        self.assertIn("AbortController", source)
+        self.assertIn("requestSequence", source)
+        self.assertNotIn('type="submit">Найти', source)
+        self.assertNotIn('class="chip"', source)
 
 
 if __name__ == "__main__":

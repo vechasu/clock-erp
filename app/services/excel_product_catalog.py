@@ -1400,7 +1400,7 @@ class ExcelProductCatalog:
 
     def _delete_product_in_transaction(
             self, connection, product, force=False, actor_id="",
-            actor_name="", actor_type="user"):
+            actor_name="", actor_type="user", record_audit=True):
         product_id = int(product["id"])
         stock = float(product["stock"] or 0)
         deleted_at = utc_now()
@@ -1416,14 +1416,15 @@ class ExcelProductCatalog:
                 "force" if force else "normal", deleted_at, product_id,
             ),
         )
-        AuditJournal(self.database).record(
-            "product", product_id, "deleted", product["excel_name_raw"],
-            product["excel_article"] or "", metadata={
-                "article": product["excel_article"] or "",
-                "force": bool(force), "stock": stock,
-            }, actor_id=actor_id, actor_name=actor_name,
-            actor_type=actor_type, connection=connection,
-        )
+        if record_audit:
+            AuditJournal(self.database).record(
+                "product", product_id, "deleted", product["excel_name_raw"],
+                product["excel_article"] or "", metadata={
+                    "article": product["excel_article"] or "",
+                    "force": bool(force), "stock": stock,
+                }, actor_id=actor_id, actor_name=actor_name,
+                actor_type=actor_type, connection=connection,
+            )
         return {"id": product_id, "stock": stock, "force": bool(force),
                 "deleted_at": deleted_at}
 
@@ -1463,6 +1464,7 @@ class ExcelProductCatalog:
                 self._delete_product_in_transaction(
                     connection, product, force=force, actor_id=actor_id,
                     actor_name=actor_name, actor_type=actor_type,
+                    record_audit=False,
                 )
             if category is not None:
                 connection.execute(
@@ -1474,6 +1476,13 @@ class ExcelProductCatalog:
                     "category", category["id"], "deleted", category["name"],
                     metadata={"brand_id": int(brand_id), "brand": brand["name"],
                               "products_deleted": len(products),
+                              "nonzero_products": sum(
+                                  float(item["stock"] or 0) != 0
+                                  for item in products
+                              ),
+                              "stock_total": sum(
+                                  float(item["stock"] or 0) for item in products
+                              ),
                               "force": bool(force)}, connection=connection,
                     actor_id=actor_id, actor_name=actor_name,
                     actor_type=actor_type,
@@ -1490,6 +1499,13 @@ class ExcelProductCatalog:
                 AuditJournal(self.database).record(
                     "brand", brand["id"], "deleted", brand["name"],
                     metadata={"products_deleted": len(products),
+                              "nonzero_products": sum(
+                                  float(item["stock"] or 0) != 0
+                                  for item in products
+                              ),
+                              "stock_total": sum(
+                                  float(item["stock"] or 0) for item in products
+                              ),
                               "force": bool(force)}, connection=connection,
                     actor_id=actor_id, actor_name=actor_name,
                     actor_type=actor_type,

@@ -159,6 +159,8 @@ def ensure_category(
             category_id = int(category_id)
         except (TypeError, ValueError):
             raise CatalogReferenceError("Категория не найдена.")
+        if category_id == 0:
+            return None
         row = connection.execute(
             "SELECT * FROM erp_categories WHERE id = ? AND active = 1",
             (category_id,),
@@ -302,15 +304,19 @@ class SharedCatalog:
             ).fetchall()
         return [self._brand(row) for row in rows]
 
-    def list_brand_overviews(self, query="", limit=200):
+    def list_brand_overviews(self, query="", limit=200, brand_id=None):
         """Load brands and their category aggregates in two batch queries."""
         self.database.initialize()
         query = catalog_search_key(query)
         parameters = []
         where = "WHERE b.active = 1"
+        if brand_id not in (None, ""):
+            where += " AND b.id = ?"
+            parameters.append(int(brand_id))
         if query:
             where += " AND catalog_search_key(b.name) LIKE ? ESCAPE '\\'"
-            parameters.append(catalog_prefix_pattern(query))
+            escaped = catalog_prefix_pattern(query)[:-1]
+            parameters.append("%{}%".format(escaped))
         parameters.append(max(1, min(int(limit), 500)))
         with self.database.connect() as connection:
             if query:
@@ -321,8 +327,12 @@ class SharedCatalog:
                 "AS nonzero_count, COALESCE(SUM(p.stock), 0) AS stock_total "
                 "FROM erp_brands b LEFT JOIN catalog_excel_products p "
                 "ON p.brand_id = b.id AND p.active = 1 " + where +
-                " GROUP BY b.id ORDER BY b.name COLLATE NOCASE LIMIT ?",
-                parameters,
+                " GROUP BY b.id ORDER BY "
+                + ("CASE WHEN catalog_search_key(b.name) LIKE ? ESCAPE '\\' "
+                   "THEN 0 ELSE 1 END, " if query else "")
+                + "b.name COLLATE NOCASE LIMIT ?",
+                (parameters[:-1] + [catalog_prefix_pattern(query), parameters[-1]])
+                if query else parameters,
             ).fetchall()
             brand_ids = [int(row["id"]) for row in brand_rows]
             category_rows = []
@@ -332,9 +342,19 @@ class SharedCatalog:
                     "SELECT bc.brand_id, c.id, c.name, c.normalized_name, "
                     "COUNT(p.id) AS product_count, "
                     "COALESCE(SUM(CASE WHEN p.stock != 0 THEN 1 ELSE 0 END), 0) "
-                    "AS nonzero_count, COALESCE(SUM(p.stock), 0) AS stock_total "
+                    "AS nonzero_count, COALESCE(SUM(p.stock), 0) AS stock_total, "
+                    "COALESCE(MAX(category_usage.brand_count), 0) AS brand_count, "
+                    "COALESCE(MAX(product_usage.product_count), 0) "
+                    "AS global_product_count "
                     "FROM erp_brand_categories bc JOIN erp_categories c "
                     "ON c.id = bc.category_id AND c.active = 1 "
+                    "LEFT JOIN (SELECT category_id, COUNT(*) AS brand_count "
+                    "FROM erp_brand_categories GROUP BY category_id) category_usage "
+                    "ON category_usage.category_id = c.id "
+                    "LEFT JOIN (SELECT category_id, COUNT(*) AS product_count "
+                    "FROM catalog_excel_products WHERE active = 1 "
+                    "GROUP BY category_id) product_usage "
+                    "ON product_usage.category_id = c.id "
                     "LEFT JOIN catalog_excel_products p ON p.brand_id = bc.brand_id "
                     "AND p.category_id = c.id AND p.active = 1 "
                     "WHERE bc.brand_id IN ({}) GROUP BY bc.brand_id, c.id "
@@ -350,6 +370,8 @@ class SharedCatalog:
                 "nonzero_count": int(row["nonzero_count"]),
                 "stock_total": normalized_stock_value(row["stock_total"]),
                 "stock_display": format_stock_value(row["stock_total"]),
+                "brand_count": int(row["brand_count"]),
+                "global_product_count": int(row["global_product_count"]),
             })
         return [{
             **self._brand(row),
@@ -362,8 +384,17 @@ class SharedCatalog:
             brand_id = int(brand_id)
         except (TypeError, ValueError):
             return None
-        return next((item for item in self.list_brand_overviews(limit=500)
-                     if item["id"] == brand_id), None)
+        return next(
+            (
+                item
+                for item in self.list_brand_overviews(
+                    limit=1,
+                    brand_id=brand_id,
+                )
+                if item["id"] == brand_id
+            ),
+            None,
+        )
 
     def create_brand_category(self, brand_id, name, **actor):
         self.database.initialize()
@@ -383,6 +414,11 @@ class SharedCatalog:
                 raise DuplicateCatalogValueError(
                     "Эта категория уже добавлена в бренд.", existing
                 )
+            global_category = connection.execute(
+                "SELECT id FROM erp_categories WHERE normalized_name = ? "
+                "ORDER BY id LIMIT 1",
+                (normalized_name(cleaned),),
+            ).fetchone()
             category = ensure_category(
                 connection, brand["id"], name=cleaned, create=True
             )
@@ -393,7 +429,18 @@ class SharedCatalog:
             ).fetchone()
             AuditJournal(self.database).record(
                 "category", category["id"], "created", category["name"],
-                metadata={"brand_id": int(brand_id), "brand": brand["name"]},
+                (
+                    "Создана в бренде {}".format(brand["name"])
+                    if global_category is None
+                    else "Добавлена в бренд {}".format(brand["name"])
+                ),
+                metadata={
+                    "brand_id": int(brand_id), "brand": brand["name"],
+                    "global_category_created": global_category is None,
+                    "relation_action": (
+                        "created" if global_category is None else "linked"
+                    ),
+                },
                 connection=connection, **actor
             )
             return {"id": int(category["id"]), "name": category["name"],
@@ -987,12 +1034,16 @@ class SharedCatalog:
                 ).fetchone()
             )
 
-    def rename_category(self, category_id, name):
+    def rename_category(self, category_id, name, **actor):
         name = catalog_name(name)
         if not name:
             raise ValueError("Название категории обязательно.")
         self.database.initialize()
         with self.database.transaction() as connection:
+            if int(category_id) == 0:
+                raise CatalogReferenceError(
+                    "Системную категорию «Без категории» нельзя переименовать."
+                )
             current = connection.execute(
                 "SELECT * FROM erp_categories WHERE id = ? AND active = 1",
                 (int(category_id),),
@@ -1025,6 +1076,16 @@ class SharedCatalog:
                     ),
                     self._category(duplicate),
                 )
+            brand_count = connection.execute(
+                "SELECT COUNT(*) FROM erp_brand_categories WHERE category_id = ?",
+                (current["id"],),
+            ).fetchone()[0]
+            product_count = connection.execute(
+                "SELECT COUNT(*) FROM catalog_excel_products "
+                "WHERE category_id = ? AND active = 1",
+                (current["id"],),
+            ).fetchone()[0]
+            old_name = current["name"]
             connection.execute(
                 "UPDATE erp_categories SET name = ?, normalized_name = ?, "
                 "updated_at = ? WHERE id = ?",
@@ -1032,8 +1093,17 @@ class SharedCatalog:
             )
             connection.execute(
                 "UPDATE catalog_excel_products SET excel_category = ?, updated_at = ? "
-                "WHERE category_id = ?",
+                "WHERE category_id = ? AND active = 1",
                 (name, utc_now(), current["id"]),
+            )
+            AuditJournal(self.database).record(
+                "category", current["id"], "updated", name,
+                before={"name": old_name}, after={"name": name},
+                metadata={
+                    "affected_brands": int(brand_count),
+                    "affected_products": int(product_count),
+                },
+                connection=connection, **actor
             )
             return self._category(
                 connection.execute(
