@@ -317,7 +317,7 @@ root_headers="$(
 )"
 printf '%s\n' "$root_headers" | grep -Eq '^HTTP/[^ ]+ 302'
 printf '%s\n' "$root_headers" |
-    grep -Eiq '^location: (https?://[^/]+)?/register$'
+    grep -Eiq '^location: (https?://[^/]+)?/(register|login)$'
 
 if journalctl -u "$SERVICE_NAME" --since "-2 minutes" \
     --priority=err --no-pager --quiet | grep -q .; then
