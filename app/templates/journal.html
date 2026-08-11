@@ -41,40 +41,60 @@
         .journal-filters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) auto; gap: 8px; margin-top: 8px; padding: 10px; border: 1px solid #dfe5ed; border-radius: 11px; background: #fff; }
         .journal-filters[hidden] { display: none; }
         .journal-apply { min-height: 40px; padding: 8px 15px; border: 0; border-radius: 9px; background: #172033; color: #fff; font-weight: 750; cursor: pointer; }
-        .journal-timeline { margin-top: 12px; }
+        .journal-timeline { width: min(100%, 1000px); margin-top: 12px; }
         .journal-day { margin: 14px 0 8px; color: #536174; font-size: 14px; font-weight: 800; }
         .journal-event { position: relative; display: grid; grid-template-columns: 76px 14px minmax(0, 1fr); width: 100%; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
-        .journal-event-time { padding-top: 18px; color: #6b7688; font-size: 13px; font-variant-numeric: tabular-nums; }
+        .journal-event-time { padding-top: 16px; color: #6b7688; font-size: 13px; font-variant-numeric: tabular-nums; }
         .journal-event-rail { position: relative; }
-        .journal-event-rail::before { content: ""; position: absolute; top: 0; bottom: 0; left: 6px; width: 2px; background: #dfe5ee; }
-        .journal-event-dot { position: absolute; top: 23px; left: 1px; z-index: 1; width: 12px; height: 12px; border: 3px solid #fff; border-radius: 50%; background: #3b82f6; box-shadow: 0 0 0 1px #b9c8da; }
+        .journal-event-rail::before { content: ""; position: absolute; top: 0; bottom: 0; left: 6px; width: 2px; background: #cfd8e5; }
+        .journal-event-dot { position: absolute; top: 20px; left: 0; z-index: 1; width: 14px; height: 14px; border: 3px solid #fff; border-radius: 50%; background: #3b82f6; box-shadow: 0 0 0 1px #aebed1; }
         .journal-event[data-tone="success"] .journal-event-dot { background: #16a34a; }
         .journal-event[data-tone="danger"] .journal-event-dot { background: #dc2626; }
         .journal-event[data-tone="warning"] .journal-event-dot { background: #f59e0b; }
         .journal-event[data-tone="neutral"] .journal-event-dot { background: #8491a3; }
-        .journal-event-card { min-width: 0; margin: 0 0 8px 10px; padding: 14px 16px; border: 1px solid #e0e6ef; border-radius: 12px; background: #fff; box-shadow: 0 3px 12px rgba(15, 23, 42, .025); transition: border-color .15s, transform .15s; }
-        .journal-event:hover .journal-event-card { border-color: #aac5ef; transform: translateY(-1px); }
-        .journal-event-title { font-size: 15px; font-weight: 800; overflow-wrap: anywhere; }
-        .journal-event-summary { margin-top: 5px; color: #344155; line-height: 1.45; overflow-wrap: anywhere; }
-        .journal-event-meta { display: flex; flex-wrap: wrap; gap: 5px 8px; margin-top: 8px; color: #748095; font-size: 13px; }
+        .journal-event-card { display: grid; min-width: 0; grid-template-columns: 28px minmax(0, 1fr) 16px; align-items: center; gap: 10px; margin: 0 0 7px 10px; padding: 12px 14px; border: 1px solid #dfe5ed; border-radius: 11px; background: #fff; box-shadow: 0 2px 9px rgba(15, 23, 42, .025); transition: border-color .14s, background .14s, transform .14s; }
+        .journal-event:hover .journal-event-card { border-color: #a9bed9; background: #fbfdff; transform: translateY(-1px); }
+        .journal-event:focus-visible { outline: none; }
+        html[data-theme] .journal-event:focus-visible { outline: none !important; box-shadow: none !important; }
+        .journal-event:focus-visible .journal-event-card { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37, 99, 235, .08); }
+        .journal-event-icon { display: grid; width: 28px; height: 28px; place-items: center; border-radius: 8px; background: #f1f5f9; color: #64748b; }
+        .journal-event-icon-svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
+        .journal-event-copy { min-width: 0; }
+        .journal-event-title { display: block; color: #1e293b; font-size: 15px; font-weight: 800; line-height: 1.3; overflow-wrap: anywhere; }
+        .journal-event-summary { display: block; margin-top: 3px; color: #344155; font-size: 14px; line-height: 1.4; overflow-wrap: anywhere; }
+        .journal-event-meta { display: flex; flex-wrap: wrap; gap: 4px 7px; margin-top: 5px; color: #748095; font-size: 12.5px; }
+        .journal-event-chevron { color: #94a3b8; font-size: 22px; font-weight: 400; line-height: 1; transition: color .14s, transform .14s; }
+        .journal-event:hover .journal-event-chevron { color: #2563eb; transform: translateX(2px); }
         .journal-empty { max-width: 520px; margin: 18px auto 0; padding: 22px 18px; border: 1px solid #e3e8ef; border-radius: 12px; background: rgba(255, 255, 255, .62); color: #748095; text-align: center; }
         .journal-empty strong { display: block; margin-bottom: 4px; color: #334155; font-size: 15px; }
         .journal-empty-reset { display: inline-block; margin-top: 9px; color: #2563eb; font-size: 13px; font-weight: 700; text-decoration: none; }
-        .journal-more { display: block; min-width: 170px; margin: 18px auto 0; padding: 11px 18px; border: 1px solid #b9c7d8; border-radius: 10px; background: #fff; color: #263348; font-weight: 750; cursor: pointer; }
+        .journal-more { display: block; min-width: 170px; margin: 18px 0 0 min(415px, calc(50% - 85px)); padding: 11px 18px; border: 1px solid #b9c7d8; border-radius: 10px; background: #fff; color: #263348; font-weight: 750; cursor: pointer; }
         .journal-more[hidden] { display: none; }
-        .journal-drawer-backdrop { position: fixed; inset: 0; z-index: 90; display: none; background: rgba(15, 23, 42, .38); }
+        body.journal-drawer-open { overflow: hidden; }
+        .journal-drawer-backdrop { position: fixed; inset: 0; z-index: 90; display: none; background: rgba(15, 23, 42, .25); backdrop-filter: blur(1px); }
         .journal-drawer-backdrop.open { display: block; }
-        .journal-drawer { position: fixed; top: 0; right: 0; z-index: 91; width: min(460px, 100%); height: 100dvh; padding: 22px; overflow-y: auto; background: #fff; box-shadow: -18px 0 44px rgba(15, 23, 42, .18); transform: translateX(104%); transition: transform .2s ease; }
+        .journal-drawer { position: fixed; top: 0; right: 0; z-index: 91; display: flex; width: min(420px, 100%); height: 100dvh; flex-direction: column; overflow: hidden; background: #fff; box-shadow: -14px 0 36px rgba(15, 23, 42, .16); transform: translateX(104%); transition: transform .2s ease; }
         .journal-drawer.open { transform: translateX(0); }
-        .journal-drawer-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-        .journal-drawer h2 { margin: 0; font-size: 22px; }
+        .journal-drawer-head { display: flex; flex: 0 0 auto; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 20px 20px 16px; border-bottom: 1px solid #e7ebf0; background: #fff; }
+        .journal-drawer h2 { margin: 0; font-size: 20px; line-height: 1.3; overflow-wrap: anywhere; }
+        #journalDrawerAction { margin-top: 3px; color: #64748b; font-size: 13px; }
         .journal-close { width: 38px; height: 38px; border: 1px solid #d8e0ea; border-radius: 10px; background: #fff; font-size: 23px; cursor: pointer; }
-        .journal-detail-meta { margin: 16px 0; padding: 13px; border-radius: 12px; background: #f5f7fa; color: #536174; line-height: 1.7; }
+        .journal-drawer-content { min-height: 0; padding: 0 20px 24px; overflow-y: auto; overscroll-behavior: contain; }
+        .journal-detail-meta { margin: 16px 0; padding: 10px 12px; border-radius: 10px; background: #f5f7fa; color: #64748b; font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; }
+        .journal-detail-heading { margin: 18px 0 4px; color: #334155; font-size: 13px; font-weight: 800; }
         .journal-detail-change { padding: 12px 0; border-bottom: 1px solid #e8edf3; }
-        .journal-detail-change strong { display: block; margin-bottom: 5px; }
-        .journal-detail-values { display: grid; grid-template-columns: 1fr 22px 1fr; align-items: center; gap: 7px; }
-        .journal-detail-value { min-width: 0; padding: 9px; border-radius: 8px; background: #f6f8fb; overflow-wrap: anywhere; }
-        .journal-object-link { display: inline-flex; margin-top: 18px; padding: 10px 15px; border-radius: 9px; background: #2563eb; color: #fff; font-weight: 750; text-decoration: none; }
+        .journal-detail-change strong { display: block; margin-bottom: 7px; color: #334155; font-size: 13px; }
+        .journal-detail-values { display: flex; min-width: 0; align-items: center; gap: 8px; }
+        .journal-detail-value-wrap { display: flex; min-width: 0; flex: 0 1 auto; align-items: baseline; gap: 5px; }
+        .journal-detail-value-caption { flex: 0 0 auto; color: #94a3b8; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+        .journal-detail-value { min-width: 0; padding: 4px 7px; border-radius: 6px; background: #f1f5f9; color: #475569; font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
+        .journal-detail-value-after { background: #eaf2ff; color: #1d4ed8; font-weight: 700; }
+        .journal-detail-arrow { flex: 0 0 auto; color: #94a3b8; }
+        .journal-detail-action { margin-top: 10px; padding: 10px 12px; border-left: 3px solid #93b4e8; border-radius: 0 8px 8px 0; background: #f7faff; color: #334155; line-height: 1.45; overflow-wrap: anywhere; }
+        .journal-detail-comment { margin-top: 10px; padding: 10px 12px; border-radius: 8px; background: #f8fafc; color: #475569; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+        .journal-object-link { display: inline-flex; align-items: center; gap: 6px; margin-top: 18px; padding: 9px 13px; border-radius: 8px; background: #2563eb; color: #fff; font-size: 13px; font-weight: 750; text-decoration: none; }
+        .journal-object-link::after { content: "↗"; font-size: 14px; }
+        html[data-theme] .journal-object-link { color: #fff !important; }
         .journal-deleted-note { margin-top: 18px; color: #7a8495; font-weight: 700; }
         @media (max-width: 900px) {
             .journal-main { padding: 16px 14px 92px; }
@@ -101,11 +121,15 @@
             .journal-event { grid-template-columns: 54px 12px minmax(0, 1fr); }
             .journal-event-card { margin-left: 6px; padding: 14px; }
             .journal-event-time { font-size: 12px; }
-            .journal-drawer { padding: 18px 15px; }
+            .journal-drawer-head { padding: 17px 15px 14px; }
+            .journal-drawer-content { padding: 0 15px 22px; }
+            .journal-detail-values { align-items: flex-start; flex-wrap: wrap; }
+            .journal-detail-value-wrap { max-width: 100%; }
         }
     </style>
 </head>
 <body>
+{% from "_navigation_icons.html" import navigation_icon %}
 <div class="app">
     {% include "_sidebar.html" %}
     <main class="journal-main">
@@ -195,12 +219,18 @@
                         <span class="journal-event-time">{{ event.time_display }}</span>
                         <span class="journal-event-rail"><span class="journal-event-dot"></span></span>
                         <span class="journal-event-card">
-                            <span class="journal-event-title">{{ event.object_label_snapshot }}</span>
-                            <span class="journal-event-summary">{{ event.summary }}</span>
-                            <span class="journal-event-meta">
-                                <span>{{ event.actor_display_name_snapshot }}</span><span>·</span><span>{{ event.entity_label }}</span>
-                                {% if event.source_snapshot %}<span>·</span><span>{{ event.source_snapshot }}</span>{% endif %}
+                            <span class="journal-event-icon" aria-hidden="true">
+                                {{ navigation_icon("products" if event.entity_type == "product" else "sales" if event.entity_type == "sale" else "receipts", "journal-event-icon-svg") }}
                             </span>
+                            <span class="journal-event-copy">
+                                <span class="journal-event-title">{{ event.object_label_snapshot }}</span>
+                                <span class="journal-event-summary">{{ event.summary }}</span>
+                                <span class="journal-event-meta">
+                                    <span>{{ event.actor_display_name_snapshot }}</span><span>·</span><span>{{ event.entity_label }}</span>
+                                    {% if event.source_snapshot %}<span>·</span><span>{{ event.source_snapshot }}</span>{% endif %}
+                                </span>
+                            </span>
+                            <span class="journal-event-chevron" aria-hidden="true">›</span>
                         </span>
                     </button>
                 {% else %}
@@ -228,7 +258,7 @@
         <div><h2 id="journalDrawerTitle">Событие</h2><div id="journalDrawerAction"></div></div>
         <button id="journalDrawerClose" class="journal-close" type="button" aria-label="Закрыть">×</button>
     </div>
-    <div id="journalDrawerContent"></div>
+    <div id="journalDrawerContent" class="journal-drawer-content"></div>
 </aside>
 
 <script>
@@ -272,6 +302,28 @@
         form.requestSubmit();
     });
 
+    const eventIconPaths = {
+        product: ["M20 13 13 20a2 2 0 0 1-2.8 0L4 13.8A2 2 0 0 1 4 11V5a1 1 0 0 1 1-1h6a2 2 0 0 1 1.4.6L20 12.2a1 1 0 0 1 0 1.4Z", "M8.5 8.5h.01"],
+        sale: ["M6 8h12l1 12H5L6 8Z", "M9 9V6a3 3 0 0 1 6 0v3"],
+        receipt: ["M4 13h4l2 3h4l2-3h4v7H4v-7Z", "M12 3v9m0 0 3-3m-3 3L9 9"],
+    };
+
+    function eventIcon(entityType) {
+        const wrapper = document.createElement("span");
+        wrapper.className = "journal-event-icon";
+        wrapper.setAttribute("aria-hidden", "true");
+        const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        svg.setAttribute("class", "journal-event-icon-svg");
+        svg.setAttribute("viewBox", "0 0 24 24");
+        (eventIconPaths[entityType] || eventIconPaths.product).forEach((value) => {
+            const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            path.setAttribute("d", value);
+            svg.append(path);
+        });
+        wrapper.append(svg);
+        return wrapper;
+    }
+
     function eventNode(event) {
         const button = document.createElement("button");
         button.type = "button";
@@ -289,6 +341,8 @@
         rail.append(dot);
         const card = document.createElement("span");
         card.className = "journal-event-card";
+        const copy = document.createElement("span");
+        copy.className = "journal-event-copy";
         const eventTitle = document.createElement("span");
         eventTitle.className = "journal-event-title";
         eventTitle.textContent = event.object_label_snapshot;
@@ -298,7 +352,12 @@
         const meta = document.createElement("span");
         meta.className = "journal-event-meta";
         meta.textContent = [event.actor_display_name_snapshot, event.entity_label, event.source_snapshot].filter(Boolean).join(" · ");
-        card.append(eventTitle, summary, meta);
+        const chevron = document.createElement("span");
+        chevron.className = "journal-event-chevron";
+        chevron.setAttribute("aria-hidden", "true");
+        chevron.textContent = "›";
+        copy.append(eventTitle, summary, meta);
+        card.append(eventIcon(event.entity_type), copy, chevron);
         button.append(time, rail, card);
         return button;
     }
@@ -336,7 +395,38 @@
         drawer.classList.remove("open");
         backdrop.classList.remove("open");
         drawer.setAttribute("aria-hidden", "true");
+        document.body.classList.remove("journal-drawer-open");
     }
+
+    function detailHeading(text) {
+        const heading = document.createElement("div");
+        heading.className = "journal-detail-heading";
+        heading.textContent = text;
+        return heading;
+    }
+
+    function changedFieldsLabel(count) {
+        const lastTwo = count % 100;
+        const last = count % 10;
+        const noun = lastTwo >= 11 && lastTwo <= 14
+            ? "полей"
+            : last === 1 ? "поле" : last >= 2 && last <= 4 ? "поля" : "полей";
+        return "Изменено " + count + " " + noun;
+    }
+
+    function detailValue(caption, value, isAfter) {
+        const wrapper = document.createElement("span");
+        wrapper.className = "journal-detail-value-wrap";
+        const label = document.createElement("span");
+        label.className = "journal-detail-value-caption";
+        label.textContent = caption;
+        const contentValue = document.createElement("span");
+        contentValue.className = "journal-detail-value" + (isAfter ? " journal-detail-value-after" : "");
+        contentValue.textContent = value;
+        wrapper.append(label, contentValue);
+        return wrapper;
+    }
+
     async function openDrawer(eventId) {
         const response = await fetch("/api/journal/" + encodeURIComponent(eventId));
         const payload = await response.json();
@@ -348,21 +438,37 @@
         meta.className = "journal-detail-meta";
         meta.textContent = event.timestamp_display + " · " + event.actor_display_name_snapshot + " · " + event.entity_label + (event.source_snapshot ? " · " + event.source_snapshot : "");
         content.append(meta);
-        event.field_changes.forEach((change) => {
+        const actionOnly = new Set([
+            "created", "system_created", "deleted",
+            "photo_added", "photo_replaced", "photo_removed",
+        ]).has(event.action);
+        const fieldChanges = actionOnly ? [] : event.field_changes;
+        if (fieldChanges.length > 1) {
+            content.append(detailHeading(changedFieldsLabel(fieldChanges.length)));
+        }
+        fieldChanges.forEach((change) => {
             const row = document.createElement("div");
             row.className = "journal-detail-change";
             const label = document.createElement("strong");
             label.textContent = change.label;
             const values = document.createElement("div");
             values.className = "journal-detail-values";
-            const before = document.createElement("div"); before.className = "journal-detail-value"; before.textContent = change.before;
-            const arrow = document.createElement("span"); arrow.textContent = "→";
-            const after = document.createElement("div"); after.className = "journal-detail-value"; after.textContent = change.after;
+            const before = detailValue("Было", change.before, false);
+            const arrow = document.createElement("span"); arrow.className = "journal-detail-arrow"; arrow.textContent = "→";
+            const after = detailValue("Стало", change.after, true);
             values.append(before, arrow, after); row.append(label, values); content.append(row);
         });
+        if (!fieldChanges.length) {
+            content.append(detailHeading("Действие"));
+            const actionValue = document.createElement("div");
+            actionValue.className = "journal-detail-action";
+            actionValue.textContent = event.action_label;
+            content.append(actionValue);
+        }
         if (event.metadata?.text_snapshot) {
+            content.append(detailHeading("Комментарий"));
             const comment = document.createElement("div");
-            comment.className = "journal-detail-meta";
+            comment.className = "journal-detail-comment";
             comment.textContent = event.metadata.text_snapshot;
             content.append(comment);
         }
@@ -370,7 +476,11 @@
             const link = document.createElement("a");
             link.className = "journal-object-link";
             link.href = event.object_url;
-            link.textContent = "Открыть объект";
+            link.textContent = {
+                product: "Открыть товар",
+                sale: "Открыть продажу",
+                receipt: "Открыть приход",
+            }[event.entity_type] || "Открыть объект";
             content.append(link);
         } else {
             const deleted = document.createElement("div");
@@ -380,6 +490,7 @@
         }
         drawer.classList.add("open"); backdrop.classList.add("open");
         drawer.setAttribute("aria-hidden", "false");
+        document.body.classList.add("journal-drawer-open");
     }
     timeline.addEventListener("click", (event) => {
         const card = event.target.closest("[data-event-id]");

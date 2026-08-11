@@ -257,12 +257,29 @@ class AuditJournalUiTest(unittest.TestCase):
         self.assertIn("Период", source)
         self.assertIn("Фильтры", source)
         self.assertIn("data-event-id=\"1\"", source)
+        self.assertIn("journal-event-icon", source)
+        self.assertIn("journal-event-copy", source)
+        self.assertIn("journal-event-title", source)
+        self.assertIn("journal-event-summary", source)
+        self.assertIn("journal-event-meta", source)
+        self.assertIn("journal-event-chevron", source)
         self.assertIn("journal-drawer", source)
         self.assertIn('class="journal-filters" hidden', source)
         self.assertIn('aria-controls="journalFilters"', source)
         self.assertIn('role="group" aria-label="Период"', source)
         self.assertIn('placeholder="Поиск по журналу"', source)
         self.assertNotIn(">Найти<", source)
+        self.assertIn('product: "Открыть товар"', source)
+        self.assertIn('sale: "Открыть продажу"', source)
+        self.assertIn('receipt: "Открыть приход"', source)
+        self.assertIn('detailValue("Было", change.before, false)', source)
+        self.assertIn('detailValue("Стало", change.after, true)', source)
+        self.assertIn("changedFieldsLabel(fieldChanges.length)", source)
+        self.assertNotIn('document.createElement("input")', source)
+        self.assertIn(
+            "html[data-theme] .journal-object-link { color: #fff !important; }",
+            source,
+        )
         self.assertNotIn("Экспорт журнала", source)
         with web.app.test_request_context("/app/journal"):
             labels = [item["label"] for item in web.get_navigation_items()]
@@ -299,6 +316,45 @@ class AuditJournalUiTest(unittest.TestCase):
         self.assertEqual(event["object_label_snapshot"], "KLOK-01")
         self.assertTrue(event["object_deleted"])
         self.assertEqual(event["object_url"], "")
+
+    def test_supported_entities_have_urls_and_multi_change_payload(self):
+        journal = AuditJournal(self.database)
+        product_event = journal.record(
+            "product", "product-1", "updated", "Product one",
+            changes={
+                "price": {"before": "1250", "after": "1350"},
+                "category": {"before": "Часы", "after": "Аксессуары"},
+            },
+        )
+        sale_event = journal.record(
+            "sale", "sale-1", "status_changed", "Продажа #1",
+            changes={"status": {"before": "sent", "after": "completed"}},
+        )
+        receipt_event = journal.record(
+            "receipt", "receipt-1", "updated", "Приход #1",
+            changes={"quantity": {"before": 5, "after": 8}},
+        )
+        with mock.patch.object(web, "ExcelProductCatalog") as products, \
+                mock.patch.object(web, "SalesInventory") as sales, \
+                mock.patch.object(web, "ReceiptInventory") as receipts:
+            products.return_value.get_product.return_value = {"id": "product-1"}
+            sales.return_value.get_sale.return_value = {"id": "sale-1"}
+            receipts.return_value.get_receipt.return_value = {"id": "receipt-1"}
+            product = self.client.get(
+                "/api/journal/{}".format(product_event)
+            ).get_json()["data"]
+            sale = self.client.get(
+                "/api/journal/{}".format(sale_event)
+            ).get_json()["data"]
+            receipt = self.client.get(
+                "/api/journal/{}".format(receipt_event)
+            ).get_json()["data"]
+        self.assertEqual(len(product["field_changes"]), 2)
+        self.assertEqual(product["object_url"], "/app/products?product_id=product-1")
+        self.assertEqual(sale["object_url"], "/app/sales?q=sale-1")
+        self.assertEqual(
+            receipt["object_url"], "/app/receipts?receipt_id=receipt-1"
+        )
 
     def test_context_filters_and_search_are_server_side(self):
         response = self.client.get(
