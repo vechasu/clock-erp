@@ -257,14 +257,14 @@ refusal = sale_record(
     "REFUSAL-1",
     warehouse_items[0],
     "Tictactoy",
-    "2026-08-04T13:00:00",
+    "2026-07-31T13:00:00",
     1,
     1200,
 )
 refusal.update({
     "order_status": "cancelled",
     "is_cancelled": True,
-    "cancelled_at": "2026-08-04T13:05:00",
+    "cancelled_at": "2026-07-31T13:05:00",
     "cancellation_reason": "Клиент отказался",
     "return_status": "returned",
 })
