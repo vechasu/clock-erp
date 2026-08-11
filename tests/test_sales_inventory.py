@@ -13,6 +13,7 @@ from app.services.sales_inventory import (
     InsufficientStockError,
     ReturnConflictError,
     SalesInventory,
+    SalesInventoryError,
 )
 
 
@@ -172,6 +173,75 @@ class SalesInventoryTest(unittest.TestCase):
         )
         self.assertEqual(updated["note"], "Обновлённое примечание")
 
+    def test_sale_keeps_historical_product_snapshot_after_catalog_edit(self):
+        product = self.create_product(stock=3)
+        sale = self.inventory.create_sale(
+            self.payload(product), product["id"], 1, 1000,
+        )
+
+        self.catalog.update_product(
+            product["id"],
+            name="Новое название карточки",
+            brand="Новый бренд",
+            category="Новая категория",
+        )
+
+        stored = self.inventory.get_sale(sale["id"])
+        self.assertEqual(stored["product_id"], str(product["id"]))
+        self.assertEqual(stored["product_name"], sale["product_name"])
+        self.assertEqual(stored["brand"], sale["brand"])
+        self.assertEqual(stored["category"], sale["category"])
+
+    def test_protected_change_rejects_entire_update_atomically(self):
+        product = self.create_product(stock=3)
+        sale = self.inventory.create_sale(
+            self.payload(product), product["id"], 1, 1000,
+        )
+        movements_before = self.inventory.list_movements(product["id"])
+
+        with self.assertRaisesRegex(SalesInventoryError, "Количество"):
+            self.inventory.update_sale(
+                sale["id"],
+                {**sale, "quantity": 2, "note": "не сохранять"},
+                2,
+                1000,
+            )
+
+        stored = self.inventory.get_sale(sale["id"])
+        self.assertEqual(stored.get("note") or "", "")
+        self.assertEqual(stored["quantity"], 1)
+        self.assertEqual(self.stock(product["id"]), 2)
+        self.assertEqual(
+            self.inventory.list_movements(product["id"]), movements_before
+        )
+
+    def test_exact_protected_field_list_is_enforced(self):
+        product = self.create_product(stock=3)
+        sale = self.inventory.create_sale(
+            self.payload(product), product["id"], 1, 1000,
+        )
+        cases = (
+            ("product_id", "999", 1, 1000, "Товар"),
+            ("product_name", "Другое название", 1, 1000, "Название товара"),
+            ("brand", "Другой бренд", 1, 1000, "Бренд"),
+            ("category", "Другая категория", 1, 1000, "Категорию"),
+            ("quantity", 2, 2, 1000, "Количество"),
+            ("unit_price", 2000, 1, 2000, "Цену"),
+        )
+        for field, value, quantity, price, message in cases:
+            with self.subTest(field=field):
+                with self.assertRaisesRegex(SalesInventoryError, message):
+                    self.inventory.update_sale(
+                        sale["id"],
+                        {**sale, field: value, "note": "не сохранять"},
+                        quantity,
+                        price,
+                    )
+                stored = self.inventory.get_sale(sale["id"])
+                self.assertEqual(stored.get("note") or "", "")
+                self.assertEqual(stored["quantity"], 1)
+                self.assertEqual(stored["unit_price"], 1000)
+
     def test_update_quantity_uses_stock_delta_and_rolls_back(self):
         product = self.create_product(stock=5)
         sale = self.inventory.create_sale(
@@ -179,22 +249,12 @@ class SalesInventoryTest(unittest.TestCase):
         )
         payload = {**sale, "quantity": 3}
 
-        updated = self.inventory.update_sale(
-            "sale-1", payload, 3, 1000, idempotency_key="update-1",
-        )
-        self.assertEqual(updated["quantity"], 3)
-        self.assertEqual(self.stock(product["id"]), 2)
-
-        def fail(_connection):
-            raise RuntimeError("forced rollback")
-
-        with self.assertRaises(RuntimeError):
+        with self.assertRaisesRegex(SalesInventoryError, "Количество"):
             self.inventory.update_sale(
-                "sale-1", {**updated, "quantity": 4}, 4, 1000,
-                idempotency_key="update-2", failure_hook=fail,
+                "sale-1", payload, 3, 1000, idempotency_key="update-1",
             )
-        self.assertEqual(self.stock(product["id"]), 2)
-        self.assertEqual(self.inventory.get_sale("sale-1")["quantity"], 3)
+        self.assertEqual(self.stock(product["id"]), 4)
+        self.assertEqual(self.inventory.get_sale("sale-1")["quantity"], 1)
 
     def test_update_quantity_applies_only_delta_and_repeated_values_are_noop(self):
         product = self.create_product(stock=5)
@@ -202,27 +262,18 @@ class SalesInventoryTest(unittest.TestCase):
             self.payload(product), product["id"], 1, 1000,
         )
 
-        increased = self.inventory.update_sale(
-            "sale-1", {**sale, "quantity": 2}, 2, 1000,
-        )
-        self.assertEqual(self.stock(product["id"]), 3)
-
-        decreased = self.inventory.update_sale(
-            "sale-1", {**increased, "quantity": 1}, 1, 1000,
-        )
-        self.assertEqual(self.stock(product["id"]), 4)
-
+        with self.assertRaisesRegex(SalesInventoryError, "Количество"):
+            self.inventory.update_sale(
+                "sale-1", {**sale, "quantity": 2}, 2, 1000,
+            )
         repeated = self.inventory.update_sale(
-            "sale-1", {**decreased, "quantity": 1}, 1, 1000,
+            "sale-1", {**sale, "quantity": 1, "note": "ok"}, 1, 1000,
         )
         movements = self.inventory.list_movements(product["id"])
         self.assertEqual(repeated["quantity"], 1)
         self.assertEqual(self.stock(product["id"]), 4)
-        self.assertEqual(len(movements), 3)
-        self.assertEqual(
-            [movement["diff"] for movement in reversed(movements)],
-            [-1, -1, 1],
-        )
+        self.assertEqual(repeated["note"], "ok")
+        self.assertEqual(len(movements), 1)
 
     def test_update_quantity_three_to_one_and_three_to_five_uses_only_delta(self):
         product = self.create_product(stock=10)
@@ -231,22 +282,13 @@ class SalesInventoryTest(unittest.TestCase):
         )
         self.assertEqual(self.stock(product["id"]), 7)
 
-        decreased = self.inventory.update_sale(
-            "sale-1", {**sale, "quantity": 1}, 1, 1000,
-        )
-        self.assertEqual(self.stock(product["id"]), 9)
-
-        increased = self.inventory.update_sale(
-            "sale-1", {**decreased, "quantity": 5}, 5, 1000,
-        )
-        self.assertEqual(increased["quantity"], 5)
-        self.assertEqual(self.stock(product["id"]), 5)
-        self.assertEqual(
-            [item["diff"] for item in reversed(
-                self.inventory.list_movements(product["id"])
-            )],
-            [-3, 2, -4],
-        )
+        for quantity in (1, 5):
+            with self.assertRaisesRegex(SalesInventoryError, "Количество"):
+                self.inventory.update_sale(
+                    "sale-1", {**sale, "quantity": quantity}, quantity, 1000,
+                )
+        self.assertEqual(self.stock(product["id"]), 7)
+        self.assertEqual(len(self.inventory.list_movements(product["id"])), 1)
 
     def test_replace_with_insufficient_stock_rolls_back_both_products(self):
         old_product = self.create_product(stock=4)
@@ -258,7 +300,7 @@ class SalesInventoryTest(unittest.TestCase):
         )
         old_movements = self.inventory.list_movements(old_product["id"])
 
-        with self.assertRaises(InsufficientStockError):
+        with self.assertRaisesRegex(SalesInventoryError, "Товар"):
             self.inventory.update_sale(
                 "sale-1",
                 {**sale, "product_id": str(new_product["id"])},
@@ -294,26 +336,16 @@ class SalesInventoryTest(unittest.TestCase):
             "order_status": "completed",
         }
 
-        updated = self.inventory.update_sale(
-            "sale-1", replacement, 3, 1000, idempotency_key="replace-1",
-        )
-        self.assertEqual(updated["product_id"], str(new_product["id"]))
-        self.assertEqual(self.stock(old_product["id"]), 4)
-        self.assertEqual(self.stock(new_product["id"]), 2)
-
-        returned = self.inventory.update_sale(
-            "sale-1", {**updated, "order_status": "returned"}, 3, 1000,
-            idempotency_key="status-returned",
-        )
-        self.assertEqual(returned["status"], "returned")
+        with self.assertRaisesRegex(SalesInventoryError, "Товар"):
+            self.inventory.update_sale(
+                "sale-1", replacement, 3, 1000,
+                idempotency_key="replace-1",
+            )
+        stored = self.inventory.get_sale("sale-1")
+        self.assertEqual(stored["product_id"], str(old_product["id"]))
+        self.assertEqual(stored["quantity"], 2)
+        self.assertEqual(self.stock(old_product["id"]), 2)
         self.assertEqual(self.stock(new_product["id"]), 5)
-
-        shipped = self.inventory.update_sale(
-            "sale-1", {**returned, "order_status": "shipped"}, 3, 1000,
-            idempotency_key="status-shipped",
-        )
-        self.assertEqual(shipped["order_status"], "shipped")
-        self.assertEqual(self.stock(new_product["id"]), 2)
 
     def test_cancel_restores_stock_then_soft_delete_does_not_change_it(self):
         product = self.create_product(stock=3)
@@ -685,7 +717,10 @@ class SalesInventoryWebTest(SalesInventoryTest):
 
         web = web_module
         super().setUp()
-        self.product = self.create_product(stock=3)
+        self.product = self.create_product(
+            stock=3,
+            article="ARTICLE-WEB-BASE",
+        )
         self.item = {
             "id": str(self.product["id"]),
             "name": self.product["display_name"],
@@ -846,19 +881,15 @@ class SalesInventoryWebTest(SalesInventoryTest):
             1000,
         )
 
-    def assert_channel_edit_blocked(self, source, **metadata):
+    def assert_channel_information_edit_allowed(self, source, **metadata):
         sale = self.create_channel_sale(source, **metadata)
         movements_before = self.inventory.list_movements(self.product["id"])
         response = self.update_sale_form(sale, note="Изменено")
 
-        self.assertEqual(response.status_code, 409)
-        self.assertEqual(response.get_json()["message"], (
-            "Проведённую продажу нельзя редактировать. "
-            "Отмените её и создайте новую."
-        ))
+        self.assertEqual(response.status_code, 200)
         stored = self.inventory.get_sale(sale["id"])
         self.assertEqual(stored["source"], source)
-        self.assertNotEqual(stored.get("note"), "Изменено")
+        self.assertEqual(stored.get("note"), "Изменено")
         self.assertEqual(stored["metadata_marker"], "сохранить")
         for key, value in metadata.items():
             self.assertEqual(stored[key], value)
@@ -868,7 +899,7 @@ class SalesInventoryWebTest(SalesInventoryTest):
         )
 
     def test_tictactoy_edit_is_blocked(self):
-        self.assert_channel_edit_blocked(
+        self.assert_channel_information_edit_allowed(
             "Tictactoy",
             delivery_cost=350,
             commission="Оплата по СБП (0)",
@@ -879,13 +910,13 @@ class SalesInventoryWebTest(SalesInventoryTest):
         )
 
     def test_wildberries_edit_is_blocked(self):
-        self.assert_channel_edit_blocked(
+        self.assert_channel_information_edit_allowed(
             "Wildberries",
             sticker_number="WB-СТИКЕР",
         )
 
     def test_amazon_edit_is_blocked(self):
-        self.assert_channel_edit_blocked(
+        self.assert_channel_information_edit_allowed(
             "Amazon",
             recipient_name="Иван Иванов",
             platform="Amazon.de",
@@ -910,13 +941,13 @@ class SalesInventoryWebTest(SalesInventoryTest):
                     sale,
                     note="QA {}".format(sale["source"]),
                 )
-                self.assertEqual(response.status_code, 409)
+                self.assertEqual(response.status_code, 200)
                 self.assertEqual(response.content_type, "application/json")
-                self.assertFalse(response.get_json()["ok"])
+                self.assertTrue(response.get_json()["ok"])
                 stored = self.inventory.get_sale(sale["id"])
                 self.assertEqual(stored["id"], sale["id"])
                 self.assertEqual(stored["source"], sale["source"])
-                self.assertNotEqual(
+                self.assertEqual(
                     stored.get("note"), "QA {}".format(sale["source"])
                 )
 
@@ -928,7 +959,7 @@ class SalesInventoryWebTest(SalesInventoryTest):
         self.assertEqual(len(self.inventory.list_sales()), 3)
         page = self.client.get("/app/sales?source=all")
         self.assertEqual(page.status_code, 200)
-        self.assertNotIn("Редактировать продажу", page.get_data(as_text=True))
+        self.assertIn("Редактировать данные продажи", page.get_data(as_text=True))
 
     def test_manual_update_quantity_is_blocked(self):
         sale = self.create_managed_sale(quantity=1)
@@ -939,12 +970,12 @@ class SalesInventoryWebTest(SalesInventoryTest):
 
         sale = self.inventory.get_sale(sale["id"])
         decreased = self.update_sale_form(sale, quantity="1")
-        self.assertEqual(decreased.status_code, 409)
+        self.assertEqual(decreased.status_code, 200)
         self.assertEqual(self.stock(self.product["id"]), 2)
 
         sale = self.inventory.get_sale(sale["id"])
         repeated = self.update_sale_form(sale, quantity="1")
-        self.assertEqual(repeated.status_code, 409)
+        self.assertEqual(repeated.status_code, 200)
         self.assertEqual(self.stock(self.product["id"]), 2)
         movements = self.inventory.list_movements(self.product["id"])
         self.assertEqual(len(movements), 1)
@@ -1015,9 +1046,9 @@ class SalesInventoryWebTest(SalesInventoryTest):
                 note="Не должно сохраниться",
             )
 
-        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.status_code, 500)
         self.assertEqual(response.content_type, "application/json")
-        self.assertIn("нельзя редактировать", response.get_json()["message"])
+        self.assertIn("не сохранены", response.get_json()["message"])
         stored = self.inventory.get_sale(sale["id"])
         self.assertEqual(stored["quantity"], 1)
         self.assertEqual(stored.get("note") or "", "")
@@ -1037,7 +1068,7 @@ class SalesInventoryWebTest(SalesInventoryTest):
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.content_type, "application/json")
         self.assertFalse(response.get_json()["ok"])
-        self.assertIn("нельзя редактировать", response.get_json()["message"])
+        self.assertIn("изменить нельзя", response.get_json()["message"])
         self.assertEqual(self.inventory.get_sale(sale["id"])["quantity"], 1)
         self.assertEqual(self.stock(self.product["id"]), stock_before)
         self.assertEqual(
@@ -1049,10 +1080,14 @@ class SalesInventoryWebTest(SalesInventoryTest):
         sale = self.create_managed_sale(source="Amazon")
         response = self.update_sale_form(sale, source=None, note="No drift")
 
-        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.status_code, 200)
         self.assertEqual(
             self.inventory.get_sale(sale["id"])["source"],
             "Amazon",
+        )
+        self.assertEqual(
+            self.inventory.get_sale(sale["id"])["note"],
+            "No drift",
         )
 
     def test_sale_date_validation_is_python_36_compatible(self):
@@ -1071,14 +1106,16 @@ class SalesInventoryWebTest(SalesInventoryTest):
         with self.assertRaisesRegex(ValueError, "корректную дату"):
             web.validate_sale_form_date("2026-02-30T14:14")
 
-    def test_sale_editor_is_removed_from_frontend(self):
+    def test_sale_editor_locks_protected_fields_in_frontend(self):
         template = (
             Path(web.app.root_path) / "templates" / "sales.html"
         ).read_text(encoding="utf-8")
 
-        self.assertNotIn("openSaleEditor", template)
-        self.assertNotIn("sales-row-edit", template)
-        self.assertNotIn("sales-mobile-edit", template)
+        self.assertIn("openSaleEditor", template)
+        self.assertIn("sales-row-edit", template)
+        self.assertIn("sales-mobile-edit", template)
+        self.assertIn("setProtectedSaleFieldsLocked(true)", template)
+        self.assertIn("отмените проведение", template)
         self.assertIn("openCancellationModal", template)
         self.assertIn("Удалить отменённую запись?", template)
 
@@ -1140,7 +1177,7 @@ class SalesInventoryWebTest(SalesInventoryTest):
             json={"quantity": 2},
         )
         self.assertEqual(patched.status_code, 409)
-        self.assertIn("нельзя редактировать", patched.get_json()["message"])
+        self.assertIn("изменить нельзя", patched.get_json()["message"])
         cancelled = self.client.post(
             "/api/v1/sales/{}/cancel".format(sale["id"]),
             json={"reason": "customer_refused"},
@@ -1150,7 +1187,7 @@ class SalesInventoryWebTest(SalesInventoryTest):
         self.assertEqual(movements[0]["type"], "cancellation")
         self.assertNotIn("return", [item["type"] for item in movements])
 
-    def test_actions_render_in_every_source_without_edit_controls(self):
+    def test_actions_render_in_every_source_with_information_edit(self):
         for index, source in enumerate(
             ("Tictactoy", "Wildberries", "Amazon"), start=1
         ):
@@ -1161,8 +1198,8 @@ class SalesInventoryWebTest(SalesInventoryTest):
             page = self.client.get("/app/sales?source={}".format(source))
             self.assertEqual(page.status_code, 200)
             text = page.get_data(as_text=True)
-            self.assertNotIn("Редактировать продажу", text)
-            self.assertNotIn("openSaleEditor", text)
+            self.assertIn("Редактировать данные продажи", text)
+            self.assertIn("openSaleEditor", text)
             self.assertIn("Отменить продажу", text)
 
     def test_cancelled_row_has_delete_menu_and_marketplace_warning(self):

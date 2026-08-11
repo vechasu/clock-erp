@@ -9,6 +9,7 @@ from unittest import mock
 from app import web
 from app.catalog_db import CatalogDatabase
 from app.services.excel_product_catalog import ExcelProductBatchService, ExcelProductCatalog
+from app.services.sales_inventory import SalesInventory
 
 
 def product_result():
@@ -153,6 +154,37 @@ class Stage2SalesApiTest(unittest.TestCase):
         self.assertEqual(blocked.status_code, 409)
         self.assertEqual(blocked.get_json()["code"], "SALE_NOT_EDITABLE")
 
+    def test_information_patch_is_saved_without_stock_movement(self):
+        sale = self.create_sale().get_json()["data"]
+        stock_before = self.stock()
+        database = CatalogDatabase(self.database_path)
+        movements_before = SalesInventory(database).list_movements(
+            self.product["id"]
+        )
+
+        response = self.client.patch(
+            "/api/v1/sales/{}".format(sale["id"]),
+            json={
+                "note": "Новый комментарий",
+                "track_number": "TRACK-NEW",
+                "recipient_name": "Иван Иванов",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        updated = response.get_json()["data"]
+        self.assertEqual(updated["note"], "Новый комментарий")
+        self.assertEqual(updated["track_number"], "TRACK-NEW")
+        self.assertEqual(updated["recipient_name"], "Иван Иванов")
+        self.assertEqual(updated["product_id"], sale["product_id"])
+        self.assertEqual(updated["quantity"], sale["quantity"])
+        self.assertEqual(updated["unit_price"], sale["unit_price"])
+        self.assertEqual(self.stock(), stock_before)
+        self.assertEqual(
+            SalesInventory(database).list_movements(self.product["id"]),
+            movements_before,
+        )
+
     def test_optional_price_supports_all_channels_and_distinguishes_zero(self):
         page = (Path(web.app.root_path) / "templates" / "sales.html").read_text(
             encoding="utf-8"
@@ -189,7 +221,7 @@ class Stage2SalesApiTest(unittest.TestCase):
         cleared = self.client.patch(
             "/api/sales/{}".format(created_ids[0]), json={"unit_price": ""}
         )
-        self.assertEqual(cleared.status_code, 409)
+        self.assertEqual(cleared.status_code, 200)
         zero = self.client.post("/api/sales", json={
             "created_at": "2026-07-30", "source": "Tictactoy",
             "product_id": str(self.product["id"]), "quantity": 1,
