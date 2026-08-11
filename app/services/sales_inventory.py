@@ -6,6 +6,7 @@ import uuid
 from datetime import datetime, timezone
 
 from app.catalog_db import CatalogDatabase
+from app.services.audit_journal import AuditJournal
 
 
 class SalesInventoryError(ValueError):
@@ -266,6 +267,24 @@ class SalesInventory:
             )
             if failure_hook:
                 failure_hook(connection)
+            AuditJournal(self.database).record(
+                "sale", sale_id,
+                "created" if user_name else "system_created",
+                "Продажа #{}".format(stored_payload.get("order_number") or sale_id),
+                source,
+                after={
+                    "status": stored_payload.get("order_status") or "completed",
+                    "quantity": quantity,
+                    "unit_price": unit_price,
+                    "source": source,
+                    "order_number": stored_payload.get("order_number") or sale_id,
+                },
+                metadata={"number": stored_payload.get("order_number") or sale_id},
+                actor_id=user_name, actor_name=user_name or source,
+                actor_type="user" if user_name else "external",
+                status=stored_payload.get("order_status") or "completed",
+                source=source, connection=connection,
+            )
 
         return self.get_sale(sale_id)
 
@@ -416,6 +435,23 @@ class SalesInventory:
                     returned_at,
                 ),
             )
+            action = (
+                "refused"
+                if movement_type == "cancellation" and "отказ" in reason.casefold()
+                else "cancelled" if movement_type == "cancellation"
+                else "status_changed"
+            )
+            AuditJournal(self.database).record(
+                "sale", sale_id, action,
+                "Продажа #{}".format(self._sale_number(sale)),
+                sale["source"],
+                before={"status": sale["status"]},
+                after={"status": item_status},
+                metadata={"number": self._sale_number(sale), "reason": reason},
+                actor_id=user_name, actor_name=user_name,
+                actor_type="user" if user_name else "system",
+                status=item_status, source=sale["source"], connection=connection,
+            )
 
         return self.get_sale(sale_id)
 
@@ -514,6 +550,48 @@ class SalesInventory:
             )
             if failure_hook:
                 failure_hook(connection)
+            before = {
+                "status": current.get("order_status") or sale["status"],
+                "payment": current.get("payment_status"),
+                "tracking": current.get("tracking_number"),
+                "quantity": float(item["quantity"]),
+                "unit_price": current_price,
+                "source": sale["source"],
+                "comment": current.get("comment") or current.get("note"),
+                "order_number": current.get("order_number") or sale_id,
+            }
+            after = {
+                "status": metadata.get("order_status") or sale["status"],
+                "payment": metadata.get("payment_status"),
+                "tracking": metadata.get("tracking_number"),
+                "quantity": float(item["quantity"]),
+                "unit_price": current_price,
+                "source": updated_source,
+                "comment": metadata.get("comment") or metadata.get("note"),
+                "order_number": metadata.get("order_number") or sale_id,
+            }
+            changed = {
+                key for key in before if before.get(key) != after.get(key)
+            }
+            if changed:
+                action = (
+                    "status_changed" if changed == {"status"}
+                    else "comment_added" if changed == {"comment"} and after["comment"]
+                    else "updated"
+                )
+                AuditJournal(self.database).record(
+                    "sale", sale_id, action,
+                    "Продажа #{}".format(after["order_number"]), updated_source,
+                    before=before, after=after,
+                    metadata={
+                        "number": after["order_number"],
+                        "text_snapshot": after["comment"] if action == "comment_added" else "",
+                    },
+                    actor_id=user_name, actor_name=user_name,
+                    actor_type="user" if user_name else "system",
+                    status=after["status"], source=updated_source,
+                    connection=connection,
+                )
         return self.get_sale(sale_id)
 
     def cancel_sale(
@@ -637,6 +715,25 @@ class SalesInventory:
                 )
             if failure_hook:
                 failure_hook(connection)
+            action = (
+                "refused"
+                if "отказ" in (reason + " " + comment).casefold()
+                or reason == "customer_refused"
+                else "cancelled"
+            )
+            AuditJournal(self.database).record(
+                "sale", sale_id, action,
+                "Продажа #{}".format(self._sale_number(sale)), sale["source"],
+                before={"status": self._metadata(sale).get("order_status") or sale["status"]},
+                after={"status": "refusal" if action == "refused" else "cancelled"},
+                metadata={
+                    "number": self._sale_number(sale), "reason": reason,
+                    "text_snapshot": comment,
+                }, actor_id=user_name, actor_name=user_name,
+                actor_type="user" if user_name else "system",
+                status="refusal" if action == "refused" else "cancelled",
+                source=sale["source"], connection=connection,
+            )
 
         return self.get_sale(sale_id)
 
@@ -677,6 +774,14 @@ class SalesInventory:
                     json.dumps(metadata, ensure_ascii=False, sort_keys=True),
                     deleted_at, sale_id,
                 ),
+            )
+            AuditJournal(self.database).record(
+                "sale", sale_id, "deleted",
+                "Продажа #{}".format(self._sale_number(sale)), sale["source"],
+                metadata={"number": self._sale_number(sale), "reason": reason},
+                actor_id=user_name, actor_name=user_name,
+                actor_type="user" if user_name else "system",
+                status="deleted", source=sale["source"], connection=connection,
             )
         return self.get_sale(sale_id)
 

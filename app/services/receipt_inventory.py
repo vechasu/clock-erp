@@ -7,6 +7,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 
 from app.catalog_db import CatalogDatabase
+from app.services.audit_journal import AuditJournal
 
 
 class ReceiptInventoryError(ValueError):
@@ -98,6 +99,7 @@ class ReceiptInventory:
                     idempotency_key,
                 ),
             ).fetchone()
+            created = existing is None
             if existing is not None:
                 if existing["status"] != "draft":
                     return self._receipt_payload(connection, existing["id"])
@@ -120,6 +122,22 @@ class ReceiptInventory:
                 failure_hook=failure_hook,
                 now=now,
             )
+            if created:
+                AuditJournal(self.database).record(
+                    "receipt", receipt_id, "created",
+                    "Приход #{}".format(receipt.get("number") or receipt_id),
+                    after={
+                        "status": "posted",
+                        "quantity": sum(item["quantity"] for item in prepared),
+                        "document": receipt.get("number") or receipt_id,
+                        "comment": receipt.get("comment") or receipt.get("note") or "",
+                        "receipt_date": receipt.get("receipt_date") or receipt.get("created_at"),
+                    },
+                    metadata={"number": receipt.get("number") or receipt_id},
+                    actor_id=user_name, actor_name=user_name,
+                    actor_type="user" if user_name else "system",
+                    status="posted", connection=connection,
+                )
         return self.get_receipt(receipt_id)
 
     def create_draft(
@@ -163,6 +181,20 @@ class ReceiptInventory:
                 tenant_id=tenant_id,
                 now=now,
             )
+            AuditJournal(self.database).record(
+                "receipt", receipt_id, "created",
+                "Приход #{}".format(receipt.get("number") or receipt_id),
+                after={
+                    "status": "draft",
+                    "quantity": sum(item["quantity"] for item in prepared),
+                    "document": receipt.get("number") or receipt_id,
+                    "comment": receipt.get("comment") or receipt.get("note") or "",
+                    "receipt_date": receipt.get("receipt_date") or receipt.get("created_at"),
+                }, metadata={"number": receipt.get("number") or receipt_id},
+                actor_id=user_name, actor_name=user_name,
+                actor_type="user" if user_name else "system",
+                status="draft", connection=connection,
+            )
         return self.get_receipt(receipt_id)
 
     def update_draft(
@@ -188,6 +220,10 @@ class ReceiptInventory:
                 raise ReceiptInventoryError(
                     "Проведённый приход изменяется только через корректировку."
                 )
+            old_items = connection.execute(
+                "SELECT quantity, purchase_price FROM erp_receipt_items "
+                "WHERE receipt_id = ? AND active = 1", (receipt_id,)
+            ).fetchall()
             products = self._load_products(connection, prepared)
             connection.execute(
                 "UPDATE erp_receipt_items SET active = 0 "
@@ -223,6 +259,34 @@ class ReceiptInventory:
                     receipt_id,
                 ),
             )
+            before = {
+                "status": current["status"],
+                "quantity": sum(float(item["quantity"]) for item in old_items),
+                "document": current["number"] or receipt_id,
+                "comment": current["comment"] or "",
+                "receipt_date": current["receipt_date"],
+            }
+            after = {
+                "status": current["status"],
+                "quantity": sum(item["quantity"] for item in prepared),
+                "document": receipt.get("number") or current["number"] or receipt_id,
+                "comment": receipt.get("comment") if "comment" in receipt else receipt.get("note") if "note" in receipt else current["comment"] or "",
+                "receipt_date": receipt.get("receipt_date") or current["receipt_date"],
+            }
+            if before != after:
+                changed = {key for key in before if before[key] != after[key]}
+                action = "comment_added" if changed == {"comment"} and after["comment"] else "updated"
+                AuditJournal(self.database).record(
+                    "receipt", receipt_id, action,
+                    "Приход #{}".format(after["document"]),
+                    before=before, after=after,
+                    metadata={
+                        "number": after["document"],
+                        "text_snapshot": after["comment"] if action == "comment_added" else "",
+                    }, actor_id=user_name, actor_name=user_name,
+                    actor_type="user" if user_name else "system",
+                    status="draft", connection=connection,
+                )
         return self.get_receipt(receipt_id)
 
     def post_receipt(
@@ -236,6 +300,9 @@ class ReceiptInventory:
         now = utc_now()
         self.database.initialize()
         with self.database.transaction() as connection:
+            before = connection.execute(
+                "SELECT number, status FROM erp_receipts WHERE id = ?", (receipt_id,)
+            ).fetchone()
             self._post_draft(
                 connection,
                 receipt_id,
@@ -243,6 +310,16 @@ class ReceiptInventory:
                 failure_hook=failure_hook,
                 now=now,
             )
+            if before is not None and before["status"] == "draft":
+                AuditJournal(self.database).record(
+                    "receipt", receipt_id, "status_changed",
+                    "Приход #{}".format(before["number"] or receipt_id),
+                    before={"status": "draft"}, after={"status": "posted"},
+                    metadata={"number": before["number"] or receipt_id},
+                    actor_id=user_name, actor_name=user_name,
+                    actor_type="user" if user_name else "system",
+                    status="posted", connection=connection,
+                )
         return self.get_receipt(receipt_id)
 
     def update_receipt(
@@ -419,6 +496,45 @@ class ReceiptInventory:
             )
             if failure_hook:
                 failure_hook(connection)
+            document = str(
+                receipt.get("document_number")
+                or receipt.get("number")
+                or current["number"]
+                or receipt_id
+            )
+            before = {
+                "status": current["status"],
+                "quantity": sum(float(row["quantity"]) for row in old_rows),
+                "document": current["number"] or receipt_id,
+                "comment": current["comment"] or "",
+                "receipt_date": current["receipt_date"],
+                "purchase_price": sum(
+                    float(row["purchase_price"] or 0) for row in old_rows
+                ),
+            }
+            after = {
+                "status": current["status"],
+                "quantity": sum(item["quantity"] for item in prepared),
+                "document": document,
+                "comment": receipt.get("comment") if "comment" in receipt else receipt.get("note") if "note" in receipt else current["comment"] or "",
+                "receipt_date": receipt.get("receipt_date") or current["receipt_date"],
+                "purchase_price": sum(
+                    float(item["purchase_price"] or 0) for item in prepared
+                ),
+            }
+            if before != after:
+                changed = {key for key in before if before[key] != after[key]}
+                action = "comment_added" if changed == {"comment"} and after["comment"] else "updated"
+                AuditJournal(self.database).record(
+                    "receipt", receipt_id, action,
+                    "Приход #{}".format(document), before=before, after=after,
+                    metadata={
+                        "number": document,
+                        "text_snapshot": after["comment"] if action == "comment_added" else "",
+                    }, actor_id=user_name, actor_name=user_name,
+                    actor_type="user" if user_name else "system",
+                    status="posted", connection=connection,
+                )
         return self.get_receipt(receipt_id)
 
     def can_cancel(self, receipt_id):
@@ -541,6 +657,18 @@ class ReceiptInventory:
             )
             if failure_hook:
                 failure_hook(connection)
+            AuditJournal(self.database).record(
+                "receipt", receipt_id, "cancelled",
+                "Приход #{}".format(receipt["number"] or receipt_id),
+                before={"status": receipt["status"]},
+                after={"status": "cancelled"},
+                metadata={
+                    "number": receipt["number"] or receipt_id,
+                    "reason": str(reason or "").strip(),
+                }, actor_id=user_name, actor_name=user_name,
+                actor_type="user" if user_name else "system",
+                status="cancelled", connection=connection,
+            )
         return self.get_receipt(receipt_id)
 
     def get_receipt(self, receipt_id):

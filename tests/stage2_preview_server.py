@@ -15,6 +15,7 @@ os.environ["CATALOG_DATABASE_PATH"] = str(PREVIEW_ROOT / "catalog.db")
 from app import web  # noqa: E402
 from app.catalog_db import CatalogDatabase  # noqa: E402
 from app.services.excel_product_catalog import ExcelProductBatchService  # noqa: E402
+from app.services.audit_journal import AuditJournal  # noqa: E402
 
 
 def product_result(row, name, article, brand, category, stock, cell):
@@ -333,6 +334,47 @@ web.build_sales_report_records = lambda warehouse_items=None: [
     dict(sale) for sale in preview_sales
 ]
 web.app.config.update(TESTING=True, AUTH_TESTING=False)
+
+preview_journal = AuditJournal(CatalogDatabase(PREVIEW_ROOT / "catalog.db"))
+for index in range(42):
+    entity_type = ("product", "sale", "receipt")[index % 3]
+    source = ("Tictactoy", "Wildberries", "Amazon")[index % 3]
+    entity_id = (
+        str(warehouse_items[index % len(warehouse_items)]["id"])
+        if entity_type == "product"
+        else "preview-sale-{}".format(index)
+        if entity_type == "sale"
+        else "preview-receipt-{}".format(index)
+    )
+    label = (
+        warehouse_items[index % len(warehouse_items)]["name"]
+        if entity_type == "product"
+        else "Продажа #PAGE-{:04d}".format(index)
+        if entity_type == "sale"
+        else "Приход #PAGE-{:04d}".format(index)
+    )
+    field = "price" if entity_type == "product" else "status" if entity_type == "sale" else "quantity"
+    preview_journal.record(
+        entity_type, entity_id,
+        "created" if index % 7 == 0 else "updated",
+        label,
+        warehouse_items[index % len(warehouse_items)].get("article", "")
+        if entity_type == "product" else source if entity_type == "sale" else "",
+        before={field: index}, after={field: index + 1},
+        metadata={
+            "article": "KLOK-01" if entity_type == "product" else "",
+            "number": "PAGE-{:04d}".format(index),
+            "text_snapshot": "Тестовый комментарий {}".format(index),
+        },
+        actor_id="preview-user-{}".format(index % 2),
+        actor_name="Максим" if index % 2 == 0 else "Анна",
+        actor_type="user",
+        occurred_at="2026-08-{:02d}T{:02d}:14:{:02d}+00:00".format(
+            11 - (index // 18), 21 - (index % 12), index % 60
+        ),
+        status="completed" if entity_type == "sale" else "",
+        source=source if entity_type == "sale" else "",
+    )
 
 
 if __name__ == "__main__":
