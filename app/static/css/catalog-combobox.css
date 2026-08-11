@@ -299,9 +299,12 @@
 }
 
 .catalog-combobox-action {
+    position: sticky;
+    top: 0;
+    z-index: 2;
     width: 100%;
     min-height: 40px;
-    margin-top: 6px;
+    margin-bottom: 6px;
     padding: 8px 11px;
     border: 1px dashed #93c5fd;
     border-radius: 10px;
@@ -310,6 +313,15 @@
     font-size: 13px;
     font-weight: 800;
     text-align: left;
+}
+
+.catalog-combobox-group-label {
+    padding: 8px 11px 5px;
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
 }
 
 .catalog-combobox-action:hover,

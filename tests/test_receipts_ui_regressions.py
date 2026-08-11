@@ -81,7 +81,11 @@ class ReceiptsUiRegressionsTest(unittest.TestCase):
             'data-new-brand-global-categories="true"',
             self.template,
         )
-        self.assertIn("newBrandUsesGlobalCategories", self.catalog_script)
+        self.assertIn("globalCategoryOptions", self.catalog_script)
+        self.assertIn(
+            'data-global-category-options="true"',
+            self.template,
+        )
         self.assertIn('"category_scope"', self.catalog_script)
 
 

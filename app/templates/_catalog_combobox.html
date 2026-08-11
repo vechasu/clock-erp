@@ -67,6 +67,18 @@
                 >×</button>
             </div>
             <div class="brand-combobox-options" role="listbox">
+                {% if action_kind and action_label %}
+                    <button
+                        class="catalog-combobox-action"
+                        type="button"
+                        role="option"
+                        data-catalog-create-action="{{ action_kind }}"
+                        data-catalog-create-label="{{ action_label }}"
+                        hidden
+                    >
+                        {{ action_label }}
+                    </button>
+                {% endif %}
                 {% if include_all %}
                     <button
                         class="brand-combobox-option{% if not selected_value %} active{% endif %}"
@@ -102,17 +114,6 @@
                     data-brand-empty
                     hidden
                 >{{ empty_label }}</div>
-                {% if action_kind and action_label %}
-                    <button
-                        class="catalog-combobox-action"
-                        type="button"
-                        role="option"
-                        data-catalog-create-action="{{ action_kind }}"
-                        hidden
-                    >
-                        ➕ Создать
-                    </button>
-                {% endif %}
             </div>
         </div>
     </div>

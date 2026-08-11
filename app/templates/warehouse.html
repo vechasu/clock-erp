@@ -4768,6 +4768,7 @@
                     action="/warehouse/add"
                     enctype="multipart/form-data"
                     data-shared-catalog-scope
+                    data-global-category-options="true"
                     onsubmit="return submitWarehouseAddForm(event, this)"
                 >
                     <input
@@ -8480,6 +8481,12 @@
                 "catalog-combobox:change",
                 function(event) {
                     const kind = event.target?.dataset?.sharedCatalogKind;
+                    if (
+                        event.target?.dataset?.catalogInlineCreating
+                        === "true"
+                    ) {
+                        return;
+                    }
                     if (kind === "brand" || kind === "category") {
                         window.setTimeout(function() {
                             resetWarehouseProductFields(warehouseAddForm);

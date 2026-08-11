@@ -179,6 +179,7 @@
 
     window.normalizeComboboxSearchValue = function(value) {
         return String(value || "")
+            .replace(/\s+/g, " ")
             .trim()
             .toLocaleLowerCase("ru")
             .replaceAll("ё", "е");
@@ -230,6 +231,17 @@
         if (typeof window.updateCatalogCreateAction === "function") {
             window.updateCatalogCreateAction(combobox, value);
         }
+
+        combobox
+            .querySelectorAll(".catalog-combobox-group-label")
+            .forEach(function(label) {
+                const group = label.dataset.catalogOptionGroup;
+                label.hidden = !Array.from(combobox.querySelectorAll(
+                    ".brand-combobox-option:not([hidden])"
+                )).some(function(option) {
+                    return option.dataset.catalogOptionGroup === group;
+                });
+            });
     };
 
     window.setBrandComboboxValue = function(
@@ -368,13 +380,24 @@
         );
 
         optionsElement
-            .querySelectorAll(".brand-combobox-option")
+            .querySelectorAll(
+                ".brand-combobox-option, .catalog-combobox-group-label"
+            )
             .forEach(function(option) {
                 option.remove();
             });
 
+        let currentGroup = null;
         (Array.isArray(options) ? options : []).forEach(
             function(option) {
+                if (option.group && option.group !== currentGroup) {
+                    const groupLabel = document.createElement("div");
+                    groupLabel.className = "catalog-combobox-group-label";
+                    groupLabel.dataset.catalogOptionGroup = option.group;
+                    groupLabel.textContent = option.group;
+                    optionsElement.insertBefore(groupLabel, emptyMessage);
+                    currentGroup = option.group;
+                }
                 const button = document.createElement("button");
                 button.className = "brand-combobox-option";
                 button.type = "button";
@@ -382,6 +405,9 @@
                 button.dataset.brand = option.value || "";
                 button.dataset.brandSearch =
                     option.searchText || option.label || "";
+                if (option.group) {
+                    button.dataset.catalogOptionGroup = option.group;
+                }
                 if (option.item) {
                     button.dataset.catalogItem = JSON.stringify(
                         option.item
@@ -792,25 +818,47 @@
         const query = String(rawQuery || "")
             .replace(/\s+/g, " ")
             .trim();
-        const hasMatches = Boolean(
-            combobox.querySelector(
-                ".brand-combobox-option:not([hidden])"
-            )
-        );
+        const normalizedQuery = window.normalizeComboboxSearchValue(query);
+        const kind = action.dataset.catalogCreateAction;
+        const exactMatch = Boolean(normalizedQuery) && Array.from(
+            combobox.querySelectorAll(".brand-combobox-option")
+        ).some(function(option) {
+            return window.normalizeComboboxSearchValue(
+                option.querySelector(
+                    ".brand-combobox-option-label"
+                )?.textContent || option.dataset.brand || ""
+            ) === normalizedQuery;
+        });
+        const hasMatches = Boolean(combobox.querySelector(
+            ".brand-combobox-option:not([hidden])"
+        ));
         const trigger = combobox.querySelector(
             ".brand-combobox-trigger"
         );
-        const available = Boolean(query)
-            && !hasMatches
+        const taxonomyAction = kind === "brand" || kind === "category";
+        const available = (
+            taxonomyAction
+                ? !exactMatch
+                : Boolean(query) && !hasMatches
+        )
             && !combobox.classList.contains("is-loading")
             && !trigger?.disabled;
 
         action.hidden = !available;
         action.disabled = !available;
         action.dataset.catalogCreateName = query;
-        action.textContent = available
-            ? '➕ Создать "' + query + '"'
-            : "➕ Создать";
+        if (taxonomyAction) {
+            const noun = kind === "brand" ? "бренд" : "категорию";
+            action.textContent = query
+                ? '➕ Создать ' + noun + ' «' + query + '»'
+                : '➕ Создать ' + (kind === "brand"
+                    ? "новый бренд"
+                    : "новую категорию");
+        } else {
+            action.textContent = available
+                ? '➕ Создать "' + query + '"'
+                : action.dataset.catalogCreateLabel || "➕ Создать";
+        }
     };
 
     function sharedCatalogOption(item, kind, hideCategoryCount) {
@@ -842,6 +890,7 @@
                 ? String(item.image_url || item.thumbnail_url || "")
                 : "",
             item,
+            group: "",
         };
     }
 
@@ -963,11 +1012,9 @@
         const categoryId = selectedSharedCatalogId(
             sharedCatalogCombobox(scope, "category")
         );
-        const brandCombobox = sharedCatalogCombobox(scope, "brand");
-        const newBrandUsesGlobalCategories = Boolean(
+        const globalCategoryOptions = Boolean(
             kind === "category"
-            && scope?.dataset.newBrandGlobalCategories === "true"
-            && brandCombobox?.dataset.sharedCatalogNewValue === "true"
+            && scope?.dataset.globalCategoryOptions === "true"
         );
 
         const categoryWithoutBrand = Boolean(
@@ -1006,7 +1053,7 @@
         if (kind === "category") {
             parameters.set(
                 "category_scope",
-                brandId === "" || newBrandUsesGlobalCategories
+                brandId === "" || globalCategoryOptions
                     ? "all"
                     : "brand"
             );
@@ -1067,13 +1114,25 @@
                 availableItems = [selectedItem, ...items];
             }
 
-            const options = availableItems.map((item) =>
-                sharedCatalogOption(
+            const groupCategories = Boolean(
+                kind === "category"
+                && globalCategoryOptions
+                && brandId !== ""
+                && availableItems.some((item) => item.used_by_brand)
+            );
+            const options = availableItems.map((item) => {
+                const option = sharedCatalogOption(
                     item,
                     kind,
-                    newBrandUsesGlobalCategories
-                )
-            );
+                    globalCategoryOptions
+                );
+                if (groupCategories) {
+                    option.group = item.used_by_brand
+                        ? "Категории этого бренда"
+                        : "Другие категории";
+                }
+                return option;
+            });
             window.replaceCatalogComboboxOptions(
                 combobox,
                 options,
@@ -1344,11 +1403,18 @@
                 action.dataset.catalogCreateName || ""
             ).replace(/\s+/g, " ").trim();
 
-            if (!combobox || !scope || !name) {
+            if (!combobox || !scope) {
                 return;
             }
 
             event.preventDefault();
+            if (!name) {
+                const search = combobox.querySelector(
+                    ".brand-combobox-search"
+                );
+                search?.focus();
+                return;
+            }
             const brandId = selectedSharedCatalogId(
                 sharedCatalogCombobox(scope, "brand")
             );
@@ -1396,6 +1462,24 @@
                 });
                 const result = await response.json();
 
+                if (
+                    response.status === 409
+                    && result?.fields?.existing
+                    && (kind === "brand" || kind === "category")
+                ) {
+                    combobox.dataset.catalogInlineCreating = "true";
+                    try {
+                        window.setSharedCatalogComboboxValue(
+                            combobox,
+                            result.fields.existing
+                        );
+                    } finally {
+                        delete combobox.dataset.catalogInlineCreating;
+                    }
+                    window.setBrandDropdownOpen(combobox, false);
+                    return;
+                }
+
                 if (!response.ok) {
                     throw new Error(
                         result?.message
@@ -1404,10 +1488,17 @@
                     );
                 }
 
-                window.setSharedCatalogComboboxValue(
-                    combobox,
-                    result.data
-                );
+                if (kind === "brand" || kind === "category") {
+                    combobox.dataset.catalogInlineCreating = "true";
+                }
+                try {
+                    window.setSharedCatalogComboboxValue(
+                        combobox,
+                        result.data
+                    );
+                } finally {
+                    delete combobox.dataset.catalogInlineCreating;
+                }
                 combobox.dataset.sharedCatalogNewValue = "true";
                 combobox.dispatchEvent(
                     new CustomEvent("shared-catalog:created", {
