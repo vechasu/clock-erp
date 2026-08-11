@@ -12984,6 +12984,7 @@ def warehouse_create_brand():
         brand = SharedCatalog().create_brand(
             request.form.get("name"), **current_audit_actor()
         )
+        _invalidate_deleted_product_caches()
         return _brands_redirect(
             brand["id"], message="Бренд создан."
         )
@@ -12998,6 +12999,7 @@ def warehouse_rename_brand(brand_id):
         SharedCatalog().rename_brand(
             brand_id, request.form.get("name"), **current_audit_actor()
         )
+        _invalidate_deleted_product_caches()
         return _brands_redirect(
             brand_id, message="Бренд переименован."
         )
@@ -13014,6 +13016,7 @@ def warehouse_create_brand_category(brand_id):
         SharedCatalog().create_brand_category(
             brand_id, request.form.get("name"), **current_audit_actor()
         )
+        _invalidate_deleted_product_caches()
         return _brands_redirect(
             brand_id, message="Категория добавлена в бренд."
         )
@@ -13021,6 +13024,41 @@ def warehouse_create_brand_category(brand_id):
         return _brands_redirect(
             brand_id, notice="error", message=str(error)
         )
+
+
+@app.route(
+    "/warehouse/brands/<int:brand_id>/categories/<int:category_id>/rename",
+    methods=["POST"],
+)
+def warehouse_rename_global_category(brand_id, category_id):
+    require_csrf_when_authenticated()
+    brand = SharedCatalog().get_brand_overview(brand_id)
+    category = next((item for item in (brand or {}).get("categories", [])
+                     if item["id"] == category_id), None)
+    if brand is None or category is None or category_id == 0:
+        return _brands_redirect(
+            brand_id, notice="error", message="Категория бренда не найдена."
+        )
+    try:
+        SharedCatalog().rename_category(
+            category_id, request.form.get("name"), **current_audit_actor()
+        )
+        _invalidate_deleted_product_caches()
+        return _brands_redirect(
+            brand_id, message="Категория переименована во всей ERP."
+        )
+    except (DuplicateCatalogValueError, ValueError) as error:
+        return _brands_redirect(brand_id, notice="error", message=str(error))
+
+
+@app.route("/api/v1/brands", methods=["GET"])
+def api_brand_overviews():
+    query = (request.args.get("q") or "").strip()
+    brands = SharedCatalog().list_brand_overviews(
+        query=query,
+        limit=500,
+    )
+    return api_success({"items": brands, "query": query})
 
 
 @app.route("/warehouse/brands/<int:brand_id>/delete", methods=["POST"])
