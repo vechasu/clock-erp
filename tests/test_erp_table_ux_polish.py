@@ -1,3 +1,4 @@
+import re
 import unittest
 from pathlib import Path
 
@@ -103,6 +104,53 @@ class ErpTableUxPolishTest(unittest.TestCase):
         self.assertIn("JSON.stringify({widths, hidden})", source)
         self.assertIn('requiredColumns = ["date", "product"]', source)
         self.assertIn('data-system-column="actions"', source)
+        self.assertIn('<col data-column-key="purchase-price">', source)
+        self.assertIn('"purchase-price": 126', source)
+        self.assertIn("normalizeWidths(saved.widths)", source)
+        self.assertIn("Number.isFinite(numeric) && numeric > 0", source)
+        self.assertIn("panel.replaceChildren()", source)
+        self.assertIn("receipt-column-settings-reset", source)
+        self.assertIn("saveReceiptTableView();\n        initializeReceiptColumnSettings()", source)
+
+    def test_table_storage_isolated_and_ajax_initializer_is_idempotent(self):
+        warehouse = self.source("app/templates/warehouse.html")
+        sales = self.source("app/templates/sales.html")
+        receipts = self.source("app/templates/receipts.html")
+
+        self.assertIn("vechasu.warehouse.table-view.v2", warehouse)
+        self.assertIn('data-sales-settings-key="sales_{{ active_source }}"', sales)
+        self.assertIn("vechasu-receipts-table-view-v1", receipts)
+        self.assertIn("warehouseTableViewController.abort()", warehouse)
+        self.assertIn('delete table.dataset.viewReady', warehouse)
+        self.assertIn("initializeWarehouseTableView();", warehouse)
+        self.assertIn('if (table.dataset.viewReady === "1") return;', warehouse)
+
+    def test_resize_completion_suppresses_sort_and_cleans_pointer_handlers(self):
+        contracts = {
+            "warehouse.html": "warehouseTableSuppressSortUntil",
+            "sales.html": "suppressSortUntil",
+            "receipts.html": "suppressSortUntil",
+        }
+        for template, guard in contracts.items():
+            with self.subTest(template=template):
+                source = self.source("app/templates/" + template)
+                self.assertIn(guard + " = Date.now() + 350", source)
+                self.assertRegex(
+                    source,
+                    re.compile(r'removeEventListener\(\s*"pointerup"'),
+                )
+                self.assertRegex(
+                    source,
+                    re.compile(r'removeEventListener\(\s*"pointercancel"'),
+                )
+
+    def test_wide_tables_are_contained_by_their_scroll_owners(self):
+        css = self.source("app/static/css/erp-components.css")
+        self.assertIn(".warehouse-page #warehouseResults", css)
+        self.assertIn(".sales-page .sales-data-card", css)
+        self.assertIn(".table-card:has(.receipts-table)", css)
+        self.assertIn(".sales-page .table-wrap:has(.sales-table)", css)
+        self.assertIn("overscroll-behavior-x: contain", css)
 
 
 if __name__ == "__main__":

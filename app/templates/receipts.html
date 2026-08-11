@@ -1027,6 +1027,25 @@
             background: #2563eb;
         }
 
+        .receipt-column-settings-reset {
+            width: 100%;
+            min-height: 34px;
+            margin-top: 7px;
+            padding: 7px 9px;
+            border: 1px solid #dbe3ec;
+            border-radius: 8px;
+            background: #f8fafc;
+            color: #475569;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .receipt-column-settings-reset:hover {
+            border-color: #bfdbfe;
+            background: #eff6ff;
+            color: #1d4ed8;
+        }
+
         body.receipt-column-resizing {
             cursor: col-resize;
             user-select: none;
@@ -1871,6 +1890,7 @@
                             <col data-column-key="photo">
                             <col data-column-key="product">
                             <col data-column-key="quantity">
+                            <col data-column-key="purchase-price">
                             <col data-column-key="status">
                             <col data-system-column="actions">
                         </colgroup>
@@ -4737,6 +4757,7 @@
             photo: 58,
             product: 250,
             quantity: 82,
+            "purchase-price": 126,
             status: 112,
         };
         const columnOrder = Object.keys(defaults);
@@ -4750,16 +4771,44 @@
             photo: "Фото",
             product: "Товар",
             quantity: "Количество",
+            "purchase-price": "Цена закупки",
             status: "Статус",
         };
+        const minimumWidths = {
+            photo: 52,
+            quantity: 64,
+        };
+        const minimumWidth = 64;
+        const maximumWidth = 520;
         const desktopMedia = window.matchMedia("(min-width: 901px)");
+        let suppressSortUntil = 0;
         let saved = {};
         try {
             saved = JSON.parse(localStorage.getItem(storageKey) || "{}");
         } catch (_error) {
             saved = {};
         }
-        const widths = {...defaults, ...(saved.widths || {})};
+        if (!saved || typeof saved !== "object" || Array.isArray(saved)) {
+            saved = {};
+        }
+
+        function normalizeWidths(value) {
+            const source = value && typeof value === "object"
+                && !Array.isArray(value) ? value : {};
+            return Object.fromEntries(columnOrder.map((key) => {
+                const numeric = Number(source[key]);
+                const fallback = defaults[key];
+                const width = Number.isFinite(numeric) && numeric > 0
+                    ? Math.round(numeric)
+                    : fallback;
+                return [key, Math.min(
+                    maximumWidth,
+                    Math.max(minimumWidths[key] || minimumWidth, width),
+                )];
+            }));
+        }
+
+        let widths = normalizeWidths(saved.widths);
         let hidden = Array.isArray(saved.hidden)
             ? saved.hidden.filter((key) => (
                 columnOrder.includes(key)
@@ -4776,11 +4825,8 @@
 
         function applyReceiptColumnWidths() {
             let total = 112;
-            Object.entries(widths).forEach(([key, value]) => {
-                const width = Math.min(
-                    520,
-                    Math.max(64, Number(value) || defaults[key])
-                );
+            columnOrder.forEach((key) => {
+                const width = widths[key];
                 widths[key] = width;
                 table.querySelectorAll(
                     'col[data-column-key="' + key + '"]'
@@ -4819,6 +4865,8 @@
                 return;
             }
 
+            panel.replaceChildren();
+
             columnOrder.forEach((key) => {
                 const label = document.createElement("label");
                 label.className = "receipt-column-settings-option";
@@ -4845,6 +4893,24 @@
             hint.textContent = "Дата, товар и действия всегда видимы.";
             panel.appendChild(hint);
 
+            const reset = document.createElement("button");
+            reset.className = "receipt-column-settings-reset";
+            reset.type = "button";
+            reset.textContent = "Сбросить вид таблицы";
+            reset.addEventListener("click", () => {
+                widths = normalizeWidths({});
+                hidden = [];
+                applyReceiptColumnVisibility();
+                applyReceiptColumnWidths();
+                panel.querySelectorAll("input[data-column-key]")
+                    .forEach((input) => {
+                        input.checked = true;
+                    });
+                saveReceiptTableView();
+                hint.textContent = "Настройки сброшены.";
+            });
+            panel.appendChild(reset);
+
             trigger.addEventListener("click", () => {
                 panel.hidden = !panel.hidden;
                 trigger.setAttribute("aria-expanded", String(!panel.hidden));
@@ -4859,6 +4925,7 @@
 
         applyReceiptColumnVisibility();
         applyReceiptColumnWidths();
+        saveReceiptTableView();
         initializeReceiptColumnSettings();
         desktopMedia.addEventListener("change", () => {
             applyReceiptColumnVisibility();
@@ -4881,14 +4948,15 @@
                     const key = header.dataset.columnKey;
                     const startX = event.clientX;
                     const startWidth = header.getBoundingClientRect().width;
+                    suppressSortUntil = Date.now() + 350;
                     handle.classList.add("is-active");
                     document.body.classList.add("receipt-column-resizing");
 
                     function resize(moveEvent) {
                         widths[key] = Math.min(
-                            520,
+                            maximumWidth,
                             Math.max(
-                                64,
+                                minimumWidths[key] || minimumWidth,
                                 Math.round(
                                     startWidth
                                     + moveEvent.clientX
@@ -4900,18 +4968,29 @@
                     }
 
                     function finish() {
+                        suppressSortUntil = Date.now() + 350;
                         handle.classList.remove("is-active");
                         document.body.classList.remove(
                             "receipt-column-resizing"
                         );
                         saveReceiptTableView();
                         window.removeEventListener("pointermove", resize);
+                        window.removeEventListener("pointerup", finish);
+                        window.removeEventListener("pointercancel", finish);
                     }
 
                     window.addEventListener("pointermove", resize);
                     window.addEventListener("pointerup", finish, {once: true});
+                    window.addEventListener("pointercancel", finish, {once: true});
                 });
             });
+
+        table.addEventListener("click", (event) => {
+            if (Date.now() < suppressSortUntil) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+        }, true);
     })();
 
 </script>
@@ -5145,6 +5224,148 @@
         } catch (error) {
             root.dataset.toolbarPopoverE2e =
                 "fail-" + error.message;
+        }
+    });
+</script>
+{% endif %}
+
+{% if config.TESTING and request.args.get("receipt_columns_e2e") == "1" %}
+<script>
+    window.addEventListener("load", () => {
+        const root = document.documentElement;
+        const phaseKey = "receipt-columns-e2e-phase";
+        const receiptKey = "vechasu-receipts-table-view-v1";
+        const warehouseKey = "vechasu.warehouse.table-view.v2";
+        const salesKey = "sales_all";
+        const warehouseSentinel = '{"widths":{"brand":177}}';
+        const salesSentinel = '{"widths":{"brand":188}}';
+        const phase = sessionStorage.getItem(phaseKey) || "start";
+
+        try {
+            if (phase === "start") {
+                localStorage.setItem(warehouseKey, warehouseSentinel);
+                localStorage.setItem(salesKey, salesSentinel);
+                localStorage.setItem(receiptKey, JSON.stringify({
+                    widths: {
+                        date: -20,
+                        product: 99999,
+                        category: "broken",
+                        stale_column: 480,
+                    },
+                    hidden: ["comment", "stale_column", "date"],
+                }));
+                sessionStorage.setItem(phaseKey, "legacy");
+                window.location.reload();
+                return;
+            }
+
+            if (phase === "legacy") {
+                const restored = JSON.parse(localStorage.getItem(receiptKey));
+                const restoredKeys = Object.keys(restored.widths);
+                const photo = document.querySelector(
+                    'th[data-column-key="photo"]'
+                );
+                const purchase = document.querySelector(
+                    'th[data-column-key="purchase-price"]'
+                );
+                const comment = document.querySelector(
+                    'th[data-column-key="comment"]'
+                );
+                if (
+                    restored.widths.date !== 112
+                    || restored.widths.product !== 520
+                    || restored.widths.category !== 150
+                    || restored.widths.photo !== 58
+                    || restored.widths["purchase-price"] !== 126
+                    || restoredKeys.includes("stale_column")
+                    || restored.hidden.join(",") !== "comment"
+                    || photo.hidden
+                    || !comment.hidden
+                    || !purchase
+                ) {
+                    throw new Error("legacy-merge");
+                }
+                localStorage.setItem(receiptKey, "{");
+                sessionStorage.setItem(phaseKey, "corrupt");
+                window.location.reload();
+                return;
+            }
+
+            const recovered = JSON.parse(localStorage.getItem(receiptKey));
+            const table = document.getElementById("receiptsTable");
+            const wrap = table.closest(".table-wrap");
+            const category = table.querySelector(
+                'th[data-column-key="category"]'
+            );
+            const handle = category.querySelector(
+                ".receipt-column-resize-handle"
+            );
+            const startWidth = Math.round(
+                category.getBoundingClientRect().width
+            );
+            const startX = category.getBoundingClientRect().right - 2;
+            const initialUrl = window.location.href;
+
+            handle.dispatchEvent(new PointerEvent("pointerdown", {
+                bubbles: true,
+                button: 0,
+                clientX: startX,
+            }));
+            window.dispatchEvent(new PointerEvent("pointermove", {
+                bubbles: true,
+                clientX: startX + 24,
+            }));
+            window.dispatchEvent(new PointerEvent("pointerup", {
+                bubbles: true,
+                clientX: startX + 24,
+            }));
+            category.querySelector(".receipt-sort-button").click();
+
+            const resized = JSON.parse(localStorage.getItem(receiptKey));
+            document.getElementById("receiptColumnSettingsTrigger").click();
+            const panel = document.getElementById(
+                "receiptColumnSettingsPanel"
+            );
+            panel.querySelector(
+                'input[data-column-key="brand"]'
+            ).click();
+            const hidden = JSON.parse(localStorage.getItem(receiptKey));
+            panel.querySelector(".receipt-column-settings-reset").click();
+            const reset = JSON.parse(localStorage.getItem(receiptKey));
+            const requiredDisabled = ["date", "product"].every((key) =>
+                panel.querySelector(
+                    'input[data-column-key="' + key + '"]'
+                ).disabled
+            );
+
+            if (
+                recovered.widths.photo !== 58
+                || recovered.widths["purchase-price"] !== 126
+                || resized.widths.category !== startWidth + 24
+                || window.location.href !== initialUrl
+                || !hidden.hidden.includes("brand")
+                || reset.hidden.length
+                || reset.widths.category !== 150
+                || reset.widths.photo !== 58
+                || !requiredDisabled
+                || localStorage.getItem(warehouseKey) !== warehouseSentinel
+                || localStorage.getItem(salesKey) !== salesSentinel
+                || document.documentElement.scrollWidth
+                    > document.documentElement.clientWidth
+                || !["auto", "scroll"].includes(
+                    getComputedStyle(wrap).overflowX
+                )
+                || wrap.scrollWidth <= wrap.clientWidth
+            ) {
+                throw new Error("interaction");
+            }
+
+            sessionStorage.removeItem(phaseKey);
+            root.dataset.receiptColumnsE2e = "pass";
+        } catch (error) {
+            sessionStorage.removeItem(phaseKey);
+            root.dataset.receiptColumnsE2e = "fail";
+            root.dataset.receiptColumnsE2eError = error.message;
         }
     });
 </script>
