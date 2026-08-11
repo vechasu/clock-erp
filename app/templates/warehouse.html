@@ -4426,6 +4426,7 @@
                     class="notice notice-{{ request.args.get('notice') }}"
                     role="status"
                     aria-live="polite"
+                    data-erp-notification-source
                 >
                     {% if request.args.get("notice") == "danger" %}
                         <svg class="notice-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -8578,6 +8579,13 @@
             notice.className = "notice notice-" + variant;
             notice.setAttribute("role", "status");
             notice.setAttribute("aria-live", "polite");
+            if (window.VechasuNotify) {
+                notice.dataset.erpNotificationConsumed = "true";
+                const kind = variant === "error" || variant === "danger"
+                    ? "error"
+                    : variant === "warning" ? "warning" : "success";
+                window.VechasuNotify[kind](message);
+            }
 
             if (variant === "danger") {
                 notice.innerHTML = [
@@ -8745,7 +8753,9 @@
                     button.removeAttribute("aria-busy");
                 }
 
-                alert(error.message);
+                if (!window.VechasuNotify) {
+                    alert(error.message);
+                }
                 return false;
             }
         }

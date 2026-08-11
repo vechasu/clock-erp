@@ -1288,7 +1288,7 @@
 
     <main class="main">
         {% if message %}
-            <div class="notice notice-{{ notice or 'success' }}">
+            <div class="notice notice-{{ notice or 'success' }}" data-erp-notification-source>
                 {{ message }}
             </div>
         {% endif %}
