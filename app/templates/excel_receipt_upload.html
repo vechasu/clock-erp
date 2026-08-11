@@ -31,7 +31,7 @@
         <section class="panel receipt-upload-card">
             <h2>Проверить Excel</h2>
             <p>Заголовки можно располагать в любом порядке. Нужны колонки «Название», «Бренд» и «Количество» или «Остаток».</p>
-            {% if error %}<div class="receipt-error" role="alert">{{ error }}</div>{% endif %}
+            {% if error %}<div class="receipt-error" role="alert" data-erp-notification-source>{{ error }}</div>{% endif %}
             <form method="post" action="{{ url_for('excel_receipt_preview') }}" enctype="multipart/form-data">
                 <div class="receipt-file-field">
                     <label for="receiptExcelFile">Excel-файл</label>

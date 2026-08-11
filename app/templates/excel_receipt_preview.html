@@ -44,7 +44,7 @@
             </div>
         </div>
 
-        {% if error %}<div class="receipt-message receipt-message-error" role="alert">{{ error }}</div>{% endif %}
+        {% if error %}<div class="receipt-message receipt-message-error" role="alert" data-erp-notification-source>{{ error }}</div>{% endif %}
         {% if draft.error_rows %}
         <div class="receipt-message receipt-message-error">Проведение заблокировано: исправьте {{ draft.error_rows }} ошибочных строк и загрузите файл снова.</div>
         {% else %}

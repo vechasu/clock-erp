@@ -202,7 +202,7 @@
 
 
         {% if message %}
-            <div id="settingsNotice" class="notice notice-{{ notice or 'success' }}" role="status">
+            <div id="settingsNotice" class="notice notice-{{ notice or 'success' }}" role="status" data-erp-notification-source>
                 {{ message }}
             </div>
         {% endif %}

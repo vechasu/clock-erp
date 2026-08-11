@@ -2,6 +2,10 @@
     "use strict";
 
     function showNotice(form, message, kind) {
+        if (window.VechasuNotify) {
+            window.VechasuNotify[kind === "error" ? "error" : "info"](message);
+            return;
+        }
         var notice = document.getElementById("settingsNotice");
         if (!notice) {
             notice = document.createElement("div");
@@ -39,7 +43,7 @@
                 }
             });
             if (!Object.keys(changes).length) {
-                showNotice(form, "Изменений нет", "success");
+                showNotice(form, "Настройки не изменились", "success");
                 return;
             }
 
@@ -74,9 +78,10 @@
                 if (subtitle) {
                     subtitle.textContent = payload.data.company_name;
                 }
-                showNotice(form, "Настройки сохранены", "success");
             }).catch(function (error) {
-                showNotice(form, error.message, "error");
+                if (!window.VechasuNotify) {
+                    showNotice(form, error.message, "error");
+                }
             }).finally(function () {
                 submit.disabled = false;
                 submit.textContent = "Сохранить настройки";

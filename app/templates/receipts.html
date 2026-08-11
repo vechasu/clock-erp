@@ -1565,7 +1565,7 @@
         </header>
 
         {% if message %}
-            <div class="notice {% if notice == 'error' %}notice-error{% else %}notice-success{% endif %}">
+            <div class="notice notice-{{ notice or 'success' }}" data-erp-notification-source>
                 {{ message }}
             </div>
         {% endif %}

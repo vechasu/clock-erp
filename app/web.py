@@ -11718,6 +11718,7 @@ def receipt_create():
         receipts.insert(0, receipt)
         save_receipts(receipts)
 
+        partial_warnings = []
         if catalog_product_id and len(positions) == 1:
             try:
                 ExcelProductCatalog().update_product(
@@ -11731,6 +11732,9 @@ def receipt_create():
                 app.logger.exception(
                     "Не удалось обновить остаток новой "
                     "локальной карточки товара"
+                )
+                partial_warnings.append(
+                    "локальный остаток товара требует проверки"
                 )
 
         for position in positions:
@@ -11793,14 +11797,16 @@ def receipt_create():
 
                     image_result_message = "Фото товара добавлено"
 
-            except Exception as image_error:
+            except Exception:
                 app.logger.exception(
                     "Ошибка добавления изображения товара %s",
                     image_product_id,
                 )
                 image_result_message = (
-                    "Приход проведён, но фото не добавлено: "
-                    + str(image_error)
+                    "Фото не добавлено"
+                )
+                partial_warnings.append(
+                    "синхронизация фотографии с МойСклад не выполнена"
                 )
 
         WAREHOUSE_CACHE["items"] = []
@@ -11819,17 +11825,21 @@ def receipt_create():
         if image_result_message:
             success_message += ". " + image_result_message
 
+        if partial_warnings:
+            success_message += ". Но " + "; ".join(partial_warnings)
+        result_notice = "warning" if partial_warnings else "success"
+
         if submit_mode == "create_next":
             return redirect(url_for(
                 "receipts_page",
-                notice="success",
+                notice=result_notice,
                 message=success_message,
                 open_receipt_modal="1",
             ))
 
         return redirect(url_for(
             "receipts_page",
-            notice="success",
+            notice=result_notice,
             message=success_message,
         ))
 
@@ -12723,7 +12733,14 @@ def excel_receipt_post(draft_id):
         ), 409
     except ExcelDraftError:
         abort(404)
-    return redirect(url_for("excel_receipt_page", receipt_id=receipt["id"]))
+    return redirect(url_for(
+        "excel_receipt_page",
+        receipt_id=receipt["id"],
+        notice="success",
+        message="Приход {} проведён".format(
+            receipt.get("number") or receipt["id"]
+        ),
+    ))
 
 
 @app.route("/products/receipts/<int:receipt_id>")
@@ -13244,6 +13261,23 @@ def api_http_exception(error):
         "HTTP_{}".format(error.code or 500),
         description,
         error.code or 500,
+    )
+
+
+@app.errorhandler(500)
+def api_internal_server_error(error):
+    if not request.path.startswith("/api/"):
+        return error
+    app.logger.error(
+        "Unhandled API error for %s %s: %s",
+        request.method,
+        request.path,
+        getattr(error, "original_exception", error),
+    )
+    return api_error(
+        "INTERNAL_ERROR",
+        "Сервер не смог выполнить операцию. Повторите позже.",
+        500,
     )
 
 
