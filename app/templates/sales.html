@@ -2261,8 +2261,8 @@
                         role="alert"
                         hidden
                     ></p>
-                    <h3 class="erp-form-section-title field-wide">Товар</h3>
-                    <div class="field">
+                    <h3 class="erp-form-section-title field-wide sale-section-title">Товар</h3>
+                    <div class="field sale-catalog-field">
                         <label for="saleBrandTrigger">Бренд</label>
                         {{ render_catalog_combobox(
                             "saleBrand",
@@ -2280,7 +2280,7 @@
                         ) }}
                     </div>
 
-                    <div class="field">
+                    <div class="field sale-catalog-field">
                         <label for="saleCategoryTrigger">
                             Категория
                         </label>
@@ -2301,7 +2301,7 @@
                         ) }}
                     </div>
 
-                    <div class="field field-wide">
+                    <div class="field sale-catalog-field">
                         <label for="saleProductTrigger">Товар</label>
                         {{ render_catalog_combobox(
                             "saleProduct",
@@ -2318,21 +2318,23 @@
                             action_label="Добавить новый товар",
                             shared_catalog_kind="product"
                         ) }}
-                        <div
-                            id="productMeta"
-                            class="product-meta-preview"
-                        >
-                            Баркод, артикул и остаток появятся после выбора товара.
-                        </div>
+                    </div>
+
+                    <div class="field field-wide sale-product-summary">
                         <div id="saleProductPhoto" class="sale-product-photo">
                             <img id="saleProductPhotoImage" alt="Фото выбранного товара" hidden>
                             <span id="saleProductPhotoPlaceholder" class="sale-product-photo-placeholder">Нет фото</span>
-                            <span id="saleProductPhotoText">Выберите товар</span>
+                            <div class="sale-product-summary-copy">
+                                <strong id="saleProductPhotoText">Выберите товар</strong>
+                                <span id="productMeta" class="product-meta-preview">
+                                    Баркод, артикул и остаток появятся после выбора товара.
+                                </span>
+                            </div>
                         </div>
                     </div>
 
-                    <h3 class="erp-form-section-title field-wide">Продажа</h3>
-                    <div class="field">
+                    <h3 class="erp-form-section-title field-wide sale-section-title">Продажа</h3>
+                    <div class="field sale-core-field">
                         <label for="created_at">Дата</label>
                         <input
                             id="created_at"
@@ -2343,7 +2345,7 @@
                         >
                     </div>
 
-                    <div class="field">
+                    <div class="field sale-core-field">
                         <label for="quantity">Количество</label>
                         <select
                             id="quantity"
@@ -2359,7 +2361,7 @@
                         </select>
                     </div>
 
-                    <div class="field">
+                    <div class="field sale-core-field">
                         <label for="unit_price">Цена</label>
                         <input
                             id="unit_price"
@@ -2373,7 +2375,7 @@
                         >
                     </div>
 
-                    <div class="field">
+                    <div class="field sale-core-field">
                         <label for="saleStatusTrigger">Статус</label>
                         {{ render_catalog_combobox(
                             "saleStatus",
@@ -2387,7 +2389,7 @@
                         ) }}
                     </div>
 
-                    <h3 class="erp-form-section-title field-wide">Данные канала</h3>
+                    <h3 class="erp-form-section-title field-wide sale-section-title">Данные канала</h3>
                     <div
                         class="source-specific-fields"
                         data-source-fields="tictactoy"
