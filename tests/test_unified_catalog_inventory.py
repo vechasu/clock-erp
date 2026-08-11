@@ -542,7 +542,7 @@ class UnifiedCatalogInventoryTest(unittest.TestCase):
         )
 
         result = self.products.list_products(
-            query="Vintage Edge Brown",
+            query=product["excel_name_raw"],
             hide_zero=True,
             sort_by="stock",
             sort_dir="desc",

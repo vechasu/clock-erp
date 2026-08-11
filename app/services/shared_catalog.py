@@ -1,6 +1,8 @@
 """Stable shared brand/category/product references for ERP workflows."""
 
 from datetime import datetime, timezone
+import re
+import unicodedata
 
 from app.catalog_db import CatalogDatabase
 
@@ -29,6 +31,31 @@ def catalog_name(value):
 
 def normalized_name(value):
     return catalog_name(value).casefold()
+
+
+def catalog_search_key(value):
+    """Normalize catalog text consistently for prefix search."""
+    normalized = unicodedata.normalize("NFKC", str(value or ""))
+    normalized = normalized.casefold().replace("ё", "е")
+    return " ".join(re.sub(r"\s+", " ", normalized).strip().split())
+
+
+def catalog_prefix_pattern(value):
+    normalized = catalog_search_key(value)
+    escaped = (
+        normalized.replace("\\", "\\\\")
+        .replace("%", "\\%")
+        .replace("_", "\\_")
+    )
+    return escaped + "%"
+
+
+def register_catalog_search(connection):
+    connection.create_function(
+        "catalog_search_key",
+        1,
+        catalog_search_key,
+    )
 
 
 def normalized_stock_value(value):
@@ -222,10 +249,20 @@ class SharedCatalog:
         where = []
         if not include_archived:
             where.append("b.active = 1")
-        query = normalized_name(query)
+        query = catalog_search_key(query)
+        query_filter = (
+            " WHERE catalog_search_key(normalized_name) "
+            "LIKE ? ESCAPE '\\' "
+            if query else ""
+        )
+        parameters = (
+            (catalog_prefix_pattern(query), max(1, min(int(limit), 200)))
+            if query else (max(1, min(int(limit), 200)),)
+        )
         where_sql = " WHERE " + " AND ".join(where) if where else ""
-        query_pattern = "%{}%".format(query)
         with self.database.connect() as connection:
+            if query:
+                register_catalog_search(connection)
             rows = connection.execute(
                 "SELECT id, name, active, product_count, stock_total FROM ("
                 "SELECT b.id, b.name, b.normalized_name, b.active, "
@@ -241,9 +278,9 @@ class SharedCatalog:
                 "COALESCE(SUM(p.stock), 0) AS stock_total "
                 "FROM catalog_excel_products p "
                 "WHERE p.active = 1 AND p.brand_id IS NULL) AS brand_options "
-                "WHERE normalized_name LIKE ? "
-                "ORDER BY name COLLATE NOCASE LIMIT ?",
-                (query_pattern, max(1, min(int(limit), 200))),
+                + query_filter
+                + "ORDER BY name COLLATE NOCASE LIMIT ?",
+                parameters,
             ).fetchall()
         return [self._brand(row) for row in rows]
 
@@ -262,13 +299,17 @@ class SharedCatalog:
         if brand_id not in (None, ""):
             where.append("c.brand_id = ?")
             parameters.append(int(brand_id))
-        query = normalized_name(query)
+        query = catalog_search_key(query)
         if query:
-            where.append("c.normalized_name LIKE ?")
-            parameters.append("%{}%".format(query))
+            where.append(
+                "catalog_search_key(c.normalized_name) LIKE ? ESCAPE '\\'"
+            )
+            parameters.append(catalog_prefix_pattern(query))
         where_sql = " WHERE " + " AND ".join(where) if where else ""
         parameters.append(max(1, min(int(limit), 200)))
         with self.database.connect() as connection:
+            if query:
+                register_catalog_search(connection)
             rows = connection.execute(
                 "SELECT c.id, c.brand_id, c.name, c.active, "
                 "b.name AS brand_name, COUNT(p.id) AS product_count, "
@@ -294,14 +335,18 @@ class SharedCatalog:
         self.database.initialize()
         where = ["c.active = 1"]
         parameters = []
-        query = normalized_name(query)
+        query = catalog_search_key(query)
         if query:
-            where.append("c.normalized_name LIKE ?")
-            parameters.append("%{}%".format(query))
+            where.append(
+                "catalog_search_key(c.normalized_name) LIKE ? ESCAPE '\\'"
+            )
+            parameters.append(catalog_prefix_pattern(query))
         selected_brand_id = (
             int(brand_id) if brand_id not in (None, "") else None
         )
         with self.database.connect() as connection:
+            if query:
+                register_catalog_search(connection)
             rows = connection.execute(
                 "SELECT * FROM ("
                 "SELECT c.id, c.brand_id, c.name, c.normalized_name, "
@@ -335,7 +380,8 @@ class SharedCatalog:
                 "WHERE p.active = 1 AND p.category_id IS NULL "
                 "GROUP BY p.category_id "
                 "HAVING COUNT(p.id) > 0 "
-                "AND (? = '' OR 'без категории' LIKE ?)) AS category_rows "
+                "AND (? = '' OR 'без категории' LIKE ? ESCAPE '\\')) "
+                "AS category_rows "
                 "ORDER BY used_by_brand DESC, "
                 "name COLLATE NOCASE, id",
                 [
@@ -349,7 +395,7 @@ class SharedCatalog:
                     selected_brand_id,
                     selected_brand_id,
                     query,
-                    "%{}%".format(query),
+                    catalog_prefix_pattern(query),
                 ],
             ).fetchall()
 
@@ -434,14 +480,14 @@ class SharedCatalog:
                 parameters.append(int(category_id))
         if in_stock:
             where.append("p.stock > 0")
-        query = normalized_name(query)
+        query = catalog_search_key(query)
         if query:
             where.append(
-                "(p.normalized_name LIKE ? OR "
-                "lower(COALESCE(p.excel_article, '')) LIKE ? OR "
-                "lower(COALESCE(cp.barcode, '')) LIKE ?)"
+                "(catalog_search_key(p.excel_name_raw) LIKE ? ESCAPE '\\' OR "
+                "catalog_search_key(p.excel_article) LIKE ? ESCAPE '\\' OR "
+                "catalog_search_key(cp.barcode) LIKE ? ESCAPE '\\')"
             )
-            pattern = "%{}%".format(query)
+            pattern = catalog_prefix_pattern(query)
             parameters.extend([pattern, pattern, pattern])
         where_sql = " WHERE " + " AND ".join(where) if where else ""
         return where_sql, parameters
@@ -463,6 +509,8 @@ class SharedCatalog:
             in_stock=in_stock,
         )
         with self.database.connect() as connection:
+            if catalog_search_key(query):
+                register_catalog_search(connection)
             return int(connection.execute(
                 "SELECT COUNT(*) FROM catalog_excel_products p "
                 "LEFT JOIN erp_categories c ON c.id = p.category_id "
@@ -491,6 +539,8 @@ class SharedCatalog:
         )
         parameters.append(max(1, min(int(limit), 200)))
         with self.database.connect() as connection:
+            if catalog_search_key(query):
+                register_catalog_search(connection)
             rows = connection.execute(
                 "SELECT p.id, p.excel_name_raw AS name, "
                 "COALESCE(p.excel_article, '') AS article, "

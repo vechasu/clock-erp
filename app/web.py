@@ -1846,6 +1846,10 @@ def warehouse_page():
                 app.testing
                 and request.args.get("table_ui_e2e") == "1"
             ),
+            warehouse_live_search_e2e=(
+                app.testing
+                and request.args.get("live_search_e2e") == "1"
+            ),
             warehouse_delete_feedback_e2e=(
                 app.testing
                 and request.args.get("delete_feedback_e2e") == "1"

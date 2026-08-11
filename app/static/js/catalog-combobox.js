@@ -185,6 +185,34 @@
             .replaceAll("ё", "е");
     };
 
+    function catalogOptionStartsWith(option, query) {
+        if (
+            option.closest("[data-shared-catalog-kind]")
+                ?.dataset.sharedCatalogKind === "product"
+            && option.dataset.catalogItem
+        ) {
+            try {
+                const item = JSON.parse(option.dataset.catalogItem);
+                return [item.name, item.article, item.barcode]
+                    .some(function(value) {
+                        return window.normalizeComboboxSearchValue(value)
+                            .startsWith(query);
+                    });
+            } catch (error) {
+                return false;
+            }
+        }
+
+        const label = option.querySelector(
+            ".brand-combobox-option-label"
+        );
+        const searchValue =
+            option.dataset.brandSearch
+            || (label ? label.textContent : "");
+        return window.normalizeComboboxSearchValue(searchValue)
+            .startsWith(query);
+    }
+
     window.filterBrandList = function(value, combobox) {
         const query = window.normalizeComboboxSearchValue(value);
         let visibleCount = 0;
@@ -203,7 +231,7 @@
                     window.normalizeComboboxSearchValue(searchValue);
                 const matches =
                     combobox.dataset.prefixSearch === "true"
-                        ? normalized.startsWith(query)
+                        ? catalogOptionStartsWith(option, query)
                         : normalized.includes(query);
                 const hidden = Boolean(query) && !matches;
                 option.hidden = hidden;
@@ -225,6 +253,13 @@
         }
 
         if (emptyMessage) {
+            if (
+                visibleCount === 0
+                && combobox.classList.contains("is-loading")
+            ) {
+                emptyMessage.textContent =
+                    "Ищем по всему каталогу…";
+            }
             emptyMessage.hidden = visibleCount !== 0;
         }
 
@@ -607,11 +642,11 @@
                             }
 
                             if (
-                                typeof window.loadSharedCatalogOptions
+                                typeof window.queueSharedCatalogSearch
                                     === "function"
                                 && combobox.dataset.sharedCatalogKind
                             ) {
-                                window.loadSharedCatalogOptions(
+                                window.queueSharedCatalogSearch(
                                     combobox,
                                     ""
                                 );
@@ -743,6 +778,7 @@
 (function initializeSharedCatalogCascades() {
     const searchTimers = new WeakMap();
     const requestControllers = new WeakMap();
+    const catalogSearchWindows = new WeakMap();
 
     function sharedCatalogScope(combobox) {
         return combobox?.closest("[data-shared-catalog-scope]");
@@ -779,6 +815,62 @@
         return sharedCatalogIdValue(
             sharedCatalogIdInput(combobox)?.value
         );
+    }
+
+    function catalogSearchContext(combobox) {
+        const scope = sharedCatalogScope(combobox);
+        const kind = combobox?.dataset.sharedCatalogKind || "";
+        return [
+            kind,
+            kind === "brand" ? "" : selectedSharedCatalogId(
+                sharedCatalogCombobox(scope, "brand")
+            ),
+            kind === "product" ? selectedSharedCatalogId(
+                sharedCatalogCombobox(scope, "category")
+            ) : "",
+        ].join("|");
+    }
+
+    function catalogSearchWindow(combobox) {
+        const context = catalogSearchContext(combobox);
+        let state = catalogSearchWindows.get(combobox);
+        if (!state || state.context !== context) {
+            state = {context, queries: new Map()};
+            catalogSearchWindows.set(combobox, state);
+        }
+        return state.queries;
+    }
+
+    function cacheCatalogSearchOptions(combobox, query, options) {
+        const queries = catalogSearchWindow(combobox);
+        const key = window.normalizeComboboxSearchValue(query);
+        queries.set(key, options);
+        if (queries.size > 12) {
+            const oldestKey = queries.keys().next().value;
+            if (oldestKey) queries.delete(oldestKey);
+        }
+    }
+
+    function restoreCatalogSearchOptions(combobox, query) {
+        const normalizedQuery = window.normalizeComboboxSearchValue(query);
+        const queries = catalogSearchWindow(combobox);
+        let cachedKey = "";
+        queries.forEach(function(options, candidate) {
+            if (
+                normalizedQuery.startsWith(candidate)
+                && candidate.length > cachedKey.length
+            ) {
+                cachedKey = candidate;
+            }
+        });
+        const options = queries.get(cachedKey);
+        if (!options) return false;
+        window.replaceCatalogComboboxOptions(
+            combobox,
+            options,
+            "Ничего не найдено"
+        );
+        return true;
     }
 
     function sharedCatalogProductLabel(item) {
@@ -966,6 +1058,15 @@
         if (emptyMessage && loading) {
             emptyMessage.textContent = "Загрузка…";
             emptyMessage.hidden = false;
+        } else if (
+            emptyMessage
+            && !combobox.querySelector(
+                ".brand-combobox-option:not([hidden])"
+            )
+            && ["Загрузка…", "Ищем по всему каталогу…"]
+                .includes(emptyMessage.textContent)
+        ) {
+            emptyMessage.textContent = "Ничего не найдено";
         }
 
         window.updateCatalogCreateAction(
@@ -1080,6 +1181,10 @@
             );
             const payload = await response.json();
 
+            if (requestControllers.get(combobox) !== controller) {
+                return [];
+            }
+
             if (!response.ok) {
                 throw new Error(
                     payload?.message
@@ -1133,6 +1238,7 @@
                 }
                 return option;
             });
+            cacheCatalogSearchOptions(combobox, query, options);
             window.replaceCatalogComboboxOptions(
                 combobox,
                 options,
@@ -1164,6 +1270,7 @@
     ) {
         window.clearTimeout(searchTimers.get(combobox));
         setSharedCatalogLoading(combobox, true);
+        restoreCatalogSearchOptions(combobox, query);
         window.filterBrandList(query, combobox);
         searchTimers.set(
             combobox,

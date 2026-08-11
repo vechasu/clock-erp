@@ -23,8 +23,10 @@ from app.services.product_reconciliation import (
 from app.services.shared_catalog import (
     DuplicateCatalogValueError,
     assign_product_taxonomy,
+    catalog_prefix_pattern,
     ensure_brand,
     ensure_category,
+    register_catalog_search,
 )
 
 
@@ -758,39 +760,13 @@ class ExcelProductCatalog:
         where = ["p.active = 1", visible_cards_sql]
         parameters = []
         if query:
-            def like_pattern(value):
-                escaped = text(value).replace(
-                    "\\", "\\\\"
-                ).replace("%", "\\%").replace("_", "\\_")
-                return "%{}%".format(escaped)
-
-            normalized_pattern = "%{}%".format(
-                normalize_text(query).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-            )
-            search_blob = (
-                "COALESCE(p.excel_name_raw, '') || char(31) || "
-                "COALESCE(p.bitrix_name, '') || char(31) || "
-                "COALESCE(p.excel_article, '') || char(31) || "
-                "COALESCE(p.bitrix_xml_id, '') || char(31) || "
-                "COALESCE(p.excel_brand, '') || char(31) || "
-                "COALESCE(p.bitrix_brand, '') || char(31) || "
-                "COALESCE(p.excel_category, '') || char(31) || "
-                "COALESCE(p.bitrix_category, '') || char(31) || "
-                "COALESCE(p.bitrix_external_product_id, '') || char(31) || "
-                "COALESCE(cp.barcode, '') || char(31) || COALESCE(p.cell, '')"
-            )
+            prefix_pattern = catalog_prefix_pattern(query)
             where.append(
-                "(p.normalized_name LIKE ? ESCAPE '\\' "
-                "OR ({blob}) LIKE ? ESCAPE '\\' "
-                "OR ({blob}) LIKE ? ESCAPE '\\' "
-                "OR ({blob}) LIKE ? ESCAPE '\\')".format(blob=search_blob)
+                "(catalog_search_key(p.excel_name_raw) LIKE ? ESCAPE '\\' "
+                "OR catalog_search_key(p.excel_article) LIKE ? ESCAPE '\\' "
+                "OR catalog_search_key(cp.barcode) LIKE ? ESCAPE '\\')"
             )
-            parameters.append(normalized_pattern)
-            parameters.extend([
-                like_pattern(query),
-                like_pattern(text(query).upper()),
-                like_pattern(text(query).title()),
-            ])
+            parameters.extend([prefix_pattern, prefix_pattern, prefix_pattern])
         if category:
             where.append(
                 "(COALESCE(p.excel_category, '') = ? OR "
@@ -859,6 +835,8 @@ class ExcelProductCatalog:
             "ON cp.id = p.bitrix_catalog_product_id"
         )
         with self.database.connect() as connection:
+            if query:
+                register_catalog_search(connection)
             active_batch = connection.execute(
                 "SELECT * FROM catalog_excel_batches WHERE status = 'active' "
                 "ORDER BY applied_at DESC LIMIT 1"
