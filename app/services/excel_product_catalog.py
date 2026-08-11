@@ -866,13 +866,22 @@ class ExcelProductCatalog:
                 "CASE WHEN NULLIF(p.bitrix_price_amount, '') IS NULL THEN 1 ELSE 0 END, "
                 if sort_by == "price" else ""
             )
-            order_sql = " ORDER BY {}{} {}".format(
-                missing_price_sql,
-                allowed_sort_fields[sort_by],
-                sort_dir.upper(),
-            )
+            if sort_by == "created_at":
+                order_sql = (
+                    " ORDER BY CASE WHEN datetime(p.created_at) IS NULL "
+                    "THEN 1 ELSE 0 END ASC, datetime(p.created_at) {}"
+                ).format(sort_dir.upper())
+                stable_order_sql = ", p.id {}".format(sort_dir.upper())
+            else:
+                order_sql = " ORDER BY {}{} {}".format(
+                    missing_price_sql,
+                    allowed_sort_fields[sort_by],
+                    sort_dir.upper(),
+                )
+                stable_order_sql = ", p.excel_row ASC, p.id ASC"
             rows = connection.execute(
-                select_sql + where_sql + order_sql + ", p.excel_row ASC, p.id ASC LIMIT ? OFFSET ?",
+                select_sql + where_sql + order_sql + stable_order_sql
+                + " LIMIT ? OFFSET ?",
                 parameters + [per_page, (page - 1) * per_page],
             ).fetchall()
             brand_groups = [dict(row) for row in connection.execute(

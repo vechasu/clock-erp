@@ -8134,8 +8134,8 @@
         function sortWarehouseTable(field) {
             if (Date.now() < warehouseTableSuppressSortUntil) return;
             const navigationUrl = new URL(window.location.href);
-            const navigationField = navigationUrl.searchParams.get("sort_by") || "name";
-            const navigationDirection = navigationUrl.searchParams.get("sort_dir") || "asc";
+            const navigationField = navigationUrl.searchParams.get("sort_by") || "created_at";
+            const navigationDirection = navigationUrl.searchParams.get("sort_dir") || "desc";
             navigationUrl.searchParams.set("sort_by", field);
             navigationUrl.searchParams.set(
                 "sort_dir",
