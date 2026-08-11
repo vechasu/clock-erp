@@ -68,28 +68,43 @@ class WarehousePhotoPreviewBrowserTest(unittest.TestCase):
                         base_url + "?warehouse_bitrix_photo_e2e=1",
                         'data-warehouse-bitrix-photo-e2e="pass"',
                     ),
+                    (
+                        "photo-mutation",
+                        base_url + "?warehouse_photo_mutation_e2e=1",
+                        'data-warehouse-photo-mutation-e2e="pass"',
+                    ),
                 )
                 for scenario, scenario_url, expected in scenarios:
                     with self.subTest(width=width, scenario=scenario), \
                             tempfile.TemporaryDirectory() as profile:
-                        result = subprocess.run(
-                            [
-                                chrome,
-                                "--headless=new",
-                                "--no-sandbox",
-                                "--disable-gpu",
-                                "--disable-dev-shm-usage",
-                                "--user-data-dir={}".format(profile),
-                                "--window-size={},{}".format(width, height),
-                                "--virtual-time-budget=3000",
-                                "--dump-dom",
-                                scenario_url,
-                            ],
-                            check=False,
-                            capture_output=True,
-                            text=True,
-                            timeout=30,
-                        )
+                        command = [
+                            chrome,
+                            "--headless=new",
+                            "--no-sandbox",
+                            "--disable-gpu",
+                            "--disable-dev-shm-usage",
+                            "--user-data-dir={}".format(profile),
+                            "--window-size={},{}".format(width, height),
+                            "--virtual-time-budget=3000",
+                            "--dump-dom",
+                            scenario_url,
+                        ]
+                        for attempt in range(2):
+                            command[5] = "--user-data-dir={}/attempt-{}".format(
+                                profile, attempt
+                            )
+                            try:
+                                result = subprocess.run(
+                                    command,
+                                    check=False,
+                                    capture_output=True,
+                                    text=True,
+                                    timeout=30,
+                                )
+                                break
+                            except subprocess.TimeoutExpired:
+                                if attempt:
+                                    raise
                         self.assertEqual(result.returncode, 0, result.stderr[-2000:])
                         self.assertIn(expected, result.stdout)
         finally:

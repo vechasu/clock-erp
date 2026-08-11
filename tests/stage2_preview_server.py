@@ -87,8 +87,8 @@ def fixture_live_bitrix_product(product, force=False):
     return {
         "external_product_id": "204699",
         "images": [
-            {"original_url": fixture_image_one, "kind": "preview"},
-            {"original_url": fixture_image_two, "kind": "gallery"},
+            {"id": "10", "original_url": fixture_image_one, "kind": "preview"},
+            {"id": "11", "original_url": fixture_image_two, "kind": "gallery"},
         ],
     }
 
