@@ -250,15 +250,36 @@ class BrandManagementTest(unittest.TestCase):
         with self.assertRaises(DuplicateCatalogValueError):
             self.catalog.rename_category(casio["category_id"], other["name"])
 
-    def test_brand_search_prioritizes_prefix_and_includes_middle_matches(self):
-        self.catalog.create_brand("Beta")
-        self.catalog.create_brand("Alpha")
-        self.catalog.create_brand("Gamma")
+    def test_brand_search_matches_normalized_prefix_only(self):
+        self.catalog.create_brand("Луч")
+        self.catalog.create_brand("Луна")
+        self.catalog.create_brand("Полёт")
+        self.catalog.create_brand("Слава")
+        self.catalog.create_brand("твлапт")
 
-        result = self.catalog.list_brand_overviews(query="a")
+        lower = self.catalog.list_brand_overviews(query="л")
+        upper = self.catalog.list_brand_overviews(query="Л")
+        trimmed = self.catalog.list_brand_overviews(query="  лу  ")
 
-        self.assertEqual(result[0]["name"], "Alpha")
-        self.assertEqual({item["name"] for item in result}, {"Alpha", "Beta", "Gamma"})
+        self.assertEqual([item["name"] for item in lower], ["Луна", "Луч"])
+        self.assertEqual([item["name"] for item in upper], ["Луна", "Луч"])
+        self.assertEqual([item["name"] for item in trimmed], ["Луна", "Луч"])
+
+    def test_brand_search_backspace_expands_and_clear_returns_all(self):
+        for name in ("Луч", "Луна", "Лонжин", "Полёт"):
+            self.catalog.create_brand(name)
+
+        exact = self.catalog.list_brand_overviews(query="луч")
+        shorter = self.catalog.list_brand_overviews(query="лу")
+        shortest = self.catalog.list_brand_overviews(query="л")
+        cleared = self.catalog.list_brand_overviews(query="")
+
+        self.assertEqual([item["name"] for item in exact], ["Луч"])
+        self.assertEqual({item["name"] for item in shorter}, {"Луч", "Луна"})
+        self.assertEqual(
+            {item["name"] for item in shortest}, {"Луч", "Луна", "Лонжин"}
+        )
+        self.assertEqual(len(cleared), 4)
 
     def test_bulk_failure_rolls_back_every_product(self):
         first = self.product("First", "FIRST", "Casio", "Часы", 0)
@@ -304,6 +325,15 @@ class BrandManagementTest(unittest.TestCase):
         self.assertIn("setTimeout(loadBrands,200)", source)
         self.assertIn("AbortController", source)
         self.assertIn("requestSequence", source)
+        self.assertIn("addEventListener('search'", source)
+        self.assertIn("open-upward", source)
+        self.assertIn("getBoundingClientRect", source)
+        self.assertIn("mobile-erp-navigation", source)
+        self.assertIn("Открыть товары", source)
+        self.assertIn("data-row-href", source)
+        self.assertIn(".metric strong { color:#172033", source)
+        self.assertIn("box-shadow:0 0 0 2px", source)
+        self.assertIn("outline:none!important", source)
         self.assertNotIn('type="submit">Найти', source)
         self.assertNotIn('class="chip"', source)
 
