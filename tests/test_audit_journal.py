@@ -258,6 +258,11 @@ class AuditJournalUiTest(unittest.TestCase):
         self.assertIn("Фильтры", source)
         self.assertIn("data-event-id=\"1\"", source)
         self.assertIn("journal-drawer", source)
+        self.assertIn('class="journal-filters" hidden', source)
+        self.assertIn('aria-controls="journalFilters"', source)
+        self.assertIn('role="group" aria-label="Период"', source)
+        self.assertIn('placeholder="Поиск по журналу"', source)
+        self.assertNotIn(">Найти<", source)
         self.assertNotIn("Экспорт журнала", source)
         with web.app.test_request_context("/app/journal"):
             labels = [item["label"] for item in web.get_navigation_items()]
@@ -285,10 +290,7 @@ class AuditJournalUiTest(unittest.TestCase):
                 connection.execute("DELETE FROM erp_audit_events")
             response = self.client.get("/app/journal")
             self.assertEqual(response.status_code, 200)
-            self.assertIn(
-                "За выбранный период событий нет",
-                response.get_data(as_text=True),
-            )
+            self.assertIn("Событий пока нет", response.get_data(as_text=True))
 
     def test_deleted_object_detail_is_readable_without_broken_link(self):
         response = self.client.get("/api/journal/1")
@@ -306,6 +308,31 @@ class AuditJournalUiTest(unittest.TestCase):
         events = response.get_json()["data"]["events"]
         self.assertEqual(len(events), 1)
         self.assertEqual(events[0]["entity_type"], "product")
+
+    def test_tabs_period_and_empty_filter_state_are_preserved(self):
+        response = self.client.get(
+            "/app/journal?entity_type=product&date_from=2026-08-01"
+            "&date_to=2026-08-31&q=missing"
+        )
+        self.assertEqual(response.status_code, 200)
+        source = response.get_data(as_text=True)
+        self.assertIn(
+            'class="journal-tab active" href="#" data-journal-tab="product"'
+            ' aria-current="page"',
+            source,
+        )
+        self.assertIn('name="date_from" value="2026-08-01"', source)
+        self.assertIn('name="date_to" value="2026-08-31"', source)
+        self.assertIn('name="q" value="missing"', source)
+        self.assertIn("По выбранным фильтрам событий нет", source)
+        self.assertIn("Сбросить фильтры", source)
+
+        filtered = self.client.get("/app/journal?action=deleted")
+        self.assertEqual(filtered.status_code, 200)
+        self.assertIn(
+            'class="journal-filter-count" aria-label="Активных фильтров: 1">1',
+            filtered.get_data(as_text=True),
+        )
 
     def test_confirmed_photo_actions_are_recorded_without_image_payload(self):
         product = {
