@@ -315,8 +315,7 @@ class SharedCatalog:
             parameters.append(int(brand_id))
         if query:
             where += " AND catalog_search_key(b.name) LIKE ? ESCAPE '\\'"
-            escaped = catalog_prefix_pattern(query)[:-1]
-            parameters.append("%{}%".format(escaped))
+            parameters.append(catalog_prefix_pattern(query))
         parameters.append(max(1, min(int(limit), 500)))
         with self.database.connect() as connection:
             if query:
@@ -327,12 +326,8 @@ class SharedCatalog:
                 "AS nonzero_count, COALESCE(SUM(p.stock), 0) AS stock_total "
                 "FROM erp_brands b LEFT JOIN catalog_excel_products p "
                 "ON p.brand_id = b.id AND p.active = 1 " + where +
-                " GROUP BY b.id ORDER BY "
-                + ("CASE WHEN catalog_search_key(b.name) LIKE ? ESCAPE '\\' "
-                   "THEN 0 ELSE 1 END, " if query else "")
-                + "b.name COLLATE NOCASE LIMIT ?",
-                (parameters[:-1] + [catalog_prefix_pattern(query), parameters[-1]])
-                if query else parameters,
+                " GROUP BY b.id ORDER BY b.name COLLATE NOCASE LIMIT ?",
+                parameters,
             ).fetchall()
             brand_ids = [int(row["id"]) for row in brand_rows]
             category_rows = []
