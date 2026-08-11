@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ТТТ ERP — Бренды</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/erp-components.css') }}">
+    <style>
+        *{box-sizing:border-box} body{margin:0;background:#f6f7f9;color:#172033;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+        .main{padding:28px}.brand-head{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;margin-bottom:18px}.brand-head h1{margin:0;font-size:30px}.brand-head p{margin:7px 0 0;color:#64748b}.brand-actions{display:flex;gap:8px;flex-wrap:wrap}
+        .brand-btn{display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:0 15px;border:1px solid #cbd5e1;border-radius:10px;background:#fff;color:#173a69;font-weight:750;text-decoration:none;cursor:pointer}.brand-btn.primary{border-color:#174887;background:#174887;color:#fff}.brand-btn.danger{border-color:#fecaca;color:#b42318}.brand-btn:hover{filter:brightness(.98)}
+        .erp-section-tabs{margin-bottom:18px}.notice{margin:0 0 16px;padding:13px 15px;border-radius:12px;font-weight:700}.notice-success{background:#dcfce7;color:#166534}.notice-error,.notice-danger{background:#fee2e2;color:#991b1b}
+        .brand-search{display:flex;gap:8px;margin-bottom:16px}.brand-search input,.field{width:100%;min-height:42px;border:1px solid #cbd5e1;border-radius:10px;padding:9px 12px;font:inherit;background:#fff}.brand-search input{max-width:420px}
+        .brand-grid{display:grid;gap:12px}.brand-card,.brand-panel{border:1px solid #e2e8f0;border-radius:15px;background:#fff;box-shadow:0 5px 18px rgba(15,23,42,.04)}.brand-card{display:grid;grid-template-columns:minmax(170px,1.4fr) repeat(3,minmax(120px,.7fr)) minmax(160px,1fr);align-items:center;gap:14px;padding:17px}.brand-name{font-size:18px;font-weight:800;color:#172033;text-decoration:none}.metric small{display:block;color:#64748b;margin-bottom:4px}.metric strong{font-size:17px}.chips{display:flex;gap:5px;flex-wrap:wrap}.chip{padding:4px 8px;border-radius:999px;background:#eef4ff;color:#174887;font-size:12px;font-weight:700}.muted{color:#64748b}.brand-panel{padding:20px}.breadcrumb{margin-bottom:12px;color:#64748b}.breadcrumb a{color:#174887;text-decoration:none}.detail-title{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:20px}.detail-title h2{margin:0;font-size:27px}.summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:16px 0 24px}.summary .metric{padding:14px;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc}.categories{width:100%;border-collapse:collapse}.categories th,.categories td{padding:13px 10px;border-bottom:1px solid #e2e8f0;text-align:left}.categories th{color:#64748b;font-size:12px;text-transform:uppercase}.row-actions{display:flex;gap:7px;justify-content:flex-end}.empty{padding:32px;text-align:center;color:#64748b}.modal{border:0;border-radius:16px;padding:0;width:min(500px,calc(100vw - 28px));box-shadow:0 24px 70px rgba(15,23,42,.3)}.modal::backdrop{background:rgba(15,23,42,.55)}.modal-body{padding:22px}.modal h3{margin:0 0 10px}.modal p{color:#475569;line-height:1.5}.modal label{display:block;margin:14px 0 6px;font-weight:750}.modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}.warning{padding:11px;border-radius:10px;background:#fff7ed;color:#9a3412}.danger-copy{color:#991b1b!important;font-weight:700}
+        @media(max-width:900px){.brand-card{grid-template-columns:1fr 1fr}.brand-card>:last-child{grid-column:1/-1}.summary{grid-template-columns:1fr}.categories thead{display:none}.categories,.categories tbody,.categories tr,.categories td{display:block}.categories tr{padding:10px 0}.categories td{border:0;padding:5px}.row-actions{justify-content:flex-start}}
+        @media(max-width:600px){.main{padding:16px}.brand-head,.detail-title{display:block}.brand-actions{margin-top:12px}.brand-card{grid-template-columns:1fr}}
+    </style>
+</head>
+<body>
+<div class="app">
+    {% include "_sidebar.html" %}
+    <main class="main">
+        <header class="brand-head">
+            <div><h1>Товары</h1><p>Управление брендами и категориями</p></div>
+            {% if not brand %}<button class="brand-btn primary" type="button" data-open="createBrand">+ Создать бренд</button>{% endif %}
+        </header>
+        <nav class="erp-section-tabs" aria-label="Раздел товаров">
+            <a class="erp-section-tab" href="{{ url_for('warehouse_page') }}">Товары</a>
+            <a class="erp-section-tab is-active" href="{{ url_for('warehouse_page', view='brands') }}" aria-current="page">Бренды</a>
+        </nav>
+        {% if request.args.get('notice') and request.args.get('message') %}<div class="notice notice-{{ request.args.get('notice') }}" role="status">{{ request.args.get('message') }}</div>{% endif %}
+
+        {% if brand %}
+        <div class="breadcrumb"><a href="{{ url_for('warehouse_page') }}">Товары</a> → <a href="{{ url_for('warehouse_page', view='brands') }}">Бренды</a> → {{ brand.name }}</div>
+        <section class="brand-panel">
+            <div class="detail-title"><div><h2>{{ brand.name }}</h2><span class="muted">Категорий: {{ brand.categories|length }}</span></div><div class="brand-actions">
+                <a class="brand-btn" href="{{ url_for('warehouse_page', brand_id=brand.id) }}">Открыть все товары</a>
+                <button class="brand-btn" type="button" data-open="renameBrand">Переименовать</button>
+                <button class="brand-btn danger" type="button" data-open="deleteBrand">Удалить бренд</button>
+            </div></div>
+            <div class="summary"><div class="metric"><small>Товаров</small><strong>{{ brand.product_count }}</strong></div><div class="metric"><small>С ненулевым остатком</small><strong>{{ brand.nonzero_count }}</strong></div><div class="metric"><small>Суммарный остаток</small><strong>{{ brand.stock_display }}</strong></div></div>
+            <div class="detail-title"><h2 style="font-size:21px">Категории</h2><button class="brand-btn primary" type="button" data-open="createCategory">+ Создать категорию</button></div>
+            {% if brand.categories %}<table class="categories"><thead><tr><th>Категория</th><th>Товаров</th><th>С остатком</th><th>Остаток</th><th></th></tr></thead><tbody>
+            {% for category in brand.categories %}<tr><td><strong>{{ category.name }}</strong></td><td>{{ category.product_count }}</td><td>{{ category.nonzero_count }}</td><td>{{ category.stock_display }}</td><td><div class="row-actions"><a class="brand-btn" href="{{ url_for('warehouse_page', brand_id=brand.id, category_id=category.id) }}">Открыть товары</a><button class="brand-btn danger" type="button" data-delete-category="{{ category|tojson|forceescape }}">Удалить категорию</button></div></td></tr>{% endfor %}
+            </tbody></table>{% else %}<div class="empty">В этом бренде пока нет категорий.</div>{% endif %}
+        </section>
+        {% else %}
+        <form class="brand-search" method="get"><input type="hidden" name="view" value="brands"><input name="q" value="{{ query }}" placeholder="Найти бренд" autocomplete="off"><button class="brand-btn" type="submit">Найти</button></form>
+        <div class="brand-grid">{% for item in brands %}<article class="brand-card"><a class="brand-name" href="{{ url_for('warehouse_page', view='brands', brand_id=item.id) }}">{{ item.name }}</a><div class="metric"><small>Товаров</small><strong>{{ item.product_count }}</strong></div><div class="metric"><small>С ненулевым остатком</small><strong>{{ item.nonzero_count }}</strong></div><div class="metric"><small>Суммарный остаток</small><strong>{{ item.stock_display }}</strong></div><div class="chips">{% for category in item.categories[:4] %}<span class="chip">{{ category.name }}</span>{% endfor %}{% if not item.categories %}<span class="muted">Без категорий</span>{% endif %}</div></article>{% else %}<div class="brand-panel empty">Бренды не найдены.</div>{% endfor %}</div>
+        {% endif %}
+    </main>
+</div>
+
+{% macro simple_modal(id, title, action, value='', label='') %}<dialog class="modal" id="{{ id }}"><form class="modal-body" method="post" action="{{ action }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><h3>{{ title }}</h3><label for="{{ id }}Name">{{ label }}</label><input class="field" id="{{ id }}Name" name="name" value="{{ value }}" maxlength="160" required autofocus><div class="modal-actions"><button class="brand-btn" type="button" data-close>Отмена</button><button class="brand-btn primary" type="submit">{{ title }}</button></div></form></dialog>{% endmacro %}
+{% if not brand %}{{ simple_modal('createBrand', 'Создать бренд', url_for('warehouse_create_brand'), label='Название бренда') }}{% else %}
+{{ simple_modal('renameBrand', 'Переименовать', url_for('warehouse_rename_brand', brand_id=brand.id), value=brand.name, label='Название бренда') }}
+{{ simple_modal('createCategory', 'Создать категорию', url_for('warehouse_create_brand_category', brand_id=brand.id), label='Название категории') }}
+<dialog class="modal" id="deleteBrand"><form class="modal-body" method="post" action="{{ url_for('warehouse_delete_brand', brand_id=brand.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><h3>Удалить бренд {{ brand.name }}?</h3><p>Товаров: <strong>{{ brand.product_count }}</strong><br>С ненулевым остатком: <strong>{{ brand.nonzero_count }}</strong><br>Суммарный остаток: <strong>{{ brand.stock_display }}</strong><br>Категорий: <strong>{{ brand.categories|length }}</strong></p><p class="warning">Все товары бренда будут удалены из активного каталога. Исторические продажи, приходы, движения и Журнал сохранятся.</p><label>Введите «{{ brand.name }}» или «УДАЛИТЬ»</label><input class="field" name="confirmation" required>{% if brand.nonzero_count and can_force_delete %}<label><input type="checkbox" name="force" value="1"> Принудительно удалить товары с остатком</label><input type="hidden" name="force_confirmation" value="УДАЛИТЬ">{% endif %}<div class="modal-actions"><button class="brand-btn" type="button" data-close>Отмена</button><button class="brand-btn danger" type="submit">Удалить</button></div></form></dialog>
+<dialog class="modal" id="deleteCategory"><form class="modal-body" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><h3 id="deleteCategoryTitle"></h3><p id="deleteCategoryStats"></p><p class="danger-copy">Удалятся только товары {{ brand.name }} этой категории. Товары других брендов и глобальная категория останутся.</p><div id="categoryStrong"><label>Введите «УДАЛИТЬ»</label><input class="field" name="confirmation"><label id="categoryForce" hidden><input type="checkbox" name="force" value="1"> Принудительно удалить товары с остатком</label><input type="hidden" name="force_confirmation" value="УДАЛИТЬ"></div><div class="modal-actions"><button class="brand-btn" type="button" data-close>Отмена</button><button class="brand-btn danger" type="submit">Удалить категорию</button></div></form></dialog>
+{% endif %}
+<script>
+document.querySelectorAll('[data-open]').forEach(button=>button.addEventListener('click',()=>document.getElementById(button.dataset.open).showModal()));document.querySelectorAll('[data-close]').forEach(button=>button.addEventListener('click',()=>button.closest('dialog').close()));
+document.querySelectorAll('[data-delete-category]').forEach(button=>button.addEventListener('click',()=>{const c=JSON.parse(button.dataset.deleteCategory);const brandName={{ (brand.name if brand else '')|tojson }};const dialog=document.getElementById('deleteCategory');dialog.querySelector('form').action=`/warehouse/brands/{{ brand.id if brand else 0 }}/categories/${c.id}/delete`;document.getElementById('deleteCategoryTitle').textContent=`Удалить категорию «${c.name}» из ${brandName}?`;document.getElementById('deleteCategoryStats').innerHTML=`Будет удалено товаров: <strong>${c.product_count}</strong><br>С ненулевым остатком: <strong>${c.nonzero_count}</strong><br>Суммарный остаток: <strong>${c.stock_display}</strong>`;document.getElementById('categoryStrong').hidden=c.product_count===0;document.querySelector('#categoryStrong input[name="confirmation"]').required=c.product_count>0;document.getElementById('categoryForce').hidden=!(c.nonzero_count>0&&{{ 'true' if can_force_delete else 'false' }});dialog.showModal()}));
+</script>
+</body></html>

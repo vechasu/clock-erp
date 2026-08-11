@@ -263,6 +263,16 @@ CREATE TABLE IF NOT EXISTS erp_categories (
 CREATE INDEX IF NOT EXISTS idx_erp_categories_brand
     ON erp_categories(brand_id, active, normalized_name);
 
+CREATE TABLE IF NOT EXISTS erp_brand_categories (
+    brand_id INTEGER NOT NULL REFERENCES erp_brands(id) ON DELETE RESTRICT,
+    category_id INTEGER NOT NULL REFERENCES erp_categories(id) ON DELETE RESTRICT,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (brand_id, category_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_erp_brand_categories_category
+    ON erp_brand_categories(category_id, brand_id);
+
 CREATE TABLE IF NOT EXISTS erp_catalog_normalization_audit (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     entity_type TEXT NOT NULL CHECK (entity_type IN ('brand', 'category', 'product')),
@@ -737,7 +747,9 @@ CREATE INDEX IF NOT EXISTS idx_catalog_stock_movements_sale
 
 CREATE TABLE IF NOT EXISTS erp_audit_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    entity_type TEXT NOT NULL CHECK (entity_type IN ('product', 'sale', 'receipt')),
+    entity_type TEXT NOT NULL CHECK (
+        entity_type IN ('product', 'sale', 'receipt', 'brand', 'category')
+    ),
     entity_id TEXT NOT NULL,
     action TEXT NOT NULL,
     actor_id TEXT,
@@ -830,13 +842,101 @@ class CatalogDatabase:
     def _initialize_schema(self):
         with self.connect() as connection:
             connection.executescript(SCHEMA)
+            self._ensure_audit_entity_constraints(connection)
             self._ensure_excel_receipt_constraints(connection)
             self._ensure_excel_cardinality_columns(connection)
             self._ensure_product_deletion_columns(connection)
             self._ensure_receipt_constraints(connection)
             self._ensure_optional_price_constraints(connection)
             self._ensure_shared_catalog(connection)
+            self._ensure_brand_category_relations(connection)
             self._ensure_stock_movement_constraints(connection)
+
+    @staticmethod
+    def _ensure_audit_entity_constraints(connection):
+        row = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' "
+            "AND name = 'erp_audit_events'"
+        ).fetchone()
+        if row is None or "'brand'" in (row["sql"] or ""):
+            return
+        connection.commit()
+        connection.execute("PRAGMA foreign_keys = OFF")
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute("ALTER TABLE erp_audit_events RENAME TO erp_audit_events_old")
+            connection.execute(
+                "CREATE TABLE erp_audit_events ("
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                "entity_type TEXT NOT NULL CHECK (entity_type IN "
+                "('product','sale','receipt','brand','category')), "
+                "entity_id TEXT NOT NULL, action TEXT NOT NULL, actor_id TEXT, "
+                "actor_type TEXT NOT NULL DEFAULT 'user' CHECK (actor_type IN "
+                "('user','system','external')), "
+                "actor_display_name_snapshot TEXT NOT NULL, occurred_at TEXT NOT NULL, "
+                "object_label_snapshot TEXT NOT NULL, "
+                "object_secondary_snapshot TEXT NOT NULL DEFAULT '', "
+                "changes_json TEXT NOT NULL DEFAULT '{}', "
+                "metadata_json TEXT NOT NULL DEFAULT '{}', "
+                "search_text TEXT NOT NULL DEFAULT '', "
+                "status_snapshot TEXT NOT NULL DEFAULT '', "
+                "source_snapshot TEXT NOT NULL DEFAULT '')"
+            )
+            connection.execute(
+                "INSERT INTO erp_audit_events SELECT * FROM erp_audit_events_old"
+            )
+            connection.execute("DROP TABLE erp_audit_events_old")
+            connection.execute(
+                "CREATE INDEX idx_erp_audit_occurred ON "
+                "erp_audit_events(occurred_at DESC, id DESC)"
+            )
+            connection.execute(
+                "CREATE INDEX idx_erp_audit_entity_occurred ON "
+                "erp_audit_events(entity_type, occurred_at DESC, id DESC)"
+            )
+            connection.execute(
+                "CREATE INDEX idx_erp_audit_entity_object ON "
+                "erp_audit_events(entity_type, entity_id, occurred_at DESC, id DESC)"
+            )
+            connection.execute(
+                "CREATE INDEX idx_erp_audit_actor ON "
+                "erp_audit_events(actor_id, occurred_at DESC)"
+            )
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.execute("PRAGMA foreign_keys = ON")
+
+    @staticmethod
+    def _ensure_brand_category_relations(connection):
+        version = "2026-08-12-brand-category-relations-v1"
+        if connection.execute(
+            "SELECT 1 FROM erp_schema_migrations WHERE version = ?",
+            (version,),
+        ).fetchone() is not None:
+            return
+        now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+        connection.execute(
+            "INSERT OR IGNORE INTO erp_brand_categories "
+            "(brand_id, category_id, created_at) "
+            "SELECT brand_id, id, ? FROM erp_categories",
+            (now,),
+        )
+        connection.execute(
+            "INSERT OR IGNORE INTO erp_brand_categories "
+            "(brand_id, category_id, created_at) "
+            "SELECT DISTINCT brand_id, category_id, ? "
+            "FROM catalog_excel_products WHERE active = 1 AND brand_id IS NOT NULL "
+            "AND category_id IS NOT NULL",
+            (now,),
+        )
+        connection.execute(
+            "INSERT INTO erp_schema_migrations "
+            "(version, applied_at, details_json) VALUES (?, ?, ?)",
+            (version, now, '{"backfill": "erp_brand_categories"}'),
+        )
 
     @staticmethod
     def _ensure_excel_receipt_constraints(connection):

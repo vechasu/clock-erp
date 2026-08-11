@@ -7,7 +7,7 @@ from datetime import datetime, time as datetime_time, timedelta, timezone
 from app.catalog_db import CatalogDatabase
 
 
-ENTITY_TYPES = {"product", "sale", "receipt"}
+ENTITY_TYPES = {"product", "sale", "receipt", "brand", "category"}
 ACTION_TYPES = {
     "created",
     "updated",
@@ -33,6 +33,8 @@ FIELD_WHITELISTS = {
         "status", "quantity", "document", "comment", "receipt_date",
         "purchase_price",
     },
+    "brand": {"name"},
+    "category": {"name"},
 }
 SENSITIVE_MARKERS = {
     "password", "passwd", "secret", "token", "authorization", "credential",
