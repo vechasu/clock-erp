@@ -734,6 +734,37 @@ CREATE INDEX IF NOT EXISTS idx_catalog_stock_movements_product
     ON catalog_stock_movements(product_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_catalog_stock_movements_sale
     ON catalog_stock_movements(sale_id, created_at);
+
+CREATE TABLE IF NOT EXISTS erp_audit_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_type TEXT NOT NULL CHECK (entity_type IN ('product', 'sale', 'receipt')),
+    entity_id TEXT NOT NULL,
+    action TEXT NOT NULL,
+    actor_id TEXT,
+    actor_type TEXT NOT NULL DEFAULT 'user' CHECK (
+        actor_type IN ('user', 'system', 'external')
+    ),
+    actor_display_name_snapshot TEXT NOT NULL,
+    occurred_at TEXT NOT NULL,
+    object_label_snapshot TEXT NOT NULL,
+    object_secondary_snapshot TEXT NOT NULL DEFAULT '',
+    changes_json TEXT NOT NULL DEFAULT '{}',
+    metadata_json TEXT NOT NULL DEFAULT '{}',
+    search_text TEXT NOT NULL DEFAULT '',
+    status_snapshot TEXT NOT NULL DEFAULT '',
+    source_snapshot TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_erp_audit_occurred
+    ON erp_audit_events(occurred_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_erp_audit_entity_occurred
+    ON erp_audit_events(entity_type, occurred_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_erp_audit_entity_object
+    ON erp_audit_events(entity_type, entity_id, occurred_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_erp_audit_actor
+    ON erp_audit_events(actor_id, occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_erp_audit_action
+    ON erp_audit_events(action, occurred_at DESC);
 """
 
 

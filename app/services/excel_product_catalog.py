@@ -11,6 +11,7 @@ import uuid
 from datetime import datetime, timezone
 
 from app.catalog_db import CatalogDatabase
+from app.services.audit_journal import AuditJournal
 from app.services.brand_values import is_numeric_brand, normalize_brand
 from app.services.product_reconciliation import (
     AUTOMATIC_STATUSES,
@@ -1016,7 +1017,8 @@ class ExcelProductCatalog:
     def create_product(
             self, name, article="", brand="", category="", cell="", stock=0,
             brand_id=None, category_id=None, price=None, enforce_unique=False,
-            moysklad_product_id=None):
+            moysklad_product_id=None, actor_id="", actor_name="",
+            actor_type="system"):
         name = text(name)
         if not name:
             raise ValueError("Название товара обязательно.")
@@ -1135,11 +1137,25 @@ class ExcelProductCatalog:
                 stock,
                 "Начальный остаток при создании товара",
             )
+            AuditJournal(self.database).record(
+                "product", product_id,
+                "created" if actor_name else "system_created",
+                name, article,
+                after={
+                    "name": name, "article": article, "brand": brand,
+                    "category": category, "price": price, "cell": cell,
+                    "stock": stock,
+                },
+                metadata={"article": article}, actor_id=actor_id,
+                actor_name=actor_name, actor_type=actor_type,
+                connection=connection,
+            )
         return self.get_product(product_id)
 
     def update_product(self, product_id, name=None, article=None, brand=None,
                        category=None, cell=None, stock=None, stock_reason="",
-                       brand_id=None, category_id=None, price=UNSET):
+                       brand_id=None, category_id=None, price=UNSET,
+                       actor_id="", actor_name="", actor_type="system"):
         self.database.initialize()
         with self.database.transaction() as connection:
             product = connection.execute(
@@ -1277,6 +1293,32 @@ class ExcelProductCatalog:
                     stock_after,
                     stock_reason,
                 )
+            before = {
+                "name": product["excel_name_raw"],
+                "article": product["excel_article"],
+                "brand": product["excel_brand"],
+                "category": product["excel_category"],
+                "price": product["bitrix_price_amount"],
+                "cell": product["cell"],
+                "stock": float(product["stock"] or 0),
+            }
+            after = {
+                "name": values["excel_name_raw"],
+                "article": values["excel_article"],
+                "brand": values["excel_brand"],
+                "category": values["excel_category"],
+                "price": values.get("bitrix_price_amount"),
+                "cell": values["cell"],
+                "stock": float(values["stock"] or 0),
+            }
+            if before != after:
+                AuditJournal(self.database).record(
+                    "product", product_id, "updated", after["name"],
+                    after["article"] or "", before=before, after=after,
+                    metadata={"article": after["article"] or ""},
+                    actor_id=actor_id, actor_name=actor_name,
+                    actor_type=actor_type, connection=connection,
+                )
         return self.get_product(product_id)
 
     def list_manual_stock_operations(self, limit=5000):
@@ -1320,7 +1362,7 @@ class ExcelProductCatalog:
 
     def delete_product(
             self, product_id, external_references=None, force=False,
-            actor_id=""):
+            actor_id="", actor_name="", actor_type="user"):
         """Permanently remove a card from the active catalog via tombstone.
 
         Related sales, receipts and movements keep their foreign keys and
@@ -1363,6 +1405,15 @@ class ExcelProductCatalog:
                     deleted_at,
                     int(product_id),
                 ),
+            )
+            AuditJournal(self.database).record(
+                "product", product_id, "deleted",
+                product["excel_name_raw"], product["excel_article"] or "",
+                metadata={
+                    "article": product["excel_article"] or "",
+                    "force": bool(force), "stock": stock,
+                }, actor_id=actor_id, actor_name=actor_name,
+                actor_type=actor_type, connection=connection,
             )
         return {
             "id": int(product_id),

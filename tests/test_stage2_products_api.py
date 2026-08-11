@@ -7,6 +7,7 @@ from unittest import mock
 
 from app import auth, web
 from app.catalog_db import CatalogDatabase
+from app.services.audit_journal import AuditJournal
 from app.services.excel_product_catalog import ExcelProductBatchService
 
 
@@ -286,6 +287,12 @@ class Stage2ProductsApiTest(unittest.TestCase):
         self.assertEqual(response.get_json()["code"], "PRODUCT_IMAGE_UPLOAD_FAILED")
         after = self.client.get("/api/v1/products?page_size=50").get_json()["meta"]["total"]
         self.assertEqual(after, before)
+        self.assertEqual(
+            AuditJournal(CatalogDatabase(self.database_path)).list_events(
+                query="Remote Failure Product", limit=10,
+            )["events"],
+            [],
+        )
 
     def test_create_product_rejects_oversized_photo(self):
         response = self.client.post(
@@ -335,6 +342,13 @@ class Stage2ProductsApiTest(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 200)
+        actions = [
+            event["action"]
+            for event in AuditJournal(CatalogDatabase(self.database_path)).list_events(
+                entity_type="product", entity_id=product["id"], limit=10,
+            )["events"]
+        ]
+        self.assertEqual(actions[:2], ["updated", "photo_replaced"])
         self.assertEqual(response.get_json()["data"]["article"], "PHOTO-UPDATED")
         self.assertEqual(
             response.get_json()["meta"]["image_message"],
@@ -417,6 +431,12 @@ class Stage2ProductsApiTest(unittest.TestCase):
             product["article"],
         )
         remote.delete_product_images.assert_not_called()
+        self.assertEqual(
+            AuditJournal(CatalogDatabase(self.database_path)).list_events(
+                entity_type="product", entity_id=product["id"], limit=10,
+            )["events"],
+            [],
+        )
 
     def test_moysklad_http_success_without_changed_image_is_failure(self):
         product = self.client.get(

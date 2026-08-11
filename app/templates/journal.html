@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ТТТ ERP — Журнал</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/themes.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/erp-components.css') }}">
+    <style>
+        * { box-sizing: border-box; }
+        body { margin: 0; background: #f4f7fb; color: #172033; font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+        .journal-main { width: 100%; min-width: 0; padding: 28px 32px 56px; }
+        .journal-shell { width: min(100%, 1120px); margin: 0 auto; }
+        .journal-header h1 { margin: 0; font-size: 30px; letter-spacing: -.03em; }
+        .journal-header p { margin: 7px 0 0; color: #687386; }
+        .journal-tabs { display: flex; gap: 8px; margin-top: 24px; overflow-x: auto; scrollbar-width: none; }
+        .journal-tab { flex: 0 0 auto; padding: 9px 15px; border: 1px solid #dce3ed; border-radius: 999px; background: #fff; color: #536174; font-weight: 700; text-decoration: none; }
+        .journal-tab.active { border-color: #2563eb; background: #2563eb; color: #fff; }
+        .journal-toolbar { display: grid; grid-template-columns: minmax(180px, .7fr) auto minmax(240px, 1.3fr); gap: 10px; margin-top: 16px; padding: 14px; border: 1px solid #e0e6ef; border-radius: 16px; background: #fff; box-shadow: 0 8px 24px rgba(15, 23, 42, .04); }
+        .journal-period { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 7px; }
+        .journal-period-label { grid-column: 1 / -1; color: #687386; font-size: 12px; font-weight: 750; }
+        .journal-control { width: 100%; min-height: 42px; padding: 9px 11px; border: 1px solid #d5dde8; border-radius: 10px; background: #fff; color: #253044; font: inherit; }
+        .journal-filter-toggle { min-height: 42px; padding: 9px 16px; border: 1px solid #d5dde8; border-radius: 10px; background: #fff; color: #253044; font-weight: 750; cursor: pointer; }
+        .journal-search { position: relative; }
+        .journal-search .journal-control { padding-right: 78px; }
+        .journal-search button { position: absolute; top: 5px; right: 5px; min-height: 32px; padding: 0 12px; border: 0; border-radius: 7px; background: #2563eb; color: #fff; font-weight: 700; cursor: pointer; }
+        .journal-filters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) auto; gap: 10px; margin-top: 10px; padding: 14px; border: 1px solid #e0e6ef; border-radius: 14px; background: #fff; }
+        .journal-filters[hidden] { display: none; }
+        .journal-apply { min-height: 42px; padding: 9px 18px; border: 0; border-radius: 10px; background: #172033; color: #fff; font-weight: 750; cursor: pointer; }
+        .journal-timeline { margin-top: 22px; }
+        .journal-day { margin: 22px 0 10px; color: #536174; font-size: 14px; font-weight: 800; }
+        .journal-event { position: relative; display: grid; grid-template-columns: 76px 14px minmax(0, 1fr); width: 100%; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+        .journal-event-time { padding-top: 18px; color: #6b7688; font-size: 13px; font-variant-numeric: tabular-nums; }
+        .journal-event-rail { position: relative; }
+        .journal-event-rail::before { content: ""; position: absolute; top: 0; bottom: 0; left: 6px; width: 2px; background: #dfe5ee; }
+        .journal-event-dot { position: absolute; top: 23px; left: 1px; z-index: 1; width: 12px; height: 12px; border: 3px solid #fff; border-radius: 50%; background: #3b82f6; box-shadow: 0 0 0 1px #b9c8da; }
+        .journal-event[data-tone="success"] .journal-event-dot { background: #16a34a; }
+        .journal-event[data-tone="danger"] .journal-event-dot { background: #dc2626; }
+        .journal-event[data-tone="warning"] .journal-event-dot { background: #f59e0b; }
+        .journal-event[data-tone="neutral"] .journal-event-dot { background: #8491a3; }
+        .journal-event-card { min-width: 0; margin: 0 0 10px 10px; padding: 16px 18px; border: 1px solid #e0e6ef; border-radius: 14px; background: #fff; box-shadow: 0 6px 18px rgba(15, 23, 42, .035); transition: border-color .15s, transform .15s; }
+        .journal-event:hover .journal-event-card { border-color: #aac5ef; transform: translateY(-1px); }
+        .journal-event-title { font-size: 15px; font-weight: 800; overflow-wrap: anywhere; }
+        .journal-event-summary { margin-top: 5px; color: #344155; line-height: 1.45; overflow-wrap: anywhere; }
+        .journal-event-meta { display: flex; flex-wrap: wrap; gap: 5px 8px; margin-top: 8px; color: #748095; font-size: 13px; }
+        .journal-empty { padding: 48px 20px; border: 1px dashed #cfd8e5; border-radius: 16px; background: #fff; color: #667386; text-align: center; }
+        .journal-empty strong { display: block; margin-bottom: 7px; color: #2b374a; font-size: 17px; }
+        .journal-more { display: block; min-width: 170px; margin: 18px auto 0; padding: 11px 18px; border: 1px solid #b9c7d8; border-radius: 10px; background: #fff; color: #263348; font-weight: 750; cursor: pointer; }
+        .journal-more[hidden] { display: none; }
+        .journal-drawer-backdrop { position: fixed; inset: 0; z-index: 90; display: none; background: rgba(15, 23, 42, .38); }
+        .journal-drawer-backdrop.open { display: block; }
+        .journal-drawer { position: fixed; top: 0; right: 0; z-index: 91; width: min(460px, 100%); height: 100dvh; padding: 22px; overflow-y: auto; background: #fff; box-shadow: -18px 0 44px rgba(15, 23, 42, .18); transform: translateX(104%); transition: transform .2s ease; }
+        .journal-drawer.open { transform: translateX(0); }
+        .journal-drawer-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+        .journal-drawer h2 { margin: 0; font-size: 22px; }
+        .journal-close { width: 38px; height: 38px; border: 1px solid #d8e0ea; border-radius: 10px; background: #fff; font-size: 23px; cursor: pointer; }
+        .journal-detail-meta { margin: 16px 0; padding: 13px; border-radius: 12px; background: #f5f7fa; color: #536174; line-height: 1.7; }
+        .journal-detail-change { padding: 12px 0; border-bottom: 1px solid #e8edf3; }
+        .journal-detail-change strong { display: block; margin-bottom: 5px; }
+        .journal-detail-values { display: grid; grid-template-columns: 1fr 22px 1fr; align-items: center; gap: 7px; }
+        .journal-detail-value { min-width: 0; padding: 9px; border-radius: 8px; background: #f6f8fb; overflow-wrap: anywhere; }
+        .journal-object-link { display: inline-flex; margin-top: 18px; padding: 10px 15px; border-radius: 9px; background: #2563eb; color: #fff; font-weight: 750; text-decoration: none; }
+        .journal-deleted-note { margin-top: 18px; color: #7a8495; font-weight: 700; }
+        @media (max-width: 900px) {
+            .journal-main { padding: 20px 14px 92px; }
+            .journal-header h1 { font-size: 26px; }
+            .journal-toolbar { grid-template-columns: 1fr auto; }
+            .journal-search { grid-column: 1 / -1; }
+            .journal-filters { grid-template-columns: 1fr 1fr; }
+            .journal-apply { grid-column: 1 / -1; }
+        }
+        @media (max-width: 420px) {
+            .journal-main { padding-inline: 10px; }
+            .journal-toolbar { padding: 10px; }
+            .journal-period { grid-column: 1 / -1; }
+            .journal-filter-toggle { grid-column: 1 / -1; }
+            .journal-filters { grid-template-columns: 1fr; }
+            .journal-apply { grid-column: auto; }
+            .journal-event { grid-template-columns: 54px 12px minmax(0, 1fr); }
+            .journal-event-card { margin-left: 6px; padding: 14px; }
+            .journal-event-time { font-size: 12px; }
+            .journal-drawer { padding: 18px 15px; }
+        }
+    </style>
+</head>
+<body>
+<div class="app">
+    {% include "_sidebar.html" %}
+    <main class="journal-main">
+        <div class="journal-shell">
+            <header class="journal-header">
+                <h1>Журнал</h1>
+                <p>История значимых изменений товаров, продаж и приходов.</p>
+            </header>
+
+            <nav class="journal-tabs" aria-label="Раздел журнала">
+                {% for value, label in [("", "Все"), ("product", "Товары"), ("sale", "Продажи"), ("receipt", "Приход")] %}
+                    <a class="journal-tab{% if filters.entity_type == value %} active{% endif %}" href="#" data-journal-tab="{{ value }}">{{ label }}</a>
+                {% endfor %}
+            </nav>
+
+            <form id="journalFilterForm" method="get">
+                <input type="hidden" name="entity_type" value="{{ filters.entity_type }}">
+                <div class="journal-toolbar">
+                    <div class="journal-period" aria-label="Период">
+                        <span class="journal-period-label">Период</span>
+                        <input class="journal-control" type="date" name="date_from" value="{{ filters.date_from }}" aria-label="Период с">
+                        <input class="journal-control" type="date" name="date_to" value="{{ filters.date_to }}" aria-label="Период по">
+                    </div>
+                    <button id="journalFilterToggle" class="journal-filter-toggle" type="button" aria-expanded="{{ 'true' if filters.action or filters.actor or filters.status or filters.source else 'false' }}">Фильтры</button>
+                    <div class="journal-search">
+                        <input class="journal-control" type="search" name="q" value="{{ filters.query }}" placeholder="Объект, артикул, номер, комментарий, пользователь" aria-label="Поиск">
+                        <button type="submit">Найти</button>
+                    </div>
+                </div>
+                <div id="journalFilters" class="journal-filters"{% if not (filters.action or filters.actor or filters.status or filters.source) %} hidden{% endif %}>
+                    {% if not filters.entity_type %}
+                        <select class="journal-control" name="filter_entity_type" aria-label="Раздел">
+                            <option value="">Все разделы</option>
+                            <option value="product">Товары</option>
+                            <option value="sale">Продажи</option>
+                            <option value="receipt">Приход</option>
+                        </select>
+                    {% endif %}
+                    <select class="journal-control" name="action" aria-label="Тип события">
+                        <option value="">Все события</option>
+                        {% for value in filter_options.actions %}
+                            <option value="{{ value }}"{% if filters.action == value %} selected{% endif %}>{{ action_labels.get(value, value) }}</option>
+                        {% endfor %}
+                    </select>
+                    <select class="journal-control" name="actor" aria-label="Пользователь">
+                        <option value="">Все пользователи</option>
+                        {% for value in filter_options.actors %}
+                            <option value="{{ value }}"{% if filters.actor == value %} selected{% endif %}>{{ value }}</option>
+                        {% endfor %}
+                    </select>
+                    {% if filters.entity_type == "sale" %}
+                        <select class="journal-control" name="status" aria-label="Статус продажи">
+                            <option value="">Все статусы</option>
+                            {% for value, label in [("completed", "Завершена"), ("cancelled", "Отменена"), ("refusal", "Отказ"), ("returned", "Возврат"), ("partially_returned", "Частичный возврат")] %}
+                                <option value="{{ value }}"{% if filters.status == value %} selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                        <select class="journal-control" name="source" aria-label="Источник продажи">
+                            <option value="">Все источники</option>
+                            {% for value in ["Tictactoy", "Wildberries", "Amazon"] %}
+                                <option value="{{ value }}"{% if filters.source == value %} selected{% endif %}>{{ value }}</option>
+                            {% endfor %}
+                        </select>
+                    {% endif %}
+                    <button class="journal-apply" type="submit">Применить</button>
+                </div>
+            </form>
+
+            <section id="journalTimeline" class="journal-timeline" aria-live="polite">
+                {% set days = namespace(current="") %}
+                {% for event in events %}
+                    {% if event.day_key != days.current %}
+                        {% set days.current = event.day_key %}
+                        <h2 class="journal-day" data-day-key="{{ event.day_key }}">{{ event.day_label }}</h2>
+                    {% endif %}
+                    <button class="journal-event" type="button" data-event-id="{{ event.id }}" data-day-key="{{ event.day_key }}" data-tone="{{ event.tone }}">
+                        <span class="journal-event-time">{{ event.time_display }}</span>
+                        <span class="journal-event-rail"><span class="journal-event-dot"></span></span>
+                        <span class="journal-event-card">
+                            <span class="journal-event-title">{{ event.object_label_snapshot }}</span>
+                            <span class="journal-event-summary">{{ event.summary }}</span>
+                            <span class="journal-event-meta">
+                                <span>{{ event.actor_display_name_snapshot }}</span><span>·</span><span>{{ event.entity_label }}</span>
+                                {% if event.source_snapshot %}<span>·</span><span>{{ event.source_snapshot }}</span>{% endif %}
+                            </span>
+                        </span>
+                    </button>
+                {% else %}
+                    <div class="journal-empty">
+                        <strong>За выбранный период событий нет</strong>
+                        Журнал записывает изменения с момента внедрения функции.
+                    </div>
+                {% endfor %}
+            </section>
+            <button id="journalMore" class="journal-more" type="button" data-cursor="{{ next_cursor }}"{% if not next_cursor %} hidden{% endif %}>Показать ещё</button>
+        </div>
+    </main>
+</div>
+
+<div id="journalDrawerBackdrop" class="journal-drawer-backdrop"></div>
+<aside id="journalDrawer" class="journal-drawer" aria-hidden="true" aria-labelledby="journalDrawerTitle">
+    <div class="journal-drawer-head">
+        <div><h2 id="journalDrawerTitle">Событие</h2><div id="journalDrawerAction"></div></div>
+        <button id="journalDrawerClose" class="journal-close" type="button" aria-label="Закрыть">×</button>
+    </div>
+    <div id="journalDrawerContent"></div>
+</aside>
+
+<script>
+(() => {
+    const form = document.getElementById("journalFilterForm");
+    const filters = document.getElementById("journalFilters");
+    const toggle = document.getElementById("journalFilterToggle");
+    const timeline = document.getElementById("journalTimeline");
+    const more = document.getElementById("journalMore");
+    const drawer = document.getElementById("journalDrawer");
+    const backdrop = document.getElementById("journalDrawerBackdrop");
+    const content = document.getElementById("journalDrawerContent");
+    const title = document.getElementById("journalDrawerTitle");
+    const action = document.getElementById("journalDrawerAction");
+
+    toggle.addEventListener("click", () => {
+        filters.hidden = !filters.hidden;
+        toggle.setAttribute("aria-expanded", String(!filters.hidden));
+    });
+    document.querySelectorAll("[data-journal-tab]").forEach((tab) => {
+        tab.addEventListener("click", (event) => {
+            event.preventDefault();
+            const url = new URL(window.location.href);
+            const value = tab.dataset.journalTab;
+            if (value) url.searchParams.set("entity_type", value);
+            else url.searchParams.delete("entity_type");
+            ["cursor", "status", "source"].forEach((key) => url.searchParams.delete(key));
+            window.location.assign(url.pathname + url.search);
+        });
+    });
+    form.addEventListener("submit", () => {
+        const contextualEntity = form.elements.filter_entity_type;
+        if (contextualEntity && contextualEntity.value) {
+            form.elements.entity_type.value = contextualEntity.value;
+        }
+    });
+
+    function eventNode(event) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "journal-event";
+        button.dataset.eventId = event.id;
+        button.dataset.dayKey = event.day_key;
+        button.dataset.tone = event.tone;
+        const time = document.createElement("span");
+        time.className = "journal-event-time";
+        time.textContent = event.time_display;
+        const rail = document.createElement("span");
+        rail.className = "journal-event-rail";
+        const dot = document.createElement("span");
+        dot.className = "journal-event-dot";
+        rail.append(dot);
+        const card = document.createElement("span");
+        card.className = "journal-event-card";
+        const eventTitle = document.createElement("span");
+        eventTitle.className = "journal-event-title";
+        eventTitle.textContent = event.object_label_snapshot;
+        const summary = document.createElement("span");
+        summary.className = "journal-event-summary";
+        summary.textContent = event.summary;
+        const meta = document.createElement("span");
+        meta.className = "journal-event-meta";
+        meta.textContent = [event.actor_display_name_snapshot, event.entity_label, event.source_snapshot].filter(Boolean).join(" · ");
+        card.append(eventTitle, summary, meta);
+        button.append(time, rail, card);
+        return button;
+    }
+
+    more.addEventListener("click", async () => {
+        if (!more.dataset.cursor) return;
+        more.disabled = true;
+        const url = new URL("/api/journal", window.location.origin);
+        new URLSearchParams(window.location.search).forEach((value, key) => url.searchParams.set(key, value));
+        url.searchParams.set("cursor", more.dataset.cursor);
+        try {
+            const response = await fetch(url, {headers: {"Accept": "application/json"}});
+            const payload = await response.json();
+            const result = payload.data || payload;
+            let lastDay = timeline.querySelector("[data-day-key]:last-of-type")?.dataset.dayKey || "";
+            result.events.forEach((event) => {
+                if (event.day_key !== lastDay) {
+                    const heading = document.createElement("h2");
+                    heading.className = "journal-day";
+                    heading.dataset.dayKey = event.day_key;
+                    heading.textContent = event.day_label;
+                    timeline.append(heading);
+                    lastDay = event.day_key;
+                }
+                timeline.append(eventNode(event));
+            });
+            more.dataset.cursor = result.next_cursor || "";
+            more.hidden = !result.next_cursor;
+        } finally {
+            more.disabled = false;
+        }
+    });
+
+    function closeDrawer() {
+        drawer.classList.remove("open");
+        backdrop.classList.remove("open");
+        drawer.setAttribute("aria-hidden", "true");
+    }
+    async function openDrawer(eventId) {
+        const response = await fetch("/api/journal/" + encodeURIComponent(eventId));
+        const payload = await response.json();
+        const event = payload.data || payload;
+        title.textContent = event.object_label_snapshot;
+        action.textContent = event.action_label;
+        content.replaceChildren();
+        const meta = document.createElement("div");
+        meta.className = "journal-detail-meta";
+        meta.textContent = event.timestamp_display + " · " + event.actor_display_name_snapshot + " · " + event.entity_label + (event.source_snapshot ? " · " + event.source_snapshot : "");
+        content.append(meta);
+        event.field_changes.forEach((change) => {
+            const row = document.createElement("div");
+            row.className = "journal-detail-change";
+            const label = document.createElement("strong");
+            label.textContent = change.label;
+            const values = document.createElement("div");
+            values.className = "journal-detail-values";
+            const before = document.createElement("div"); before.className = "journal-detail-value"; before.textContent = change.before;
+            const arrow = document.createElement("span"); arrow.textContent = "→";
+            const after = document.createElement("div"); after.className = "journal-detail-value"; after.textContent = change.after;
+            values.append(before, arrow, after); row.append(label, values); content.append(row);
+        });
+        if (event.metadata?.text_snapshot) {
+            const comment = document.createElement("div");
+            comment.className = "journal-detail-meta";
+            comment.textContent = event.metadata.text_snapshot;
+            content.append(comment);
+        }
+        if (event.object_url) {
+            const link = document.createElement("a");
+            link.className = "journal-object-link";
+            link.href = event.object_url;
+            link.textContent = "Открыть объект";
+            content.append(link);
+        } else {
+            const deleted = document.createElement("div");
+            deleted.className = "journal-deleted-note";
+            deleted.textContent = "Объект удалён";
+            content.append(deleted);
+        }
+        drawer.classList.add("open"); backdrop.classList.add("open");
+        drawer.setAttribute("aria-hidden", "false");
+    }
+    timeline.addEventListener("click", (event) => {
+        const card = event.target.closest("[data-event-id]");
+        if (card) openDrawer(card.dataset.eventId);
+    });
+    document.getElementById("journalDrawerClose").addEventListener("click", closeDrawer);
+    backdrop.addEventListener("click", closeDrawer);
+    document.addEventListener("keydown", (event) => { if (event.key === "Escape") closeDrawer(); });
+})();
+</script>
+</body>
+</html>

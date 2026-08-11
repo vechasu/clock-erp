@@ -1,6 +1,6 @@
 import sys
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -31,6 +31,7 @@ from app.clients.bitrix_catalog import (
     BitrixCatalogWriteError,
 )
 from app.services.bitrix_catalog_importer import BitrixCatalogImporter
+from app.services.audit_journal import AuditJournal
 from app.services.brand_values import normalize_brand
 from app.services.catalog_reader import CatalogReader
 from app.services.excel_product_catalog import (
@@ -4866,6 +4867,16 @@ def current_sales_user_name():
         for field in ("first_name", "last_name")
     ).strip()
     return full_name or str(user.get("email") or "").strip()
+
+
+def current_audit_actor():
+    user = current_auth_user() or {}
+    name = current_sales_user_name()
+    return {
+        "actor_id": str(user.get("id") or user.get("email") or "").strip(),
+        "actor_name": name,
+        "actor_type": "user" if user else "system",
+    }
 
 
 def get_automatic_sales_overrides_path():
@@ -13316,15 +13327,28 @@ NAVIGATION_DEFINITIONS = [
         "active_prefixes": ["/app/receipts", "/receipts", "/products/receipts"],
     },
     {
+        "key": "journal",
+        "label": "Журнал",
+        "description": "История изменений ERP.",
+        "icon": "journal",
+        "href": "/app/journal",
+        "mobile_href": "/app/journal",
+        "position": 4,
+        "group": "main",
+        "mobile_primary": True,
+        "active_exact": [],
+        "active_prefixes": ["/app/journal", "/journal"],
+    },
+    {
         "key": "settings",
         "label": "Настройки",
         "description": "Настройки ERP.",
         "icon": "settings",
         "href": "/app/settings",
         "mobile_href": "/app/settings",
-        "position": 4,
+        "position": 5,
         "group": "system",
-        "mobile_primary": True,
+        "mobile_primary": False,
         "active_exact": [],
         "active_prefixes": ["/app/settings", "/settings"],
         "required": True,
@@ -13361,6 +13385,181 @@ def inject_sidebar_navigation():
             "subtitle": app_settings["company_name"],
         },
     }
+
+
+JOURNAL_ENTITY_LABELS = {
+    "product": "Товары",
+    "sale": "Продажи",
+    "receipt": "Приход",
+}
+JOURNAL_ACTION_LABELS = {
+    "created": "Создано",
+    "system_created": "Создано системой",
+    "updated": "Изменено",
+    "status_changed": "Статус изменён",
+    "photo_added": "Фото добавлено",
+    "photo_replaced": "Фото заменено",
+    "photo_removed": "Фото удалено",
+    "cancelled": "Отменено",
+    "refused": "Отказ",
+    "deleted": "Удалено",
+    "comment_added": "Комментарий добавлен",
+}
+JOURNAL_FIELD_LABELS = {
+    "name": "Название", "article": "Артикул", "brand": "Бренд",
+    "category": "Категория", "price": "Цена", "cell": "Ячейка",
+    "stock": "Остаток", "status": "Статус", "payment": "Оплата",
+    "tracking": "Трек-номер", "quantity": "Количество",
+    "unit_price": "Цена", "source": "Источник", "comment": "Комментарий",
+    "order_number": "Номер", "document": "Документ",
+    "receipt_date": "Дата прихода", "purchase_price": "Закупочная цена",
+}
+JOURNAL_MONTHS = (
+    "января", "февраля", "марта", "апреля", "мая", "июня",
+    "июля", "августа", "сентября", "октября", "ноября", "декабря",
+)
+
+
+def _journal_local_datetime(value):
+    raw = str(value or "").strip().replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(raw)
+    except ValueError:
+        parsed = datetime.now(timezone.utc)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone()
+
+
+def _journal_day_label(value):
+    local = _journal_local_datetime(value)
+    today = datetime.now().astimezone().date()
+    prefix = ""
+    if local.date() == today:
+        prefix = "Сегодня, "
+    elif local.date() == today - timedelta(days=1):
+        prefix = "Вчера, "
+    return "{}{} {}".format(prefix, local.day, JOURNAL_MONTHS[local.month - 1])
+
+
+def _journal_value(value):
+    if value in (None, ""):
+        return "—"
+    if isinstance(value, bool):
+        return "Да" if value else "Нет"
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value)
+
+
+def serialize_journal_event(event):
+    local = _journal_local_datetime(event["occurred_at"])
+    changes = []
+    for field, values in event.get("changes", {}).items():
+        values = values if isinstance(values, dict) else {}
+        changes.append({
+            "field": field,
+            "label": JOURNAL_FIELD_LABELS.get(field, field),
+            "before": _journal_value(values.get("before")),
+            "after": _journal_value(values.get("after")),
+        })
+    summary = JOURNAL_ACTION_LABELS.get(event["action"], event["action"])
+    if changes:
+        first = changes[0]
+        summary = "{}: {} → {}".format(
+            first["label"], first["before"], first["after"]
+        )
+        if len(changes) > 1:
+            summary += " · ещё {}".format(len(changes) - 1)
+    result = dict(event)
+    result.update({
+        "entity_label": JOURNAL_ENTITY_LABELS.get(event["entity_type"], ""),
+        "action_label": JOURNAL_ACTION_LABELS.get(event["action"], event["action"]),
+        "field_changes": changes,
+        "summary": summary,
+        "time_display": local.strftime("%H:%M:%S"),
+        "timestamp_display": local.strftime("%d.%m.%Y %H:%M:%S"),
+        "day_key": local.date().isoformat(),
+        "day_label": _journal_day_label(event["occurred_at"]),
+        "tone": (
+            "success" if event["action"] in {"created", "system_created"}
+            else "danger" if event["action"] in {"deleted", "refused"}
+            else "warning" if event["action"] == "cancelled"
+            else "neutral" if event["actor_type"] != "user"
+            else "info"
+        ),
+    })
+    return result
+
+
+def journal_query_arguments():
+    entity_type = str(request.args.get("entity_type") or "").strip()
+    if entity_type not in {"product", "sale", "receipt"}:
+        entity_type = ""
+    return {
+        "entity_type": entity_type,
+        "entity_id": str(request.args.get("entity_id") or "").strip(),
+        "action": str(request.args.get("action") or "").strip(),
+        "actor": str(request.args.get("actor") or "").strip(),
+        "status": str(request.args.get("status") or "").strip(),
+        "source": str(request.args.get("source") or "").strip(),
+        "query": str(request.args.get("q") or "").strip(),
+        "date_from": str(request.args.get("date_from") or "").strip(),
+        "date_to": str(request.args.get("date_to") or "").strip(),
+        "cursor": str(request.args.get("cursor") or "").strip(),
+    }
+
+
+@app.route("/journal")
+@app.route("/app/journal")
+def journal_page():
+    journal = AuditJournal()
+    filters = journal_query_arguments()
+    listing = journal.list_events(**filters, limit=30)
+    return render_template(
+        "journal.html",
+        events=[serialize_journal_event(event) for event in listing["events"]],
+        next_cursor=listing["next_cursor"],
+        filters=filters,
+        filter_options=journal.filter_options(),
+        action_labels=JOURNAL_ACTION_LABELS,
+    )
+
+
+@app.route("/api/journal")
+@app.route("/api/v1/journal")
+def api_journal_collection():
+    filters = journal_query_arguments()
+    listing = AuditJournal().list_events(**filters, limit=30)
+    return api_success({
+        "events": [serialize_journal_event(event) for event in listing["events"]],
+        "next_cursor": listing["next_cursor"],
+        "has_more": listing["has_more"],
+    })
+
+
+@app.route("/api/journal/<int:event_id>")
+@app.route("/api/v1/journal/<int:event_id>")
+def api_journal_event(event_id):
+    event = AuditJournal().get_event(event_id)
+    if event is None:
+        return api_error("JOURNAL_EVENT_NOT_FOUND", "Событие не найдено.", 404)
+    object_url = ""
+    if event["action"] != "deleted":
+        if event["entity_type"] == "product":
+            if ExcelProductCatalog().get_product(event["entity_id"]):
+                object_url = "/app/products?product_id={}".format(event["entity_id"])
+        elif event["entity_type"] == "sale":
+            sale = SalesInventory().get_sale(event["entity_id"])
+            if sale and not sale.get("deleted_at"):
+                object_url = "/app/sales?q={}".format(event["entity_id"])
+        elif event["entity_type"] == "receipt":
+            if ReceiptInventory().get_receipt(event["entity_id"]):
+                object_url = "/app/receipts?receipt_id={}".format(event["entity_id"])
+    payload = serialize_journal_event(event)
+    payload["object_url"] = object_url
+    payload["object_deleted"] = not bool(object_url)
+    return api_success(payload)
 
 
 def get_app_settings_path():
@@ -13664,6 +13863,37 @@ def record_product_photo_operation(product, action, affected_file_id):
         "user_name": user.get("name") or user.get("email") or "",
         "bitrix_file_id": str(affected_file_id or ""),
     })
+    record_product_photo_audit(product, action, "Bitrix")
+
+
+def record_product_photo_audit(product, action, source):
+    audit_action = {
+        "add": "photo_added",
+        "replace": "photo_replaced",
+        "remove": "photo_removed",
+    }.get(action)
+    if not audit_action:
+        return
+    actor = current_audit_actor()
+    try:
+        AuditJournal().record(
+            "product",
+            product.get("id"),
+            audit_action,
+            product.get("excel_name_raw") or product.get("bitrix_name") or "Товар",
+            product.get("excel_article") or "",
+            metadata={
+                "article": product.get("excel_article") or "",
+                "source": source,
+            },
+            source=source,
+            **actor
+        )
+    except Exception:
+        app.logger.exception(
+            "Confirmed external product photo mutation could not be audited: %s",
+            product.get("id"),
+        )
 
 
 def rollback_remote_product(client, product):
@@ -13726,6 +13956,7 @@ def api_products_collection():
                 moysklad_product_id=(
                     remote_product.get("id") if remote_product else None
                 ),
+                **current_audit_actor()
             )
         except DuplicateCatalogValueError as error:
             if remote_client and remote_product:
@@ -13872,7 +14103,8 @@ def api_products_bulk_update():
             product_id = int(raw_product_id)
             product = catalog_service.update_product(
                 product_id,
-                **normalized_changes
+                **normalized_changes,
+                **current_audit_actor()
             )
             updated.append(serialize_api_product(product))
         except (TypeError, ValueError) as error:
@@ -13911,6 +14143,8 @@ def api_product_resource(product_id):
                 product_id,
                 force=force,
                 actor_id=_product_delete_identity(),
+                actor_name=current_audit_actor()["actor_name"],
+                actor_type=current_audit_actor()["actor_type"],
             )
             app.logger.info(
                 "product_delete product_id=%s actor_id=%s mode=%s stock=%s",
@@ -14098,8 +14332,11 @@ def api_product_resource(product_id):
                         502,
                         {"gallery": actual_gallery},
                     )
+                record_product_photo_audit(product, image_action, "МойСклад")
         updated = (
-            catalog_service.update_product(product_id, **payload)
+            catalog_service.update_product(
+                product_id, **payload, **current_audit_actor()
+            )
             if payload
             else catalog_service.get_product(product_id)
         )
