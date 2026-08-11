@@ -194,6 +194,44 @@ class BitrixProductGalleryIntegrationTest(unittest.TestCase):
                 )
                 self.assertEqual(result["affected_file_id"], "77")
 
+    def test_remove_preserves_remaining_order_for_first_middle_and_last(self):
+        before_ids = ["10", "11", "12"]
+        for position in (0, 1, 2):
+            with self.subTest(position=position):
+                after_ids = [
+                    image_id for index, image_id in enumerate(before_ids)
+                    if index != position
+                ]
+                session = FakeSession([
+                    {"products": [{
+                        "id": "204699",
+                        "images": [
+                            {"id": image_id, "url": "/{}.jpg".format(image_id)}
+                            for image_id in before_ids
+                        ],
+                    }]},
+                    {"products": [{
+                        "id": "204699",
+                        "images": [
+                            {"id": image_id, "url": "/{}.jpg".format(image_id)}
+                            for image_id in after_ids
+                        ],
+                    }]},
+                ], post_payload={
+                    "ok": True,
+                    "affected_file_id": before_ids[position],
+                })
+                client = BitrixCatalogClient(
+                    "https://www.tictactoy.ru/api/catalog-export.php",
+                    session=session,
+                )
+                product, _result = client.mutate_product_image(
+                    "204699", "remove", file_id=before_ids[position]
+                )
+                self.assertEqual(
+                    [image["id"] for image in product["images"]], after_ids
+                )
+
     def test_replace_rejects_http_success_when_gallery_did_not_change(self):
         unchanged = {"products": [{
             "id": "204699",

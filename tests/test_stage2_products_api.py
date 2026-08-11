@@ -316,6 +316,10 @@ class Stage2ProductsApiTest(unittest.TestCase):
         with mock.patch.object(web, "MoySkladClient") as client_class:
             remote = client_class.return_value
             remote.upload_product_image.return_value = True
+            remote.get_product_images.side_effect = [
+                [{"id": "image-old"}],
+                [{"id": "image-new"}],
+            ]
             response = self.client.patch(
                 "/api/v1/products/{}".format(product["id"]),
                 data={
@@ -350,6 +354,10 @@ class Stage2ProductsApiTest(unittest.TestCase):
         with mock.patch.object(web, "MoySkladClient") as client_class:
             remote = client_class.return_value
             remote.delete_product_images.return_value = True
+            remote.get_product_images.side_effect = [
+                [{"id": "image-old"}],
+                [],
+            ]
             response = self.client.patch(
                 "/api/v1/products/{}".format(product["id"]),
                 data={"product_image_action": "remove"},
@@ -383,6 +391,10 @@ class Stage2ProductsApiTest(unittest.TestCase):
         with mock.patch.object(web, "MoySkladClient") as client_class:
             remote = client_class.return_value
             remote.upload_product_image.return_value = False
+            remote.get_product_images.side_effect = [
+                [{"id": "image-old"}],
+                [{"id": "image-old"}],
+            ]
             response = self.client.patch(
                 "/api/v1/products/{}".format(product["id"]),
                 data={
@@ -405,6 +417,39 @@ class Stage2ProductsApiTest(unittest.TestCase):
             product["article"],
         )
         remote.delete_product_images.assert_not_called()
+
+    def test_moysklad_http_success_without_changed_image_is_failure(self):
+        product = self.client.get(
+            "/api/v1/products?page_size=1"
+        ).get_json()["data"][0]
+        remote_id = self.link_product_to_moysklad(product["id"])
+        with mock.patch.object(web, "MoySkladClient") as client_class:
+            remote = client_class.return_value
+            remote.upload_product_image.return_value = {"id": "remote-product"}
+            remote.get_product_images.side_effect = [
+                [{"id": "image-old"}],
+                [{"id": "image-old"}],
+            ]
+            response = self.client.patch(
+                "/api/v1/products/{}".format(product["id"]),
+                data={
+                    "product_image_action": "replace",
+                    "product_image": (
+                        BytesIO(b"\xff\xd8\xffreplacement"),
+                        "replacement.jpg",
+                        "image/jpeg",
+                    ),
+                },
+                content_type="multipart/form-data",
+            )
+
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(
+            response.get_json()["fields"]["gallery"][0]["original_url"],
+            "/warehouse/product/{}/thumbnail?v=image-old".format(
+                remote_id
+            ),
+        )
 
     def test_invalid_replacement_does_not_touch_product(self):
         product = self.client.get(

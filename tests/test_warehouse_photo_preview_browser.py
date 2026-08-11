@@ -68,6 +68,11 @@ class WarehousePhotoPreviewBrowserTest(unittest.TestCase):
                         base_url + "?warehouse_bitrix_photo_e2e=1",
                         'data-warehouse-bitrix-photo-e2e="pass"',
                     ),
+                    (
+                        "photo-mutation",
+                        base_url + "?warehouse_photo_mutation_e2e=1",
+                        'data-warehouse-photo-mutation-e2e="pass"',
+                    ),
                 )
                 for scenario, scenario_url, expected in scenarios:
                     with self.subTest(width=width, scenario=scenario), \

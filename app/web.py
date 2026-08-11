@@ -2125,7 +2125,39 @@ def persist_live_bitrix_gallery(product, live_product):
     )
 
 
-def warehouse_product_gallery_items(product, live_product=None):
+def moysklad_image_revision(image):
+    if not isinstance(image, dict):
+        return ""
+    meta = image.get("meta") if isinstance(image.get("meta"), dict) else {}
+    return str(
+        image.get("id")
+        or image.get("updated")
+        or image.get("filename")
+        or meta.get("href")
+        or ""
+    ).strip()
+
+
+def moysklad_gallery_items(product, images):
+    product_id = str(product.get("moysklad_product_id") or "").strip()
+    if not product_id or not images:
+        return []
+    revision = moysklad_image_revision(images[0])
+    url = "/warehouse/product/{}/thumbnail".format(product_id)
+    if revision:
+        url = "{}?{}".format(url, urlencode({"v": revision}))
+    return [{
+        "external_file_id": "",
+        "kind": "moysklad",
+        "is_primary": True,
+        "order": 0,
+        "original_url": url,
+    }]
+
+
+def warehouse_product_gallery_items(
+    product, live_product=None, moysklad_images=None
+):
     if str(product.get("bitrix_external_product_id") or "").strip():
         images = (
             live_product.get("images")
@@ -2156,15 +2188,9 @@ def warehouse_product_gallery_items(product, live_product=None):
         product.get("moysklad_product_id") or ""
     ).strip()
     if moysklad_product_id:
-        return [{
-            "external_file_id": "",
-            "kind": "moysklad",
-            "is_primary": True,
-            "order": 0,
-            "original_url": "/warehouse/product/{}/thumbnail".format(
-                moysklad_product_id
-            ),
-        }]
+        if moysklad_images is not None:
+            return moysklad_gallery_items(product, moysklad_images)
+        return moysklad_gallery_items(product, [{}])
     return []
 
 
@@ -2178,6 +2204,7 @@ def warehouse_product_detail(product_id):
     if product is None:
         abort(404)
     live_product = None
+    moysklad_images = None
     gallery_error = ""
     if str(product.get("bitrix_external_product_id") or "").strip():
         try:
@@ -2188,6 +2215,17 @@ def warehouse_product_detail(product_id):
                 product_id,
             )
             gallery_error = "Не удалось обновить галерею из Bitrix."
+    elif str(product.get("moysklad_product_id") or "").strip():
+        try:
+            moysklad_images = MoySkladClient().get_product_images(
+                product["moysklad_product_id"], limit=100
+            )
+        except (ValueError, OSError, requests.RequestException):
+            app.logger.exception(
+                "Не удалось обновить галерею МойСклад товара %s",
+                product_id,
+            )
+            gallery_error = "Не удалось обновить галерею из МойСклад."
     return jsonify({
         "id": product["id"],
         "source": (
@@ -2199,7 +2237,9 @@ def warehouse_product_detail(product_id):
             product.get("bitrix_external_product_id")
             or product.get("moysklad_product_id")
         ),
-        "gallery": warehouse_product_gallery_items(product, live_product),
+        "gallery": warehouse_product_gallery_items(
+            product, live_product, moysklad_images
+        ),
         "gallery_error": gallery_error,
     })
 
@@ -13797,14 +13837,21 @@ def api_product_resource(product_id):
                 )
             else:
                 image_client = MoySkladClient()
+                actual_gallery = []
+                before_images = []
+                mutation_attempted = False
                 try:
+                    before_images = image_client.get_product_images(
+                        remote_product_id, limit=100
+                    )
+                    mutation_attempted = True
                     if image_action == "remove":
-                        image_result = image_client.delete_product_images(
+                        image_client.delete_product_images(
                             remote_product_id
                         )
                         image_message = "Фото товара удалено."
                     else:
-                        image_result = image_client.upload_product_image(
+                        image_client.upload_product_image(
                             remote_product_id,
                             product_image["filename"],
                             product_image["content"],
@@ -13815,15 +13862,42 @@ def api_product_resource(product_id):
                         "Products API failed to update image for %s",
                         product_id,
                     )
-                    image_result = None
-                if not image_result:
+                try:
+                    after_images = image_client.get_product_images(
+                        remote_product_id, limit=100
+                    )
+                    actual_gallery = moysklad_gallery_items(
+                        product, after_images
+                    )
+                    before_revisions = [
+                        moysklad_image_revision(image)
+                        for image in before_images
+                    ]
+                    after_revisions = [
+                        moysklad_image_revision(image)
+                        for image in after_images
+                    ]
+                    image_verified = mutation_attempted and (
+                        not after_images
+                        if image_action == "remove"
+                        else bool(after_images)
+                        and after_revisions != before_revisions
+                    )
+                except Exception:
+                    app.logger.exception(
+                        "Products API failed to verify image for %s",
+                        product_id,
+                    )
+                    image_verified = False
+                if not image_verified:
                     return api_error(
                         "PRODUCT_IMAGE_UPLOAD_FAILED",
                         (
-                            "Не удалось изменить фотографию. "
-                            "Прежнее изображение и данные товара сохранены."
+                            "Изменение фотографии не подтверждено МойСклад. "
+                            "Показано актуальное доступное состояние."
                         ),
                         502,
+                        {"gallery": actual_gallery},
                     )
         updated = (
             catalog_service.update_product(product_id, **payload)

@@ -68,6 +68,52 @@ class WarehouseProductPhotosTest(unittest.TestCase):
         ])
         catalog.get_product.assert_called_once_with(42)
 
+    def test_moysklad_detail_rereads_actual_image_and_versions_thumbnail(self):
+        product = {
+            "id": 42,
+            "gallery": [],
+            "moysklad_product_id": "11111111-2222-4333-8444-555555555555",
+        }
+        catalog = mock.Mock()
+        catalog.get_product.return_value = product
+        remote = mock.Mock()
+        remote.get_product_images.return_value = [{"id": "image-new"}]
+        with web.app.test_request_context("/warehouse/product/42"), \
+                mock.patch.object(web, "ExcelProductCatalog", return_value=catalog), \
+                mock.patch.object(web, "MoySkladClient", return_value=remote):
+            response = web.warehouse_product_detail(42)
+
+        self.assertEqual(response.get_json()["gallery"], [{
+            "external_file_id": "",
+            "kind": "moysklad",
+            "is_primary": True,
+            "order": 0,
+            "original_url": (
+                "/warehouse/product/11111111-2222-4333-8444-555555555555/"
+                "thumbnail?v=image-new"
+            ),
+        }])
+        remote.get_product_images.assert_called_once_with(
+            product["moysklad_product_id"], limit=100
+        )
+
+    def test_moysklad_detail_returns_empty_gallery_after_last_photo_removed(self):
+        product = {
+            "id": 42,
+            "gallery": [],
+            "moysklad_product_id": "11111111-2222-4333-8444-555555555555",
+        }
+        catalog = mock.Mock()
+        catalog.get_product.return_value = product
+        remote = mock.Mock()
+        remote.get_product_images.return_value = []
+        with web.app.test_request_context("/warehouse/product/42"), \
+                mock.patch.object(web, "ExcelProductCatalog", return_value=catalog), \
+                mock.patch.object(web, "MoySkladClient", return_value=remote):
+            response = web.warehouse_product_detail(42)
+
+        self.assertEqual(response.get_json()["gallery"], [])
+
     def test_position_card_layout_photo_contract(self):
         self.assertIn('grid-template-areas: "info media"', self.template)
         self.assertIn('"media"\n                    "info"', self.template)
@@ -80,6 +126,8 @@ class WarehouseProductPhotosTest(unittest.TestCase):
         self.assertIn("product-gallery-counter", self.template)
         self.assertIn("object-fit: contain", self.template)
         self.assertIn('data-thumbnail-url="{{ item.thumbnail_url|e }}"', self.template)
+        self.assertIn("syncDetailRowThumbnail(firstUrl)", self.template)
+        self.assertIn('image.removeAttribute("src")', self.template)
 
     def test_position_card_preserves_existing_photo_edit_workflow(self):
         self.assertIn("warehouseProductImageAction", self.template)

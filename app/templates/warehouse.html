@@ -6403,6 +6403,72 @@
             syncDetailPhotoActions();
         }
 
+        function syncDetailRowThumbnail(thumbnailUrl) {
+            if (!detailOpenButton) return;
+            const url = String(thumbnailUrl || "");
+            detailOpenButton.dataset.thumbnailUrl = url;
+            const row = detailOpenButton.closest("tr");
+            const photoCell = row && row.querySelector(
+                ".warehouse-product-photo-cell"
+            );
+            if (!photoCell) return;
+            let thumbnailButton = photoCell.querySelector(
+                ".warehouse-product-thumb-button"
+            );
+            let placeholder = photoCell.querySelector(
+                ".warehouse-product-thumb-placeholder"
+            );
+            if (!placeholder) {
+                placeholder = document.createElement("span");
+                placeholder.className = (
+                    "warehouse-product-thumb warehouse-product-thumb-placeholder"
+                );
+                placeholder.setAttribute("aria-hidden", "true");
+                placeholder.textContent = "⌚";
+                photoCell.appendChild(placeholder);
+            }
+            if (!url) {
+                if (thumbnailButton) {
+                    thumbnailButton.hidden = true;
+                    thumbnailButton.dataset.thumbnailUrl = "";
+                    const image = thumbnailButton.querySelector("img");
+                    if (image) image.removeAttribute("src");
+                }
+                placeholder.hidden = false;
+                return;
+            }
+            if (!thumbnailButton) {
+                thumbnailButton = document.createElement("button");
+                thumbnailButton.type = "button";
+                thumbnailButton.className = "warehouse-product-thumb-button";
+                thumbnailButton.dataset.productId = (
+                    detailOpenButton.dataset.id
+                    || detailOpenButton.dataset.productId
+                    || ""
+                );
+                thumbnailButton.dataset.productName = (
+                    detailOpenButton.dataset.name || "Фото товара"
+                );
+                thumbnailButton.dataset.detailUrl = (
+                    detailOpenButton.dataset.detailUrl || ""
+                );
+                thumbnailButton.addEventListener("click", function(event) {
+                    openWarehousePhotoPreview(event, thumbnailButton);
+                });
+                const image = document.createElement("img");
+                image.className = "warehouse-product-thumb";
+                image.alt = "";
+                image.loading = "lazy";
+                image.decoding = "async";
+                thumbnailButton.appendChild(image);
+                photoCell.insertBefore(thumbnailButton, placeholder);
+            }
+            thumbnailButton.hidden = false;
+            thumbnailButton.dataset.thumbnailUrl = url;
+            thumbnailButton.querySelector("img").src = url;
+            placeholder.hidden = true;
+        }
+
         function startInlineProductEdit() {
             const form = document.getElementById("inlineProductForm");
             form.classList.add("is-editing");
@@ -6688,6 +6754,8 @@
                         detailGalleryOriginalItems = detailGalleryItems.map(item => ({...item}));
                         detailGallerySelectedIndex = 0;
                         renderDetailProductGallery();
+                        syncDetailRowThumbnail(detailGalleryUrls()[0] || "");
+                        resetDetailPhotoChanges(false);
                     }
                     throw new Error(payload.message || "Не удалось сохранить карточку.");
                 }
@@ -6704,16 +6772,7 @@
                         detailGallerySelectedIndex = 0;
                         renderDetailProductGallery();
                         const firstUrl = detailGalleryUrls()[0] || "";
-                        if (detailOpenButton) {
-                            detailOpenButton.dataset.thumbnailUrl = firstUrl;
-                            const row = detailOpenButton.closest("tr");
-                            const thumbnailButton = row && row.querySelector(
-                                ".warehouse-product-thumb-button"
-                            );
-                            const thumbnailImage = thumbnailButton && thumbnailButton.querySelector("img");
-                            if (thumbnailButton) thumbnailButton.dataset.thumbnailUrl = firstUrl;
-                            if (thumbnailImage && firstUrl) thumbnailImage.src = firstUrl;
-                        }
+                        syncDetailRowThumbnail(firstUrl);
                     }
                 }
                 resetDetailPhotoChanges(false);
@@ -10222,6 +10281,140 @@
                     JSON.stringify(result);
             } finally {
                 window.fetch = originalFetch;
+            }
+        });
+    </script>
+    {% endif %}
+    {% if config.TESTING and request.args.get("warehouse_photo_mutation_e2e") == "1" %}
+    <script>
+        window.addEventListener("load", async function() {
+            const result = {};
+            const originalFetch = window.fetch;
+            const originalConfirm = window.confirm;
+            const firstUrl = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
+            const replacementUrl = "data:image/gif;base64,R0lGODlhAQABAIAAAAD/AP///ywAAAAAAQABAAACAUwAOw==";
+            let actualGallery = [{
+                original_url: firstUrl,
+                external_file_id: "",
+                kind: "moysklad",
+            }];
+            let writes = 0;
+            const payloads = [];
+            const waitForSave = async function(form) {
+                for (let attempt = 0; attempt < 50; attempt += 1) {
+                    if (form.dataset.submitting !== "true") return;
+                    await new Promise(resolve => window.setTimeout(resolve, 10));
+                }
+                throw new Error("save-timeout");
+            };
+            try {
+                window.fetch = async function(url, options = {}) {
+                    const method = String(options.method || "GET").toUpperCase();
+                    if (method === "PATCH") {
+                        writes += 1;
+                        const body = options.body;
+                        const action = body.get("product_image_action");
+                        payloads.push({
+                            action: action,
+                            fileId: body.get("bitrix_image_file_id"),
+                            hasFile: Boolean(body.get("product_image")?.size),
+                        });
+                        actualGallery = action === "remove" ? [] : [{
+                            original_url: replacementUrl,
+                            external_file_id: "",
+                            kind: "moysklad",
+                        }];
+                        return {
+                            ok: true,
+                            json: async () => ({
+                                meta: {image_message: "Фото обновлено."},
+                            }),
+                        };
+                    }
+                    if (String(url).startsWith("/warehouse/product/")) {
+                        return {
+                            ok: true,
+                            json: async () => ({
+                                editable: true,
+                                source: "moysklad",
+                                gallery: actualGallery.map(item => ({...item})),
+                            }),
+                        };
+                    }
+                    return originalFetch(url, options);
+                };
+                window.confirm = () => true;
+                const openButton = document.querySelector(
+                    '.erp-table-action-view[data-detail-url^="/warehouse/product/"]'
+                );
+                const form = document.getElementById("inlineProductForm");
+                const input = document.getElementById("detailPhotoInput");
+                const stageReplacement = function() {
+                    const transfer = new DataTransfer();
+                    transfer.items.add(new File(
+                        ["replacement"], "replacement.png", {type: "image/png"}
+                    ));
+                    input.dataset.requestedAction = "replace";
+                    input.files = transfer.files;
+                    input.dispatchEvent(new Event("change", {bubbles: true}));
+                };
+
+                await openEditDrawer(openButton);
+                startInlineProductEdit();
+                stageReplacement();
+                cancelInlineProductEdit();
+                result.cancelReplaceNoWrite = writes === 0
+                    && detailGalleryItems[0].original_url === firstUrl;
+
+                await openEditDrawer(openButton);
+                startInlineProductEdit();
+                stageReplacement();
+                form.requestSubmit();
+                form.requestSubmit();
+                await waitForSave(form);
+                result.replacePayload = writes === 1
+                    && payloads[0].action === "replace"
+                    && payloads[0].fileId === ""
+                    && payloads[0].hasFile;
+                await openEditDrawer(openButton);
+                result.replaceReopened = detailGalleryItems.length === 1
+                    && detailGalleryItems[0].original_url === replacementUrl;
+
+                startInlineProductEdit();
+                document.getElementById("detailPhotoRemove").click();
+                cancelInlineProductEdit();
+                result.cancelRemoveNoWrite = writes === 1
+                    && detailGalleryItems.length === 1;
+
+                startInlineProductEdit();
+                document.getElementById("detailPhotoRemove").click();
+                form.requestSubmit();
+                form.requestSubmit();
+                await waitForSave(form);
+                const row = openButton.closest("tr");
+                result.removePayload = writes === 2
+                    && payloads[1].action === "remove"
+                    && !payloads[1].hasFile;
+                result.lastPhotoUi = detailGalleryItems.length === 0
+                    && document.querySelector("#detailGallery img") === null
+                    && row.querySelector(".warehouse-product-thumb-button").hidden
+                    && !row.querySelector(".warehouse-product-thumb-placeholder").hidden;
+                await openEditDrawer(openButton);
+                result.removeReopened = detailGalleryItems.length === 0
+                    && document.querySelector("#detailGallery img") === null;
+                result.doubleSubmit = writes === 2;
+                result.noOverflow = document.documentElement.scrollWidth
+                    <= document.documentElement.clientWidth + 1;
+                document.documentElement.dataset.warehousePhotoMutationE2e =
+                    Object.values(result).every(Boolean) ? "pass" : "fail";
+            } catch (error) {
+                document.documentElement.dataset.warehousePhotoMutationE2e =
+                    "fail-" + error.message;
+            } finally {
+                document.documentElement.dataset.warehousePhotoMutationResult =
+                    JSON.stringify(result);
+                window.fetch = originalFetch;
+                window.confirm = originalConfirm;
             }
         });
     </script>
