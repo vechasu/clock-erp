@@ -73,6 +73,38 @@ def optional_price_text(value):
     return "{:g}".format(price)
 
 
+def ensure_unique_article(connection, article, exclude_product_id=None):
+    """Reject an exact article duplicate without changing legacy rows."""
+    article = text(article)
+    if not article:
+        return
+    parameters = [article]
+    exclusion = ""
+    if exclude_product_id is not None:
+        exclusion = "AND id <> ? "
+        parameters.append(int(exclude_product_id))
+    duplicate = connection.execute(
+        "SELECT id, excel_name_raw FROM catalog_excel_products "
+        "WHERE trim(COALESCE(excel_article, '')) = ? "
+        + exclusion
+        + "ORDER BY id LIMIT 1",
+        parameters,
+    ).fetchone()
+    if duplicate is None:
+        return
+    raise DuplicateCatalogValueError(
+        "Товар с артикулом «{}» уже существует: {} (ID {}).".format(
+            article, duplicate["excel_name_raw"], duplicate["id"]
+        ),
+        {
+            "id": str(duplicate["id"]),
+            "product_id": str(duplicate["id"]),
+            "name": duplicate["excel_name_raw"],
+            "article": article,
+        },
+    )
+
+
 class BatchBlockedError(ValueError):
     def __init__(self, message, blocked_rows=None):
         ValueError.__init__(self, message)
@@ -1004,6 +1036,7 @@ class ExcelProductCatalog:
         moysklad_product_id = text(moysklad_product_id) or None
         self.database.initialize()
         with self.database.transaction() as connection:
+            ensure_unique_article(connection, article)
             brand_row = ensure_brand(
                 connection,
                 name=brand,
@@ -1128,7 +1161,14 @@ class ExcelProductCatalog:
                     raise ValueError("Название товара обязательно.")
                 values["normalized_name"] = normalize_text(values["excel_name_raw"])
             if article is not None:
-                values["excel_article"] = text(article) or None
+                normalized_article = text(article) or None
+                if normalized_article != (text(product["excel_article"]) or None):
+                    ensure_unique_article(
+                        connection,
+                        normalized_article,
+                        exclude_product_id=product_id,
+                    )
+                values["excel_article"] = normalized_article
                 values["article_quality"] = article_quality(values["excel_article"])
             if brand is not None:
                 if is_numeric_brand(brand):

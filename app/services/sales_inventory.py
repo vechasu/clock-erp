@@ -30,6 +30,43 @@ class CancellationConflictError(SalesInventoryError):
     pass
 
 
+def validate_performed_sale_update(current, requested):
+    """Validate the exact immutable business fields of a performed sale."""
+    requested = dict(requested or {})
+    checks = (
+        ("product_id", "Товар", lambda value: str(value or "").strip()),
+        (
+            "product_name",
+            "Название товара",
+            lambda value: str(value or "").strip(),
+        ),
+        ("brand", "Бренд", lambda value: str(value or "").strip()),
+        ("category", "Категорию", lambda value: str(value or "").strip()),
+        ("quantity", "Количество", lambda value: float(value)),
+        (
+            "unit_price",
+            "Цену",
+            lambda value: None if value in (None, "") else float(value),
+        ),
+    )
+    for field, label, normalize in checks:
+        if field not in requested:
+            continue
+        try:
+            old_value = normalize(current.get(field))
+            new_value = normalize(requested.get(field))
+        except (TypeError, ValueError):
+            raise SalesInventoryError(
+                "{} проведённой продажи изменить нельзя.".format(label)
+            )
+        if old_value != new_value:
+            raise SalesInventoryError(
+                "{} проведённой продажи изменить нельзя. "
+                "Отмените проведение, исправьте продажу и проведите её заново."
+                .format(label)
+            )
+
+
 def now_iso():
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
@@ -393,23 +430,9 @@ class SalesInventory:
         failure_hook=None,
     ):
         sale_id = str(sale_id or "").strip()
-        quantity = positive_number(quantity, "Количество")
-        unit_price = optional_nonnegative_number(unit_price, "Цена продажи")
-        idempotency_key = str(idempotency_key or "").strip() or None
         updated_at = now_iso()
         self.initialize()
         with self.database.transaction() as connection:
-            if idempotency_key:
-                repeated = connection.execute(
-                    "SELECT sale_id FROM catalog_stock_movements "
-                    "WHERE idempotency_key = ?",
-                    (idempotency_key,),
-                ).fetchone()
-                if repeated is not None:
-                    return self._sale_from_connection(
-                        connection,
-                        repeated["sale_id"],
-                    )
             sale = connection.execute(
                 "SELECT * FROM erp_sales WHERE id = ?",
                 (sale_id,),
@@ -421,117 +444,41 @@ class SalesInventory:
             ).fetchone()
             if sale is None or item is None:
                 raise SalesInventoryError("Продажа не найдена.")
-            if float(item["returned_quantity"] or 0) > quantity:
-                raise SalesInventoryError(
-                    "Количество продажи не может быть меньше уже возвращённого."
-                )
-            metadata = dict(payload)
-            old_quantity = float(item["quantity"])
-            old_returned = float(item["returned_quantity"] or 0)
-            requested_product_id = str(
-                metadata.get("product_id", item["product_id"])
-            ).strip()
-            try:
-                product_id = int(requested_product_id)
-            except (TypeError, ValueError):
-                raise SalesInventoryError("Товар не найден.")
 
-            old_product_id = int(item["product_id"])
-            requested_status = str(
-                metadata.get("order_status") or sale["status"] or "completed"
+            current = self._metadata(sale)
+            requested = dict(payload or {})
+
+            requested_quantity = positive_number(quantity, "Количество")
+            requested_price = optional_nonnegative_number(
+                unit_price, "Цена продажи"
             )
-            if requested_status in {"returned", "cancelled"}:
-                new_returned = quantity
-            elif old_returned >= old_quantity - 0.000001:
-                new_returned = 0.0
-            else:
-                new_returned = min(old_returned, quantity)
-            old_effect = old_quantity - old_returned
-            new_effect = quantity - new_returned
-            source = str(metadata.get("source") or sale["source"])
-            sale_number = metadata.get("order_number") or sale_id
+            current_price = (
+                None if item["unit_price"] is None else float(item["unit_price"])
+            )
+            canonical = dict(current)
+            canonical.update({
+                "product_id": str(item["product_id"]),
+                "quantity": float(item["quantity"]),
+                "unit_price": current_price,
+            })
+            protected_request = dict(requested)
+            protected_request.update({
+                "quantity": requested_quantity,
+                "unit_price": requested_price,
+            })
+            validate_performed_sale_update(canonical, protected_request)
+            product_id = int(item["product_id"])
 
-            def adjust_stock(target_product_id, delta, key, comment):
-                if abs(delta) <= 0.000001:
-                    return None
-                product_row = connection.execute(
-                    "SELECT id, stock, brand_id, category_id "
-                    "FROM catalog_excel_products WHERE id = ? AND active = 1",
-                    (target_product_id,),
-                ).fetchone()
-                if product_row is None:
-                    raise SalesInventoryError("Товар не найден.")
-                if delta < 0:
-                    cursor = connection.execute(
-                        "UPDATE catalog_excel_products SET stock = stock + ?, "
-                        "stock_source = 'sale', updated_at = ? "
-                        "WHERE id = ? AND active = 1 AND stock >= ?",
-                        (delta, updated_at, target_product_id, abs(delta)),
-                    )
-                    if cursor.rowcount != 1:
-                        raise InsufficientStockError(product_row["stock"])
-                else:
-                    cursor = connection.execute(
-                        "UPDATE catalog_excel_products SET stock = stock + ?, "
-                        "stock_source = 'sale', updated_at = ? "
-                        "WHERE id = ? AND active = 1",
-                        (delta, updated_at, target_product_id),
-                    )
-                    if cursor.rowcount != 1:
-                        raise SalesInventoryError("Товар не найден.")
-                stock_after = float(product_row["stock"]) + delta
-                connection.execute(
-                    "INSERT INTO catalog_stock_movements ("
-                    "id, product_id, movement_type, quantity_delta, stock_after, "
-                    "sale_id, sale_item_id, idempotency_key, source, user_name, "
-                    "comment, created_at) VALUES (?, ?, 'manual_adjustment', "
-                    "?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        str(uuid.uuid4()), target_product_id, delta, stock_after,
-                        sale_id, item["id"], key, source,
-                        str(user_name or "") or None, comment, updated_at,
-                    ),
-                )
-                return product_row
-
-            if product_id != old_product_id:
-                adjust_stock(
-                    old_product_id,
-                    old_effect,
-                    idempotency_key,
-                    "Корректировка продажи №{}: возврат старого товара".format(
-                        sale_number
-                    ),
-                )
-                product = adjust_stock(
-                    product_id,
-                    -new_effect,
-                    None,
-                    "Корректировка продажи №{}: списание нового товара".format(
-                        sale_number
-                    ),
-                )
-            else:
-                product = adjust_stock(
-                    product_id,
-                    old_effect - new_effect,
-                    idempotency_key,
-                    "Корректировка продажи №{}".format(sale_number),
-                )
-            if product is None:
-                product = connection.execute(
-                    "SELECT id, stock, brand_id, category_id "
-                    "FROM catalog_excel_products WHERE id = ? AND active = 1",
-                    (product_id,),
-                ).fetchone()
-            if product is None:
-                raise SalesInventoryError("Товар не найден.")
-
+            metadata = dict(current)
+            metadata.update(requested)
             metadata.update({
                 "id": sale_id,
                 "product_id": str(product_id),
-                "quantity": quantity,
-                "unit_price": unit_price,
+                "product_name": current.get("product_name"),
+                "brand": current.get("brand"),
+                "category": current.get("category"),
+                "quantity": float(item["quantity"]),
+                "unit_price": current_price,
                 "inventory_managed": True,
                 "automatic_stock_applied": True,
             })
@@ -564,33 +511,6 @@ class SalesInventory:
                     updated_at,
                     sale_id,
                 ),
-            )
-            item_status = (
-                "returned"
-                if new_returned >= quantity - 0.000001
-                else "partially_returned"
-                if new_returned > 0
-                else "completed"
-            )
-            returned_at = (
-                updated_at
-                if new_returned > 0
-                else None
-            )
-            connection.execute(
-                "UPDATE erp_sale_items SET product_id = ?, brand_id = ?, "
-                "category_id = ?, quantity = ?, unit_price = ?, "
-                "returned_quantity = ?, status = ?, returned_at = ? WHERE id = ?",
-                (
-                    product_id, product["brand_id"], product["category_id"],
-                    quantity, unit_price, new_returned, item_status,
-                    returned_at, item["id"],
-                ),
-            )
-            connection.execute(
-                "UPDATE erp_sales SET status = ?, returned_at = ?, "
-                "updated_at = ? WHERE id = ?",
-                (item_status, returned_at, updated_at, sale_id),
             )
             if failure_hook:
                 failure_hook(connection)

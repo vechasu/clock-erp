@@ -57,6 +57,7 @@ from app.services.sales_inventory import (
     ReturnConflictError,
     SalesInventory,
     SalesInventoryError,
+    validate_performed_sale_update,
 )
 from app.services.receipt_inventory import (
     ReceiptInventory,
@@ -6453,12 +6454,34 @@ def manual_sale_add():
 def manual_sale_update():
     require_csrf_when_authenticated()
 
-    return respond_to_sales_action(
-        "Проведённую продажу нельзя редактировать. "
-        "Отмените её и создайте новую.",
-        notice="error",
-        status_code=409,
-    )
+    managed_sale_id = (request.form.get("sale_id") or "").strip()
+    managed_sale = SalesInventory().get_sale(managed_sale_id)
+    if managed_sale is not None:
+        try:
+            normalized = normalize_api_sale_payload(
+                request.form.to_dict(),
+                existing=managed_sale,
+            )
+            SalesInventory().update_sale(
+                managed_sale_id,
+                normalized,
+                quantity=normalized["quantity"],
+                unit_price=normalized["unit_price"],
+                user_name=current_sales_user_name(),
+                idempotency_key=request.headers.get("Idempotency-Key") or "",
+            )
+        except (ValueError, SalesInventoryError) as error:
+            return respond_to_sales_action(
+                str(error), notice="error", status_code=409
+            )
+        except Exception:
+            app.logger.exception("Transactional manual sale update failed")
+            return respond_to_sales_action(
+                "Изменения не сохранены. Остаток не изменён.",
+                notice="error",
+                status_code=500,
+            )
+        return respond_to_sales_action("Изменения сохранены")
 
     sale_id = (request.form.get("sale_id") or "").strip()
     product_name = (request.form.get("product_name") or "").strip()
@@ -6861,12 +6884,35 @@ def sale_status_update():
 def automatic_sale_update():
     require_csrf_when_authenticated()
 
-    return respond_to_sales_action(
-        "Проведённую продажу нельзя редактировать. "
-        "Отмените её и создайте новую.",
-        notice="error",
-        status_code=409,
-    )
+    managed_operation_id = (request.form.get("operation_id") or "").strip()
+    managed_record = find_api_sale(managed_operation_id)
+    if (
+        managed_record is not None
+        and managed_record.get("sale_type") == "automatic"
+    ):
+        try:
+            payload = request.form.to_dict()
+            current_protected = dict(managed_record)
+            current_protected["quantity"] = managed_record.get(
+                "quantity_value", managed_record.get("quantity")
+            )
+            validate_performed_sale_update(current_protected, payload)
+            normalized = normalize_api_sale_payload(
+                payload,
+                existing=managed_record,
+            )
+            overrides = load_automatic_sales_overrides()
+            current = overrides.get(managed_operation_id) or {}
+            if current.get("deleted_at"):
+                raise ValueError("Продажа уже удалена.")
+            current.update(normalized)
+            overrides[managed_operation_id] = current
+            save_automatic_sales_overrides(overrides)
+        except (ValueError, SalesInventoryError) as error:
+            return respond_to_sales_action(
+                str(error), notice="error", status_code=409
+            )
+        return respond_to_sales_action("Изменения сохранены")
 
     operation_id = (
         request.form.get("operation_id") or ""
@@ -15598,11 +15644,18 @@ def normalize_api_sale_payload(payload, existing=None, require_catalog=False):
         or ""
     ).strip()
     product = SharedCatalog().get_product(product_id)
+    keeps_historical_product = bool(
+        existing.get("inventory_managed")
+        and product_id == str(existing.get("product_id") or "").strip()
+    )
     if require_catalog and product is None:
         raise ValueError("Выберите товар из каталога.")
     product_name = str(
-        (product or {}).get("name")
-        or payload.get("product_name")
+        payload.get("product_name")
+        if "product_name" in payload
+        else existing.get("product_name")
+        if keeps_historical_product
+        else (product or {}).get("name")
         or existing.get("product_name")
         or ""
     ).strip()
@@ -15668,31 +15721,46 @@ def normalize_api_sale_payload(payload, existing=None, require_catalog=False):
             else sale_snapshot_text(product or {}, "article")
         ),
         "barcode": str(
-            (product or {}).get("barcode")
-            or payload.get("barcode")
+            payload.get("barcode")
+            if "barcode" in payload
+            else existing.get("barcode")
+            if keeps_historical_product
+            else (product or {}).get("barcode")
             or existing.get("barcode")
             or ""
         ),
         "brand": str(
-            (product or {}).get("brand")
-            or payload.get("brand")
+            payload.get("brand")
+            if "brand" in payload
+            else existing.get("brand")
+            if keeps_historical_product
+            else (product or {}).get("brand")
             or existing.get("brand")
             or ""
         ),
         "category": str(
-            (product or {}).get("category")
-            or payload.get("category")
+            payload.get("category")
+            if "category" in payload
+            else existing.get("category")
+            if keeps_historical_product
+            else (product or {}).get("category")
             or existing.get("category")
             or ""
         ),
         "brand_id": (
-            (product or {}).get("brand_id")
-            or payload.get("brand_id")
+            payload.get("brand_id")
+            if "brand_id" in payload
+            else existing.get("brand_id")
+            if keeps_historical_product
+            else (product or {}).get("brand_id")
             or existing.get("brand_id")
         ),
         "category_id": (
-            (product or {}).get("category_id")
-            or payload.get("category_id")
+            payload.get("category_id")
+            if "category_id" in payload
+            else existing.get("category_id")
+            if keeps_historical_product
+            else (product or {}).get("category_id")
             or existing.get("category_id")
         ),
         "quantity": quantity,
@@ -15962,13 +16030,6 @@ def api_sale_resource(sale_id):
     if request.method == "GET":
         return api_success(serialize_api_sale(record))
     require_csrf_when_authenticated()
-    if request.method == "PATCH":
-        return api_error(
-            "SALE_NOT_EDITABLE",
-            "Проведённую продажу нельзя редактировать. "
-            "Отмените её и создайте новую.",
-            409,
-        )
     if request.method == "DELETE":
         if record.get("sale_type") == "manual":
             if record.get("inventory_managed"):
@@ -16029,9 +16090,16 @@ def api_sale_resource(sale_id):
 
     try:
         payload = api_json_payload()
+        current_protected = dict(record)
+        current_protected["quantity"] = record.get(
+            "quantity_value", record.get("quantity")
+        )
+        validate_performed_sale_update(current_protected, payload)
         normalized = normalize_api_sale_payload(payload, existing=record)
     except InsufficientStockError as error:
         return api_error("INSUFFICIENT_STOCK", str(error), 409)
+    except SalesInventoryError as error:
+        return api_error("SALE_NOT_EDITABLE", str(error), 409)
     except ValueError as error:
         return api_error("SALE_VALIDATION_FAILED", str(error), 422)
     if record.get("sale_type") == "manual":

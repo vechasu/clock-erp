@@ -1902,6 +1902,16 @@
                                         data-system-column="actions"
                                     >
                                         <div class="sales-row-actions">
+                                            {% if not sale.is_cancelled %}
+                                                <button
+                                                    class="sales-row-action sales-row-edit"
+                                                    type="button"
+                                                    title="Редактировать данные продажи"
+                                                    aria-label="Редактировать данные продажи"
+                                                    data-sale="{{ sale|tojson|forceescape }}"
+                                                    onclick="openSaleEditor(this)"
+                                                >✎</button>
+                                            {% endif %}
                                             {% if not sale.is_cancelled and sale.return_status != 'returned' %}
                                                 <button
                                                     class="sales-row-action sales-row-cancel"
@@ -2065,6 +2075,14 @@
                         </details>
 
                         <div class="mobile-erp-card-actions">
+                            {% if not sale.is_cancelled %}
+                                <button
+                                    class="sales-mobile-edit"
+                                    type="button"
+                                    data-sale="{{ sale|tojson|forceescape }}"
+                                    onclick="openSaleEditor(this)"
+                                >Редактировать данные</button>
+                            {% endif %}
                             {% if not sale.is_cancelled and sale.return_status != 'returned' %}
                                 <button
                                     class="sales-mobile-delete sales-row-cancel"
@@ -2193,6 +2211,7 @@
                     name="csrf_token"
                     value="{{ csrf_token() }}"
                 >
+                <input id="saleEditId" type="hidden" disabled>
                 <input id="saleSource" type="hidden" name="source">
                 <input
                     id="product_name"
@@ -4748,11 +4767,21 @@
     const modalDescription = document.getElementById(
         "manualSaleModalDescription"
     );
+    const saleEditId = document.getElementById("saleEditId");
     const saleSubmitButton = manualSaleForm.querySelector(
         '.form-actions button[type="submit"]'
     );
     const saleFormError = document.getElementById("saleFormError");
     let manualSaleReturnFocus = null;
+    let editingSale = null;
+    let saleEditSavePending = false;
+    let saleEditIdempotencyKey = "";
+
+    function createSaleEditIdempotencyKey(saleId) {
+        const randomPart = window.crypto?.randomUUID?.()
+            || Math.random().toString(36).slice(2);
+        return ["sale-edit", saleId || "unknown", randomPart].join(":");
+    }
 
     function setSaleFormError(message = "") {
         saleFormError.textContent = message;
@@ -4781,15 +4810,21 @@
     }
 
     function showSaleForm(sourceKey) {
+        const isEditing = manualSaleForm.dataset.editing === "1";
         saleSourceInput.value = sourceLabels[sourceKey];
         saleFormFields.disabled = false;
         manualSaleForm.classList.remove("is-hidden");
-        modalTitle.textContent = "Добавить продажу";
+        modalTitle.textContent = isEditing
+            ? "Редактировать данные продажи"
+            : "Добавить продажу";
         modalDescription.textContent =
-            "Источник: " + sourceLabels[sourceKey]
-            + ". Он сохранится вместе с продажей.";
-        saleSubmitButton.textContent =
-            "Добавить продажу в " + sourceLabels[sourceKey];
+            isEditing
+                ? "Товар, бренд, категория, название, количество и цена защищены. Для их изменения отмените проведение и проведите продажу заново."
+                : "Источник: " + sourceLabels[sourceKey]
+                    + ". Он сохранится вместе с продажей.";
+        saleSubmitButton.textContent = isEditing
+            ? "Сохранить изменения"
+            : "Добавить продажу в " + sourceLabels[sourceKey];
         saleSubmitButton.disabled = false;
         sourceChoicePanel
             .querySelectorAll("[data-sale-source]")
@@ -4850,7 +4885,13 @@
     function resetModalView() {
         manualSaleForm.reset();
         manualSaleForm.action = "{{ url_for('manual_sale_add') }}";
+        manualSaleForm.dataset.editing = "0";
+        editingSale = null;
         setSaleFormError();
+        saleEditId.disabled = true;
+        saleEditId.removeAttribute("name");
+        saleEditId.value = "";
+        setProtectedSaleFieldsLocked(false);
         document.getElementById("product_id").value = "";
         document.getElementById("productMeta").textContent =
             "Баркод, артикул и остаток появятся после выбора товара.";
@@ -4961,6 +5002,24 @@
         "saleProductPhotoText"
     );
     let sharedSelectedSaleProduct = null;
+
+    function setProtectedSaleFieldsLocked(locked) {
+        [saleBrandCombobox, saleCategoryCombobox, saleProductCombobox]
+            .forEach((combobox) => {
+                window.setCatalogComboboxDisabled(
+                    combobox,
+                    locked,
+                    locked ? "Недоступно после проведения" : undefined,
+                );
+            });
+        [
+            productNameInput,
+            document.getElementById("quantity"),
+            document.getElementById("unit_price"),
+        ].forEach((control) => {
+            control.disabled = locked;
+        });
+    }
 
     function renderSaleProductPhoto(product) {
         const source = String(
@@ -5213,10 +5272,113 @@
 
     resetProductFilters();
 
+    window.openSaleEditor = function (button) {
+        let sale;
+        try {
+            sale = JSON.parse(button.dataset.sale || "{}");
+        } catch (_error) {
+            return;
+        }
+
+        manualSaleReturnFocus = button;
+        resetModalView();
+        editingSale = sale;
+        saleEditSavePending = false;
+        saleEditIdempotencyKey = createSaleEditIdempotencyKey(sale.id);
+        manualSaleForm.dataset.editing = "1";
+        const sourceKey = sale.source_key || "tictactoy";
+        showSaleForm(sourceKey);
+        manualSaleForm.action = sale.is_manual
+            ? "{{ url_for('manual_sale_update') }}"
+            : "{{ url_for('automatic_sale_update') }}";
+        saleEditId.disabled = false;
+        saleEditId.name = sale.is_manual ? "sale_id" : "operation_id";
+        saleEditId.value = sale.id || "";
+
+        window.restoreSharedCatalogCascade(manualSaleForm, {
+            brandId: sale.brand_id || "",
+            brandLabel: sale.brand || "",
+            categoryId: sale.category_id || "",
+            categoryLabel: sale.category || "",
+            productId: sale.product_id || "",
+            productLabel: sale.product_name || "",
+        });
+        productIdInput.value = sale.product_id || "";
+        productNameInput.value = sale.product_name || "";
+
+        const editableStatus = ["shipped", "returned"].includes(
+            sale.order_status
+        ) ? sale.order_status : "";
+        window.setBrandComboboxValue(
+            saleStatusCombobox,
+            editableStatus,
+            sale.order_status_label || saleStatusLabels[editableStatus],
+        );
+        window.setBrandComboboxValue(
+            saleCommissionCombobox,
+            sale.commission_value ?? sale.commission ?? "",
+        );
+        window.setBrandComboboxValue(
+            salePlatformCombobox,
+            sale.platform || "",
+        );
+        if (sourceKey === "amazon") {
+            window.setBrandComboboxValue(
+                saleCountryCombobox,
+                sale.country || "",
+            );
+        } else if (sourceKey === "tictactoy") {
+            window.setBrandComboboxValue(
+                tictactoyCountryCombobox,
+                sale.country || "",
+            );
+            refreshTictactoyRegions(sale.region || "", sale.city || "");
+        }
+
+        const saleDateValue = String(sale.created_at || "")
+            .replace(" ", "T")
+            .slice(0, 16);
+        const fieldValues = {
+            created_at: /^\d{4}-\d{2}-\d{2}$/.test(saleDateValue)
+                ? saleDateValue + "T00:00"
+                : saleDateValue,
+            quantity: sale.quantity_value || sale.quantity || 1,
+            unit_price: sale.unit_price ?? "",
+            order_number: sale.order_number || "",
+            track_number: sale.track_number || "",
+            delivery_cost: sale.delivery_cost || "",
+            sticker_number: sale.sticker_number || "",
+            recipient_name: sale.recipient_name || "",
+            invoice_number: sale.invoice_number || "",
+            note: sale.note || "",
+        };
+        Object.entries(fieldValues).forEach(([name, value]) => {
+            manualSaleForm.querySelectorAll('[name="' + name + '"]')
+                .forEach((control) => {
+                    control.value = value;
+                });
+        });
+        productMeta.textContent = [
+            "Артикул: " + (sale.article || "—"),
+            "Товарные данные защищены после проведения",
+        ].join(" · ");
+        setProtectedSaleFieldsLocked(true);
+
+        manualSaleModal.classList.add("is-open");
+        manualSaleModal.setAttribute("aria-hidden", "false");
+        document.body.classList.add("modal-open");
+        requestAnimationFrame(() => {
+            manualSaleModal.querySelector(".modal-close")?.focus();
+        });
+    };
+
+    window.openMobileSaleEditor = window.openSaleEditor;
+
     manualSaleForm.addEventListener("submit", async (event) => {
+        const isEditing = manualSaleForm.dataset.editing === "1";
         const selectedProduct = sharedSelectedSaleProduct;
 
-        if (!selectedProduct) {
+        if (!selectedProduct && !isEditing) {
             event.preventDefault();
             window.setBrandDropdownOpen(
                 saleProductCombobox,
@@ -5228,6 +5390,46 @@
         }
 
         rememberSalesPosition();
+
+        if (!isEditing) {
+            return;
+        }
+
+        event.preventDefault();
+        if (saleEditSavePending) {
+            return;
+        }
+        saleEditSavePending = true;
+        setSaleFormError();
+        saleSubmitButton.disabled = true;
+        manualSaleForm.setAttribute("aria-busy", "true");
+
+        try {
+            const response = await fetch(manualSaleForm.action, {
+                method: "POST",
+                headers: {
+                    "X-Requested-With": "XMLHttpRequest",
+                    "Idempotency-Key": saleEditIdempotencyKey,
+                },
+                body: new FormData(manualSaleForm),
+            });
+            const result = await response.json();
+            if (!response.ok || !result.ok) {
+                throw new Error(
+                    result.message || "Не удалось сохранить изменения"
+                );
+            }
+            reloadSalesWithNotice(
+                result.message || "Изменения сохранены"
+            );
+        } catch (error) {
+            setSaleFormError(
+                error.message || "Не удалось сохранить изменения"
+            );
+            saleEditSavePending = false;
+            saleSubmitButton.disabled = false;
+            manualSaleForm.removeAttribute("aria-busy");
+        }
     });
 
     const savedSalesScrollValue = sessionStorage.getItem(

@@ -11,6 +11,7 @@ from app.services.excel_product_catalog import (
     ExcelProductBatchService,
     ExcelProductCatalog,
 )
+from app.services.shared_catalog import DuplicateCatalogValueError
 
 
 def bitrix_product(identity=10, name="Watch X1", brand="Brand"):
@@ -139,6 +140,30 @@ class ExcelProductCatalogTest(unittest.TestCase):
             (len(history), history[0]["product_id"], history[0]["stock_before"],
              history[0]["stock_after"], history[0]["reason"]),
             (1, product["id"], 5, 8, "Counted"),
+        )
+
+    def test_new_article_duplicates_are_rejected_after_edge_trim(self):
+        self.apply_initial()
+
+        with self.assertRaisesRegex(DuplicateCatalogValueError, "SKU-10"):
+            self.catalog.create_product(
+                name="Duplicate article",
+                article="  SKU-10  ",
+                brand="Brand",
+                category="Other",
+            )
+
+        another = self.catalog.create_product(
+            name="Another product",
+            article="sku-10",
+            brand="Brand",
+            category="Other",
+        )
+        with self.assertRaisesRegex(DuplicateCatalogValueError, "SKU-10"):
+            self.catalog.update_product(another["id"], article=" SKU-10 ")
+        self.assertEqual(
+            self.catalog.get_product(another["id"])["excel_article"],
+            "sku-10",
         )
     def test_exact_is_enriched_with_preview_photo_price_and_properties(self):
         self.apply_initial()
