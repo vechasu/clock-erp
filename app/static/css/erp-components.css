@@ -4785,3 +4785,336 @@ select.erp-control {
 .future-card {
     font-weight: 500 !important;
 }
+
+/* Compact mutation modals: desktop layout only, controls and submit contracts stay intact. */
+@media (min-width: 768px) {
+    #warehouseAddModal,
+    #manualSaleModal,
+    #receiptModal {
+        padding-top: 8px;
+        padding-bottom: 8px;
+    }
+
+    #warehouseAddModal #warehouseAddCard,
+    #manualSaleModal .modal-dialog,
+    #receiptModal .modal-dialog {
+        max-height: calc(100dvh - 16px);
+    }
+
+    #warehouseAddModal #warehouseAddCard > .add-form {
+        display: grid;
+        grid-template-columns: minmax(220px, 0.72fr) minmax(0, 1.7fr);
+        grid-template-rows: auto auto auto auto;
+        align-content: start;
+        overflow-y: auto;
+    }
+
+    #warehouseAddModal .warehouse-add-section {
+        min-width: 0;
+        padding: 14px 18px;
+    }
+
+    #warehouseAddModal .warehouse-add-catalog-section {
+        grid-column: 1 / -1;
+        grid-row: 1;
+    }
+
+    #warehouseAddModal .warehouse-add-photo-section {
+        grid-column: 1;
+        grid-row: 2 / span 2;
+        border-right: 1px solid var(--erp-border);
+        border-bottom: 1px solid var(--erp-border);
+    }
+
+    #warehouseAddModal .warehouse-add-data-section {
+        grid-column: 2;
+        grid-row: 2;
+    }
+
+    #warehouseAddModal .warehouse-add-stock-section {
+        grid-column: 2;
+        grid-row: 3;
+    }
+
+    #warehouseAddModal .warehouse-add-grid-catalog {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    #warehouseAddModal .warehouse-add-data-section .warehouse-add-grid,
+    #warehouseAddModal .warehouse-add-grid-stock {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    #warehouseAddModal .warehouse-product-image-field {
+        min-height: 150px;
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 10px;
+        overflow: visible;
+    }
+
+    #warehouseAddModal .warehouse-upload-content {
+        gap: 4px;
+    }
+
+    #warehouseAddModal .warehouse-product-image-preview,
+    #warehouseAddModal .warehouse-product-image-placeholder {
+        width: 76px;
+        height: 76px;
+        flex-basis: 76px;
+    }
+
+    #warehouseAddModal #warehouseAddError {
+        grid-column: 1 / -1;
+        grid-row: 4;
+        margin: 0 18px;
+    }
+
+    #warehouseAddModal .warehouse-add-actions {
+        grid-column: 1 / -1;
+        grid-row: 5;
+        width: 100%;
+        padding: 12px 18px;
+        border-top: 1px solid var(--erp-border);
+        background: rgba(255, 255, 255, 0.98);
+    }
+
+    #manualSaleModal .modal-dialog {
+        width: min(1120px, 100%);
+    }
+
+    #manualSaleModal .modal-body {
+        padding: 14px 18px 18px;
+    }
+
+    #manualSaleModal .source-choice-panel {
+        margin-bottom: 12px;
+    }
+
+    #manualSaleModal .source-choice {
+        min-height: 46px;
+    }
+
+    #manualSaleModal .control,
+    #manualSaleModal .brand-combobox-trigger {
+        min-height: 44px;
+        height: 44px;
+    }
+
+    #manualSaleModal .manual-form-grid {
+        grid-template-columns: repeat(12, minmax(0, 1fr));
+        gap: 8px 12px;
+    }
+
+    #manualSaleModal .sale-section-title {
+        grid-column: 1 / -1;
+        margin: 0 0 1px;
+    }
+
+    #manualSaleModal .manual-form-grid > .sale-section-title:not(:first-of-type) {
+        margin-top: 2px;
+        padding-top: 10px;
+    }
+
+    #manualSaleModal .sale-catalog-field {
+        grid-column: span 4;
+    }
+
+    #manualSaleModal .sale-core-field {
+        grid-column: span 3;
+    }
+
+    #manualSaleModal .sale-product-summary {
+        grid-column: 1 / -1;
+    }
+
+    #manualSaleModal .sale-product-photo {
+        min-height: 58px;
+        margin-top: 0;
+        padding: 6px 9px;
+    }
+
+    #manualSaleModal .sale-product-photo img,
+    #manualSaleModal .sale-product-photo-placeholder {
+        width: 46px;
+        height: 46px;
+        flex-basis: 46px;
+    }
+
+    #manualSaleModal .sale-product-summary-copy {
+        display: flex;
+        min-width: 0;
+        flex: 1 1 auto;
+        flex-direction: column;
+        gap: 2px;
+    }
+
+    #manualSaleModal .sale-product-summary-copy > strong,
+    #manualSaleModal .product-meta-preview {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    #manualSaleModal .product-meta-preview {
+        margin-top: 0;
+    }
+
+    #manualSaleModal .source-specific-fields > .field {
+        grid-column: span 4;
+    }
+
+    #manualSaleModal .source-specific-fields > .field-wide {
+        grid-column: 1 / -1;
+    }
+
+    #manualSaleModal textarea.control {
+        min-height: 54px;
+        height: 54px;
+    }
+
+    #manualSaleModal .form-actions {
+        grid-column: 1 / -1;
+        bottom: -18px;
+        margin: 4px -18px -18px;
+        padding: 11px 18px;
+    }
+
+    #receiptModal .modal-dialog {
+        width: min(1100px, 100%);
+    }
+
+    #receiptModal .modal-body {
+        padding: 14px 18px 18px;
+    }
+
+    #receiptModal .receipt-import-toolbar {
+        margin-bottom: 12px;
+    }
+
+    #receiptModal .receipt-simple-grid {
+        grid-template-columns: repeat(12, minmax(0, 1fr));
+        grid-template-rows: auto auto auto auto auto auto;
+        gap: 9px 12px;
+        margin-bottom: 10px;
+    }
+
+    #receiptModal .receipt-simple-grid > .field {
+        grid-column: span 4;
+        min-width: 0;
+    }
+
+    #receiptModal .receipt-document-title {
+        grid-column: 1 / -1;
+        grid-row: 1;
+        margin-bottom: 1px;
+    }
+
+    #receiptModal .receipt-simple-grid > .field:nth-of-type(-n + 3) {
+        grid-row: 2;
+    }
+
+    #receiptModal .receipt-product-title {
+        grid-column: 1 / -1;
+        grid-row: 3;
+        margin: 2px 0 1px;
+        padding-top: 10px;
+    }
+
+    #receiptModal [data-receipt-catalog-field] {
+        grid-row: 4;
+    }
+
+    #receiptModal .receipt-photo-title {
+        grid-column: 1 / span 4;
+        grid-row: 5;
+        margin: 2px 0 1px;
+        padding-top: 10px;
+    }
+
+    #receiptModal .receipt-comment-title {
+        grid-column: 5 / -1;
+        grid-row: 5;
+        margin: 2px 0 1px;
+        padding-top: 10px;
+    }
+
+    #receiptModal #receiptSelectedPhoto {
+        grid-column: 1 / span 4;
+        grid-row: 6;
+        align-self: stretch;
+    }
+
+    #receiptModal .receipt-quantity-field {
+        grid-column: 5 / span 2;
+        grid-row: 6;
+    }
+
+    #receiptModal .receipt-comment-field {
+        grid-column: 7 / -1;
+        grid-row: 6;
+    }
+
+    #receiptModal #receiptImageField {
+        grid-column: 1 / span 4;
+        grid-row: 7;
+    }
+
+    #receiptModal textarea.control {
+        min-height: 70px;
+        height: 70px;
+    }
+
+    #receiptModal .receipt-selected-photo {
+        min-height: 70px;
+        flex-direction: row;
+        padding: 8px;
+    }
+
+    #receiptModal .receipt-selected-photo img,
+    #receiptModal .receipt-selected-photo-placeholder,
+    #receiptModal .receipt-image-preview img {
+        width: 52px;
+        height: 52px;
+        flex-basis: 52px;
+    }
+
+    #receiptModal .modal-actions {
+        bottom: -18px;
+        margin: 10px -18px -18px;
+        padding: 11px 18px;
+    }
+}
+
+#receiptModal #receiptImageField[hidden],
+#receiptModal #receiptSelectedPhotoPicture[hidden],
+#receiptModal #receiptSelectedPhotoPlaceholder[hidden] {
+    display: none;
+}
+
+@media (max-width: 767px) {
+    #warehouseAddModal #warehouseAddCard > .add-form {
+        display: flex;
+    }
+
+    #warehouseAddModal .warehouse-add-section {
+        padding: 16px 15px;
+    }
+
+    #manualSaleModal .sale-product-summary-copy {
+        min-width: 0;
+    }
+
+    #manualSaleModal .sale-product-summary-copy > strong,
+    #manualSaleModal .product-meta-preview {
+        overflow-wrap: anywhere;
+    }
+
+    #receiptModal .receipt-simple-grid > .field,
+    #receiptModal .receipt-simple-grid > .erp-form-section-title {
+        grid-column: 1;
+        grid-row: auto;
+        min-width: 0;
+    }
+}

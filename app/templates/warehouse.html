@@ -4788,7 +4788,7 @@
                         name="name"
                         value=""
                     >
-                    <section class="warehouse-add-section">
+                    <section class="warehouse-add-section warehouse-add-catalog-section">
                         <h3 class="warehouse-add-section-title">Каталог</h3>
                         <div class="warehouse-add-grid warehouse-add-grid-catalog">
                             <div class="warehouse-add-field">
@@ -4905,7 +4905,7 @@
                         </div>
                     </section>
 
-                    <section class="warehouse-add-section">
+                    <section class="warehouse-add-section warehouse-add-data-section">
                         <h3 class="warehouse-add-section-title">Данные товара</h3>
                         <div class="warehouse-add-grid">
                             <label class="warehouse-add-field" for="warehouseProductArticle">
@@ -4924,7 +4924,7 @@
                         </div>
                     </section>
 
-                    <section class="warehouse-add-section">
+                    <section class="warehouse-add-section warehouse-add-stock-section">
                         <h3 class="warehouse-add-section-title">Склад</h3>
                         <div class="warehouse-add-grid warehouse-add-grid-stock">
                             <label class="warehouse-add-field" for="addStock">
@@ -9475,11 +9475,12 @@
                     && category.querySelector(".brand-combobox-trigger").disabled
                     && product.querySelector(".brand-combobox-trigger").disabled
                 );
-                result.layout = (
-                    window.getComputedStyle(
-                        document.querySelector(".warehouse-add-grid-catalog")
-                    ).gridTemplateColumns.split(" ").length === 1
-                );
+                const catalogColumnCount = window.getComputedStyle(
+                    document.querySelector(".warehouse-add-grid-catalog")
+                ).gridTemplateColumns.split(" ").length;
+                result.layout = window.innerWidth >= 768
+                    ? catalogColumnCount === 3
+                    : catalogColumnCount === 1;
 
                 window.setSharedCatalogComboboxValue(brand, {
                     id: 1,
