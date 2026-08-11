@@ -1,25 +1,16 @@
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 
 
-_AWARE_FORMATS = (
-    "%Y-%m-%dT%H:%M:%S.%f%z",
-    "%Y-%m-%dT%H:%M:%S%z",
-    "%Y-%m-%dT%H:%M%z",
-    "%Y-%m-%d %H:%M:%S.%f%z",
-    "%Y-%m-%d %H:%M:%S%z",
-    "%Y-%m-%d %H:%M%z",
+_ISO_DATETIME = re.compile(
+    r"^(\d{4})-(\d{2})-(\d{2})"
+    r"(?:(?:T| )(\d{2}):(\d{2})"
+    r"(?::(\d{2})(?:\.(\d{1,6}))?)?"
+    r"(Z|z|[+-]\d{2}:?\d{2})?)?$"
 )
-_NAIVE_FORMATS = (
-    ("%Y-%m-%dT%H:%M:%S.%f", "second"),
-    ("%Y-%m-%dT%H:%M:%S", "second"),
-    ("%Y-%m-%dT%H:%M", "minute"),
-    ("%Y-%m-%d %H:%M:%S.%f", "second"),
-    ("%Y-%m-%d %H:%M:%S", "second"),
-    ("%Y-%m-%d %H:%M", "minute"),
+_LEGACY_FORMATS = (
     ("%d.%m.%Y %H:%M:%S", "second"),
     ("%d.%m.%Y %H:%M", "minute"),
-    ("%Y-%m-%d", "date"),
     ("%d.%m.%Y", "date"),
 )
 
@@ -40,17 +31,36 @@ def parse_erp_datetime(value):
     if not text:
         return None
 
-    aware_text = text[:-1] + "+0000" if text.endswith(("Z", "z")) else text
-    aware_text = re.sub(r"([+-]\d{2}):(\d{2})$", r"\1\2", aware_text)
-    for pattern in _AWARE_FORMATS:
+    match = _ISO_DATETIME.match(text)
+    if match:
+        year, month, day, hour, minute, second, microsecond, offset = (
+            match.groups()
+        )
+        tzinfo = None
+        if offset in {"Z", "z"}:
+            tzinfo = timezone.utc
+        elif offset:
+            sign = 1 if offset[0] == "+" else -1
+            compact_offset = offset[1:].replace(":", "")
+            tzinfo = timezone(sign * timedelta(
+                hours=int(compact_offset[:2]),
+                minutes=int(compact_offset[2:]),
+            ))
         try:
-            parsed = datetime.strptime(aware_text, pattern)
-            precision = "second" if "%S" in pattern else "minute"
-            return parsed, precision
-        except ValueError:
-            continue
+            parsed = datetime(
+                int(year), int(month), int(day), int(hour or 0),
+                int(minute or 0), int(second or 0),
+                int((microsecond or "0").ljust(6, "0")), tzinfo=tzinfo,
+            )
+            return parsed, (
+                "date" if hour is None
+                else "second" if second is not None
+                else "minute"
+            )
+        except (TypeError, ValueError):
+            return None
 
-    for pattern, precision in _NAIVE_FORMATS:
+    for pattern, precision in _LEGACY_FORMATS:
         try:
             return datetime.strptime(text, pattern), precision
         except ValueError:
@@ -62,8 +72,12 @@ def erp_timestamp(value):
     parsed = parse_erp_datetime(value)
     if parsed is None:
         return None
+    return _parsed_timestamp(parsed[0])
+
+
+def _parsed_timestamp(parsed):
     try:
-        return parsed[0].timestamp()
+        return parsed.timestamp()
     except (OverflowError, OSError, ValueError):
         return None
 
@@ -91,7 +105,7 @@ def receipt_business_timestamp(receipt):
                 created_time.microsecond,
                 tzinfo=created_time.tzinfo,
             )
-            return erp_timestamp(combined)
-        return erp_timestamp(receipt_date)
+            return _parsed_timestamp(combined)
+        return _parsed_timestamp(receipt_date)
 
     return erp_timestamp(created_value)
