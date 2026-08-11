@@ -12,6 +12,21 @@
     </style>
 </head>
 <body>
+    <div id="brandPrefix" data-brand-combobox data-prefix-search="true">
+        <div class="brand-combobox-options">
+            <button class="brand-combobox-option" data-brand-search="Danish Design"><span class="brand-combobox-option-label">Danish Design</span></button>
+            <button class="brand-combobox-option" data-brand-search="666 Barcelona"><span class="brand-combobox-option-label">666 Barcelona</span></button>
+            <button class="brand-combobox-option" data-brand-search="The D Brand"><span class="brand-combobox-option-label">The D Brand</span></button>
+            <div data-brand-empty hidden></div>
+        </div>
+    </div>
+    <div id="categoryPrefix" data-brand-combobox data-prefix-search="true">
+        <div class="brand-combobox-options">
+            <button class="brand-combobox-option" data-brand-search="Часы"><span class="brand-combobox-option-label">Часы</span></button>
+            <button class="brand-combobox-option" data-brand-search="Наручные часы"><span class="brand-combobox-option-label">Наручные часы</span></button>
+            <div data-brand-empty hidden></div>
+        </div>
+    </div>
     <div class="fixture filter-combobox" data-shared-catalog-scope>
         <div data-brand-combobox data-shared-catalog-kind="brand">
             <input class="brand-combobox-hidden" value="Тестовый бренд">
@@ -26,7 +41,7 @@
             class="brand-combobox"
             data-brand-combobox
             data-shared-catalog-kind="product"
-            data-prefix-search="false"
+            data-prefix-search="true"
             data-search-enabled="true"
             data-all-label="Выберите товар"
         >
@@ -108,10 +123,11 @@
                     const inStock = target.searchParams.get("in_stock") === "1";
                     const data = products.filter((item) => (
                         (!inStock || item.stock > 0)
-                        && (!query || normalize([
+                        && (!query || [
                             item.name,
                             item.article,
-                        ].join(" ")).includes(query))
+                            item.barcode,
+                        ].some((value) => normalize(value).startsWith(query)))
                     ));
                     return {
                         ok: true,
@@ -125,6 +141,23 @@
                 const combobox = document.getElementById("productCombobox");
                 await window.loadSharedCatalogOptions(combobox, "");
                 window.setBrandDropdownOpen(combobox, true);
+
+                const brandPrefix = document.getElementById("brandPrefix");
+                window.filterBrandList("D", brandPrefix);
+                result.brandPrefix = Array.from(brandPrefix.querySelectorAll(
+                    ".brand-combobox-option:not([hidden])"
+                )).map((option) => option.textContent.trim()).join("|")
+                    === "Danish Design";
+                const categoryPrefix = document.getElementById(
+                    "categoryPrefix"
+                );
+                window.filterBrandList("Ч", categoryPrefix);
+                result.categoryPrefix = Array.from(
+                    categoryPrefix.querySelectorAll(
+                        ".brand-combobox-option:not([hidden])"
+                    )
+                ).map((option) => option.textContent.trim()).join("|")
+                    === "Часы";
 
                 let options = Array.from(combobox.querySelectorAll(
                     ".brand-combobox-option:not([hidden])"
@@ -229,6 +262,48 @@
                     combobox.querySelectorAll(
                         ".brand-combobox-option:not([hidden])"
                     ).length === 1
+                );
+                await window.loadSharedCatalogOptions(combobox, "");
+                window.filterBrandList("SHORT", combobox);
+                result.immediateArticlePrefix = (
+                    combobox.querySelectorAll(
+                        ".brand-combobox-option:not([hidden])"
+                    ).length === 1
+                    && combobox.querySelector(
+                        ".brand-combobox-option:not([hidden])"
+                    ).dataset.brand === "1"
+                );
+                window.filterBrandList("орот", combobox);
+                result.productInfixExcluded = (
+                    combobox.querySelectorAll(
+                        ".brand-combobox-option:not([hidden])"
+                    ).length === 0
+                );
+
+                await window.loadSharedCatalogOptions(combobox, "");
+                const searchInput = combobox.querySelector(
+                    ".brand-combobox-search"
+                );
+                searchInput.focus();
+                const reactionStarted = performance.now();
+                searchInput.value = "К";
+                searchInput.dispatchEvent(new Event("input", {bubbles: true}));
+                result.liveReactionMs = performance.now() - reactionStarted;
+                result.liveReactionFast = result.liveReactionMs < 50;
+                result.liveAfterOneLetter = (
+                    combobox.querySelectorAll(
+                        ".brand-combobox-option:not([hidden])"
+                    ).length === 2
+                );
+                await new Promise((resolve) => setTimeout(resolve, 230));
+                result.focusPreserved = document.activeElement === searchInput;
+                result.debouncedRequest = requests.at(-1).includes("q=%D0%9A");
+                searchInput.value = "";
+                searchInput.dispatchEvent(new Event("input", {bubbles: true}));
+                result.clearRestoresWindow = (
+                    combobox.querySelectorAll(
+                        ".brand-combobox-option:not([hidden])"
+                    ).length === products.length
                 );
 
                 await window.loadSharedCatalogOptions(combobox, "");

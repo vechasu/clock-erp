@@ -1,4 +1,5 @@
 import json
+import re
 import tempfile
 import unittest
 from datetime import datetime, timezone
@@ -107,6 +108,7 @@ class CatalogFilteringTest(unittest.TestCase):
         prefix,
         positive_count=0,
         special_last=False,
+        special_at=None,
     ):
         now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
         with self.database.transaction() as connection:
@@ -123,6 +125,8 @@ class CatalogFilteringTest(unittest.TestCase):
                 name = "{} {:05d}".format(prefix, offset)
                 if special_last and offset == count - 1:
                     name = "{} Последний товар".format(prefix)
+                if special_at is not None and offset == special_at:
+                    name = "Фоссил тестовый товар"
                 article = "{}-{:05d}".format(prefix.upper(), offset)
                 rows.append((
                     "test:{}:{}".format(prefix, offset),
@@ -300,7 +304,7 @@ class CatalogFilteringTest(unittest.TestCase):
             brand_id=large_brand["id"],
             category_id=large_category_id,
             prefix="Large",
-            special_last=True,
+            special_at=3499,
         )
 
         initial = self.client.get(
@@ -314,18 +318,88 @@ class CatalogFilteringTest(unittest.TestCase):
             "&brand_id={}&category_id={}&q={}".format(
                 large_brand["id"],
                 large_category_id,
-                "Последний%20товар",
+                "Ф",
             )
         ).get_json()
 
         self.assertEqual(initial["meta"]["total"], 4601)
         self.assertEqual(len(initial["data"]), 200)
         self.assertEqual(len(searched["data"]), 1)
-        self.assertEqual(searched["data"][0]["name"], "Large Последний товар")
+        self.assertEqual(
+            searched["data"][0]["name"],
+            "Фоссил тестовый товар",
+        )
         script = (ROOT / "app/static/js/catalog-combobox.js").read_text(
             encoding="utf-8"
         )
         self.assertIn('limit: "200"', script)
+
+    def test_prefix_search_matches_name_or_article_but_not_infix(self):
+        products = (
+            ("Фоссил часы", "NAME-1"),
+            ("Механические часы", "MECH-1"),
+            ("Часы Фоссил", "INSIDE-1"),
+            ("Товар по артикулу", "Ф123"),
+            ("Товар с внутренним артикулом", "AB-Ф123"),
+        )
+        for name, article in products:
+            self.excel.create_product(
+                name=name,
+                article=article,
+                brand_id=self.brand["id"],
+                category_id=self.category_id,
+            )
+
+        api = self.client.get(
+            "/api/v1/catalog/options?type=product&limit=200&q=Ф"
+        ).get_json()["data"]
+        api_names = {item["name"] for item in api}
+        warehouse = self.client.get("/warehouse?q=Ф&per_page=200")
+        warehouse_html = warehouse.get_data(as_text=True)
+        warehouse_names = set(re.findall(
+            r'<tr\s+data-product-id="[^"]+"\s+'
+            r'data-stock="[^"]+"\s+data-name="([^"]+)"',
+            warehouse_html,
+        ))
+
+        self.assertEqual(api_names, {
+            "Фоссил часы",
+            "Товар по артикулу",
+        })
+        self.assertEqual(warehouse.status_code, 200)
+        self.assertEqual(warehouse_names, {
+            "фоссил часы",
+            "товар по артикулу",
+        })
+
+    def test_brand_category_and_product_queries_use_normalized_prefixes(self):
+        danish = self.shared.create_brand("Danish Design")
+        self.shared.create_brand("The D Brand")
+        category = self.shared.create_category(danish["id"], "Ёлочные часы")
+        self.excel.create_product(
+            name="  Ёлочные   часы  ",
+            article="TREE-1",
+            brand_id=danish["id"],
+            category_id=category["id"],
+        )
+
+        brands = self.client.get(
+            "/api/v1/catalog/options?type=brand&q=d"
+        ).get_json()["data"]
+        categories = self.client.get(
+            "/api/v1/catalog/options?type=category&q=%20ел%20"
+        ).get_json()["data"]
+        products = self.client.get(
+            "/api/v1/catalog/options?type=product&q=%20ЕЛ%20"
+        ).get_json()["data"]
+
+        self.assertIn("Danish Design", [item["name"] for item in brands])
+        self.assertNotIn("The D Brand", [item["name"] for item in brands])
+        self.assertIn("Ёлочные часы", [item["name"] for item in categories])
+        self.assertIn(
+            "Ёлочные   часы",
+            [item["name"].strip() for item in products],
+        )
 
     def test_repeated_catalog_request_does_not_reuse_a_stale_window(self):
         url = (
@@ -429,7 +503,9 @@ class CatalogFilteringTest(unittest.TestCase):
             "&brand_id={}&category_id=0&q=".format(self.brand["id"])
         )
 
-        by_name = self.client.get(base + "search%2000001").get_json()["data"]
+        by_name = self.client.get(
+            base + "Uncategorized%20search%2000001"
+        ).get_json()["data"]
         by_article = self.client.get(
             base + "UNCATEGORIZED%20SEARCH-00000"
         ).get_json()["data"]

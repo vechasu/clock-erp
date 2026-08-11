@@ -354,7 +354,7 @@ class ExcelProductCatalogTest(unittest.TestCase):
         bitrix.assert_not_called()
         moysklad.assert_not_called()
 
-    def test_search_covers_excel_bitrix_brand_article_cell_and_xml_id(self):
+    def test_search_uses_name_article_and_barcode_prefixes(self):
         self.service.apply(
             [result(
                 2, "Excel Alias", 5, "exact", self.bitrix_id,
@@ -364,12 +364,16 @@ class ExcelProductCatalogTest(unittest.TestCase):
             "search-fields.xlsx",
         )
         for query in (
-            "Excel Alias", "Watch X1", "Excel Brand", "Brand",
-            "SKU-10", "CELL-77", "xml-10",
+            "Excel", "excel alias", "SKU", "sku-10", "BARCODE", "barcode-10"
         ):
             with self.subTest(query=query):
                 listing = self.catalog.list_products(query=query)
                 self.assertEqual(listing["total"], 1)
+
+        for query in ("Alias", "Watch X1", "Brand", "CELL", "xml"):
+            with self.subTest(non_prefix=query):
+                listing = self.catalog.list_products(query=query)
+                self.assertEqual(listing["total"], 0)
 
     def test_filters_hide_zero_category_tree_and_sorting_are_compatible(self):
         self.service.apply(

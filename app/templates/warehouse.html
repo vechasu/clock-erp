@@ -4798,7 +4798,7 @@
                                     "brand",
                                     brand_groups,
                                     item_label="бренд",
-                                    prefix_search=false,
+                                    prefix_search=true,
                                     component_class="filter-combobox",
                                     clear_selection_on_search_clear=true,
                                     action_kind="brand",
@@ -4816,7 +4816,7 @@
                                     category_groups,
                                     item_label="категорию",
                                     disabled=true,
-                                    prefix_search=false,
+                                    prefix_search=true,
                                     component_class="filter-combobox",
                                     clear_selection_on_search_clear=true,
                                     action_kind="category",
@@ -4834,7 +4834,7 @@
                                     [],
                                     item_label="товар",
                                     disabled=true,
-                                    prefix_search=false,
+                                    prefix_search=true,
                                     empty_label="Ничего не найдено",
                                     component_class="filter-combobox",
                                     clear_selection_on_search_clear=true,
@@ -5263,6 +5263,7 @@
                                     data-stock="{{ item.stock }}"
                                     data-name="{{ item.name|lower|e }}"
                                     data-article="{{ (item.article or '')|lower|e }}"
+                                    data-barcode="{{ (item.barcode or '')|lower|e }}"
                                 >
                                     <td data-column-key="photo">
                                         <div class="warehouse-product-photo-cell">
@@ -5490,7 +5491,7 @@
                 true,
                 "бренд",
                 "Все бренды",
-                prefix_search=false,
+                prefix_search=true,
                 component_class="filter-combobox",
                 all_count=brand_all_count,
                 shared_catalog_kind="brand",
@@ -6790,6 +6791,112 @@
         let warehouseSearchTimer = null;
         let warehouseSearchController = null;
         let warehouseSearchRequestId = 0;
+        let warehouseSearchBaseline = null;
+        const warehouseSearchSnapshots = new Map();
+        let warehouseRenderedQuery = normalizeWarehouseSearchValue(
+            new URL(window.location.href).searchParams.get("q") || ""
+        );
+
+        function normalizeWarehouseSearchValue(value) {
+            return String(value || "")
+                .replace(/\s+/g, " ")
+                .trim()
+                .toLocaleLowerCase("ru")
+                .replaceAll("ё", "е");
+        }
+
+        function captureWarehouseSearchBaseline() {
+            const results = document.getElementById("warehouseResults");
+            const counter = document.getElementById("visiblePositionsCount");
+            const stock = document.getElementById("totalStockCount");
+            if (!results) return null;
+            return {
+                html: results.innerHTML,
+                counter: counter ? counter.textContent : "",
+                stock: stock ? stock.textContent : "",
+            };
+        }
+
+        function replaceWarehouseResults(html, counterText, stockText) {
+            const currentResults = document.getElementById(
+                "warehouseResults"
+            );
+            if (!currentResults) return;
+            const currentScroll = currentResults.querySelector(
+                ".table-card"
+            )?.scrollLeft || 0;
+            currentResults.innerHTML = html;
+            const nextScroll = currentResults.querySelector(".table-card");
+            const table = currentResults.querySelector(
+                "#warehouseProductsTable"
+            );
+            if (table) {
+                delete table.dataset.viewReady;
+                table.querySelectorAll(
+                    ".warehouse-column-resize-handle"
+                ).forEach(function(handle) {
+                    handle.remove();
+                });
+            }
+            const currentCounter = document.getElementById(
+                "visiblePositionsCount"
+            );
+            const currentStock = document.getElementById("totalStockCount");
+            if (currentCounter && counterText !== undefined) {
+                currentCounter.textContent = counterText;
+            }
+            if (currentStock && stockText !== undefined) {
+                currentStock.textContent = stockText;
+            }
+            bindWarehouseSelectionHandlers();
+            initializeWarehouseTableView();
+            if (nextScroll) nextScroll.scrollLeft = currentScroll;
+            filterWarehouseRows();
+        }
+
+        function restoreWarehouseSearchBaseline() {
+            if (!warehouseSearchBaseline) return false;
+            replaceWarehouseResults(
+                warehouseSearchBaseline.html,
+                warehouseSearchBaseline.counter,
+                warehouseSearchBaseline.stock
+            );
+            return true;
+        }
+
+        function cacheWarehouseSearchSnapshot(query) {
+            const key = normalizeWarehouseSearchValue(query);
+            const snapshot = captureWarehouseSearchBaseline();
+            if (!snapshot) return;
+            warehouseSearchSnapshots.set(key, snapshot);
+            if (!key) warehouseSearchBaseline = snapshot;
+            if (warehouseSearchSnapshots.size > 12) {
+                const oldestKey = warehouseSearchSnapshots.keys().next().value;
+                if (oldestKey) warehouseSearchSnapshots.delete(oldestKey);
+            }
+        }
+
+        function restoreWarehouseSearchSnapshot(query) {
+            const key = normalizeWarehouseSearchValue(query);
+            let snapshotKey = "";
+            warehouseSearchSnapshots.forEach(function(snapshot, candidate) {
+                if (
+                    key.startsWith(candidate)
+                    && candidate.length > snapshotKey.length
+                ) {
+                    snapshotKey = candidate;
+                }
+            });
+            const snapshot = warehouseSearchSnapshots.get(snapshotKey);
+            if (!snapshot) return false;
+            replaceWarehouseResults(
+                snapshot.html,
+                snapshot.counter,
+                snapshot.stock
+            );
+            warehouseRenderedQuery = snapshotKey;
+            return true;
+        }
 
         function syncWarehouseSearchClear() {
             if (!warehouseSearchInput || !warehouseSearchClear) {
@@ -6804,11 +6911,30 @@
 
         function filterWarehouseRows(hideZeroOverride) {
             const rows = Array.from(document.querySelectorAll(
-                "tbody tr[data-name][data-article][data-stock]"
+                "#warehouseProductsTable tbody "
+                + "tr[data-name][data-article][data-stock]"
             ));
 
+            const query = normalizeWarehouseSearchValue(
+                warehouseSearchInput ? warehouseSearchInput.value : ""
+            );
+            let visibleCount = 0;
+
+            rows.forEach(function(row) {
+                const matches = !query || [
+                    row.dataset.name,
+                    row.dataset.article,
+                    row.dataset.barcode,
+                ].some(function(value) {
+                    return normalizeWarehouseSearchValue(value)
+                        .startsWith(query);
+                });
+                row.hidden = !matches;
+                if (matches) visibleCount += 1;
+            });
+
             syncWarehouseBulkSelection();
-            return rows.length;
+            return visibleCount;
         }
 
         function getWarehouseVisibleProductCheckboxes() {
@@ -6963,7 +7089,9 @@
             warehouseSearchInput.value = "";
             syncWarehouseSearchClear();
             warehouseSearchInput.focus();
-            filterWarehouseRows();
+            restoreWarehouseSearchSnapshot("")
+                || restoreWarehouseSearchBaseline()
+                || filterWarehouseRows();
 
             const url = new URL(window.location.href);
             url.searchParams.delete("q");
@@ -7080,21 +7208,18 @@
                 const nextStock = documentCopy.getElementById(
                     "totalStockCount"
                 );
-                const currentStock = document.getElementById(
-                    "totalStockCount"
-                );
 
                 if (nextResults && currentResults) {
-                    currentResults.innerHTML = nextResults.innerHTML;
-                    if (nextCounter && currentCounter) {
-                        currentCounter.textContent = nextCounter.textContent;
-                    }
-                    if (nextStock && currentStock) {
-                        currentStock.textContent = nextStock.textContent;
-                    }
-                    bindWarehouseSelectionHandlers();
-                    initializeWarehouseTableView();
-                    filterWarehouseRows();
+                    replaceWarehouseResults(
+                        nextResults.innerHTML,
+                        nextCounter && currentCounter
+                            ? nextCounter.textContent
+                            : undefined,
+                        nextStock ? nextStock.textContent : undefined
+                    );
+                    warehouseRenderedQuery =
+                        normalizeWarehouseSearchValue(query);
+                    cacheWarehouseSearchSnapshot(query);
                 }
                 if (loadingState) {
                     loadingState.className = "warehouse-loading-state";
@@ -7114,6 +7239,10 @@
                         );
                     }
                 }
+            } finally {
+                if (warehouseSearchController === controller) {
+                    warehouseSearchController = null;
+                }
             }
         }
 
@@ -7132,12 +7261,38 @@
                     warehouseSearchController.abort();
                 }
 
+                const immediateQuery = warehouseSearchInput.value.trim();
+                const normalizedImmediateQuery =
+                    normalizeWarehouseSearchValue(immediateQuery);
+                if (normalizedImmediateQuery.startsWith(
+                    warehouseRenderedQuery
+                )) {
+                    filterWarehouseRows();
+                } else {
+                    restoreWarehouseSearchSnapshot(immediateQuery)
+                        || filterWarehouseRows();
+                }
+
+                const loadingState = document.getElementById(
+                    "warehouseLoadingState"
+                );
+                if (loadingState) {
+                    loadingState.className =
+                        "warehouse-loading-state is-visible";
+                    loadingState.textContent = "Ищем по всему каталогу…";
+                }
+
                 warehouseSearchTimer = window.setTimeout(function() {
                     const query = warehouseSearchInput.value.trim();
                     const url = new URL(window.location.href);
                     const currentQuery = url.searchParams.get("q") || "";
 
                     if (query === currentQuery) {
+                        if (loadingState) {
+                            loadingState.className =
+                                "warehouse-loading-state";
+                            loadingState.textContent = "";
+                        }
                         return;
                     }
 
@@ -7160,6 +7315,12 @@
 
             syncWarehouseSearchClear();
             filterWarehouseRows();
+            if (!normalizeWarehouseSearchValue(
+                new URL(window.location.href).searchParams.get("q") || ""
+            )) {
+                warehouseSearchBaseline = captureWarehouseSearchBaseline();
+                cacheWarehouseSearchSnapshot("");
+            }
         }
 
         if (warehouseSearchForm && warehouseSearchInput) {
@@ -9376,6 +9537,145 @@
                 document.documentElement.dataset.tableUiE2e = "fail";
                 document.documentElement.dataset.tableUiE2eError = error.message;
                 document.documentElement.dataset.tableUiE2eResult = JSON.stringify(result);
+            }
+        });
+    </script>
+    {% endif %}
+
+    {% if warehouse_live_search_e2e %}
+    <script>
+        window.addEventListener("load", async function() {
+            const root = document.documentElement;
+            const result = {};
+            const wait = (milliseconds) => new Promise(
+                (resolve) => window.setTimeout(resolve, milliseconds)
+            );
+            const normalize = normalizeWarehouseSearchValue;
+            const search = document.getElementById("warehouseSearchInput");
+            const initialResults = document.getElementById(
+                "warehouseResults"
+            ).outerHTML;
+            const initialCount = document.querySelectorAll(
+                "#warehouseProductsTable tbody tr"
+            ).length;
+            const requests = [];
+            const consoleErrors = [];
+            const originalConsoleError = console.error;
+            console.error = function() {
+                consoleErrors.push(Array.from(arguments).join(" "));
+                originalConsoleError.apply(console, arguments);
+            };
+
+            function visibleRows() {
+                return Array.from(document.querySelectorAll(
+                    "#warehouseProductsTable tbody tr:not([hidden])"
+                ));
+            }
+
+            function rowMatches(row, query) {
+                return [
+                    row.dataset.name,
+                    row.dataset.article,
+                    row.dataset.barcode,
+                ].some((value) => normalize(value).startsWith(normalize(query)));
+            }
+
+            function input(value) {
+                search.value = value;
+                search.dispatchEvent(new Event("input", {bubbles: true}));
+            }
+
+            function responseHtml(query) {
+                return initialResults.replace(
+                    '<div id="warehouseResults">',
+                    '<div id="warehouseResults"><span id="warehouseSearchMarker" data-result-query="'
+                        + query + '"></span>'
+                ) + '<span id="visiblePositionsCount">1</span>'
+                    + '<span id="totalStockCount">1</span>';
+            }
+
+            try {
+                search.focus();
+                const reactionStarted = performance.now();
+                input("C");
+                result.firstReactionMs = performance.now() - reactionStarted;
+                result.oneLetter = visibleRows().length > 0
+                    && visibleRows().every((row) => rowMatches(row, "C"));
+
+                input("Ca");
+                result.twoLetters = visibleRows().length > 0
+                    && visibleRows().every((row) => rowMatches(row, "Ca"));
+                input("Cas");
+                result.threeLetters = visibleRows().length > 0
+                    && visibleRows().every((row) => rowMatches(row, "Cas"));
+                input("Ca");
+                result.deleteExpands = visibleRows().length > 0
+                    && visibleRows().every((row) => rowMatches(row, "Ca"));
+                input("C");
+                result.deleteToOne = visibleRows().length > 0
+                    && visibleRows().every((row) => rowMatches(row, "C"));
+                input("");
+                result.clearImmediate = visibleRows().length === initialCount;
+
+                const tableScroll = document.querySelector(
+                    "#warehouseResults .table-card"
+                );
+                tableScroll.scrollLeft = 41;
+                const expectedScroll = tableScroll.scrollLeft;
+                window.fetch = function(url) {
+                    const target = new URL(url, window.location.origin);
+                    const query = target.searchParams.get("q") || "";
+                    requests.push({query, at: performance.now()});
+                    const delay = query === "slow" ? 80 : 10;
+                    return new Promise(function(resolve) {
+                        window.setTimeout(function() {
+                            resolve({
+                                ok: true,
+                                text: async function() {
+                                    return responseHtml(query);
+                                },
+                            });
+                        }, delay);
+                    });
+                };
+
+                const serverStarted = performance.now();
+                input("C");
+                input("Ca");
+                input("Cas");
+                for (let attempt = 0; attempt < 80; attempt += 1) {
+                    if (document.getElementById("warehouseSearchMarker")) break;
+                    await wait(5);
+                }
+                result.serverResultMs = performance.now() - serverStarted;
+                result.debouncedRequest = requests.length === 1
+                    && requests[0].query === "Cas";
+                result.focus = document.activeElement === search;
+                result.scroll = document.querySelector(
+                    "#warehouseResults .table-card"
+                ).scrollLeft === expectedScroll;
+
+                const slow = loadWarehouseSearchResults("slow");
+                const fast = loadWarehouseSearchResults("fast");
+                await Promise.all([slow, fast]);
+                result.race = document.getElementById(
+                    "warehouseSearchMarker"
+                ).dataset.resultQuery === "fast";
+                result.prefixOnly = !visibleRows().some(function(row) {
+                    return !rowMatches(row, search.value);
+                });
+                result.noConsoleErrors = consoleErrors.length === 0;
+                result.noOverflow = root.scrollWidth <= root.clientWidth + 1;
+                result.fastReaction = result.firstReactionMs < 50;
+                const passed = Object.values(result).every(Boolean);
+                root.dataset.liveSearchE2e = passed ? "pass" : "fail";
+                root.dataset.liveSearchE2eResult = JSON.stringify(result);
+            } catch (error) {
+                root.dataset.liveSearchE2e = "fail";
+                root.dataset.liveSearchE2eError = error.message;
+                root.dataset.liveSearchE2eResult = JSON.stringify(result);
+            } finally {
+                console.error = originalConsoleError;
             }
         });
     </script>

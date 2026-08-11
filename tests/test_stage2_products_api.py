@@ -78,7 +78,7 @@ class Stage2ProductsApiTest(unittest.TestCase):
 
     def test_list_search_filter_sort_and_pagination(self):
         response = self.client.get(
-            "/api/products?q=strap&brand=Alpha&sort_by=stock"
+            "/api/products?q=Alpha%20S&brand=Alpha&sort_by=stock"
             "&sort_dir=desc&page=1&page_size=1"
         )
         self.assertEqual(response.status_code, 200)
@@ -99,7 +99,7 @@ class Stage2ProductsApiTest(unittest.TestCase):
         self.assertTrue(payload["meta"]["csrf_token"])
 
         aliases = self.client.get(
-            "/api/v1/products?search=strap&brand=Alpha&sort=stock"
+            "/api/v1/products?search=Alpha%20S&brand=Alpha&sort=stock"
             "&order=desc&page=1&page_size=1"
         ).get_json()
         self.assertEqual(aliases["data"][0]["name"], "Alpha Strap")
