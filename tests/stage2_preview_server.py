@@ -73,11 +73,12 @@ with CatalogDatabase(PREVIEW_ROOT / "catalog.db").transaction() as connection:
     connection.execute(
         "UPDATE catalog_excel_products SET bitrix_external_product_id = ?, "
         "bitrix_primary_image_url = ?, bitrix_thumbnail_url = ?, "
-        "bitrix_gallery_json = ? WHERE id = ?",
+        "bitrix_gallery_json = ?, created_at = ? WHERE id = ?",
         (
             "204699", fixture_image_one, fixture_image_one,
             '[{"original_url":"' + fixture_image_one + '"},'
             '{"original_url":"' + fixture_image_two + '"}]',
+            "2026-08-12T00:00:00+00:00",
             first_id,
         ),
     )

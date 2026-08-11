@@ -21,6 +21,7 @@ from io import BytesIO
 from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache, wraps
 from urllib.parse import parse_qsl, urlencode, urlsplit
+from app.time_ranking import erp_timestamp, receipt_business_timestamp
 from app.clients.moysklad import MoySkladClient
 from app.catalog_db import CatalogDatabase
 from app.clients.bitrix_catalog import (
@@ -725,6 +726,13 @@ def order_stock_writeoff(order_id):
             add_stock_operation({
                 "id": str(uuid.uuid4()),
                 "created_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "order_created_at": str(
+                    full_order.get("created_at")
+                    or full_order.get("date")
+                    or full_order.get("DATE_INSERT")
+                    or full_order.get("date_insert")
+                    or ""
+                ),
                 "product_id": item["moysklad_product_id"],
                 "product_name": item["moysklad_product_name"],
                 "type": "writeoff",
@@ -1598,7 +1606,11 @@ def sort_erp_records(records, field, direction, numeric_fields=()):
     numeric_fields = set(numeric_fields)
 
     def identifier(item):
-        return str(item.get("id") or item.get("number") or "")
+        value = str(item.get("id") or item.get("number") or "").strip()
+        try:
+            return 1, int(value)
+        except (TypeError, ValueError):
+            return 0, value.casefold()
 
     def normalized(item):
         value = item.get(field)
@@ -1614,7 +1626,11 @@ def sort_erp_records(records, field, direction, numeric_fields=()):
     ordered = sorted(records, key=identifier)
     present = [item for item in ordered if normalized(item) is not None]
     missing = [item for item in ordered if normalized(item) is None]
-    present.sort(key=normalized, reverse=direction == "desc")
+    present.sort(
+        key=lambda item: (normalized(item), identifier(item)),
+        reverse=direction == "desc",
+    )
+    missing.sort(key=identifier, reverse=direction == "desc")
     return present + missing
 
 
@@ -1656,8 +1672,12 @@ def warehouse_page():
     created_date_from = request.args.get("date_from", "").strip()
     created_date_to = request.args.get("date_to", "").strip()
     in_stock = request.args.get("in_stock", "").strip() == "1"
-    sort_by = request.args.get("sort_by", "name").strip()
-    sort_dir = request.args.get("sort_dir", "asc").strip()
+    requested_sort_by = request.args.get("sort_by")
+    sort_by = (requested_sort_by or "created_at").strip()
+    sort_dir = (
+        request.args.get("sort_dir")
+        or ("desc" if sort_by == "created_at" else "asc")
+    ).strip()
     page, per_page = parse_erp_pagination()
 
     allowed_sort_fields = {
@@ -1671,10 +1691,11 @@ def warehouse_page():
     }
 
     if sort_by not in allowed_sort_fields:
-        sort_by = "name"
+        sort_by = "created_at"
+        sort_dir = "desc"
 
     if sort_dir not in {"asc", "desc"}:
-        sort_dir = "asc"
+        sort_dir = "desc" if sort_by == "created_at" else "asc"
 
     for value_name, value in (
         ("created_date_from", created_date_from),
@@ -1868,14 +1889,17 @@ def warehouse_page():
 
 
 def warehouse_export_items():
-    sort_by = (request.args.get("sort_by") or "name").strip()
+    sort_by = (request.args.get("sort_by") or "created_at").strip()
     if sort_by not in {
         "name", "article", "brand", "category", "stock", "created_at", "cell",
     }:
-        sort_by = "name"
-    sort_dir = (request.args.get("sort_dir") or "asc").strip()
+        sort_by = "created_at"
+    sort_dir = (
+        request.args.get("sort_dir")
+        or ("desc" if sort_by == "created_at" else "asc")
+    ).strip()
     if sort_dir not in {"asc", "desc"}:
-        sort_dir = "asc"
+        sort_dir = "desc" if sort_by == "created_at" else "asc"
     catalog = ExcelProductCatalog().list_products(
         query=(request.args.get("q") or "").strip(),
         brand=(
@@ -7593,10 +7617,9 @@ def build_sales_report_records(
         )
 
         created_at = str(
-            override.get(
-                "created_at",
-                operation.get("created_at") or "",
-            )
+            override.get("created_at")
+            or operation.get("order_created_at")
+            or operation.get("created_at")
             or ""
         )
         product_metadata = get_sales_product_metadata(
@@ -8116,6 +8139,9 @@ def build_sales_report_records(
     sales = manual_sales + automatic_sales
 
     for sale in sales:
+        sale["_canonical_timestamp"] = erp_timestamp(
+            sale.get("created_at")
+        )
         decorate_sale_status(sale)
         if normalize_sales_source_key(sale.get("source")) == "amazon":
             sale["country"] = normalize_amazon_country(
@@ -8151,12 +8177,11 @@ def build_sales_report_records(
         sale.setdefault("return_status", sale.get("order_status"))
         sale.setdefault("inventory_managed", False)
 
-    return sorted(
+    return sort_erp_records(
         sales,
-        key=lambda sale: str(
-            sale.get("created_at") or ""
-        ),
-        reverse=True,
+        "_canonical_timestamp",
+        "desc",
+        numeric_fields={"_canonical_timestamp"},
     )
 
 
@@ -9586,16 +9611,22 @@ def sales_page():
     if sort_direction not in {"asc", "desc"}:
         sort_direction = "desc"
     sort_value_fields = {
+        "created_at": "_canonical_timestamp",
         "quantity_display": "quantity_value",
         "unit_price_display": "unit_price",
         "delivery_cost_display": "delivery_cost",
     }
+    for sale in sales:
+        sale["_canonical_timestamp"] = erp_timestamp(
+            sale.get("created_at")
+        )
     sales = sort_erp_records(
         sales,
         sort_value_fields.get(sort_field, sort_field),
         sort_direction,
         numeric_fields={
-            "quantity_value", "unit_price", "delivery_cost",
+            "_canonical_timestamp", "quantity_value", "unit_price",
+            "delivery_cost",
         },
     )
     sales, page = paginate_erp_records(sales, page, per_page)
@@ -10160,6 +10191,9 @@ def receipts_page():
     }
     receipts = []
     for receipt in all_receipts:
+        receipt["_canonical_timestamp"] = receipt_business_timestamp(
+            receipt
+        )
         receipt_date = str(
             receipt.get("receipt_date") or receipt.get("created_at") or ""
         )[:10]
@@ -10204,7 +10238,7 @@ def receipts_page():
     sort_key = (request.args.get("sort") or "date").strip()
     sort_direction = (request.args.get("sort_dir") or "desc").strip()
     sort_fields = {
-        "date": "receipt_date", "document": "number", "brand": "brand",
+        "date": "_canonical_timestamp", "document": "number", "brand": "brand",
         "category": "category", "product": "product_name",
         "quantity": "total_quantity", "status": "status_label",
     }
@@ -10214,7 +10248,7 @@ def receipts_page():
         sort_direction = "desc"
     receipts = sort_erp_records(
         receipts, sort_fields[sort_key], sort_direction,
-        numeric_fields={"total_quantity"},
+        numeric_fields={"_canonical_timestamp", "total_quantity"},
     )
     page, per_page = parse_erp_pagination()
     receipts, page = paginate_erp_records(receipts, page, per_page)
@@ -10340,18 +10374,16 @@ def receipts_report():
         ):
             continue
 
+        receipt["_canonical_timestamp"] = receipt_business_timestamp(
+            receipt
+        )
         receipts.append(receipt)
 
-    receipts.sort(
-        key=lambda receipt: (
-            str(
-                receipt.get("receipt_date")
-                or receipt.get("created_at")
-                or ""
-            ),
-            str(receipt.get("number") or ""),
-        ),
-        reverse=True,
+    receipts = sort_erp_records(
+        receipts,
+        "_canonical_timestamp",
+        "desc",
+        numeric_fields={"_canonical_timestamp"},
     )
 
     total_quantity = sum(
@@ -13666,15 +13698,27 @@ def api_products_collection():
         WAREHOUSE_CACHE["loaded_at"] = 0
         return api_success(serialize_api_product(product), 201)
 
-    sort_by = (request.args.get("sort_by") or request.args.get("sort") or "name").strip()
+    sort_by = (
+        request.args.get("sort_by")
+        or request.args.get("sort")
+        or "created_at"
+    ).strip()
     sort_dir = (
         request.args.get("sort_dir")
         or request.args.get("order")
-        or "asc"
+        or ("desc" if sort_by == "created_at" else "asc")
     ).strip().lower()
     if sort_by.startswith("-"):
         sort_by = sort_by[1:]
         sort_dir = "desc"
+    if sort_by not in {
+        "name", "article", "brand", "category", "stock", "cell",
+        "created_at", "price", "match_status",
+    }:
+        sort_by = "created_at"
+        sort_dir = "desc"
+    if sort_dir not in {"asc", "desc"}:
+        sort_dir = "desc" if sort_by == "created_at" else "asc"
     page = api_positive_int(request.args.get("page"), 1, 1000000)
     page_size = api_positive_int(
         request.args.get("page_size") or request.args.get("per_page"),
@@ -15252,7 +15296,7 @@ def api_receipts_collection():
             image_message=image_message,
         )
 
-    receipts = list(api_receipt_records())
+    receipts = [dict(item) for item in api_receipt_records()]
     query = (
         request.args.get("q")
         or request.args.get("search")
@@ -15324,6 +15368,10 @@ def api_receipts_collection():
                 for position in item["positions"]
             )
         ]
+    for receipt in receipts:
+        receipt["_canonical_timestamp"] = receipt_business_timestamp(
+            receipt
+        )
     sort_by = (
         request.args.get("sort_by")
         or request.args.get("sort")
@@ -15340,17 +15388,19 @@ def api_receipts_collection():
     }
     if sort_by not in allowed_sort:
         sort_by = "receipt_date"
-    numeric_receipt_sort = {"total_quantity", "total_amount"}
-    receipts.sort(
-        key=lambda item: (
-            float(item.get(sort_by) or 0)
-            if sort_by in numeric_receipt_sort
-            else str(item.get(sort_by) or "").casefold(),
-            item["id"],
-        ),
-        reverse=sort_dir != "asc",
+    receipt_sort_field = (
+        "_canonical_timestamp"
+        if sort_by == "receipt_date"
+        else sort_by
     )
-    receipts.sort(key=lambda item: item.get(sort_by) is None)
+    receipts = sort_erp_records(
+        receipts,
+        receipt_sort_field,
+        "asc" if sort_dir == "asc" else "desc",
+        numeric_fields={
+            "_canonical_timestamp", "total_quantity", "total_amount",
+        },
+    )
     total = len(receipts)
     page = api_positive_int(request.args.get("page"), 1, 1000000)
     page_size = api_positive_int(request.args.get("page_size"), 50, 200)
@@ -15359,6 +15409,8 @@ def api_receipts_collection():
         page = pages
     start = (page - 1) * page_size
     visible = receipts[start:start + page_size]
+    for receipt in visible:
+        receipt.pop("_canonical_timestamp", None)
     return api_success(
         visible,
         page=page,
@@ -16113,19 +16165,17 @@ def api_sales_collection():
     }
     if sort_by not in allowed_sort:
         sort_by = "created_at"
-    numeric_sort_fields = {"quantity_value", "total_amount"}
-    sales.sort(
-        key=lambda item: (
-            (
-                float(item.get(sort_by) or 0)
-                if sort_by in numeric_sort_fields
-                else str(item.get(sort_by) or "").casefold()
-            ),
-            str(item.get("id") or ""),
-        ),
-        reverse=sort_dir != "asc",
+    sales_sort_field = (
+        "_canonical_timestamp" if sort_by == "created_at" else sort_by
     )
-    sales.sort(key=lambda item: item.get(sort_by) is None)
+    sales = sort_erp_records(
+        sales,
+        sales_sort_field,
+        "asc" if sort_dir == "asc" else "desc",
+        numeric_fields={
+            "_canonical_timestamp", "quantity_value", "total_amount",
+        },
+    )
     total = len(sales)
     active = [sale for sale in sales if not sale.get("is_cancelled")]
     page = api_positive_int(request.args.get("page"), 1, 1000000)
