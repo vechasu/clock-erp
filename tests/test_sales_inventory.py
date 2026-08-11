@@ -1215,6 +1215,11 @@ class SalesInventoryWebTest(SalesInventoryTest):
         movements = self.inventory.list_movements(self.product["id"])
         self.assertEqual(movements[0]["type"], "cancellation")
         self.assertNotIn("return", [item["type"] for item in movements])
+        page = self.client.get("/app/sales?source=tictactoy&status=refusal")
+        self.assertIn("Отказ", page.get_data(as_text=True))
+        self.assertIn(
+            "sale-status-badge--danger", page.get_data(as_text=True)
+        )
 
     def test_actions_render_in_every_source_with_information_edit(self):
         for index, source in enumerate(
@@ -1239,7 +1244,7 @@ class SalesInventoryWebTest(SalesInventoryTest):
         text = self.client.get(
             "/app/sales?source=wildberries&status=cancelled"
         ).get_data(as_text=True)
-        self.assertIn("Отменена", text)
+        self.assertIn("Отменён", text)
         self.assertIn("Удалить запись", text)
         self.assertIn(
             "Отмена действует только в ERP и не изменяет заказ на площадке.",
