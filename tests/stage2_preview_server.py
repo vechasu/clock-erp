@@ -67,9 +67,13 @@ fixture_image_two = (
     "R0lGODlhAQABAIAAAAD/AP///ywAAAAAAQABAAACAUwAOw=="
 )
 with CatalogDatabase(PREVIEW_ROOT / "catalog.db").transaction() as connection:
-    first_id = connection.execute(
-        "SELECT id FROM catalog_excel_products ORDER BY id LIMIT 1"
-    ).fetchone()[0]
+    product_ids = [
+        row[0]
+        for row in connection.execute(
+            "SELECT id FROM catalog_excel_products ORDER BY id LIMIT 3"
+        ).fetchall()
+    ]
+    first_id = product_ids[0]
     connection.execute(
         "UPDATE catalog_excel_products SET bitrix_external_product_id = ?, "
         "bitrix_primary_image_url = ?, bitrix_thumbnail_url = ?, "
@@ -81,6 +85,11 @@ with CatalogDatabase(PREVIEW_ROOT / "catalog.db").transaction() as connection:
             "2026-08-12T00:00:00+00:00",
             first_id,
         ),
+    )
+    connection.execute(
+        "UPDATE catalog_excel_products SET bitrix_thumbnail_url = ? "
+        "WHERE id = ?",
+        ("/static/missing-product-photo.jpg", product_ids[1]),
     )
 
 
@@ -296,6 +305,18 @@ preview_receipts.extend([
     }
     for index in range(2, 122)
 ])
+preview_receipts[1].update({
+    "receipt_date": "2026-07-29",
+    "created_at": "2026-07-29T09:00:00",
+    "product_id": str(warehouse_items[1]["id"]),
+    "product_name": warehouse_items[1]["name"],
+})
+preview_receipts[2].update({
+    "receipt_date": "2026-07-28",
+    "created_at": "2026-07-28T09:00:00",
+    "product_id": str(warehouse_items[2]["id"]),
+    "product_name": warehouse_items[2]["name"],
+})
 
 web.CATALOG_TAXONOMY_PATH = PREVIEW_ROOT / "catalog_taxonomy.json"
 web.get_warehouse_items = lambda *args, **kwargs: [dict(item) for item in warehouse_items]
