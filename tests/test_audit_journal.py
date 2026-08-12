@@ -8,7 +8,6 @@ from app import web
 from app.catalog_db import CatalogDatabase
 from app.services.audit_journal import AuditJournal, whitelisted_changes
 from app.services.excel_product_catalog import ExcelProductCatalog
-from app.services.journal_presenter import format_journal_event
 from app.services.receipt_inventory import ReceiptInventory
 from app.services.sales_inventory import SalesInventory
 from app.services.shared_catalog import SharedCatalog
@@ -308,9 +307,8 @@ class AuditJournalTest(unittest.TestCase):
         )
         old = web.serialize_journal_event(self.journal.get_event(old_id))
         self.assertEqual(old["summary"], "Создана категория")
-        self.assertEqual(old["secondary_context"], "")
 
-        deleted_brand = format_journal_event({
+        deleted_brand = web.format_journal_event({
             "entity_type": "brand", "action": "deleted",
             "object_label_snapshot": "Casio",
             "metadata": {"products_deleted": 48},
@@ -321,11 +319,11 @@ class AuditJournalTest(unittest.TestCase):
         )
 
     def test_sale_and_receipt_copy_remains_human_readable(self):
-        sale_created = format_journal_event({
+        sale_created = web.format_journal_event({
             "entity_type": "sale", "action": "created",
             "object_label_snapshot": "Продажа #1542", "metadata": {},
         })
-        receipt_created = format_journal_event({
+        receipt_created = web.format_journal_event({
             "entity_type": "receipt", "action": "created",
             "object_label_snapshot": "Приход #483", "metadata": {},
         })
@@ -340,6 +338,83 @@ class AuditJournalTest(unittest.TestCase):
         self.assertEqual(
             status["summary"], "Статус: Отправлен → Завершён успешно"
         )
+
+    def test_feed_formatter_distinguishes_create_rename_and_scoped_actions(self):
+        cases = [
+            (
+                {"entity_type": "brand", "action": "created", "changes": {
+                    "name": {"before": None, "after": "Casio"},
+                }},
+                "Создан новый бренд",
+            ),
+            (
+                {"entity_type": "brand", "action": "updated", "changes": {
+                    "name": {"before": "Casio", "after": "CASIO Europe"},
+                }},
+                "Бренд переименован: Casio → CASIO Europe",
+            ),
+            (
+                {"entity_type": "category", "action": "created", "changes": {},
+                 "metadata": {"relation_action": "created",
+                              "global_category_created": True,
+                              "brand_name_snapshot": "Casio"}},
+                "Создана новая категория в бренде «Casio»",
+            ),
+            (
+                {"entity_type": "category", "action": "created", "changes": {},
+                 "metadata": {"relation_action": "linked",
+                              "brand_name_snapshot": "Casio"}},
+                "Добавлена в бренд «Casio»",
+            ),
+            (
+                {"entity_type": "category", "action": "updated", "changes": {
+                    "name": {"before": "Часы", "after": "Наручные часы"},
+                }},
+                "Категория переименована во всей ERP: Часы → Наручные часы",
+            ),
+            (
+                {"entity_type": "category", "action": "deleted", "changes": {},
+                 "metadata": {"brand_name_snapshot": "Casio",
+                              "products_deleted": 12}},
+                "Удалена из бренда «Casio» · удалено 12 товаров",
+            ),
+        ]
+        base = {
+            "occurred_at": "2026-08-12T10:00:00+00:00",
+            "actor_type": "user", "metadata": {},
+        }
+        for event, expected in cases:
+            payload = web.serialize_journal_event({**base, **event})
+            self.assertEqual(payload["summary"], expected)
+            self.assertNotIn("— →", payload["summary"])
+
+    def test_feed_formatter_keeps_updates_and_handles_incomplete_history(self):
+        base = {
+            "occurred_at": "2026-08-12T10:00:00+00:00",
+            "actor_type": "user", "metadata": {},
+        }
+        product_create = web.serialize_journal_event({
+            **base, "entity_type": "product", "action": "created",
+            "changes": {"name": {"before": None, "after": "KLOK-01"}},
+        })
+        product_update = web.serialize_journal_event({
+            **base, "entity_type": "product", "action": "updated",
+            "changes": {"stock": {"before": 0, "after": 1}},
+        })
+        sale_status = web.serialize_journal_event({
+            **base, "entity_type": "sale", "action": "status_changed",
+            "changes": {"status": {"before": "sent", "after": "completed"}},
+        })
+        incomplete = web.serialize_journal_event({
+            **base, "entity_type": "category", "action": "created",
+            "changes": {},
+        })
+        self.assertEqual(product_create["summary"], "Создан новый товар")
+        self.assertEqual(product_update["summary"], "Остаток: 0 → 1")
+        self.assertEqual(
+            sale_status["summary"], "Статус: Отправлен → Завершён успешно"
+        )
+        self.assertEqual(incomplete["summary"], "Создана категория")
 
 
 class AuditJournalUiTest(unittest.TestCase):

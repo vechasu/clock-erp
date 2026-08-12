@@ -32,13 +32,6 @@ from app.clients.bitrix_catalog import (
 )
 from app.services.bitrix_catalog_importer import BitrixCatalogImporter
 from app.services.audit_journal import AuditJournal
-from app.services.journal_presenter import (
-    ACTION_LABELS as JOURNAL_ACTION_LABELS,
-    ENTITY_LABELS as JOURNAL_ENTITY_LABELS,
-    FIELD_LABELS as JOURNAL_FIELD_LABELS,
-    display_value as journal_display_value,
-    format_journal_event,
-)
 from app.services.brand_values import normalize_brand
 from app.services.catalog_reader import CatalogReader
 from app.services.excel_product_catalog import (
@@ -13570,6 +13563,35 @@ def inject_sidebar_navigation():
     }
 
 
+JOURNAL_ENTITY_LABELS = {
+    "product": "Товары",
+    "brand": "Бренды",
+    "category": "Категории",
+    "sale": "Продажи",
+    "receipt": "Приход",
+}
+JOURNAL_ACTION_LABELS = {
+    "created": "Создано",
+    "system_created": "Создано системой",
+    "updated": "Изменено",
+    "status_changed": "Статус изменён",
+    "photo_added": "Фото добавлено",
+    "photo_replaced": "Фото заменено",
+    "photo_removed": "Фото удалено",
+    "cancelled": "Отменено",
+    "refused": "Отказ",
+    "deleted": "Удалено",
+    "comment_added": "Комментарий добавлен",
+}
+JOURNAL_FIELD_LABELS = {
+    "name": "Название", "article": "Артикул", "brand": "Бренд",
+    "category": "Категория", "price": "Цена", "cell": "Ячейка",
+    "stock": "Остаток", "status": "Статус", "payment": "Оплата",
+    "tracking": "Трек-номер", "quantity": "Количество",
+    "unit_price": "Цена", "source": "Источник", "comment": "Комментарий",
+    "order_number": "Номер", "document": "Документ",
+    "receipt_date": "Дата прихода", "purchase_price": "Закупочная цена",
+}
 JOURNAL_MONTHS = (
     "января", "февраля", "марта", "апреля", "мая", "июня",
     "июля", "августа", "сентября", "октября", "ноября", "декабря",
@@ -13604,31 +13626,166 @@ def _journal_day_label(value):
     return "{}{} {}".format(prefix, local.day, JOURNAL_MONTHS[local.month - 1])
 
 
-def _journal_value(value, field=""):
-    return journal_display_value(value, field)
+def _journal_value(value):
+    if value in (None, ""):
+        return "—"
+    if isinstance(value, bool):
+        return "Да" if value else "Нет"
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value)
 
 
-def serialize_journal_event(event):
-    local = _journal_local_datetime(event["occurred_at"])
+def _journal_count_text(count, one, few, many):
+    count = int(count)
+    last_two = count % 100
+    last = count % 10
+    noun = (
+        many if 11 <= last_two <= 14
+        else one if last == 1
+        else few if 2 <= last <= 4
+        else many
+    )
+    return "{} {}".format(count, noun)
+
+
+def _journal_optional_count(value):
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _journal_change_text(entity_type, change):
+    before = change["before"]
+    after = change["after"]
+    if entity_type == "sale" and change["field"] == "status":
+        before = get_sale_status_presentation(before)["label"]
+        after = get_sale_status_presentation(after)["label"]
+    return "{}: {} → {}".format(change["label"], before, after)
+
+
+def format_journal_event(event):
+    """Return a compact feed presentation from immutable structured data."""
+    entity_type = event["entity_type"]
+    action = event["action"]
     changes = []
     for field, values in event.get("changes", {}).items():
         values = values if isinstance(values, dict) else {}
         changes.append({
             "field": field,
             "label": JOURNAL_FIELD_LABELS.get(field, field),
-            "before": _journal_value(values.get("before"), field),
-            "after": _journal_value(values.get("after"), field),
+            "before": _journal_value(values.get("before")),
+            "after": _journal_value(values.get("after")),
         })
-    presentation = format_journal_event(event, changes)
+    metadata = event.get("metadata", {})
+    metadata = metadata if isinstance(metadata, dict) else {}
+    brand_name = str(
+        metadata.get("brand_name_snapshot") or metadata.get("brand") or ""
+    ).strip()
+    product_count = _journal_optional_count(metadata.get(
+        "deleted_products_count", metadata.get("products_deleted")
+    ))
+
+    action_text = ""
+
+    if action in {"created", "system_created"}:
+        if entity_type == "brand":
+            action_text = "Создан новый бренд"
+        elif entity_type == "category":
+            relation_action = metadata.get("relation_action")
+            if relation_action == "linked" and brand_name:
+                action_text = "Добавлена в бренд «{}»".format(brand_name)
+            elif metadata.get("global_category_created") is True and brand_name:
+                action_text = "Создана новая категория в бренде «{}»".format(
+                    brand_name
+                )
+            else:
+                action_text = "Создана категория"
+        elif entity_type == "product":
+            action_text = (
+                "Товар создан системой"
+                if action == "system_created" else "Создан новый товар"
+            )
+        elif entity_type == "sale":
+            action_text = "Создана новая продажа"
+        elif entity_type == "receipt":
+            action_text = "Создан новый приход"
+
+    elif entity_type == "brand" and action == "updated":
+        name_change = next((item for item in changes if item["field"] == "name"), None)
+        if name_change:
+            action_text = "Бренд переименован: {} → {}".format(
+                name_change["before"], name_change["after"]
+            )
+    elif entity_type == "category" and action == "updated":
+        name_change = next((item for item in changes if item["field"] == "name"), None)
+        if name_change:
+            action_text = "Категория переименована во всей ERP: {} → {}".format(
+                name_change["before"], name_change["after"]
+            )
+    elif entity_type == "brand" and action == "deleted":
+        action_text = "Бренд удалён"
+        if product_count:
+            action_text += " · удалено {}".format(
+                _journal_count_text(product_count, "товар", "товара", "товаров")
+            )
+    elif entity_type == "category" and action == "deleted":
+        action_text = (
+            "Удалена из бренда «{}»".format(brand_name)
+            if brand_name else "Удалена категория из бренда"
+        )
+        if product_count:
+            action_text += " · удалено {}".format(
+                _journal_count_text(product_count, "товар", "товара", "товаров")
+            )
+    elif entity_type == "sale" and action == "cancelled":
+        action_text = "Продажа отменена"
+    elif entity_type == "sale" and action == "refused":
+        action_text = "Отказ"
+    elif entity_type == "sale" and action == "deleted":
+        action_text = "Продажа удалена"
+    elif entity_type == "product" and action == "deleted":
+        action_text = "Товар удалён"
+    elif entity_type == "receipt" and action == "cancelled":
+        action_text = "Приход отменён"
+    elif action == "photo_added":
+        action_text = "Добавлена фотография"
+    elif action == "photo_replaced":
+        action_text = "Фотография заменена"
+    elif action == "photo_removed":
+        action_text = "Фотография удалена"
+    elif len(changes) == 1:
+        action_text = _journal_change_text(entity_type, changes[0])
+    elif len(changes) > 1:
+        action_text = "Изменено {}".format(
+            _journal_count_text(len(changes), "поле", "поля", "полей")
+        )
+        meaningful = [
+            _journal_change_text(entity_type, change) for change in changes[:2]
+        ]
+        action_text = "{} · {}".format(action_text, " · ".join(meaningful))
+    if not action_text:
+        action_text = JOURNAL_ACTION_LABELS.get(action, action)
+    return {
+        "title": event.get("object_label_snapshot", ""),
+        "action_text": action_text,
+        "secondary_context": JOURNAL_ENTITY_LABELS.get(entity_type, ""),
+        "semantic_type": entity_type,
+        "field_changes": changes,
+    }
+
+
+def serialize_journal_event(event):
+    local = _journal_local_datetime(event["occurred_at"])
+    presentation = format_journal_event(event)
+    summary = presentation["action_text"]
     result = dict(event)
     result.update({
-        "title": presentation["title"],
-        "entity_label": presentation["entity_label"],
-        "action_label": JOURNAL_ACTION_LABELS.get(event["action"], event["action"]),
-        "action_text": presentation["action_text"],
-        "secondary_context": presentation["secondary_context"],
-        "field_changes": changes,
-        "summary": presentation["action_text"],
+        "entity_label": presentation["secondary_context"],
+        "action_label": summary,
+        "field_changes": presentation["field_changes"],
+        "summary": summary,
         "time_display": local.strftime("%H:%M:%S"),
         "timestamp_display": local.strftime("%d.%m.%Y %H:%M:%S"),
         "day_key": local.date().isoformat(),

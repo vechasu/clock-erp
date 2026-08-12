@@ -150,7 +150,6 @@ class AuditJournal:
             str(safe_metadata.get("article") or ""),
             str(safe_metadata.get("number") or ""),
             str(safe_metadata.get("brand_name_snapshot") or ""),
-            str(safe_metadata.get("brand_name") or ""),
             str(safe_metadata.get("brand") or ""),
         ]
         values = (

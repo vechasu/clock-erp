@@ -81,7 +81,7 @@ with CatalogDatabase(PREVIEW_ROOT / "catalog.db").transaction() as connection:
             "204699", fixture_image_one, fixture_image_one,
             '[{"original_url":"' + fixture_image_one + '"},'
             '{"original_url":"' + fixture_image_two + '"}]',
-            "2026-08-12T00:00:00+00:00",
+            "2099-01-01T00:00:00+00:00",
             first_id,
         ),
     )

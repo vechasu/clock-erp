@@ -430,7 +430,7 @@ class SharedCatalog:
                     else "Добавлена в бренд {}".format(brand["name"])
                 ),
                 metadata={
-                    "brand_id": int(brand_id), "brand": brand["name"],
+                    "brand_id": int(brand_id),
                     "brand_name_snapshot": brand["name"],
                     "global_category_created": global_category is None,
                     "relation_action": (
