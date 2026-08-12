@@ -39,7 +39,7 @@ def main():
     ) + "\n"
     if args.output:
         Path(args.output).write_text(rendered, encoding="utf-8")
-    sys.stdout.write(rendered)
+    sys.stdout.buffer.write(rendered.encode("utf-8"))
 
 
 if __name__ == "__main__":
