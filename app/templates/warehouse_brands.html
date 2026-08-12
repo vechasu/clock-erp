@@ -81,7 +81,7 @@
         <div class="erp-workspace-heading"><h1>Товары</h1><p>Управление товарами, категориями и брендами</p></div>
         {% if not brand %}<div class="erp-workspace-actions"><button class="brand-btn primary" type="button" data-open="createBrand">+ Создать бренд</button></div>{% endif %}
     </header>
-    <nav class="erp-section-tabs" aria-label="Раздел товаров"><a class="erp-section-tab" href="{{ url_for('warehouse_page') }}">Товары</a><a class="erp-section-tab is-active" href="{{ url_for('warehouse_page', view='brands') }}" aria-current="page">Бренды</a></nav>
+    <nav class="erp-section-tabs" aria-label="Раздел товаров"><a class="erp-section-tab" href="{{ url_for('warehouse_page') }}">Товары</a><a class="erp-section-tab is-active" href="{{ url_for('warehouse_page', view='brands') }}" aria-current="page">Бренды</a><a class="erp-section-tab" href="{{ url_for('warehouse_page', view='categories') }}">Категории</a></nav>
     {% if request.args.get('notice') and request.args.get('message') %}<div class="notice notice-{{ request.args.get('notice') }}" role="status">{{ request.args.get('message') }}</div>{% endif %}
 
     {% if brand %}
