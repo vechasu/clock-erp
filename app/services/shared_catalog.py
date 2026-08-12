@@ -51,6 +51,10 @@ def catalog_prefix_pattern(value):
     return escaped + "%"
 
 
+def catalog_contains_pattern(value):
+    return "%" + catalog_prefix_pattern(value)
+
+
 def register_catalog_search(connection):
     connection.create_function(
         "catalog_search_key",
@@ -571,7 +575,7 @@ class SharedCatalog:
             where.append(
                 "catalog_search_key(c.name) LIKE ? ESCAPE '\\'"
             )
-            parameters.append(catalog_prefix_pattern(query))
+            parameters.append(catalog_contains_pattern(query))
         where_sql = " AND ".join(where)
         directions = {"asc": "ASC", "desc": "DESC"}
         direction = directions.get(str(sort_dir).lower(), "ASC")
@@ -591,7 +595,7 @@ class SharedCatalog:
 
         system_matches = (
             category_id in (None, "", 0, "0")
-            and (not query or catalog_search_key("Без категории").startswith(query))
+            and (not query or query in catalog_search_key("Без категории"))
         )
         with self.database.connect() as connection:
             if query:

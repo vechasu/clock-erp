@@ -82,12 +82,20 @@ class CategoryManagementTest(unittest.TestCase):
     def test_live_search_is_normalized_and_keeps_empty_entities(self):
         brand = self.catalog.create_brand("Casio")
         self.catalog.create_brand_category(brand["id"], "  Ёлочные часы  ")
+        self.catalog.create_brand_category(brand["id"], "Часы")
         self.catalog.create_brand_category(brand["id"], "test")
 
         found = self.catalog.list_category_overviews(query="  ел ", limit=100)
+        contains = self.catalog.list_category_overviews(
+            query="часы", limit=100
+        )
         empty = self.catalog.list_category_overviews(query="test", limit=100)
 
         self.assertEqual([item["name"] for item in found["items"]], ["Ёлочные часы"])
+        self.assertEqual(
+            [item["name"] for item in contains["items"]],
+            ["Ёлочные часы", "Часы"],
+        )
         self.assertEqual(empty["items"][0]["product_count"], 0)
 
     def test_global_create_uses_one_registry_and_blocks_normalized_duplicate(self):
