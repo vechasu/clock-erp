@@ -3628,12 +3628,19 @@ select.erp-control {
     }
 
     .search-form.erp-toolbar {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns: minmax(0, 1fr);
     }
 
-    .search-form.erp-toolbar .erp-search-wrap,
-    .search-form.erp-toolbar .warehouse-filter-actions {
-        grid-column: 1 / -1;
+    .warehouse-page .search-form.erp-toolbar > .erp-search-wrap,
+    .warehouse-page .search-form.erp-toolbar > .warehouse-filter-actions,
+    .warehouse-page .search-form.erp-toolbar > .warehouse-mobile-stock-controls,
+    .warehouse-page .search-form.erp-toolbar > .warehouse-column-settings,
+    .warehouse-page .search-form.erp-toolbar > .warehouse-more-menu,
+    .warehouse-page .search-form.erp-toolbar > .add-position-card {
+        grid-column: 1;
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
     }
 
     .search-form.erp-toolbar .warehouse-filter-actions {
