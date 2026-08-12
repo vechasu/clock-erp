@@ -1,3 +1,4 @@
+from pathlib import Path
 import unittest
 from unittest import mock
 
@@ -88,6 +89,16 @@ class SalesReportingContractTest(unittest.TestCase):
         ):
             with self.subTest(path=path):
                 self.assertEqual(self.client.post(path).status_code, 405)
+
+    def test_extracted_module_does_not_import_monolithic_web_module(self):
+        module_directory = Path(web.PROJECT_ROOT) / "app" / "sales_reporting"
+        source = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in module_directory.glob("*.py")
+        )
+        self.assertNotIn("from app import web", source)
+        self.assertNotIn("from app.web import", source)
+        self.assertNotIn("import app.web", source)
 
 
 if __name__ == "__main__":
