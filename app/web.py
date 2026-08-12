@@ -1639,6 +1639,53 @@ def sort_erp_records(records, field, direction, numeric_fields=()):
 @app.route("/app/products")
 def warehouse_page():
     warehouse_view = (request.args.get("view") or "products").strip()
+    if warehouse_view == "categories":
+        shared_catalog = SharedCatalog()
+        category_id = (request.args.get("category_id") or "").strip()
+        query = (request.args.get("q") or "").strip()
+        sort_by = (request.args.get("sort_by") or "usage").strip()
+        sort_dir = (request.args.get("sort_dir") or "asc").strip()
+        page, per_page = parse_erp_pagination()
+        category = (
+            shared_catalog.get_category_overview(category_id)
+            if category_id else None
+        )
+        if category_id and category is None:
+            return redirect(url_for(
+                "warehouse_page", view="categories", notice="error",
+                message="Категория не найдена.",
+            ))
+        result = shared_catalog.list_category_overviews(
+            query=query,
+            limit=per_page,
+            offset=(page - 1) * per_page,
+            sort_by=sort_by,
+            sort_dir=sort_dir,
+        )
+        pages = max(1, (result["total"] + per_page - 1) // per_page)
+        if page > pages:
+            page = pages
+            result = shared_catalog.list_category_overviews(
+                query=query,
+                limit=per_page,
+                offset=(page - 1) * per_page,
+                sort_by=sort_by,
+                sort_dir=sort_dir,
+            )
+        return render_template(
+            "warehouse_categories.html",
+            categories=result["items"],
+            category=category,
+            query=query,
+            sort_by=sort_by,
+            sort_dir=sort_dir,
+            pagination=build_erp_pagination(
+                "warehouse_page", result["total"], page, per_page
+            ),
+            category_options=shared_catalog.list_category_overviews(
+                limit=200
+            )["items"],
+        )
     if warehouse_view == "brands":
         shared_catalog = SharedCatalog()
         brand_id = (request.args.get("brand_id") or "").strip()
@@ -12975,6 +13022,109 @@ def _brands_redirect(brand_id=None, notice="success", message=""):
     if brand_id is not None:
         arguments["brand_id"] = int(brand_id)
     return redirect(url_for("warehouse_page", **arguments))
+
+
+def _categories_redirect(category_id=None, notice="success", message=""):
+    arguments = {"view": "categories", "notice": notice, "message": message}
+    if category_id is not None:
+        arguments["category_id"] = int(category_id)
+    return redirect(url_for("warehouse_page", **arguments))
+
+
+@app.route("/warehouse/categories", methods=["POST"])
+def warehouse_create_global_category():
+    require_csrf_when_authenticated()
+    try:
+        category = SharedCatalog().create_global_category(
+            request.form.get("name"), **current_audit_actor()
+        )
+        _invalidate_deleted_product_caches()
+        return _categories_redirect(
+            category["id"], message="Категория создана."
+        )
+    except (DuplicateCatalogValueError, CatalogReferenceError, ValueError) as error:
+        return _categories_redirect(notice="error", message=str(error))
+
+
+@app.route(
+    "/warehouse/categories/<int:category_id>/rename", methods=["POST"]
+)
+def warehouse_rename_category(category_id):
+    require_csrf_when_authenticated()
+    try:
+        SharedCatalog().rename_category(
+            category_id, request.form.get("name"), **current_audit_actor()
+        )
+        _invalidate_deleted_product_caches()
+        return _categories_redirect(
+            category_id, message="Категория переименована во всей ERP."
+        )
+    except (DuplicateCatalogValueError, CatalogReferenceError, ValueError) as error:
+        return _categories_redirect(
+            category_id, notice="error", message=str(error)
+        )
+
+
+@app.route(
+    "/warehouse/categories/<int:category_id>/delete", methods=["POST"]
+)
+def warehouse_delete_global_category(category_id):
+    require_csrf_when_authenticated()
+    try:
+        catalog = SharedCatalog()
+        plan = catalog.category_delete_plan(category_id)
+        expected_confirmation = (
+            "ПЕРЕНЕСТИ" if plan["requires_transfer"] else "УДАЛИТЬ"
+        )
+        if (request.form.get("confirmation") or "").strip() != expected_confirmation:
+            raise CatalogReferenceError("Подтвердите операцию удаления категории.")
+        result = catalog.move_products_and_archive_category(
+            category_id,
+            target_category_id=request.form.get("target_category_id"),
+            **current_audit_actor()
+        )
+        _invalidate_deleted_product_caches()
+        if result["active_product_count"]:
+            message = "Перенесено товаров: {}; категория удалена.".format(
+                result["active_product_count"]
+            )
+        else:
+            message = "Категория удалена."
+        return _categories_redirect(message=message)
+    except (CatalogReferenceError, ValueError) as error:
+        return _categories_redirect(
+            category_id, notice="error", message=str(error)
+        )
+
+
+@app.route("/api/v1/category-overviews", methods=["GET"])
+def api_category_overviews():
+    query = (request.args.get("q") or "").strip()
+    limit = api_positive_int(request.args.get("limit"), 50, 200)
+    try:
+        offset = max(0, int(request.args.get("offset") or 0))
+        result = SharedCatalog().list_category_overviews(
+            query=query,
+            limit=limit,
+            offset=offset,
+            sort_by=(request.args.get("sort_by") or "usage").strip(),
+            sort_dir=(request.args.get("sort_dir") or "asc").strip(),
+        )
+    except (TypeError, ValueError) as error:
+        return api_error("CATEGORY_FILTER_INVALID", str(error), 422)
+    return api_success(result["items"], total=result["total"],
+                       limit=limit, offset=offset)
+
+
+@app.route(
+    "/api/v1/category-overviews/<int:category_id>/delete-plan",
+    methods=["GET"],
+)
+def api_category_delete_plan(category_id):
+    try:
+        return api_success(SharedCatalog().category_delete_plan(category_id))
+    except (CatalogReferenceError, ValueError) as error:
+        return api_error("CATEGORY_DELETE_BLOCKED", str(error), 422)
 
 
 @app.route("/warehouse/brands", methods=["POST"])
