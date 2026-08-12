@@ -70,7 +70,9 @@ class CategoryManagementTest(unittest.TestCase):
         )
         self.assertEqual(items["test"]["id"], empty["id"])
         self.assertEqual(items["test"]["status"], "Не используется")
-        self.assertEqual(items["test"]["brands"], [])
+        self.assertEqual(items["test"]["brand_count"], 1)
+        self.assertEqual(items["test"]["brands"][0]["name"], "Casio")
+        self.assertEqual(items["test"]["brands"][0]["product_count"], 0)
         self.assertTrue(items["Без категории"]["system"])
         self.assertEqual(items["Без категории"]["status"], "Системная")
         self.assertEqual(items["Без категории"]["product_count"], 1)
@@ -190,7 +192,7 @@ class CategoryManagementTest(unittest.TestCase):
         with self.assertRaises(CatalogReferenceError):
             self.catalog.category_delete_plan(0)
 
-    def test_detail_uses_actual_product_brands_not_stale_relations(self):
+    def test_detail_unions_explicit_empty_and_product_brands(self):
         product = self.product("A", "A", "Casio", "Часы", 1)
         stale = self.catalog.create_brand("Legacy")
         with self.database.transaction() as connection:
@@ -201,8 +203,122 @@ class CategoryManagementTest(unittest.TestCase):
             )
 
         detail = self.catalog.get_category_overview(product["category_id"])
-        self.assertEqual(detail["brand_count"], 1)
-        self.assertEqual([item["name"] for item in detail["brands"]], ["Casio"])
+        self.assertEqual(detail["brand_count"], 2)
+        self.assertEqual(detail["detail_brand_count"], 2)
+        self.assertEqual(
+            [item["name"] for item in detail["brands"]],
+            ["Casio", "Legacy"],
+        )
+        legacy = next(item for item in detail["brands"] if item["name"] == "Legacy")
+        self.assertTrue(legacy["explicit_relation"])
+        self.assertEqual(legacy["product_count"], 0)
+        self.assertEqual(legacy["nonzero_count"], 0)
+        self.assertEqual(legacy["stock_total"], 0)
+
+    def test_product_only_brand_is_visible_without_get_side_effects(self):
+        product = self.product("A", "A", "Casio", "Часы", 3)
+        with self.database.transaction() as connection:
+            connection.execute(
+                "DELETE FROM erp_brand_categories WHERE brand_id = ? "
+                "AND category_id = ?",
+                (product["brand_id"], product["category_id"]),
+            )
+
+        detail = self.catalog.get_category_overview(product["category_id"])
+
+        self.assertEqual(detail["brand_count"], 0)
+        self.assertEqual(detail["detail_brand_count"], 1)
+        self.assertTrue(detail["brands"][0]["product_only"])
+        self.assertEqual(detail["brands"][0]["product_count"], 1)
+        with self.database.connect() as connection:
+            relation_count = connection.execute(
+                "SELECT COUNT(*) FROM erp_brand_categories "
+                "WHERE brand_id = ? AND category_id = ?",
+                (product["brand_id"], product["category_id"]),
+            ).fetchone()[0]
+        self.assertEqual(relation_count, 0)
+
+    def test_detail_reconciles_negative_and_zero_sum_stock(self):
+        first = self.product("Positive", "POS", "Casio", "Часы", 5)
+        negative = self.product("Negative", "NEG", "Casio", "Часы", 0)
+        self.product("Other", "OTH", "Seiko", "Часы", 0)
+        with self.database.transaction() as connection:
+            connection.execute(
+                "UPDATE catalog_excel_products SET stock = -5 WHERE id = ?",
+                (negative["id"],),
+            )
+
+        detail = self.catalog.get_category_overview(first["category_id"])
+
+        self.assertEqual(detail["product_count"], 3)
+        self.assertEqual(detail["nonzero_count"], 2)
+        self.assertEqual(detail["stock_total"], 0)
+        self.assertEqual(
+            sum(item["product_count"] for item in detail["brands"]),
+            detail["product_count"],
+        )
+        self.assertEqual(
+            sum(item["nonzero_count"] for item in detail["brands"]),
+            detail["nonzero_count"],
+        )
+        self.assertEqual(
+            sum(item["stock_total"] for item in detail["brands"]),
+            detail["stock_total"],
+        )
+
+    def test_real_duplicate_category_ids_remain_separate_rows(self):
+        first_brand = self.catalog.create_brand("First")
+        second_brand = self.catalog.create_brand("Second")
+        with self.database.transaction() as connection:
+            for category_id, brand_id in ((501, first_brand["id"]),
+                                          (502, second_brand["id"])):
+                connection.execute(
+                    "INSERT INTO erp_categories "
+                    "(id, brand_id, name, normalized_name, active, "
+                    "created_at, updated_at) VALUES (?, ?, 'Часы', 'часы', "
+                    "1, 'x', 'x')",
+                    (category_id, brand_id),
+                )
+
+        result = self.catalog.list_category_overviews(query="час", limit=100)
+
+        self.assertEqual([item["id"] for item in result["items"]], [501, 502])
+
+    def test_global_empty_category_has_no_brand_relation(self):
+        self.catalog.create_brand("Owner")
+        category = self.catalog.create_global_category("Ремешки")
+        detail = self.catalog.get_category_overview(category["id"])
+
+        self.assertEqual(detail["brand_count"], 0)
+        self.assertEqual(detail["detail_brand_count"], 0)
+        self.assertEqual(detail["product_count"], 0)
+        self.assertEqual(detail["brands"], [])
+        with self.database.connect() as connection:
+            self.assertEqual(connection.execute(
+                "SELECT COUNT(*) FROM erp_brand_categories WHERE category_id = ?",
+                (category["id"],),
+            ).fetchone()[0], 0)
+
+    def test_system_bucket_is_first_and_has_product_brand_count(self):
+        self.product("Watch", "WATCH", "Casio", "Часы", 1)
+        unassigned = self.products.create_product(
+            name="No category", article="NONE", brand="Seiko",
+            category="", category_id=0, stock=0,
+        )
+        with self.database.transaction() as connection:
+            connection.execute(
+                "UPDATE catalog_excel_products SET stock = -2 WHERE id = ?",
+                (unassigned["id"],),
+            )
+
+        result = self.catalog.list_category_overviews(
+            sort_by="products", sort_dir="desc", limit=100
+        )
+
+        self.assertEqual(result["items"][0]["id"], 0)
+        self.assertEqual(result["items"][0]["brand_count"], 1)
+        self.assertEqual(result["items"][0]["nonzero_count"], 1)
+        self.assertEqual(result["items"][0]["stock_total"], -2)
 
     def test_pagination_and_numeric_sort_are_server_side(self):
         brand = self.catalog.create_brand("Casio")
@@ -227,9 +343,18 @@ class CategoryManagementWebTest(unittest.TestCase):
             "os.environ", {"CATALOG_DATABASE_PATH": str(self.database_path)}
         )
         self.environment.start()
-        database = CatalogDatabase(self.database_path)
-        database.initialize()
-        SharedCatalog(database).create_brand("Casio")
+        self.database = CatalogDatabase(self.database_path)
+        self.database.initialize()
+        with self.database.transaction() as connection:
+            connection.execute(
+                "INSERT INTO catalog_excel_batches ("
+                "id, file_sha256, source_filename, row_count, total_stock, "
+                "positive_rows, zero_rows, status, created_at, applied_at) "
+                "VALUES ('category-web', 'category-web-sha', 'category-web.xlsx', "
+                "0, 0, 0, 0, 'active', '2026-08-12T00:00:00+00:00', "
+                "'2026-08-12T00:00:00+00:00')"
+            )
+        SharedCatalog(self.database).create_brand("Casio")
         self.original_config = dict(web.app.config)
         web.app.config.update(TESTING=True, AUTH_TESTING=False)
         self.client = web.app.test_client()
@@ -251,7 +376,7 @@ class CategoryManagementWebTest(unittest.TestCase):
         page = self.client.get("/app/products?view=categories")
         self.assertEqual(page.status_code, 200)
         self.assertIn("Категории".encode(), page.data)
-        self.assertIn("Поиск категории".encode(), page.data)
+        self.assertIn("Поиск категорий".encode(), page.data)
         payload = self.client.get(
             "/api/v1/category-overviews?q=test"
         ).get_json()
@@ -263,29 +388,74 @@ class CategoryManagementWebTest(unittest.TestCase):
         self.assertIn("Открыть все товары".encode(), detail.data)
         self.assertIn("Бренды (0)".encode(), detail.data)
 
-        rejected = self.client.post(
-            "/warehouse/categories/{}/delete".format(category_id),
-            data={}, follow_redirects=False,
-        )
-        self.assertIn("category_id={}".format(category_id), rejected.headers["Location"])
-        accepted = self.client.post(
-            "/warehouse/categories/{}/delete".format(category_id),
-            data={"confirmation": "УДАЛИТЬ"}, follow_redirects=False,
-        )
-        self.assertNotIn("category_id=", accepted.headers["Location"])
-
-    def test_template_contains_two_step_confirmation_and_live_search(self):
+    def test_template_has_canonical_columns_actions_and_live_search(self):
         source = (
             Path(__file__).resolve().parents[1]
             / "app" / "templates" / "warehouse_categories.html"
         ).read_text(encoding="utf-8")
-        self.assertIn("Категория используется", source)
-        self.assertIn("Перенести товары и удалить категорию?", source)
-        self.assertIn("Остатки, цены и другие данные товаров", source)
+        self.assertIn("Переименовать категорию во всей ERP", source)
+        self.assertIn("Открыть товары", source)
+        self.assertIn("Брендов", source)
+        self.assertNotIn(">Статус<", source)
+        self.assertNotIn("Удалить категорию", source)
+        self.assertNotIn("delete-plan", source)
         self.assertIn("setTimeout(loadCategories,200)", source)
         self.assertIn("AbortController", source)
         self.assertIn("history.replaceState", source)
-        self.assertIn("delete-plan", source)
+
+    def test_category_get_search_and_detail_do_not_repair_relations(self):
+        products = ExcelProductCatalog(self.database)
+        product = products.create_product(
+            name="Legacy", article="LEGACY", brand="Casio",
+            category="Часы", stock=1,
+        )
+        with self.database.transaction() as connection:
+            connection.execute(
+                "DELETE FROM erp_brand_categories WHERE brand_id = ? "
+                "AND category_id = ?",
+                (product["brand_id"], product["category_id"]),
+            )
+            before = {
+                "relations": connection.execute(
+                    "SELECT COUNT(*) FROM erp_brand_categories"
+                ).fetchone()[0],
+                "products": connection.execute(
+                    "SELECT COUNT(*) FROM catalog_excel_products"
+                ).fetchone()[0],
+                "events": connection.execute(
+                    "SELECT COUNT(*) FROM erp_audit_events"
+                ).fetchone()[0],
+            }
+
+        self.assertEqual(
+            self.client.get("/app/products?view=categories").status_code, 200
+        )
+        self.assertEqual(
+            self.client.get(
+                "/app/products?view=categories&category_id={}".format(
+                    product["category_id"]
+                )
+            ).status_code,
+            200,
+        )
+        self.assertEqual(
+            self.client.get("/api/v1/category-overviews?q=час").status_code,
+            200,
+        )
+
+        with self.database.connect() as connection:
+            after = {
+                "relations": connection.execute(
+                    "SELECT COUNT(*) FROM erp_brand_categories"
+                ).fetchone()[0],
+                "products": connection.execute(
+                    "SELECT COUNT(*) FROM catalog_excel_products"
+                ).fetchone()[0],
+                "events": connection.execute(
+                    "SELECT COUNT(*) FROM erp_audit_events"
+                ).fetchone()[0],
+            }
+        self.assertEqual(after, before)
 
 
 if __name__ == "__main__":

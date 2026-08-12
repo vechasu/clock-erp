@@ -1643,7 +1643,7 @@ def warehouse_page():
         shared_catalog = SharedCatalog()
         category_id = (request.args.get("category_id") or "").strip()
         query = (request.args.get("q") or "").strip()
-        sort_by = (request.args.get("sort_by") or "usage").strip()
+        sort_by = (request.args.get("sort_by") or "name").strip()
         sort_dir = (request.args.get("sort_dir") or "asc").strip()
         page, per_page = parse_erp_pagination()
         category = (
@@ -1682,9 +1682,6 @@ def warehouse_page():
             pagination=build_erp_pagination(
                 "warehouse_page", result["total"], page, per_page
             ),
-            category_options=shared_catalog.list_category_overviews(
-                limit=200
-            )["items"],
         )
     if warehouse_view == "brands":
         shared_catalog = SharedCatalog()
@@ -13107,7 +13104,7 @@ def api_category_overviews():
             query=query,
             limit=limit,
             offset=offset,
-            sort_by=(request.args.get("sort_by") or "usage").strip(),
+            sort_by=(request.args.get("sort_by") or "name").strip(),
             sort_dir=(request.args.get("sort_dir") or "asc").strip(),
         )
     except (TypeError, ValueError) as error:

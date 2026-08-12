@@ -554,7 +554,7 @@ class SharedCatalog:
         limit=50,
         offset=0,
         category_id=None,
-        sort_by="usage",
+        sort_by="name",
         sort_dir="asc",
     ):
         """Return the global category registry with product-derived metrics."""
@@ -577,7 +577,7 @@ class SharedCatalog:
         direction = directions.get(str(sort_dir).lower(), "ASC")
         sort_expressions = {
             "name": "c.name COLLATE NOCASE",
-            "brands": "COUNT(DISTINCT p.brand_id)",
+            "brands": "COALESCE(MAX(category_relations.brand_count), 0)",
             "products": "COUNT(p.id)",
             "in_stock": "SUM(CASE WHEN p.stock != 0 THEN 1 ELSE 0 END)",
             "stock": "SUM(COALESCE(p.stock, 0))",
@@ -587,10 +587,7 @@ class SharedCatalog:
                 sort_expressions[sort_by], direction
             )
         else:
-            order_sql = (
-                "CASE WHEN COUNT(p.id) > 0 THEN 0 ELSE 1 END ASC, "
-                "c.name COLLATE NOCASE ASC"
-            )
+            order_sql = "c.name COLLATE NOCASE ASC, c.id ASC"
 
         system_matches = (
             category_id in (None, "", 0, "0")
@@ -625,13 +622,19 @@ class SharedCatalog:
                 rows.extend(connection.execute(
                     "SELECT c.id, c.brand_id, c.name, c.active, "
                     "COUNT(p.id) AS product_count, "
-                    "COUNT(DISTINCT p.brand_id) AS brand_count, "
+                    "COALESCE(MAX(category_relations.brand_count), 0) "
+                    "AS brand_count, "
                     "COALESCE(SUM(CASE WHEN p.stock != 0 THEN 1 ELSE 0 END), 0) "
                     "AS nonzero_count, COALESCE(SUM(p.stock), 0) AS stock_total "
                     "FROM erp_categories c LEFT JOIN catalog_excel_products p "
                     "ON p.category_id = c.id AND p.active = 1 "
+                    "LEFT JOIN (SELECT category_id, "
+                    "COUNT(DISTINCT brand_id) AS brand_count "
+                    "FROM erp_brand_categories WHERE category_id <> 0 "
+                    "GROUP BY category_id) category_relations "
+                    "ON category_relations.category_id = c.id "
                     "WHERE " + where_sql + " GROUP BY c.id ORDER BY "
-                    + order_sql + " LIMIT ? OFFSET ?",
+                    + order_sql + ", c.id ASC LIMIT ? OFFSET ?",
                     parameters + [normal_limit, normal_offset],
                 ).fetchall())
 
@@ -640,26 +643,41 @@ class SharedCatalog:
             if category_ids:
                 placeholders = ", ".join("?" for _ in category_ids)
                 brand_rows = connection.execute(
-                    "SELECT p.category_id, b.id, b.name, COUNT(p.id) "
-                    "AS product_count, COALESCE(SUM(CASE WHEN p.stock != 0 "
-                    "THEN 1 ELSE 0 END), 0) AS nonzero_count, "
-                    "COALESCE(SUM(p.stock), 0) AS stock_total "
-                    "FROM catalog_excel_products p JOIN erp_brands b "
-                    "ON b.id = p.brand_id WHERE p.active = 1 "
-                    "AND p.category_id IN ({}) GROUP BY p.category_id, b.id "
-                    "ORDER BY b.name COLLATE NOCASE".format(placeholders),
-                    category_ids,
+                    "SELECT pairs.category_id, pairs.brand_id AS id, "
+                    "COALESCE(b.name, 'Без бренда') AS name, "
+                    "COUNT(p.id) AS product_count, "
+                    "COALESCE(SUM(CASE WHEN p.stock != 0 THEN 1 ELSE 0 END), 0) "
+                    "AS nonzero_count, COALESCE(SUM(p.stock), 0) AS stock_total, "
+                    "EXISTS (SELECT 1 FROM erp_brand_categories relation "
+                    "WHERE relation.category_id = pairs.category_id "
+                    "AND relation.brand_id = pairs.brand_id) AS explicit_relation "
+                    "FROM (SELECT bc.category_id, bc.brand_id "
+                    "FROM erp_brand_categories bc WHERE bc.category_id IN ({0}) "
+                    "UNION SELECT p.category_id, COALESCE(p.brand_id, 0) "
+                    "FROM catalog_excel_products p WHERE p.active = 1 "
+                    "AND p.category_id IN ({0})) pairs "
+                    "LEFT JOIN erp_brands b ON b.id = pairs.brand_id "
+                    "LEFT JOIN catalog_excel_products p ON p.active = 1 "
+                    "AND p.category_id = pairs.category_id "
+                    "AND COALESCE(p.brand_id, 0) = pairs.brand_id "
+                    "GROUP BY pairs.category_id, pairs.brand_id "
+                    "ORDER BY name COLLATE NOCASE, pairs.brand_id".format(
+                        placeholders
+                    ),
+                    category_ids + category_ids,
                 ).fetchall()
             if any(int(row["id"]) == 0 for row in rows):
                 brand_rows.extend(connection.execute(
-                    "SELECT 0 AS category_id, b.id, b.name, COUNT(p.id) "
+                    "SELECT 0 AS category_id, COALESCE(b.id, 0) AS id, "
+                    "COALESCE(b.name, 'Без бренда') AS name, COUNT(p.id) "
                     "AS product_count, COALESCE(SUM(CASE WHEN p.stock != 0 "
                     "THEN 1 ELSE 0 END), 0) AS nonzero_count, "
-                    "COALESCE(SUM(p.stock), 0) AS stock_total "
-                    "FROM catalog_excel_products p JOIN erp_brands b "
+                    "COALESCE(SUM(p.stock), 0) AS stock_total, "
+                    "0 AS explicit_relation "
+                    "FROM catalog_excel_products p LEFT JOIN erp_brands b "
                     "ON b.id = p.brand_id WHERE p.active = 1 "
-                    "AND p.category_id IS NULL GROUP BY b.id "
-                    "ORDER BY b.name COLLATE NOCASE"
+                    "AND p.category_id IS NULL GROUP BY COALESCE(b.id, 0) "
+                    "ORDER BY name COLLATE NOCASE, id"
                 ).fetchall())
 
         brands = {}
@@ -671,6 +689,12 @@ class SharedCatalog:
                 "nonzero_count": int(row["nonzero_count"]),
                 "stock_total": normalized_stock_value(row["stock_total"]),
                 "stock_display": format_stock_value(row["stock_total"]),
+                "explicit_relation": bool(row["explicit_relation"]),
+                "product_only": (
+                    not bool(row["explicit_relation"])
+                    and int(row["product_count"]) > 0
+                    and int(row["category_id"]) != 0
+                ),
             })
         items = []
         for row in rows:
@@ -686,6 +710,10 @@ class SharedCatalog:
                 "nonzero_count": int(row["nonzero_count"]),
                 "brands": brands.get(int(row["id"]), []),
             })
+            item["detail_brand_count"] = len(item["brands"])
+            item["product_only_brand_count"] = sum(
+                1 for brand in item["brands"] if brand["product_only"]
+            )
             items.append(item)
         return {"items": items, "total": int(total), "limit": limit,
                 "offset": offset}
