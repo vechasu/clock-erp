@@ -1,3 +1,5 @@
+import ast
+from pathlib import Path
 import unittest
 
 from flask import url_for
@@ -6,6 +8,32 @@ from app import web
 
 
 class CatalogExtractionContractTest(unittest.TestCase):
+    def test_catalog_application_is_independent_from_flask_and_web(self):
+        source = (
+            Path(__file__).resolve().parents[1]
+            / "app/catalog/application.py"
+        ).read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        imported_modules = {
+            alias.name
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Import)
+            for alias in node.names
+        }
+        imported_modules.update(
+            node.module or ""
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom)
+        )
+        self.assertFalse(
+            any(
+                module == "flask"
+                or module.startswith("flask.")
+                or module == "app.web"
+                for module in imported_modules
+            )
+        )
+
     def test_management_routes_keep_paths_methods_and_endpoints(self):
         expected = {
             "/warehouse/categories": (

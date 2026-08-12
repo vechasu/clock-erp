@@ -34,6 +34,7 @@ from app.services.bitrix_catalog_importer import BitrixCatalogImporter
 from app.services.audit_journal import AuditJournal
 from app.services.brand_values import normalize_brand
 from app.services.catalog_reader import CatalogReader
+from app.catalog.application import CatalogApplication
 from app.services.excel_product_catalog import (
     ExcelProductCatalog,
     ProductDeleteBlockedError,
@@ -12413,6 +12414,18 @@ def _invalidate_deleted_product_caches():
     WAREHOUSE_CACHE["loaded_at"] = 0
 
 
+_catalog_application = CatalogApplication(
+    shared_catalog_factory=lambda: SharedCatalog(),
+    product_catalog_factory=lambda: ExcelProductCatalog(),
+    normalize_label=normalize_catalog_label,
+    label_key=catalog_label_key,
+    remember_classification=lambda brand, category="": (
+        remember_catalog_classification(brand, category)
+    ),
+    invalidate_product_caches=_invalidate_deleted_product_caches,
+)
+
+
 def _product_force_delete_allowed():
     user = current_auth_user() or {}
     return str(user.get("role") or "").strip() == "admin"
@@ -12454,10 +12467,9 @@ def _categories_redirect(category_id=None, notice="success", message=""):
 def warehouse_create_global_category():
     require_csrf_when_authenticated()
     try:
-        category = SharedCatalog().create_global_category(
-            request.form.get("name"), **current_audit_actor()
+        category = _catalog_application.create_global_category(
+            request.form.get("name"), current_audit_actor()
         )
-        _invalidate_deleted_product_caches()
         return _categories_redirect(
             category["id"], message="Категория создана."
         )
@@ -12471,10 +12483,11 @@ def warehouse_create_global_category():
 def warehouse_rename_category(category_id):
     require_csrf_when_authenticated()
     try:
-        SharedCatalog().rename_category(
-            category_id, request.form.get("name"), **current_audit_actor()
+        _catalog_application.rename_category(
+            category_id,
+            request.form.get("name"),
+            current_audit_actor(),
         )
-        _invalidate_deleted_product_caches()
         return _categories_redirect(
             category_id, message="Категория переименована во всей ERP."
         )
@@ -12490,19 +12503,12 @@ def warehouse_rename_category(category_id):
 def warehouse_delete_global_category(category_id):
     require_csrf_when_authenticated()
     try:
-        catalog = SharedCatalog()
-        plan = catalog.category_delete_plan(category_id)
-        expected_confirmation = (
-            "ПЕРЕНЕСТИ" if plan["requires_transfer"] else "УДАЛИТЬ"
-        )
-        if (request.form.get("confirmation") or "").strip() != expected_confirmation:
-            raise CatalogReferenceError("Подтвердите операцию удаления категории.")
-        result = catalog.move_products_and_archive_category(
+        result = _catalog_application.delete_global_category(
             category_id,
-            target_category_id=request.form.get("target_category_id"),
-            **current_audit_actor()
+            request.form.get("confirmation"),
+            request.form.get("target_category_id"),
+            current_audit_actor(),
         )
-        _invalidate_deleted_product_caches()
         if result["active_product_count"]:
             message = "Перенесено товаров: {}; категория удалена.".format(
                 result["active_product_count"]
@@ -12522,7 +12528,7 @@ def api_category_overviews():
     limit = api_positive_int(request.args.get("limit"), 50, 200)
     try:
         offset = max(0, int(request.args.get("offset") or 0))
-        result = SharedCatalog().list_category_overviews(
+        result = _catalog_application.category_overviews(
             query=query,
             limit=limit,
             offset=offset,
@@ -12541,7 +12547,7 @@ def api_category_overviews():
 )
 def api_category_delete_plan(category_id):
     try:
-        return api_success(SharedCatalog().category_delete_plan(category_id))
+        return api_success(_catalog_application.category_delete_plan(category_id))
     except (CatalogReferenceError, ValueError) as error:
         return api_error("CATEGORY_DELETE_BLOCKED", str(error), 422)
 
@@ -12550,10 +12556,9 @@ def api_category_delete_plan(category_id):
 def warehouse_create_brand():
     require_csrf_when_authenticated()
     try:
-        brand = SharedCatalog().create_brand(
-            request.form.get("name"), **current_audit_actor()
+        brand = _catalog_application.create_brand(
+            request.form.get("name"), current_audit_actor()
         )
-        _invalidate_deleted_product_caches()
         return _brands_redirect(
             brand["id"], message="Бренд создан."
         )
@@ -12565,10 +12570,11 @@ def warehouse_create_brand():
 def warehouse_rename_brand(brand_id):
     require_csrf_when_authenticated()
     try:
-        SharedCatalog().rename_brand(
-            brand_id, request.form.get("name"), **current_audit_actor()
+        _catalog_application.rename_brand(
+            brand_id,
+            request.form.get("name"),
+            current_audit_actor(),
         )
-        _invalidate_deleted_product_caches()
         return _brands_redirect(
             brand_id, message="Бренд переименован."
         )
@@ -12582,10 +12588,11 @@ def warehouse_rename_brand(brand_id):
 def warehouse_create_brand_category(brand_id):
     require_csrf_when_authenticated()
     try:
-        SharedCatalog().create_brand_category(
-            brand_id, request.form.get("name"), **current_audit_actor()
+        _catalog_application.create_brand_category(
+            brand_id,
+            request.form.get("name"),
+            current_audit_actor(),
         )
-        _invalidate_deleted_product_caches()
         return _brands_redirect(
             brand_id, message="Категория добавлена в бренд."
         )
@@ -12601,18 +12608,19 @@ def warehouse_create_brand_category(brand_id):
 )
 def warehouse_rename_global_category(brand_id, category_id):
     require_csrf_when_authenticated()
-    brand = SharedCatalog().get_brand_overview(brand_id)
-    category = next((item for item in (brand or {}).get("categories", [])
-                     if item["id"] == category_id), None)
-    if brand is None or category is None or category_id == 0:
-        return _brands_redirect(
-            brand_id, notice="error", message="Категория бренда не найдена."
-        )
     try:
-        SharedCatalog().rename_category(
-            category_id, request.form.get("name"), **current_audit_actor()
+        result = _catalog_application.rename_brand_category(
+            brand_id,
+            category_id,
+            request.form.get("name"),
+            current_audit_actor(),
         )
-        _invalidate_deleted_product_caches()
+        if result is None:
+            return _brands_redirect(
+                brand_id,
+                notice="error",
+                message="Категория бренда не найдена.",
+            )
         return _brands_redirect(
             brand_id, message="Категория переименована во всей ERP."
         )
@@ -12623,18 +12631,14 @@ def warehouse_rename_global_category(brand_id, category_id):
 @app.route("/api/v1/brands", methods=["GET"])
 def api_brand_overviews():
     query = (request.args.get("q") or "").strip()
-    brands = SharedCatalog().list_brand_overviews(
-        query=query,
-        limit=500,
-    )
+    brands = _catalog_application.brand_overviews(query)
     return api_success({"items": brands, "query": query})
 
 
 @app.route("/warehouse/brands/<int:brand_id>/delete", methods=["POST"])
 def warehouse_delete_brand(brand_id):
     require_csrf_when_authenticated()
-    catalog = SharedCatalog()
-    brand = catalog.get_brand_overview(brand_id)
+    brand = _catalog_application.brand_for_delete(brand_id)
     if brand is None:
         return _brands_redirect(notice="error", message="Бренд не найден.")
     confirmation = (request.form.get("confirmation") or "").strip()
@@ -12647,10 +12651,11 @@ def warehouse_delete_brand(brand_id):
     try:
         if force:
             _validate_product_force_delete(request.form)
-        result = ExcelProductCatalog().delete_brand_catalog(
-            brand_id, force=force, **current_audit_actor()
+        result = _catalog_application.delete_brand(
+            brand_id,
+            force,
+            current_audit_actor(),
         )
-        _invalidate_deleted_product_caches()
         return _brands_redirect(message="Бренд и {} товар(ов) удалены.".format(
             result["products_deleted"]
         ))
@@ -12664,9 +12669,10 @@ def warehouse_delete_brand(brand_id):
 )
 def warehouse_delete_brand_category(brand_id, category_id):
     require_csrf_when_authenticated()
-    brand = SharedCatalog().get_brand_overview(brand_id)
-    category = next((item for item in (brand or {}).get("categories", [])
-                     if item["id"] == category_id), None)
+    brand, category = _catalog_application.brand_category_for_delete(
+        brand_id,
+        category_id,
+    )
     if brand is None or category is None:
         return _brands_redirect(
             brand_id, notice="error", message="Категория бренда не найдена."
@@ -12682,11 +12688,12 @@ def warehouse_delete_brand_category(brand_id, category_id):
     try:
         if force:
             _validate_product_force_delete(request.form)
-        result = ExcelProductCatalog().delete_brand_catalog(
-            brand_id, category_id=category_id, force=force,
-            **current_audit_actor()
+        result = _catalog_application.delete_brand_category(
+            brand_id,
+            category_id,
+            force,
+            current_audit_actor(),
         )
-        _invalidate_deleted_product_caches()
         return _brands_redirect(
             brand_id, message="Категория удалена из бренда; удалено товаров: {}.".format(
                 result["products_deleted"]
@@ -14212,37 +14219,15 @@ def api_product_movements(product_id):
 
 
 def api_catalog_values(kind):
-    catalog = SharedCatalog()
-    if kind == "brand":
-        return [
-            {**item, "count": item["product_count"]}
-            for item in catalog.list_brands(
-                query=request.args.get("q") or "",
-                limit=api_positive_int(request.args.get("limit"), 100, 200),
-            )
-        ]
-    values = [
-        {
-            **item,
-            "brand": item["brand_name"],
-            "count": item["product_count"],
-        }
-        for item in catalog.list_categories(
-            brand_id=request.args.get("brand_id"),
-            query=request.args.get("q") or "",
-            limit=api_positive_int(request.args.get("limit"), 100, 200),
-        )
-    ]
-    if not request.path.startswith("/api/v1/"):
-        return [
-            {
-                "brand": item["brand"],
-                "name": item["name"],
-                "count": item["count"],
-            }
-            for item in values
-        ]
-    return values
+    return _catalog_application.catalog_values(
+        kind,
+        query=request.args.get("q") or "",
+        limit=api_positive_int(request.args.get("limit"), 100, 200),
+        brand_id=request.args.get("brand_id"),
+        legacy_category_shape=(
+            kind != "brand" and not request.path.startswith("/api/v1/")
+        ),
+    )
 
 
 @app.route("/api/brands", methods=["GET", "POST"])
@@ -14255,7 +14240,9 @@ def api_brands_collection():
         except ValueError as error:
             return api_error("BRAND_VALIDATION_FAILED", str(error), 400)
         try:
-            created = SharedCatalog().create_brand(payload.get("name"))
+            created = _catalog_application.create_api_brand(
+                payload.get("name")
+            )
         except DuplicateCatalogValueError as error:
             return api_error(
                 "BRAND_ALREADY_EXISTS",
@@ -14265,8 +14252,7 @@ def api_brands_collection():
             )
         except ValueError as error:
             return api_error("BRAND_VALIDATION_FAILED", str(error), 422)
-        remember_catalog_classification(created["name"])
-        return api_success({**created, "count": created["product_count"]}, 201)
+        return api_success(created, 201)
     return api_success(api_catalog_values("brand"))
 
 
@@ -14279,25 +14265,10 @@ def api_categories_collection():
             payload = api_json_payload()
         except ValueError as error:
             return api_error("CATEGORY_VALIDATION_FAILED", str(error), 400)
-        brand_id = payload.get("brand_id")
-        brand_name = normalize_catalog_label(payload.get("brand"))
-        if brand_id in (None, "") and brand_name:
-            brand = next(
-                (
-                    item
-                    for item in SharedCatalog().list_brands(
-                        query=brand_name,
-                        limit=200,
-                    )
-                    if catalog_label_key(item["name"])
-                    == catalog_label_key(brand_name)
-                ),
-                None,
-            )
-            brand_id = brand["id"] if brand else None
         try:
-            created = SharedCatalog().create_category(
-                brand_id,
+            created = _catalog_application.create_api_category(
+                payload.get("brand_id"),
+                payload.get("brand"),
                 payload.get("name"),
             )
         except DuplicateCatalogValueError as error:
@@ -14309,18 +14280,7 @@ def api_categories_collection():
             )
         except (CatalogReferenceError, ValueError) as error:
             return api_error("CATEGORY_VALIDATION_FAILED", str(error), 422)
-        remember_catalog_classification(
-            created["brand_name"],
-            created["name"],
-        )
-        return api_success(
-            {
-                **created,
-                "brand": created["brand_name"],
-                "count": created["product_count"],
-            },
-            201,
-        )
+        return api_success(created, 201)
     return api_success(api_catalog_values("category"))
 
 
@@ -14328,13 +14288,15 @@ def api_categories_collection():
 @app.route("/api/v1/brands/<int:brand_id>", methods=["PATCH", "DELETE"])
 def api_brand_resource(brand_id):
     require_csrf_when_authenticated()
-    catalog = SharedCatalog()
     try:
-        if request.method == "DELETE":
-            catalog.archive_brand(brand_id)
-            return api_success({"id": brand_id, "archived": True})
-        payload = api_json_payload()
-        updated = catalog.rename_brand(brand_id, payload.get("name"))
+        name = None
+        if request.method != "DELETE":
+            name = api_json_payload().get("name")
+        updated = _catalog_application.update_api_brand(
+            brand_id,
+            request.method,
+            name,
+        )
     except DuplicateCatalogValueError as error:
         return api_error(
             "BRAND_ALREADY_EXISTS",
@@ -14351,13 +14313,15 @@ def api_brand_resource(brand_id):
 @app.route("/api/v1/categories/<int:category_id>", methods=["PATCH", "DELETE"])
 def api_category_resource(category_id):
     require_csrf_when_authenticated()
-    catalog = SharedCatalog()
     try:
-        if request.method == "DELETE":
-            catalog.archive_category(category_id)
-            return api_success({"id": category_id, "archived": True})
-        payload = api_json_payload()
-        updated = catalog.rename_category(category_id, payload.get("name"))
+        name = None
+        if request.method != "DELETE":
+            name = api_json_payload().get("name")
+        updated = _catalog_application.update_api_category(
+            category_id,
+            request.method,
+            name,
+        )
     except DuplicateCatalogValueError as error:
         return api_error(
             "CATEGORY_ALREADY_EXISTS",
@@ -14373,67 +14337,41 @@ def api_category_resource(category_id):
 @app.route("/api/catalog/options", methods=["GET"])
 @app.route("/api/v1/catalog/options", methods=["GET"])
 def api_catalog_options():
-    catalog = SharedCatalog()
     kind = (request.args.get("type") or "product").strip()
     query = request.args.get("q") or ""
     limit = api_positive_int(request.args.get("limit"), 50, 200)
     try:
-        if kind == "brand":
-            items = catalog.list_brands(query=query, limit=limit)
-        elif kind == "category":
-            items = catalog.list_category_options(
-                brand_id=request.args.get("brand_id"),
-                query=query,
-                limit=limit,
-                only_used_by_brand=(
-                    (request.args.get("category_scope") or "").strip()
-                    == "brand"
-                ),
-            )
-        elif kind == "product":
-            items = catalog.list_products(
-                brand_id=request.args.get("brand_id"),
-                category_id=request.args.get("category_id"),
-                query=query,
-                limit=limit,
-                in_stock=(
-                    (request.args.get("in_stock") or "").strip().lower()
-                    in {"1", "true", "yes"}
-                ),
-            )
-        else:
-            return api_error(
-                "CATALOG_OPTION_TYPE_INVALID",
-                "Неизвестный тип справочника.",
-                422,
-            )
-    except (TypeError, ValueError) as error:
-        return api_error("CATALOG_FILTER_INVALID", str(error), 422)
-    if kind in {"brand", "category"}:
-        items = [
-            {**item, "count": item.get("product_count", 0)}
-            for item in items
-        ]
-    total = (
-        catalog.count_products(
+        result = _catalog_application.catalog_options(
+            kind,
             query=query,
+            limit=limit,
             brand_id=request.args.get("brand_id"),
             category_id=request.args.get("category_id"),
+            only_used_by_brand=(
+                (request.args.get("category_scope") or "").strip()
+                == "brand"
+            ),
             in_stock=(
                 (request.args.get("in_stock") or "").strip().lower()
                 in {"1", "true", "yes"}
             ),
         )
-        if kind == "product"
-        else len(items)
-    )
+        if result is None:
+            return api_error(
+                "CATALOG_OPTION_TYPE_INVALID",
+                "Неизвестный тип справочника.",
+                422,
+            )
+        items, total = result
+    except (TypeError, ValueError) as error:
+        return api_error("CATALOG_FILTER_INVALID", str(error), 422)
     return api_success(items, total=total, limit=limit)
 
 
 @app.route("/api/catalog/duplicates", methods=["GET"])
 @app.route("/api/v1/catalog/duplicates", methods=["GET"])
 def api_catalog_duplicates():
-    return api_success(SharedCatalog().duplicate_audit())
+    return api_success(_catalog_application.duplicate_audit())
 
 
 def serialize_api_receipt(
