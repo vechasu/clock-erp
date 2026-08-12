@@ -73,7 +73,7 @@ class UnifiedCatalogInventoryTest(unittest.TestCase):
         casio_variant = self.create_product(
             name="Casio F-91W",
             brand="  CASIO  ",
-            category="Наручные часы",
+            category="  наручные   ЧАСЫ  ",
         )
         seiko = self.create_product(
             name="Seiko 5",
