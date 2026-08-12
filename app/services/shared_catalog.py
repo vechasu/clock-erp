@@ -431,6 +431,7 @@ class SharedCatalog:
                 ),
                 metadata={
                     "brand_id": int(brand_id), "brand": brand["name"],
+                    "brand_name_snapshot": brand["name"],
                     "global_category_created": global_category is None,
                     "relation_action": (
                         "created" if global_category is None else "linked"

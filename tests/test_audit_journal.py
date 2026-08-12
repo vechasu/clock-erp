@@ -8,8 +8,10 @@ from app import web
 from app.catalog_db import CatalogDatabase
 from app.services.audit_journal import AuditJournal, whitelisted_changes
 from app.services.excel_product_catalog import ExcelProductCatalog
+from app.services.journal_presenter import format_journal_event
 from app.services.receipt_inventory import ReceiptInventory
 from app.services.sales_inventory import SalesInventory
+from app.services.shared_catalog import SharedCatalog
 
 
 class Python36Datetime:
@@ -38,6 +40,7 @@ class AuditJournalTest(unittest.TestCase):
         self.products = ExcelProductCatalog(self.database)
         self.sales = SalesInventory(self.database)
         self.receipts = ReceiptInventory(self.database)
+        self.catalog = SharedCatalog(self.database)
 
     def tearDown(self):
         self.temp.cleanup()
@@ -219,6 +222,124 @@ class AuditJournalTest(unittest.TestCase):
         self.assertEqual([event["entity_id"] for event in events[:2]], ["b", "a"])
         self.assertFalse(hasattr(self.journal, "update_event"))
         self.assertFalse(hasattr(self.journal, "delete_event"))
+
+    def test_brand_and_category_feed_context_uses_immutable_snapshots(self):
+        brand = self.catalog.create_brand("Casio", actor_name="Максим")
+        brand_created = web.serialize_journal_event(
+            self.events(entity_type="brand", action="created")[0]
+        )
+        self.assertEqual(brand_created["summary"], "Создан новый бренд")
+        self.assertNotIn("— →", brand_created["summary"])
+
+        category = self.catalog.create_brand_category(
+            brand["id"], "Ремешки", actor_name="Максим"
+        )
+        created_event = self.events(entity_type="category", action="created")[0]
+        self.assertEqual(
+            created_event["metadata"]["brand_name_snapshot"], "Casio"
+        )
+        self.assertEqual(
+            web.serialize_journal_event(created_event)["summary"],
+            "Создана новая категория в бренде «Casio»",
+        )
+        self.assertEqual(
+            self.events(entity_type="category", query="Casio")[0]["entity_id"],
+            str(category["id"]),
+        )
+
+        self.catalog.rename_brand(brand["id"], "CASIO Europe", actor_name="Максим")
+        rename_event = self.events(entity_type="brand", action="updated")[0]
+        self.assertEqual(
+            web.serialize_journal_event(rename_event)["summary"],
+            "Бренд переименован: Casio → CASIO Europe",
+        )
+        unchanged = self.journal.get_event(created_event["id"])
+        self.assertEqual(
+            web.serialize_journal_event(unchanged)["summary"],
+            "Создана новая категория в бренде «Casio»",
+        )
+
+    def test_existing_category_link_global_rename_and_scoped_delete_copy(self):
+        source_brand = self.catalog.create_brand("Seiko")
+        category = self.catalog.create_brand_category(
+            source_brand["id"], "Аксессуары"
+        )
+        casio = self.catalog.create_brand("Casio")
+        self.catalog.create_brand_category(casio["id"], "аксессуары")
+        linked = self.events(entity_type="category", action="created")[0]
+        self.assertEqual(
+            web.serialize_journal_event(linked)["summary"],
+            "Добавлена в бренд «Casio»",
+        )
+
+        self.catalog.rename_category(category["id"], "Ремешки")
+        renamed = self.events(entity_type="category", action="updated")[0]
+        self.assertEqual(
+            web.serialize_journal_event(renamed)["summary"],
+            "Категория переименована во всей ERP: Аксессуары → Ремешки",
+        )
+
+        self.products.delete_brand_catalog(
+            casio["id"], category_id=category["id"]
+        )
+        deleted = self.events(entity_type="category", action="deleted")[0]
+        self.assertEqual(
+            web.serialize_journal_event(deleted)["summary"],
+            "Удалена из бренда «Casio»",
+        )
+
+    def test_create_update_delete_and_old_event_fallback_copy(self):
+        product = self.create_product(stock=0)
+        created = next(
+            item for item in self.events(entity_type="product")
+            if item["action"] == "created"
+        )
+        self.assertEqual(
+            web.serialize_journal_event(created)["summary"], "Создан новый товар"
+        )
+        self.products.update_product(product["id"], stock=1, stock_reason="Тест")
+        updated = self.events(entity_type="product", action="updated")[0]
+        self.assertEqual(
+            web.serialize_journal_event(updated)["summary"], "Остаток: 0 → 1"
+        )
+
+        old_id = self.journal.record(
+            "category", "old-category", "created", "Старая категория"
+        )
+        old = web.serialize_journal_event(self.journal.get_event(old_id))
+        self.assertEqual(old["summary"], "Создана категория")
+        self.assertEqual(old["secondary_context"], "")
+
+        deleted_brand = format_journal_event({
+            "entity_type": "brand", "action": "deleted",
+            "object_label_snapshot": "Casio",
+            "metadata": {"products_deleted": 48},
+        })
+        self.assertEqual(
+            deleted_brand["action_text"],
+            "Бренд удалён · удалено 48 товаров",
+        )
+
+    def test_sale_and_receipt_copy_remains_human_readable(self):
+        sale_created = format_journal_event({
+            "entity_type": "sale", "action": "created",
+            "object_label_snapshot": "Продажа #1542", "metadata": {},
+        })
+        receipt_created = format_journal_event({
+            "entity_type": "receipt", "action": "created",
+            "object_label_snapshot": "Приход #483", "metadata": {},
+        })
+        self.assertEqual(sale_created["action_text"], "Создана новая продажа")
+        self.assertEqual(receipt_created["action_text"], "Создан новый приход")
+
+        status_id = self.journal.record(
+            "sale", "1542", "status_changed", "Продажа #1542",
+            changes={"status": {"before": "sent", "after": "completed"}},
+        )
+        status = web.serialize_journal_event(self.journal.get_event(status_id))
+        self.assertEqual(
+            status["summary"], "Статус: Отправлен → Завершён успешно"
+        )
 
 
 class AuditJournalUiTest(unittest.TestCase):

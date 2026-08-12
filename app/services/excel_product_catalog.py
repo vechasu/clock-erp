@@ -1475,6 +1475,7 @@ class ExcelProductCatalog:
                 AuditJournal(self.database).record(
                     "category", category["id"], "deleted", category["name"],
                     metadata={"brand_id": int(brand_id), "brand": brand["name"],
+                              "brand_name_snapshot": brand["name"],
                               "products_deleted": len(products),
                               "nonzero_products": sum(
                                   float(item["stock"] or 0) != 0

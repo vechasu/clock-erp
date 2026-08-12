@@ -32,6 +32,13 @@ from app.clients.bitrix_catalog import (
 )
 from app.services.bitrix_catalog_importer import BitrixCatalogImporter
 from app.services.audit_journal import AuditJournal
+from app.services.journal_presenter import (
+    ACTION_LABELS as JOURNAL_ACTION_LABELS,
+    ENTITY_LABELS as JOURNAL_ENTITY_LABELS,
+    FIELD_LABELS as JOURNAL_FIELD_LABELS,
+    display_value as journal_display_value,
+    format_journal_event,
+)
 from app.services.brand_values import normalize_brand
 from app.services.catalog_reader import CatalogReader
 from app.services.excel_product_catalog import (
@@ -13563,35 +13570,6 @@ def inject_sidebar_navigation():
     }
 
 
-JOURNAL_ENTITY_LABELS = {
-    "product": "Товары",
-    "brand": "Бренды",
-    "category": "Категории",
-    "sale": "Продажи",
-    "receipt": "Приход",
-}
-JOURNAL_ACTION_LABELS = {
-    "created": "Создано",
-    "system_created": "Создано системой",
-    "updated": "Изменено",
-    "status_changed": "Статус изменён",
-    "photo_added": "Фото добавлено",
-    "photo_replaced": "Фото заменено",
-    "photo_removed": "Фото удалено",
-    "cancelled": "Отменено",
-    "refused": "Отказ",
-    "deleted": "Удалено",
-    "comment_added": "Комментарий добавлен",
-}
-JOURNAL_FIELD_LABELS = {
-    "name": "Название", "article": "Артикул", "brand": "Бренд",
-    "category": "Категория", "price": "Цена", "cell": "Ячейка",
-    "stock": "Остаток", "status": "Статус", "payment": "Оплата",
-    "tracking": "Трек-номер", "quantity": "Количество",
-    "unit_price": "Цена", "source": "Источник", "comment": "Комментарий",
-    "order_number": "Номер", "document": "Документ",
-    "receipt_date": "Дата прихода", "purchase_price": "Закупочная цена",
-}
 JOURNAL_MONTHS = (
     "января", "февраля", "марта", "апреля", "мая", "июня",
     "июля", "августа", "сентября", "октября", "ноября", "декабря",
@@ -13626,14 +13604,8 @@ def _journal_day_label(value):
     return "{}{} {}".format(prefix, local.day, JOURNAL_MONTHS[local.month - 1])
 
 
-def _journal_value(value):
-    if value in (None, ""):
-        return "—"
-    if isinstance(value, bool):
-        return "Да" if value else "Нет"
-    if isinstance(value, float) and value.is_integer():
-        return str(int(value))
-    return str(value)
+def _journal_value(value, field=""):
+    return journal_display_value(value, field)
 
 
 def serialize_journal_event(event):
@@ -13644,23 +13616,19 @@ def serialize_journal_event(event):
         changes.append({
             "field": field,
             "label": JOURNAL_FIELD_LABELS.get(field, field),
-            "before": _journal_value(values.get("before")),
-            "after": _journal_value(values.get("after")),
+            "before": _journal_value(values.get("before"), field),
+            "after": _journal_value(values.get("after"), field),
         })
-    summary = JOURNAL_ACTION_LABELS.get(event["action"], event["action"])
-    if changes:
-        first = changes[0]
-        summary = "{}: {} → {}".format(
-            first["label"], first["before"], first["after"]
-        )
-        if len(changes) > 1:
-            summary += " · ещё {}".format(len(changes) - 1)
+    presentation = format_journal_event(event, changes)
     result = dict(event)
     result.update({
-        "entity_label": JOURNAL_ENTITY_LABELS.get(event["entity_type"], ""),
+        "title": presentation["title"],
+        "entity_label": presentation["entity_label"],
         "action_label": JOURNAL_ACTION_LABELS.get(event["action"], event["action"]),
+        "action_text": presentation["action_text"],
+        "secondary_context": presentation["secondary_context"],
         "field_changes": changes,
-        "summary": summary,
+        "summary": presentation["action_text"],
         "time_display": local.strftime("%H:%M:%S"),
         "timestamp_display": local.strftime("%d.%m.%Y %H:%M:%S"),
         "day_key": local.date().isoformat(),
