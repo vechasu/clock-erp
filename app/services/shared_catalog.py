@@ -167,6 +167,14 @@ def ensure_category(
         ).fetchone()
         if row is None:
             raise CatalogReferenceError("Категория не найдена.")
+        canonical = connection.execute(
+            "SELECT * FROM erp_categories "
+            "WHERE normalized_name = ? AND active = 1 "
+            "ORDER BY id LIMIT 1",
+            (normalized_name(row["name"]),),
+        ).fetchone()
+        if canonical is not None:
+            row = canonical
         if brand_id:
             connection.execute(
                 "INSERT OR IGNORE INTO erp_brand_categories "
@@ -331,6 +339,7 @@ class SharedCatalog:
             ).fetchall()
             brand_ids = [int(row["id"]) for row in brand_rows]
             category_rows = []
+            uncategorized_rows = []
             if brand_ids:
                 placeholders = ", ".join("?" for _ in brand_ids)
                 category_rows = connection.execute(
@@ -338,27 +347,45 @@ class SharedCatalog:
                     "COUNT(p.id) AS product_count, "
                     "COALESCE(SUM(CASE WHEN p.stock != 0 THEN 1 ELSE 0 END), 0) "
                     "AS nonzero_count, COALESCE(SUM(p.stock), 0) AS stock_total, "
-                    "COALESCE(MAX(category_usage.brand_count), 0) AS brand_count, "
-                    "COALESCE(MAX(product_usage.product_count), 0) "
+                    "(SELECT COUNT(DISTINCT all_bc.brand_id) "
+                    "FROM erp_brand_categories all_bc "
+                    "JOIN erp_categories all_c "
+                    "ON all_c.id = all_bc.category_id "
+                    "WHERE all_c.active = 1 "
+                    "AND all_c.normalized_name = c.normalized_name) "
+                    "AS brand_count, "
+                    "(SELECT COUNT(all_p.id) "
+                    "FROM catalog_excel_products all_p "
+                    "JOIN erp_categories all_c "
+                    "ON all_c.id = all_p.category_id "
+                    "WHERE all_p.active = 1 "
+                    "AND all_c.normalized_name = c.normalized_name) "
                     "AS global_product_count "
                     "FROM erp_brand_categories bc JOIN erp_categories c "
                     "ON c.id = bc.category_id AND c.active = 1 "
-                    "LEFT JOIN (SELECT category_id, COUNT(*) AS brand_count "
-                    "FROM erp_brand_categories GROUP BY category_id) category_usage "
-                    "ON category_usage.category_id = c.id "
-                    "LEFT JOIN (SELECT category_id, COUNT(*) AS product_count "
-                    "FROM catalog_excel_products WHERE active = 1 "
-                    "GROUP BY category_id) product_usage "
-                    "ON product_usage.category_id = c.id "
                     "LEFT JOIN catalog_excel_products p ON p.brand_id = bc.brand_id "
                     "AND p.category_id = c.id AND p.active = 1 "
                     "WHERE bc.brand_id IN ({}) GROUP BY bc.brand_id, c.id "
                     "ORDER BY c.name COLLATE NOCASE".format(placeholders),
                     brand_ids,
                 ).fetchall()
+                uncategorized_rows = connection.execute(
+                    "SELECT p.brand_id, COUNT(p.id) AS product_count, "
+                    "COALESCE(SUM(CASE WHEN p.stock != 0 THEN 1 ELSE 0 END), 0) "
+                    "AS nonzero_count, COALESCE(SUM(p.stock), 0) AS stock_total "
+                    "FROM catalog_excel_products p "
+                    "WHERE p.active = 1 AND p.category_id IS NULL "
+                    "AND p.brand_id IN ({}) GROUP BY p.brand_id".format(
+                        placeholders
+                    ),
+                    brand_ids,
+                ).fetchall()
         categories = {}
         for row in category_rows:
-            categories.setdefault(int(row["brand_id"]), []).append({
+            brand_categories = categories.setdefault(int(row["brand_id"]), {})
+            key = normalized_name(row["name"])
+            aggregate = brand_categories.get(key)
+            prepared = {
                 "id": int(row["id"]),
                 "name": row["name"],
                 "product_count": int(row["product_count"]),
@@ -367,11 +394,50 @@ class SharedCatalog:
                 "stock_display": format_stock_value(row["stock_total"]),
                 "brand_count": int(row["brand_count"]),
                 "global_product_count": int(row["global_product_count"]),
-            })
+            }
+            if aggregate is None:
+                brand_categories[key] = prepared
+            else:
+                if prepared["id"] < aggregate["id"]:
+                    aggregate["id"] = prepared["id"]
+                    aggregate["name"] = prepared["name"]
+                aggregate["product_count"] += prepared["product_count"]
+                aggregate["nonzero_count"] += prepared["nonzero_count"]
+                aggregate["stock_total"] = normalized_stock_value(
+                    aggregate["stock_total"] + prepared["stock_total"]
+                )
+                aggregate["stock_display"] = format_stock_value(
+                    aggregate["stock_total"]
+                )
+                aggregate["brand_count"] = max(
+                    aggregate["brand_count"], prepared["brand_count"]
+                )
+                aggregate["global_product_count"] = max(
+                    aggregate["global_product_count"],
+                    prepared["global_product_count"],
+                )
+        for row in uncategorized_rows:
+            categories.setdefault(int(row["brand_id"]), {})[""] = {
+                "id": 0,
+                "name": "Без категории",
+                "product_count": int(row["product_count"]),
+                "nonzero_count": int(row["nonzero_count"]),
+                "stock_total": normalized_stock_value(row["stock_total"]),
+                "stock_display": format_stock_value(row["stock_total"]),
+                "brand_count": 1,
+                "global_product_count": int(row["product_count"]),
+            }
         return [{
             **self._brand(row),
             "nonzero_count": int(row["nonzero_count"]),
-            "categories": categories.get(int(row["id"]), []),
+            "categories": sorted(
+                categories.get(int(row["id"]), {}).values(),
+                key=lambda item: (
+                    item["id"] == 0,
+                    normalized_name(item["name"]),
+                    item["id"],
+                ),
+            ),
         } for row in brand_rows]
 
     def get_brand_overview(self, brand_id):
