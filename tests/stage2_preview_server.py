@@ -73,7 +73,11 @@ with CatalogDatabase(PREVIEW_ROOT / "catalog.db").transaction() as connection:
     product_ids = [
         row[0]
         for row in connection.execute(
-            "SELECT id FROM catalog_excel_products ORDER BY id LIMIT 3"
+            "SELECT id FROM catalog_excel_products "
+            "WHERE excel_article IN ('GA-2100-1A1', 'T137.407', 'STRAP-CB') "
+            "ORDER BY CASE excel_article "
+            "WHEN 'GA-2100-1A1' THEN 1 "
+            "WHEN 'T137.407' THEN 2 ELSE 3 END"
         ).fetchall()
     ]
     first_id = product_ids[0]
