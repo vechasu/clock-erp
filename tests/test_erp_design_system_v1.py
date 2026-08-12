@@ -76,6 +76,21 @@ class ErpDesignSystemV1Test(unittest.TestCase):
         self.assertIn("box-shadow: none", focus)
         self.assertNotIn("0 0 0 4px", focus)
 
+    def test_mobile_product_toolbar_has_one_bounded_grid_track(self):
+        css = self.source("app/static/css/erp-components.css")
+        mobile = css.split("@media (max-width: 767px) {", 1)[1]
+        self.assertIn(
+            ".search-form.erp-toolbar {\n"
+            "        grid-template-columns: minmax(0, 1fr);",
+            mobile,
+        )
+        self.assertIn(
+            ".warehouse-page .search-form.erp-toolbar > .erp-search-wrap,",
+            mobile,
+        )
+        self.assertIn("grid-column: 1;", mobile)
+        self.assertIn("max-width: 100%;", mobile)
+
 
 if __name__ == "__main__":
     unittest.main()
