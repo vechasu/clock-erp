@@ -5,19 +5,26 @@
  */
 
 :root {
-    --erp-canvas: #f4f7fb;
-    --erp-surface: #ffffff;
-    --erp-surface-muted: #f8fafc;
-    --erp-border: #e5eaf2;
-    --erp-border-strong: #dfe5ed;
-    --erp-text: #172033;
-    --erp-muted: #64748b;
+    --erp-canvas: var(--theme-workspace-bg, #f4f7fb);
+    --erp-surface: var(--theme-surface, #ffffff);
+    --erp-surface-muted: var(--theme-surface-muted, #f8fafc);
+    --erp-border: var(--theme-border, #e5eaf2);
+    --erp-border-strong: var(--theme-border-strong, #dfe5ed);
+    --erp-text: var(--theme-text, #172033);
+    --erp-muted: var(--theme-text-muted, #64748b);
     --erp-navy: #102a56;
-    --erp-primary: #2563eb;
-    --erp-primary-hover: #1d4ed8;
-    --erp-radius: 14px;
-    --erp-control-radius: 12px;
-    --erp-control-height: 40px;
+    --erp-primary: var(--theme-primary, #2563eb);
+    --erp-primary-hover: var(--theme-primary-hover, #1d4ed8);
+    --erp-primary-text: var(--theme-primary-text, #ffffff);
+    --erp-success: var(--theme-success, #166534);
+    --erp-warning: var(--theme-warning, #92400e);
+    --erp-danger: var(--theme-error, #b42318);
+    --erp-overlay: var(--theme-overlay, rgba(15, 23, 42, 0.42));
+    --erp-radius-sm: 8px;
+    --erp-radius: var(--theme-card-radius, 14px);
+    --erp-radius-lg: 18px;
+    --erp-control-radius: var(--theme-control-radius, 10px);
+    --erp-control-height: var(--theme-control-height, 42px);
     --erp-font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     --erp-type-page-title-size: 28px;
     --erp-type-page-title-weight: 800;
@@ -48,10 +55,17 @@
     --erp-space-2: 8px;
     --erp-space-3: 12px;
     --erp-space-4: 16px;
+    --erp-space-5: 20px;
+    --erp-space-6: 24px;
     --erp-text-xs: 11px;
     --erp-text-sm: 13px;
     --erp-text-md: 15px;
-    --erp-focus-ring: 0 0 0 3px rgba(37, 99, 235, 0.15);
+    --erp-focus-ring: 0 0 0 3px var(--theme-focus-ring, rgba(37, 99, 235, 0.15));
+    --erp-z-dropdown: 1200;
+    --erp-z-drawer: 1300;
+    --erp-z-modal: 1400;
+    --erp-z-notification: 1600;
+    --erp-transition-fast: 140ms ease;
     --erp-shadow:
         0 8px 24px rgba(15, 23, 42, 0.045),
         0 1px 2px rgba(15, 23, 42, 0.03);
@@ -5157,5 +5171,494 @@ select.erp-control {
         grid-column: 1;
         grid-row: auto;
         min-width: 0;
+    }
+}
+
+/* ERP Design System V1: visual contracts shared by every active workspace. */
+.brands-page,
+.journal-page {
+    background: var(--erp-canvas);
+    color: var(--erp-text);
+    font-family: var(--erp-font-family);
+}
+
+.brands-page .main,
+.journal-page .journal-main,
+.settings-page .main {
+    min-width: 0;
+    padding: var(--erp-space-6) 26px 48px;
+}
+
+.journal-page .journal-shell,
+.settings-page .settings-card,
+.settings-page .settings-header,
+.settings-page #settingsNotice {
+    width: 100%;
+    max-width: 1120px;
+    margin-right: auto;
+    margin-left: auto;
+}
+
+.journal-page .journal-header,
+.settings-page .settings-header {
+    margin-bottom: var(--erp-space-3);
+}
+
+.journal-page .journal-header h1,
+.settings-page .settings-header h1 {
+    margin: 0;
+    color: var(--erp-text);
+    font: var(--erp-type-page-title-weight) var(--erp-type-page-title-size) / 1.15 var(--erp-font-family);
+    letter-spacing: -0.035em;
+}
+
+.journal-page .journal-header p,
+.settings-page .settings-header p {
+    margin: 5px 0 0;
+    color: var(--erp-muted);
+    font: var(--erp-type-page-subtitle-weight) var(--erp-type-page-subtitle-size) / 1.35 var(--erp-font-family);
+}
+
+/* One tab grammar; links retain each page's original URL/history behavior. */
+.erp-section-tabs,
+.sales-page .sales-tabs,
+.journal-page .journal-tabs {
+    display: flex;
+    min-width: 0;
+    align-items: stretch;
+    gap: 2px;
+    overflow-x: auto;
+    border-bottom: 1px solid var(--erp-border);
+    scrollbar-width: none;
+}
+
+.erp-section-tabs::-webkit-scrollbar,
+.sales-page .sales-tabs::-webkit-scrollbar,
+.journal-page .journal-tabs::-webkit-scrollbar {
+    display: none;
+}
+
+.erp-section-tab,
+.sales-page .sales-tab.erp-section-tab,
+.journal-page .journal-tab {
+    position: relative;
+    min-height: 40px;
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    padding: 0 14px;
+    border: 0;
+    border-radius: var(--erp-radius-sm) var(--erp-radius-sm) 0 0;
+    background: transparent;
+    color: var(--erp-muted);
+    font: var(--erp-type-control-weight) var(--erp-type-control-size) / 1.2 var(--erp-font-family);
+    text-decoration: none;
+    white-space: nowrap;
+    box-shadow: none;
+    transition: background var(--erp-transition-fast), color var(--erp-transition-fast);
+}
+
+.erp-section-tab::after,
+.sales-page .sales-tab.erp-section-tab::after,
+.journal-page .journal-tab::after {
+    position: absolute;
+    right: 12px;
+    bottom: -1px;
+    left: 12px;
+    height: 2px;
+    border-radius: 2px 2px 0 0;
+    background: transparent;
+    content: "";
+}
+
+.erp-section-tab:hover,
+.sales-page .sales-tab.erp-section-tab:hover,
+.journal-page .journal-tab:hover {
+    background: var(--erp-surface-muted);
+    color: var(--erp-primary-hover);
+}
+
+.erp-section-tab.is-active,
+.sales-page .sales-tab.erp-section-tab.is-active,
+.journal-page .journal-tab.is-active,
+.journal-page .journal-tab.active {
+    border: 0;
+    background: var(--theme-active, #eff6ff);
+    color: var(--erp-primary);
+}
+
+.erp-section-tab.is-active::after,
+.sales-page .sales-tab.erp-section-tab.is-active::after,
+.journal-page .journal-tab.is-active::after,
+.journal-page .journal-tab.active::after {
+    background: var(--erp-primary);
+}
+
+.erp-section-tab:focus-visible,
+.sales-page .sales-tab.erp-section-tab:focus-visible,
+.journal-page .journal-tab:focus-visible {
+    outline: 0;
+    box-shadow: inset var(--erp-focus-ring);
+}
+
+/* Shared control and action sizing, scoped to active ERP surfaces. */
+.brands-page .brand-btn,
+.brands-page .field,
+.brands-page .brand-search input,
+.journal-page .journal-control,
+.journal-page .journal-filter-toggle,
+.journal-page .journal-apply,
+.settings-page .control,
+.settings-page .button {
+    min-height: var(--erp-control-height);
+    border-radius: var(--erp-control-radius);
+    font: var(--erp-type-control-weight) var(--erp-type-control-size) / 1.2 var(--erp-font-family);
+}
+
+.brands-page .field,
+.brands-page .brand-search input,
+.journal-page .journal-control,
+.settings-page .control {
+    border: 1px solid var(--erp-border-strong);
+    background: var(--theme-input-bg, var(--erp-surface));
+    color: var(--erp-text);
+}
+
+.brands-page .field::placeholder,
+.brands-page .brand-search input::placeholder,
+.journal-page .journal-control::placeholder,
+.settings-page .control::placeholder {
+    color: var(--erp-muted);
+    opacity: 0.78;
+}
+
+.brands-page .field:focus-visible,
+.brands-page .brand-search input:focus-visible,
+.brands-page .brand-btn:focus-visible,
+.brands-page details.action-menu > summary:focus-visible,
+.journal-page .journal-control:focus-visible,
+.journal-page .journal-filter-toggle:focus-visible,
+.journal-page .journal-apply:focus-visible,
+.journal-page .journal-close:focus-visible,
+.journal-page .journal-object-link:focus-visible,
+.settings-page .control:focus-visible,
+.settings-page .button:focus-visible,
+.settings-page .theme-option:focus-visible {
+    border-color: var(--theme-focus, var(--erp-primary));
+    outline: 0;
+    box-shadow: var(--erp-focus-ring);
+}
+
+.brands-page .brand-btn,
+.journal-page .journal-filter-toggle {
+    border: 1px solid var(--erp-border-strong);
+    background: var(--erp-surface);
+    color: var(--erp-text);
+    font-weight: var(--erp-type-control-weight);
+}
+
+.brands-page .brand-btn:hover,
+.journal-page .journal-filter-toggle:hover {
+    border-color: var(--erp-border-strong);
+    background: var(--erp-surface-muted);
+    color: var(--erp-primary-hover);
+}
+
+.brands-page .brand-btn.primary,
+.journal-page .journal-apply,
+.journal-page .journal-object-link,
+.settings-page .button {
+    border-color: var(--erp-primary);
+    background: var(--erp-primary);
+    color: var(--erp-primary-text);
+    font-weight: var(--erp-type-control-weight);
+}
+
+.brands-page .brand-btn.primary:hover,
+.journal-page .journal-apply:hover,
+.journal-page .journal-object-link:hover,
+.settings-page .button:hover {
+    border-color: var(--erp-primary-hover);
+    background: var(--erp-primary-hover);
+}
+
+.brands-page .brand-btn.danger,
+.brands-page .menu-popover button.danger {
+    color: var(--erp-danger);
+}
+
+.brands-page .brand-btn:disabled,
+.journal-page button:disabled,
+.settings-page button:disabled,
+.settings-page .control:disabled {
+    cursor: not-allowed;
+    opacity: 0.58;
+}
+
+/* Existing KPI values stay neutral; blue remains reserved for interaction. */
+.erp-workspace-metric .erp-stat-value,
+.erp-workspace-metric .stat-value,
+.brands-page .metric strong,
+.brands-page .summary-metric strong {
+    color: var(--erp-text);
+}
+
+/* Brands keeps its dense list/detail model and receives shared surfaces only. */
+.brands-page .brand-search,
+.brands-page .brand-list,
+.brands-page .brand-panel {
+    border-color: var(--erp-border);
+    border-radius: var(--erp-radius);
+    background: var(--erp-surface);
+    box-shadow: var(--theme-shadow, var(--erp-shadow));
+}
+
+.brands-page .brand-row,
+.brands-page .category-row {
+    border-color: var(--erp-border);
+}
+
+.brands-page .brand-row:hover,
+.brands-page .category-row:hover {
+    background: var(--theme-hover, var(--erp-surface-muted));
+}
+
+.brands-page details.action-menu > summary {
+    border-color: var(--erp-border-strong);
+    border-radius: var(--erp-control-radius);
+    background: var(--erp-surface);
+    color: var(--erp-muted);
+}
+
+.brands-page .menu-popover {
+    z-index: var(--erp-z-dropdown);
+    border-color: var(--erp-border);
+    border-radius: var(--erp-control-radius);
+    background: var(--erp-surface);
+    color: var(--erp-text);
+    box-shadow: var(--theme-shadow-raised, 0 18px 44px rgba(15, 23, 42, 0.16));
+}
+
+.brands-page .menu-popover button:hover,
+.brands-page .menu-popover a:hover {
+    background: var(--theme-hover, var(--erp-surface-muted));
+}
+
+.brands-page .modal {
+    border: 1px solid var(--erp-border);
+    border-radius: var(--erp-radius-lg);
+    background: var(--erp-surface);
+    color: var(--erp-text);
+    box-shadow: var(--theme-shadow-raised, 0 24px 70px rgba(15, 23, 42, 0.3));
+}
+
+.brands-page .modal::backdrop {
+    background: var(--erp-overlay);
+}
+
+.brands-page .modal h3 {
+    font: var(--erp-type-section-title-weight) var(--erp-type-section-title-size) / 1.25 var(--erp-font-family);
+}
+
+.brands-page .modal label {
+    color: var(--erp-text);
+    font: var(--erp-type-field-label-weight) var(--erp-type-field-label-size) / 1.3 var(--erp-font-family);
+}
+
+/* Journal keeps the timeline while adopting the shared shell and controls. */
+.journal-page .journal-tabs {
+    margin-top: 0;
+}
+
+.journal-page .journal-toolbar {
+    margin-top: var(--erp-space-3);
+    padding: 7px;
+    border: 1px solid var(--erp-border);
+    border-radius: var(--erp-radius);
+    background: var(--erp-surface);
+    box-shadow: var(--theme-shadow, 0 5px 18px rgba(15, 23, 42, 0.035));
+}
+
+.journal-page .journal-period {
+    min-height: var(--erp-control-height);
+    border-color: var(--erp-border-strong);
+    border-radius: var(--erp-control-radius);
+    background: var(--erp-surface);
+}
+
+.journal-page .journal-period input {
+    height: calc(var(--erp-control-height) - 2px);
+    color: var(--erp-text);
+}
+
+.journal-page .journal-period:focus-within {
+    border-color: var(--theme-focus, var(--erp-primary));
+    box-shadow: var(--erp-focus-ring);
+}
+
+.journal-page .journal-filters,
+.journal-page .journal-event-card,
+.journal-page .journal-empty,
+.journal-page .journal-detail-meta,
+.journal-page .journal-detail-comment {
+    border-color: var(--erp-border);
+    background: var(--erp-surface);
+    color: var(--erp-text);
+}
+
+.journal-page .journal-event-card {
+    border-radius: var(--erp-radius);
+    box-shadow: var(--theme-shadow, 0 2px 9px rgba(15, 23, 42, 0.025));
+}
+
+.journal-page .journal-event:hover .journal-event-card {
+    border-color: var(--erp-border-strong);
+    background: var(--theme-hover, var(--erp-surface-muted));
+}
+
+.journal-page .journal-event-title,
+.journal-page .journal-event-summary,
+.journal-page .journal-day,
+.journal-page .journal-detail-heading {
+    color: var(--erp-text);
+}
+
+.journal-page .journal-event-meta,
+.journal-page .journal-event-time,
+.journal-page .journal-detail-meta,
+.journal-page .journal-drawer #journalDrawerAction {
+    color: var(--erp-muted);
+}
+
+.journal-page .journal-drawer-backdrop {
+    z-index: var(--erp-z-drawer);
+    background: var(--erp-overlay);
+}
+
+.journal-page .journal-drawer {
+    z-index: calc(var(--erp-z-drawer) + 1);
+    border-left: 1px solid var(--erp-border);
+    background: var(--erp-surface);
+    color: var(--erp-text);
+}
+
+.journal-page .journal-drawer-head {
+    border-color: var(--erp-border);
+    background: var(--erp-surface);
+}
+
+.journal-page .journal-close {
+    border-color: var(--erp-border-strong);
+    border-radius: var(--erp-control-radius);
+    background: var(--erp-surface);
+    color: var(--erp-text);
+}
+
+/* Settings remains one form and one save action, composed as three surfaces. */
+.settings-page .settings-card {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+}
+
+.settings-page .settings-section {
+    margin: 0 0 var(--erp-space-3);
+    padding: var(--erp-space-5) 22px;
+    border: 1px solid var(--erp-border);
+    border-radius: var(--erp-radius);
+    background: var(--erp-surface);
+    box-shadow: var(--theme-shadow, var(--erp-shadow));
+}
+
+.settings-page .settings-section:last-of-type {
+    margin-bottom: 0;
+}
+
+.settings-page .settings-section h2 {
+    margin-bottom: var(--erp-space-1);
+    color: var(--erp-text);
+}
+
+.settings-page .settings-section p {
+    margin-bottom: var(--erp-space-4);
+    color: var(--erp-muted);
+}
+
+.settings-page .actions {
+    margin-top: var(--erp-space-3);
+    padding: var(--erp-space-3) 0 0;
+    border-color: var(--erp-border);
+}
+
+.settings-page .button {
+    min-height: var(--erp-control-height);
+    padding: 0 var(--erp-space-5);
+}
+
+@media (max-width: 767px) {
+    .brands-page .main,
+    .journal-page .journal-main,
+    .settings-page .main {
+        padding: 16px 14px calc(88px + env(safe-area-inset-bottom));
+    }
+
+    .journal-page .journal-header,
+    .settings-page .settings-header {
+        display: block;
+    }
+
+    .journal-page .journal-toolbar {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 8px;
+    }
+
+    .journal-page .journal-toolbar-left,
+    .journal-page .journal-search {
+        width: 100%;
+        max-width: none;
+        flex-basis: auto;
+    }
+
+    .journal-page .journal-period {
+        min-width: 0;
+        flex: 1 1 auto;
+    }
+
+    .journal-page .journal-period-fields {
+        min-width: 0;
+        flex: 1 1 auto;
+    }
+
+    .journal-page .journal-period input {
+        width: 50%;
+    }
+
+    .settings-page .settings-section {
+        padding: 18px 16px;
+    }
+
+    .settings-page .actions .button {
+        width: 100%;
+    }
+}
+
+@media (max-width: 370px) {
+    .erp-section-tab,
+    .sales-page .sales-tab.erp-section-tab,
+    .journal-page .journal-tab {
+        padding-right: 11px;
+        padding-left: 11px;
+    }
+
+    .journal-page .journal-toolbar-left {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .journal-page .journal-filter-toggle {
+        width: 100%;
+        justify-content: center;
     }
 }

@@ -76,7 +76,7 @@
         @media(max-width:650px) { .main { padding:16px; } .erp-workspace-header,.detail-title { align-items:stretch; flex-direction:column; } .erp-workspace-actions,.detail-actions { width:100%; } .erp-workspace-actions .brand-btn,.detail-actions>.brand-btn { flex:1; } .brand-row { grid-template-columns:minmax(0,1fr) auto; gap:8px; min-height:76px; } .brand-row .metric { display:none; } .brand-identity { align-items:flex-start; flex-direction:column; gap:5px; } .brand-icon { display:none; } .brand-name { white-space:normal; } .brand-mobile-meta { display:block!important; color:#64748b; font-size:12px; } .category-row { grid-template-columns:minmax(0,1fr) auto; } .category-row .metric { display:none; } .summary { gap:10px 16px; } .menu-popover { width:min(250px,calc(100vw - 40px)); } .modal-actions { align-items:stretch; flex-direction:column-reverse; } .modal-actions .brand-btn { width:100%; } }
     </style>
 </head>
-<body><div class="app">{% include "_sidebar.html" %}<main class="main">
+<body class="brands-page"><div class="app">{% include "_sidebar.html" %}<main class="main">
     <header class="erp-workspace-header">
         <div class="erp-workspace-heading"><h1>Товары</h1><p>Управление товарами, категориями и брендами</p></div>
         {% if not brand %}<div class="erp-workspace-actions"><button class="brand-btn primary" type="button" data-open="createBrand">+ Создать бренд</button></div>{% endif %}

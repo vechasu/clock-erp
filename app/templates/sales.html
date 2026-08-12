@@ -1400,10 +1400,10 @@
             class="sales-tabs-scroll"
             aria-label="Источники продаж"
         >
-            <div class="sales-tabs">
+            <div class="sales-tabs erp-section-tabs">
                 {% for tab in source_tabs %}
                     <a
-                        class="sales-tab{% if tab.active %} is-active{% endif %}"
+                        class="sales-tab erp-section-tab{% if tab.active %} is-active{% endif %}"
                         href="{{ tab.url }}"
                         data-source-tab="{{ tab.key }}"
                         {% if tab.active %}aria-current="page"{% endif %}

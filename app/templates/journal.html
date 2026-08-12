@@ -128,18 +128,20 @@
         }
     </style>
 </head>
-<body>
+<body class="journal-page">
 {% from "_navigation_icons.html" import navigation_icon %}
 <div class="app">
     {% include "_sidebar.html" %}
     <main class="journal-main">
         <div class="journal-shell">
-            <header class="journal-header">
-                <h1>Журнал</h1>
-                <p>История значимых изменений товаров, продаж и приходов.</p>
+            <header class="journal-header erp-workspace-header">
+                <div class="erp-workspace-heading">
+                    <h1>Журнал</h1>
+                    <p>История значимых изменений товаров, продаж и приходов.</p>
+                </div>
             </header>
 
-            <nav class="journal-tabs" aria-label="Раздел журнала">
+            <nav class="journal-tabs erp-section-tabs" aria-label="Раздел журнала">
                 {% for value, label in [("", "Все"), ("product", "Товары"), ("brand", "Бренды"), ("category", "Категории"), ("sale", "Продажи"), ("receipt", "Приход")] %}
                     <a class="journal-tab{% if filters.entity_type == value %} active{% endif %}" href="#" data-journal-tab="{{ value }}"{% if filters.entity_type == value %} aria-current="page"{% endif %}>{{ label }}</a>
                 {% endfor %}
