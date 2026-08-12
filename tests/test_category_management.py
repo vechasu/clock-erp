@@ -224,10 +224,17 @@ class CategoryManagementTest(unittest.TestCase):
                 (product["brand_id"], product["category_id"]),
             )
 
+        registry = self.catalog.list_category_overviews(limit=100)["items"]
+        main_row = next(
+            item for item in registry if item["id"] == product["category_id"]
+        )
         detail = self.catalog.get_category_overview(product["category_id"])
 
-        self.assertEqual(detail["brand_count"], 0)
+        self.assertEqual(main_row["brand_count"], 1)
+        self.assertEqual(detail["brand_count"], 1)
         self.assertEqual(detail["detail_brand_count"], 1)
+        self.assertEqual(main_row["brand_count"], detail["brand_count"])
+        self.assertEqual(detail["brand_count"], detail["detail_brand_count"])
         self.assertTrue(detail["brands"][0]["product_only"])
         self.assertEqual(detail["brands"][0]["product_count"], 1)
         with self.database.connect() as connection:
@@ -283,6 +290,9 @@ class CategoryManagementTest(unittest.TestCase):
         result = self.catalog.list_category_overviews(query="час", limit=100)
 
         self.assertEqual([item["id"] for item in result["items"]], [501, 502])
+        self.assertTrue(all(
+            item["duplicate_category"] for item in result["items"]
+        ))
 
     def test_global_empty_category_has_no_brand_relation(self):
         self.catalog.create_brand("Owner")
@@ -305,6 +315,10 @@ class CategoryManagementTest(unittest.TestCase):
             name="No category", article="NONE", brand="Seiko",
             category="", category_id=0, stock=0,
         )
+        self.products.create_product(
+            name="No brand or category", article="NONE-2", brand="",
+            category="", category_id=0, stock=4,
+        )
         with self.database.transaction() as connection:
             connection.execute(
                 "UPDATE catalog_excel_products SET stock = -2 WHERE id = ?",
@@ -316,9 +330,11 @@ class CategoryManagementTest(unittest.TestCase):
         )
 
         self.assertEqual(result["items"][0]["id"], 0)
-        self.assertEqual(result["items"][0]["brand_count"], 1)
-        self.assertEqual(result["items"][0]["nonzero_count"], 1)
-        self.assertEqual(result["items"][0]["stock_total"], -2)
+        self.assertEqual(result["items"][0]["brand_count"], 2)
+        self.assertEqual(result["items"][0]["detail_brand_count"], 2)
+        self.assertEqual(result["items"][0]["product_count"], 2)
+        self.assertEqual(result["items"][0]["nonzero_count"], 2)
+        self.assertEqual(result["items"][0]["stock_total"], 2)
 
     def test_pagination_and_numeric_sort_are_server_side(self):
         brand = self.catalog.create_brand("Casio")
@@ -396,6 +412,7 @@ class CategoryManagementWebTest(unittest.TestCase):
         self.assertIn("Переименовать категорию во всей ERP", source)
         self.assertIn("Открыть товары", source)
         self.assertIn("Брендов", source)
+        self.assertIn("Дубликат категории", source)
         self.assertNotIn(">Статус<", source)
         self.assertNotIn("Удалить категорию", source)
         self.assertNotIn("delete-plan", source)

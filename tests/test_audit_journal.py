@@ -355,6 +355,12 @@ class AuditJournalTest(unittest.TestCase):
             ),
             (
                 {"entity_type": "category", "action": "created", "changes": {},
+                 "metadata": {"relation_action": "unlinked",
+                              "global_category_created": True}},
+                "Создана новая глобальная категория",
+            ),
+            (
+                {"entity_type": "category", "action": "created", "changes": {},
                  "metadata": {"relation_action": "created",
                               "global_category_created": True,
                               "brand_name_snapshot": "Casio"}},
