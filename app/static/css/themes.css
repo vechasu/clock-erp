@@ -613,10 +613,10 @@ html[data-theme] :where(
     [role="switch"],
     [role="radio"]
 ):focus-visible {
-    outline: 3px solid var(--theme-focus) !important;
+    outline: 2px solid var(--theme-focus) !important;
     outline-offset: 2px !important;
     border-color: var(--theme-focus) !important;
-    box-shadow: 0 0 0 4px var(--theme-focus-ring) !important;
+    box-shadow: none !important;
 }
 
 /* Tabs, selection and progress. */

@@ -199,7 +199,12 @@
     {% include "_sidebar.html" %}
 
     <main class="main">
-
+        <header class="erp-workspace-header settings-header">
+            <div class="erp-workspace-heading">
+                <h1>Настройки</h1>
+                <p>Параметры системы и оформления</p>
+            </div>
+        </header>
 
         {% if message %}
             <div id="settingsNotice" class="notice notice-{{ notice or 'success' }}" role="status" data-erp-notification-source>
@@ -207,7 +212,7 @@
             </div>
         {% endif %}
 
-        <form id="settingsForm" class="settings-card" method="post">
+        <form id="settingsForm" class="settings-card settings-form" method="post">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <section class="settings-section">
                 <h2>Оформление</h2>
