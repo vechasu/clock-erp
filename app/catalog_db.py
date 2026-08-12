@@ -1509,7 +1509,7 @@ class CatalogDatabase:
         now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
         def cleaned(value):
-            return str(value or "").strip()
+            return " ".join(str(value or "").split())
 
         def normalized(value):
             return cleaned(value).casefold()

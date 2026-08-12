@@ -175,7 +175,13 @@ class BrandManagementTest(unittest.TestCase):
         )
         normal = self.product("Normal", "NORMAL", "Casio", "Часы", 0)
         overview = self.catalog.get_brand_overview(uncategorized["brand_id"])
-        self.assertEqual([item["name"] for item in overview["categories"]], ["Часы"])
+        self.assertEqual(
+            [item["name"] for item in overview["categories"]],
+            ["Часы", "Без категории"],
+        )
+        uncategorized_group = overview["categories"][1]
+        self.assertEqual(uncategorized_group["id"], 0)
+        self.assertEqual(uncategorized_group["product_count"], 1)
         with self.database.connect() as connection:
             zero_links = connection.execute(
                 "SELECT COUNT(*) FROM erp_brand_categories WHERE category_id = 0"
@@ -244,6 +250,71 @@ class BrandManagementTest(unittest.TestCase):
         )
         refreshed = self.products.get_product(product["id"])
         self.assertIsNone(refreshed["category_id"])
+
+    def test_explicit_legacy_category_id_is_replaced_with_global_canonical_id(self):
+        canonical_product = self.product(
+            "Canonical", "CANONICAL", "Casio", "Наручные часы", 0
+        )
+        other_brand = self.catalog.create_brand("Seiko")
+        with self.database.transaction() as connection:
+            cursor = connection.execute(
+                "INSERT INTO erp_categories "
+                "(brand_id, name, normalized_name, active, created_at, updated_at) "
+                "VALUES (?, 'наручные   часы', 'наручные   часы', "
+                "1, '2026-08-12T00:00:00+00:00', "
+                "'2026-08-12T00:00:00+00:00')",
+                (other_brand["id"],),
+            )
+            legacy_id = cursor.lastrowid
+        assigned = self.products.create_product(
+            name="Assigned", article="ASSIGNED", brand_id=other_brand["id"],
+            category_id=legacy_id, stock=1,
+        )
+
+        self.assertEqual(
+            assigned["category_id"], canonical_product["category_id"]
+        )
+        with self.database.connect() as connection:
+            self.assertIsNotNone(connection.execute(
+                "SELECT 1 FROM erp_brand_categories WHERE brand_id = ? "
+                "AND category_id = ?",
+                (other_brand["id"], canonical_product["category_id"]),
+            ).fetchone())
+            self.assertIsNone(connection.execute(
+                "SELECT 1 FROM erp_brand_categories WHERE brand_id = ? "
+                "AND category_id = ?",
+                (other_brand["id"], legacy_id),
+            ).fetchone())
+
+    def test_brand_overview_aggregates_legacy_category_ids(self):
+        first = self.product("First", "FIRST", "Casio", "Наручные часы", 2)
+        second = self.product("Second", "SECOND", "Casio", "Наручные часы", 3)
+        with self.database.transaction() as connection:
+            cursor = connection.execute(
+                "INSERT INTO erp_categories "
+                "(brand_id, name, normalized_name, active, created_at, updated_at) "
+                "VALUES (?, 'НАРУЧНЫЕ  ЧАСЫ', 'наручные  часы', 1, 'x', 'x')",
+                (first["brand_id"],),
+            )
+            duplicate_id = cursor.lastrowid
+            connection.execute(
+                "INSERT INTO erp_brand_categories "
+                "(brand_id, category_id, created_at) VALUES (?, ?, 'x')",
+                (first["brand_id"], duplicate_id),
+            )
+            connection.execute(
+                "UPDATE catalog_excel_products SET category_id = ? WHERE id = ?",
+                (duplicate_id, second["id"]),
+            )
+
+        overview = self.catalog.get_brand_overview(first["brand_id"])
+
+        self.assertEqual(len(overview["categories"]), 1)
+        category = overview["categories"][0]
+        self.assertEqual(category["id"], first["category_id"])
+        self.assertEqual(category["product_count"], 2)
+        self.assertEqual(category["nonzero_count"], 2)
+        self.assertEqual(category["stock_total"], 5)
 
     def test_category_global_rename_propagates_and_duplicate_is_blocked(self):
         casio = self.product("Casio Watch", "CW", "Casio", "Часы", 0)
