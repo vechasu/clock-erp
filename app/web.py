@@ -71,6 +71,8 @@ from app.services.shared_catalog import (
 )
 from app.sales_reporting.application import build_report_context
 from app.sales_reporting.routes import SalesReportingRoutes
+from app.system_settings.application import SettingsApplication
+from app.system_settings.routes import SettingsRoutes
 from app.services.repair_cases import (
     LEGACY_STATUS_MAP,
     REPAIR_CHANNEL_LABELS,
@@ -13493,100 +13495,44 @@ def save_app_settings(settings):
     _load_app_settings_cached.cache_clear()
 
 
-@app.route("/settings", methods=["GET", "POST"])
-@app.route("/app/settings", methods=["GET", "POST"])
-def settings_page():
-    settings = load_app_settings()
+_settings_application = SettingsApplication(
+    load_settings=lambda: load_app_settings(),
+    save_settings=lambda settings: save_app_settings(settings),
+)
+_settings_routes = SettingsRoutes(
+    application=_settings_application,
+    require_csrf=lambda: require_csrf_when_authenticated(),
+    invitation_context=lambda: settings_invitation_context(),
+    json_payload=lambda: api_json_payload(),
+    api_success=lambda data, **meta: api_success(data, **meta),
+    api_error=lambda code, message, status, fields=None: api_error(
+        code,
+        message,
+        status,
+        {"fields": fields} if fields else None,
+    ),
+)
+settings_page = _settings_routes.page
+api_settings_resource = _settings_routes.api_resource
 
-    if request.method == "POST":
-        require_csrf_when_authenticated()
-        company_name = (request.form.get("company_name") or "").strip()
-        erp_name = (request.form.get("erp_name") or "").strip()
-        try:
-            low_stock_threshold = int(
-                request.form.get("low_stock_threshold") or 0
-            )
-        except ValueError:
-            low_stock_threshold = 0
-
-        settings.update({
-            "company_name": company_name or "Tictactoy",
-            "erp_name": erp_name or "Vechasu ERP",
-            "low_stock_threshold": max(0, min(low_stock_threshold, 999)),
-        })
-        save_app_settings(settings)
-        return redirect(
-            url_for(
-                "settings_page",
-                notice="success",
-                message="Настройки сохранены",
-            )
-        )
-
-    return render_template(
-        "settings.html",
-        settings=settings,
-        notice=(request.args.get("notice") or "").strip(),
-        message=(request.args.get("message") or "").strip(),
-        **settings_invitation_context(),
-    )
-
-
-@app.route("/api/v1/settings", methods=["GET", "PATCH"])
-def api_settings_resource():
-    settings = load_app_settings()
-    if request.method == "GET":
-        return api_success(settings)
-
-    require_csrf_when_authenticated()
-    try:
-        payload = api_json_payload()
-    except ValueError as error:
-        return api_error("SETTINGS_VALIDATION_FAILED", str(error), 400)
-    allowed_fields = {
-        "company_name",
-        "erp_name",
-        "low_stock_threshold",
-    }
-    unknown_fields = set(payload) - allowed_fields
-    if unknown_fields:
-        return api_error(
-            "SETTINGS_VALIDATION_FAILED",
-            "Переданы неизвестные настройки.",
-            422,
-            {"fields": sorted(unknown_fields)},
-        )
-
-    changes = {}
-    if "company_name" in payload:
-        changes["company_name"] = (
-            str(payload.get("company_name") or "").strip()
-            or "Tictactoy"
-        )
-    if "erp_name" in payload:
-        changes["erp_name"] = (
-            str(payload.get("erp_name") or "").strip()
-            or "Vechasu ERP"
-        )
-    if "low_stock_threshold" in payload:
-        try:
-            threshold = int(payload.get("low_stock_threshold") or 0)
-        except (TypeError, ValueError):
-            return api_error(
-                "SETTINGS_VALIDATION_FAILED",
-                "Минимальный остаток должен быть целым числом.",
-                422,
-            )
-        changes["low_stock_threshold"] = max(0, min(threshold, 999))
-
-    changed_fields = [
-        key for key, value in changes.items()
-        if settings.get(key) != value
-    ]
-    if changed_fields:
-        settings.update({key: changes[key] for key in changed_fields})
-        save_app_settings(settings)
-    return api_success(settings, changed_fields=changed_fields)
+app.add_url_rule(
+    "/app/settings",
+    endpoint="settings_page",
+    view_func=settings_page,
+    methods=["GET", "POST"],
+)
+app.add_url_rule(
+    "/settings",
+    endpoint="settings_page",
+    view_func=settings_page,
+    methods=["GET", "POST"],
+)
+app.add_url_rule(
+    "/api/v1/settings",
+    endpoint="api_settings_resource",
+    view_func=api_settings_resource,
+    methods=["GET", "PATCH"],
+)
 
 
 def api_success(data, status=200, **meta):
