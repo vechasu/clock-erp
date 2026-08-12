@@ -191,7 +191,7 @@ def ensure_category(
         raise CatalogReferenceError("Сначала выберите бренд.")
     row = connection.execute(
         "SELECT * FROM erp_categories "
-        "WHERE normalized_name = ? ORDER BY id LIMIT 1",
+        "WHERE normalized_name = ? ORDER BY active DESC, id LIMIT 1",
         (key,),
     ).fetchone()
     if row is not None:
@@ -221,7 +221,7 @@ def ensure_category(
     )
     row = connection.execute(
         "SELECT * FROM erp_categories "
-        "WHERE normalized_name = ? ORDER BY id LIMIT 1",
+        "WHERE normalized_name = ? ORDER BY active DESC, id LIMIT 1",
         (key,),
     ).fetchone()
     connection.execute(
