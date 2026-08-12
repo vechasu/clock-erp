@@ -52,14 +52,15 @@ ExcelProductBatchService(CatalogDatabase(PREVIEW_ROOT / "catalog.db")).apply(
     ] + [
         # Keep the named browser-test fixtures on the first (newest-first)
         # page when the catalog grows beyond the server page-size limit.
-        product_result(2, "Casio G-Shock GA-2100", "GA-2100-1A1", "Casio", "Часы", 7, "A-01"),
-        product_result(3, "Tissot PRX Powermatic 80", "T137.407", "Tissot", "Часы", 3, "A-05"),
-        product_result(4, "Ремешок Cordura Black", "STRAP-CB", "Vechasu", "Ремешки", 12, "B-12"),
         product_result(5, "Футляр для часов", "CASE-01", "Vechasu", "Аксессуары", 0, "C-03"),
+        product_result(4, "Ремешок Cordura Black", "STRAP-CB", "Vechasu", "Ремешки", 12, "B-12"),
+        product_result(3, "Tissot PRX Powermatic 80", "T137.407", "Tissot", "Часы", 3, "A-05"),
+        product_result(2, "Casio G-Shock GA-2100", "GA-2100-1A1", "Casio", "Часы", 7, "A-01"),
     ],
     "d" * 64,
     "stage2-preview.xlsx",
 )
+projected_products = web.get_excel_warehouse_items()
 
 fixture_image_one = (
     "data:image/gif;base64,"
@@ -70,16 +71,7 @@ fixture_image_two = (
     "R0lGODlhAQABAIAAAAD/AP///ywAAAAAAQABAAACAUwAOw=="
 )
 with CatalogDatabase(PREVIEW_ROOT / "catalog.db").transaction() as connection:
-    product_ids = [
-        row[0]
-        for row in connection.execute(
-            "SELECT id FROM catalog_excel_products "
-            "WHERE excel_article IN ('GA-2100-1A1', 'T137.407', 'STRAP-CB') "
-            "ORDER BY CASE excel_article "
-            "WHEN 'GA-2100-1A1' THEN 1 "
-            "WHEN 'T137.407' THEN 2 ELSE 3 END"
-        ).fetchall()
-    ]
+    product_ids = [int(item["id"]) for item in projected_products[:3]]
     first_id = product_ids[0]
     connection.execute(
         "UPDATE catalog_excel_products SET bitrix_external_product_id = ?, "
@@ -113,7 +105,6 @@ def fixture_live_bitrix_product(product, force=False):
 web._live_bitrix_product = fixture_live_bitrix_product
 web.persist_live_bitrix_gallery = lambda product, live: product
 
-projected_products = web.get_excel_warehouse_items()
 warehouse_items = [
     {
         **item,
@@ -327,11 +318,9 @@ preview_receipts[2].update({
 
 web.CATALOG_TAXONOMY_PATH = PREVIEW_ROOT / "catalog_taxonomy.json"
 web.get_warehouse_items = lambda *args, **kwargs: [dict(item) for item in warehouse_items]
-web.get_excel_warehouse_items = lambda *args, **kwargs: (
-    web.build_excel_warehouse_items(kwargs["catalog"]["items"])
-    if kwargs.get("catalog")
-    else [dict(item) for item in warehouse_items]
-)
+web.get_excel_warehouse_items = lambda *args, **kwargs: [
+    dict(item) for item in warehouse_items
+]
 web.load_receipts = lambda: [dict(receipt) for receipt in preview_receipts]
 web.api_receipt_records = lambda: tuple(
     dict(receipt) for receipt in preview_receipts
