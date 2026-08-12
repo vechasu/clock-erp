@@ -412,16 +412,15 @@ class CategoryConsolidation:
                 raise CategoryConsolidationError(
                     "Foreign-key integrity check failed."
                 )
+            second_dry_run = self.build_plan()
+            if second_dry_run["predicted_changes"]:
+                raise CategoryConsolidationError(
+                    "Second dry-run is not idempotent."
+                )
             self.connection.commit()
         except Exception:
             self.connection.rollback()
             raise
-
-        second_dry_run = self.build_plan()
-        if second_dry_run["predicted_changes"]:
-            raise CategoryConsolidationError(
-                "Second dry-run is not idempotent."
-            )
         return {
             **plan,
             "mode": "apply",

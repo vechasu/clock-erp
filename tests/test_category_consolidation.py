@@ -11,6 +11,7 @@ from app.services.excel_product_catalog import (
     ExcelProductBatchService,
     ExcelProductCatalog,
 )
+from app.services.shared_catalog import SharedCatalog, ensure_category
 
 
 class CategoryConsolidationTest(unittest.TestCase):
@@ -238,6 +239,38 @@ class CategoryConsolidationTest(unittest.TestCase):
             self.assertEqual(migration.build_plan()["plan_sha256"], plan["plan_sha256"])
         finally:
             connection.close()
+
+    def test_brand_workflow_prefers_active_survivor_over_archived_alias(self):
+        first, _, uncategorized, _ = self._fixture()
+        connection = self.database.connect()
+        try:
+            migration = CategoryConsolidation(connection)
+            migration.apply(migration.build_plan()["plan_sha256"])
+            row = ensure_category(
+                connection,
+                uncategorized["brand_id"],
+                name="  НАРУЧНЫЕ  ЧАСЫ ",
+                create=True,
+            )
+            connection.commit()
+            self.assertEqual(int(row["id"]), first["category_id"])
+            active = connection.execute(
+                "SELECT COUNT(*) FROM erp_categories WHERE active = 1 "
+                "AND normalized_name = 'наручные часы'"
+            ).fetchone()[0]
+            self.assertEqual(active, 1)
+        finally:
+            connection.close()
+
+    def test_global_create_and_rename_collisions_stay_blocked(self):
+        self._fixture()
+        catalog = SharedCatalog(self.database)
+        with self.assertRaises(ValueError):
+            catalog.create_global_category("  НАРУЧНЫЕ   ЧАСЫ ")
+        categories = catalog.list_category_overviews(limit=50)["items"]
+        seed = next(item for item in categories if item["name"] == "Seed")
+        with self.assertRaises(ValueError):
+            catalog.rename_category(seed["id"], "наручные часы")
 
 if __name__ == "__main__":
     unittest.main()
