@@ -33,6 +33,15 @@ def _table_has_column(connection, table, column):
     )
 
 
+def _references_erp_categories(connection, table):
+    return any(
+        row["table"] == "erp_categories" and row["from"] == "category_id"
+        for row in connection.execute(
+            "PRAGMA foreign_key_list({})".format(table)
+        ).fetchall()
+    )
+
+
 def category_reference_counts(connection, category_ids, brand_id=None):
     if not category_ids:
         return []
@@ -43,7 +52,7 @@ def category_reference_counts(connection, category_ids, brand_id=None):
     ).fetchall()
     for table_row in tables:
         table = table_row["name"]
-        if not _table_has_column(connection, table, "category_id"):
+        if not _references_erp_categories(connection, table):
             continue
         row = connection.execute(
             "SELECT COUNT(*) AS row_count FROM {} "

@@ -274,6 +274,29 @@ if [[ -f instance/catalog.db ]]; then
         --database instance/catalog.db \
         --backup-dir "$BACKUP_DIR/catalog-migrations" \
         --apply
+
+    CATEGORY_MIGRATION_TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
+    CATEGORY_DRY_RUN_PATH="$BACKUP_DIR/category-consolidation-dry-run-$CATEGORY_MIGRATION_TIMESTAMP.json"
+    CATEGORY_RESULT_PATH="$BACKUP_DIR/category-consolidation-result-$CATEGORY_MIGRATION_TIMESTAMP.json"
+    "$PYTHON_BIN" scripts/consolidate_global_categories.py \
+        --database instance/catalog.db \
+        --output "$CATEGORY_DRY_RUN_PATH"
+    CATEGORY_PLAN_SHA="$($PYTHON_BIN - "$CATEGORY_DRY_RUN_PATH" <<'PYTHON_PLAN'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as source:
+    print(json.load(source)["plan_sha256"])
+PYTHON_PLAN
+)"
+    "$PYTHON_BIN" scripts/consolidate_global_categories.py \
+        --database instance/catalog.db \
+        --apply \
+        --expected-plan-sha256 "$CATEGORY_PLAN_SHA" \
+        --output "$CATEGORY_RESULT_PATH"
+    sqlite3 instance/catalog.db "PRAGMA quick_check;" | grep -qx "ok"
+    printf 'CATEGORY_DRY_RUN_PATH=%s\n' "$CATEGORY_DRY_RUN_PATH"
+    printf 'CATEGORY_RESULT_PATH=%s\n' "$CATEGORY_RESULT_PATH"
 fi
 
 systemctl restart "$SERVICE_NAME"
