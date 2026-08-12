@@ -210,6 +210,45 @@ class SettingsContractTest(unittest.TestCase):
                 with self.assertRaisesRegex(OSError, "simulated storage failure"):
                     web.settings_page()
 
+    def test_each_settings_request_loads_storage_once(self):
+        self.write_settings()
+        with mock.patch.object(
+            web,
+            "load_app_settings",
+            wraps=web.load_app_settings,
+        ) as loader:
+            self.client.get("/settings")
+            # One page load plus the existing shared sidebar context load.
+            self.assertEqual(loader.call_count, 2)
+
+            loader.reset_mock()
+            self.client.post(
+                "/settings",
+                data={
+                    "company_name": "New Company",
+                    "erp_name": "New ERP",
+                    "low_stock_threshold": "5",
+                },
+            )
+            self.assertEqual(loader.call_count, 1)
+
+            loader.reset_mock()
+            self.client.patch(
+                "/api/v1/settings",
+                json={"erp_name": "Another ERP"},
+            )
+            self.assertEqual(loader.call_count, 1)
+
+    def test_extracted_module_does_not_import_monolithic_web_module(self):
+        module_directory = Path(web.PROJECT_ROOT) / "app" / "system_settings"
+        source = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in module_directory.glob("*.py")
+        )
+        self.assertNotIn("from app import web", source)
+        self.assertNotIn("from app.web import", source)
+        self.assertNotIn("import app.web", source)
+
 
 if __name__ == "__main__":
     unittest.main()
