@@ -75,6 +75,21 @@ class BrandManagementTest(unittest.TestCase):
             ).fetchone()[0]
         self.assertEqual(count, 1)
         self.assertEqual(links, 2)
+        event = AuditJournal(self.database).list_events(
+            entity_type="category", entity_id=second["id"], limit=1,
+        )["events"][0]
+        self.assertEqual(event["metadata"]["relation_action"], "linked")
+        self.assertEqual(event["metadata"]["brand_name_snapshot"], "Seiko")
+
+    def test_category_event_keeps_historical_brand_name_snapshot(self):
+        brand = self.catalog.create_brand("Casio")
+        category = self.catalog.create_brand_category(brand["id"], "Ремешки")
+        self.catalog.rename_brand(brand["id"], "CASIO Europe")
+
+        event = AuditJournal(self.database).list_events(
+            entity_type="category", entity_id=category["id"], limit=1,
+        )["events"][0]
+        self.assertEqual(event["metadata"]["brand_name_snapshot"], "Casio")
 
     def test_aggregate_distinguishes_nonzero_products_from_zero_sum(self):
         first = self.product("A", "A", "Casio", "Часы", 0)

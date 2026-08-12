@@ -70,8 +70,15 @@ fixture_image_two = (
 with CatalogDatabase(PREVIEW_ROOT / "catalog.db").transaction() as connection:
     product_ids = [
         row[0]
+        for name in (
+            "Casio G-Shock GA-2100",
+            "Tissot PRX Powermatic 80",
+            "Ремешок Cordura Black",
+        )
         for row in connection.execute(
-            "SELECT id FROM catalog_excel_products ORDER BY id LIMIT 3"
+            "SELECT id FROM catalog_excel_products "
+            "WHERE excel_name_raw = ? AND active = 1 LIMIT 1",
+            (name,),
         ).fetchall()
     ]
     first_id = product_ids[0]
@@ -83,7 +90,7 @@ with CatalogDatabase(PREVIEW_ROOT / "catalog.db").transaction() as connection:
             "204699", fixture_image_one, fixture_image_one,
             '[{"original_url":"' + fixture_image_one + '"},'
             '{"original_url":"' + fixture_image_two + '"}]',
-            "2026-08-12T00:00:00+00:00",
+            "2099-01-01T00:00:00+00:00",
             first_id,
         ),
     )

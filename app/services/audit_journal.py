@@ -149,6 +149,8 @@ class AuditJournal:
             str(safe_metadata.get("text_snapshot") or ""),
             str(safe_metadata.get("article") or ""),
             str(safe_metadata.get("number") or ""),
+            str(safe_metadata.get("brand_name_snapshot") or ""),
+            str(safe_metadata.get("brand") or ""),
         ]
         values = (
             entity_type, entity_id, action, actor_id, actor_type, actor_name,
