@@ -606,8 +606,9 @@ class SharedCatalog:
             if system_matches and offset == 0:
                 system_row = connection.execute(
                     "SELECT 0 AS id, 0 AS brand_id, 'Без категории' AS name, "
-                    "1 AS active, COUNT(p.id) AS product_count, "
-                    "COUNT(DISTINCT p.brand_id) AS brand_count, "
+                    "1 AS active, 1 AS duplicate_count, "
+                    "COUNT(p.id) AS product_count, "
+                    "COUNT(DISTINCT COALESCE(p.brand_id, 0)) AS brand_count, "
                     "COALESCE(SUM(CASE WHEN p.stock != 0 THEN 1 ELSE 0 END), 0) "
                     "AS nonzero_count, COALESCE(SUM(p.stock), 0) AS stock_total "
                     "FROM catalog_excel_products p "
@@ -621,6 +622,8 @@ class SharedCatalog:
             if normal_limit:
                 rows.extend(connection.execute(
                     "SELECT c.id, c.brand_id, c.name, c.active, "
+                    "COALESCE(MAX(category_duplicates.duplicate_count), 1) "
+                    "AS duplicate_count, "
                     "COUNT(p.id) AS product_count, "
                     "COALESCE(MAX(category_relations.brand_count), 0) "
                     "AS brand_count, "
@@ -628,11 +631,19 @@ class SharedCatalog:
                     "AS nonzero_count, COALESCE(SUM(p.stock), 0) AS stock_total "
                     "FROM erp_categories c LEFT JOIN catalog_excel_products p "
                     "ON p.category_id = c.id AND p.active = 1 "
-                    "LEFT JOIN (SELECT category_id, "
-                    "COUNT(DISTINCT brand_id) AS brand_count "
-                    "FROM erp_brand_categories WHERE category_id <> 0 "
+                    "LEFT JOIN (SELECT category_id, COUNT(*) AS brand_count "
+                    "FROM (SELECT bc.category_id, bc.brand_id "
+                    "FROM erp_brand_categories bc WHERE bc.category_id <> 0 "
+                    "UNION SELECT p.category_id, COALESCE(p.brand_id, 0) "
+                    "FROM catalog_excel_products p WHERE p.active = 1 "
+                    "AND p.category_id IS NOT NULL) category_brands "
                     "GROUP BY category_id) category_relations "
                     "ON category_relations.category_id = c.id "
+                    "LEFT JOIN (SELECT normalized_name, COUNT(*) "
+                    "AS duplicate_count FROM erp_categories "
+                    "WHERE active = 1 GROUP BY normalized_name "
+                    "HAVING COUNT(*) > 1) category_duplicates "
+                    "ON category_duplicates.normalized_name = c.normalized_name "
                     "WHERE " + where_sql + " GROUP BY c.id ORDER BY "
                     + order_sql + ", c.id ASC LIMIT ? OFFSET ?",
                     parameters + [normal_limit, normal_offset],
@@ -701,6 +712,10 @@ class SharedCatalog:
             item = self._category(row)
             item.update({
                 "system": int(row["id"]) == 0,
+                "duplicate_category": (
+                    int(row["id"]) != 0
+                    and int(row["duplicate_count"]) > 1
+                ),
                 "status": (
                     "Системная" if int(row["id"]) == 0 else
                     "Используется" if int(row["product_count"]) else

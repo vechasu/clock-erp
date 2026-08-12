@@ -13843,6 +13843,11 @@ def format_journal_event(event):
             relation_action = metadata.get("relation_action")
             if relation_action == "linked" and brand_name:
                 action_text = "Добавлена в бренд «{}»".format(brand_name)
+            elif (
+                metadata.get("global_category_created") is True
+                and relation_action == "unlinked"
+            ):
+                action_text = "Создана новая глобальная категория"
             elif metadata.get("global_category_created") is True and brand_name:
                 action_text = "Создана новая категория в бренде «{}»".format(
                     brand_name
