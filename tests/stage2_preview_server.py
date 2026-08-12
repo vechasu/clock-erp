@@ -39,11 +39,6 @@ def product_result(row, name, article, brand, category, stock, cell):
 
 ExcelProductBatchService(CatalogDatabase(PREVIEW_ROOT / "catalog.db")).apply(
     [
-        product_result(2, "Casio G-Shock GA-2100", "GA-2100-1A1", "Casio", "Часы", 7, "A-01"),
-        product_result(3, "Tissot PRX Powermatic 80", "T137.407", "Tissot", "Часы", 3, "A-05"),
-        product_result(4, "Ремешок Cordura Black", "STRAP-CB", "Vechasu", "Ремешки", 12, "B-12"),
-        product_result(5, "Футляр для часов", "CASE-01", "Vechasu", "Аксессуары", 0, "C-03"),
-    ] + [
         product_result(
             row,
             "Тестовый товар {:03d}".format(row),
@@ -54,6 +49,13 @@ ExcelProductBatchService(CatalogDatabase(PREVIEW_ROOT / "catalog.db")).apply(
             "P-{:03d}".format(row),
         )
         for row in range(6, 122)
+    ] + [
+        # Keep the named browser-test fixtures on the first (newest-first)
+        # page when the catalog grows beyond the server page-size limit.
+        product_result(2, "Casio G-Shock GA-2100", "GA-2100-1A1", "Casio", "Часы", 7, "A-01"),
+        product_result(3, "Tissot PRX Powermatic 80", "T137.407", "Tissot", "Часы", 3, "A-05"),
+        product_result(4, "Ремешок Cordura Black", "STRAP-CB", "Vechasu", "Ремешки", 12, "B-12"),
+        product_result(5, "Футляр для часов", "CASE-01", "Vechasu", "Аксессуары", 0, "C-03"),
     ],
     "d" * 64,
     "stage2-preview.xlsx",
