@@ -222,7 +222,7 @@
                         <span class="journal-event-rail"><span class="journal-event-dot"></span></span>
                         <span class="journal-event-card">
                             <span class="journal-event-icon" aria-hidden="true">
-                                {{ navigation_icon("products" if event.entity_type == "product" else "sales" if event.entity_type == "sale" else "receipts", "journal-event-icon-svg") }}
+                                {{ navigation_icon("products" if event.entity_type == "product" else "brand" if event.entity_type == "brand" else "category" if event.entity_type == "category" else "sales" if event.entity_type == "sale" else "receipts", "journal-event-icon-svg") }}
                             </span>
                             <span class="journal-event-copy">
                                 <span class="journal-event-title">{{ event.object_label_snapshot }}</span>
@@ -306,6 +306,8 @@
 
     const eventIconPaths = {
         product: ["M20 13 13 20a2 2 0 0 1-2.8 0L4 13.8A2 2 0 0 1 4 11V5a1 1 0 0 1 1-1h6a2 2 0 0 1 1.4.6L20 12.2a1 1 0 0 1 0 1.4Z", "M8.5 8.5h.01"],
+        brand: ["M4 7.5 12 3l8 4.5v9L12 21l-8-4.5v-9Z", "M4.5 7.5 12 12l7.5-4.5M12 12v9"],
+        category: ["M4 6h6l2 2h8v10H4V6Z", "M4 10h16"],
         sale: ["M6 8h12l1 12H5L6 8Z", "M9 9V6a3 3 0 0 1 6 0v3"],
         receipt: ["M4 13h4l2 3h4l2-3h4v7H4v-7Z", "M12 3v9m0 0 3-3m-3 3L9 9"],
     };
