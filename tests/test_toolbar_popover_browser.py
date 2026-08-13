@@ -28,6 +28,12 @@ class ToolbarPopoverStructureTest(unittest.TestCase):
         self.assertIn("closeAll(entry, false)", coordinator)
         self.assertIn('event.key !== "Escape"', coordinator)
         self.assertIn("entry.container.contains(event.target)", coordinator)
+        period_picker = self.source("app/static/js/period-picker.js")
+        self.assertIn(
+            'button.addEventListener("click", function(event)',
+            period_picker,
+        )
+        self.assertIn("event.stopPropagation()", period_picker)
         for source in (warehouse, receipts):
             self.assertIn("js/toolbar-popover-coordinator.js", source)
             self.assertIn("createErpToolbarPopoverCoordinator", source)

@@ -1603,7 +1603,7 @@
         src="{{ url_for('static', filename='js/receipt-submit.js') }}"
     ></script>
     <script
-        src="{{ url_for('static', filename='js/period-picker.js', v='receipts-period-2') }}"
+        src="{{ url_for('static', filename='js/period-picker.js', v='receipts-period-3') }}"
     ></script>
     <script
         src="{{ url_for('static', filename='js/toolbar-popover-coordinator.js') }}"
@@ -5475,6 +5475,49 @@
                 "period-then-columns"
             );
             window.receiptToolbarPopovers.closeAll();
+
+            period.click();
+            await wait();
+            const currentMonthDays = Array.from(
+                periodPanel.querySelectorAll(
+                    ".warehouse-calendar-day:not(.is-outside)"
+                )
+            );
+            const startLabel = currentMonthDays[0].getAttribute(
+                "aria-label"
+            );
+            const endLabel = currentMonthDays[1].getAttribute(
+                "aria-label"
+            );
+            currentMonthDays[0].click();
+            await wait();
+            assert(!periodPanel.hidden, "period-closed-after-start");
+            assert(
+                periodPanel.querySelector(
+                    `[aria-label="${startLabel}"]`
+                ).classList.contains("is-start"),
+                "period-start-not-selected"
+            );
+            periodPanel.querySelector(
+                `[aria-label="${endLabel}"]`
+            ).click();
+            await wait();
+            assert(!periodPanel.hidden, "period-closed-after-end");
+            assert(
+                periodPanel.querySelector(
+                    `[aria-label="${endLabel}"]`
+                ).classList.contains("is-end"),
+                "period-end-not-selected"
+            );
+            assert(
+                periodPanel.querySelectorAll(
+                    ".warehouse-calendar-day.is-in-range"
+                ).length === 2,
+                "period-range-not-highlighted"
+            );
+            periodPanel.querySelector("[data-calendar-reset]").click();
+            await wait();
+            assert(periodPanel.hidden, "period-reset-not-closed");
 
             assert(
                 document.getElementById(

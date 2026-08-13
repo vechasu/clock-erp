@@ -277,7 +277,9 @@
                     button.setAttribute("aria-pressed", "false");
                 }
 
-                button.addEventListener("click", function() {
+                button.addEventListener("click", function(event) {
+                    event.stopPropagation();
+
                     if (!draftFrom || draftTo) {
                         draftFrom = value;
                         draftTo = "";
