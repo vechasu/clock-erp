@@ -41,7 +41,8 @@ def sale(
 def receipt(
         receipt_id, number, note, *, brand_id="b1", brand="Casio",
         category_id="c1", category="Часы", product_id="p1",
-        product="G-Shock", article="GA-2100"):
+        product="G-Shock", article="GA-2100", quantity=1,
+        receipt_date="2026-08-10", positions=None):
     position = {
         "brand_id": brand_id,
         "brand": brand,
@@ -50,23 +51,26 @@ def receipt(
         "product_id": product_id,
         "product_name": product,
         "article": article,
-        "quantity": 1,
+        "quantity": quantity,
     }
+    positions = positions or [position]
     return {
         "id": receipt_id,
         "number": number,
         "note": note,
-        "receipt_date": "2026-08-10",
+        "receipt_date": receipt_date,
         "created_at": "2026-08-10 12:00:00",
+        "status": "posted",
         "status_label": "Проведён",
-        "total_quantity": 1,
+        "total_quantity": sum(item["quantity"] for item in positions),
+        "total_amount": 0,
         "brand_id": brand_id,
         "brand": brand,
         "category_id": category_id,
         "category": category,
         "product_id": product_id,
         "product_name": product,
-        "positions": [position],
+        "positions": positions,
     }
 
 
@@ -158,6 +162,163 @@ class ReceiptCatalogFiltersTest(unittest.TestCase):
         self.assertEqual([item["id"] for item in context["receipts"]], ["two"])
         self.assertEqual(context["total_receipts"], 1)
         self.assertEqual(context["total_quantity"], "1")
+
+    def test_multi_item_document_counts_once_and_sums_only_matching_items(self):
+        mixed = receipt(
+            "mixed", "RCPT-MIXED", "Два бренда",
+            positions=[
+                {
+                    "brand_id": "b1", "brand": "Casio",
+                    "category_id": "c1", "category": "Часы",
+                    "product_id": "p1", "product_name": "G-Shock",
+                    "article": "GA-2100", "quantity": 10,
+                },
+                {
+                    "brand_id": "b2", "brand": "Vechasu",
+                    "category_id": "c2", "category": "Аксессуары",
+                    "product_id": "p3", "product_name": "Ремешок",
+                    "article": "STRAP-1", "quantity": 20,
+                },
+                {
+                    "brand_id": "b1", "brand": "Casio",
+                    "category_id": "c1", "category": "Часы",
+                    "product_id": "p4", "product_name": "Edifice",
+                    "article": "EFV-100", "quantity": 5,
+                },
+            ],
+        )
+        self.receipts = [mixed]
+
+        by_brand = self.route_context("?receipt_brand_id=b1")
+        by_product = self.route_context("?receipt_product_id=p3")
+
+        self.assertEqual(by_brand["total_receipts"], 1)
+        self.assertEqual(by_brand["total_quantity"], "15")
+        self.assertEqual(by_brand["receipts"][0]["total_quantity"], 15)
+        self.assertEqual(by_product["total_receipts"], 1)
+        self.assertEqual(by_product["total_quantity"], "20")
+        self.assertEqual(by_product["receipts"][0]["product_id"], "p3")
+
+    def test_catalog_filters_must_intersect_on_one_position(self):
+        mixed = receipt(
+            "mixed", "RCPT-MIXED", "Два товара",
+            positions=[
+                {
+                    "brand_id": "b1", "brand": "Casio",
+                    "category_id": "c1", "category": "Часы",
+                    "product_id": "p1", "product_name": "G-Shock",
+                    "article": "GA-2100", "quantity": 10,
+                },
+                {
+                    "brand_id": "b2", "brand": "Vechasu",
+                    "category_id": "c2", "category": "Аксессуары",
+                    "product_id": "p3", "product_name": "Ремешок",
+                    "article": "STRAP-1", "quantity": 20,
+                },
+            ],
+        )
+        self.receipts = [mixed]
+
+        context = self.route_context(
+            "?receipt_brand_id=b1&receipt_category_id=c2"
+        )
+
+        self.assertEqual(context["receipts"], [])
+        self.assertEqual(context["total_receipts"], 0)
+        self.assertEqual(context["total_quantity"], "0")
+
+    def test_period_search_and_catalog_filters_are_intersection(self):
+        self.receipts = [
+            receipt(
+                "selected", "PR-2026-0021", "поставка от сегодня",
+                quantity=10, receipt_date="2026-08-10",
+            ),
+            receipt(
+                "wrong-date", "PR-2026-0022", "поставка от сегодня",
+                quantity=50, receipt_date="2026-07-01",
+            ),
+            receipt(
+                "wrong-brand", "PR-2026-0023", "поставка от сегодня",
+                brand_id="b2", brand="Vechasu", quantity=20,
+            ),
+            receipt(
+                "wrong-search", "PR-2026-0024", "другая поставка",
+                quantity=30,
+            ),
+        ]
+
+        context = self.route_context(
+            "?q=сегодня&date_from=2026-08-01&date_to=2026-08-31"
+            "&receipt_brand_id=b1&receipt_category_id=c1"
+            "&receipt_product_id=p1"
+        )
+
+        self.assertEqual(
+            [item["id"] for item in context["receipts"]], ["selected"]
+        )
+        self.assertEqual(context["total_receipts"], 1)
+        self.assertEqual(context["total_quantity"], "10")
+
+    def test_sorting_still_applies_after_backend_filters(self):
+        self.receipts = [
+            receipt("lower", "RCPT-010", "", quantity=1),
+            receipt("higher", "RCPT-020", "", quantity=5),
+            receipt(
+                "other", "RCPT-030", "", brand_id="b2",
+                brand="Vechasu", quantity=100,
+            ),
+        ]
+
+        context = self.route_context(
+            "?receipt_brand_id=b1&sort=quantity&sort_dir=desc"
+        )
+
+        self.assertEqual(
+            [item["id"] for item in context["receipts"]],
+            ["higher", "lower"],
+        )
+
+    def test_receipts_api_intersects_item_filters_and_totals_matching_units(self):
+        mixed = receipt(
+            "mixed", "RCPT-MIXED", "Два товара",
+            positions=[
+                {
+                    "brand_id": "b1", "brand": "Casio",
+                    "category_id": "c1", "category": "Часы",
+                    "product_id": "p1", "product_name": "G-Shock",
+                    "article": "GA-2100", "quantity": 10,
+                },
+                {
+                    "brand_id": "b2", "brand": "Vechasu",
+                    "category_id": "c2", "category": "Аксессуары",
+                    "product_id": "p3", "product_name": "Ремешок",
+                    "article": "STRAP-1", "quantity": 20,
+                },
+            ],
+        )
+        with web.app.test_request_context(
+            "/api/receipts?brand_id=b1&category_id=c1&product_id=p1"
+        ), mock.patch.object(
+            web, "api_receipt_records", return_value=[mixed]
+        ):
+            payload = web.app.make_response(
+                web.api_receipts_collection()
+            ).get_json()
+
+        self.assertEqual(payload["meta"]["total"], 1)
+        self.assertEqual(payload["meta"]["totals"]["quantity"], 10)
+
+        with web.app.test_request_context(
+            "/api/receipts?brand_id=b1&category_id=c2"
+        ), mock.patch.object(
+            web, "api_receipt_records", return_value=[mixed]
+        ):
+            incompatible = web.app.make_response(
+                web.api_receipts_collection()
+            ).get_json()
+
+        self.assertEqual(incompatible["meta"]["total"], 0)
+        self.assertEqual(incompatible["meta"]["totals"]["quantity"], 0)
 
     def test_main_search_finds_document_number_and_comment(self):
         by_number = self.route_context("?q=rcpt-002")

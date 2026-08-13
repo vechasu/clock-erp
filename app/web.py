@@ -10018,7 +10018,7 @@ def build_receipt_filter_catalog(receipts):
     )
 
 
-def receipt_matches_catalog_filters(receipt, filters):
+def matching_receipt_positions(receipt, filters):
     brand_id = str(filters.get("receipt_brand_id") or "")
     category_id = str(filters.get("receipt_category_id") or "")
     product_id = str(filters.get("receipt_product_id") or "")
@@ -10026,6 +10026,7 @@ def receipt_matches_catalog_filters(receipt, filters):
     legacy_category = str(filters.get("receipt_category") or "")
     legacy_product = str(filters.get("receipt_product") or "")
 
+    matches = []
     for position in receipt_filter_positions(receipt):
         brand = str(position.get("brand") or receipt.get("brand") or "")
         category = str(
@@ -10065,8 +10066,43 @@ def receipt_matches_catalog_filters(receipt, filters):
             continue
         if legacy_product and product != legacy_product:
             continue
-        return True
-    return False
+        matches.append(position)
+    return matches
+
+
+def receipt_matches_catalog_filters(receipt, filters):
+    return bool(matching_receipt_positions(receipt, filters))
+
+
+def receipt_has_catalog_filters(filters):
+    return any(
+        str(filters.get(key) or "").strip()
+        for key in (
+            "receipt_brand", "receipt_brand_id",
+            "receipt_category", "receipt_category_id",
+            "receipt_product", "receipt_product_id",
+        )
+    )
+
+
+def project_receipt_catalog_match(receipt, matching_positions):
+    """Keep one document row while exposing only matching item quantities."""
+    projected = dict(receipt)
+    first_position = matching_positions[0]
+    for field in (
+            "brand", "brand_id", "category", "category_id",
+            "product_id", "product_name"):
+        if first_position.get(field) not in (None, ""):
+            projected[field] = first_position[field]
+    projected["total_quantity"] = sum(
+        parse_receipt_number(
+            position.get("total_quantity", position.get("quantity"))
+            if position is receipt
+            else position.get("quantity")
+        )
+        for position in matching_positions
+    )
+    return projected
 
 
 def build_receipt_search_text(receipt):
@@ -10171,11 +10207,18 @@ def receipts_page():
         if receipt_filters["receipt_comment"].casefold() not in str(
                 receipt.get("note") or "").casefold():
             continue
-        if not receipt_matches_catalog_filters(receipt, receipt_filters):
+        matching_positions = matching_receipt_positions(
+            receipt, receipt_filters
+        )
+        if not matching_positions:
             continue
         if (receipt_filters["receipt_status"] and receipt.get("status_label")
                 != receipt_filters["receipt_status"]):
             continue
+        if receipt_has_catalog_filters(receipt_filters):
+            receipt = project_receipt_catalog_match(
+                receipt, matching_positions
+            )
         receipts.append(receipt)
 
     filtered_total = len(receipts)
@@ -15836,37 +15879,27 @@ def api_receipts_collection():
             item for item in receipts
             if comment in item["comment"].casefold()
         ]
-    if brand:
-        receipts = [item for item in receipts if item["brand"] == brand]
-    if category:
-        receipts = [item for item in receipts if item["category"] == category]
-    if brand_id:
-        receipts = [
-            item for item in receipts
-            if str(item.get("brand_id") or "") == brand_id
-            or any(
-                str(position.get("brand_id") or "") == brand_id
-                for position in item["positions"]
+    catalog_filters = {
+        "receipt_brand": brand,
+        "receipt_brand_id": brand_id,
+        "receipt_category": category,
+        "receipt_category_id": category_id,
+        "receipt_product_id": product_id,
+    }
+    if receipt_has_catalog_filters(catalog_filters):
+        catalog_filtered_receipts = []
+        for receipt in receipts:
+            matching_positions = matching_receipt_positions(
+                receipt, catalog_filters
             )
-        ]
-    if category_id:
-        receipts = [
-            item for item in receipts
-            if str(item.get("category_id") or "") == category_id
-            or any(
-                str(position.get("category_id") or "") == category_id
-                for position in item["positions"]
+            if not matching_positions:
+                continue
+            receipt["_filtered_quantity"] = sum(
+                parse_receipt_number(position.get("quantity"))
+                for position in matching_positions
             )
-        ]
-    if product_id:
-        receipts = [
-            item for item in receipts
-            if str(item.get("product_id") or "") == product_id
-            or any(
-                str(position.get("product_id") or "") == product_id
-                for position in item["positions"]
-            )
-        ]
+            catalog_filtered_receipts.append(receipt)
+        receipts = catalog_filtered_receipts
     for receipt in receipts:
         receipt["_canonical_timestamp"] = receipt_business_timestamp(
             receipt
@@ -15906,10 +15939,15 @@ def api_receipts_collection():
     pages = (total + page_size - 1) // page_size
     if pages and page > pages:
         page = pages
+    filtered_quantity_total = sum(
+        item.get("_filtered_quantity", item["total_quantity"])
+        for item in receipts
+    )
     start = (page - 1) * page_size
     visible = receipts[start:start + page_size]
     for receipt in visible:
         receipt.pop("_canonical_timestamp", None)
+        receipt.pop("_filtered_quantity", None)
     return api_success(
         visible,
         page=page,
@@ -15918,7 +15956,7 @@ def api_receipts_collection():
         pages=pages,
         total_pages=pages,
         totals={
-            "quantity": sum(item["total_quantity"] for item in receipts),
+            "quantity": filtered_quantity_total,
             "amount": (
                 round(sum(item["total_amount"] for item in receipts), 2)
                 if all(item["total_amount"] is not None for item in receipts)
