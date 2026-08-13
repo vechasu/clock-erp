@@ -55,16 +55,16 @@ class UnifiedPageArchitectureTest(unittest.TestCase):
             "</div>\n\n        <section", 1
         )[0]
         for label in (
-            "Выручка", "Продаж", "Товаров продано",
-            "Средний чек", "Отменено",
+            "Продажи", "Продано единиц", "В обработке", "Отправлено",
         ):
             self.assertIn(label, sales_metrics)
         self.assertNotIn("Активных продаж", sales_metrics)
-        self.assertIn("Сейчас в работе", sales)
-        self.assertIn("В обработке", sales)
-        self.assertIn("Отправлено", sales)
+        self.assertNotIn("Выручка", sales_metrics)
+        self.assertNotIn("Средний чек", sales_metrics)
+        self.assertNotIn("Отменено", sales_metrics)
+        self.assertNotIn("Сейчас в работе", sales)
         components = self.source("app/static/css/erp-components.css")
-        self.assertIn("--erp-workspace-metric-count: 5", components)
+        self.assertIn("--erp-workspace-metric-count: 4", components)
 
     def test_product_add_action_is_not_inside_the_search_form(self):
         warehouse = self.source("app/templates/warehouse.html")
