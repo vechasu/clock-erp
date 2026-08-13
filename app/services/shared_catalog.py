@@ -1146,12 +1146,14 @@ class SharedCatalog:
             if current is None:
                 current = {
                     "canonical": row,
+                    "category_ids": [],
                     "product_count": 0,
                     "global_stock_total": 0.0,
                     "selected_stock_total": 0.0,
                     "used_by_brand": False,
                 }
                 grouped[key] = current
+            current["category_ids"].append(int(row["id"]))
             if int(row["id"]) < int(current["canonical"]["id"]):
                 current["canonical"] = row
             current["product_count"] += int(row["product_count"])
@@ -1187,8 +1189,48 @@ class SharedCatalog:
                 if selected_brand_id is not None
                 else item["global_stock_total"]
             )
-            result.append(self._category(prepared))
+            result.append({
+                **self._category(prepared),
+                "category_ids": sorted(set(item["category_ids"])),
+            })
         return result
+
+    def category_compatibility_groups(self):
+        """Return canonical IDs plus legacy aliases for each logical category."""
+        self.database.initialize()
+        with self.database.connect() as connection:
+            rows = connection.execute(
+                "SELECT id, name, normalized_name, active "
+                "FROM erp_categories ORDER BY id"
+            ).fetchall()
+
+        grouped = {}
+        for row in rows:
+            key = normalized_name(row["name"])
+            item = grouped.setdefault(key, {
+                "id": None,
+                "name": row["name"],
+                "normalized_name": key,
+                "category_ids": [],
+            })
+            category_id = int(row["id"])
+            item["category_ids"].append(category_id)
+            if bool(row["active"]) and (
+                item["id"] is None or category_id < item["id"]
+            ):
+                item["id"] = category_id
+                item["name"] = row["name"]
+
+        result = []
+        for item in grouped.values():
+            if item["id"] is None:
+                item["id"] = min(item["category_ids"])
+            item["category_ids"] = sorted(set(item["category_ids"]))
+            result.append(item)
+        return sorted(
+            result,
+            key=lambda item: (item["normalized_name"], item["id"]),
+        )
 
     @staticmethod
     def _product_filter_sql(

@@ -3625,12 +3625,32 @@
         const categories = salesFilterCatalog
             .filter((item) => !values.brand_id || String(item.brand_id) === String(values.brand_id))
             .map((item) => ({value: String(item.category_id), label: item.category}));
+        const categoryValues = new Set(
+            categories.map((item) => item.value)
+        );
+        if (
+            values.category_id
+            && !categoryValues.has(String(values.category_id))
+        ) {
+            values.category_id = "";
+            values.product_id = "";
+        }
         const products = salesFilterCatalog
             .filter((item) => !values.brand_id || String(item.brand_id) === String(values.brand_id))
             .filter((item) => !values.category_id || String(item.category_id) === String(values.category_id))
             .map((item) => ({value: String(item.product_id), label: item.product}));
+        const productValues = new Set(
+            products.map((item) => item.value)
+        );
+        if (
+            values.product_id
+            && !productValues.has(String(values.product_id))
+        ) {
+            values.product_id = "";
+        }
         populateSelect(salesCategoryFilter, "Все категории", categories, values.category_id);
         populateSelect(salesProductFilter, "Все товары", products, values.product_id);
+        return values;
     }
 
     function setDraft(values) {
@@ -3748,14 +3768,11 @@
 
     salesBrandFilter.addEventListener("change", () => {
         const values = draftValues();
-        values.category_id = "";
-        values.product_id = "";
         cascadeOptions(values);
         salesPopoverManager.reposition();
     });
     salesCategoryFilter.addEventListener("change", () => {
         const values = draftValues();
-        values.product_id = "";
         cascadeOptions(values);
         salesPopoverManager.reposition();
     });

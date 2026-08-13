@@ -64,7 +64,7 @@ class ActiveFilterChipsTest(unittest.TestCase):
     def test_removing_filters_updates_url_rows_and_statistics(self):
         self.assertIn("navigateSales(changes)", self.sales)
         self.assertIn(
-            "filter_sales_report_records(all_sales, filters)",
+            "filter_sales_report_records(\n        all_sales,",
             self.source("app/web.py"),
         )
         self.assertIn("window.history.replaceState({}, \"\", url)", self.receipts)

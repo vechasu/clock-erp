@@ -69,6 +69,7 @@ from app.services.shared_catalog import (
     CatalogReferenceError,
     DuplicateCatalogValueError,
     SharedCatalog,
+    normalized_name,
 )
 from app.sales_reporting.application import build_report_context
 from app.sales_reporting.routes import SalesReportingRoutes
@@ -8374,22 +8375,100 @@ def get_sale_filter_identifier(sale, id_field, label_field):
     )
 
 
-def build_sales_filter_catalog(sales):
+def _sales_category_value_sort_key(value):
+    text = str(value or "")
+    try:
+        return (0, int(text), text)
+    except (TypeError, ValueError):
+        return (1, 0, text)
+
+
+def build_sales_category_compatibility(sales, category_groups=None):
+    groups = {}
+    key_by_id = {}
+    key_by_name = {}
+
+    for item in category_groups or []:
+        canonical_id = str(item.get("id") or "")
+        logical_name = normalized_name(item.get("name"))
+        if not canonical_id or not logical_name:
+            continue
+        key = "catalog:{}".format(canonical_id)
+        group = {
+            "value": canonical_id,
+            "label": str(item.get("name") or "").strip(),
+            "category_ids": {
+                str(value) for value in item.get("category_ids") or []
+            } | {canonical_id},
+        }
+        groups[key] = group
+        key_by_name[logical_name] = key
+        for category_id in group["category_ids"]:
+            key_by_id[category_id] = key
+
+    def group_key(sale):
+        raw_id = get_sale_filter_identifier(
+            sale, "category_id", "category"
+        )
+        label = str(sale.get("category") or "").strip()
+        logical_name = normalized_name(label)
+        if raw_id == "0" and not logical_name:
+            return "system:uncategorized", raw_id, "Без категории"
+        if raw_id in key_by_id:
+            return key_by_id[raw_id], raw_id, label
+        if logical_name in key_by_name:
+            return key_by_name[logical_name], raw_id, label
+        if logical_name:
+            return "snapshot-name:{}".format(logical_name), raw_id, label
+        return "snapshot-id:{}".format(raw_id), raw_id, label
+
+    for sale in sales:
+        key, raw_id, label = group_key(sale)
+        group = groups.get(key)
+        if group is None:
+            group = {
+                "value": "0" if key == "system:uncategorized" else "",
+                "label": label or "Без категории",
+                "category_ids": set(),
+            }
+            groups[key] = group
+        if raw_id:
+            group["category_ids"].add(raw_id)
+
+    for key, group in groups.items():
+        if not group["value"]:
+            candidates = sorted(
+                group["category_ids"],
+                key=_sales_category_value_sort_key,
+            )
+            group["value"] = candidates[0] if candidates else ""
+        group["category_ids"] = sorted(
+            group["category_ids"],
+            key=_sales_category_value_sort_key,
+        )
+
+    return {"groups": groups, "group_key": group_key}
+
+
+def build_sales_filter_catalog(sales, category_groups=None):
     catalog = []
     seen = set()
+    compatibility = build_sales_category_compatibility(
+        sales, category_groups=category_groups
+    )
 
     for sale in sales:
         brand_id = get_sale_filter_identifier(
             sale, "brand_id", "brand"
         )
-        category_id = get_sale_filter_identifier(
-            sale, "category_id", "category"
-        )
+        category_key, _, _ = compatibility["group_key"](sale)
+        category_group = compatibility["groups"][category_key]
+        category_id = category_group["value"]
         product_id = get_sale_filter_identifier(
             sale, "product_id", "product_name"
         )
         brand_label = str(sale.get("brand") or "").strip()
-        category_label = str(sale.get("category") or "").strip()
+        category_label = category_group["label"]
         product_label = str(sale.get("product_name") or "").strip()
 
         if category_id == "0" and not category_label:
@@ -8407,6 +8486,7 @@ def build_sales_filter_catalog(sales):
             "brand": brand_label or "Без бренда",
             "category_id": category_id,
             "category": category_label or "Без категории",
+            "category_ids": category_group["category_ids"],
             "product_id": product_id,
             "product": product_label or "Товар без названия",
         })
@@ -8421,8 +8501,10 @@ def build_sales_filter_catalog(sales):
     )
 
 
-def build_sales_filter_options(sales, filters):
-    catalog = build_sales_filter_catalog(sales)
+def build_sales_filter_options(sales, filters, category_groups=None):
+    catalog = build_sales_filter_catalog(
+        sales, category_groups=category_groups
+    )
     brand_id = str(filters.get("brand_id") or "")
     category_id = str(filters.get("category_id") or "")
 
@@ -8469,8 +8551,17 @@ def build_sales_filter_options(sales, filters):
     }
 
 
-def filter_sales_report_records(sales, filters):
+def filter_sales_report_records(sales, filters, category_groups=None):
     result = []
+    category_compatibility = build_sales_category_compatibility(
+        sales, category_groups=category_groups
+    )
+    selected_category_id = str(filters.get("category_id") or "")
+    selected_category_key = next((
+        key for key, item in category_compatibility["groups"].items()
+        if item["value"] == selected_category_id
+        or selected_category_id in item["category_ids"]
+    ), "")
 
     source_key = (
         get_active_sales_source(filters.get("source"))
@@ -8529,13 +8620,15 @@ def filter_sales_report_records(sales, filters):
         ):
             continue
 
-        if (
-            filters.get("category_id")
-            and get_sale_filter_identifier(
-                sale, "category_id", "category"
-            ) != filters["category_id"]
-        ):
-            continue
+        if selected_category_id:
+            sale_category_key, _, _ = category_compatibility[
+                "group_key"
+            ](sale)
+            if (
+                not selected_category_key
+                or sale_category_key != selected_category_key
+            ):
+                continue
 
         if (
             filters.get("product_id")
@@ -8613,10 +8706,15 @@ def filter_sales_report_records(sales, filters):
 
 
 def build_sales_report_context():
+    category_groups = SharedCatalog().category_compatibility_groups()
     return build_report_context(
         all_sales=build_sales_report_records(),
         filters=get_sales_report_filters(),
-        filter_records=filter_sales_report_records,
+        filter_records=lambda sales, filters: filter_sales_report_records(
+            sales,
+            filters,
+            category_groups=category_groups,
+        ),
         filter_by_source=filter_sales_by_source,
         get_columns=get_sales_columns,
         format_stock_number=format_stock_number,
@@ -9082,6 +9180,7 @@ def build_legacy_sales_page():
 @app.route("/sales")
 @app.route("/app/sales")
 def sales_page():
+    category_groups = SharedCatalog().category_compatibility_groups()
     all_warehouse_items = get_warehouse_items()
     all_sales = build_sales_report_records(
         warehouse_items=all_warehouse_items
@@ -9097,7 +9196,11 @@ def sales_page():
         if active_source == "all" and requested_tab == "all"
         else active_source
     )
-    sales = filter_sales_report_records(all_sales, filters)
+    sales = filter_sales_report_records(
+        all_sales,
+        filters,
+        category_groups=category_groups,
+    )
     option_source_sales = filter_sales_by_source(
         all_sales,
         filters["source"] if active_source != "all" else "all",
@@ -9105,6 +9208,7 @@ def sales_page():
     filter_options = build_sales_filter_options(
         option_source_sales,
         filters,
+        category_groups=category_groups,
     )
 
     active_sales = [
@@ -9249,7 +9353,8 @@ def sales_page():
         sales_filters=filters,
         sales_filter_options=filter_options,
         sales_filter_catalog=build_sales_filter_catalog(
-            option_source_sales
+            option_source_sales,
+            category_groups=category_groups,
         ),
         notice=(request.args.get("notice") or "").strip(),
         message=(request.args.get("message") or "").strip(),
