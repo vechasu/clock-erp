@@ -48,12 +48,17 @@ class CatalogApplication:
             raise CatalogReferenceError(
                 "Подтвердите операцию удаления категории."
             )
-        result = self.delete_empty_category(category_id, actor)
+        result = self.delete_empty_category(
+            category_id, actor, target_category_id
+        )
         return result
 
-    def delete_empty_category(self, category_id, actor=None):
-        result = self._shared_catalog_factory().delete_empty_category(
+    def delete_empty_category(
+        self, category_id, actor=None, expected_product_count=None
+    ):
+        result = self._shared_catalog_factory().delete_category_with_products(
             category_id,
+            expected_product_count,
             **(actor or {})
         )
         self._invalidate_product_caches()
@@ -252,10 +257,15 @@ class CatalogApplication:
         updated = catalog.rename_brand(brand_id, name)
         return {**updated, "count": updated["product_count"]}
 
-    def update_api_category(self, category_id, method, name=None, actor=None):
+    def update_api_category(
+        self, category_id, method, name=None, actor=None,
+        expected_product_count=None,
+    ):
         catalog = self._shared_catalog_factory()
         if method == "DELETE":
-            return self.delete_empty_category(category_id, actor)
+            return self.delete_empty_category(
+                category_id, actor, expected_product_count
+            )
         updated = catalog.rename_category(category_id, name, **(actor or {}))
         return {**updated, "count": updated["product_count"]}
 

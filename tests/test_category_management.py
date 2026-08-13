@@ -6,6 +6,7 @@ from unittest import mock
 from app import web
 from app.catalog_db import CatalogDatabase
 from app.services.excel_product_catalog import ExcelProductCatalog
+from app.services.sales_inventory import ReturnConflictError, SalesInventory
 from app.services.shared_catalog import (
     CatalogReferenceError,
     DuplicateCatalogValueError,
@@ -179,7 +180,7 @@ class CategoryManagementTest(unittest.TestCase):
                 (removed["id"],),
             ).fetchone()[0], 0)
 
-    def test_category_with_product_is_not_deleted_or_changed(self):
+    def test_category_with_historical_product_is_archived_with_history(self):
         product = self.product("A", "A", "Casio", "Часы", 7)
         before = self.products.get_product(product["id"])
         with self.database.transaction() as connection:
@@ -209,17 +210,21 @@ class CategoryManagementTest(unittest.TestCase):
                 (product["id"], product["brand_id"], product["category_id"]),
             )
 
-        with self.assertRaisesRegex(
-            CatalogReferenceError,
-            "Нельзя удалить категорию, пока в ней находятся товары",
-        ):
-            self.catalog.delete_empty_category(product["category_id"])
+        result = self.catalog.delete_category_with_products(
+            product["category_id"], 1
+        )
 
-        after = self.products.get_product(product["id"])
-        self.assertEqual(after["category_id"], before["category_id"])
-        self.assertEqual(after["stock"], before["stock"])
+        self.assertEqual(result["products_archived"], 1)
         with self.database.connect() as connection:
-            self.assertIsNotNone(connection.execute(
+            after = connection.execute(
+                "SELECT category_id, stock, active "
+                "FROM catalog_excel_products WHERE id = ?",
+                (product["id"],),
+            ).fetchone()
+            self.assertEqual(after["category_id"], before["category_id"])
+            self.assertEqual(after["stock"], before["stock"])
+            self.assertFalse(after["active"])
+            self.assertIsNone(connection.execute(
                 "SELECT id FROM erp_categories WHERE id = ? AND active = 1",
                 (product["category_id"],),
             ).fetchone())
@@ -231,6 +236,60 @@ class CategoryManagementTest(unittest.TestCase):
                 "SELECT COUNT(*) FROM erp_receipt_items WHERE category_id = ?",
                 (product["category_id"],),
             ).fetchone()[0], 1)
+
+    def test_delete_category_rejects_stale_count_and_rolls_back_failure(self):
+        first = self.product("A", "A", "Casio", "Часы", 7)
+        category_id = first["category_id"]
+        self.product("B", "B", "Casio", "Часы", 2)
+
+        with self.assertRaisesRegex(CatalogReferenceError, "Состав категории"):
+            self.catalog.delete_category_with_products(category_id, 1)
+        with self.assertRaisesRegex(RuntimeError, "forced"):
+            self.catalog.delete_category_with_products(
+                category_id,
+                2,
+                failure_hook=lambda _connection: (_ for _ in ()).throw(
+                    RuntimeError("forced")
+                ),
+            )
+
+        with self.database.connect() as connection:
+            self.assertEqual(connection.execute(
+                "SELECT COUNT(*) FROM catalog_excel_products "
+                "WHERE category_id = ? AND active = 1",
+                (category_id,),
+            ).fetchone()[0], 2)
+            self.assertIsNotNone(connection.execute(
+                "SELECT id FROM erp_categories WHERE id = ? AND active = 1",
+                (category_id,),
+            ).fetchone())
+
+    def test_return_reactivates_archived_product_without_duplicate(self):
+        product = self.product("A", "A", "Casio", "Часы", 1)
+        sales = SalesInventory(self.database)
+        sales.create_sale({
+            "id": "archived-return",
+            "created_at": "2026-08-13",
+            "source": "Tictactoy",
+            "product_name": "A",
+            "brand": "Casio",
+            "category": "Часы",
+        }, product["id"], 1, 100)
+        self.catalog.delete_category_with_products(product["category_id"], 1)
+
+        returned = sales.return_sale("archived-return", 1)
+
+        restored = self.products.get_product(product["id"])
+        self.assertEqual(returned["status"], "returned")
+        self.assertEqual(restored["stock"], 1)
+        self.assertIsNone(restored["category_id"])
+        with self.database.connect() as connection:
+            self.assertEqual(connection.execute(
+                "SELECT COUNT(*) FROM catalog_excel_products"
+            ).fetchone()[0], 1)
+        with self.assertRaises(ReturnConflictError):
+            sales.return_sale("archived-return", 1)
+        self.assertEqual(self.products.get_product(product["id"])["stock"], 1)
 
     def test_used_category_requires_target_and_move_preserves_product_data(self):
         product = self.product("A", "A", "Casio", "Часы", 7)
@@ -509,7 +568,8 @@ class CategoryManagementWebTest(unittest.TestCase):
         self.assertIn("deleteCategoryForm", source)
         self.assertIn("categoryMenuController.closeAll()", source)
         self.assertIn("method:'DELETE'", source)
-        self.assertNotIn("delete-plan", source)
+        self.assertIn("delete-plan", source)
+        self.assertIn("expected_product_count", source)
         self.assertIn("setTimeout(loadCategories,200)", source)
         self.assertIn("AbortController", source)
         self.assertIn("history.replaceState", source)
@@ -523,25 +583,26 @@ class CategoryManagementWebTest(unittest.TestCase):
         )
 
         deleted = self.client.delete(
-            "/api/v1/categories/{}".format(empty["id"])
+            "/api/v1/categories/{}".format(empty["id"]),
+            json={"expected_product_count": 0},
         )
-        blocked = self.client.delete(
-            "/api/v1/categories/{}".format(product["category_id"])
+        archived = self.client.delete(
+            "/api/v1/categories/{}".format(product["category_id"]),
+            json={"expected_product_count": 1},
         )
-        system = self.client.delete("/api/v1/categories/0")
+        system = self.client.delete(
+            "/api/v1/categories/0", json={"expected_product_count": 0}
+        )
 
         self.assertEqual(deleted.status_code, 200)
         self.assertTrue(deleted.get_json()["data"]["deleted"])
-        self.assertEqual(blocked.status_code, 409)
-        self.assertIn(
-            "Сначала перенесите товары",
-            blocked.get_json()["message"],
-        )
+        self.assertEqual(archived.status_code, 200)
+        self.assertEqual(archived.get_json()["data"]["products_archived"], 1)
         self.assertEqual(system.status_code, 409)
         self.assertIn("Системную категорию", system.get_json()["message"])
         with self.database.connect() as connection:
             self.assertIsNone(connection.execute(
-                "SELECT id FROM erp_categories WHERE id = ?",
+                "SELECT id FROM erp_categories WHERE id = ? AND active = 1",
                 (empty["id"],),
             ).fetchone())
             row = connection.execute(
@@ -551,6 +612,10 @@ class CategoryManagementWebTest(unittest.TestCase):
             ).fetchone()
             self.assertEqual(row["category_id"], product["category_id"])
             self.assertEqual(row["stock"], 11)
+            self.assertEqual(connection.execute(
+                "SELECT active FROM catalog_excel_products WHERE id = ?",
+                (product["id"],),
+            ).fetchone()["active"], 0)
 
     def test_category_get_search_and_detail_do_not_repair_relations(self):
         products = ExcelProductCatalog(self.database)

@@ -997,6 +997,69 @@ class SharedCatalog:
                 "Нельзя удалить категорию: с ней связаны данные ERP."
             ) from error
 
+    def delete_category_with_products(
+        self, category_id, expected_product_count, failure_hook=None, **actor
+    ):
+        """Archive a category and its active product cards atomically."""
+        self.database.initialize()
+        category_id = int(category_id)
+        if category_id == 0:
+            raise CatalogReferenceError(
+                "Системную категорию «Без категории» нельзя удалить."
+            )
+        try:
+            expected_product_count = int(expected_product_count)
+        except (TypeError, ValueError):
+            raise CatalogReferenceError(
+                "Обновите подтверждение удаления категории."
+            )
+        if expected_product_count < 0:
+            raise CatalogReferenceError(
+                "Обновите подтверждение удаления категории."
+            )
+
+        with self.database.transaction() as connection:
+            plan = self.category_delete_plan(category_id, connection=connection)
+            if plan["active_product_count"] != expected_product_count:
+                raise CatalogReferenceError(
+                    "Состав категории изменился. Обновите подтверждение удаления."
+                )
+            changed_at = utc_now()
+            connection.execute(
+                "UPDATE catalog_excel_products SET active = 0, "
+                "deleted_at = COALESCE(deleted_at, ?), updated_at = ? "
+                "WHERE category_id = ? AND active = 1",
+                (changed_at, changed_at, category_id),
+            )
+            connection.execute(
+                "DELETE FROM erp_brand_categories WHERE category_id = ?",
+                (category_id,),
+            )
+            cursor = connection.execute(
+                "UPDATE erp_categories SET active = 0, updated_at = ? "
+                "WHERE id = ? AND active = 1",
+                (changed_at, category_id),
+            )
+            if cursor.rowcount != 1:
+                raise CatalogReferenceError("Категория не найдена.")
+            if failure_hook:
+                failure_hook(connection)
+            AuditJournal(self.database).record(
+                "category", category_id, "deleted", plan["name"],
+                "Категория и товары удалены из активного каталога",
+                metadata={
+                    "products_archived": plan["active_product_count"],
+                    "references_preserved": plan["references"],
+                },
+                connection=connection, **actor
+            )
+            return {
+                **plan,
+                "deleted": True,
+                "product_count": plan["active_product_count"],
+                "products_archived": plan["active_product_count"],
+            }
+
     def list_category_options(
         self,
         brand_id=None,

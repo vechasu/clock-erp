@@ -133,6 +133,13 @@ class SalesInventory:
     ):
         quantity = positive_number(quantity, "Количество")
         unit_price = optional_nonnegative_number(unit_price, "Цена продажи")
+        requested_status = str(
+            (payload or {}).get("order_status") or "completed"
+        ).strip().lower()
+        if requested_status in {"returned", "partially_returned", "cancelled"}:
+            raise SalesInventoryError(
+                "Возврат и отмена оформляются только для существующей продажи."
+            )
 
         try:
             product_id = int(product_id)
@@ -296,6 +303,7 @@ class SalesInventory:
         user_name="",
         idempotency_key="",
         movement_type="return",
+        failure_hook=None,
     ):
         quantity = positive_number(quantity, "Количество возврата")
         returned_at = now_iso()
@@ -329,6 +337,31 @@ class SalesInventory:
             ).fetchone()
             if sale is None or item is None:
                 raise ReturnConflictError("Продажа не найдена.")
+            if sale["deleted_at"]:
+                raise ReturnConflictError("Продажа удалена.")
+            if sale["cancelled_at"]:
+                raise ReturnConflictError("Отменённую продажу нельзя вернуть.")
+
+            movement_plan = self._movement_plan_from_connection(
+                connection, sale_id
+            )
+            matching_reversals = [
+                reversal for reversal in movement_plan["reversals"]
+                if int(reversal["product_id"]) == int(item["product_id"])
+            ]
+            provable_quantity = sum(
+                float(reversal["quantity"])
+                for reversal in matching_reversals
+            )
+            if (
+                not movement_plan["safe"]
+                or movement_plan["movement_count"] <= 0
+                or provable_quantity <= 0.000001
+            ):
+                raise ReturnConflictError(
+                    "Не удалось доказать исходное списание этой продажи. "
+                    "Остаток не изменён."
+                )
 
             remaining = (
                 float(item["quantity"])
@@ -342,6 +375,11 @@ class SalesInventory:
                         format_number(remaining)
                     )
                 )
+            if quantity > provable_quantity + 0.000001:
+                raise ReturnConflictError(
+                    "Можно вернуть не больше фактически списанного количества: "
+                    "{}.".format(format_number(provable_quantity))
+                )
 
             new_returned = (
                 float(item["returned_quantity"] or 0) + quantity
@@ -352,6 +390,29 @@ class SalesInventory:
             item_status = (
                 "returned" if fully_reversed else "partially_returned"
             )
+            product = connection.execute(
+                "SELECT stock, active, category_id "
+                "FROM catalog_excel_products WHERE id = ?",
+                (item["product_id"],),
+            ).fetchone()
+            if product is None:
+                raise ReturnConflictError("Товар не найден.")
+            category_active = True
+            if product["category_id"] is not None:
+                category_active = connection.execute(
+                    "SELECT 1 FROM erp_categories "
+                    "WHERE id = ? AND active = 1",
+                    (product["category_id"],),
+                ).fetchone() is not None
+            if not product["active"] or not category_active:
+                connection.execute(
+                    "UPDATE catalog_excel_products SET active = 1, "
+                    "category_id = NULL, excel_category = NULL, "
+                    "deleted_at = NULL, updated_at = ? WHERE id = ?",
+                    (returned_at, item["product_id"]),
+                )
+
+            stock_before = float(product["stock"] or 0)
             stock_cursor = connection.execute(
                 "UPDATE catalog_excel_products "
                 "SET stock = stock + ?, stock_source = ?, "
@@ -406,15 +467,16 @@ class SalesInventory:
             )
             connection.execute(
                 "INSERT INTO catalog_stock_movements ("
-                "id, product_id, movement_type, quantity_delta, stock_after, "
+                "id, product_id, movement_type, quantity_delta, stock_before, stock_after, "
                 "sale_id, sale_item_id, idempotency_key, source, user_name, "
                 "comment, created_at"
-                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     str(uuid.uuid4()),
                     item["product_id"],
                     movement_type,
                     quantity,
+                    stock_before,
                     float(product["stock"]),
                     sale_id,
                     item["id"],
@@ -435,6 +497,8 @@ class SalesInventory:
                     returned_at,
                 ),
             )
+            if failure_hook:
+                failure_hook(connection)
             action = (
                 "refused"
                 if movement_type == "cancellation" and "отказ" in reason.casefold()
