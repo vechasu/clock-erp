@@ -1577,6 +1577,16 @@
             margin-top: 12px;
         }
 
+        .receipt-product-filter-field,
+        .receipt-product-filter-field .sales-product-combobox {
+            min-width: 0;
+            position: relative;
+        }
+
+        .receipt-product-filter-field .sales-product-combobox-menu {
+            z-index: 80;
+        }
+
     </style>
     <link
         rel="stylesheet"
@@ -1678,35 +1688,65 @@
                 </summary>
                 <div class="receipt-advanced-filter-panel">
                     <div class="receipt-advanced-filter-grid">
-                        <input class="search erp-control" id="receiptDocumentFilter" type="search"
-                            value="{{ receipt_filters.receipt_document }}" placeholder="Номер документа" oninput="scheduleReceiptFilter()">
-                        <input class="search erp-control" id="receiptCommentFilter" type="search"
-                            value="{{ receipt_filters.receipt_comment }}" placeholder="Комментарий" oninput="scheduleReceiptFilter()">
-                        <select class="control erp-control" id="receiptBrandFilter" onchange="filterReceipts()">
+                        <select class="control erp-control" id="receiptBrandFilter">
                             <option value="">Все бренды</option>
-                            {% for value in receipt_filter_brands %}<option value="{{ value }}"{% if receipt_filters.receipt_brand == value %} selected{% endif %}>{{ value }}</option>{% endfor %}
                         </select>
-                        <select class="control erp-control" id="receiptCategoryFilter" onchange="filterReceipts()">
+                        <select class="control erp-control" id="receiptCategoryFilter">
                             <option value="">Все категории</option>
-                            {% for value in receipt_filter_categories %}<option value="{{ value }}"{% if receipt_filters.receipt_category == value %} selected{% endif %}>{{ value }}</option>{% endfor %}
                         </select>
-                        <select class="control erp-control" id="receiptProductFilter" onchange="filterReceipts()">
-                            <option value="">Все товары</option>
-                            {% for value in receipt_filter_products %}<option value="{{ value }}"{% if receipt_filters.receipt_product == value %} selected{% endif %}>{{ value }}</option>{% endfor %}
-                        </select>
-                        <select class="control erp-control" id="receiptStatusFilter" onchange="filterReceipts()">
+                        <div class="receipt-product-filter-field">
+                            <input id="receiptProductFilter" type="hidden">
+                            <div id="receiptFilterProductCombobox" class="sales-product-combobox">
+                                <button
+                                    id="receiptFilterProductTrigger"
+                                    class="sales-product-combobox-trigger"
+                                    type="button"
+                                    role="combobox"
+                                    aria-haspopup="listbox"
+                                    aria-controls="receiptFilterProductMenu"
+                                    aria-expanded="false"
+                                >
+                                    <span id="receiptFilterProductLabel">Все товары</span>
+                                    <span aria-hidden="true">⌄</span>
+                                </button>
+                                <div id="receiptFilterProductMenu" class="sales-product-combobox-menu" hidden>
+                                    <input
+                                        id="receiptFilterProductSearch"
+                                        class="sales-product-combobox-search"
+                                        type="search"
+                                        placeholder="Поиск товара по названию или артикулу..."
+                                        autocomplete="off"
+                                    >
+                                    <div
+                                        id="receiptFilterProductOptions"
+                                        class="sales-product-combobox-options"
+                                        role="listbox"
+                                    ></div>
+                                </div>
+                            </div>
+                        </div>
+                        <select class="control erp-control" id="receiptStatusFilter">
                             <option value="">Все статусы</option>
                             <option value="Проведён"{% if receipt_filters.receipt_status == 'Проведён' %} selected{% endif %}>Проведён</option>
                             <option value="Отменён"{% if receipt_filters.receipt_status == 'Отменён' %} selected{% endif %}>Отменён</option>
                         </select>
                     </div>
-                    <button
-                        class="button button-secondary erp-reset-action receipt-filter-reset"
-                        type="button"
-                        onclick="resetReceiptAdvancedFilters()"
-                    >
-                        Сбросить фильтры
-                    </button>
+                    <div class="sales-filter-panel-actions">
+                        <button
+                            class="button button-secondary erp-reset-action receipt-filter-reset"
+                            type="button"
+                            onclick="resetReceiptAdvancedFilters()"
+                        >
+                            Сбросить
+                        </button>
+                        <button
+                            class="button button-primary erp-primary-action"
+                            type="button"
+                            onclick="filterReceipts()"
+                        >
+                            Применить
+                        </button>
+                    </div>
                 </div>
             </details>
 
@@ -4021,13 +4061,149 @@
             : 0;
     }
 
+    const receiptFilterCatalog = {{ receipt_filter_catalog | tojson }};
+    const receiptBrandFilter = document.getElementById("receiptBrandFilter");
+    const receiptCategoryFilter = document.getElementById("receiptCategoryFilter");
+    const receiptProductFilter = document.getElementById("receiptProductFilter");
+    const receiptFilterProductCombobox = document.getElementById("receiptFilterProductCombobox");
+    const receiptFilterProductTrigger = document.getElementById("receiptFilterProductTrigger");
+    const receiptFilterProductLabel = document.getElementById("receiptFilterProductLabel");
+    const receiptFilterProductMenu = document.getElementById("receiptFilterProductMenu");
+    const receiptFilterProductSearch = document.getElementById("receiptFilterProductSearch");
+    const receiptFilterProductOptions = document.getElementById("receiptFilterProductOptions");
+
+    function receiptProductDisplayLabel(item) {
+        const name = String(item?.product || "Товар без названия");
+        const article = String(item?.article || "").trim();
+        return article ? `${name} · ${article}` : name;
+    }
+
+    function receiptAvailableProducts() {
+        const result = new Map();
+        receiptFilterCatalog
+            .filter((item) => !receiptBrandFilter.value
+                || String(item.brand_id) === receiptBrandFilter.value)
+            .filter((item) => !receiptCategoryFilter.value
+                || String(item.category_id) === receiptCategoryFilter.value)
+            .forEach((item) => {
+                const value = String(item.product_id || "");
+                if (value && !result.has(value)) result.set(value, item);
+            });
+        return Array.from(result.values());
+    }
+
+    function syncReceiptProductLabel() {
+        const selected = receiptFilterCatalog.find((item) =>
+            String(item.product_id) === receiptProductFilter.value
+        );
+        receiptFilterProductLabel.textContent = receiptProductFilter.value
+            ? receiptProductDisplayLabel(selected)
+            : "Все товары";
+        receiptProductFilter.dataset.displayLabel = receiptFilterProductLabel.textContent;
+        receiptFilterProductTrigger.title = receiptFilterProductLabel.textContent;
+    }
+
+    function renderReceiptProductOptions() {
+        const query = receiptFilterProductSearch.value.trim().toLocaleLowerCase();
+        const matches = receiptAvailableProducts().filter((item) =>
+            !query || `${item.product || ""} ${item.article || ""}`
+                .toLocaleLowerCase().includes(query)
+        ).slice(0, 100);
+        receiptFilterProductOptions.replaceChildren();
+        const appendOption = (value, text) => {
+            const option = document.createElement("button");
+            option.type = "button";
+            option.className = "sales-product-combobox-option";
+            option.dataset.productValue = value;
+            option.setAttribute("role", "option");
+            option.setAttribute("aria-selected", String(receiptProductFilter.value === value));
+            option.textContent = text;
+            option.title = text;
+            receiptFilterProductOptions.appendChild(option);
+        };
+        appendOption("", "Все товары");
+        matches.forEach((item) => appendOption(
+            String(item.product_id), receiptProductDisplayLabel(item)
+        ));
+        if (!matches.length && query) {
+            const empty = document.createElement("div");
+            empty.className = "sales-product-combobox-empty";
+            empty.textContent = "Ничего не найдено";
+            receiptFilterProductOptions.appendChild(empty);
+        }
+    }
+
+    function closeReceiptProductFilter(returnFocus = false) {
+        receiptFilterProductMenu.hidden = true;
+        receiptFilterProductMenu.classList.remove("is-up");
+        receiptFilterProductTrigger.setAttribute("aria-expanded", "false");
+        receiptFilterProductSearch.value = "";
+        if (returnFocus) receiptFilterProductTrigger.focus();
+    }
+
+    function openReceiptProductFilter() {
+        receiptFilterProductSearch.value = "";
+        renderReceiptProductOptions();
+        receiptFilterProductMenu.hidden = false;
+        receiptFilterProductTrigger.setAttribute("aria-expanded", "true");
+        receiptFilterProductSearch.focus();
+        requestAnimationFrame(() => {
+            const bounds = receiptFilterProductTrigger.getBoundingClientRect();
+            const below = window.innerHeight - bounds.bottom - 12;
+            const above = bounds.top - 12;
+            receiptFilterProductMenu.classList.toggle(
+                "is-up",
+                receiptFilterProductMenu.offsetHeight > below && above > below,
+            );
+        });
+    }
+
+    function cascadeReceiptFilters(values) {
+        const brands = new Map();
+        receiptFilterCatalog.forEach((item) => brands.set(
+            String(item.brand_id), item.brand
+        ));
+        receiptBrandFilter.replaceChildren(new Option("Все бренды", ""));
+        Array.from(brands.entries())
+            .sort((left, right) => left[1].localeCompare(
+                right[1], "ru", {sensitivity: "base"}
+            ))
+            .forEach(([value, text]) => receiptBrandFilter.add(
+                new Option(text, value)
+            ));
+        receiptBrandFilter.value = values.brand_id;
+        const categories = new Map();
+        receiptFilterCatalog
+            .filter((item) => !receiptBrandFilter.value
+                || String(item.brand_id) === receiptBrandFilter.value)
+            .forEach((item) => categories.set(String(item.category_id), item.category));
+        receiptCategoryFilter.replaceChildren(new Option("Все категории", ""));
+        Array.from(categories.entries())
+            .sort((left, right) => left[1].localeCompare(
+                right[1], "ru", {sensitivity: "base"}
+            ))
+            .forEach(([value, text]) => receiptCategoryFilter.add(
+                new Option(text, value)
+            ));
+        receiptCategoryFilter.value = values.category_id;
+        if (values.category_id && receiptCategoryFilter.value !== values.category_id) {
+            values.category_id = "";
+            values.product_id = "";
+            receiptCategoryFilter.value = "";
+        }
+        receiptProductFilter.value = values.product_id;
+        if (values.product_id && !receiptAvailableProducts().some((item) =>
+            String(item.product_id) === values.product_id
+        )) receiptProductFilter.value = "";
+        syncReceiptProductLabel();
+        closeReceiptProductFilter();
+    }
+
     function receiptAdvancedFilterDefinitions() {
         return [
-            ["receipt_document", "Документ", "receiptDocumentFilter"],
-            ["receipt_comment", "Комментарий", "receiptCommentFilter"],
-            ["receipt_brand", "Бренд", "receiptBrandFilter"],
-            ["receipt_category", "Категория", "receiptCategoryFilter"],
-            ["receipt_product", "Товар", "receiptProductFilter"],
+            ["receipt_brand_id", "Бренд", "receiptBrandFilter"],
+            ["receipt_category_id", "Категория", "receiptCategoryFilter"],
+            ["receipt_product_id", "Товар", "receiptProductFilter"],
             ["receipt_status", "Статус", "receiptStatusFilter"],
         ].map(([parameter, type, controlId]) => ({
             parameter,
@@ -4061,7 +4237,11 @@
             const button = document.createElement("button");
             const text = document.createElement("span");
             const remove = document.createElement("span");
-            const label = type + ": " + control.value;
+            const selectedOption = control.selectedOptions?.[0];
+            const displayValue = control.dataset.displayLabel
+                || selectedOption?.textContent?.trim()
+                || control.value;
+            const label = type + ": " + displayValue;
 
             button.className = "erp-filter-chip";
             button.type = "button";
@@ -4075,6 +4255,18 @@
             button.append(text, remove);
             button.addEventListener("click", () => {
                 control.value = "";
+                if (parameter === "receipt_brand_id") {
+                    cascadeReceiptFilters({
+                        brand_id: "", category_id: "", product_id: "",
+                    });
+                } else if (parameter === "receipt_category_id") {
+                    cascadeReceiptFilters({
+                        brand_id: receiptBrandFilter.value,
+                        category_id: "", product_id: "",
+                    });
+                } else if (parameter === "receipt_product_id") {
+                    syncReceiptProductLabel();
+                }
                 filterReceipts();
             });
             container.appendChild(button);
@@ -4127,17 +4319,9 @@
             ).value || ""
         ).trim();
         const query = rawQuery.toLowerCase();
-        const rawDocumentQuery = (
-            document.getElementById("receiptDocumentFilter")?.value || ""
-        ).trim();
-        const documentQuery = rawDocumentQuery.toLowerCase();
-        const rawCommentQuery = (
-            document.getElementById("receiptCommentFilter")?.value || ""
-        ).trim();
-        const commentQuery = rawCommentQuery.toLowerCase();
-        const brand = document.getElementById("receiptBrandFilter")?.value || "";
-        const category = document.getElementById("receiptCategoryFilter")?.value || "";
-        const product = document.getElementById("receiptProductFilter")?.value || "";
+        const brand = receiptBrandFilter.value;
+        const category = receiptCategoryFilter.value;
+        const product = receiptProductFilter.value;
         const status = document.getElementById("receiptStatusFilter")?.value || "";
 
         const clientFilterE2e = {{ (
@@ -4145,13 +4329,15 @@
             and request.args.get("toolbar_popover_e2e") == "1"
         )|tojson }};
         const navigationUrl = new URL(window.location.href);
+        [
+            "receipt_document", "receipt_comment",
+            "receipt_brand", "receipt_category", "receipt_product",
+        ].forEach((key) => navigationUrl.searchParams.delete(key));
         const values = {
             q: rawQuery,
-            receipt_document: rawDocumentQuery,
-            receipt_comment: rawCommentQuery,
-            receipt_brand: brand,
-            receipt_category: category,
-            receipt_product: product,
+            receipt_brand_id: brand,
+            receipt_category_id: category,
+            receipt_product_id: product,
             receipt_status: status,
             date_from: document.getElementById("receiptDateFrom")?.value || "",
             date_to: document.getElementById("receiptDateTo")?.value || "",
@@ -4194,13 +4380,9 @@
 
             const matchesSearch =
                 searchText.includes(query);
-            const matchesDocument = !documentQuery
-                || (row.dataset.document || "").toLowerCase().includes(documentQuery);
-            const matchesComment = !commentQuery
-                || (row.dataset.comment || "").toLowerCase().includes(commentQuery);
-            const matchesBrand = !brand || row.dataset.brand === brand;
-            const matchesCategory = !category || row.dataset.category === category;
-            const matchesProduct = !product || row.dataset.product === product;
+            const matchesBrand = !brand || row.dataset.brandId === brand;
+            const matchesCategory = !category || row.dataset.categoryId === category;
+            const matchesProduct = !product || row.dataset.productId === product;
             const matchesStatus = !status || row.dataset.status === status;
 
             const matchesDateFrom =
@@ -4213,8 +4395,6 @@
 
             const isVisible =
                 matchesSearch
-                && matchesDocument
-                && matchesComment
                 && matchesBrand
                 && matchesCategory
                 && matchesProduct
@@ -4282,13 +4462,16 @@
 
     function resetReceiptAdvancedFilters() {
         [
-            "receiptDocumentFilter", "receiptCommentFilter",
             "receiptBrandFilter", "receiptCategoryFilter", "receiptProductFilter",
             "receiptStatusFilter",
         ].forEach((id) => {
             const control = document.getElementById(id);
             if (control) control.value = "";
         });
+        cascadeReceiptFilters({
+            brand_id: "", category_id: "", product_id: "",
+        });
+        closeReceiptProductFilter();
         filterReceipts();
     }
 
@@ -4464,14 +4647,77 @@
         updateReceiptSortIndicators();
         filterReceipts();
     }
-    const receiptUrlFilters = new URL(window.location.href).searchParams;
-    receiptAdvancedFilterDefinitions().forEach(
-        ({parameter, control}) => {
-            if (control && receiptUrlFilters.has(parameter)) {
-                control.value = receiptUrlFilters.get(parameter) || "";
-            }
-        }
+    cascadeReceiptFilters({
+        brand_id: {{ receipt_filters.receipt_brand_id | tojson }},
+        category_id: {{ receipt_filters.receipt_category_id | tojson }},
+        product_id: {{ receipt_filters.receipt_product_id | tojson }},
+    });
+    receiptBrandFilter.addEventListener("change", () => {
+        cascadeReceiptFilters({
+            brand_id: receiptBrandFilter.value,
+            category_id: receiptCategoryFilter.value,
+            product_id: receiptProductFilter.value,
+        });
+    });
+    receiptCategoryFilter.addEventListener("change", () => {
+        cascadeReceiptFilters({
+            brand_id: receiptBrandFilter.value,
+            category_id: receiptCategoryFilter.value,
+            product_id: receiptProductFilter.value,
+        });
+    });
+    receiptFilterProductTrigger.addEventListener("click", () => {
+        if (receiptFilterProductMenu.hidden) openReceiptProductFilter();
+        else closeReceiptProductFilter(true);
+    });
+    receiptFilterProductSearch.addEventListener(
+        "input", renderReceiptProductOptions
     );
+    receiptFilterProductSearch.addEventListener("keydown", (event) => {
+        if (event.key === "ArrowDown") {
+            event.preventDefault();
+            receiptFilterProductOptions.querySelector(
+                ".sales-product-combobox-option"
+            )?.focus();
+        }
+    });
+    receiptFilterProductOptions.addEventListener("click", (event) => {
+        const option = event.target.closest("[data-product-value]");
+        if (!option) return;
+        receiptProductFilter.value = option.dataset.productValue;
+        syncReceiptProductLabel();
+        closeReceiptProductFilter(true);
+    });
+    receiptFilterProductOptions.addEventListener("keydown", (event) => {
+        if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+        event.preventDefault();
+        const choices = Array.from(receiptFilterProductOptions.querySelectorAll(
+            ".sales-product-combobox-option"
+        ));
+        const current = choices.indexOf(document.activeElement);
+        let next = current;
+        if (event.key === "Home") next = 0;
+        if (event.key === "End") next = choices.length - 1;
+        if (event.key === "ArrowDown") next = Math.min(current + 1, choices.length - 1);
+        if (event.key === "ArrowUp") next = Math.max(current - 1, 0);
+        choices[next]?.focus();
+    });
+    receiptFilterProductCombobox.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && !receiptFilterProductMenu.hidden) {
+            event.preventDefault();
+            event.stopPropagation();
+            closeReceiptProductFilter(true);
+        }
+    });
+    receiptFilterProductCombobox.addEventListener("click", (event) => {
+        event.stopPropagation();
+    });
+    document.addEventListener("click", (event) => {
+        if (
+            !receiptFilterProductMenu.hidden
+            && !receiptFilterProductCombobox.contains(event.target)
+        ) closeReceiptProductFilter();
+    });
     updateReceiptAdvancedFilterCount();
     updateReceiptSortIndicators();
     // RECEIPTS DATE FILTER SORT SCRIPT V1 END
@@ -5031,16 +5277,28 @@
 
         [
             ["q", "receiptSearch"],
-            ["document_number", "receiptDocumentFilter"],
-            ["comment", "receiptCommentFilter"],
-            ["brand", "receiptBrandFilter"],
-            ["category", "receiptCategoryFilter"],
-            ["product_name", "receiptProductFilter"],
             ["status_label", "receiptStatusFilter"],
         ].forEach(([key, id]) => {
             const value = document.getElementById(id)?.value || "";
             if (value) params.set(key, value);
         });
+        const selectedCatalogItem = receiptFilterCatalog.find((item) =>
+            (!receiptBrandFilter.value
+                || String(item.brand_id) === receiptBrandFilter.value)
+            && (!receiptCategoryFilter.value
+                || String(item.category_id) === receiptCategoryFilter.value)
+            && (!receiptProductFilter.value
+                || String(item.product_id) === receiptProductFilter.value)
+        );
+        if (receiptBrandFilter.value && selectedCatalogItem) {
+            params.set("brand", selectedCatalogItem.brand);
+        }
+        if (receiptCategoryFilter.value && selectedCatalogItem) {
+            params.set("category", selectedCatalogItem.category);
+        }
+        if (receiptProductFilter.value && selectedCatalogItem) {
+            params.set("product_name", selectedCatalogItem.product);
+        }
 
         const query = params.toString();
 
@@ -5156,8 +5414,8 @@
             filters.click();
             await wait();
             assert(openCount() === 1 && filterPanel.open, "filters-open");
-            document.getElementById("receiptDocumentFilter").value =
-                "PR-2026";
+            document.getElementById("receiptStatusFilter").value =
+                "Проведён";
             filterReceipts();
             columns.click();
             await wait();
@@ -5178,8 +5436,8 @@
             );
             assert(
                 document.getElementById(
-                    "receiptDocumentFilter"
-                ).value === "PR-2026",
+                    "receiptStatusFilter"
+                ).value === "Проведён",
                 "filter-value-reset"
             );
 
@@ -5216,8 +5474,8 @@
 
             assert(
                 document.getElementById(
-                    "receiptDocumentFilter"
-                ).value === "PR-2026",
+                    "receiptStatusFilter"
+                ).value === "Проведён",
                 "filter-lost-after-close"
             );
             assert(

@@ -8813,9 +8813,11 @@ def filter_sales_report_records(sales, filters, category_groups=None):
 
 def build_sales_report_context():
     category_groups = SharedCatalog().category_compatibility_groups()
-    return build_report_context(
-        all_sales=build_sales_report_records(),
-        filters=get_sales_report_filters(),
+    all_sales = build_sales_report_records()
+    filters = get_sales_report_filters()
+    context = build_report_context(
+        all_sales=all_sales,
+        filters=filters,
         filter_records=lambda sales, filters: filter_sales_report_records(
             sales,
             filters,
@@ -8829,6 +8831,37 @@ def build_sales_report_context():
         status_labels=SALE_STATUS_LABELS,
         generated_at=datetime.now().strftime("%d.%m.%Y %H:%M"),
     )
+    option_sales = all_sales
+    brand_compatibility = build_sales_brand_compatibility(option_sales)
+    selected_brand_key = brand_compatibility["selected_group_key"](
+        filters.get("brand_id")
+    )
+    if selected_brand_key:
+        filters["brand_id"] = brand_compatibility["groups"][
+            selected_brand_key
+        ]["value"]
+    category_compatibility = build_sales_category_compatibility(
+        option_sales,
+        category_groups=category_groups,
+    )
+    selected_category_id = str(filters.get("category_id") or "")
+    selected_category = next((
+        group for group in category_compatibility["groups"].values()
+        if group["value"] == selected_category_id
+        or selected_category_id in group["category_ids"]
+    ), None)
+    if selected_category:
+        filters["category_id"] = selected_category["value"]
+    context["sales_filter_options"] = build_sales_filter_options(
+        option_sales,
+        filters,
+        category_groups=category_groups,
+    )
+    context["sales_filter_catalog"] = build_sales_filter_catalog(
+        option_sales,
+        category_groups=category_groups,
+    )
+    return context
 
 
 def sales_report_filename(extension):
@@ -9907,6 +9940,152 @@ def attach_receipt_product_thumbnails(receipts, shared_catalog=None):
     return receipts
 
 
+def get_receipt_filter_identifier(item, id_field, label_field):
+    value = item.get(id_field)
+    if value is not None and str(value).strip():
+        return str(value).strip()
+    label = str(item.get(label_field) or "").strip()
+    if not label:
+        return ""
+    kind = id_field[:-3] if id_field.endswith("_id") else id_field
+    return "snapshot:{}:{}".format(kind, label.casefold())
+
+
+def receipt_filter_positions(receipt):
+    positions = [
+        item for item in receipt.get("positions") or []
+        if isinstance(item, dict)
+    ]
+    return positions or [receipt]
+
+
+def build_receipt_filter_catalog(receipts):
+    catalog = []
+    seen = set()
+    for receipt in receipts:
+        for position in receipt_filter_positions(receipt):
+            brand = str(
+                position.get("brand") or receipt.get("brand") or ""
+            ).strip()
+            category = str(
+                position.get("category") or receipt.get("category") or ""
+            ).strip()
+            product = str(
+                position.get("product_name")
+                or receipt.get("product_name")
+                or ""
+            ).strip()
+            article = str(
+                position.get("article")
+                or position.get("code")
+                or receipt.get("article")
+                or ""
+            ).strip()
+            normalized = {
+                "brand_id": get_receipt_filter_identifier(
+                    position, "brand_id", "brand"
+                ) or get_receipt_filter_identifier(
+                    receipt, "brand_id", "brand"
+                ),
+                "brand": brand or "Без бренда",
+                "category_id": get_receipt_filter_identifier(
+                    position, "category_id", "category"
+                ) or get_receipt_filter_identifier(
+                    receipt, "category_id", "category"
+                ),
+                "category": category or "Без категории",
+                "product_id": get_receipt_filter_identifier(
+                    position, "product_id", "product_name"
+                ) or get_receipt_filter_identifier(
+                    receipt, "product_id", "product_name"
+                ),
+                "product": product or "Товар без названия",
+                "article": article,
+            }
+            key = tuple(normalized.values())
+            if key in seen:
+                continue
+            seen.add(key)
+            catalog.append(normalized)
+    return sorted(
+        catalog,
+        key=lambda item: (
+            item["brand"].casefold(),
+            item["category"].casefold(),
+            item["product"].casefold(),
+            item["product_id"],
+        ),
+    )
+
+
+def receipt_matches_catalog_filters(receipt, filters):
+    brand_id = str(filters.get("receipt_brand_id") or "")
+    category_id = str(filters.get("receipt_category_id") or "")
+    product_id = str(filters.get("receipt_product_id") or "")
+    legacy_brand = str(filters.get("receipt_brand") or "")
+    legacy_category = str(filters.get("receipt_category") or "")
+    legacy_product = str(filters.get("receipt_product") or "")
+
+    for position in receipt_filter_positions(receipt):
+        brand = str(position.get("brand") or receipt.get("brand") or "")
+        category = str(
+            position.get("category") or receipt.get("category") or ""
+        )
+        product = str(
+            position.get("product_name")
+            or receipt.get("product_name")
+            or ""
+        )
+        values = {
+            "brand_id": get_receipt_filter_identifier(
+                position, "brand_id", "brand"
+            ) or get_receipt_filter_identifier(
+                receipt, "brand_id", "brand"
+            ),
+            "category_id": get_receipt_filter_identifier(
+                position, "category_id", "category"
+            ) or get_receipt_filter_identifier(
+                receipt, "category_id", "category"
+            ),
+            "product_id": get_receipt_filter_identifier(
+                position, "product_id", "product_name"
+            ) or get_receipt_filter_identifier(
+                receipt, "product_id", "product_name"
+            ),
+        }
+        if brand_id and values["brand_id"] != brand_id:
+            continue
+        if category_id and values["category_id"] != category_id:
+            continue
+        if product_id and values["product_id"] != product_id:
+            continue
+        if legacy_brand and brand != legacy_brand:
+            continue
+        if legacy_category and category != legacy_category:
+            continue
+        if legacy_product and product != legacy_product:
+            continue
+        return True
+    return False
+
+
+def build_receipt_search_text(receipt):
+    values = [
+        receipt.get("number"),
+        receipt.get("note"),
+        receipt.get("comment"),
+    ]
+    for position in receipt_filter_positions(receipt):
+        values.extend((
+            position.get("brand"),
+            position.get("category"),
+            position.get("product_name"),
+            position.get("article"),
+            position.get("code"),
+        ))
+    return " ".join(str(value or "") for value in values).casefold()
+
+
 @app.route("/receipts")
 @app.route("/app/receipts")
 def receipts_page():
@@ -9934,16 +10113,43 @@ def receipts_page():
         "receipt_brand": (
             request.args.get("receipt_brand") or ""
         ).strip(),
+        "receipt_brand_id": (
+            request.args.get("receipt_brand_id") or ""
+        ).strip(),
         "receipt_category": (
             request.args.get("receipt_category") or ""
         ).strip(),
+        "receipt_category_id": (
+            request.args.get("receipt_category_id") or ""
+        ).strip(),
         "receipt_product": (
             request.args.get("receipt_product") or ""
+        ).strip(),
+        "receipt_product_id": (
+            request.args.get("receipt_product_id") or ""
         ).strip(),
         "receipt_status": (
             request.args.get("receipt_status") or ""
         ).strip(),
     }
+    receipt_filter_catalog = build_receipt_filter_catalog(all_receipts)
+    legacy_filter_fields = (
+        ("receipt_brand", "receipt_brand_id", "brand", "brand_id"),
+        (
+            "receipt_category", "receipt_category_id",
+            "category", "category_id",
+        ),
+        ("receipt_product", "receipt_product_id", "product", "product_id"),
+    )
+    for legacy_key, id_key, label_key, catalog_id_key in legacy_filter_fields:
+        if receipt_filters[id_key] or not receipt_filters[legacy_key]:
+            continue
+        match = next((
+            item for item in receipt_filter_catalog
+            if item[label_key] == receipt_filters[legacy_key]
+        ), None)
+        if match:
+            receipt_filters[id_key] = str(match[catalog_id_key])
     receipts = []
     for receipt in all_receipts:
         receipt["_canonical_timestamp"] = receipt_business_timestamp(
@@ -9952,13 +10158,7 @@ def receipts_page():
         receipt_date = str(
             receipt.get("receipt_date") or receipt.get("created_at") or ""
         )[:10]
-        search_text = " ".join([
-            str(receipt.get("number") or ""),
-            str(receipt.get("note") or ""),
-            str(receipt.get("brand") or ""),
-            str(receipt.get("category") or ""),
-            str(receipt.get("product_name") or ""),
-        ]).casefold()
+        search_text = build_receipt_search_text(receipt)
         if date_from and receipt_date < date_from:
             continue
         if date_to and receipt_date > date_to:
@@ -9971,14 +10171,7 @@ def receipts_page():
         if receipt_filters["receipt_comment"].casefold() not in str(
                 receipt.get("note") or "").casefold():
             continue
-        if (receipt_filters["receipt_brand"]
-                and receipt.get("brand") != receipt_filters["receipt_brand"]):
-            continue
-        if (receipt_filters["receipt_category"] and receipt.get("category")
-                != receipt_filters["receipt_category"]):
-            continue
-        if (receipt_filters["receipt_product"] and receipt.get("product_name")
-                != receipt_filters["receipt_product"]):
+        if not receipt_matches_catalog_filters(receipt, receipt_filters):
             continue
         if (receipt_filters["receipt_status"] and receipt.get("status_label")
                 != receipt_filters["receipt_status"]):
@@ -10020,21 +10213,7 @@ def receipts_page():
         today=datetime.now().strftime("%Y-%m-%d"),
         total_receipts=filtered_total,
         total_quantity=format_stock_number(total_quantity),
-        receipt_filter_brands=sorted({
-            str(receipt.get("brand") or "").strip()
-            for receipt in all_receipts
-            if str(receipt.get("brand") or "").strip()
-        }),
-        receipt_filter_categories=sorted({
-            str(receipt.get("category") or "").strip()
-            for receipt in all_receipts
-            if str(receipt.get("category") or "").strip()
-        }),
-        receipt_filter_products=sorted({
-            str(receipt.get("product_name") or "").strip()
-            for receipt in all_receipts
-            if str(receipt.get("product_name") or "").strip()
-        }),
+        receipt_filter_catalog=receipt_filter_catalog,
         receipt_filters=receipt_filters,
         receipt_sort_key=sort_key,
         receipt_sort_direction=sort_direction,

@@ -74,14 +74,15 @@ class UnifiedPageArchitectureTest(unittest.TestCase):
             "</details>", 1
         )[0]
         for control_id in (
-            "receiptDocumentFilter",
-            "receiptCommentFilter",
             "receiptBrandFilter",
             "receiptCategoryFilter",
             "receiptProductFilter",
+            "receiptFilterProductSearch",
             "receiptStatusFilter",
         ):
             self.assertIn('id="{}"'.format(control_id), panel)
+        self.assertNotIn('id="receiptDocumentFilter"', panel)
+        self.assertNotIn('id="receiptCommentFilter"', panel)
         self.assertIn("resetReceiptAdvancedFilters()", panel)
         self.assertIn('id="receiptAdvancedFilterCount"', panel)
         self.assertIn("updateReceiptAdvancedFilterCount", receipts)
