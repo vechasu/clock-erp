@@ -119,10 +119,7 @@
 
         .stats {
             display: grid;
-            grid-template-columns:
-                repeat(4, minmax(0, 1fr))
-                minmax(180px, 0.9fr)
-                minmax(180px, 0.9fr);
+            grid-template-columns: repeat(5, minmax(0, 1fr));
             gap: 8px;
             margin-bottom: 8px;
         }
@@ -149,6 +146,36 @@
             font-size: 20px;
             font-weight: 900;
             line-height: 1;
+        }
+
+        .stat-value.is-unavailable {
+            font-size: 16px;
+        }
+
+        .sales-work-status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+
+        .sales-work-status-title {
+            flex: 0 0 auto;
+            margin: 0;
+            color: #374151;
+            font-size: 12px;
+            font-weight: 850;
+        }
+
+        .sales-work-status-grid {
+            display: grid;
+            width: min(100%, 420px);
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px;
+        }
+
+        .sales-work-status .stat-card {
+            min-height: 40px;
         }
 
         .button {
@@ -1268,6 +1295,16 @@
                 gap: 4px;
             }
 
+            .sales-work-status {
+                align-items: stretch;
+                flex-direction: column;
+                gap: 6px;
+            }
+
+            .sales-work-status-grid {
+                width: 100%;
+            }
+
             .stats-action-button {
                 min-height: 48px;
                 white-space: normal;
@@ -1325,7 +1362,7 @@
         href="{{ url_for(
             'static',
             filename='css/erp-components.css',
-            v='sales-product-combobox-v1'
+            v='sales-kpi-v1'
         ) }}"
     >
     <link
@@ -1417,32 +1454,42 @@
         <div class="stats erp-stats erp-workspace-metrics">
             <div class="stat-card erp-stat-card erp-workspace-metric">
                 <span class="stat-label erp-stat-label">
-                    Активных продаж
+                    Выручка
+                </span>
+                <span
+                    id="statRevenue"
+                    class="stat-value erp-stat-value{% if not sales_kpis.amount_complete %} is-unavailable{% endif %}"
+                >{{ sales_kpis.revenue_display }}</span>
+            </div>
+
+            <div class="stat-card erp-stat-card erp-workspace-metric">
+                <span class="stat-label erp-stat-label">
+                    Продаж
                 </span>
                 <span
                     id="statSales"
                     class="stat-value erp-stat-value"
-                >{{ total_sales }}</span>
+                >{{ sales_kpis.sales_count }}</span>
             </div>
 
             <div class="stat-card erp-stat-card erp-workspace-metric">
                 <span class="stat-label erp-stat-label">
-                    Заказов
-                </span>
-                <span
-                    id="statOrders"
-                    class="stat-value erp-stat-value"
-                >{{ total_orders }}</span>
-            </div>
-
-            <div class="stat-card erp-stat-card erp-workspace-metric">
-                <span class="stat-label erp-stat-label">
-                    Продано единиц
+                    Товаров продано
                 </span>
                 <span
                     id="statQuantity"
                     class="stat-value erp-stat-value"
-                >{{ total_quantity }}</span>
+                >{{ sales_kpis.quantity_display }}</span>
+            </div>
+
+            <div class="stat-card erp-stat-card erp-workspace-metric">
+                <span class="stat-label erp-stat-label">
+                    Средний чек
+                </span>
+                <span
+                    id="statAverageReceipt"
+                    class="stat-value erp-stat-value{% if not sales_kpis.amount_complete %} is-unavailable{% endif %}"
+                >{{ sales_kpis.average_receipt_display }}</span>
             </div>
 
             <div class="stat-card erp-stat-card erp-workspace-metric">
@@ -1456,6 +1503,36 @@
             </div>
 
         </div>
+
+        <section
+            class="sales-work-status"
+            aria-labelledby="salesWorkStatusTitle"
+        >
+            <h2
+                id="salesWorkStatusTitle"
+                class="sales-work-status-title"
+            >Сейчас в работе</h2>
+            <div class="sales-work-status-grid">
+                <div class="stat-card erp-stat-card">
+                    <span class="stat-label erp-stat-label">
+                        В обработке
+                    </span>
+                    <span
+                        id="statProcessing"
+                        class="stat-value erp-stat-value"
+                    >{{ sales_kpis.processing_count }}</span>
+                </div>
+                <div class="stat-card erp-stat-card">
+                    <span class="stat-label erp-stat-label">
+                        Отправлено
+                    </span>
+                    <span
+                        id="statShipped"
+                        class="stat-value erp-stat-value"
+                    >{{ sales_kpis.shipped_count }}</span>
+                </div>
+            </div>
+        </section>
 
         <section class="sales-data-card">
             <div
@@ -6425,6 +6502,61 @@
     });
 </script>
 {% endif %}
+{% if config.TESTING and request.args.get("sales_kpi_e2e") == "1" %}
+<script>
+    window.addEventListener("load", () => {
+        const root = document.documentElement;
+
+        try {
+            const metricCards = Array.from(document.querySelectorAll(
+                ".erp-workspace-metrics .erp-workspace-metric"
+            ));
+            const metricLabels = metricCards.map((card) =>
+                card.querySelector(".erp-stat-label")?.textContent.trim()
+            );
+            const metricValues = metricCards.map((card) =>
+                card.querySelector(".erp-stat-value")?.textContent.trim()
+            );
+            const expectedLabels = [
+                "Выручка", "Продаж", "Товаров продано",
+                "Средний чек", "Отменено",
+            ];
+            if (
+                metricCards.length !== 5
+                || metricLabels.join("|") !== expectedLabels.join("|")
+            ) {
+                throw new Error("kpi-contract");
+            }
+            if (metricValues.some((value) =>
+                !value || ["NaN", "None", "null"].includes(value)
+            )) {
+                throw new Error("kpi-value");
+            }
+            if (
+                !document.getElementById("statProcessing")
+                || !document.getElementById("statShipped")
+            ) {
+                throw new Error("work-status-contract");
+            }
+            if (root.scrollWidth > root.clientWidth + 1) {
+                throw new Error("horizontal-overflow");
+            }
+            if (window.innerWidth > 1100) {
+                const rows = new Set(metricCards.map((card) =>
+                    card.getBoundingClientRect().top
+                ));
+                if (rows.size !== 1) {
+                    throw new Error("desktop-kpi-row");
+                }
+            }
+            root.dataset.salesKpiE2e = "pass";
+        } catch (error) {
+            root.dataset.salesKpiE2e = "fail-" + error.message;
+        }
+    });
+</script>
+{% endif %}
+
 {% if config.TESTING and request.args.get("sales_modal_e2e") == "1" %}
 <script>
     window.addEventListener("load", async () => {

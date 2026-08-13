@@ -198,6 +198,16 @@ class ToolbarPopoverBrowserTest(unittest.TestCase):
                     'data-receipts-modal-e2e="pass"',
                 ),
             )
+            for width, height in ((1440, 900), (390, 844), (320, 568)):
+                with self.subTest(path="sales-kpi", width=width):
+                    self.run_chrome(
+                        chrome,
+                        f"http://127.0.0.1:{port}/app/sales"
+                        "?source=all&sales_kpi_e2e=1",
+                        width,
+                        height,
+                        'data-sales-kpi-e2e="pass"',
+                    )
             for path, marker in modal_paths:
                 with self.subTest(path=path, width=1440):
                     self.run_chrome(

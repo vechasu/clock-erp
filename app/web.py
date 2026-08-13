@@ -5860,6 +5860,126 @@ def format_sale_money(value):
     return f"{formatted} ₽"
 
 
+FINANCIAL_SALE_STATUSES = {"completed", "partially_returned"}
+CANCELLED_SALE_STATUSES = {"cancelled", "refusal"}
+
+
+def sales_kpi_document_key(sale):
+    sale_type = str(sale.get("sale_type") or "").strip()
+    source = normalize_sales_source_key(sale.get("source"))
+    order_number = str(sale.get("order_number") or "").strip()
+    sale_id = str(sale.get("id") or "").strip()
+
+    if sale_type == "automatic" and order_number:
+        return (sale_type, source, order_number)
+
+    return (sale_type, source, sale_id or order_number)
+
+
+def calculate_sales_kpis(sales):
+    documents = {}
+
+    for sale in sales:
+        status = get_sale_status_presentation(sale)["value"]
+
+        if status == "deleted" or sale.get("deleted_at"):
+            continue
+
+        key = sales_kpi_document_key(sale)
+        document = documents.setdefault(key, {
+            "statuses": set(),
+            "net_quantity": 0.0,
+            "net_amount": 0.0,
+            "amount_complete": True,
+        })
+        document["statuses"].add(status)
+
+        if status not in FINANCIAL_SALE_STATUSES:
+            continue
+
+        try:
+            net_quantity = float(
+                sale.get("net_quantity_value")
+                if sale.get("net_quantity_value") is not None
+                else sale.get("quantity_value") or 0
+            )
+        except (TypeError, ValueError):
+            net_quantity = 0.0
+        document["net_quantity"] += net_quantity
+
+        amount = sale.get("total_amount")
+        try:
+            amount = float(amount)
+        except (TypeError, ValueError):
+            document["amount_complete"] = False
+            continue
+        if not math.isfinite(amount):
+            document["amount_complete"] = False
+            continue
+        document["net_amount"] += amount
+
+    financial_documents = [
+        document
+        for document in documents.values()
+        if document["statuses"] & FINANCIAL_SALE_STATUSES
+        and not document["statuses"] & CANCELLED_SALE_STATUSES
+        and "returned" not in document["statuses"]
+    ]
+    sales_count = len(financial_documents)
+    quantity = sum(
+        document["net_quantity"]
+        for document in financial_documents
+    )
+    amount_complete = all(
+        document["amount_complete"]
+        for document in financial_documents
+    )
+    revenue = (
+        sum(document["net_amount"] for document in financial_documents)
+        if amount_complete
+        else None
+    )
+    average_receipt = (
+        revenue / sales_count
+        if revenue is not None and sales_count
+        else 0.0 if not sales_count else None
+    )
+    cancelled_count = sum(
+        bool(document["statuses"] & CANCELLED_SALE_STATUSES)
+        for document in documents.values()
+    )
+    processing_count = sum(
+        "processing" in document["statuses"]
+        for document in documents.values()
+    )
+    shipped_count = sum(
+        "shipped" in document["statuses"]
+        for document in documents.values()
+    )
+
+    return {
+        "revenue": revenue,
+        "revenue_display": (
+            format_sale_money(revenue)
+            if revenue is not None
+            else "Нет данных"
+        ),
+        "sales_count": sales_count,
+        "quantity": quantity,
+        "quantity_display": format_stock_number(quantity),
+        "average_receipt": average_receipt,
+        "average_receipt_display": (
+            format_sale_money(average_receipt)
+            if average_receipt is not None
+            else "Нет данных"
+        ),
+        "cancelled_count": cancelled_count,
+        "processing_count": processing_count,
+        "shipped_count": shipped_count,
+        "amount_complete": amount_complete,
+    }
+
+
 # === SALES PRICE FUNCTIONS V1 END ===
 
 
@@ -9350,22 +9470,8 @@ def sales_page():
         category_groups=category_groups,
     )
 
-    active_sales = [
-        sale
-        for sale in sales
-        if not sale.get("is_cancelled")
-    ]
-    unique_orders = {
-        str(sale.get("order_number") or "").strip()
-        for sale in active_sales
-        if str(sale.get("order_number") or "").strip()
-    }
-    total_quantity = sum(
-        float(sale.get("quantity_value") or 0)
-        for sale in active_sales
-    )
+    sales_kpis = calculate_sales_kpis(sales)
     total_filtered_sales = len(sales)
-    total_cancelled_sales = total_filtered_sales - len(active_sales)
     page, per_page = parse_erp_pagination()
     allowed_sort_fields = {
         column["key"] for column in get_sales_columns(active_source)
@@ -9457,12 +9563,10 @@ def sales_page():
             else SALES_SOURCE_LABELS[active_source]
         ),
         sales_columns=get_sales_columns(active_source),
-        total_sales=len(active_sales),
-        total_cancelled=total_cancelled_sales,
-        total_orders=len(unique_orders),
-        total_quantity=format_stock_number(
-            total_quantity
-        ),
+        total_sales=sales_kpis["sales_count"],
+        total_cancelled=sales_kpis["cancelled_count"],
+        total_quantity=sales_kpis["quantity_display"],
+        sales_kpis=sales_kpis,
         report_url=url_for(
             "sales_report_page",
             **report_query,

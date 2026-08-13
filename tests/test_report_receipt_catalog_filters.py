@@ -23,7 +23,7 @@ def sale(
         "product_name": product,
         "article": article,
         "order_number": "ORDER-{}".format(sale_id),
-        "order_status": "shipped",
+        "order_status": "completed",
         "is_cancelled": False,
         "quantity_value": quantity,
         "net_quantity_value": quantity,
