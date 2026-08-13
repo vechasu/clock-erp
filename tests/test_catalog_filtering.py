@@ -426,6 +426,28 @@ class CatalogFilteringTest(unittest.TestCase):
             if item["name"].strip().casefold() == "наручные часы"
         ]
         self.assertEqual(len(matching), 1)
+        self.assertEqual(
+            matching[0]["category_ids"],
+            [self.category_id, self.duplicate_category_id],
+        )
+
+    def test_category_compatibility_groups_include_inactive_sales_aliases(self):
+        with self.database.transaction() as connection:
+            connection.execute(
+                "UPDATE erp_categories SET active = 0 WHERE id = ?",
+                (self.duplicate_category_id,),
+            )
+
+        group = next(
+            item for item in self.shared.category_compatibility_groups()
+            if item["id"] == self.category_id
+        )
+
+        self.assertEqual(group["name"], "Наручные часы")
+        self.assertEqual(
+            group["category_ids"],
+            [self.category_id, self.duplicate_category_id],
+        )
 
     def test_selected_product_keeps_the_catalog_id(self):
         response = self.client.get(

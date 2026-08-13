@@ -138,6 +138,101 @@ class SalesServerFiltersTest(unittest.TestCase):
             ["p2"],
         )
 
+    def test_duplicate_category_ids_are_one_logical_server_filter(self):
+        duplicate_sales = [
+            sale("10", category_id=10, product_id="p10", product="Модель 10"),
+            sale("25", category_id=25, product_id="p25", product="Модель 25"),
+            sale(
+                "25-b",
+                brand_id="b2",
+                brand="Second",
+                category_id=25,
+                product_id="p25-b",
+                product="Модель 25 B",
+            ),
+        ]
+        category_groups = [{
+            "id": 10,
+            "name": "Наручные часы",
+            "normalized_name": "наручные часы",
+            "category_ids": [10, 25],
+        }]
+
+        options = web.build_sales_filter_options(
+            duplicate_sales,
+            {"brand_id": "", "category_id": "10"},
+            category_groups=category_groups,
+        )
+        self.assertEqual(options["categories"], [{
+            "value": "10",
+            "label": "Наручные часы",
+        }])
+        self.assertEqual(
+            {item["value"] for item in options["products"]},
+            {"p10", "p25", "p25-b"},
+        )
+        filtered = web.filter_sales_report_records(
+            duplicate_sales,
+            {"source": "all", "category_id": "10"},
+            category_groups=category_groups,
+        )
+        self.assertEqual({item["id"] for item in filtered}, {
+            "10", "25", "25-b",
+        })
+        legacy_url = web.filter_sales_report_records(
+            duplicate_sales,
+            {"source": "all", "category_id": "25"},
+            category_groups=category_groups,
+        )
+        self.assertEqual({item["id"] for item in legacy_url}, {
+            "10", "25", "25-b",
+        })
+
+    def test_duplicate_category_group_respects_brand_cascade(self):
+        duplicate_sales = [
+            sale("a", category_id=10, product_id="pa", product="A"),
+            sale(
+                "b",
+                brand_id="b2",
+                brand="Second",
+                category_id=25,
+                product_id="pb",
+                product="B",
+            ),
+        ]
+        groups = [{
+            "id": 10,
+            "name": "Наручные часы",
+            "category_ids": [10, 25],
+        }]
+        options = web.build_sales_filter_options(
+            duplicate_sales,
+            {"brand_id": "b2", "category_id": "10"},
+            category_groups=groups,
+        )
+
+        self.assertEqual(
+            [item["value"] for item in options["categories"]],
+            ["10"],
+        )
+        self.assertEqual(
+            [item["value"] for item in options["products"]],
+            ["pb"],
+        )
+
+    def test_uncategorized_is_not_the_all_categories_state(self):
+        options = web.build_sales_filter_options(
+            self.sales,
+            {"brand_id": "b1", "category_id": "0"},
+        )
+        self.assertEqual(
+            [item for item in options["categories"] if item["value"] == "0"],
+            [{"value": "0", "label": "Без категории"}],
+        )
+        self.assertNotIn("", {
+            item["value"] for item in options["categories"]
+        })
+
     def test_unknown_value_returns_empty_without_error(self):
         result = web.filter_sales_report_records(
             self.sales,
