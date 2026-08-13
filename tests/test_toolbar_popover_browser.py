@@ -228,6 +228,22 @@ class ToolbarPopoverBrowserTest(unittest.TestCase):
                             'data-sales-article-e2e="pass"',
                         )
 
+            for width, height in (
+                (1440, 900),
+                (1024, 768),
+                (390, 844),
+                (320, 568),
+            ):
+                with self.subTest(path="sales-columns", width=width):
+                    self.run_chrome(
+                        chrome,
+                        f"http://127.0.0.1:{port}/app/sales"
+                        "?source=all&sales_columns_scroll_e2e=1",
+                        width,
+                        height,
+                        'data-sales-columns-scroll-e2e="pass"',
+                    )
+
             for width, height in ((1440, 900), (390, 844), (320, 568)):
                 for source in ("all", "tictactoy", "wildberries", "amazon"):
                     with self.subTest(

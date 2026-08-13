@@ -3166,9 +3166,11 @@ select.erp-control {
 .sales-popover-root
     > .sales-column-settings-panel
     .sales-column-settings-list {
+    height: min(390px, 52vh);
     min-height: 0;
     flex: 1 1 auto;
     max-height: none;
+    overscroll-behavior: contain;
 }
 
 .sales-popover-root
