@@ -481,7 +481,7 @@ class ReceiptCatalogFiltersTest(unittest.TestCase):
         )
         self.assertIn("periodValues?.dateFrom", source)
         self.assertIn("periodValues?.dateTo", source)
-        self.assertIn("receipts-period-2", source)
+        self.assertIn("receipts-period-3", source)
 
 
 if __name__ == "__main__":
