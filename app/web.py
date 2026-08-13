@@ -8375,6 +8375,95 @@ def get_sale_filter_identifier(sale, id_field, label_field):
     )
 
 
+SALES_BRAND_COMPATIBILITY = ({
+    "value": "logical:brand:a-b-art",
+    "label": "A.B. Art",
+    "aliases": {"A B ART", "A.B. Art"},
+},)
+
+
+def build_sales_brand_compatibility(sales):
+    groups = {}
+    explicit_key_by_name = {}
+
+    for item in SALES_BRAND_COMPATIBILITY:
+        key = item["value"]
+        groups[key] = {
+            "value": item["value"],
+            "label": item["label"],
+            "identifiers": set(),
+            "id_labels": set(),
+            "labels": set(),
+        }
+        for alias in item["aliases"]:
+            explicit_key_by_name[normalized_name(alias)] = key
+
+    def group_key(sale):
+        label = str(sale.get("brand") or "").strip()
+        strict_name = normalized_name(label)
+        return explicit_key_by_name.get(
+            strict_name,
+            "strict-name:{}".format(strict_name),
+        )
+
+    for sale in sales:
+        label = str(sale.get("brand") or "").strip()
+        identifier = get_sale_filter_identifier(
+            sale, "brand_id", "brand"
+        )
+        key = group_key(sale)
+        group = groups.setdefault(key, {
+            "value": "",
+            "label": "",
+            "identifiers": set(),
+            "id_labels": set(),
+            "labels": set(),
+        })
+        if identifier:
+            group["identifiers"].add(identifier)
+        if label:
+            group["labels"].add(label)
+            if sale.get("brand_id") not in (None, ""):
+                group["id_labels"].add(label)
+
+    for group in groups.values():
+        if not group["value"]:
+            physical_ids = sorted(
+                (
+                    value for value in group["identifiers"]
+                    if not value.startswith("snapshot:")
+                ),
+                key=_sales_category_value_sort_key,
+            )
+            all_identifiers = sorted(group["identifiers"])
+            group["value"] = (
+                physical_ids[0]
+                if physical_ids
+                else all_identifiers[0] if all_identifiers else ""
+            )
+        if not group["label"]:
+            labels = group["id_labels"] or group["labels"]
+            group["label"] = sorted(
+                labels,
+                key=lambda value: (value.casefold(), value),
+            )[0] if labels else "Без бренда"
+        group["identifiers"] = sorted(group["identifiers"])
+
+    def selected_group_key(value):
+        selected = str(value or "")
+        return next((
+            key for key, group in groups.items()
+            if selected == group["value"]
+            or selected in group["identifiers"]
+        ), "")
+
+    return {
+        "groups": groups,
+        "group_key": group_key,
+        "selected_group_key": selected_group_key,
+    }
+
+
 def _sales_category_value_sort_key(value):
     text = str(value or "")
     try:
@@ -8453,21 +8542,22 @@ def build_sales_category_compatibility(sales, category_groups=None):
 def build_sales_filter_catalog(sales, category_groups=None):
     catalog = []
     seen = set()
+    brand_compatibility = build_sales_brand_compatibility(sales)
     compatibility = build_sales_category_compatibility(
         sales, category_groups=category_groups
     )
 
     for sale in sales:
-        brand_id = get_sale_filter_identifier(
-            sale, "brand_id", "brand"
-        )
+        brand_key = brand_compatibility["group_key"](sale)
+        brand_group = brand_compatibility["groups"][brand_key]
+        brand_id = brand_group["value"]
         category_key, _, _ = compatibility["group_key"](sale)
         category_group = compatibility["groups"][category_key]
         category_id = category_group["value"]
         product_id = get_sale_filter_identifier(
             sale, "product_id", "product_name"
         )
-        brand_label = str(sale.get("brand") or "").strip()
+        brand_label = brand_group["label"]
         category_label = category_group["label"]
         product_label = str(sale.get("product_name") or "").strip()
 
@@ -8505,7 +8595,15 @@ def build_sales_filter_options(sales, filters, category_groups=None):
     catalog = build_sales_filter_catalog(
         sales, category_groups=category_groups
     )
-    brand_id = str(filters.get("brand_id") or "")
+    brand_compatibility = build_sales_brand_compatibility(sales)
+    selected_brand_key = brand_compatibility["selected_group_key"](
+        filters.get("brand_id")
+    )
+    brand_id = (
+        brand_compatibility["groups"][selected_brand_key]["value"]
+        if selected_brand_key
+        else str(filters.get("brand_id") or "")
+    )
     category_id = str(filters.get("category_id") or "")
 
     def unique_options(items, value_key, label_key):
@@ -8553,6 +8651,10 @@ def build_sales_filter_options(sales, filters, category_groups=None):
 
 def filter_sales_report_records(sales, filters, category_groups=None):
     result = []
+    brand_compatibility = build_sales_brand_compatibility(sales)
+    selected_brand_key = brand_compatibility["selected_group_key"](
+        filters.get("brand_id")
+    )
     category_compatibility = build_sales_category_compatibility(
         sales, category_groups=category_groups
     )
@@ -8614,9 +8716,11 @@ def filter_sales_report_records(sales, filters, category_groups=None):
 
         if (
             filters.get("brand_id")
-            and get_sale_filter_identifier(
-                sale, "brand_id", "brand"
-            ) != filters["brand_id"]
+            and (
+                not selected_brand_key
+                or brand_compatibility["group_key"](sale)
+                != selected_brand_key
+            )
         ):
             continue
 

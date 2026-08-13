@@ -138,6 +138,113 @@ class SalesServerFiltersTest(unittest.TestCase):
             ["p2"],
         )
 
+    def test_exact_brand_duplicate_uses_one_id_backed_option(self):
+        duplicate_sales = [
+            sale("id-backed", brand_id=9, brand="Aark"),
+            sale(
+                "snapshot",
+                brand_id=None,
+                brand="AARK",
+                product_id="legacy-product",
+            ),
+        ]
+
+        options = web.build_sales_filter_options(
+            duplicate_sales, {"brand_id": "", "category_id": ""}
+        )
+
+        self.assertEqual(options["brands"], [{
+            "value": "9",
+            "label": "Aark",
+        }])
+        filtered = web.filter_sales_report_records(
+            duplicate_sales, {"source": "all", "brand_id": "9"}
+        )
+        self.assertEqual({item["id"] for item in filtered}, {
+            "id-backed", "snapshot",
+        })
+
+    def test_explicit_brand_alias_combines_results_and_sources(self):
+        alias_sales = [
+            sale(
+                "legacy-{}".format(index),
+                brand_id=None,
+                brand="A B ART",
+                source="tictactoy",
+            )
+            for index in range(3)
+        ] + [
+            sale(
+                "canonical-{}".format(index),
+                brand_id=31,
+                brand="A.B. Art",
+                source=("amazon" if index < 4 else "wildberries"),
+            )
+            for index in range(7)
+        ]
+        logical_value = "logical:brand:a-b-art"
+
+        options = web.build_sales_filter_options(
+            alias_sales, {"brand_id": "", "category_id": ""}
+        )
+        self.assertEqual(options["brands"], [{
+            "value": logical_value,
+            "label": "A.B. Art",
+        }])
+        for source, expected_count in (
+            ("all", 10),
+            ("tictactoy", 3),
+            ("wildberries", 3),
+            ("amazon", 4),
+        ):
+            filtered = web.filter_sales_report_records(alias_sales, {
+                "source": source,
+                "brand_id": logical_value,
+            })
+            self.assertEqual(len(filtered), expected_count)
+
+        legacy_options = web.build_sales_filter_options(
+            alias_sales,
+            {"brand_id": "31", "category_id": ""},
+        )
+        self.assertTrue(legacy_options["categories"])
+        legacy_filtered = web.filter_sales_report_records(alias_sales, {
+            "source": "all",
+            "brand_id": "snapshot:brand:a b art",
+        })
+        self.assertEqual(len(legacy_filtered), 10)
+
+    def test_brand_filter_does_not_rewrite_historical_snapshots(self):
+        alias_sales = [
+            sale("legacy", brand_id=None, brand="A B ART"),
+            sale("canonical", brand_id=31, brand="A.B. Art"),
+        ]
+
+        web.filter_sales_report_records(alias_sales, {
+            "source": "all",
+            "brand_id": "logical:brand:a-b-art",
+        })
+
+        self.assertEqual(
+            [item["brand"] for item in alias_sales],
+            ["A B ART", "A.B. Art"],
+        )
+
+    def test_punctuation_collision_is_not_merged_without_explicit_alias(self):
+        distinct_sales = [
+            sale("first", brand_id=41, brand="AC-ME"),
+            sale("second", brand_id=42, brand="AC.ME"),
+        ]
+
+        options = web.build_sales_filter_options(
+            distinct_sales, {"brand_id": "", "category_id": ""}
+        )
+
+        self.assertEqual(
+            {item["value"] for item in options["brands"]},
+            {"41", "42"},
+        )
+
     def test_duplicate_category_ids_are_one_logical_server_filter(self):
         duplicate_sales = [
             sale("10", category_id=10, product_id="p10", product="Модель 10"),
