@@ -3341,8 +3341,11 @@
             panel.style.top = Math.round(top) + "px";
             panel.style.maxHeight =
                 Math.floor(availableHeight) + "px";
-            panel.style.overflowY =
-                naturalHeight > availableHeight
+            panel.style.overflowY = panel.classList.contains(
+                "sales-column-settings-panel"
+            )
+                ? "hidden"
+                : naturalHeight > availableHeight
                     ? "auto"
                     : "visible";
             panel.dataset.salesPopoverPlacement =
@@ -7089,19 +7092,31 @@
                 const columnList = panel.querySelector(
                     ".sales-column-settings-list"
                 );
-                const columnScrollIsAccessible = (
-                    !columnList
-                    || (
-                        panel.scrollHeight
-                            <= panel.clientHeight + 1
-                        && (
-                            columnList.scrollHeight
-                                <= columnList.clientHeight + 1
-                            || getComputedStyle(columnList)
-                                .overflowY === "auto"
-                        )
-                    )
-                );
+                let columnScrollIsAccessible = true;
+
+                if (columnList) {
+                    const initialScrollTop = columnList.scrollTop;
+                    columnList.scrollTop = columnList.scrollHeight;
+                    const lastItem = columnList.lastElementChild;
+                    const listBounds = columnList.getBoundingClientRect();
+                    const lastItemBounds = lastItem?.getBoundingClientRect();
+                    const footerBounds = panel.querySelector(
+                        ".sales-column-settings-footer"
+                    )?.getBoundingClientRect();
+                    const scrolledToEnd = columnList.scrollHeight
+                        <= columnList.clientHeight + 1
+                        || columnList.scrollTop > initialScrollTop;
+
+                    columnScrollIsAccessible = (
+                        style.overflowY === "hidden"
+                        && panel.scrollHeight <= panel.clientHeight + 1
+                        && getComputedStyle(columnList).overflowY === "auto"
+                        && scrolledToEnd
+                        && lastItemBounds.bottom <= listBounds.bottom + 1
+                        && footerBounds.bottom <= bounds.bottom + 1
+                    );
+                    columnList.scrollTop = initialScrollTop;
+                }
 
                 return (
                     panel.parentElement?.id === "salesPopoverRoot"
@@ -7230,6 +7245,93 @@
             document.documentElement.dataset
                 .salesColumnsE2eError = error.message;
             sessionStorage.removeItem(phaseKey);
+        }
+    });
+</script>
+{% endif %}
+{% if config.TESTING and request.args.get("sales_columns_scroll_e2e") == "1" %}
+<script>
+    window.addEventListener("load", () => {
+        const root = document.documentElement;
+        const trigger = document.getElementById(
+            "salesColumnSettingsTrigger"
+        );
+        const panel = document.getElementById(
+            "salesColumnSettingsPanel"
+        );
+        const close = document.getElementById(
+            "salesColumnSettingsClose"
+        );
+
+        try {
+            const open = () => {
+                trigger.click();
+                if (panel.hidden) throw new Error("open");
+            };
+
+            open();
+            const list = panel.querySelector(
+                ".sales-column-settings-list"
+            );
+            const footer = panel.querySelector(
+                ".sales-column-settings-footer"
+            );
+            const initialPageScroll = window.scrollY;
+            const panelBounds = panel.getBoundingClientRect();
+            const listBounds = list.getBoundingClientRect();
+            const footerBounds = footer.getBoundingClientRect();
+
+            list.scrollTop = list.scrollHeight;
+            const lastItemBounds = list.lastElementChild
+                .getBoundingClientRect();
+
+            if (
+                panel.parentElement?.id !== "salesPopoverRoot"
+                || getComputedStyle(panel).position !== "fixed"
+                || getComputedStyle(panel).overflowY !== "hidden"
+                || getComputedStyle(list).overflowY !== "auto"
+                || panelBounds.left < 0
+                || panelBounds.top < 0
+                || panelBounds.right > window.innerWidth
+                || panelBounds.bottom > window.innerHeight
+                || panel.scrollHeight > panel.clientHeight + 1
+                || list.scrollHeight <= list.clientHeight
+                || list.scrollTop <= 0
+                || lastItemBounds.bottom > listBounds.bottom + 1
+                || footerBounds.bottom > panelBounds.bottom + 1
+                || window.scrollY !== initialPageScroll
+                || root.scrollWidth > root.clientWidth
+            ) {
+                throw new Error("layout");
+            }
+
+            trigger.click();
+            if (!panel.hidden) throw new Error("toggle");
+            open();
+            document.dispatchEvent(new KeyboardEvent(
+                "keydown",
+                {key: "Escape", bubbles: true},
+            ));
+            if (
+                !panel.hidden
+                || (
+                    trigger.getClientRects().length > 0
+                    && document.activeElement !== trigger
+                )
+            ) {
+                throw new Error("escape");
+            }
+            open();
+            document.body.click();
+            if (!panel.hidden) throw new Error("outside");
+            open();
+            close.click();
+            if (!panel.hidden) throw new Error("close");
+
+            root.dataset.salesColumnsScrollE2e = "pass";
+        } catch (error) {
+            root.dataset.salesColumnsScrollE2e = "fail";
+            root.dataset.salesColumnsScrollE2eError = error.message;
         }
     });
 </script>
