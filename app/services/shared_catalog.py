@@ -2,6 +2,7 @@
 
 from datetime import datetime, timezone
 import re
+import sqlite3
 import unicodedata
 
 from app.catalog_db import CatalogDatabase
@@ -917,6 +918,84 @@ class SharedCatalog:
             )
             return {**plan, "target_category_id": target_id,
                     "target_category_name": target_name or "Без категории"}
+
+    def delete_empty_category(self, category_id, **actor):
+        """Delete one category only when no product or history references it."""
+        self.database.initialize()
+        category_id = int(category_id)
+        if category_id == 0:
+            raise CatalogReferenceError(
+                "Системную категорию «Без категории» нельзя удалить."
+            )
+        try:
+            with self.database.transaction() as connection:
+                category = connection.execute(
+                    "SELECT * FROM erp_categories WHERE id = ? AND active = 1",
+                    (category_id,),
+                ).fetchone()
+                if category is None:
+                    raise CatalogReferenceError("Категория не найдена.")
+
+                product_count = int(connection.execute(
+                    "SELECT COUNT(*) FROM catalog_excel_products "
+                    "WHERE category_id = ?",
+                    (category_id,),
+                ).fetchone()[0])
+                if product_count:
+                    raise CatalogReferenceError(
+                        "Нельзя удалить категорию, пока в ней находятся товары. "
+                        "Сначала перенесите товары в другую категорию или в "
+                        "«Без категории»."
+                    )
+
+                historical_count = 0
+                for table in (
+                    "catalog_excel_receipt_rows",
+                    "erp_sale_items",
+                    "erp_receipt_items",
+                ):
+                    historical_count += int(connection.execute(
+                        "SELECT COUNT(*) FROM {} WHERE category_id = ?".format(
+                            table
+                        ),
+                        (category_id,),
+                    ).fetchone()[0])
+                if historical_count:
+                    raise CatalogReferenceError(
+                        "Нельзя удалить категорию, потому что она используется "
+                        "в истории продаж или приходов."
+                    )
+
+                connection.execute(
+                    "DELETE FROM erp_brand_categories WHERE category_id = ?",
+                    (category_id,),
+                )
+                AuditJournal(self.database).record(
+                    "category",
+                    category_id,
+                    "deleted",
+                    category["name"],
+                    "Пустая категория удалена",
+                    metadata={"hard_deleted": True, "products_preserved": True},
+                    connection=connection,
+                    **actor
+                )
+                cursor = connection.execute(
+                    "DELETE FROM erp_categories WHERE id = ? AND active = 1",
+                    (category_id,),
+                )
+                if cursor.rowcount != 1:
+                    raise CatalogReferenceError("Категория не найдена.")
+                return {
+                    "id": category_id,
+                    "name": category["name"],
+                    "deleted": True,
+                    "product_count": 0,
+                }
+        except sqlite3.IntegrityError as error:
+            raise CatalogReferenceError(
+                "Нельзя удалить категорию: с ней связаны данные ERP."
+            ) from error
 
     def list_category_options(
         self,

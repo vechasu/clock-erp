@@ -152,6 +152,86 @@ class CategoryManagementTest(unittest.TestCase):
             [item["id"] for item in self.catalog.list_category_options(limit=100)],
         )
 
+    def test_empty_category_is_deleted_and_other_categories_persist(self):
+        brand = self.catalog.create_brand("Casio")
+        removed = self.catalog.create_brand_category(
+            brand["id"], "Controlled deletion fixture"
+        )
+        preserved = self.catalog.create_brand_category(
+            brand["id"], "Preserved category"
+        )
+
+        result = self.catalog.delete_empty_category(removed["id"])
+
+        self.assertTrue(result["deleted"])
+        with self.database.connect() as connection:
+            self.assertIsNone(connection.execute(
+                "SELECT id FROM erp_categories WHERE id = ?",
+                (removed["id"],),
+            ).fetchone())
+            self.assertIsNotNone(connection.execute(
+                "SELECT id FROM erp_categories WHERE id = ? AND active = 1",
+                (preserved["id"],),
+            ).fetchone())
+            self.assertEqual(connection.execute(
+                "SELECT COUNT(*) FROM erp_brand_categories "
+                "WHERE category_id = ?",
+                (removed["id"],),
+            ).fetchone()[0], 0)
+
+    def test_category_with_product_is_not_deleted_or_changed(self):
+        product = self.product("A", "A", "Casio", "Часы", 7)
+        before = self.products.get_product(product["id"])
+        with self.database.transaction() as connection:
+            connection.execute(
+                "INSERT INTO erp_sales "
+                "(id, source, status, created_at, inserted_at, updated_at) "
+                "VALUES ('delete-guard-sale', 'test', 'completed', 'a', 'a', 'a')"
+            )
+            connection.execute(
+                "INSERT INTO erp_sale_items "
+                "(sale_id, product_id, brand_id, category_id, quantity, "
+                "status, created_at) VALUES "
+                "('delete-guard-sale', ?, ?, ?, 1, 'completed', 'a')",
+                (product["id"], product["brand_id"], product["category_id"]),
+            )
+            connection.execute(
+                "INSERT INTO erp_receipts "
+                "(id, number, status, receipt_date, created_at, updated_at) "
+                "VALUES ('delete-guard-receipt', 'R-1', 'posted', "
+                "'2026-01-01', 'a', 'a')"
+            )
+            connection.execute(
+                "INSERT INTO erp_receipt_items "
+                "(receipt_id, product_id, brand_id, category_id, quantity, "
+                "active, created_at) VALUES "
+                "('delete-guard-receipt', ?, ?, ?, 1, 1, 'a')",
+                (product["id"], product["brand_id"], product["category_id"]),
+            )
+
+        with self.assertRaisesRegex(
+            CatalogReferenceError,
+            "Нельзя удалить категорию, пока в ней находятся товары",
+        ):
+            self.catalog.delete_empty_category(product["category_id"])
+
+        after = self.products.get_product(product["id"])
+        self.assertEqual(after["category_id"], before["category_id"])
+        self.assertEqual(after["stock"], before["stock"])
+        with self.database.connect() as connection:
+            self.assertIsNotNone(connection.execute(
+                "SELECT id FROM erp_categories WHERE id = ? AND active = 1",
+                (product["category_id"],),
+            ).fetchone())
+            self.assertEqual(connection.execute(
+                "SELECT COUNT(*) FROM erp_sale_items WHERE category_id = ?",
+                (product["category_id"],),
+            ).fetchone()[0], 1)
+            self.assertEqual(connection.execute(
+                "SELECT COUNT(*) FROM erp_receipt_items WHERE category_id = ?",
+                (product["category_id"],),
+            ).fetchone()[0], 1)
+
     def test_used_category_requires_target_and_move_preserves_product_data(self):
         product = self.product("A", "A", "Casio", "Часы", 7)
         target = self.catalog.create_brand_category(
@@ -199,6 +279,8 @@ class CategoryManagementTest(unittest.TestCase):
             self.catalog.rename_category(0, "Другое")
         with self.assertRaises(CatalogReferenceError):
             self.catalog.category_delete_plan(0)
+        with self.assertRaises(CatalogReferenceError):
+            self.catalog.delete_empty_category(0)
 
     def test_detail_unions_explicit_empty_and_product_brands(self):
         product = self.product("A", "A", "Casio", "Часы", 1)
@@ -422,11 +504,53 @@ class CategoryManagementWebTest(unittest.TestCase):
         self.assertIn("Брендов", source)
         self.assertIn("Дубликат категории", source)
         self.assertNotIn(">Статус<", source)
-        self.assertNotIn("Удалить категорию", source)
+        self.assertIn("Удалить категорию", source)
+        self.assertIn("data-delete-category", source)
+        self.assertIn("deleteCategoryForm", source)
+        self.assertIn("categoryMenuController.closeAll()", source)
+        self.assertIn("method:'DELETE'", source)
         self.assertNotIn("delete-plan", source)
         self.assertIn("setTimeout(loadCategories,200)", source)
         self.assertIn("AbortController", source)
         self.assertIn("history.replaceState", source)
+
+    def test_delete_api_is_persistent_and_blocks_system_and_used_categories(self):
+        catalog = SharedCatalog(self.database)
+        empty = catalog.create_global_category("Controlled API deletion fixture")
+        product = ExcelProductCatalog(self.database).create_product(
+            name="Protected", article="PROTECTED", brand="Casio",
+            category="Protected category", stock=11,
+        )
+
+        deleted = self.client.delete(
+            "/api/v1/categories/{}".format(empty["id"])
+        )
+        blocked = self.client.delete(
+            "/api/v1/categories/{}".format(product["category_id"])
+        )
+        system = self.client.delete("/api/v1/categories/0")
+
+        self.assertEqual(deleted.status_code, 200)
+        self.assertTrue(deleted.get_json()["data"]["deleted"])
+        self.assertEqual(blocked.status_code, 409)
+        self.assertIn(
+            "Сначала перенесите товары",
+            blocked.get_json()["message"],
+        )
+        self.assertEqual(system.status_code, 409)
+        self.assertIn("Системную категорию", system.get_json()["message"])
+        with self.database.connect() as connection:
+            self.assertIsNone(connection.execute(
+                "SELECT id FROM erp_categories WHERE id = ?",
+                (empty["id"],),
+            ).fetchone())
+            row = connection.execute(
+                "SELECT category_id, stock FROM catalog_excel_products "
+                "WHERE id = ?",
+                (product["id"],),
+            ).fetchone()
+            self.assertEqual(row["category_id"], product["category_id"])
+            self.assertEqual(row["stock"], 11)
 
     def test_category_get_search_and_detail_do_not_repair_relations(self):
         products = ExcelProductCatalog(self.database)
