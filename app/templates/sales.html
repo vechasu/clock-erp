@@ -1694,12 +1694,53 @@
                                 </select>
                             </label>
 
-                            <label class="sales-filter-field">
+                            <div class="sales-filter-field sales-product-filter-field">
                                 <span>Товар</span>
-                                <select id="salesProductFilter">
+                                <select
+                                    id="salesProductFilter"
+                                    class="sales-product-native"
+                                    tabindex="-1"
+                                    aria-hidden="true"
+                                >
                                     <option value="">Все товары</option>
                                 </select>
-                            </label>
+                                <div
+                                    id="salesProductCombobox"
+                                    class="sales-product-combobox"
+                                >
+                                    <button
+                                        id="salesProductComboboxTrigger"
+                                        class="sales-product-combobox-trigger"
+                                        type="button"
+                                        role="combobox"
+                                        aria-haspopup="listbox"
+                                        aria-controls="salesProductComboboxMenu"
+                                        aria-expanded="false"
+                                    >
+                                        <span id="salesProductComboboxLabel">Все товары</span>
+                                        <span aria-hidden="true">⌄</span>
+                                    </button>
+                                    <div
+                                        id="salesProductComboboxMenu"
+                                        class="sales-product-combobox-menu"
+                                        hidden
+                                    >
+                                        <input
+                                            id="salesProductComboboxSearch"
+                                            class="sales-product-combobox-search"
+                                            type="search"
+                                            placeholder="Поиск товара по названию или артикулу..."
+                                            autocomplete="off"
+                                            aria-label="Поиск товара по названию или артикулу"
+                                        >
+                                        <div
+                                            id="salesProductComboboxOptions"
+                                            class="sales-product-combobox-options"
+                                            role="listbox"
+                                        ></div>
+                                    </div>
+                                </div>
+                            </div>
 
                             <label class="sales-filter-field">
                                 <span>Статус</span>
@@ -3184,6 +3225,24 @@
     const salesBrandFilter = document.getElementById("salesBrandFilter");
     const salesCategoryFilter = document.getElementById("salesCategoryFilter");
     const salesProductFilter = document.getElementById("salesProductFilter");
+    const salesProductCombobox = document.getElementById(
+        "salesProductCombobox"
+    );
+    const salesProductComboboxTrigger = document.getElementById(
+        "salesProductComboboxTrigger"
+    );
+    const salesProductComboboxLabel = document.getElementById(
+        "salesProductComboboxLabel"
+    );
+    const salesProductComboboxMenu = document.getElementById(
+        "salesProductComboboxMenu"
+    );
+    const salesProductComboboxSearch = document.getElementById(
+        "salesProductComboboxSearch"
+    );
+    const salesProductComboboxOptions = document.getElementById(
+        "salesProductComboboxOptions"
+    );
     const salesStatusFilter = document.getElementById("salesStatusFilter");
     const salesSourceFilter = document.getElementById("salesSourceFilter");
     const salesFilterCatalog = {{ sales_filter_catalog | tojson }};
@@ -3621,6 +3680,132 @@
         }
     }
 
+    function productDisplayLabel(item) {
+        const name = String(item.product || "Товар без названия");
+        const article = String(item.article || "").trim();
+        return article ? `${name} · ${article}` : name;
+    }
+
+    function availableProductOptions(values) {
+        const options = new Map();
+        salesFilterCatalog
+            .filter((item) => !values.brand_id || String(item.brand_id) === String(values.brand_id))
+            .filter((item) => !values.category_id || String(item.category_id) === String(values.category_id))
+            .forEach((item) => {
+                const value = String(item.product_id || "");
+                if (value && !options.has(value)) {
+                    options.set(value, {
+                        value,
+                        label: productDisplayLabel(item),
+                        search: `${item.product || ""} ${item.article || ""}`.toLocaleLowerCase(),
+                    });
+                }
+            });
+        return Array.from(options.values()).sort((left, right) =>
+            left.label.localeCompare(right.label, "ru", {sensitivity: "base"})
+        );
+    }
+
+    function selectedProductLabel(value) {
+        if (!value) return "Все товары";
+        const item = salesFilterCatalog.find(
+            (candidate) => String(candidate.product_id) === String(value)
+        );
+        return item ? productDisplayLabel(item) : optionLabel("product_id", value);
+    }
+
+    function populateProductValue(value) {
+        salesProductFilter.replaceChildren(new Option("Все товары", ""));
+        if (value) {
+            salesProductFilter.add(new Option(selectedProductLabel(value), value));
+        }
+        salesProductFilter.value = value;
+    }
+
+    function syncProductComboboxLabel() {
+        salesProductComboboxLabel.textContent = selectedProductLabel(
+            salesProductFilter.value
+        );
+        salesProductComboboxTrigger.title = salesProductComboboxLabel.textContent;
+    }
+
+    function renderProductComboboxOptions() {
+        const query = salesProductComboboxSearch.value
+            .trim()
+            .toLocaleLowerCase();
+        const values = draftValues();
+        const matches = availableProductOptions(values).filter(
+            (item) => !query || item.search.includes(query)
+        );
+        const visibleMatches = matches.slice(0, 100);
+        salesProductComboboxOptions.replaceChildren();
+
+        const allProducts = document.createElement("button");
+        allProducts.type = "button";
+        allProducts.className = "sales-product-combobox-option";
+        allProducts.dataset.productValue = "";
+        allProducts.setAttribute("role", "option");
+        allProducts.setAttribute(
+            "aria-selected",
+            String(salesProductFilter.value === "")
+        );
+        allProducts.textContent = "Все товары";
+        salesProductComboboxOptions.appendChild(allProducts);
+
+        visibleMatches.forEach((item) => {
+            const option = document.createElement("button");
+            option.type = "button";
+            option.className = "sales-product-combobox-option";
+            option.dataset.productValue = item.value;
+            option.setAttribute("role", "option");
+            option.setAttribute(
+                "aria-selected",
+                String(item.value === salesProductFilter.value)
+            );
+            option.textContent = item.label;
+            option.title = item.label;
+            salesProductComboboxOptions.appendChild(option);
+        });
+
+        if (!visibleMatches.length && query) {
+            const empty = document.createElement("div");
+            empty.className = "sales-product-combobox-empty";
+            empty.textContent = "Ничего не найдено";
+            salesProductComboboxOptions.appendChild(empty);
+        }
+    }
+
+    function closeProductCombobox({returnFocus = false} = {}) {
+        salesProductComboboxMenu.hidden = true;
+        salesProductComboboxMenu.classList.remove("is-up");
+        salesProductComboboxTrigger.setAttribute("aria-expanded", "false");
+        salesProductComboboxSearch.value = "";
+        if (returnFocus) salesProductComboboxTrigger.focus();
+    }
+
+    function openProductCombobox() {
+        salesProductComboboxSearch.value = "";
+        renderProductComboboxOptions();
+        salesProductComboboxMenu.hidden = false;
+        salesProductComboboxTrigger.setAttribute("aria-expanded", "true");
+        salesProductComboboxSearch.focus();
+        salesPopoverManager.reposition();
+        requestAnimationFrame(() => {
+            const triggerBounds =
+                salesProductComboboxTrigger.getBoundingClientRect();
+            const menuHeight =
+                salesProductComboboxMenu.getBoundingClientRect().height;
+            const viewportHeight =
+                window.visualViewport?.height || window.innerHeight;
+            const spaceBelow = viewportHeight - triggerBounds.bottom - 12;
+            const spaceAbove = triggerBounds.top - 12;
+            salesProductComboboxMenu.classList.toggle(
+                "is-up",
+                menuHeight > spaceBelow && spaceAbove > spaceBelow
+            );
+        });
+    }
+
     function cascadeOptions(values) {
         const categories = salesFilterCatalog
             .filter((item) => !values.brand_id || String(item.brand_id) === String(values.brand_id))
@@ -3635,10 +3820,7 @@
             values.category_id = "";
             values.product_id = "";
         }
-        const products = salesFilterCatalog
-            .filter((item) => !values.brand_id || String(item.brand_id) === String(values.brand_id))
-            .filter((item) => !values.category_id || String(item.category_id) === String(values.category_id))
-            .map((item) => ({value: String(item.product_id), label: item.product}));
+        const products = availableProductOptions(values);
         const productValues = new Set(
             products.map((item) => item.value)
         );
@@ -3649,7 +3831,9 @@
             values.product_id = "";
         }
         populateSelect(salesCategoryFilter, "Все категории", categories, values.category_id);
-        populateSelect(salesProductFilter, "Все товары", products, values.product_id);
+        populateProductValue(values.product_id);
+        syncProductComboboxLabel();
+        closeProductCombobox();
         return values;
     }
 
@@ -3727,6 +3911,7 @@
     const salesFilterPopover = salesPopoverManager.register({
         trigger: salesFilterTrigger,
         panel: salesFilterPanel,
+        onClose: () => closeProductCombobox(),
     });
 
     function closeSalesFilterPanel(returnFocus = false) {
@@ -3764,6 +3949,7 @@
 
     salesFilterReset.addEventListener("click", () => {
         setDraft({brand_id: "", category_id: "", product_id: "", status: "", source: ""});
+        closeProductCombobox();
     });
 
     salesBrandFilter.addEventListener("change", () => {
@@ -3775,6 +3961,73 @@
         const values = draftValues();
         cascadeOptions(values);
         salesPopoverManager.reposition();
+    });
+
+    salesProductComboboxTrigger.addEventListener("click", () => {
+        if (salesProductComboboxMenu.hidden) {
+            openProductCombobox();
+        } else {
+            closeProductCombobox({returnFocus: true});
+        }
+    });
+
+    salesProductComboboxSearch.addEventListener("input", () => {
+        renderProductComboboxOptions();
+    });
+
+    salesProductComboboxSearch.addEventListener("keydown", (event) => {
+        if (event.key === "ArrowDown") {
+            event.preventDefault();
+            salesProductComboboxOptions.querySelector(
+                ".sales-product-combobox-option"
+            )?.focus();
+        }
+    });
+
+    salesProductComboboxOptions.addEventListener("click", (event) => {
+        const option = event.target.closest("[data-product-value]");
+        if (!option) return;
+        populateProductValue(option.dataset.productValue);
+        syncProductComboboxLabel();
+        closeProductCombobox({returnFocus: true});
+    });
+
+    salesProductComboboxOptions.addEventListener("keydown", (event) => {
+        if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+            return;
+        }
+        event.preventDefault();
+        const options = Array.from(
+            salesProductComboboxOptions.querySelectorAll(
+                ".sales-product-combobox-option"
+            )
+        );
+        if (!options.length) return;
+        const current = options.indexOf(document.activeElement);
+        let next = current;
+        if (event.key === "Home") next = 0;
+        if (event.key === "End") next = options.length - 1;
+        if (event.key === "ArrowDown") next = Math.min(current + 1, options.length - 1);
+        if (event.key === "ArrowUp") next = Math.max(current - 1, 0);
+        options[next]?.focus();
+    });
+
+    salesProductCombobox.addEventListener("keydown", (event) => {
+        if (event.key !== "Escape" || salesProductComboboxMenu.hidden) {
+            return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        closeProductCombobox({returnFocus: true});
+    });
+
+    document.addEventListener("click", (event) => {
+        if (
+            !salesProductComboboxMenu.hidden
+            && !salesProductCombobox.contains(event.target)
+        ) {
+            closeProductCombobox();
+        }
     });
 
     document.addEventListener("click", (event) => {
@@ -7488,6 +7741,54 @@
             document.getElementById("salesFilterClose").click();
             trigger.click();
             if (brand.value !== appliedBrand) throw new Error("draft");
+
+            const productTrigger = document.getElementById(
+                "salesProductComboboxTrigger"
+            );
+            const productMenu = document.getElementById(
+                "salesProductComboboxMenu"
+            );
+            const productSearch = document.getElementById(
+                "salesProductComboboxSearch"
+            );
+            const productOptions = document.getElementById(
+                "salesProductComboboxOptions"
+            );
+            productTrigger.click();
+            productSearch.value = "__missing_product__";
+            productSearch.dispatchEvent(new Event("input", {bubbles: true}));
+            if (!productOptions.textContent.includes("Ничего не найдено")) throw new Error("product-empty");
+            productSearch.dispatchEvent(new KeyboardEvent("keydown", {key: "Escape", bubbles: true}));
+            if (!productMenu.hidden || panel.hidden) throw new Error("product-escape");
+            productTrigger.click();
+            const searchableProduct = salesFilterCatalog.find((item) =>
+                (!brand.value || String(item.brand_id) === String(brand.value))
+                && (item.article || item.product)
+            );
+            if (searchableProduct) {
+                const needle = String(
+                    searchableProduct.article || searchableProduct.product
+                ).slice(0, 4).toLocaleLowerCase();
+                productSearch.value = needle;
+                productSearch.dispatchEvent(new Event("input", {bubbles: true}));
+                const result = productOptions.querySelector(
+                    `[data-product-value="${CSS.escape(String(searchableProduct.product_id))}"]`
+                );
+                if (!result) throw new Error("product-search");
+                result.click();
+                if (
+                    product.value !== String(searchableProduct.product_id)
+                    || productTrigger.textContent.includes(String(searchableProduct.product_id))
+                ) throw new Error("product-selection");
+            } else {
+                productTrigger.click();
+            }
+            document.getElementById("salesFilterReset").click();
+            if (
+                product.value !== ""
+                || productSearch.value !== ""
+                || !productMenu.hidden
+            ) throw new Error("product-reset");
 
             document.querySelector(".warehouse-date-trigger").click();
             trigger.click();

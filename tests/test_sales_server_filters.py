@@ -13,6 +13,7 @@ def sale(
     category="Наручные часы",
     product_id="p1",
     product="Луч Классика",
+    article="FD41",
     source="tictactoy",
     status="active",
     created_at="2026-08-05T12:00:00",
@@ -26,6 +27,7 @@ def sale(
         "category": category,
         "product_id": product_id,
         "product_name": product,
+        "article": article,
         "source_key": source,
         "source": web.SALES_SOURCE_LABELS[source],
         "order_status": status,
@@ -111,6 +113,29 @@ class SalesServerFiltersTest(unittest.TestCase):
         )
         self.assertEqual(historical["brand"], "Исторический бренд")
         self.assertEqual(historical["category"], "Удалённая категория")
+
+    def test_filter_catalog_keeps_article_and_duplicate_names_by_id(self):
+        duplicate_names = [
+            sale(
+                "sku-one",
+                product_id="product-one",
+                product="Example Watch",
+                article="SKU123",
+            ),
+            sale(
+                "sku-two",
+                product_id="product-two",
+                product="Example Watch",
+                article="SKU999",
+            ),
+        ]
+
+        catalog = web.build_sales_filter_catalog(duplicate_names)
+
+        self.assertEqual(
+            {(item["product_id"], item["article"]) for item in catalog},
+            {("product-one", "SKU123"), ("product-two", "SKU999")},
+        )
 
     def test_snapshot_identifier_is_compatible_with_production_python(self):
         self.assertEqual(

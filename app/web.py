@@ -8560,13 +8560,14 @@ def build_sales_filter_catalog(sales, category_groups=None):
         brand_label = brand_group["label"]
         category_label = category_group["label"]
         product_label = str(sale.get("product_name") or "").strip()
+        product_article = str(sale.get("article") or "").strip()
 
         if category_id == "0" and not category_label:
             category_label = "Без категории"
 
         key = (
             brand_id, category_id, product_id,
-            brand_label, category_label, product_label,
+            brand_label, category_label, product_label, product_article,
         )
         if key in seen:
             continue
@@ -8579,6 +8580,7 @@ def build_sales_filter_catalog(sales, category_groups=None):
             "category_ids": category_group["category_ids"],
             "product_id": product_id,
             "product": product_label or "Товар без названия",
+            "article": product_article,
         })
 
     return sorted(
