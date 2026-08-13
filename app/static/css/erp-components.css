@@ -220,7 +220,7 @@
 }
 
 .sales-page .erp-workspace-metrics {
-    --erp-workspace-metric-count: 5;
+    --erp-workspace-metric-count: 4;
 }
 
 .erp-workspace-metric,
@@ -2833,7 +2833,7 @@ select.erp-control {
 .sales-page .stats {
     width: 100%;
     max-width: none;
-    grid-template-columns: repeat(5, minmax(140px, 1fr));
+    grid-template-columns: repeat(4, minmax(140px, 1fr));
     gap: 8px;
     margin-bottom: 12px;
 }
