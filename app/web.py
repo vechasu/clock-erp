@@ -5111,7 +5111,7 @@ SALE_STATUS_PRESENTATIONS = {
     "partially_returned": {
         "label": "Частичный возврат", "tone": "warning",
     },
-    "returned": {"label": "Возврат", "tone": "danger"},
+    "returned": {"label": "Возврат", "tone": "warning"},
     "deleted": {"label": "Удалён", "tone": "destructive"},
 }
 
@@ -5132,7 +5132,6 @@ SALE_STATUS_ALIAS_MAP = {
 
 SALE_FORM_STATUS_LABELS = {
     "shipped": "Отправлен",
-    "returned": "Возврат",
 }
 
 SALE_CANCELLATION_REASONS = {
@@ -14309,13 +14308,15 @@ def api_category_resource(category_id):
     require_csrf_when_authenticated()
     try:
         name = None
+        payload = api_json_payload()
         if request.method != "DELETE":
-            name = api_json_payload().get("name")
+            name = payload.get("name")
         updated = _catalog_application.update_api_category(
             category_id,
             request.method,
             name,
             current_audit_actor(),
+            payload.get("expected_product_count"),
         )
     except DuplicateCatalogValueError as error:
         return api_error(
@@ -16014,6 +16015,12 @@ def normalize_api_sale_payload(payload, existing=None, require_catalog=False):
         merged_form,
         existing=existing,
     )
+    if require_catalog and optional_fields.get("order_status") in {
+        "returned", "partially_returned", "cancelled"
+    }:
+        raise ValueError(
+            "Возврат и отмена оформляются только для существующей продажи."
+        )
     location_fields = {
         field: str(merged_form.get(field) or "").strip()
         for field in ("country", "region", "city")

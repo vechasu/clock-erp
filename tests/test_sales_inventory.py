@@ -93,6 +93,14 @@ class SalesInventoryTest(unittest.TestCase):
         self.assertEqual(movement["stock_after"], 2)
         self.assertEqual(movement["sale_id"], "sale-1")
 
+    def test_return_status_cannot_be_used_to_create_sale(self):
+        product = self.create_product(stock=3)
+        payload = self.payload(product)
+        payload["order_status"] = "returned"
+        with self.assertRaisesRegex(SalesInventoryError, "существующей продажи"):
+            self.inventory.create_sale(payload, product["id"], 1, 1000)
+        self.assertEqual(self.stock(product["id"]), 3)
+
     def test_unknown_and_zero_prices_remain_distinct(self):
         product = self.create_product(stock=3)
         unknown = self.inventory.create_sale(
@@ -403,6 +411,39 @@ class SalesInventoryTest(unittest.TestCase):
         with self.assertRaises(ReturnConflictError):
             self.inventory.return_sale("sale-1", 1)
         self.assertEqual(self.stock(product["id"]), 4)
+
+    def test_return_requires_proven_sale_movement(self):
+        product = self.create_product(stock=2)
+        self.inventory.create_sale(
+            self.payload(product), product["id"], 1, 1000
+        )
+        with self.database.transaction() as connection:
+            connection.execute(
+                "DELETE FROM catalog_stock_movements WHERE sale_id = ?",
+                ("sale-1",),
+            )
+
+        with self.assertRaisesRegex(ReturnConflictError, "исходное списание"):
+            self.inventory.return_sale("sale-1", 1)
+        self.assertEqual(self.stock(product["id"]), 1)
+        self.assertEqual(self.inventory.get_sale("sale-1")["status"], "completed")
+
+    def test_return_rolls_back_stock_and_state_on_failure(self):
+        product = self.create_product(stock=2)
+        self.inventory.create_sale(
+            self.payload(product), product["id"], 1, 1000
+        )
+        with self.assertRaisesRegex(RuntimeError, "forced"):
+            self.inventory.return_sale(
+                "sale-1",
+                1,
+                failure_hook=lambda _connection: (_ for _ in ()).throw(
+                    RuntimeError("forced")
+                ),
+            )
+        self.assertEqual(self.stock(product["id"]), 1)
+        self.assertEqual(self.inventory.get_sale("sale-1")["status"], "completed")
+        self.assertEqual(len(self.inventory.list_movements(product["id"])), 1)
 
     def test_cannot_return_more_than_remaining(self):
         product = self.create_product(stock=3)
@@ -793,6 +834,15 @@ class SalesInventoryWebTest(SalesInventoryTest):
                 "order_number": "125",
             },
         )
+
+    def test_new_sale_form_does_not_offer_return_status(self):
+        self.assertNotIn("returned", web.SALE_FORM_STATUS_LABELS)
+        page = self.client.get("/app/sales?source=all")
+        self.assertEqual(page.status_code, 200)
+        form_fragment = page.get_data(as_text=True).split(
+            'id="manualSaleForm"', 1
+        )[-1].split("</form>", 1)[0]
+        self.assertNotIn('data-brand="returned"', form_fragment)
 
     def create_managed_sale(
         self,

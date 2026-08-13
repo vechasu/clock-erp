@@ -9,6 +9,7 @@ class SalesStatusVisualSystemTest(unittest.TestCase):
         cases = (
             ({"order_status": "completed"}, "completed", "Завершён успешно", "success"),
             ({"order_status": "cancelled"}, "cancelled", "Отменён", "warning"),
+            ({"order_status": "returned"}, "returned", "Возврат", "warning"),
             (
                 {
                     "order_status": "cancelled",
