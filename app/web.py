@@ -12509,13 +12509,7 @@ def warehouse_delete_global_category(category_id):
             request.form.get("target_category_id"),
             current_audit_actor(),
         )
-        if result["active_product_count"]:
-            message = "Перенесено товаров: {}; категория удалена.".format(
-                result["active_product_count"]
-            )
-        else:
-            message = "Категория удалена."
-        return _categories_redirect(message=message)
+        return _categories_redirect(message="Категория удалена.")
     except (CatalogReferenceError, ValueError) as error:
         return _categories_redirect(
             category_id, notice="error", message=str(error)
@@ -14321,6 +14315,7 @@ def api_category_resource(category_id):
             category_id,
             request.method,
             name,
+            current_audit_actor(),
         )
     except DuplicateCatalogValueError as error:
         return api_error(
@@ -14330,7 +14325,19 @@ def api_category_resource(category_id):
             {"existing": error.existing},
         )
     except (CatalogReferenceError, ValueError) as error:
+        if request.method == "DELETE":
+            status = 404 if str(error) == "Категория не найдена." else 409
+            return api_error("CATEGORY_DELETE_BLOCKED", str(error), status)
         return api_error("CATEGORY_VALIDATION_FAILED", str(error), 422)
+    except Exception:
+        if request.method != "DELETE":
+            raise
+        app.logger.exception("Unexpected category deletion failure")
+        return api_error(
+            "CATEGORY_DELETE_FAILED",
+            "Не удалось удалить категорию из-за внутренней ошибки.",
+            500,
+        )
     return api_success({**updated, "count": updated["product_count"]})
 
 

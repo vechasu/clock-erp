@@ -44,19 +44,17 @@ class CatalogApplication:
         target_category_id,
         actor,
     ):
-        catalog = self._shared_catalog_factory()
-        plan = catalog.category_delete_plan(category_id)
-        expected_confirmation = (
-            "ПЕРЕНЕСТИ" if plan["requires_transfer"] else "УДАЛИТЬ"
-        )
-        if str(confirmation or "").strip() != expected_confirmation:
+        if str(confirmation or "").strip() != "УДАЛИТЬ":
             raise CatalogReferenceError(
                 "Подтвердите операцию удаления категории."
             )
-        result = catalog.move_products_and_archive_category(
+        result = self.delete_empty_category(category_id, actor)
+        return result
+
+    def delete_empty_category(self, category_id, actor=None):
+        result = self._shared_catalog_factory().delete_empty_category(
             category_id,
-            target_category_id=target_category_id,
-            **actor
+            **(actor or {})
         )
         self._invalidate_product_caches()
         return result
@@ -254,12 +252,11 @@ class CatalogApplication:
         updated = catalog.rename_brand(brand_id, name)
         return {**updated, "count": updated["product_count"]}
 
-    def update_api_category(self, category_id, method, name=None):
+    def update_api_category(self, category_id, method, name=None, actor=None):
         catalog = self._shared_catalog_factory()
         if method == "DELETE":
-            catalog.archive_category(category_id)
-            return {"id": category_id, "archived": True}
-        updated = catalog.rename_category(category_id, name)
+            return self.delete_empty_category(category_id, actor)
+        updated = catalog.rename_category(category_id, name, **(actor or {}))
         return {**updated, "count": updated["product_count"]}
 
     def catalog_options(
