@@ -3095,6 +3095,137 @@ select.erp-control {
     box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.09);
 }
 
+.sales-product-filter-field {
+    position: relative;
+}
+
+.sales-product-native {
+    position: absolute;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0 !important;
+}
+
+.sales-product-combobox {
+    position: relative;
+    min-width: 0;
+}
+
+.sales-product-combobox-trigger {
+    display: flex;
+    width: 100%;
+    height: 40px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 0 11px;
+    border: 1px solid #dfe5ed;
+    border-radius: 10px;
+    background: #ffffff;
+    color: #172033;
+    font-size: 13px;
+    font-weight: 400;
+    text-align: left;
+}
+
+.sales-product-combobox-trigger > span:first-child {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sales-product-combobox-trigger:hover,
+.sales-product-combobox-trigger:focus-visible,
+.sales-product-combobox-trigger[aria-expanded="true"] {
+    border-color: #93b4ff;
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.09);
+}
+
+.sales-product-combobox-menu {
+    position: absolute;
+    z-index: 8;
+    top: calc(100% + 6px);
+    right: 0;
+    left: 0;
+    min-width: min(360px, calc(100vw - 60px));
+    padding: 7px;
+    border: 1px solid #dce3ed;
+    border-radius: 11px;
+    background: #ffffff;
+    box-shadow: 0 14px 34px rgba(15, 23, 42, 0.18);
+}
+
+.sales-product-combobox-menu[hidden] {
+    display: none;
+}
+
+.sales-product-combobox-menu.is-up {
+    top: auto;
+    bottom: calc(100% + 6px);
+}
+
+.sales-product-combobox-search {
+    width: 100%;
+    height: 38px;
+    padding: 0 10px;
+    border: 1px solid #dfe5ed;
+    border-radius: 8px;
+    color: #172033;
+    font-size: 12px;
+    outline: none;
+}
+
+.sales-product-combobox-search:focus {
+    border-color: #93b4ff;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.09);
+}
+
+.sales-product-combobox-options {
+    display: grid;
+    max-height: min(280px, 38vh);
+    margin-top: 6px;
+    gap: 2px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.sales-product-combobox-option {
+    width: 100%;
+    min-height: 36px;
+    padding: 7px 9px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: #334155;
+    font-size: 12px;
+    font-weight: 650;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+    text-align: left;
+}
+
+.sales-product-combobox-option:hover,
+.sales-product-combobox-option:focus-visible,
+.sales-product-combobox-option[aria-selected="true"] {
+    background: #eff6ff;
+    color: #1d4ed8;
+    outline: none;
+}
+
+.sales-product-combobox-empty {
+    padding: 14px 9px;
+    color: #64748b;
+    font-size: 12px;
+    font-weight: 650;
+    text-align: center;
+}
+
 .sales-filter-panel-actions {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -3578,6 +3709,7 @@ select.erp-control {
     }
 
     .sales-filter-field select,
+    .sales-product-combobox-trigger,
     .sales-panel-close,
     .sales-filter-panel-actions .erp-primary-action,
     .sales-filter-panel-actions .erp-reset-action {
