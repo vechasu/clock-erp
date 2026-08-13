@@ -1603,7 +1603,7 @@
         src="{{ url_for('static', filename='js/receipt-submit.js') }}"
     ></script>
     <script
-        src="{{ url_for('static', filename='js/period-picker.js') }}"
+        src="{{ url_for('static', filename='js/period-picker.js', v='receipts-period-2') }}"
     ></script>
     <script
         src="{{ url_for('static', filename='js/toolbar-popover-coordinator.js') }}"
@@ -4312,7 +4312,7 @@
         container.hidden = count === 0;
     }
 
-    function filterReceipts() {
+    function filterReceipts(periodValues = null) {
         const rawQuery = (
             document.getElementById(
                 "receiptSearch"
@@ -4339,8 +4339,12 @@
             receipt_category_id: category,
             receipt_product_id: product,
             receipt_status: status,
-            date_from: document.getElementById("receiptDateFrom")?.value || "",
-            date_to: document.getElementById("receiptDateTo")?.value || "",
+            date_from: periodValues?.dateFrom
+                ?? document.getElementById("receiptDateFrom")?.value
+                ?? "",
+            date_to: periodValues?.dateTo
+                ?? document.getElementById("receiptDateTo")?.value
+                ?? "",
         };
         Object.entries(values).forEach(([key, value]) => {
             if (value) navigationUrl.searchParams.set(key, value);
@@ -4529,7 +4533,7 @@
             clearButton: document.getElementById(
                 "clearReceiptPeriod"
             ),
-            onChange: filterReceipts,
+            onChange: (periodValues) => filterReceipts(periodValues),
         }
     );
 

@@ -10122,6 +10122,26 @@ def build_receipt_search_text(receipt):
     return " ".join(str(value or "") for value in values).casefold()
 
 
+def receipt_business_date(receipt):
+    """Return the existing receipt document date as an ISO calendar date."""
+    value = str(
+        receipt.get("receipt_date")
+        or receipt.get("created_at")
+        or ""
+    ).strip()
+    return value[:10]
+
+
+def receipt_is_in_period(receipt, date_from="", date_to=""):
+    receipt_date = receipt_business_date(receipt)
+    if not receipt_date:
+        return not (date_from or date_to)
+    return (
+        (not date_from or receipt_date >= date_from)
+        and (not date_to or receipt_date <= date_to)
+    )
+
+
 @app.route("/receipts")
 @app.route("/app/receipts")
 def receipts_page():
@@ -10191,13 +10211,8 @@ def receipts_page():
         receipt["_canonical_timestamp"] = receipt_business_timestamp(
             receipt
         )
-        receipt_date = str(
-            receipt.get("receipt_date") or receipt.get("created_at") or ""
-        )[:10]
         search_text = build_receipt_search_text(receipt)
-        if date_from and receipt_date < date_from:
-            continue
-        if date_to and receipt_date > date_to:
+        if not receipt_is_in_period(receipt, date_from, date_to):
             continue
         if receipt_filters["q"].casefold() not in search_text:
             continue

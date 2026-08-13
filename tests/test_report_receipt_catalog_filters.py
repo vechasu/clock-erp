@@ -259,6 +259,137 @@ class ReceiptCatalogFiltersTest(unittest.TestCase):
         self.assertEqual(context["total_receipts"], 1)
         self.assertEqual(context["total_quantity"], "10")
 
+    def test_period_is_inclusive_and_changes_rows_and_kpis(self):
+        self.receipts = [
+            receipt(
+                "a", "RCPT-A", "before", quantity=1,
+                receipt_date="2026-08-10 23:59:59",
+            ),
+            receipt(
+                "b", "RCPT-B", "start", quantity=10,
+                receipt_date="2026-08-11 00:00:00",
+            ),
+            receipt(
+                "c", "RCPT-C", "middle", quantity=20,
+                receipt_date="2026-08-12 12:00:00",
+            ),
+            receipt(
+                "d", "RCPT-D", "end", quantity=5,
+                receipt_date="2026-08-13 18:45:00",
+            ),
+            receipt(
+                "e", "RCPT-E", "after", quantity=100,
+                receipt_date="2026-08-14 00:00:00",
+            ),
+        ]
+
+        context = self.route_context(
+            "?date_from=2026-08-11&date_to=2026-08-13"
+        )
+
+        self.assertEqual(
+            [item["id"] for item in context["receipts"]],
+            ["d", "c", "b"],
+        )
+        self.assertEqual(context["total_receipts"], 3)
+        self.assertEqual(context["total_quantity"], "35")
+
+    def test_single_day_includes_receipt_with_time_inside_last_day(self):
+        self.receipts = [
+            receipt(
+                "before", "RCPT-BEFORE", "", quantity=10,
+                receipt_date="2026-08-12 23:59:59",
+            ),
+            receipt(
+                "start", "RCPT-START", "", quantity=20,
+                receipt_date="2026-08-13 00:00:00",
+            ),
+            receipt(
+                "inside", "RCPT-INSIDE", "", quantity=5,
+                receipt_date="2026-08-13 18:45:00",
+            ),
+            receipt(
+                "after", "RCPT-AFTER", "", quantity=30,
+                receipt_date="2026-08-14 00:00:00",
+            ),
+        ]
+
+        context = self.route_context(
+            "?date_from=2026-08-13&date_to=2026-08-13"
+        )
+
+        self.assertEqual(
+            [item["id"] for item in context["receipts"]],
+            ["inside", "start"],
+        )
+        self.assertEqual(context["total_receipts"], 2)
+        self.assertEqual(context["total_quantity"], "25")
+
+    def test_period_and_product_only_count_matching_items_inside_period(self):
+        product_a = {
+            "brand_id": "b1", "brand": "Casio",
+            "category_id": "c1", "category": "Часы",
+            "product_id": "p1", "product_name": "G-Shock",
+            "article": "GA-2100", "quantity": 10,
+        }
+        product_b = {
+            "brand_id": "b2", "brand": "Vechasu",
+            "category_id": "c2", "category": "Аксессуары",
+            "product_id": "p2", "product_name": "Ремешок",
+            "article": "STRAP", "quantity": 20,
+        }
+        self.receipts = [
+            receipt(
+                "inside", "RCPT-IN", "target", receipt_date="2026-08-12",
+                positions=[product_a, product_b],
+            ),
+            receipt(
+                "outside", "RCPT-OUT", "target", receipt_date="2026-08-14",
+                positions=[dict(product_a, quantity=100)],
+            ),
+        ]
+
+        context = self.route_context(
+            "?date_from=2026-08-11&date_to=2026-08-13"
+            "&receipt_brand_id=b1&receipt_category_id=c1"
+            "&receipt_product_id=p1"
+        )
+
+        self.assertEqual(
+            [item["id"] for item in context["receipts"]], ["inside"]
+        )
+        self.assertEqual(context["total_receipts"], 1)
+        self.assertEqual(context["total_quantity"], "10")
+
+    def test_period_state_survives_reload_and_reset_restores_dataset(self):
+        self.receipts = [
+            receipt("inside", "RCPT-IN", "", quantity=5,
+                    receipt_date="2026-08-13 18:45:00"),
+            receipt("outside", "RCPT-OUT", "", quantity=50,
+                    receipt_date="2026-08-10 12:00:00"),
+        ]
+        query = "?date_from=2026-08-13&date_to=2026-08-13"
+
+        applied = self.route_context(query)
+        reloaded = self.route_context(query)
+        reset = self.route_context("")
+
+        self.assertEqual(
+            [item["id"] for item in applied["receipts"]], ["inside"]
+        )
+        self.assertEqual(
+            [item["id"] for item in reloaded["receipts"]], ["inside"]
+        )
+        self.assertEqual(reloaded["receipt_date_from"], "2026-08-13")
+        self.assertEqual(reloaded["receipt_date_to"], "2026-08-13")
+        self.assertEqual(reloaded["total_quantity"], "5")
+        self.assertEqual(
+            [item["id"] for item in reset["receipts"]],
+            ["inside", "outside"],
+        )
+        self.assertEqual(reset["total_receipts"], 2)
+        self.assertEqual(reset["total_quantity"], "55")
+
     def test_sorting_still_applies_after_backend_filters(self):
         self.receipts = [
             receipt("lower", "RCPT-010", "", quantity=1),
@@ -343,6 +474,14 @@ class ReceiptCatalogFiltersTest(unittest.TestCase):
             "receipt_product_id",
         ):
             self.assertIn(marker, source)
+
+        self.assertIn("function filterReceipts(periodValues = null)", source)
+        self.assertIn(
+            "onChange: (periodValues) => filterReceipts(periodValues)", source
+        )
+        self.assertIn("periodValues?.dateFrom", source)
+        self.assertIn("periodValues?.dateTo", source)
+        self.assertIn("receipts-period-2", source)
 
 
 if __name__ == "__main__":
