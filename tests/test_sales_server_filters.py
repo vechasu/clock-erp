@@ -15,7 +15,7 @@ def sale(
     product="Луч Классика",
     article="FD41",
     source="tictactoy",
-    status="active",
+    status="completed",
     created_at="2026-08-05T12:00:00",
     quantity=1,
 ):
@@ -34,6 +34,7 @@ def sale(
         "created_at": created_at,
         "quantity_value": quantity,
         "net_quantity_value": quantity,
+        "total_amount": quantity * 100,
         "order_number": f"order-{sale_id}",
         "is_cancelled": status == "cancelled",
         "sale_type": "manual",
