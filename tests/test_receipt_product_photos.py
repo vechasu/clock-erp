@@ -200,7 +200,12 @@ class ReceiptProductPhotosTest(unittest.TestCase):
         self.assertIn('class="col-photo" data-column-key="photo"', source)
         self.assertIn('loading="lazy"', source)
         self.assertIn('decoding="async"', source)
-        self.assertIn("this.nextElementSibling.hidden=false", source)
+        self.assertIn(
+            "this.nextElementSibling.removeAttribute('hidden')", source
+        )
+        self.assertIn(
+            ".receipt-product-photo-placeholder[hidden]", source
+        )
         self.assertIn("receipt-product-photo-placeholder", source)
         self.assertIn("@media (max-width: 900px)", source)
         components = (
