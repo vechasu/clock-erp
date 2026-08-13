@@ -8,6 +8,11 @@
     >
     <title>Отчёт по продажам — Vechasu ERP</title>
 
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='css/erp-components.css', v='sales-report-filters-v1') }}"
+    >
+
     <style>
         * {
             box-sizing: border-box;
@@ -78,10 +83,16 @@
 
         .filter-grid {
             display: grid;
-            grid-template-columns:
-                minmax(220px, 1.4fr)
-                repeat(2, minmax(155px, 0.7fr));
+            grid-template-columns: repeat(4, minmax(155px, 1fr));
             gap: 12px;
+        }
+
+        .field-wide {
+            grid-column: span 2;
+        }
+
+        .report-product-filter {
+            position: relative;
         }
 
         .field {
@@ -140,6 +151,12 @@
         .button-pdf {
             background: #fee2e2;
             color: #991b1b;
+        }
+
+        .button-reset {
+            border: 1px solid #cbd5e1;
+            background: #ffffff;
+            color: #475569;
         }
 
         .stats {
@@ -306,22 +323,12 @@
         method="get"
         action="{{ url_for('sales_report_page') }}"
     >
-        <input
-            type="hidden"
-            name="source"
-            value="{{ active_source }}"
-        >
         {% if filters.tab %}
             <input type="hidden" name="tab" value="{{ filters.tab }}">
         {% endif %}
-        {% for name in ("brand_id", "category_id", "product_id", "status") %}
-            {% if filters[name] %}
-                <input type="hidden" name="{{ name }}" value="{{ filters[name] }}">
-            {% endif %}
-        {% endfor %}
 
         <div class="filter-grid">
-            <div class="field">
+            <div class="field field-wide">
                 <label for="q">Поиск</label>
                 <input
                     id="q"
@@ -354,6 +361,76 @@
                     value="{{ filters.date_to }}"
                 >
             </div>
+
+            <div class="field">
+                <label for="reportBrandFilter">Бренд</label>
+                <select id="reportBrandFilter" class="control" name="brand_id">
+                    <option value="">Все бренды</option>
+                    {% for option in sales_filter_options.brands %}
+                        <option value="{{ option.value }}">{{ option.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="field">
+                <label for="reportCategoryFilter">Категория</label>
+                <select id="reportCategoryFilter" class="control" name="category_id">
+                    <option value="">Все категории</option>
+                </select>
+            </div>
+
+            <div class="field report-product-filter">
+                <label for="reportProductTrigger">Товар</label>
+                <input id="reportProductFilter" type="hidden" name="product_id">
+                <div id="reportProductCombobox" class="sales-product-combobox">
+                    <button
+                        id="reportProductTrigger"
+                        class="sales-product-combobox-trigger"
+                        type="button"
+                        role="combobox"
+                        aria-haspopup="listbox"
+                        aria-controls="reportProductMenu"
+                        aria-expanded="false"
+                    >
+                        <span id="reportProductLabel">Все товары</span>
+                        <span aria-hidden="true">⌄</span>
+                    </button>
+                    <div id="reportProductMenu" class="sales-product-combobox-menu" hidden>
+                        <input
+                            id="reportProductSearch"
+                            class="sales-product-combobox-search"
+                            type="search"
+                            placeholder="Поиск товара по названию или артикулу..."
+                            autocomplete="off"
+                        >
+                        <div
+                            id="reportProductOptions"
+                            class="sales-product-combobox-options"
+                            role="listbox"
+                        ></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="field">
+                <label for="reportStatusFilter">Статус</label>
+                <select id="reportStatusFilter" class="control" name="status">
+                    <option value="">Все статусы</option>
+                    {% for option in sales_filter_options.statuses %}
+                        <option value="{{ option.value }}"{% if filters.status == option.value %} selected{% endif %}>{{ option.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="field">
+                <label for="reportSourceFilter">Источник</label>
+                <select id="reportSourceFilter" class="control" name="source">
+                    <option value="all"{% if active_source == 'all' %} selected{% endif %}>Все источники</option>
+                    {% for option in sales_filter_options.sources %}
+                        <option value="{{ option.value }}"{% if active_source == option.value %} selected{% endif %}>{{ option.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
         </div>
 
         <div class="report-actions">
@@ -362,6 +439,13 @@
                 type="submit"
             >
                 Применить
+            </button>
+            <button
+                id="reportFilterReset"
+                class="button button-reset"
+                type="button"
+            >
+                Сбросить
             </button>
             <a
                 class="button button-excel"
@@ -458,5 +542,180 @@
     </div>
     </main>
 </div>
+<script>
+(() => {
+    const catalog = {{ sales_filter_catalog | tojson }};
+    const applied = {
+        brand_id: {{ filters.brand_id | tojson }},
+        category_id: {{ filters.category_id | tojson }},
+        product_id: {{ filters.product_id | tojson }},
+    };
+    const brand = document.getElementById("reportBrandFilter");
+    const category = document.getElementById("reportCategoryFilter");
+    const product = document.getElementById("reportProductFilter");
+    const combobox = document.getElementById("reportProductCombobox");
+    const trigger = document.getElementById("reportProductTrigger");
+    const label = document.getElementById("reportProductLabel");
+    const menu = document.getElementById("reportProductMenu");
+    const search = document.getElementById("reportProductSearch");
+    const options = document.getElementById("reportProductOptions");
+
+    const productLabel = (item) => {
+        const name = String(item?.product || "Товар без названия");
+        const article = String(item?.article || "").trim();
+        return article ? `${name} · ${article}` : name;
+    };
+    const selectedProduct = () => catalog.find(
+        (item) => String(item.product_id) === String(product.value)
+    );
+    const productItems = () => {
+        const unique = new Map();
+        catalog
+            .filter((item) => !brand.value || String(item.brand_id) === brand.value)
+            .filter((item) => !category.value || String(item.category_id) === category.value)
+            .forEach((item) => {
+                const value = String(item.product_id || "");
+                if (value && !unique.has(value)) unique.set(value, item);
+            });
+        return Array.from(unique.values());
+    };
+    function syncProductLabel() {
+        label.textContent = product.value
+            ? productLabel(selectedProduct())
+            : "Все товары";
+        trigger.title = label.textContent;
+    }
+    function renderProducts() {
+        const query = search.value.trim().toLocaleLowerCase();
+        const matches = productItems().filter((item) =>
+            !query || `${item.product || ""} ${item.article || ""}`
+                .toLocaleLowerCase().includes(query)
+        ).slice(0, 100);
+        options.replaceChildren();
+        const addOption = (value, text) => {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "sales-product-combobox-option";
+            button.dataset.productValue = value;
+            button.setAttribute("role", "option");
+            button.setAttribute("aria-selected", String(product.value === value));
+            button.textContent = text;
+            button.title = text;
+            options.appendChild(button);
+        };
+        addOption("", "Все товары");
+        matches.forEach((item) => addOption(String(item.product_id), productLabel(item)));
+        if (!matches.length && query) {
+            const empty = document.createElement("div");
+            empty.className = "sales-product-combobox-empty";
+            empty.textContent = "Ничего не найдено";
+            options.appendChild(empty);
+        }
+    }
+    function closeProduct(returnFocus = false) {
+        menu.hidden = true;
+        menu.classList.remove("is-up");
+        trigger.setAttribute("aria-expanded", "false");
+        search.value = "";
+        if (returnFocus) trigger.focus();
+    }
+    function openProduct() {
+        search.value = "";
+        renderProducts();
+        menu.hidden = false;
+        trigger.setAttribute("aria-expanded", "true");
+        search.focus();
+        requestAnimationFrame(() => {
+            const bounds = trigger.getBoundingClientRect();
+            const below = window.innerHeight - bounds.bottom - 12;
+            const above = bounds.top - 12;
+            menu.classList.toggle("is-up", menu.offsetHeight > below && above > below);
+        });
+    }
+    function cascade(values) {
+        brand.value = values.brand_id;
+        const categoryItems = new Map();
+        catalog
+            .filter((item) => !brand.value || String(item.brand_id) === brand.value)
+            .forEach((item) => categoryItems.set(String(item.category_id), item.category));
+        category.replaceChildren(new Option("Все категории", ""));
+        Array.from(categoryItems.entries())
+            .sort((left, right) => left[1].localeCompare(right[1], "ru", {sensitivity: "base"}))
+            .forEach(([value, text]) => category.add(new Option(text, value)));
+        category.value = values.category_id;
+        if (values.category_id && category.value !== values.category_id) {
+            values.category_id = "";
+            values.product_id = "";
+            category.value = "";
+        }
+        product.value = values.product_id;
+        if (values.product_id && !productItems().some(
+            (item) => String(item.product_id) === values.product_id
+        )) product.value = "";
+        syncProductLabel();
+        closeProduct();
+    }
+
+    cascade({...applied});
+    brand.addEventListener("change", () => cascade({
+        brand_id: brand.value,
+        category_id: category.value,
+        product_id: product.value,
+    }));
+    category.addEventListener("change", () => cascade({
+        brand_id: brand.value,
+        category_id: category.value,
+        product_id: product.value,
+    }));
+    trigger.addEventListener("click", () => menu.hidden ? openProduct() : closeProduct(true));
+    search.addEventListener("input", renderProducts);
+    search.addEventListener("keydown", (event) => {
+        if (event.key === "ArrowDown") {
+            event.preventDefault();
+            options.querySelector(".sales-product-combobox-option")?.focus();
+        }
+    });
+    options.addEventListener("click", (event) => {
+        const option = event.target.closest("[data-product-value]");
+        if (!option) return;
+        product.value = option.dataset.productValue;
+        syncProductLabel();
+        closeProduct(true);
+    });
+    options.addEventListener("keydown", (event) => {
+        if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+        event.preventDefault();
+        const choices = Array.from(options.querySelectorAll(
+            ".sales-product-combobox-option"
+        ));
+        const current = choices.indexOf(document.activeElement);
+        let next = current;
+        if (event.key === "Home") next = 0;
+        if (event.key === "End") next = choices.length - 1;
+        if (event.key === "ArrowDown") next = Math.min(current + 1, choices.length - 1);
+        if (event.key === "ArrowUp") next = Math.max(current - 1, 0);
+        choices[next]?.focus();
+    });
+    combobox.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && !menu.hidden) {
+            event.preventDefault();
+            event.stopPropagation();
+            closeProduct(true);
+        }
+    });
+    document.addEventListener("click", (event) => {
+        if (!menu.hidden && !combobox.contains(event.target)) closeProduct();
+    });
+    document.getElementById("reportFilterReset").addEventListener("click", () => {
+        const url = new URL(window.location.href);
+        ["q", "date_from", "date_to", "brand_id", "category_id", "product_id",
+            "status", "source", "sale_type", "product", "order_number",
+            "order_status", "delivery_method", "region", "city"]
+            .forEach((name) => url.searchParams.delete(name));
+        url.searchParams.set("source", "all");
+        window.location.assign(url.pathname + url.search);
+    });
+})();
+</script>
 </body>
 </html>

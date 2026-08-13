@@ -73,16 +73,14 @@ class ActiveFilterChipsTest(unittest.TestCase):
 
     def test_receipt_filter_urls_are_restored_and_cleared_individually(self):
         for parameter in (
-            "receipt_document",
-            "receipt_comment",
-            "receipt_brand",
-            "receipt_category",
-            "receipt_product",
+            "receipt_brand_id",
+            "receipt_category_id",
+            "receipt_product_id",
             "receipt_status",
         ):
             self.assertIn(parameter, self.receipts)
         self.assertIn("url.searchParams.delete(parameter)", self.receipts)
-        self.assertIn("receiptUrlFilters.has(parameter)", self.receipts)
+        self.assertIn("cascadeReceiptFilters({", self.receipts)
 
     def test_search_and_stock_toggle_remain_available(self):
         self.assertIn('id="warehouseSearchInput"', self.warehouse)
