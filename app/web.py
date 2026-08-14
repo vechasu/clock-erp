@@ -1672,6 +1672,7 @@ def warehouse_page():
             offset=(page - 1) * per_page,
             sort_by=sort_by,
             sort_dir=sort_dir,
+            include_brands=False,
         )
         pages = max(1, (result["total"] + per_page - 1) // per_page)
         if page > pages:
@@ -1682,6 +1683,7 @@ def warehouse_page():
                 offset=(page - 1) * per_page,
                 sort_by=sort_by,
                 sort_dir=sort_dir,
+                include_brands=False,
             )
         return render_template(
             "warehouse_categories.html",
@@ -1705,7 +1707,7 @@ def warehouse_page():
             ))
         return render_template(
             "warehouse_brands.html",
-            brands=shared_catalog.list_brand_overviews(
+            brands=shared_catalog.list_brand_summaries(
                 query=(request.args.get("q") or "").strip(), limit=500,
             ),
             brand=brand,
@@ -1812,6 +1814,8 @@ def warehouse_page():
         created_to=created_date_to,
         brand_id=selected_brand_id or None,
         category_id=selected_category_id or None,
+        include_cell_item_names=False,
+        include_facets=False,
     )
     catalog_items = build_excel_warehouse_items(catalog["items"])
     items = get_excel_warehouse_items(catalog=catalog)
@@ -1898,13 +1902,16 @@ def warehouse_page():
             sort_dir=sort_dir,
             add_request_id=uuid.uuid4().hex,
             visible_positions=visible_positions,
-            brand_groups=brand_groups,
-            filter_brand_groups=filter_brand_groups,
+            # Shared comboboxes fetch their options on demand. Keeping hundreds
+            # of identical options in three initial widgets inflated every
+            # warehouse response without adding functionality.
+            brand_groups=[],
+            filter_brand_groups=[],
             brand_all_count="{} ед.".format(format_stock_number(sum(
                 float(item.get("stock_total") or 0)
                 for item in shared_brand_groups
             ))),
-            category_groups=category_groups,
+            category_groups=[],
             category_all_count="{} ед.".format(format_stock_number(sum(
                 float(item.get("stock_total") or 0)
                 for item in category_groups
@@ -3427,6 +3434,16 @@ def get_repair_catalog_product(product_id, items=None):
     product_id = str(product_id or "").strip()
     if not product_id:
         return None
+    if items is None:
+        try:
+            matches = ExcelProductCatalog().search_repair_catalog_items(
+                product_id=product_id,
+                limit=1,
+            )
+        except Exception:
+            app.logger.exception("Failed to load repair catalog product")
+            matches = []
+        items = matches
     return next(
         (
             item
@@ -3716,6 +3733,19 @@ def build_repair_form_payload(
         product_id,
         catalog_items,
     ) if product_id else None
+    if product_id and catalog_product is None:
+        if product_id == _repair_text(existing.get("product_id")):
+            catalog_product = {
+                "id": product_id,
+                "name": _repair_text(existing.get("product_name")),
+                "brand": _repair_text(existing.get("brand")),
+                "model": _repair_text(existing.get("model")),
+                "article": _repair_text(existing.get("article")),
+                "url": _repair_text(existing.get("product_url")),
+                "image_url": _repair_text(existing.get("product_image_url")),
+            }
+        else:
+            raise ValueError("Выбранный товар не найден в каталоге")
     order_id = _repair_text(form.get("order_id"))
     order_number = _repair_text(form.get("order_number"))
     order_source = _validated_repair_choice(
@@ -4028,10 +4058,15 @@ def repair_page():
     page = pagination["page"]
     visible_cases, page = paginate_erp_records(cases, page, per_page)
 
-    catalog_items = build_repair_catalog_items()
     prepared_cases = [prepare_repair_case(case) for case in visible_cases]
     repeat_candidates = [
-        prepare_repair_case(case)
+        {
+            "id": case.get("id"),
+            "client_name": case.get("client_name"),
+            "brand": case.get("brand"),
+            "model": case.get("model"),
+            "product_name": case.get("product_name"),
+        }
         for case in all_cases
         if case.get("status") == "completed"
     ]
@@ -4054,7 +4089,6 @@ def repair_page():
         return_method_labels=RETURN_METHOD_LABELS,
         completion_result_labels=COMPLETION_RESULT_LABELS,
         action_labels=REPAIR_ACTION_LABELS,
-        catalog_items=catalog_items,
         repeat_candidates=repeat_candidates,
     )
 
@@ -4065,10 +4099,8 @@ def repair_add():
     now = repair_now()
     case_id = str(uuid.uuid4())
     try:
-        catalog_items = build_repair_catalog_items()
         payload = build_repair_form_payload(
             request.form,
-            catalog_items=catalog_items,
         )
         attachments = save_repair_uploads(case_id)
     except ValueError as error:
@@ -4157,7 +4189,6 @@ def repair_update():
     case_id = _repair_text(request.form.get("case_id"))
     actor = current_repair_user_name()
     try:
-        catalog_items = build_repair_catalog_items()
         attachments = save_repair_uploads(case_id)
     except ValueError as error:
         return _repair_redirect(str(error), notice="error")
@@ -4170,7 +4201,6 @@ def repair_update():
             payload = build_repair_form_payload(
                 request.form,
                 existing=case,
-                catalog_items=catalog_items,
                 allow_missing_required=bool(case.get("legacy_import")),
             )
             case.update(payload)
@@ -16871,7 +16901,6 @@ def find_api_repair(case_id, cases=None):
 def create_api_repair(payload, idempotency_key=""):
     now = repair_now()
     case_id = str(uuid.uuid4())
-    catalog_items = build_repair_catalog_items()
     order_snapshot = None
     order_item = None
     if _repair_text(payload.get("order_id")):
@@ -16880,7 +16909,6 @@ def create_api_repair(payload, idempotency_key=""):
         )
     normalized = build_repair_form_payload(
         payload,
-        catalog_items=catalog_items,
         order_snapshot=order_snapshot,
         order_item=order_item,
     )
@@ -16977,15 +17005,24 @@ def create_api_repair(payload, idempotency_key=""):
 @app.route("/api/repairs/catalog", methods=["GET"])
 @app.route("/api/v1/repairs/catalog", methods=["GET"])
 def api_repairs_catalog():
-    query = (request.args.get("q") or "").strip().casefold()
-    items = build_repair_catalog_items()
-    if query:
-        items = [
-            item for item in items
-            if query in str(item.get("search") or "")
-        ]
-    limit = api_positive_int(request.args.get("limit"), 100, 200)
-    return api_success(items[:limit], total=len(items))
+    query = (request.args.get("q") or "").strip()
+    product_id = (request.args.get("product_id") or "").strip()
+    if not product_id and len(query) < 2:
+        return api_success([], total=0, limit=20)
+    limit = api_positive_int(request.args.get("limit"), 20, 20)
+    items = ExcelProductCatalog().search_repair_catalog_items(
+        query=query,
+        product_id=product_id or None,
+        limit=limit,
+    )
+    payload = [{
+        "id": str(item.get("id") or ""),
+        "name": str(item.get("name") or ""),
+        "brand": str(item.get("brand") or ""),
+        "model": str(item.get("model") or ""),
+        "article": str(item.get("article") or ""),
+    } for item in items]
+    return api_success(payload, total=len(payload), limit=limit)
 
 
 @app.route("/api/repairs/orders", methods=["GET"])
@@ -17193,7 +17230,6 @@ def api_repair_resource(case_id):
             normalized = build_repair_form_payload(
                 merged,
                 existing=target,
-                catalog_items=build_repair_catalog_items(),
                 allow_missing_required=bool(target.get("legacy_import")),
                 order_snapshot=order_snapshot,
                 order_item=order_item,

@@ -96,6 +96,9 @@
         .repair-order-result:hover { background: #f7faff; }
         .repair-order-result:last-child { border-bottom: 0; }
         .repair-order-selected { margin-top: 8px; padding: 10px 12px; border-radius: 9px; background: #edf5ff; color: #2456a6; font-size: 13px; }
+        .repair-product-search-status { display: block; min-height: 18px; margin-top: 6px; color: #748095; font-size: 12px; }
+        .repair-product-search-status.is-error { color: #b42318; }
+        [data-product-search] + select { margin-top: 7px; }
         .repair-detail-summary { display: grid; grid-template-columns: 1fr auto; gap: 14px; align-items: start; }
         .repair-detail-product { margin-top: 10px; font-size: 18px; font-weight: 850; }
         .repair-detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 18px; }
@@ -223,7 +226,7 @@
             <label class="repair-field"><span>Где общаемся *</span><select class="repair-control" name="communication_channel">{% for value, label in channel_labels.items() %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></label>
         </div></section>
         <section class="repair-form-section"><h3>Товар и обращение</h3><div class="repair-form-grid">
-            <label class="repair-field full" data-manual-product><span>Товар из каталога</span><select class="repair-control" name="product_id"><option value="">Ввести вручную</option>{% for item in catalog_items %}<option value="{{ item.id }}" data-name="{{ item.name }}" data-brand="{{ item.brand }}" data-model="{{ item.model }}">{{ item.brand }} · {{ item.name }}</option>{% endfor %}</select></label>
+            <label class="repair-field full" data-manual-product><span>Товар из каталога</span><input class="repair-control" type="search" data-product-search placeholder="Введите минимум 2 символа" autocomplete="off"><select class="repair-control" name="product_id" aria-label="Результаты поиска товара"><option value="">Ввести вручную</option></select><small class="repair-product-search-status" data-product-search-status aria-live="polite">Начните вводить название, бренд, артикул или идентификатор</small></label>
             <label class="repair-field"><span>Бренд</span><input class="repair-control" name="brand"></label>
             <label class="repair-field"><span>Модель или название *</span><input class="repair-control" name="model" required></label>
             <label class="repair-field"><span>Тип ремонта *</span><select class="repair-control" name="request_type">{% for value, label in type_labels.items() %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></label>
@@ -333,6 +336,41 @@
 
     async function loadRepair(id) { title.textContent='Карточка ремонта'; subtitle.textContent='Загрузка…'; body.innerHTML='<div class="repair-loading">Загружаем карточку…</div>'; footer.innerHTML=''; openDrawer(); try { renderDetail(await api(`/api/v1/repairs/${encodeURIComponent(id)}`)); } catch(error) { body.innerHTML=`<div class="repair-error">${escapeHtml(error.message)}</div>`; } }
 
+    function populateRepairCatalog(select, items, selectedValue) {
+        select.innerHTML = '<option value="">Ввести вручную</option>' + items.map(item => `<option value="${escapeHtml(item.id)}" data-name="${escapeHtml(item.name)}" data-brand="${escapeHtml(item.brand)}" data-model="${escapeHtml(item.model)}">${escapeHtml([item.brand,item.name,item.article].filter(Boolean).join(' · '))}</option>`).join('');
+        select.value = selectedValue || '';
+    }
+    function bindRepairCatalogSearch(form, repair) {
+        const search = form.querySelector('[data-product-search]');
+        const status = form.querySelector('[data-product-search-status]');
+        const select = form.elements.product_id;
+        let timer = 0;
+        let controller = null;
+        let requestSequence = 0;
+        const setStatus = (message, error = false) => { status.textContent=message; status.classList.toggle('is-error',error); };
+        if (repair?.product_id) search.value=[repair.brand,repair.product_name||repair.model].filter(Boolean).join(' · ');
+        search.addEventListener('input', () => {
+            clearTimeout(timer); controller?.abort(); requestSequence += 1;
+            const query=search.value.trim();
+            populateRepairCatalog(select, [], '');
+            if(query.length<2){setStatus('Введите минимум 2 символа');return;}
+            const sequence=requestSequence;
+            timer=setTimeout(async()=>{
+                controller=new AbortController(); select.disabled=true; setStatus('Ищем товары…');
+                try {
+                    const items=await api(`/api/v1/repairs/catalog?q=${encodeURIComponent(query)}&limit=20`,{signal:controller.signal});
+                    if(sequence!==requestSequence)return;
+                    populateRepairCatalog(select,items,'');
+                    setStatus(items.length?`Найдено: ${items.length}. Выберите товар в списке.`:'Товары не найдены');
+                } catch(error) {
+                    if(error.name==='AbortError'||sequence!==requestSequence)return;
+                    setStatus(error.message||'Не удалось выполнить поиск',true);
+                } finally {
+                    if(sequence===requestSequence)select.disabled=false;
+                }
+            },300);
+        });
+    }
     function openEditor(repair = null) {
         editingId = repair?.id || '';
         const fragment = document.getElementById('repairCreateTemplate').content.cloneNode(true); body.replaceChildren(fragment); title.textContent = repair ? 'Редактировать ремонт' : 'Добавить ремонт'; subtitle.textContent = repair ? `${repair.order_label} · ${repair.client_name}` : 'Новое обращение';
@@ -341,7 +379,9 @@
         form.elements.request_type.addEventListener('change', () => { body.querySelector('[data-parent-field]').hidden = form.elements.request_type.value !== 'repeat_repair'; });
         form.elements.product_id.addEventListener('change', () => { const option=form.elements.product_id.selectedOptions[0]; if(option?.value){ form.elements.brand.value=option.dataset.brand||''; form.elements.model.value=option.dataset.model||option.dataset.name||''; } });
         let orderTimer=0; const search=body.querySelector('[data-order-search]'); search.addEventListener('input',()=>{ clearTimeout(orderTimer); orderTimer=setTimeout(()=>searchOrders(search.value,form),350); });
+        if (repair?.product_id) form.elements.product_id.innerHTML += `<option value="${escapeHtml(repair.product_id)}" data-name="${escapeHtml(repair.product_name)}" data-brand="${escapeHtml(repair.brand)}" data-model="${escapeHtml(repair.model)}">${escapeHtml([repair.brand,repair.product_name||repair.model].filter(Boolean).join(' · '))}</option>`;
         if (repair) fillEditor(form, repair); else { const tomorrow = new Date(Date.now()+86400000).toISOString().slice(0,10); form.elements.control_date.value=tomorrow; }
+        bindRepairCatalogSearch(form,repair);
         footer.innerHTML='<button class="repair-button" type="button" data-cancel-editor>Отмена</button><button class="repair-button primary" type="submit" form="repairEditor">Сохранить</button>';
         footer.querySelector('[data-cancel-editor]').addEventListener('click', () => repair ? renderDetail(repair) : closeDrawer());
         form.addEventListener('submit', submitEditor); openDrawer();

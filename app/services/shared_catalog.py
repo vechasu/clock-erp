@@ -445,6 +445,54 @@ class SharedCatalog:
             ),
         } for row in brand_rows]
 
+    def list_brand_summaries(self, query="", limit=200):
+        """Load list-page brand metrics without building category details."""
+        self.database.initialize()
+        query = catalog_search_key(query)
+        parameters = []
+        where = "WHERE b.active = 1"
+        if query:
+            where += " AND catalog_search_key(b.name) LIKE ? ESCAPE '\\'"
+            parameters.append(catalog_prefix_pattern(query))
+        parameters.append(max(1, min(int(limit), 500)))
+        with self.database.connect() as connection:
+            if query:
+                register_catalog_search(connection)
+            brand_rows = connection.execute(
+                "SELECT b.id, b.name, b.active, COUNT(p.id) AS product_count, "
+                "COALESCE(SUM(CASE WHEN p.stock != 0 THEN 1 ELSE 0 END), 0) "
+                "AS nonzero_count, COALESCE(SUM(p.stock), 0) AS stock_total "
+                "FROM erp_brands b LEFT JOIN catalog_excel_products p "
+                "ON p.brand_id = b.id AND p.active = 1 " + where +
+                " GROUP BY b.id ORDER BY b.name COLLATE NOCASE LIMIT ?",
+                parameters,
+            ).fetchall()
+            brand_ids = [int(row["id"]) for row in brand_rows]
+            category_rows = []
+            if brand_ids:
+                placeholders = ", ".join("?" for _ in brand_ids)
+                category_rows = connection.execute(
+                    "SELECT bc.brand_id, c.normalized_name AS category_key "
+                    "FROM erp_brand_categories bc JOIN erp_categories c "
+                    "ON c.id = bc.category_id AND c.active = 1 "
+                    "WHERE bc.brand_id IN ({0}) UNION SELECT p.brand_id, '' "
+                    "FROM catalog_excel_products p WHERE p.active = 1 "
+                    "AND p.category_id IS NULL AND p.brand_id IN ({0})".format(
+                        placeholders
+                    ),
+                    brand_ids + brand_ids,
+                ).fetchall()
+        category_counts = {}
+        for row in category_rows:
+            category_counts[int(row["brand_id"])] = (
+                category_counts.get(int(row["brand_id"]), 0) + 1
+            )
+        return [{
+            **self._brand(row),
+            "nonzero_count": int(row["nonzero_count"]),
+            "category_count": category_counts.get(int(row["id"]), 0),
+        } for row in brand_rows]
+
     def get_brand_overview(self, brand_id):
         try:
             brand_id = int(brand_id)
@@ -561,6 +609,7 @@ class SharedCatalog:
         category_id=None,
         sort_by="name",
         sort_dir="asc",
+        include_brands=True,
     ):
         """Return the global category registry with product-derived metrics."""
         self.database.initialize()
@@ -624,7 +673,65 @@ class SharedCatalog:
 
             normal_limit = max(0, limit - system_offset)
             normal_offset = max(0, offset - (1 if system_matches else 0))
-            if normal_limit:
+            use_name_fast_path = sort_by == "name"
+            if normal_limit and use_name_fast_path:
+                category_rows = connection.execute(
+                    "SELECT c.id, c.brand_id, c.name, c.active, "
+                    "COALESCE(category_duplicates.duplicate_count, 1) "
+                    "AS duplicate_count FROM erp_categories c "
+                    "LEFT JOIN (SELECT normalized_name, COUNT(*) "
+                    "AS duplicate_count FROM erp_categories WHERE active = 1 "
+                    "GROUP BY normalized_name HAVING COUNT(*) > 1) "
+                    "category_duplicates ON category_duplicates.normalized_name "
+                    "= c.normalized_name WHERE " + where_sql +
+                    " ORDER BY c.name COLLATE NOCASE " + direction +
+                    ", c.id ASC LIMIT ? OFFSET ?",
+                    parameters + [normal_limit, normal_offset],
+                ).fetchall()
+                category_ids = [int(row["id"]) for row in category_rows]
+                product_metrics = {}
+                brand_counts = {}
+                if category_ids:
+                    placeholders = ", ".join("?" for _ in category_ids)
+                    product_metrics = {
+                        int(row["category_id"]): row
+                        for row in connection.execute(
+                            "SELECT category_id, COUNT(*) AS product_count, "
+                            "COALESCE(SUM(CASE WHEN stock != 0 THEN 1 ELSE 0 END), 0) "
+                            "AS nonzero_count, COALESCE(SUM(stock), 0) AS stock_total "
+                            "FROM catalog_excel_products WHERE active = 1 "
+                            "AND category_id IN ({}) GROUP BY category_id".format(
+                                placeholders
+                            ),
+                            category_ids,
+                        ).fetchall()
+                    }
+                    brand_counts = {
+                        int(row["category_id"]): int(row["brand_count"])
+                        for row in connection.execute(
+                            "SELECT category_id, COUNT(*) AS brand_count FROM ("
+                            "SELECT bc.category_id, bc.brand_id "
+                            "FROM erp_brand_categories bc WHERE bc.category_id "
+                            "IN ({0}) UNION SELECT p.category_id, "
+                            "COALESCE(p.brand_id, 0) FROM catalog_excel_products p "
+                            "WHERE p.active = 1 AND p.category_id IN ({0})) "
+                            "category_brands GROUP BY category_id".format(
+                                placeholders
+                            ),
+                            category_ids + category_ids,
+                        ).fetchall()
+                    }
+                for row in category_rows:
+                    prepared = dict(row)
+                    metrics = product_metrics.get(int(row["id"]))
+                    prepared.update({
+                        "product_count": int(metrics["product_count"]) if metrics else 0,
+                        "nonzero_count": int(metrics["nonzero_count"]) if metrics else 0,
+                        "stock_total": metrics["stock_total"] if metrics else 0,
+                        "brand_count": brand_counts.get(int(row["id"]), 0),
+                    })
+                    rows.append(prepared)
+            elif normal_limit:
                 rows.extend(connection.execute(
                     "SELECT c.id, c.brand_id, c.name, c.active, "
                     "COALESCE(MAX(category_duplicates.duplicate_count), 1) "
@@ -656,7 +763,7 @@ class SharedCatalog:
 
             category_ids = [int(row["id"]) for row in rows if int(row["id"])]
             brand_rows = []
-            if category_ids:
+            if include_brands and category_ids:
                 placeholders = ", ".join("?" for _ in category_ids)
                 brand_rows = connection.execute(
                     "SELECT pairs.category_id, pairs.brand_id AS id, "
@@ -682,7 +789,7 @@ class SharedCatalog:
                     ),
                     category_ids + category_ids,
                 ).fetchall()
-            if any(int(row["id"]) == 0 for row in rows):
+            if include_brands and any(int(row["id"]) == 0 for row in rows):
                 brand_rows.extend(connection.execute(
                     "SELECT 0 AS category_id, COALESCE(b.id, 0) AS id, "
                     "COALESCE(b.name, 'Без бренда') AS name, COUNT(p.id) "
