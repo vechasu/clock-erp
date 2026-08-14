@@ -309,19 +309,6 @@
                 displayValue || value || emptyLabel;
         }
 
-        const bulkField = combobox.closest(
-            ".warehouse-bulk-field"
-        );
-        const autoApplyToggle = bulkField
-            ? bulkField.querySelector(
-                'input[data-bulk-auto-apply="true"]'
-            )
-            : null;
-
-        if (autoApplyToggle) {
-            autoApplyToggle.checked = Boolean(value);
-        }
-
         combobox
             .querySelectorAll(".brand-combobox-option")
             .forEach(function(option) {
@@ -330,14 +317,6 @@
                     (option.dataset.brand || "") === value
                 );
             });
-
-        if (
-            autoApplyToggle
-            && typeof window.syncWarehouseBulkSelection
-                === "function"
-        ) {
-            window.syncWarehouseBulkSelection();
-        }
 
         if (previousValue !== value) {
             combobox.dispatchEvent(

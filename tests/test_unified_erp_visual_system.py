@@ -57,7 +57,7 @@ class UnifiedErpVisualSystemTest(unittest.TestCase):
     def test_product_add_form_is_one_modal_overlay(self):
         source = self.source("app/templates/warehouse.html")
         modal = source.split('id="warehouseAddModal"', 1)[1].split(
-            'id="warehouseBulkPanel"', 1
+            'id="warehouseLoadingState"', 1
         )[0]
         self.assertIn("data-erp-modal-shell", modal)
         self.assertIn("data-erp-modal-lock", modal)
