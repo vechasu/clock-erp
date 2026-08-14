@@ -80,6 +80,21 @@ class CategoryManagementTest(unittest.TestCase):
         self.assertEqual(items["Без категории"]["stock_total"], 3)
         self.assertEqual(unassigned["category_id"], None)
 
+    def test_list_summary_skips_brand_details_but_keeps_counts(self):
+        self.product("A", "A", "Casio", "Часы", 5)
+        self.product("B", "B", "Seiko", "Часы", 0)
+
+        result = self.catalog.list_category_overviews(
+            limit=100, include_brands=False
+        )
+        item = self.by_name(result)["Часы"]
+
+        self.assertEqual(item["product_count"], 2)
+        self.assertEqual(item["brand_count"], 2)
+        self.assertEqual(item["nonzero_count"], 1)
+        self.assertEqual(item["stock_total"], 5)
+        self.assertEqual(item["brands"], [])
+
     def test_live_search_is_normalized_and_keeps_empty_entities(self):
         brand = self.catalog.create_brand("Casio")
         self.catalog.create_brand_category(brand["id"], "  Ёлочные часы  ")

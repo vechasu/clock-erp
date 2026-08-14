@@ -2,6 +2,7 @@ import json
 import re
 import tempfile
 import unittest
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest import mock
@@ -203,6 +204,122 @@ class CatalogFilteringTest(unittest.TestCase):
         self.assertIn('id="warehouseInStockToggle"', template)
         self.assertIn('"in_stock",\n                "page"', template)
         self.assertIn('in_stock: ["in_stock"]', template)
+
+    def test_stock_filter_preserves_fractional_and_legacy_value_semantics(self):
+        with self.database.transaction() as connection:
+            ids = [row[0] for row in connection.execute(
+                "SELECT id FROM catalog_excel_products WHERE brand_id = ? "
+                "ORDER BY id LIMIT 5", (self.brand["id"],)
+            ).fetchall()]
+            values = (0.5, 2.5, 0, -1, "legacy-invalid")
+            connection.executemany(
+                "UPDATE catalog_excel_products SET stock = ? WHERE id = ?",
+                list(zip(values, ids)),
+            )
+
+        result = self.excel.list_products(
+            brand_id=self.brand["id"], category_id=self.category_id,
+            hide_zero=True, sort_by="stock", sort_dir="asc", per_page=200,
+        )
+
+        self.assertEqual(result["total"], 2)
+        self.assertEqual([item["stock"] for item in result["items"]], [0.5, 2.5])
+
+    def test_repair_catalog_endpoint_uses_lightweight_catalog_projection(self):
+        response = self.client.get(
+            "/api/v1/repairs/catalog?q=barcelona%2000001&limit=10"
+        )
+        payload = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(payload["data"]), 1)
+        self.assertEqual(payload["data"][0]["name"], "Barcelona 00001")
+        self.assertEqual(payload["data"][0]["brand"], "666 Barcelona")
+        self.assertEqual(
+            set(payload["data"][0]),
+            {"id", "name", "brand", "model", "article"},
+        )
+
+    def test_repair_catalog_requires_two_characters_and_caps_at_twenty(self):
+        empty = self.client.get("/api/v1/repairs/catalog").get_json()
+        short = self.client.get("/api/v1/repairs/catalog?q=b").get_json()
+        matches = self.client.get(
+            "/api/v1/repairs/catalog?q=barcelona&limit=999"
+        ).get_json()
+
+        self.assertEqual(empty["data"], [])
+        self.assertEqual(short["data"], [])
+        self.assertEqual(len(matches["data"]), 20)
+        self.assertEqual(matches["meta"]["limit"], 20)
+
+    def test_repair_catalog_like_metacharacters_are_literal(self):
+        percent = self.client.get("/api/v1/repairs/catalog?q=%25%25")
+        underscore = self.client.get("/api/v1/repairs/catalog?q=__")
+
+        self.assertEqual(percent.status_code, 200)
+        self.assertEqual(percent.get_json()["data"], [])
+        self.assertEqual(underscore.status_code, 200)
+        self.assertEqual(underscore.get_json()["data"], [])
+
+    def test_repair_catalog_can_resolve_exact_product_id(self):
+        product = self.excel.list_products(
+            brand_id=self.brand["id"], per_page=1,
+        )["items"][0]
+        payload = self.client.get(
+            "/api/v1/repairs/catalog?product_id={}".format(product["id"])
+        ).get_json()
+
+        self.assertEqual(len(payload["data"]), 1)
+        self.assertEqual(payload["data"][0]["id"], str(product["id"]))
+
+    def test_repair_catalog_searches_current_external_identifiers(self):
+        product = self.excel.list_products(
+            brand_id=self.brand["id"], per_page=1,
+        )["items"][0]
+        with self.database.transaction() as connection:
+            connection.execute(
+                "UPDATE catalog_excel_products SET moysklad_product_id = ?, "
+                "bitrix_external_product_id = ?, bitrix_xml_id = ? WHERE id = ?",
+                ("ms-repair-42", "bx-repair-42", "xml-repair-42", product["id"]),
+            )
+
+        for query in ("ms-repair-42", "bx-repair-42", "xml-repair-42"):
+            payload = self.client.get(
+                "/api/v1/repairs/catalog?q={}".format(query)
+            ).get_json()
+            self.assertEqual(payload["data"][0]["id"], str(product["id"]))
+
+    def test_repair_catalog_search_is_one_read_only_sql_statement(self):
+        statements = []
+        original_connect = self.database.connect
+
+        @contextmanager
+        def traced_connect():
+            with original_connect() as connection:
+                connection.set_trace_callback(statements.append)
+                yield connection
+
+        with mock.patch.object(self.database, "connect", side_effect=traced_connect):
+            items = self.excel.search_repair_catalog_items("barcelona", limit=20)
+
+        sql = [statement.lstrip().upper() for statement in statements]
+        self.assertEqual(len(items), 20)
+        self.assertEqual(sum(
+            "SELECT P.ID, P.EXCEL_NAME_RAW AS NAME" in statement
+            for statement in sql
+        ), 1)
+        self.assertFalse(any(statement.startswith(
+            ("INSERT", "UPDATE", "DELETE", "REPLACE")
+        ) for statement in sql))
+
+    def test_repair_catalog_requires_authentication_when_auth_is_enabled(self):
+        web.app.config["AUTH_TESTING"] = True
+        try:
+            response = self.client.get("/api/v1/repairs/catalog?q=barcelona")
+        finally:
+            web.app.config["AUTH_TESTING"] = False
+
+        self.assertEqual(response.status_code, 401)
 
     def test_warehouse_brand_and_category_render_two_active_filter_chips(self):
         response = self.client.get(
