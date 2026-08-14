@@ -1,7 +1,7 @@
 # Реестр документации Vechasu ERP
 
 Реестр составлен 2026-08-14 по чистому `origin/main` на commit
-`975ef2572edfbf3568c5fac430d31f9d79af1d23`. Production не проверялся: задача
+`3158cb7de5328bd71d28fd6bff30b46edc27fb9b`. Production не проверялся: задача
 не разрешает SSH или deploy. Дата в колонке «Проверено» взята только из самого
 документа либо обозначает текущую сверку с кодом; выдуманных дат нет.
 
@@ -17,7 +17,17 @@
 | `docs/README.md` | Карта разделов, статусы и правила документации | Сверено с деревом `origin/main` | `current` | 2026-08-14 | документация | `docs/README.md` | нет | нет | Оставить |
 | `docs/document-register.md` | Инвентаризация и план будущего размещения | Сверено с Git-деревом и выбранными реализациями | `current` | 2026-08-14 | документация | `docs/document-register.md` | поддерживать | нет | Обновлять при каждом изменении документов |
 | `docs/product/README.md` | Карта существующих продуктовых модулей, URL, действий и тестов | Сверено с Flask routes, services, templates и test tree | `current` | 2026-08-14 | product | без изменений | поддерживать | нет | Обновлять при изменении подтверждённого product contract |
-| `docs/architecture/README.md` | Фактическая архитектура и границы current/legacy/planned/unknown | Сверено с `app/`, `frontend/`, routes и storage code | `current` | 2026-08-14 | architecture | без изменений | поддерживать | нет | Не добавлять production-факты без проверки |
+| `docs/architecture/README.md` | Индекс архитектурного аудита и verified baseline | Сверено с `app/`, `frontend/`, routes, schema and tests | `current` | 2026-08-14 | architecture | без изменений | поддерживать | нет | Не добавлять production-факты без проверки |
+| `docs/architecture/current-state.md` | Фактические system/layer/dependency boundaries | Flask composition, imports, startup, CLI and CI inspected | `current` | 2026-08-14 | architecture | без изменений | поддерживать | нет | Rebaseline after structural changes |
+| `docs/architecture/module-map.md` | Status/URL/logic/data/UI/test/coupling map for ERP modules | Routes, templates, services, schema and tests cross-checked | `current` | 2026-08-14 | product, architecture | без изменений | поддерживать | нет | Keep broken/partial distinct from implemented |
+| `docs/architecture/request-flows.md` | URL-to-response/data chains for key read/write scenarios | Handlers, services, transaction calls and tests traced | `current` | 2026-08-14 | architecture | без изменений | поддерживать | нет | Update when a boundary moves |
+| `docs/architecture/data-and-transactions.md` | SQLite/JSON/external ownership and transaction map | SQL schema and write services inspected; no data read | `current` | 2026-08-14 | database, architecture | без изменений | поддерживать | нет | Do not infer production storage contents |
+| `docs/architecture/frontend-boundaries.md` | Actual Jinja/JS/CSS/Vite/React roles and contracts | Templates, static assets, frontend package and tests inspected | `current` | 2026-08-14 | frontend | без изменений | поддерживать | нет | React remains absent from current runtime |
+| `docs/architecture/integration-boundaries.md` | Bitrix, MoySklad and mentioned-channel adapter matrix | Clients, call sites, fields and mock tests inspected | `current` | 2026-08-14 | integrations | без изменений | поддерживать | нет | Runtime availability/schedules remain unknown |
+| `docs/architecture/risks.md` | Prioritized architecture risk register | Evidence links point to current code/docs | `current` | 2026-08-14 | architecture, security | без изменений | поддерживать | нет | Reassess after each roadmap stage |
+| `docs/architecture/target-state.md` | Proposed evolutionary modular-monolith boundaries | Derived from current seams and explicit constraints | `draft` | 2026-08-14 | architecture | без изменений | да | нет | Owner approval required |
+| `docs/architecture/web-py-decomposition.md` | Quantitative audit and extraction candidates | AST/text counts and code seams checked | `current` | 2026-08-14 | architecture | без изменений | поддерживать | нет | Recount when baseline changes |
+| `docs/architecture/roadmap.md` | Proposed small-PR extraction plan and pilot rationale | Current coupling/tests used as gates | `draft` | 2026-08-14 | architecture, quality | без изменений | да | нет | Owner approval required before implementation |
 | `docs/design/README.md` | Текущие tokens, primitives, shell и UI states | Сверено с CSS, shared JS и Jinja templates | `current` | 2026-08-14 | design | без изменений | поддерживать | нет | Не включать незакоммиченный redesign |
 | `docs/ux/README.md` | Навигация, query state, поиск, фильтры, таблицы и responsive behavior | Сверено с routes, templates, shared JS и browser tests | `current` | 2026-08-14 | UX | без изменений | поддерживать | нет | Фиксировать различия страниц, не выдумывать общий стандарт |
 | `docs/quality/definition-of-done.md` | Практический checklist готовности изменения | Команды и примеры сверены с CI, package scripts и test tree | `current` | 2026-08-14 | quality | без изменений | поддерживать | нет | Применять только релевантные проверки |
