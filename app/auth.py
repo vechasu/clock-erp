@@ -60,6 +60,13 @@ COMMON_PASSWORDS = {
 PASSWORD_HASH_METHOD = "pbkdf2:sha256:600000"
 TOKEN_EMAIL_VERIFICATION = "email_verification"
 TOKEN_PASSWORD_RESET = "password_reset"
+LOGIN_PUBLIC_ERROR = "Неверный email или пароль."
+AUTH_RATE_LIMIT_WINDOW_SECONDS = 15 * 60
+LOGIN_EMAIL_RATE_LIMIT = 8
+LOGIN_IP_RATE_LIMIT = 60
+LOGIN_GLOBAL_RATE_LIMIT = 500
+AUTH_IDLE_TIMEOUT_SECONDS = 12 * 60 * 60
+AUTH_ABSOLUTE_TIMEOUT_SECONDS = 7 * 24 * 60 * 60
 LOGGER = logging.getLogger(__name__)
 
 
@@ -80,14 +87,6 @@ def invitation_digest(token):
 
 def token_digest(token):
     return invitation_digest(token)
-
-
-def allowed_emails(value):
-    return {
-        normalize_email(item)
-        for item in str(value or "").split(",")
-        if normalize_email(item)
-    }
 
 
 def safe_next_url(value, default="/"):
@@ -333,6 +332,13 @@ class AuthStore:
                 connection.execute(
                     "BEGIN IMMEDIATE"
                 )
+                if connection.execute(
+                    "SELECT COUNT(*) FROM users"
+                ).fetchone()[0]:
+                    raise RegistrationError(
+                        "bootstrap",
+                        "Начальная настройка уже завершена: в ERP есть пользователи.",
+                    )
                 cursor = connection.execute(
                     """
                     INSERT INTO users (
@@ -396,6 +402,47 @@ class AuthStore:
                     now,
                 ),
             )
+        return token
+
+    def create_bootstrap_invitation(self, lifetime_hours):
+        token = secrets.token_urlsafe(32)
+        token_hash = invitation_digest(token)
+        now = int(time.time())
+        expires_at = now + int(lifetime_hours) * 3600
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            if connection.execute(
+                "SELECT COUNT(*) FROM users"
+            ).fetchone()[0]:
+                connection.rollback()
+                raise RegistrationError(
+                    "bootstrap",
+                    "Начальная настройка уже завершена: в ERP есть пользователи.",
+                )
+            if connection.execute(
+                """
+                SELECT 1 FROM invitations
+                WHERE created_by IS NULL AND role = 'admin'
+                  AND state = 'active' AND expires_at > ?
+                LIMIT 1
+                """,
+                (now,),
+            ).fetchone():
+                connection.rollback()
+                raise RegistrationError(
+                    "bootstrap",
+                    "Активная начальная ссылка уже существует.",
+                )
+            connection.execute(
+                """
+                INSERT INTO invitations (
+                    token_hash, email, email_normalized, role, expires_at,
+                    created_by, created_at
+                ) VALUES (?, NULL, NULL, 'admin', ?, NULL, ?)
+                """,
+                (token_hash, expires_at, now),
+            )
+            connection.commit()
         return token
 
     def user_count(self):
@@ -531,9 +578,10 @@ class AuthStore:
                     """
                     INSERT INTO users (
                         first_name, last_name, email, email_normalized,
-                        password_hash, role, created_at
+                        password_hash, role, created_at, email_verified_at,
+                        updated_at, session_version
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
                     """,
                     (
                         first_name,
@@ -545,6 +593,8 @@ class AuthStore:
                             method=PASSWORD_HASH_METHOD,
                         ),
                         invitation["role"],
+                        now,
+                        now,
                         now,
                     ),
                 )
@@ -576,63 +626,6 @@ class AuthStore:
                 raise
 
         return self.get_user(user_id)
-
-    def create_allowed_user(self, email, password):
-        normalized = normalize_email(email)
-        now = int(time.time())
-        token = secrets.token_urlsafe(32)
-        digest = token_digest(token)
-        try:
-            with self.connect() as connection:
-                connection.execute("BEGIN IMMEDIATE")
-                user_count = connection.execute(
-                    "SELECT COUNT(*) FROM users"
-                ).fetchone()[0]
-                role = "admin" if user_count == 0 else "employee"
-                cursor = connection.execute(
-                    """
-                    INSERT INTO users (
-                        first_name, last_name, email, email_normalized,
-                        password_hash, role, active, created_at, updated_at,
-                        session_version
-                    )
-                    VALUES ('', '', ?, ?, ?, ?, 1, ?, ?, 1)
-                    """,
-                    (
-                        str(email).strip(),
-                        normalized,
-                        generate_password_hash(
-                            password,
-                            method=PASSWORD_HASH_METHOD,
-                        ),
-                        role,
-                        now,
-                        now,
-                    ),
-                )
-                user_id = cursor.lastrowid
-                connection.execute(
-                    """
-                    INSERT INTO auth_tokens (
-                        user_id, token_hash, token_type, expires_at, created_at
-                    )
-                    VALUES (?, ?, ?, ?, ?)
-                    """,
-                    (
-                        user_id,
-                        digest,
-                        TOKEN_EMAIL_VERIFICATION,
-                        now + 24 * 3600,
-                        now,
-                    ),
-                )
-                connection.commit()
-        except sqlite3.IntegrityError as error:
-            raise RegistrationError(
-                "email",
-                "Аккаунт с таким email уже существует.",
-            ) from error
-        return self.get_user_by_email(normalized), token
 
     def create_token(self, user_id, token_type, lifetime_seconds):
         token = secrets.token_urlsafe(32)
@@ -797,6 +790,41 @@ class AuthStore:
             connection.commit()
         return True
 
+    def check_rate_limits(self, limits, window_seconds):
+        now = int(time.time())
+        cutoff = now - int(window_seconds)
+        hashed_limits = [
+            (
+                hashlib.sha256(bucket.encode("utf-8")).hexdigest(),
+                int(limit),
+            )
+            for bucket, limit in limits
+        ]
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(
+                "DELETE FROM auth_attempts WHERE attempted_at < ?",
+                (cutoff,),
+            )
+            allowed = True
+            for bucket_hash, limit in hashed_limits:
+                count = connection.execute(
+                    """
+                    SELECT COUNT(*) FROM auth_attempts
+                    WHERE bucket = ? AND attempted_at >= ?
+                    """,
+                    (bucket_hash, cutoff),
+                ).fetchone()[0]
+                if count >= limit:
+                    allowed = False
+            for bucket_hash, _limit in hashed_limits:
+                connection.execute(
+                    "INSERT INTO auth_attempts (bucket, attempted_at) VALUES (?, ?)",
+                    (bucket_hash, now),
+                )
+            connection.commit()
+        return allowed
+
 
 class ServerSideSession(dict, SessionMixin):
     def __init__(self, initial=None, sid=None, new=False):
@@ -843,11 +871,26 @@ class SQLiteSessionInterface(SessionInterface):
             with self._connect(app) as connection:
                 row = connection.execute(
                     """
-                    SELECT data FROM auth_sessions
-                    WHERE session_hash = ? AND expires_at > ?
+                    SELECT data, created_at, expires_at FROM auth_sessions
+                    WHERE session_hash = ?
                     """,
-                    (self._hash(sid), now),
+                    (self._hash(sid),),
                 ).fetchone()
+                absolute_lifetime = int(
+                    app.config.get(
+                        "AUTH_ABSOLUTE_SESSION_LIFETIME",
+                        AUTH_ABSOLUTE_TIMEOUT_SECONDS,
+                    )
+                )
+                if row is not None and (
+                    row["expires_at"] <= now
+                    or row["created_at"] + absolute_lifetime <= now
+                ):
+                    connection.execute(
+                        "DELETE FROM auth_sessions WHERE session_hash = ?",
+                        (self._hash(sid),),
+                    )
+                    row = None
         except sqlite3.Error:
             LOGGER.exception("Не удалось открыть серверную сессию ERP")
             return self.session_class(new=True)
@@ -874,16 +917,33 @@ class SQLiteSessionInterface(SessionInterface):
             return
 
         now = int(time.time())
-        lifetime = int(app.permanent_session_lifetime.total_seconds())
-        expires_at = now + lifetime
+        idle_lifetime = int(app.permanent_session_lifetime.total_seconds())
+        absolute_lifetime = int(
+            app.config.get(
+                "AUTH_ABSOLUTE_SESSION_LIFETIME",
+                AUTH_ABSOLUTE_TIMEOUT_SECONDS,
+            )
+        )
         payload = json.dumps(dict(session_object), ensure_ascii=False)
         user_id = session_object.get("user_id")
         with self._connect(app) as connection:
             connection.execute("BEGIN IMMEDIATE")
-            connection.execute(
-                "DELETE FROM auth_sessions WHERE expires_at <= ?",
-                (now,),
-            )
+            connection.execute("DELETE FROM auth_sessions WHERE expires_at <= ?", (now,))
+            existing = connection.execute(
+                "SELECT created_at FROM auth_sessions WHERE session_hash = ?",
+                (session_hash,),
+            ).fetchone()
+            created_at = existing["created_at"] if existing else now
+            absolute_expires_at = created_at + absolute_lifetime
+            if absolute_expires_at <= now:
+                connection.execute(
+                    "DELETE FROM auth_sessions WHERE session_hash = ?",
+                    (session_hash,),
+                )
+                connection.commit()
+                response.delete_cookie(cookie_name, domain=domain, path=path)
+                return
+            expires_at = min(now + idle_lifetime, absolute_expires_at)
             connection.execute(
                 """
                 INSERT OR REPLACE INTO auth_sessions (
@@ -891,11 +951,7 @@ class SQLiteSessionInterface(SessionInterface):
                     updated_at
                 )
                 VALUES (
-                    ?, ?, ?, ?,
-                    COALESCE((
-                        SELECT created_at FROM auth_sessions
-                        WHERE session_hash = ?
-                    ), ?), ?
+                    ?, ?, ?, ?, ?, ?
                 )
                 """,
                 (
@@ -903,8 +959,7 @@ class SQLiteSessionInterface(SessionInterface):
                     user_id,
                     payload,
                     expires_at,
-                    session_hash,
-                    now,
+                    created_at,
                     now,
                 ),
             )
@@ -991,29 +1046,28 @@ def admin_required(view):
     return wrapped
 
 
-def _client_rate_key(scope):
-    session_key = session.get("_rate_key")
-    if not session_key:
-        session_key = secrets.token_urlsafe(18)
-        session["_rate_key"] = session_key
+def _rate_allowed(scope, subject, subject_limit, ip_limit=None, global_limit=None):
     remote = request.remote_addr or "unknown"
-    return f"{scope}:{remote}:{session_key}"
-
-
-def _rate_allowed(scope, session_limit, window=900):
-    store = get_auth_store()
-    remote = request.remote_addr or "unknown"
-    session_allowed = store.check_rate_limit(
-        _client_rate_key(scope),
-        session_limit,
-        window,
+    limits = [
+        (f"{scope}:subject:{subject}", subject_limit),
+        (
+            f"{scope}:ip:{remote}",
+            ip_limit
+            or current_app.config.get("AUTH_IP_RATE_LIMIT", 100),
+        ),
+        (
+            f"{scope}:global",
+            global_limit
+            or current_app.config.get("AUTH_GLOBAL_RATE_LIMIT", 1000),
+        ),
+    ]
+    return get_auth_store().check_rate_limits(
+        limits,
+        current_app.config.get(
+            "AUTH_RATE_LIMIT_WINDOW_SECONDS",
+            AUTH_RATE_LIMIT_WINDOW_SECONDS,
+        ),
     )
-    office_allowed = store.check_rate_limit(
-        f"{scope}:office:{remote}",
-        current_app.config.get("AUTH_OFFICE_RATE_LIMIT", 1000),
-        window,
-    )
-    return session_allowed and office_allowed
 
 
 def _validate_password(form):
@@ -1035,11 +1089,8 @@ def _validate_password(form):
 def _validate_registration(form):
     email = str(form.get("email") or "").strip()
     password, errors = _validate_password(form)
-    normalized = normalize_email(email)
     if len(email) > 254 or not EMAIL_PATTERN.fullmatch(email):
         errors["email"] = "Введите корректный email."
-    elif normalized not in current_app.config["TICTACTOY_ALLOWED_EMAILS"]:
-        errors["email"] = "Регистрация для этого email недоступна."
     return {"email": email}, password, errors
 
 
@@ -1065,7 +1116,9 @@ def _send_auth_email(recipient, subject, body, development_link):
     sender = current_app.config.get("SMTP_FROM", "")
     if not host or not sender:
         if current_app.debug and current_app.config.get("AUTH_DEV_EMAIL_LOG"):
-            LOGGER.warning("DEV auth link: %s", development_link)
+            LOGGER.warning(
+                "DEV auth email suppressed: SMTP is not configured"
+            )
             return True
         LOGGER.error("Письмо авторизации не отправлено: SMTP не настроен")
         return False
@@ -1127,42 +1180,81 @@ def register():
     if current_auth_user():
         return redirect("/")
 
-    values = {}
+    store = get_auth_store()
+    token_hash = session.get("_pending_invitation")
+    invitation = store.get_invitation(token_hash)
+    if not invitation or invitation["status"] != "active":
+        session.pop("_pending_invitation", None)
+        invitation = None
+
+    values = {
+        "email": invitation["email"] if invitation and invitation["email"] else "",
+    }
     errors = {}
+    invitation_error = session.pop("_register_error", "")
     if request.method == "POST":
+        if invitation is None:
+            return render_template(
+                "register.html",
+                errors={"form": "Для регистрации требуется действующее приглашение."},
+                values={},
+                invitation=None,
+                invitation_error=invitation_error,
+                rate_limited=False,
+            ), 403
+        normalized = normalize_email(request.form.get("email"))
         if not _rate_allowed(
             "registration",
-            current_app.config.get("REGISTRATION_RATE_LIMIT", 8),
+            normalized or "invalid",
+            current_app.config.get("REGISTRATION_EMAIL_RATE_LIMIT", 8),
+            current_app.config.get("REGISTRATION_IP_RATE_LIMIT", 30),
+            current_app.config.get("REGISTRATION_GLOBAL_RATE_LIMIT", 200),
         ):
             return render_template(
                 "register.html",
                 errors={"form": "Слишком много попыток. Попробуйте позже."},
                 values=request.form,
+                invitation=invitation,
+                invitation_error=invitation_error,
                 rate_limited=True,
             ), 429
         values, password, errors = _validate_registration(request.form)
 
         if not errors:
             try:
-                user, token = get_auth_store().create_allowed_user(
-                    values["email"], password
+                user = store.register_user(
+                    token_hash,
+                    "",
+                    "",
+                    values["email"],
+                    password,
                 )
             except RegistrationError as error:
-                errors[error.field] = error.message
+                errors[error.field] = (
+                    "Не удалось создать аккаунт с указанными данными."
+                    if error.field == "email"
+                    else error.message
+                )
             else:
-                _send_verification(user, token)
-                return render_template(
-                    "auth_message.html",
-                    title="Подтвердите email",
-                    message="Мы отправили ссылку подтверждения на указанный email.",
-                    action_url=url_for("auth.login"),
-                    action_label="Перейти ко входу",
+                session.pop("_pending_invitation", None)
+                regenerate_session()
+                session["user_id"] = user["id"]
+                session["session_version"] = user["session_version"]
+                session.permanent = True
+                csrf_token()
+                return redirect(
+                    url_for(
+                        "auth.registration_success",
+                        next=safe_next_url(request.values.get("next"), "/"),
+                    )
                 )
 
     return render_template(
         "register.html",
         errors=errors,
         values=values,
+        invitation=invitation,
+        invitation_error=invitation_error,
         rate_limited=False,
     )
 
@@ -1175,7 +1267,10 @@ def accept_invitation():
 
     if not _rate_allowed(
         "invitation-check",
+        invitation_digest(request.form.get("invitation_token")),
         current_app.config.get("INVITATION_CHECK_RATE_LIMIT", 20),
+        current_app.config.get("INVITATION_CHECK_IP_RATE_LIMIT", 60),
+        current_app.config.get("INVITATION_CHECK_GLOBAL_RATE_LIMIT", 500),
     ):
         session["_register_error"] = (
             "Слишком много попыток. Попробуйте позже."
@@ -1197,7 +1292,12 @@ def accept_invitation():
 
 @auth.route("/register/success")
 def registration_success():
-    return redirect(url_for("auth.login"))
+    if not current_auth_user():
+        return redirect(url_for("auth.login"))
+    return render_template(
+        "registration_success.html",
+        target=safe_next_url(request.args.get("next"), "/"),
+    )
 
 
 @auth.route("/verify-email/<token>")
@@ -1218,11 +1318,15 @@ def verify_email(token):
 
 @auth.post("/resend-verification")
 def resend_verification():
+    email = normalize_email(request.form.get("email"))
     if _rate_allowed(
         "verification-resend",
+        email or "invalid",
         current_app.config.get("PASSWORD_RESET_RATE_LIMIT", 5),
+        current_app.config.get("AUTH_IP_RATE_LIMIT", 100),
+        current_app.config.get("AUTH_GLOBAL_RATE_LIMIT", 1000),
     ):
-        user = get_auth_store().get_user_by_email(request.form.get("email"))
+        user = get_auth_store().get_user_by_email(email)
         if user and user["email_verified_at"] is None:
             token = get_auth_store().create_token(
                 user["id"], TOKEN_EMAIL_VERIFICATION, 24 * 3600
@@ -1235,11 +1339,15 @@ def resend_verification():
 def forgot_password():
     sent = False
     if request.method == "POST":
+        email = normalize_email(request.form.get("email"))
         if _rate_allowed(
             "password-reset",
+            email or "invalid",
             current_app.config.get("PASSWORD_RESET_RATE_LIMIT", 5),
+            current_app.config.get("AUTH_IP_RATE_LIMIT", 100),
+            current_app.config.get("AUTH_GLOBAL_RATE_LIMIT", 1000),
         ):
-            user = get_auth_store().get_user_by_email(request.form.get("email"))
+            user = get_auth_store().get_user_by_email(email)
             if user and user["email_verified_at"] is not None:
                 token = get_auth_store().create_token(
                     user["id"], TOKEN_PASSWORD_RESET, 30 * 60
@@ -1287,7 +1395,16 @@ def login():
         email = str(request.form.get("email") or "").strip()
         if not _rate_allowed(
             "login",
-            current_app.config.get("LOGIN_RATE_LIMIT", 10),
+            normalize_email(email) or "invalid",
+            current_app.config.get(
+                "LOGIN_EMAIL_RATE_LIMIT",
+                LOGIN_EMAIL_RATE_LIMIT,
+            ),
+            current_app.config.get("LOGIN_IP_RATE_LIMIT", LOGIN_IP_RATE_LIMIT),
+            current_app.config.get(
+                "LOGIN_GLOBAL_RATE_LIMIT",
+                LOGIN_GLOBAL_RATE_LIMIT,
+            ),
         ):
             return render_template(
                 "login.html",
@@ -1302,18 +1419,7 @@ def login():
             request.form.get("password"),
         )
         if user is None:
-            candidate = store.get_user_by_email(email)
-            if (
-                candidate
-                and candidate["email_verified_at"] is None
-                and check_password_hash(
-                    candidate["password_hash"],
-                    str(request.form.get("password") or ""),
-                )
-            ):
-                error = "Сначала подтвердите email по ссылке из письма."
-            else:
-                error = "Неверный email или пароль."
+            error = LOGIN_PUBLIC_ERROR
         else:
             regenerate_session()
             session["user_id"] = user["id"]
@@ -1394,9 +1500,13 @@ def revoke_invitation(invitation_id):
 
 
 def settings_invitation_context():
+    user = current_auth_user()
+    can_manage = bool(user and user.get("role") == "admin")
     return {
-        "can_manage_invitations": False,
-        "invitations": [],
+        "can_manage_invitations": can_manage,
+        "invitations": (
+            get_auth_store().list_invitations() if can_manage else []
+        ),
         "invitation_roles": ALLOWED_ROLES,
     }
 
@@ -1410,9 +1520,6 @@ def configure_auth(app, project_root):
         "AUTH_DATABASE",
         os.getenv("ERP_AUTH_DATABASE", "").strip()
         or str(project_root / "instance" / "auth.db"),
-    )
-    app.config["TICTACTOY_ALLOWED_EMAILS"] = allowed_emails(
-        os.getenv("TICTACTOY_ALLOWED_EMAILS", "")
     )
     app.config["SMTP_HOST"] = os.getenv("SMTP_HOST", "").strip()
     try:
@@ -1431,7 +1538,22 @@ def configure_auth(app, project_root):
         os.getenv("AUTH_DEV_EMAIL_LOG", "false").strip().lower()
         in ("1", "true", "yes", "on")
     )
-    app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(hours=12)
+    app.config.setdefault(
+        "AUTH_RATE_LIMIT_WINDOW_SECONDS",
+        AUTH_RATE_LIMIT_WINDOW_SECONDS,
+    )
+    app.config.setdefault("LOGIN_EMAIL_RATE_LIMIT", LOGIN_EMAIL_RATE_LIMIT)
+    app.config.setdefault("LOGIN_IP_RATE_LIMIT", LOGIN_IP_RATE_LIMIT)
+    app.config.setdefault("LOGIN_GLOBAL_RATE_LIMIT", LOGIN_GLOBAL_RATE_LIMIT)
+    app.config.setdefault("AUTH_IP_RATE_LIMIT", 100)
+    app.config.setdefault("AUTH_GLOBAL_RATE_LIMIT", 1000)
+    app.config.setdefault(
+        "AUTH_ABSOLUTE_SESSION_LIFETIME",
+        AUTH_ABSOLUTE_TIMEOUT_SECONDS,
+    )
+    app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(
+        seconds=AUTH_IDLE_TIMEOUT_SECONDS
+    )
     app.config["SESSION_COOKIE_HTTPONLY"] = True
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
     app.config["SESSION_COOKIE_SECURE"] = (
@@ -1522,18 +1644,8 @@ def configure_auth(app, project_root):
     )
     def bootstrap_admin_link_command(lifetime_hours):
         store = get_auth_store()
-        if store.user_count():
-            raise click.ClickException(
-                "Начальная настройка уже завершена: в ERP есть пользователи."
-            )
-        if store.has_active_bootstrap_invitation():
-            raise click.ClickException(
-                "Активная начальная ссылка уже существует."
-            )
-        token = store.create_invitation(
-            None,
-            None,
-            "admin",
-            lifetime_hours,
-        )
+        try:
+            token = store.create_bootstrap_invitation(lifetime_hours)
+        except RegistrationError as error:
+            raise click.ClickException(error.message) from error
         click.echo(f"/register#invite={token}")

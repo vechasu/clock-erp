@@ -124,11 +124,18 @@ from app.auth import (
 )
 
 app = Flask(__name__)
+try:
+    TRUSTED_PROXY_COUNT = max(
+        0,
+        int(os.getenv("ERP_TRUSTED_PROXY_COUNT", "0") or 0),
+    )
+except ValueError:
+    TRUSTED_PROXY_COUNT = 0
 app.wsgi_app = ProxyFix(
     app.wsgi_app,
-    x_for=1,
-    x_proto=1,
-    x_host=1,
+    x_for=TRUSTED_PROXY_COUNT,
+    x_proto=TRUSTED_PROXY_COUNT,
+    x_host=TRUSTED_PROXY_COUNT,
 )
 configure_auth(app, PROJECT_ROOT)
 
@@ -223,8 +230,6 @@ def repair_product_classification_command(mode, backup_root):
 ORDERS_URL = "https://tictactoy.ru/api/orders.php"
 ORDER_URL = "https://tictactoy.ru/api/order.php?id="
 UPDATE_ORDER_STATUS_URL = "https://tictactoy.ru/api/update_order_status.php"
-
-UPDATE_ORDER_STATUS_TOKEN = "clock_erp_secret_2026_change_me"
 
 ORDERS_CACHE = {
     "items": [],
@@ -556,11 +561,19 @@ def update_order_status(order_id, new_status):
             "message": "Недопустимый статус"
         }
 
+    update_token = os.getenv("UPDATE_ORDER_STATUS_TOKEN", "").strip()
+    if not update_token:
+        return {
+            "status": "error",
+            "code": "UPDATE_ORDER_STATUS_NOT_CONFIGURED",
+            "message": "Изменение статуса временно недоступно: секрет не настроен.",
+        }
+
     try:
         response = requests.post(
             UPDATE_ORDER_STATUS_URL,
             data={
-                "token": UPDATE_ORDER_STATUS_TOKEN,
+                "token": update_token,
                 "order_id": str(order_id),
                 "status": new_status,
             },
@@ -570,15 +583,20 @@ def update_order_status(order_id, new_status):
         if not response.ok:
             return {
                 "status": "error",
-                "message": f"Битрикс не принял статус {new_status}. HTTP {response.status_code}: {response.text[:300]}"
+                "code": "UPDATE_ORDER_STATUS_REJECTED",
+                "message": (
+                    "Внешний сервис не принял изменение статуса. "
+                    f"HTTP {response.status_code}."
+                ),
             }
 
         return response.json()
 
-    except Exception as error:
+    except Exception:
         return {
             "status": "error",
-            "message": f"Ошибка при смене статуса: {error}"
+            "code": "UPDATE_ORDER_STATUS_FAILED",
+            "message": "Не удалось изменить статус заказа.",
         }
 
 
