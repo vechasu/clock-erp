@@ -36,6 +36,21 @@ class BitrixOrderLinksTest(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertEqual(self.client.get(path).status_code, 404)
 
+    def test_order_url_builder_does_not_require_str_isascii(self):
+        class Python36Text(str):
+            def __getattribute__(self, name):
+                if name == "isascii":
+                    raise AttributeError(name)
+                return super().__getattribute__(name)
+
+        with mock.patch.object(
+            web,
+            "str",
+            side_effect=lambda value: Python36Text(value),
+            create=True,
+        ):
+            self.assertEqual(web.build_bitrix_order_url("0018593"), BITRIX_ORDER_URL)
+
     def test_repair_table_and_card_links_open_safely_in_new_tab(self):
         repair = {
             "id": "repair-1",

@@ -629,7 +629,9 @@ def orders_page():
 
 def build_bitrix_order_url(order_id):
     order_id = str(order_id or "").strip()
-    if not order_id.isascii() or not order_id.isdecimal():
+    if not order_id or any(
+        character < "0" or character > "9" for character in order_id
+    ):
         return ""
     order_id = str(int(order_id))
     if order_id == "0":
