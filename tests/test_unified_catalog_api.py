@@ -1076,7 +1076,7 @@ class UnifiedCatalogApiTest(unittest.TestCase):
         redirects = {
             "/products": "/app/products",
             "/receipt": "/app/receipts",
-            "/repair": "/app/products",
+            "/repair": "/app/repairs",
             "/stock-operations": "/app/products",
         }
         for path, target in redirects.items():
@@ -1093,6 +1093,7 @@ class UnifiedCatalogApiTest(unittest.TestCase):
             "/app/sales": "sales_page",
             "/receipts": "receipts_page",
             "/app/receipts": "receipts_page",
+            "/app/repairs": "repair_page",
             "/settings": "settings_page",
             "/app/settings": "settings_page",
         }
