@@ -6,15 +6,21 @@
 <section class="auth-card" aria-labelledby="register-title">
     <header class="auth-card-header">
         <h2 id="register-title">Создать аккаунт</h2>
-        <p>Регистрация доступна только для разрешённых email TicTacToy.</p>
+        <p>Регистрация доступна только по одноразовому приглашению администратора.</p>
     </header>
 
+    {% if invitation_error %}
+        <div class="auth-alert" role="alert">{{ invitation_error }}</div>
+    {% endif %}
     {% if errors.form %}
         <div class="auth-alert" role="alert">{{ errors.form }}</div>
     {% endif %}
 
+    {% if invitation %}
+    <div class="invitation-confirmed" role="status">Приглашение подтверждено</div>
     <form class="auth-form" id="registerForm" method="post" novalidate>
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="next" value="{{ request.args.get('next', '/') }}">
         <div class="auth-grid">
             <div class="auth-field auth-field-wide">
                 <label class="auth-label" for="email">Email</label>
@@ -28,6 +34,7 @@
                     autocomplete="email"
                     inputmode="email"
                     required
+                    {% if invitation.email %}readonly{% endif %}
                     {% if errors.email %}aria-invalid="true" aria-describedby="email_error"{% endif %}
                 >
                 {% if errors.email %}<p class="auth-error" id="email_error" role="alert">{{ errors.email }}</p>{% endif %}
@@ -59,6 +66,16 @@
             <button class="auth-submit" id="registerSubmit" type="submit" {% if rate_limited %}disabled{% endif %}>Создать аккаунт</button>
         </div>
     </form>
+    {% else %}
+    <div class="auth-alert" role="status">
+        Откройте персональную ссылку приглашения, полученную от администратора ERP.
+    </div>
+    <form id="invitationCheckForm" method="post" action="{{ url_for('auth.accept_invitation') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="invitation_token" id="invitationToken">
+        <input type="hidden" name="next" value="{{ request.args.get('next', '/') }}">
+    </form>
+    {% endif %}
 
     <p class="auth-switch">Уже есть аккаунт? <a href="{{ url_for('auth.login') }}">Войти</a></p>
 </section>
@@ -76,12 +93,23 @@
     });
     const form = document.getElementById("registerForm");
     const submit = document.getElementById("registerSubmit");
-    form.addEventListener("submit", () => {
-        if (form.dataset.submitting === "1") return;
-        form.dataset.submitting = "1";
-        submit.disabled = true;
-        submit.textContent = "Отправляем…";
-    });
+    if (form) {
+        form.addEventListener("submit", () => {
+            if (form.dataset.submitting === "1") return;
+            form.dataset.submitting = "1";
+            submit.disabled = true;
+            submit.textContent = "Отправляем…";
+        });
+    }
+    const invitationForm = document.getElementById("invitationCheckForm");
+    const invitationToken = window.location.hash.startsWith("#invite=")
+        ? decodeURIComponent(window.location.hash.slice(8))
+        : "";
+    if (invitationForm && invitationToken) {
+        document.getElementById("invitationToken").value = invitationToken;
+        history.replaceState(null, "", window.location.pathname + window.location.search);
+        invitationForm.submit();
+    }
     if (new URLSearchParams(window.location.search).has("registration_ui_e2e")) {
         document.body.dataset.registrationUiE2e = document.documentElement.scrollWidth <= window.innerWidth ? "pass" : "fail";
     }
