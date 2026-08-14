@@ -111,6 +111,78 @@ class UnifiedPageArchitectureTest(unittest.TestCase):
         self.assertIn(".receipt-advanced-filter-panel", css)
         self.assertIn("grid-template-columns: repeat(2", css)
 
+    def test_active_pages_share_page_header_copy(self):
+        contracts = {
+            "warehouse.html": (
+                "Товары", "Каталог, цены и текущие остатки",
+            ),
+            "warehouse_brands.html": (
+                "Товары", "Каталог, цены и текущие остатки",
+            ),
+            "warehouse_categories.html": (
+                "Товары", "Каталог, цены и текущие остатки",
+            ),
+            "sales.html": (
+                "Продажи", "Учёт продаж по всем каналам",
+            ),
+            "journal.html": (
+                "Журнал",
+                "История значимых изменений товаров, продаж и приходов.",
+            ),
+            "repair.html": (
+                "Ремонт", "Учёт ремонтных обращений",
+            ),
+        }
+
+        for template, expected in contracts.items():
+            with self.subTest(template=template):
+                source = self.source("app/templates/" + template)
+                header = source.split("erp-workspace-header", 1)[1].split(
+                    "</header>", 1
+                )[0]
+                self.assertIn("erp-workspace-heading", header)
+                for text in expected:
+                    self.assertIn(text, header)
+
+    def test_existing_tabs_use_shared_visual_contract(self):
+        for template in (
+            "warehouse.html",
+            "warehouse_brands.html",
+            "warehouse_categories.html",
+            "sales.html",
+            "journal.html",
+        ):
+            with self.subTest(template=template):
+                source = self.source("app/templates/" + template)
+                self.assertIn("erp-section-tabs", source)
+                self.assertIn("erp-section-tab", source)
+
+        repair = self.source("app/templates/repair.html")
+        self.assertNotIn("erp-section-tabs", repair)
+
+        css = self.source("app/static/css/erp-components.css")
+        contract = css.split(
+            "Unified page chrome for products, sales, journal and repairs.",
+            1,
+        )[1]
+        for declaration in (
+            "min-height: 42px;",
+            "border-bottom: 1px solid var(--erp-border);",
+            "white-space: nowrap;",
+            "overflow-x: auto;",
+            "background: var(--erp-primary);",
+            "outline: 2px solid var(--erp-primary);",
+        ):
+            self.assertIn(declaration, contract)
+
+    def test_active_tab_reveal_stays_page_local(self):
+        journal = self.source("app/templates/journal.html")
+        self.assertIn('.journal-tab[aria-current="page"]', journal)
+        self.assertIn("activeTab.scrollIntoView", journal)
+
+        theme_script = self.source("app/static/js/theme.js")
+        self.assertNotIn("revealActiveSectionTab", theme_script)
+
 
 if __name__ == "__main__":
     unittest.main()

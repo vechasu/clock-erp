@@ -3753,6 +3753,16 @@ select.erp-control {
 
     .main {
         min-width: 0;
+    }
+
+    body:not(:is(
+        .warehouse-page,
+        .sales-page,
+        .brands-page,
+        .categories-page,
+        .journal-page,
+        .repair-page
+    )) .main {
         padding: 12px !important;
     }
 
@@ -5774,5 +5784,315 @@ select.erp-control {
     .journal-page .journal-filter-toggle {
         width: 100%;
         justify-content: center;
+    }
+}
+
+/* Unified page chrome for products, sales, journal and repairs. */
+:is(
+    .warehouse-page,
+    .sales-page,
+    .brands-page,
+    .categories-page,
+    .journal-page,
+    .repair-page
+) {
+    max-width: 100%;
+    overflow-x: hidden;
+}
+
+:is(
+    .warehouse-page,
+    .sales-page,
+    .brands-page,
+    .categories-page,
+    .journal-page,
+    .repair-page
+) .app > :is(.main, .journal-main, .repair-main) {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    padding: var(--erp-space-6) 26px 48px;
+}
+
+:is(.journal-page, .repair-page) :is(.journal-shell, .repair-shell) {
+    width: 100%;
+    max-width: none;
+    margin-right: 0;
+    margin-left: 0;
+}
+
+:is(
+    .warehouse-page,
+    .sales-page,
+    .brands-page,
+    .categories-page,
+    .journal-page,
+    .repair-page
+) .erp-workspace-header {
+    min-width: 0;
+    align-items: flex-start;
+    gap: var(--erp-space-5);
+    margin: 0 0 var(--erp-space-3);
+}
+
+:is(
+    .warehouse-page,
+    .sales-page,
+    .brands-page,
+    .categories-page,
+    .journal-page,
+    .repair-page
+) .erp-workspace-heading h1 {
+    margin: 0;
+    color: var(--erp-text);
+    font: var(--erp-type-page-title-weight) var(--erp-type-page-title-size) / 1.15 var(--erp-font-family);
+    letter-spacing: -0.035em;
+}
+
+:is(
+    .warehouse-page,
+    .sales-page,
+    .brands-page,
+    .categories-page,
+    .journal-page,
+    .repair-page
+) .erp-workspace-heading p {
+    margin: var(--erp-space-1) 0 0;
+    color: var(--erp-muted);
+    font: var(--erp-type-page-subtitle-weight) var(--erp-type-page-subtitle-size) / 1.35 var(--erp-font-family);
+}
+
+:is(
+    .warehouse-page,
+    .sales-page,
+    .brands-page,
+    .categories-page,
+    .journal-page
+) .erp-section-tabs {
+    min-height: 42px;
+    align-items: stretch;
+    gap: 2px;
+    margin: 0 0 var(--erp-space-3);
+    padding: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    border: 0;
+    border-bottom: 1px solid var(--erp-border);
+    border-radius: 0;
+    background: transparent;
+    scroll-padding-inline: var(--erp-space-3);
+    scrollbar-width: none;
+}
+
+.sales-page .sales-tabs-scroll {
+    margin: 0 0 var(--erp-space-3);
+    overflow-x: auto;
+    overflow-y: hidden;
+    border: 0;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+}
+
+.sales-page .sales-tabs-scroll .erp-section-tabs {
+    min-width: 100%;
+    margin-bottom: 0;
+    overflow: visible;
+}
+
+:is(
+    .warehouse-page,
+    .brands-page,
+    .categories-page,
+    .journal-page
+) .erp-section-tabs::-webkit-scrollbar,
+.sales-page .sales-tabs-scroll::-webkit-scrollbar {
+    display: none;
+}
+
+:is(
+    .warehouse-page,
+    .sales-page,
+    .brands-page,
+    .categories-page,
+    .journal-page
+) .erp-section-tab {
+    position: relative;
+    min-height: 42px;
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    padding: 0 14px;
+    border: 0;
+    border-radius: var(--erp-radius-sm) var(--erp-radius-sm) 0 0;
+    background: transparent;
+    color: var(--erp-muted);
+    font: var(--erp-type-control-weight) var(--erp-type-control-size) / 1.2 var(--erp-font-family);
+    text-decoration: none;
+    white-space: nowrap;
+    box-shadow: none;
+    transition: background var(--erp-transition-fast), color var(--erp-transition-fast);
+}
+
+:is(
+    .warehouse-page,
+    .sales-page,
+    .brands-page,
+    .categories-page,
+    .journal-page
+) .erp-section-tab::after {
+    position: absolute;
+    right: 0;
+    bottom: -1px;
+    left: 0;
+    height: 2px;
+    border-radius: 2px 2px 0 0;
+    background: transparent;
+    content: "";
+}
+
+:is(
+    .warehouse-page,
+    .sales-page,
+    .brands-page,
+    .categories-page,
+    .journal-page
+) .erp-section-tab:hover {
+    background: var(--erp-surface-muted);
+    color: var(--erp-primary-hover);
+}
+
+:is(
+    .warehouse-page,
+    .sales-page,
+    .brands-page,
+    .categories-page,
+    .journal-page
+) .erp-section-tab:is(.is-active, .active) {
+    background: var(--theme-active, #eff6ff);
+    color: var(--erp-primary);
+}
+
+:is(
+    .warehouse-page,
+    .sales-page,
+    .brands-page,
+    .categories-page,
+    .journal-page
+) .erp-section-tab:is(.is-active, .active)::after {
+    background: var(--erp-primary);
+}
+
+:is(
+    .warehouse-page,
+    .sales-page,
+    .brands-page,
+    .categories-page,
+    .journal-page
+) .erp-section-tab:focus-visible {
+    outline: 2px solid var(--erp-primary);
+    outline-offset: -2px;
+    box-shadow: none;
+}
+
+.journal-page .journal-toolbar,
+.repair-page .repair-toolbar {
+    margin-top: 0;
+    padding: var(--erp-space-2);
+    border: 1px solid var(--erp-border);
+    border-radius: var(--erp-radius);
+    background: var(--erp-surface);
+    box-shadow: none;
+}
+
+.repair-page .repair-search svg {
+    left: var(--erp-space-3);
+    width: 18px;
+    height: 18px;
+    stroke: var(--erp-muted);
+}
+
+.repair-page .repair-search .repair-control {
+    min-height: var(--erp-control-height);
+    padding: 0 var(--erp-space-3) 0 38px;
+    border-color: var(--erp-border-strong);
+    border-radius: var(--erp-control-radius);
+    background: var(--erp-surface);
+    color: var(--erp-text);
+    font: 500 var(--erp-type-control-size) / 1.2 var(--erp-font-family);
+}
+
+.repair-page .repair-search .repair-control::placeholder {
+    color: var(--erp-muted);
+    opacity: 1;
+}
+
+.repair-page .repair-search .repair-control:hover:not(:disabled) {
+    border-color: var(--theme-border-hover, #cbd5e1);
+}
+
+.repair-page .repair-search .repair-control:focus {
+    border-color: var(--erp-primary);
+    box-shadow: var(--erp-focus-ring);
+}
+
+.repair-page .repair-search .repair-control:disabled {
+    cursor: not-allowed;
+    background: var(--erp-surface-muted);
+    opacity: 0.65;
+}
+
+@media (max-width: 767px) {
+    :is(
+        .warehouse-page,
+        .sales-page,
+        .brands-page,
+        .categories-page,
+        .journal-page,
+        .repair-page
+    ) .app > :is(.main, .journal-main, .repair-main) {
+        padding: var(--erp-space-4) 14px calc(88px + env(safe-area-inset-bottom));
+    }
+
+    :is(
+        .warehouse-page,
+        .sales-page,
+        .brands-page,
+        .categories-page,
+        .journal-page,
+        .repair-page
+    ) .erp-workspace-header {
+        flex-wrap: wrap;
+        gap: var(--erp-space-3);
+    }
+
+    :is(
+        .warehouse-page,
+        .sales-page,
+        .brands-page,
+        .categories-page,
+        .journal-page,
+        .repair-page
+    ) .erp-workspace-heading h1 {
+        font: var(--erp-type-page-title-weight) 24px / 1.15 var(--erp-font-family);
+    }
+
+    .repair-page .repair-search {
+        width: 100%;
+        min-width: 0;
+        flex-basis: 100%;
+    }
+}
+
+@media (max-width: 370px) {
+    :is(
+        .warehouse-page,
+        .sales-page,
+        .brands-page,
+        .categories-page,
+        .journal-page
+    ) .erp-section-tab {
+        padding-right: 12px;
+        padding-left: 12px;
     }
 }

@@ -109,6 +109,22 @@ class BrandManagementTest(unittest.TestCase):
         self.assertEqual(overview["nonzero_count"], 2)
         self.assertEqual(overview["categories"][0]["nonzero_count"], 2)
 
+    def test_list_summary_keeps_metrics_without_category_details(self):
+        product = self.product("A", "A", "Casio", "Часы", 3)
+        self.catalog.create_brand_category(product["brand_id"], "Ремешки")
+        self.products.create_product(
+            name="Без категории", article="NONE", brand="Casio",
+            category="", category_id=0, stock=0,
+        )
+
+        summary = self.catalog.list_brand_summaries(limit=100)[0]
+
+        self.assertEqual(summary["product_count"], 2)
+        self.assertEqual(summary["nonzero_count"], 1)
+        self.assertEqual(summary["stock_total"], 3)
+        self.assertEqual(summary["category_count"], 3)
+        self.assertNotIn("categories", summary)
+
     def test_bulk_prevalidation_is_atomic_and_force_preserves_history(self):
         zero = self.product("Zero", "ZERO", "Casio", "Часы", 0)
         nonzero = self.product("Stock", "STOCK", "Casio", "Часы", 0)

@@ -84,6 +84,11 @@ class Stage2RepairsApiTest(unittest.TestCase):
                 "get_excel_warehouse_items",
                 return_value=[catalog_item()],
             ),
+            mock.patch.object(
+                web.ExcelProductCatalog,
+                "search_repair_catalog_items",
+                return_value=[catalog_item()],
+            ),
         ]
         for patcher in self.patchers:
             patcher.start()
@@ -98,7 +103,9 @@ class Stage2RepairsApiTest(unittest.TestCase):
         self.temp.cleanup()
 
     def test_repair_api_full_workspace_flow(self):
-        catalog = self.client.get("/api/v1/repairs/catalog").get_json()
+        catalog = self.client.get(
+            "/api/v1/repairs/catalog?q=vechasu"
+        ).get_json()
         self.assertEqual(catalog["data"][0]["name"], "Vechasu Voyager")
 
         created = self.client.post("/api/repairs", json=repair_payload())

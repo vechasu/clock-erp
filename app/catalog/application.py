@@ -128,7 +128,7 @@ class CatalogApplication:
         return result
 
     def brand_overviews(self, query):
-        return self._shared_catalog_factory().list_brand_overviews(
+        return self._shared_catalog_factory().list_brand_summaries(
             query=query,
             limit=500,
         )

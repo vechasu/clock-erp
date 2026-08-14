@@ -43,7 +43,7 @@ font family и font weights. `erp-components.css` добавляет:
 | Поля | `.erp-control`, search input, modal fields, combobox trigger | Некоторые формы используют локальные `.control`/`.field` |
 | Таблицы | `.erp-data-table`, sticky/colored head, row hover, actions, numeric alignment | Состав колонок, resizing и mobile-представление page-specific |
 | Поиск и фильтры | `.erp-search-input`, filter trigger/count, panels, active-filter chips | Набор фильтров и момент применения различаются |
-| Вкладки | `.erp-section-tabs` используется на товарах и журнале; продажи имеют собственный слой tabs | Единого DOM-контракта для всех страниц нет |
+| Вкладки | Товары, продажи и журнал используют общий визуальный контракт `.erp-section-tabs` / `.erp-section-tab`; существующие ссылки, порядок и active-механизмы остаются локальными | У ремонтов вкладок нет; продажи сохраняют собственную scroll-обёртку |
 | Модальные окна | `[data-erp-modal-shell]`, dialog/header/body/actions, overlay, focus trap | Часть ремонтов использует drawer; закрытие Escape намеренно блокируется modal shell |
 | Уведомления | Глобальный `VechasuNotify` и toast palette | В шаблонах также сохраняются inline notices и field errors |
 
@@ -60,6 +60,11 @@ Desktop shell использует фиксированную sidebar ширин
 используется товарами, брендами, категориями, продажами, приходами, ремонтами,
 журналом и настройками. В `erp-components.css` также есть `.erp-page-header`,
 но отдельного React-компонента `PageHeader` в текущем `origin/main` нет.
+
+Для товаров, продаж, журнала и ремонтов общий CSS-контракт дополнительно
+фиксирует выравнивание шапки, типографику, отступы и responsive-поведение.
+Он меняет только оформление существующей разметки: URL, query-параметры,
+порядок вкладок и page-specific механизм активного состояния не унифицируются.
 
 ## Состояния интерфейса
 
