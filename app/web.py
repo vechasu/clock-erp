@@ -223,6 +223,9 @@ def repair_product_classification_command(mode, backup_root):
 ORDERS_URL = "https://tictactoy.ru/api/orders.php"
 ORDER_URL = "https://tictactoy.ru/api/order.php?id="
 UPDATE_ORDER_STATUS_URL = "https://tictactoy.ru/api/update_order_status.php"
+BITRIX_ADMIN_ORDER_VIEW_URL = (
+    "https://www.tictactoy.ru/bitrix/admin/sale_order_view.php"
+)
 
 UPDATE_ORDER_STATUS_TOKEN = "clock_erp_secret_2026_change_me"
 
@@ -606,30 +609,25 @@ def orders_page():
     )
 
 
+def build_bitrix_order_url(order_id):
+    order_id = str(order_id or "").strip()
+    if not order_id.isascii() or not order_id.isdecimal():
+        return ""
+    order_id = str(int(order_id))
+    if order_id == "0":
+        return ""
+    return BITRIX_ADMIN_ORDER_VIEW_URL + "?" + urlencode([
+        ("ID", order_id),
+        ("lang", "ru"),
+    ])
+
+
 @app.route("/order/<int:order_id>")
 def order_page(order_id):
-    orders = get_orders()
-    selected_order = None
-
-    for order in orders:
-        if str(order.get("id")) == str(order_id) or str(order.get("ID")) == str(order_id):
-            selected_order = order
-            break
-
-    try:
-        full_order = get_order(order_id)
-        if full_order:
-            selected_order = full_order
-    except Exception as error:
-        print(f"Полная карточка заказа {order_id} не загрузилась быстро: {error}")
-
-    return render_template(
-        "orders.html",
-        orders=orders,
-        selected_order=selected_order,
-        warehouse_items=get_warehouse_items(),
-        product_mappings=load_product_mappings()
-    )
+    order_url = build_bitrix_order_url(order_id)
+    if not order_url:
+        abort(404)
+    return redirect(order_url)
 
 
 
@@ -3496,7 +3494,7 @@ def serialize_repair_order(order):
         "phone": _repair_text(order.get("phone")),
         "email": _repair_text(order.get("email")),
         "products": products,
-        "url": f"/order/{_order_external_id(order)}" if _order_external_id(order) else "",
+        "url": build_bitrix_order_url(_order_external_id(order)),
     }
 
 
@@ -3656,6 +3654,7 @@ def prepare_repair_case(case):
         prepared.get("communication_channel") or "—",
     )
     prepared["order_label"] = _repair_order_label(prepared)
+    prepared["order_url"] = build_bitrix_order_url(prepared.get("order_id"))
     prepared["waiting_for_label"] = REPAIR_RESPONSIBILITY_LABELS.get(
         prepared.get("waiting_for"), "—"
     )
