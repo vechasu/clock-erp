@@ -81,8 +81,11 @@ Shared modal shell удерживает focus внутри активного di
 ## Desktop, mobile и состояния
 
 - shared shell переключается на mobile navigation при 767 px;
-- товары, продажи, приходы и ремонты содержат дополнительные собственные
-  breakpoints и не имеют одного общего responsive contract;
+- товары, продажи, журнал и ремонты используют общий визуальный page-chrome
+  contract для desktop и mobile; page-specific фильтры, поиск, навигация и
+  query state сохраняют собственное поведение;
+- приходы и внутренние блоки перечисленных страниц сохраняют дополнительные
+  собственные breakpoints;
 - loading, empty и error реализованы неравномерно: товары имеют partial-loading,
   ремонты — явные loading/empty/error blocks, таблицы — empty states, формы —
   inline validation, а глобальные изменяющие запросы могут создавать toast;

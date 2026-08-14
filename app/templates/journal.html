@@ -143,7 +143,7 @@
 
             <nav class="journal-tabs erp-section-tabs" aria-label="Раздел журнала">
                 {% for value, label in [("", "Все"), ("product", "Товары"), ("brand", "Бренды"), ("category", "Категории"), ("sale", "Продажи"), ("receipt", "Приход")] %}
-                    <a class="journal-tab{% if filters.entity_type == value %} active{% endif %}" href="#" data-journal-tab="{{ value }}"{% if filters.entity_type == value %} aria-current="page"{% endif %}>{{ label }}</a>
+                    <a class="journal-tab erp-section-tab{% if filters.entity_type == value %} active{% endif %}" href="#" data-journal-tab="{{ value }}"{% if filters.entity_type == value %} aria-current="page"{% endif %}>{{ label }}</a>
                 {% endfor %}
             </nav>
 
@@ -294,6 +294,15 @@
             window.location.assign(url.pathname + url.search);
         });
     });
+    const activeTab = document.querySelector(
+        '.journal-tab[aria-current="page"]'
+    );
+    if (activeTab) {
+        requestAnimationFrame(() => activeTab.scrollIntoView({
+            block: "nearest",
+            inline: "nearest",
+        }));
+    }
     form.addEventListener("submit", () => {
         const contextualEntity = form.elements.filter_entity_type;
         if (contextualEntity && contextualEntity.value) {

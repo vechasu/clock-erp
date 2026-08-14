@@ -144,7 +144,9 @@
             {% if message %}<div class="notice notice-{{ notice or 'success' }}" data-erp-notification-source>{{ message }}</div>{% endif %}
             <header class="repair-header erp-workspace-header">
                 <div class="erp-workspace-heading"><h1>Ремонт</h1><p>Учёт ремонтных обращений</p></div>
-                <button id="repairAdd" class="repair-button primary erp-workspace-primary" type="button"><span aria-hidden="true">+</span> Добавить ремонт</button>
+                <div class="erp-workspace-actions">
+                    <button id="repairAdd" class="repair-button primary erp-workspace-primary" type="button"><span aria-hidden="true">+</span> Добавить ремонт</button>
+                </div>
             </header>
 
             <form id="repairFilters" class="repair-toolbar" method="get">
