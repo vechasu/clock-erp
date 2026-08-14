@@ -23,6 +23,7 @@ from app.services.product_reconciliation import (
 from app.services.shared_catalog import (
     DuplicateCatalogValueError,
     assign_product_taxonomy,
+    catalog_contains_pattern,
     catalog_prefix_pattern,
     ensure_brand,
     ensure_category,
@@ -994,27 +995,50 @@ class ExcelProductCatalog:
             ).fetchone()
         return self._prepare_product(dict(row)) if row else None
 
-    def list_repair_catalog_source_items(self, limit=100000):
-        """Return only fields needed by the repair product selector."""
-        self.database.initialize()
-        limit = max(1, min(int(limit), 100000))
+    def search_repair_catalog_items(self, query="", product_id=None, limit=20):
+        """Search the repair selector without materializing the assortment."""
+        limit = max(1, min(int(limit), 20))
+        query = text(query)
+        if product_id in (None, "") and len(query) < 2:
+            return []
+        where = ["p.active = 1", VISIBLE_PRODUCT_SQL]
+        parameters = []
+        if product_id not in (None, ""):
+            try:
+                product_id = int(product_id)
+            except (TypeError, ValueError):
+                return []
+            where.append("p.id = ?")
+            parameters.append(product_id)
+        else:
+            pattern = catalog_contains_pattern(query)
+            where.append(
+                "(catalog_search_key(p.excel_name_raw) LIKE ? ESCAPE '\\' "
+                "OR catalog_search_key(p.excel_brand) LIKE ? ESCAPE '\\' "
+                "OR catalog_search_key(p.excel_article) LIKE ? ESCAPE '\\' "
+                "OR catalog_search_key(cp.barcode) LIKE ? ESCAPE '\\' "
+                "OR catalog_search_key(p.moysklad_product_id) LIKE ? ESCAPE '\\' "
+                "OR catalog_search_key(p.bitrix_external_product_id) LIKE ? "
+                "ESCAPE '\\' OR catalog_search_key(p.bitrix_xml_id) LIKE ? "
+                "ESCAPE '\\' OR CAST(p.id AS TEXT) = ?)"
+            )
+            parameters.extend([pattern] * 7 + [query])
+        parameters.append(limit)
         with self.database.connect() as connection:
+            register_catalog_search(connection)
             rows = connection.execute(
                 "SELECT p.id, p.excel_name_raw AS name, "
                 "COALESCE(p.excel_brand, '') AS brand, "
                 "COALESCE(p.excel_article, '') AS article, "
-                "COALESCE(cp.barcode, '') AS barcode, '' AS model, "
-                "p.bitrix_external_product_id, p.bitrix_thumbnail_url, "
-                "p.bitrix_primary_image_url, p.bitrix_gallery_json, "
-                "p.moysklad_product_id "
+                "'' AS model "
                 "FROM catalog_excel_products p JOIN catalog_excel_batches b "
                 "ON b.id = p.current_batch_id LEFT JOIN catalog_products cp "
                 "ON cp.id = p.bitrix_catalog_product_id "
-                "WHERE p.active = 1 AND " + VISIBLE_PRODUCT_SQL +
+                "WHERE " + " AND ".join(where) +
                 " ORDER BY p.excel_brand COLLATE NOCASE, "
                 "p.excel_name_raw COLLATE NOCASE, "
                 "p.excel_article COLLATE NOCASE, p.id LIMIT ?",
-                (limit,),
+                parameters,
             ).fetchall()
         return [dict(row) for row in rows]
 

@@ -1904,13 +1904,16 @@ def warehouse_page():
             sort_dir=sort_dir,
             add_request_id=uuid.uuid4().hex,
             visible_positions=visible_positions,
-            brand_groups=brand_groups,
-            filter_brand_groups=filter_brand_groups,
+            # Shared comboboxes fetch their options on demand. Keeping hundreds
+            # of identical options in three initial widgets inflated every
+            # warehouse response without adding functionality.
+            brand_groups=[],
+            filter_brand_groups=[],
             brand_all_count="{} ед.".format(format_stock_number(sum(
                 float(item.get("stock_total") or 0)
                 for item in shared_brand_groups
             ))),
-            category_groups=category_groups,
+            category_groups=[],
             category_all_count="{} ед.".format(format_stock_number(sum(
                 float(item.get("stock_total") or 0)
                 for item in category_groups
@@ -3433,6 +3436,16 @@ def get_repair_catalog_product(product_id, items=None):
     product_id = str(product_id or "").strip()
     if not product_id:
         return None
+    if items is None:
+        try:
+            matches = ExcelProductCatalog().search_repair_catalog_items(
+                product_id=product_id,
+                limit=1,
+            )
+        except Exception:
+            app.logger.exception("Failed to load repair catalog product")
+            matches = []
+        items = matches
     return next(
         (
             item
@@ -3721,6 +3734,19 @@ def build_repair_form_payload(
         product_id,
         catalog_items,
     ) if product_id else None
+    if product_id and catalog_product is None:
+        if product_id == _repair_text(existing.get("product_id")):
+            catalog_product = {
+                "id": product_id,
+                "name": _repair_text(existing.get("product_name")),
+                "brand": _repair_text(existing.get("brand")),
+                "model": _repair_text(existing.get("model")),
+                "article": _repair_text(existing.get("article")),
+                "url": _repair_text(existing.get("product_url")),
+                "image_url": _repair_text(existing.get("product_image_url")),
+            }
+        else:
+            raise ValueError("Выбранный товар не найден в каталоге")
     order_id = _repair_text(form.get("order_id"))
     order_number = _repair_text(form.get("order_number"))
     order_source = _validated_repair_choice(
@@ -4074,10 +4100,8 @@ def repair_add():
     now = repair_now()
     case_id = str(uuid.uuid4())
     try:
-        catalog_items = build_repair_catalog_items()
         payload = build_repair_form_payload(
             request.form,
-            catalog_items=catalog_items,
         )
         attachments = save_repair_uploads(case_id)
     except ValueError as error:
@@ -4166,7 +4190,6 @@ def repair_update():
     case_id = _repair_text(request.form.get("case_id"))
     actor = current_repair_user_name()
     try:
-        catalog_items = build_repair_catalog_items()
         attachments = save_repair_uploads(case_id)
     except ValueError as error:
         return _repair_redirect(str(error), notice="error")
@@ -4179,7 +4202,6 @@ def repair_update():
             payload = build_repair_form_payload(
                 request.form,
                 existing=case,
-                catalog_items=catalog_items,
                 allow_missing_required=bool(case.get("legacy_import")),
             )
             case.update(payload)
@@ -16880,7 +16902,6 @@ def find_api_repair(case_id, cases=None):
 def create_api_repair(payload, idempotency_key=""):
     now = repair_now()
     case_id = str(uuid.uuid4())
-    catalog_items = build_repair_catalog_items()
     order_snapshot = None
     order_item = None
     if _repair_text(payload.get("order_id")):
@@ -16889,7 +16910,6 @@ def create_api_repair(payload, idempotency_key=""):
         )
     normalized = build_repair_form_payload(
         payload,
-        catalog_items=catalog_items,
         order_snapshot=order_snapshot,
         order_item=order_item,
     )
@@ -16986,43 +17006,24 @@ def create_api_repair(payload, idempotency_key=""):
 @app.route("/api/repairs/catalog", methods=["GET"])
 @app.route("/api/v1/repairs/catalog", methods=["GET"])
 def api_repairs_catalog():
-    query = (request.args.get("q") or "").strip().casefold()
-    source_items = ExcelProductCatalog().list_repair_catalog_source_items(
-        limit=100000
+    query = (request.args.get("q") or "").strip()
+    product_id = (request.args.get("product_id") or "").strip()
+    if not product_id and len(query) < 2:
+        return api_success([], total=0, limit=20)
+    limit = api_positive_int(request.args.get("limit"), 20, 20)
+    items = ExcelProductCatalog().search_repair_catalog_items(
+        query=query,
+        product_id=product_id or None,
+        limit=limit,
     )
-    for item in source_items:
-        try:
-            gallery = json.loads(item.get("bitrix_gallery_json") or "[]")
-        except (TypeError, ValueError):
-            gallery = []
-        first_file_id = next((
-            bitrix_image_file_id(image)
-            for image in gallery
-            if bitrix_image_file_id(image)
-        ), "")
-        item["thumbnail_url"] = (
-            "/warehouse/product/{}/image/{}".format(item["id"], first_file_id)
-            if item.get("bitrix_external_product_id") and first_file_id
-            else item.get("thumbnail_url")
-            or item.get("bitrix_thumbnail_url")
-            or item.get("bitrix_primary_image_url")
-            or (
-                "/warehouse/product/{}/thumbnail".format(
-                    item["moysklad_product_id"]
-                )
-                if item.get("moysklad_product_id") else ""
-            )
-        )
-    items = build_repair_catalog_items(
-        source_items
-    )
-    if query:
-        items = [
-            item for item in items
-            if query in str(item.get("search") or "")
-        ]
-    limit = api_positive_int(request.args.get("limit"), 100, 100000)
-    return api_success(items[:limit], total=len(items))
+    payload = [{
+        "id": str(item.get("id") or ""),
+        "name": str(item.get("name") or ""),
+        "brand": str(item.get("brand") or ""),
+        "model": str(item.get("model") or ""),
+        "article": str(item.get("article") or ""),
+    } for item in items]
+    return api_success(payload, total=len(payload), limit=limit)
 
 
 @app.route("/api/repairs/orders", methods=["GET"])
@@ -17230,7 +17231,6 @@ def api_repair_resource(case_id):
             normalized = build_repair_form_payload(
                 merged,
                 existing=target,
-                catalog_items=build_repair_catalog_items(),
                 allow_missing_required=bool(target.get("legacy_import")),
                 order_snapshot=order_snapshot,
                 order_item=order_item,

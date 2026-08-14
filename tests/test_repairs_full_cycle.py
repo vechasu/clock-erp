@@ -103,8 +103,34 @@ class RepairsFullCycleTest(unittest.TestCase):
 
         html = response.get_data(as_text=True)
         self.assertEqual(response.status_code, 200)
-        self.assertIn("/api/v1/repairs/catalog?limit=100000", html)
+        self.assertNotIn("/api/v1/repairs/catalog?limit=100000", html)
+        self.assertIn("data-product-search", html)
+        self.assertIn("setTimeout(async()=>", html)
+        self.assertIn("},300);", html)
+        self.assertIn("new AbortController()", html)
+        self.assertIn("sequence!==requestSequence", html)
         self.assertIn('<option value="">Ввести вручную</option>', html)
+
+    def test_unknown_catalog_product_is_rejected_but_legacy_snapshot_survives(self):
+        with self.assertRaisesRegex(ValueError, "не найден"):
+            web.build_repair_form_payload(
+                base_payload(product_id="999"),
+                catalog_items=[],
+            )
+
+        payload = web.build_repair_form_payload(
+            base_payload(product_id="999"),
+            existing={
+                "product_id": "999",
+                "product_name": "Старый товар",
+                "brand": "Legacy",
+                "model": "Archive",
+                "article": "OLD-999",
+            },
+            catalog_items=[],
+        )
+        self.assertEqual(payload["product_id"], "999")
+        self.assertEqual(payload["product_name"], "Старый товар")
 
     def test_create_from_order_requires_exact_position_and_keeps_snapshot(self):
         created = self.create(
