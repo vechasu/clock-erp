@@ -575,7 +575,8 @@ class AuditJournalUiTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         source = response.get_data(as_text=True)
         self.assertIn(
-            'class="journal-tab active" href="#" data-journal-tab="product"'
+            'class="journal-tab erp-section-tab active" href="#" '
+            'data-journal-tab="product"'
             ' aria-current="page"',
             source,
         )

@@ -37,7 +37,10 @@ class ErpDesignSystemV1Test(unittest.TestCase):
         self.assertIn('<body class="journal-page">', journal)
         self.assertIn("journal-header erp-workspace-header", journal)
         self.assertIn("journal-tabs erp-section-tabs", journal)
-        self.assertIn('class="journal-tab{% if filters.entity_type', journal)
+        self.assertIn(
+            'class="journal-tab erp-section-tab{% if filters.entity_type',
+            journal,
+        )
         self.assertIn("sales-tabs erp-section-tabs", sales)
         self.assertIn("sales-tab erp-section-tab", sales)
 
