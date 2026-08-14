@@ -3,23 +3,26 @@ import fcntl
 import json
 import shutil
 import uuid
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 
-REPAIR_SCHEMA_VERSION = 2
+REPAIR_SCHEMA_VERSION = 3
 
 REPAIR_STATUS_LABELS = {
     "new": "Новая",
     "waiting_customer_shipment": "Ожидаем отправку клиентом",
     "inbound_transit": "В пути к нам",
-    "at_us": "У нас",
-    "waiting_master": "Ожидает передачи мастеру",
-    "at_master": "У мастера",
-    "waiting_decision": "Ожидает решения",
+    "waiting_diagnostics": "Ожидает диагностики",
+    "diagnostics": "На диагностике",
+    "waiting_decision": "Ожидает решения клиента",
     "waiting_payment": "Ожидается оплата",
+    "in_repair": "В ремонте",
+    "ready_return": "Готов к возврату",
     "outbound_transit": "В пути к клиенту",
     "completed": "Завершено",
+    "cancelled": "Отменено",
 }
 
 REPAIR_TYPE_LABELS = {
@@ -27,19 +30,16 @@ REPAIR_TYPE_LABELS = {
     "paid_repair": "Платный ремонт",
     "warranty_repair": "Гарантийный ремонт",
     "repeat_repair": "Повторный ремонт",
-    "repeat_diagnostics": "Повторная диагностика / замена",
-    "repair_completed": "Ремонт завершён",
-    "surcharge_accessories": "Доплата / аксессуары",
 }
 
 REPAIR_LOCATION_LABELS = {
     "with_customer": "У клиента",
     "inbound_transit": "В пути к нам",
     "at_us": "У нас",
-    "with_master": "У мастера",
+    "with_master": "У мастера/в сервисе",
     "outbound_transit": "В пути к клиенту",
-    "with_customer_returned": "У клиента",
-    "unknown": "Требует уточнения",
+    "delivered": "Выдан клиенту",
+    "unknown": "Неизвестно",
 }
 
 REPAIR_CHANNEL_LABELS = {
@@ -57,12 +57,92 @@ SHIPMENT_DIRECTION_LABELS = {
     "unknown": "Требует уточнения",
 }
 
+REPAIR_RESPONSIBILITY_LABELS = {
+    "us": "От нас",
+    "customer": "От клиента",
+    "delivery": "От доставки",
+}
+
+REPAIR_RESPONSIBILITY_GROUPS = {
+    "new": "us",
+    "waiting_customer_shipment": "customer",
+    "inbound_transit": "delivery",
+    "waiting_diagnostics": "us",
+    "diagnostics": "us",
+    "waiting_decision": "customer",
+    "waiting_payment": "customer",
+    "in_repair": "us",
+    "ready_return": "us",
+    "outbound_transit": "delivery",
+    "completed": "completed",
+    "cancelled": "cancelled",
+}
+
+RETURN_METHOD_LABELS = {
+    "cdek": "СДЭК",
+    "pickup": "Самовывоз",
+    "courier": "Курьер",
+    "other": "Другое",
+}
+
+COMPLETION_RESULT_LABELS = {
+    "repaired": "Отремонтировано",
+    "replaced": "Заменено",
+    "returned_unrepaired": "Возвращено без ремонта",
+    "impossible": "Ремонт невозможен",
+    "customer_declined": "Клиент отказался от ремонта",
+    "other": "Другое",
+}
+
+REPAIR_ACTION_LABELS = {
+    "add_incoming_waybill": "Добавить входящую накладную",
+    "request_shipment": "Ожидать отправку клиентом",
+    "mark_customer_sent": "Отметить отправку клиентом",
+    "receive": "Принять товар",
+    "start_diagnostics": "Передать на диагностику",
+    "finish_diagnostics": "Зафиксировать диагностику",
+    "request_decision": "Запросить решение клиента",
+    "accept_paid": "Зафиксировать решение клиента",
+    "accept_free": "Согласовать бесплатный ремонт",
+    "record_payment": "Зафиксировать оплату",
+    "start_repair": "Начать ремонт",
+    "mark_ready": "Отметить готовность",
+    "send_to_customer": "Отправить клиенту",
+    "complete": "Завершить",
+    "cancel": "Отменить",
+    "reopen": "Возобновить",
+}
+
+REPAIR_TRANSITIONS = {
+    "add_incoming_waybill": (
+        set(REPAIR_STATUS_LABELS) - {"completed", "cancelled"},
+        None,
+    ),
+    "request_shipment": ({"new"}, "waiting_customer_shipment"),
+    "mark_customer_sent": ({"waiting_customer_shipment"}, "inbound_transit"),
+    "receive": ({"new", "inbound_transit"}, "waiting_diagnostics"),
+    "start_diagnostics": ({"waiting_diagnostics"}, "diagnostics"),
+    "finish_diagnostics": ({"diagnostics"}, "waiting_decision"),
+    "request_decision": ({"diagnostics"}, "waiting_decision"),
+    "accept_paid": ({"waiting_decision"}, "waiting_payment"),
+    "accept_free": ({"waiting_decision"}, "in_repair"),
+    "record_payment": ({"waiting_payment"}, "in_repair"),
+    "start_repair": ({"waiting_decision"}, "in_repair"),
+    "mark_ready": ({"in_repair"}, "ready_return"),
+    "send_to_customer": ({"ready_return"}, "outbound_transit"),
+    "complete": ({"ready_return", "outbound_transit"}, "completed"),
+    "cancel": (set(REPAIR_STATUS_LABELS) - {"completed", "cancelled"}, "cancelled"),
+    "reopen": ({"completed", "cancelled"}, "new"),
+}
+
 LEGACY_STATUS_MAP = {
     "done": "completed",
-    "diagnostics": "at_us",
+    "at_us": "waiting_diagnostics",
+    "waiting_master": "waiting_diagnostics",
+    "at_master": "diagnostics",
     "waiting": "waiting_decision",
-    "in_progress": "at_master",
-    "ready": "at_us",
+    "in_progress": "in_repair",
+    "ready": "ready_return",
     "issued": "completed",
 }
 
@@ -76,13 +156,15 @@ STATUS_LOCATION_MAP = {
     "new": "with_customer",
     "waiting_customer_shipment": "with_customer",
     "inbound_transit": "inbound_transit",
-    "at_us": "at_us",
-    "waiting_master": "at_us",
-    "at_master": "with_master",
+    "waiting_diagnostics": "at_us",
+    "diagnostics": "with_master",
     "waiting_decision": "with_master",
     "waiting_payment": "at_us",
+    "in_repair": "with_master",
+    "ready_return": "at_us",
     "outbound_transit": "outbound_transit",
-    "completed": "with_customer_returned",
+    "completed": "delivered",
+    "cancelled": "unknown",
 }
 
 DEFAULT_FIELDS = {
@@ -92,6 +174,9 @@ DEFAULT_FIELDS = {
     "archived_at": "",
     "responsible": "",
     "order_number": "",
+    "order_id": "",
+    "order_item_id": "",
+    "order_item_name": "",
     "order_source": "none",
     "client_name": "",
     "client_phone": "",
@@ -108,11 +193,32 @@ DEFAULT_FIELDS = {
     "communication_channel": "other",
     "contact": "",
     "problem": "",
+    "problem_details": "",
+    "external_condition": "",
+    "note": "",
     "diagnostic_result": "",
-    "master_conclusion": "",
-    "decision": "",
-    "estimate_cost": "",
-    "final_cost": "",
+    "proposed_solution": "",
+    "customer_decision": "",
+    "agreed_cost": "",
+    "payment_amount": "",
+    "paid_at": "",
+    "work_result": "",
+    "completion_result": "",
+    "completion_comment": "",
+    "cancellation_reason": "",
+    "incoming_waybill": "",
+    "return_method": "",
+    "outgoing_waybill": "",
+    "next_action": "",
+    "waiting_for": "us",
+    "control_date": "",
+    "parent_repair_id": "",
+    "repeat_repair_id": "",
+    "completed_at": "",
+    "cancelled_at": "",
+    "created_by": "",
+    "updated_by": "",
+    "last_idempotency_key": "",
     "location": "unknown",
     "request_at": "",
     "customer_sent_at": "",
@@ -174,6 +280,284 @@ def make_history_event(
 def append_history_event(case, *args, **kwargs):
     history = case.setdefault("history", [])
     history.append(make_history_event(*args, **kwargs))
+
+
+def normalize_money(value, field_label="Сумма"):
+    text = _text(value).replace(" ", "").replace(",", ".")
+    if not text:
+        return ""
+    try:
+        amount = Decimal(text)
+    except InvalidOperation as error:
+        raise ValueError(f"{field_label}: укажите корректное число") from error
+    if amount < 0:
+        raise ValueError(f"{field_label} не может быть отрицательной")
+    return format(amount.quantize(Decimal("0.01")), "f")
+
+
+def normalize_date(value, field_label="Дата"):
+    text = _date_part(value)
+    if not text:
+        return ""
+    try:
+        date.fromisoformat(text)
+    except ValueError as error:
+        raise ValueError(f"{field_label}: укажите корректную дату") from error
+    return text
+
+
+def available_repair_actions(case):
+    status = _text(case.get("status"))
+    return [
+        action
+        for action, (allowed, _target) in REPAIR_TRANSITIONS.items()
+        if status in allowed
+    ]
+
+
+def repair_attention_key(case, today=None):
+    """Stable business sorting: overdue, our action, today, active, closed."""
+    today = today or date.today().isoformat()
+    status = _text(case.get("status"))
+    control = _date_part(case.get("control_date"))
+    active = status not in {"completed", "cancelled"}
+    overdue = active and bool(control) and control < today
+    ours = active and _text(case.get("waiting_for")) == "us"
+    due_today = active and control == today
+    if overdue:
+        group = 0
+    elif ours:
+        group = 1
+    elif due_today:
+        group = 2
+    elif active:
+        group = 3
+    elif status == "completed":
+        group = 4
+    else:
+        group = 5
+    return (
+        group,
+        control or "9999-12-31",
+        _text(case.get("created_at")),
+        _text(case.get("id")),
+    )
+
+
+def apply_repair_action(case, action, payload, actor="Система"):
+    """Validate and atomically mutate one repair workflow state."""
+    if action not in REPAIR_TRANSITIONS:
+        raise ValueError("Неизвестное действие ремонта")
+    payload = payload if isinstance(payload, dict) else {}
+    idempotency_key = _text(payload.get("idempotency_key"))
+    if idempotency_key and idempotency_key == _text(
+        case.get("last_idempotency_key")
+    ):
+        return False
+    before = copy.deepcopy(case)
+    status = _text(case.get("status"))
+    allowed, target = REPAIR_TRANSITIONS[action]
+    if status not in allowed:
+        raise ValueError("Действие недоступно на текущем этапе")
+    target = target or status
+
+    reason = _text(payload.get("reason"))
+    old_incoming_waybill = _text(case.get("incoming_waybill"))
+
+    if action == "add_incoming_waybill":
+        incoming = _text(
+            payload.get("incoming_waybill") or case.get("incoming_waybill")
+        )
+        if not incoming:
+            raise ValueError("Укажите входящую накладную")
+        case["incoming_waybill"] = incoming
+
+    if action in {"finish_diagnostics", "request_decision"}:
+        diagnostic = _text(
+            payload.get("diagnostic_result") or case.get("diagnostic_result")
+        )
+        solution = _text(
+            payload.get("proposed_solution") or case.get("proposed_solution")
+        )
+        if not diagnostic:
+            raise ValueError("Укажите результат диагностики")
+        if not solution:
+            raise ValueError("Укажите предложенное решение")
+        case["diagnostic_result"] = diagnostic
+        case["proposed_solution"] = solution
+
+    if action in {"accept_paid", "accept_free"}:
+        decision = _text(
+            payload.get("customer_decision") or case.get("customer_decision")
+        )
+        if not decision:
+            raise ValueError("Укажите решение клиента")
+        case["customer_decision"] = decision
+        if action == "accept_paid":
+            case["agreed_cost"] = normalize_money(
+                payload.get("agreed_cost") or case.get("agreed_cost"),
+                "Согласованная стоимость",
+            )
+            if not case["agreed_cost"]:
+                raise ValueError("Укажите согласованную стоимость")
+
+    if action == "record_payment":
+        amount = normalize_money(
+            payload.get("payment_amount") or case.get("agreed_cost"),
+            "Сумма оплаты",
+        )
+        if not amount:
+            raise ValueError("Укажите сумму оплаты")
+        case["payment_amount"] = amount
+        case["paid_at"] = repair_now()
+
+    if action == "send_to_customer":
+        return_method = _text(
+            payload.get("return_method") or case.get("return_method")
+        )
+        if return_method not in RETURN_METHOD_LABELS:
+            raise ValueError("Выберите способ возврата")
+        outgoing = _text(
+            payload.get("outgoing_waybill") or case.get("outgoing_waybill")
+        )
+        if return_method in {"cdek", "courier"} and not outgoing:
+            raise ValueError("Укажите исходящую накладную")
+        case["return_method"] = return_method
+        case["outgoing_waybill"] = outgoing
+
+    if action == "complete":
+        if status == "ready_return" and _text(
+            payload.get("return_method") or case.get("return_method")
+        ) not in {"pickup", "other"}:
+            raise ValueError("Для доставки сначала отметьте отправку клиенту")
+        result = _text(
+            payload.get("completion_result") or case.get("completion_result")
+        )
+        if result not in COMPLETION_RESULT_LABELS:
+            raise ValueError("Выберите результат завершения")
+        case["completion_result"] = result
+        case["work_result"] = _text(
+            payload.get("work_result") or case.get("work_result")
+        )
+        case["completion_comment"] = _text(payload.get("comment"))
+        case["completed_at"] = repair_now()
+
+    if action == "cancel":
+        if not reason:
+            raise ValueError("Укажите причину отмены")
+        case["cancellation_reason"] = reason
+        case["cancelled_at"] = repair_now()
+
+    if action == "reopen":
+        if not reason:
+            raise ValueError("Укажите причину возобновления")
+        requested_status = _text(payload.get("status")) or "new"
+        if requested_status in {"completed", "cancelled"} or requested_status not in REPAIR_STATUS_LABELS:
+            raise ValueError("Выберите активный статус")
+        target = requested_status
+        case["completed_at"] = ""
+        case["cancelled_at"] = ""
+        case["cancellation_reason"] = ""
+
+    next_action = _text(payload.get("next_action"))
+    waiting_for = _text(payload.get("waiting_for"))
+    control_date = normalize_date(payload.get("control_date"), "Контрольная дата")
+    if target not in {"completed", "cancelled"}:
+        if not next_action:
+            raise ValueError("Укажите следующее действие")
+        if waiting_for not in REPAIR_RESPONSIBILITY_LABELS:
+            raise ValueError("Укажите, от кого ожидается действие")
+        if not control_date:
+            raise ValueError("Укажите контрольную дату")
+        case["next_action"] = next_action
+        case["waiting_for"] = waiting_for
+        case["control_date"] = control_date
+    else:
+        case["next_action"] = ""
+        case["control_date"] = ""
+
+    old_status = status
+    old_location = _text(case.get("location"))
+    case["status"] = target
+    action_locations = {
+        "request_shipment": "with_customer",
+        "mark_customer_sent": "inbound_transit",
+        "receive": "at_us",
+        "start_diagnostics": "with_master",
+        "start_repair": "with_master",
+        "mark_ready": "at_us",
+        "send_to_customer": "outbound_transit",
+        "complete": "delivered",
+    }
+    if action in action_locations:
+        case["location"] = action_locations[action]
+    case["updated_at"] = repair_now()
+    case["updated_by"] = actor
+    case["last_idempotency_key"] = idempotency_key
+    if action == "add_incoming_waybill":
+        append_history_event(
+            case,
+            REPAIR_ACTION_LABELS[action],
+            actor=actor,
+            field="incoming_waybill",
+            old_value=old_incoming_waybill,
+            new_value=case["incoming_waybill"],
+            comment=reason or _text(payload.get("comment")),
+        )
+    else:
+        append_history_event(
+            case,
+            REPAIR_ACTION_LABELS[action],
+            actor=actor,
+            field="status",
+            old_value=REPAIR_STATUS_LABELS.get(old_status, old_status),
+            new_value=REPAIR_STATUS_LABELS[target],
+            comment=reason or _text(payload.get("comment")),
+        )
+    if old_location != _text(case.get("location")):
+        append_history_event(
+            case,
+            "Изменено местонахождение",
+            actor=actor,
+            field="location",
+            old_value=REPAIR_LOCATION_LABELS.get(old_location, old_location),
+            new_value=REPAIR_LOCATION_LABELS.get(
+                case.get("location"), case.get("location")
+            ),
+        )
+    field_labels = {
+        "diagnostic_result": "Результат диагностики",
+        "proposed_solution": "Предложенное решение",
+        "customer_decision": "Решение клиента",
+        "agreed_cost": "Согласованная стоимость",
+        "payment_amount": "Сумма оплаты",
+        "paid_at": "Дата оплаты",
+        "incoming_waybill": "Входящая накладная",
+        "return_method": "Способ возврата",
+        "outgoing_waybill": "Исходящая накладная",
+        "work_result": "Итог выполненных работ",
+        "completion_result": "Результат завершения",
+        "cancellation_reason": "Причина отмены",
+        "next_action": "Следующее действие",
+        "waiting_for": "Ожидаем действие",
+        "control_date": "Контрольная дата",
+    }
+    for field, label in field_labels.items():
+        old_value = _text(before.get(field))
+        new_value = _text(case.get(field))
+        if old_value == new_value:
+            continue
+        if action == "add_incoming_waybill" and field == "incoming_waybill":
+            continue
+        append_history_event(
+            case,
+            f"Изменено поле «{label}»",
+            actor=actor,
+            field=field,
+            old_value=old_value,
+            new_value=new_value,
+        )
+    return True
 
 
 def _normalize_existing_history(case_id, history):
@@ -332,6 +716,11 @@ def migrate_repair_case(source, migrated_at=None):
         case.get("request_type") or case.get("repair_type")
     ) or "paid_repair"
     request_type = LEGACY_TYPE_MAP.get(original_type, original_type)
+    request_type = {
+        "repeat_diagnostics": "repeat_repair",
+        "repair_completed": "paid_repair",
+        "surcharge_accessories": "paid_repair",
+    }.get(request_type, request_type)
     if request_type not in REPAIR_TYPE_LABELS:
         request_type = "paid_repair"
         review_notes.append(
@@ -393,10 +782,45 @@ def migrate_repair_case(source, migrated_at=None):
     }.get(channel, "")
 
     location = _text(case.get("location")).lower()
+    location = {
+        "with_customer_returned": "delivered",
+    }.get(location, location)
     if location not in REPAIR_LOCATION_LABELS:
         location = STATUS_LOCATION_MAP.get(status, "unknown")
         mapped_fields += 1
     case["location"] = location
+
+    compatibility_fields = {
+        "problem_details": ("communication",),
+        "note": ("internal_comment",),
+        "proposed_solution": ("decision", "master_conclusion"),
+        "agreed_cost": ("final_cost", "estimate_cost"),
+        "control_date": ("due_date",),
+        "completed_at": ("repair_completed_at",),
+    }
+    for target, sources in compatibility_fields.items():
+        if _text(case.get(target)):
+            continue
+        value = next(
+            (_text(case.get(source)) for source in sources if _text(case.get(source))),
+            "",
+        )
+        if value:
+            case[target] = value
+            if previous_version < REPAIR_SCHEMA_VERSION:
+                mapped_fields += 1
+    case["order_id"] = _text(case.get("order_id") or case.get("order_number"))
+    case["order_item_id"] = _text(case.get("order_item_id"))
+    case["order_item_name"] = _text(
+        case.get("order_item_name") or case.get("product_name")
+    )
+    case["waiting_for"] = _text(case.get("waiting_for"))
+    if case["waiting_for"] not in REPAIR_RESPONSIBILITY_LABELS:
+        inferred = REPAIR_RESPONSIBILITY_GROUPS.get(status, "us")
+        case["waiting_for"] = inferred if inferred in REPAIR_RESPONSIBILITY_LABELS else "us"
+    if status in {"completed", "cancelled"}:
+        case["next_action"] = ""
+        case["control_date"] = ""
 
     request_at = case.get("request_at")
     if not request_at and previous_version < REPAIR_SCHEMA_VERSION:
@@ -409,6 +833,7 @@ def migrate_repair_case(source, migrated_at=None):
         "repair_completed_at",
         "returned_at",
         "due_date",
+        "control_date",
     ):
         case[field] = _date_part(case.get(field))
 

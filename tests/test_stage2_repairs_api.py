@@ -131,10 +131,10 @@ class Stage2RepairsApiTest(unittest.TestCase):
 
         status = self.client.post(
             f"/api/repairs/{repair_id}/status",
-            json={"status": "at_master"},
+            json={"status": "diagnostics"},
         )
         self.assertEqual(status.status_code, 200)
-        self.assertEqual(status.get_json()["data"]["status"], "at_master")
+        self.assertEqual(status.get_json()["data"]["status"], "diagnostics")
 
         shipment = self.client.post(
             f"/api/repairs/{repair_id}/shipments",

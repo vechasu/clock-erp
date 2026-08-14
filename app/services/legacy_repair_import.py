@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 from app.services.repair_cases import (
+    LEGACY_STATUS_MAP,
     REPAIR_CHANNEL_LABELS,
     REPAIR_LOCATION_LABELS,
     REPAIR_SCHEMA_VERSION,
@@ -95,9 +96,13 @@ def validate_import_dataset(dataset):
                 f"У записи {source_key} обязательны fields и shipments"
             )
         choices = (
-            ("status", REPAIR_STATUS_LABELS),
-            ("request_type", REPAIR_TYPE_LABELS),
-            ("location", REPAIR_LOCATION_LABELS),
+            ("status", set(REPAIR_STATUS_LABELS) | set(LEGACY_STATUS_MAP)),
+            (
+                "request_type",
+                set(REPAIR_TYPE_LABELS)
+                | {"repeat_diagnostics", "repair_completed", "surcharge_accessories"},
+            ),
+            ("location", set(REPAIR_LOCATION_LABELS) | {"with_customer_returned"}),
             ("communication_channel", REPAIR_CHANNEL_LABELS),
         )
         for field, allowed in choices:

@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ТТТ ERP — Ремонт</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/themes.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/erp-components.css') }}">
+    <style>
+        * { box-sizing: border-box; }
+        body { margin: 0; background: #f4f7fb; color: #172033; font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+        button, input, select, textarea { font: inherit; }
+        .repair-main { min-width: 0; width: 100%; padding: 20px 32px 48px; }
+        .repair-shell { width: min(100%, 1480px); margin: 0 auto; }
+        .repair-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+        .repair-header h1 { margin: 0; font-size: 28px; letter-spacing: -.03em; }
+        .repair-header p { margin: 4px 0 0; color: #687386; font-size: 14px; }
+        .repair-button { display: inline-flex; min-height: 40px; align-items: center; justify-content: center; gap: 7px; padding: 9px 14px; border: 1px solid #cfd7e2; border-radius: 10px; background: #fff; color: #334155; font-weight: 750; cursor: pointer; text-decoration: none; }
+        .repair-button:hover { background: #f8fafc; border-color: #aeb9c7; }
+        .repair-button.primary { border-color: #2563eb; background: #2563eb; color: #fff; }
+        .repair-button.primary:hover { background: #1d4ed8; }
+        .repair-button.danger { color: #b91c1c; }
+        .repair-toolbar { position: relative; display: flex; align-items: center; gap: 8px; margin-top: 18px; padding: 12px; border: 1px solid #dfe5ed; border-radius: 12px; background: #fff; box-shadow: 0 2px 10px rgba(15, 23, 42, .025); }
+        .repair-search { position: relative; flex: 1 1 480px; min-width: 220px; }
+        .repair-search svg { position: absolute; top: 50%; left: 12px; width: 17px; height: 17px; transform: translateY(-50%); fill: none; stroke: #7b8798; stroke-width: 1.8; pointer-events: none; }
+        .repair-control { width: 100%; min-height: 40px; padding: 8px 11px; border: 1px solid #cfd5dc; border-radius: 10px; background: #fff; color: #253044; outline: none; }
+        .repair-control:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37, 99, 235, .08); }
+        .repair-search .repair-control { padding-left: 38px; }
+        .repair-toolbar-action { flex: 0 0 auto; }
+        .repair-filter-count { display: inline-grid; min-width: 18px; height: 18px; place-items: center; padding: 0 5px; border-radius: 9px; background: #e8f0ff; color: #2563eb; font-size: 11px; }
+        .repair-filter-panel, .repair-columns-panel, .repair-more-panel { position: absolute; top: calc(100% + 7px); right: 12px; z-index: 25; width: min(620px, calc(100vw - 28px)); padding: 16px; border: 1px solid #d9e1eb; border-radius: 12px; background: #fff; box-shadow: 0 18px 48px rgba(15, 23, 42, .16); }
+        .repair-columns-panel { width: min(300px, calc(100vw - 28px)); }
+        .repair-more-panel { width: min(230px, calc(100vw - 28px)); }
+        [hidden] { display: none !important; }
+        .repair-filter-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+        .repair-field { display: grid; gap: 6px; min-width: 0; }
+        .repair-field > span, .repair-label { color: #526074; font-size: 12px; font-weight: 750; }
+        .repair-filter-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+        .repair-check { display: flex; align-items: center; gap: 8px; min-height: 36px; color: #38465a; font-size: 13px; }
+        .repair-active-filters { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
+        .repair-chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; border: 0; border-radius: 999px; background: #eaf2ff; color: #2456a6; font-size: 12px; font-weight: 700; cursor: pointer; }
+        .repair-table-card { margin-top: 12px; overflow: hidden; border: 1px solid #dfe5ed; border-radius: 12px; background: #fff; box-shadow: 0 2px 10px rgba(15, 23, 42, .025); }
+        .repair-table-wrap { overflow-x: auto; }
+        .repair-table { width: 100%; min-width: 1180px; border-collapse: collapse; table-layout: fixed; }
+        .repair-table th, .repair-table td { padding: 12px 10px; border-bottom: 1px solid #e7ebf0; vertical-align: top; text-align: left; }
+        .repair-table th { background: #f8fafc; color: #64748b; font-size: 11px; font-weight: 800; letter-spacing: .025em; text-transform: uppercase; }
+        .repair-table td { color: #293548; font-size: 13px; line-height: 1.38; }
+        .repair-table tbody tr { cursor: pointer; transition: background .14s; }
+        .repair-table tbody tr:hover { background: #f8fbff; }
+        .repair-table tbody tr.is-overdue { background: #fff8f8; }
+        .repair-table tbody tr.is-overdue:hover { background: #fff3f3; }
+        .repair-table tbody tr:last-child td { border-bottom: 0; }
+        .repair-status { display: inline-flex; max-width: 100%; align-items: center; padding: 5px 8px; border-radius: 999px; background: #eef2f7; color: #526074; font-size: 11px; font-weight: 800; line-height: 1.2; }
+        .repair-status[data-status="new"], .repair-status[data-status="waiting_diagnostics"] { background: #eaf2ff; color: #2456a6; }
+        .repair-status[data-status="diagnostics"], .repair-status[data-status="in_repair"] { background: #eee9ff; color: #6842b8; }
+        .repair-status[data-status="waiting_decision"], .repair-status[data-status="waiting_payment"] { background: #fff3d6; color: #9a5b00; }
+        .repair-status[data-status="completed"] { background: #e7f7ed; color: #247142; }
+        .repair-status[data-status="cancelled"] { background: #f1f3f6; color: #667085; }
+        .repair-primary { display: block; color: #253044; font-weight: 800; overflow-wrap: anywhere; }
+        .repair-secondary { display: block; margin-top: 3px; color: #748095; font-size: 12px; overflow-wrap: anywhere; }
+        .repair-order-link { color: #2563eb; text-decoration: none; }
+        .repair-problem { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+        .repair-control-date { font-weight: 750; }
+        .repair-control-date.overdue { color: #c62828; }
+        .repair-control-date.today { color: #c46a00; }
+        .repair-open { display: inline-grid; width: 34px; height: 34px; place-items: center; border: 0; border-radius: 8px; background: #eaf2ff; color: #2563eb; cursor: pointer; }
+        .repair-open svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; }
+        .repair-action-cell { display: flex; align-items: center; gap: 5px; }
+        .repair-dots { width: 34px; height: 34px; border: 0; border-radius: 8px; background: transparent; color: #64748b; font-size: 20px; cursor: pointer; }
+        .repair-mobile-list { display: none; margin-top: 12px; gap: 10px; }
+        .repair-mobile-card { padding: 14px; border: 1px solid #dfe5ed; border-radius: 12px; background: #fff; cursor: pointer; }
+        .repair-mobile-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+        .repair-mobile-card h2 { margin: 10px 0 3px; font-size: 16px; }
+        .repair-mobile-card p { margin: 7px 0 0; color: #59677b; font-size: 13px; }
+        .repair-empty { padding: 44px 18px; color: #748095; text-align: center; }
+        body.repair-drawer-open { overflow: hidden; }
+        .repair-backdrop { position: fixed; inset: 0; z-index: 90; display: none; background: rgba(15, 23, 42, .28); backdrop-filter: blur(1px); }
+        .repair-backdrop.open { display: block; }
+        .repair-drawer { position: fixed; inset: 0 0 0 auto; z-index: 91; display: flex; width: min(760px, 100%); height: 100dvh; flex-direction: column; background: #fff; box-shadow: -16px 0 42px rgba(15, 23, 42, .19); transform: translateX(104%); transition: transform .2s ease; }
+        .repair-drawer.open { transform: translateX(0); }
+        .repair-drawer-head { display: flex; flex: 0 0 auto; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 20px 22px 16px; border-bottom: 1px solid #e3e8ef; }
+        .repair-drawer-head h2 { margin: 0; font-size: 21px; }
+        .repair-drawer-subtitle { margin-top: 4px; color: #687386; font-size: 13px; }
+        .repair-close { width: 38px; height: 38px; border: 1px solid #d6dee8; border-radius: 10px; background: #fff; color: #48566a; font-size: 22px; cursor: pointer; }
+        .repair-drawer-body { min-height: 0; flex: 1 1 auto; padding: 20px 22px 34px; overflow-y: auto; overscroll-behavior: contain; }
+        .repair-drawer-footer { display: flex; flex: 0 0 auto; justify-content: flex-end; gap: 8px; padding: 14px 22px; border-top: 1px solid #e3e8ef; background: #fff; }
+        .repair-form-section, .repair-detail-section { margin-bottom: 20px; padding: 16px; border: 1px solid #e2e7ee; border-radius: 12px; background: #fff; }
+        .repair-form-section h3, .repair-detail-section h3 { margin: 0 0 13px; color: #28364a; font-size: 14px; }
+        .repair-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+        .repair-field.full { grid-column: 1 / -1; }
+        .repair-field textarea { min-height: 88px; resize: vertical; }
+        .repair-radio-row { display: flex; gap: 16px; min-height: 40px; align-items: center; }
+        .repair-radio-row label { display: inline-flex; align-items: center; gap: 7px; }
+        .repair-order-results { max-height: 220px; margin-top: 7px; overflow-y: auto; border: 1px solid #dde4ed; border-radius: 10px; }
+        .repair-order-result { display: block; width: 100%; padding: 10px 12px; border: 0; border-bottom: 1px solid #edf0f4; background: #fff; color: #334155; text-align: left; cursor: pointer; }
+        .repair-order-result:hover { background: #f7faff; }
+        .repair-order-result:last-child { border-bottom: 0; }
+        .repair-order-selected { margin-top: 8px; padding: 10px 12px; border-radius: 9px; background: #edf5ff; color: #2456a6; font-size: 13px; }
+        .repair-detail-summary { display: grid; grid-template-columns: 1fr auto; gap: 14px; align-items: start; }
+        .repair-detail-product { margin-top: 10px; font-size: 18px; font-weight: 850; }
+        .repair-detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 18px; }
+        .repair-detail-item dt { color: #748095; font-size: 11px; font-weight: 750; text-transform: uppercase; }
+        .repair-detail-item dd { margin: 4px 0 0; color: #293548; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+        .repair-history { margin: 0; padding: 0; list-style: none; }
+        .repair-history li { padding: 12px 0; border-bottom: 1px solid #e8edf3; }
+        .repair-history li:last-child { border-bottom: 0; }
+        .repair-history time { display: block; margin-top: 4px; color: #8994a5; font-size: 12px; }
+        .repair-action-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+        .repair-action-form .full { grid-column: 1 / -1; }
+        .repair-error { margin-bottom: 14px; padding: 10px 12px; border-radius: 9px; background: #fff0f0; color: #b42318; font-size: 13px; }
+        .repair-loading { padding: 34px 10px; color: #748095; text-align: center; }
+        .repair-toast { position: fixed; right: 24px; bottom: 24px; z-index: 120; max-width: min(390px, calc(100vw - 30px)); padding: 12px 15px; border-radius: 10px; background: #172033; color: #fff; box-shadow: 0 12px 35px rgba(15, 23, 42, .28); }
+        @media (max-width: 900px) {
+            .repair-main { padding: 16px 14px 92px; }
+            .repair-toolbar { flex-wrap: wrap; }
+            .repair-search { flex-basis: 100%; }
+            .repair-filter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .repair-table-card { display: none; }
+            .repair-mobile-list { display: grid; }
+        }
+        @media (max-width: 600px) {
+            .repair-main { padding-inline: 10px; }
+            .repair-header { align-items: stretch; flex-direction: column; }
+            .repair-header .repair-button { align-self: flex-start; }
+            .repair-toolbar-action { flex: 1 1 auto; }
+            .repair-filter-grid, .repair-form-grid, .repair-detail-grid, .repair-action-form { grid-template-columns: 1fr; }
+            .repair-field.full, .repair-action-form .full { grid-column: auto; }
+            .repair-drawer { width: 100%; }
+            .repair-drawer-head { padding: 17px 15px 14px; }
+            .repair-drawer-body { padding: 16px 15px 28px; }
+            .repair-drawer-footer { padding: 12px 15px; }
+        }
+    </style>
+</head>
+<body class="repair-page">
+{% from "_pagination.html" import render_erp_pagination %}
+<div class="app">
+    {% include "_sidebar.html" %}
+    <main class="repair-main">
+        <div class="repair-shell">
+            {% if message %}<div class="notice notice-{{ notice or 'success' }}" data-erp-notification-source>{{ message }}</div>{% endif %}
+            <header class="repair-header erp-workspace-header">
+                <div class="erp-workspace-heading"><h1>Ремонт</h1><p>Учёт ремонтных обращений</p></div>
+                <button id="repairAdd" class="repair-button primary erp-workspace-primary" type="button"><span aria-hidden="true">+</span> Добавить ремонт</button>
+            </header>
+
+            <form id="repairFilters" class="repair-toolbar" method="get">
+                <div class="repair-search">
+                    <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"></circle><path d="m12.5 12.5 4 4"></path></svg>
+                    <input id="repairSearch" class="repair-control" type="search" name="q" value="{{ filters.q }}" placeholder="Поиск по заказу, клиенту, телефону или товару" autocomplete="off">
+                </div>
+                {% set active_filter_count = [filters.status, filters.type, filters.location, filters.order_link, filters.channel, filters.waiting_for, filters.control, filters.attention, repair_view if repair_view != 'active' else ''] | select | list | length %}
+                <button id="repairFilterToggle" class="repair-button repair-toolbar-action" type="button">Фильтры{% if active_filter_count %}<span class="repair-filter-count">{{ active_filter_count }}</span>{% endif %}</button>
+                <button id="repairColumnsToggle" class="repair-button repair-toolbar-action" type="button">Столбцы</button>
+                <button id="repairMoreToggle" class="repair-button repair-toolbar-action" type="button">Ещё</button>
+                <div id="repairFilterPanel" class="repair-filter-panel" hidden>
+                    <div class="repair-filter-grid">
+                        <label class="repair-field"><span>Статус</span><select class="repair-control" name="status"><option value="">Все статусы</option>{% for value, label in status_labels.items() %}<option value="{{ value }}"{% if filters.status == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+                        <label class="repair-field"><span>Тип ремонта</span><select class="repair-control" name="type"><option value="">Все типы</option>{% for value, label in type_labels.items() %}<option value="{{ value }}"{% if filters.type == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+                        <label class="repair-field"><span>Где товар</span><select class="repair-control" name="location"><option value="">Любое место</option>{% for value, label in location_labels.items() %}<option value="{{ value }}"{% if filters.location == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+                        <label class="repair-field"><span>Заказ</span><select class="repair-control" name="order_link"><option value="">Все</option><option value="our"{% if filters.order_link == 'our' %} selected{% endif %}>Наш заказ</option><option value="none"{% if filters.order_link == 'none' %} selected{% endif %}>Без заказа</option></select></label>
+                        <label class="repair-field"><span>Где общаемся</span><select class="repair-control" name="channel"><option value="">Все каналы</option>{% for value, label in channel_labels.items() %}<option value="{{ value }}"{% if filters.channel == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+                        <label class="repair-field"><span>Ожидаем действие</span><select class="repair-control" name="waiting_for"><option value="">От любой стороны</option>{% for value, label in responsibility_labels.items() %}<option value="{{ value }}"{% if filters.waiting_for == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+                        <label class="repair-field"><span>Контрольная дата</span><select class="repair-control" name="control"><option value="">Любая дата</option><option value="overdue"{% if filters.control == 'overdue' %} selected{% endif %}>Просрочено</option><option value="today"{% if filters.control == 'today' %} selected{% endif %}>Сегодня</option><option value="future"{% if filters.control == 'future' %} selected{% endif %}>В будущем</option></select></label>
+                        <label class="repair-field"><span>Состояние</span><select class="repair-control" name="view"><option value="active"{% if repair_view == 'active' %} selected{% endif %}>Активные</option><option value="completed"{% if repair_view == 'completed' %} selected{% endif %}>Завершённые</option><option value="cancelled"{% if repair_view == 'cancelled' %} selected{% endif %}>Отменённые</option><option value="all"{% if repair_view == 'all' %} selected{% endif %}>Все</option></select></label>
+                        <label class="repair-check"><input type="checkbox" name="attention" value="1"{% if filters.attention %} checked{% endif %}> Только требующие внимания</label>
+                    </div>
+                    <div class="repair-filter-actions"><a class="repair-button" href="{{ url_for('repair_page') }}">Сбросить</a><button class="repair-button primary" type="submit">Применить</button></div>
+                </div>
+                <div id="repairColumnsPanel" class="repair-columns-panel" hidden>
+                    {% for key, label in [('status','Статус'),('customer','Заказ / клиент'),('product','Товар'),('channel','Связь'),('problem','Обращение'),('location','Где товар'),('control','Контроль'),('event','Последнее событие')] %}<label class="repair-check"><input type="checkbox" data-repair-column="{{ key }}" checked> {{ label }}</label>{% endfor %}
+                </div>
+                <div id="repairMorePanel" class="repair-more-panel" hidden><a class="repair-button" href="{{ url_for('repair_page', view='all') }}">Показать все</a></div>
+            </form>
+
+            {% if active_filter_count %}<div class="repair-active-filters"><span class="repair-chip">Применено фильтров: {{ active_filter_count }}</span><a class="repair-chip" href="{{ url_for('repair_page') }}">Сбросить все ×</a></div>{% endif %}
+
+            <section class="repair-table-card" aria-label="Ремонтные обращения">
+                {% if data_error %}<div class="repair-empty"><strong>Не удалось загрузить ремонты</strong><br>{{ data_error }}</div>{% elif not cases %}<div class="repair-empty"><strong>Ремонты не найдены</strong><br>Измените фильтры или добавьте первое обращение.</div>{% else %}
+                <div class="repair-table-wrap"><table class="repair-table erp-data-table"><thead><tr>
+                    <th data-column="status" style="width:130px">Статус</th><th data-column="customer" style="width:180px">Заказ / клиент</th><th data-column="product" style="width:155px">Товар</th><th data-column="channel" style="width:115px">Связь</th><th data-column="problem" style="width:210px">Обращение</th><th data-column="location" style="width:130px">Где товар</th><th data-column="control" style="width:170px">Контроль</th><th data-column="event" style="width:175px">Последнее событие</th><th style="width:82px">Действие</th>
+                </tr></thead><tbody>
+                    {% for case in cases %}<tr class="{% if case.control_state == 'overdue' %}is-overdue{% endif %}" data-repair-id="{{ case.id }}" tabindex="0">
+                        <td data-column="status"><span class="repair-status" data-status="{{ case.status }}">{{ case.status_label }}</span></td>
+                        <td data-column="customer">{% if case.order_id %}<a class="repair-primary repair-order-link" href="/order/{{ case.order_id }}" onclick="event.stopPropagation()">{{ case.order_label }}</a>{% else %}<span class="repair-primary">Без заказа</span>{% endif %}<span class="repair-secondary">{{ case.client_name or 'Клиент не указан' }}</span><span class="repair-secondary">{{ case.contact or case.client_phone or case.client_email or case.client_messenger or 'Контакт не указан' }}</span></td>
+                        <td data-column="product"><span class="repair-primary">{{ case.brand or 'Без бренда' }}</span><span class="repair-secondary">{{ case.model or case.product_name or 'Товар не указан' }}</span></td>
+                        <td data-column="channel"><span class="repair-primary">{{ case.channel_label }}</span><span class="repair-secondary">{{ case.contact or '—' }}</span></td>
+                        <td data-column="problem"><span class="repair-problem">{{ case.problem or '—' }}</span></td>
+                        <td data-column="location"><span class="repair-primary">{{ case.location_label }}</span></td>
+                        <td data-column="control"><span class="repair-control-date {{ case.control_state }}">{{ case.control_date_display or '—' }}</span><span class="repair-secondary">{{ case.next_action or 'Нет активного действия' }}</span><span class="repair-secondary">{{ case.waiting_for_label }}</span></td>
+                        <td data-column="event"><span class="repair-primary">{{ case.latest_event.action if case.latest_event else 'Создано обращение' }}</span><span class="repair-secondary">{{ case.latest_event.timestamp if case.latest_event else case.created_at }}</span></td>
+                        <td><div class="repair-action-cell"><button class="repair-open" type="button" aria-label="Открыть карточку" data-open-repair="{{ case.id }}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 5h5v5M10 14 19 5M19 14v5H5V5h5"></path></svg></button><button class="repair-dots" type="button" aria-label="Контекстные действия" data-open-repair="{{ case.id }}">⋯</button></div></td>
+                    </tr>{% endfor %}
+                </tbody></table></div>{% endif %}
+                {% if not data_error %}{{ render_erp_pagination(pagination, "Страницы ремонтов") }}{% endif %}
+            </section>
+
+            <section class="repair-mobile-list" aria-label="Ремонтные обращения">
+                {% for case in cases %}<article class="repair-mobile-card" data-repair-id="{{ case.id }}" tabindex="0"><div class="repair-mobile-head"><span class="repair-status" data-status="{{ case.status }}">{{ case.status_label }}</span><span class="repair-control-date {{ case.control_state }}">{{ case.control_date_display or '—' }}</span></div><h2>{{ case.brand }} {{ case.model or case.product_name }}</h2><p><strong>{{ case.order_label }}</strong> · {{ case.client_name }} · {{ case.contact or case.client_phone }}</p><p>{{ case.problem }}</p><p>{{ case.location_label }} · {{ case.next_action }}</p><button class="repair-button" type="button" data-open-repair="{{ case.id }}">Открыть</button></article>{% else %}<div class="repair-empty">Ремонты не найдены.</div>{% endfor %}
+            </section>
+        </div>
+    </main>
+</div>
+
+<div id="repairBackdrop" class="repair-backdrop"></div>
+<aside id="repairDrawer" class="repair-drawer" aria-hidden="true" aria-labelledby="repairDrawerTitle">
+    <div class="repair-drawer-head"><div><h2 id="repairDrawerTitle">Карточка ремонта</h2><div id="repairDrawerSubtitle" class="repair-drawer-subtitle"></div></div><button id="repairDrawerClose" class="repair-close" type="button" aria-label="Закрыть">×</button></div>
+    <div id="repairDrawerBody" class="repair-drawer-body"></div>
+    <div id="repairDrawerFooter" class="repair-drawer-footer"></div>
+</aside>
+
+<template id="repairCreateTemplate">
+    <form id="repairEditor" novalidate>
+        <div id="repairEditorError" class="repair-error" hidden></div>
+        <section class="repair-form-section"><h3>Клиент и заказ</h3><div class="repair-form-grid">
+            <div class="repair-field full"><span>Наш заказ?</span><div class="repair-radio-row"><label><input type="radio" name="has_order" value="yes"> Да</label><label><input type="radio" name="has_order" value="no" checked> Нет</label></div></div>
+            <div class="repair-field full" data-order-fields hidden><span>Заказ</span><input class="repair-control" type="search" data-order-search placeholder="Номер, имя или телефон" autocomplete="off"><div class="repair-order-results" data-order-results hidden></div><div class="repair-order-selected" data-order-selected hidden></div><input type="hidden" name="order_id"><input type="hidden" name="order_number"></div>
+            <label class="repair-field full" data-order-fields hidden><span>Конкретная позиция заказа *</span><select class="repair-control" name="order_item_id"><option value="">Сначала выберите заказ</option></select></label>
+            <label class="repair-field"><span>Имя клиента *</span><input class="repair-control" name="client_name" required></label>
+            <label class="repair-field"><span>Телефон</span><input class="repair-control" name="client_phone"></label>
+            <label class="repair-field"><span>Email</span><input class="repair-control" type="email" name="client_email"></label>
+            <label class="repair-field"><span>Telegram / WhatsApp / другой контакт</span><input class="repair-control" name="contact"></label>
+            <label class="repair-field"><span>Где общаемся *</span><select class="repair-control" name="communication_channel">{% for value, label in channel_labels.items() %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></label>
+        </div></section>
+        <section class="repair-form-section"><h3>Товар и обращение</h3><div class="repair-form-grid">
+            <label class="repair-field full" data-manual-product><span>Товар из каталога</span><select class="repair-control" name="product_id"><option value="">Ввести вручную</option>{% for item in catalog_items %}<option value="{{ item.id }}" data-name="{{ item.name }}" data-brand="{{ item.brand }}" data-model="{{ item.model }}">{{ item.brand }} · {{ item.name }}</option>{% endfor %}</select></label>
+            <label class="repair-field"><span>Бренд</span><input class="repair-control" name="brand"></label>
+            <label class="repair-field"><span>Модель или название *</span><input class="repair-control" name="model" required></label>
+            <label class="repair-field"><span>Тип ремонта *</span><select class="repair-control" name="request_type">{% for value, label in type_labels.items() %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></label>
+            <label class="repair-field" data-parent-field hidden><span>Предыдущий ремонт *</span><select class="repair-control" name="parent_repair_id"><option value="">Выберите обращение</option>{% for item in repeat_candidates %}<option value="{{ item.id }}">{{ item.client_name }} · {{ item.brand }} {{ item.model or item.product_name }}</option>{% endfor %}</select></label>
+            <label class="repair-field full"><span>Краткая проблема *</span><input class="repair-control" name="problem" maxlength="240" required></label>
+            <label class="repair-field full"><span>Полное описание</span><textarea class="repair-control" name="problem_details"></textarea></label>
+            <label class="repair-field full"><span>Комплектация</span><textarea class="repair-control" name="equipment"></textarea></label>
+            <label class="repair-field full"><span>Внешнее состояние</span><textarea class="repair-control" name="external_condition"></textarea></label>
+            <label class="repair-field full"><span>Примечание</span><textarea class="repair-control" name="note"></textarea></label>
+        </div></section>
+        <section class="repair-form-section"><h3>Контроль</h3><div class="repair-form-grid">
+            <label class="repair-field"><span>Где находится товар *</span><select class="repair-control" name="location">{% for value, label in location_labels.items() %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></label>
+            <label class="repair-field"><span>Ожидаем действие *</span><select class="repair-control" name="waiting_for">{% for value, label in responsibility_labels.items() %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></label>
+            <label class="repair-field full"><span>Следующее действие *</span><input class="repair-control" name="next_action" required></label>
+            <label class="repair-field"><span>Контрольная дата *</span><input class="repair-control" type="date" name="control_date" required></label>
+            <label class="repair-field"><span>Входящая накладная</span><input class="repair-control" name="incoming_waybill"></label>
+        </div></section>
+    </form>
+</template>
+
+<script>
+(() => {
+    const csrfToken = {{ csrf_token() | tojson }};
+    const drawer = document.getElementById('repairDrawer');
+    const backdrop = document.getElementById('repairBackdrop');
+    const body = document.getElementById('repairDrawerBody');
+    const footer = document.getElementById('repairDrawerFooter');
+    const title = document.getElementById('repairDrawerTitle');
+    const subtitle = document.getElementById('repairDrawerSubtitle');
+    let activeRepair = null;
+    let editingId = '';
+
+    function escapeHtml(value) {
+        return String(value ?? '').replace(/[&<>'"]/g, (character) => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[character]));
+    }
+    function openDrawer() { drawer.classList.add('open'); backdrop.classList.add('open'); drawer.setAttribute('aria-hidden','false'); document.body.classList.add('repair-drawer-open'); }
+    function closeDrawer() { drawer.classList.remove('open'); backdrop.classList.remove('open'); drawer.setAttribute('aria-hidden','true'); document.body.classList.remove('repair-drawer-open'); activeRepair = null; editingId = ''; }
+    document.getElementById('repairDrawerClose').addEventListener('click', closeDrawer);
+    backdrop.addEventListener('click', closeDrawer);
+    document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && drawer.classList.contains('open')) closeDrawer(); });
+
+    function api(path, options = {}) {
+        const headers = new Headers(options.headers || {});
+        if (options.body && !(options.body instanceof FormData)) headers.set('Content-Type','application/json');
+        if (csrfToken) headers.set('X-CSRF-Token', csrfToken);
+        return fetch(path, {...options, headers}).then(async response => {
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(payload.message || payload.error || 'Не удалось выполнить операцию');
+            return payload.data;
+        });
+    }
+    function toast(message) { const node = document.createElement('div'); node.className='repair-toast'; node.textContent=message; document.body.append(node); setTimeout(() => node.remove(), 2800); }
+    function field(label, value) { return `<div class="repair-detail-item"><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value || '—')}</dd></div>`; }
+
+    function renderDetail(repair) {
+        activeRepair = repair;
+        title.textContent = 'Карточка ремонта';
+        subtitle.textContent = `${repair.order_label} · ${repair.client_name || 'Клиент не указан'}`;
+        const history = (repair.history || []).slice().reverse().map(event => `<li><strong>${escapeHtml(event.action)}</strong>${event.comment ? `<div>${escapeHtml(event.comment)}</div>` : ''}<time>${escapeHtml(event.timestamp)} · ${escapeHtml(event.actor)}</time></li>`).join('');
+        const orderLink = repair.order_id ? `<a class="repair-order-link" href="/order/${encodeURIComponent(repair.order_id)}">Открыть заказ ${escapeHtml(repair.order_label)} ↗</a>` : 'Без заказа';
+        const relationLinks = [repair.parent_repair_id ? `<button class="repair-button" data-related="${escapeHtml(repair.parent_repair_id)}">Предыдущее обращение</button>` : '', repair.repeat_repair_id ? `<button class="repair-button" data-related="${escapeHtml(repair.repeat_repair_id)}">Повторное обращение</button>` : ''].join('');
+        body.innerHTML = `
+            <section class="repair-detail-section"><div class="repair-detail-summary"><div><span class="repair-status" data-status="${escapeHtml(repair.status)}">${escapeHtml(repair.status_label)}</span><div class="repair-detail-product">${escapeHtml([repair.brand, repair.model || repair.product_name].filter(Boolean).join(' '))}</div><div class="repair-secondary">${escapeHtml(repair.problem)}</div></div></div></section>
+            <section class="repair-detail-section"><h3>Клиент и связь</h3><dl class="repair-detail-grid">${field('Заказ', repair.order_label)}${field('Клиент', repair.client_name)}${field('Основной контакт', repair.contact || repair.client_phone || repair.client_email || repair.client_messenger)}${field('Где общаемся', repair.channel_label)}</dl><div style="margin-top:12px">${orderLink}</div></section>
+            <section class="repair-detail-section"><h3>Основная информация</h3><dl class="repair-detail-grid">${field('Тип ремонта', repair.request_type_label)}${field('Где товар', repair.location_label)}${field('Краткая проблема', repair.problem)}${field('Полное описание', repair.problem_details)}${field('Комплектация', repair.equipment)}${field('Внешнее состояние', repair.external_condition)}${field('Примечание', repair.note)}</dl></section>
+            <section class="repair-detail-section"><h3>Логистика</h3><dl class="repair-detail-grid">${field('Входящая накладная', repair.incoming_waybill)}${field('Способ возврата', repair.return_method_label)}${field('Исходящая накладная', repair.outgoing_waybill)}</dl></section>
+            <section class="repair-detail-section"><h3>Диагностика и решение</h3><dl class="repair-detail-grid">${field('Результат диагностики', repair.diagnostic_result)}${field('Предложенное решение', repair.proposed_solution)}${field('Решение клиента', repair.customer_decision)}${field('Согласованная стоимость', repair.agreed_cost)}${field('Оплачено', repair.payment_amount)}${field('Дата оплаты', repair.paid_at)}${field('Итог работ', repair.work_result)}${field('Результат завершения', repair.completion_result_label)}</dl></section>
+            <section class="repair-detail-section"><h3>Контроль</h3><dl class="repair-detail-grid">${field('Следующее действие', repair.next_action)}${field('Ожидаем действие', repair.waiting_for_label)}${field('Контрольная дата', repair.control_date_display)}</dl></section>
+            ${relationLinks ? `<section class="repair-detail-section"><h3>Связи</h3>${relationLinks}</section>` : ''}
+            <section class="repair-detail-section"><h3>Действия</h3>${renderActionForm(repair)}</section>
+            <section class="repair-detail-section"><h3>История</h3><ul class="repair-history">${history || '<li>Событий пока нет</li>'}</ul></section>`;
+        footer.innerHTML = `<button class="repair-button" type="button" data-edit-repair>Редактировать</button><button class="repair-button" type="button" data-close-repair>Закрыть</button>`;
+        body.querySelectorAll('[data-related]').forEach(button => button.addEventListener('click', () => loadRepair(button.dataset.related)));
+        body.querySelector('[data-repair-action-form]')?.addEventListener('submit', submitAction);
+        footer.querySelector('[data-close-repair]').addEventListener('click', closeDrawer);
+        footer.querySelector('[data-edit-repair]').addEventListener('click', () => openEditor(repair));
+    }
+
+    function renderActionForm(repair) {
+        const options = Object.entries(repair.available_action_labels || {}).map(([value,label]) => `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`).join('');
+        if (!options) return '<p class="repair-secondary">Для текущего этапа нет доступных действий.</p>';
+        return `<form class="repair-action-form" data-repair-action-form>
+            <label class="repair-field full"><span>Бизнес-действие</span><select class="repair-control" name="action">${options}</select></label>
+            <label class="repair-field full"><span>Следующее действие</span><input class="repair-control" name="next_action" value="${escapeHtml(repair.next_action || '')}"></label>
+            <label class="repair-field"><span>Ожидаем действие</span><select class="repair-control" name="waiting_for">{% for value, label in responsibility_labels.items() %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></label>
+            <label class="repair-field"><span>Контрольная дата</span><input class="repair-control" type="date" name="control_date" value="${escapeHtml(repair.control_date || '')}"></label>
+            <label class="repair-field full"><span>Результат диагностики</span><textarea class="repair-control" name="diagnostic_result">${escapeHtml(repair.diagnostic_result || '')}</textarea></label>
+            <label class="repair-field full"><span>Предложенное решение</span><textarea class="repair-control" name="proposed_solution">${escapeHtml(repair.proposed_solution || '')}</textarea></label>
+            <label class="repair-field"><span>Решение клиента</span><input class="repair-control" name="customer_decision" value="${escapeHtml(repair.customer_decision || '')}"></label>
+            <label class="repair-field"><span>Согласованная стоимость</span><input class="repair-control" inputmode="decimal" name="agreed_cost" value="${escapeHtml(repair.agreed_cost || '')}"></label>
+            <label class="repair-field"><span>Сумма оплаты</span><input class="repair-control" inputmode="decimal" name="payment_amount"></label>
+            <label class="repair-field"><span>Входящая накладная</span><input class="repair-control" name="incoming_waybill" value="${escapeHtml(repair.incoming_waybill || '')}"></label>
+            <label class="repair-field"><span>Способ возврата</span><select class="repair-control" name="return_method"><option value="">Выберите</option>{% for value, label in return_method_labels.items() %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></label>
+            <label class="repair-field full"><span>Исходящая накладная</span><input class="repair-control" name="outgoing_waybill" value="${escapeHtml(repair.outgoing_waybill || '')}"></label>
+            <label class="repair-field full"><span>Результат завершения</span><select class="repair-control" name="completion_result"><option value="">Выберите</option>{% for value, label in completion_result_labels.items() %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></label>
+            <label class="repair-field full"><span>Итог выполненных работ</span><textarea class="repair-control" name="work_result">${escapeHtml(repair.work_result || '')}</textarea></label>
+            <label class="repair-field full"><span>Причина / комментарий</span><textarea class="repair-control" name="reason"></textarea></label>
+            <button class="repair-button primary full" type="submit">Выполнить действие</button></form>`;
+    }
+
+    async function submitAction(event) {
+        event.preventDefault(); const form = event.currentTarget; const button = form.querySelector('button[type=submit]'); button.disabled = true;
+        const values = Object.fromEntries(new FormData(form)); const action = values.action; delete values.action; values.idempotency_key = crypto.randomUUID();
+        try { const repair = await api(`/api/v1/repairs/${encodeURIComponent(activeRepair.id)}/actions/${encodeURIComponent(action)}`, {method:'POST', body:JSON.stringify(values), headers:{'Idempotency-Key': values.idempotency_key}}); renderDetail(repair); toast('Действие выполнено'); }
+        catch (error) { toast(error.message); button.disabled = false; }
+    }
+
+    async function loadRepair(id) { title.textContent='Карточка ремонта'; subtitle.textContent='Загрузка…'; body.innerHTML='<div class="repair-loading">Загружаем карточку…</div>'; footer.innerHTML=''; openDrawer(); try { renderDetail(await api(`/api/v1/repairs/${encodeURIComponent(id)}`)); } catch(error) { body.innerHTML=`<div class="repair-error">${escapeHtml(error.message)}</div>`; } }
+
+    function openEditor(repair = null) {
+        editingId = repair?.id || '';
+        const fragment = document.getElementById('repairCreateTemplate').content.cloneNode(true); body.replaceChildren(fragment); title.textContent = repair ? 'Редактировать ремонт' : 'Добавить ремонт'; subtitle.textContent = repair ? `${repair.order_label} · ${repair.client_name}` : 'Новое обращение';
+        const form = body.querySelector('#repairEditor'); const orderFields = body.querySelectorAll('[data-order-fields]');
+        form.elements.has_order.forEach(radio => radio.addEventListener('change', () => orderFields.forEach(node => node.hidden = radio.value !== 'yes' || !radio.checked)));
+        form.elements.request_type.addEventListener('change', () => { body.querySelector('[data-parent-field]').hidden = form.elements.request_type.value !== 'repeat_repair'; });
+        form.elements.product_id.addEventListener('change', () => { const option=form.elements.product_id.selectedOptions[0]; if(option?.value){ form.elements.brand.value=option.dataset.brand||''; form.elements.model.value=option.dataset.model||option.dataset.name||''; } });
+        let orderTimer=0; const search=body.querySelector('[data-order-search]'); search.addEventListener('input',()=>{ clearTimeout(orderTimer); orderTimer=setTimeout(()=>searchOrders(search.value,form),350); });
+        if (repair) fillEditor(form, repair); else { const tomorrow = new Date(Date.now()+86400000).toISOString().slice(0,10); form.elements.control_date.value=tomorrow; }
+        footer.innerHTML='<button class="repair-button" type="button" data-cancel-editor>Отмена</button><button class="repair-button primary" type="submit" form="repairEditor">Сохранить</button>';
+        footer.querySelector('[data-cancel-editor]').addEventListener('click', () => repair ? renderDetail(repair) : closeDrawer());
+        form.addEventListener('submit', submitEditor); openDrawer();
+    }
+    function fillEditor(form, repair) {
+        [...form.elements].forEach(control => { if (control.name && repair[control.name] != null && !['has_order'].includes(control.name)) control.value = repair[control.name]; });
+        form.elements.has_order.value = repair.order_id ? 'yes' : 'no';
+        if (repair.order_id) { body.querySelectorAll('[data-order-fields]').forEach(node => node.hidden=false); body.querySelector('[data-order-selected]').hidden=false; body.querySelector('[data-order-selected]').textContent=repair.order_label; form.elements.order_item_id.innerHTML=`<option value="${escapeHtml(repair.order_item_id)}">${escapeHtml(repair.order_item_name || repair.product_name)}</option>`; form.elements.order_item_id.value=repair.order_item_id; }
+        body.querySelector('[data-parent-field]').hidden = repair.request_type !== 'repeat_repair';
+    }
+    async function searchOrders(query, form) {
+        const results=body.querySelector('[data-order-results]'); if(query.trim().length<2){results.hidden=true;return;} results.hidden=false; results.innerHTML='<div class="repair-loading">Поиск…</div>';
+        try { const orders=await api(`/api/v1/repairs/orders?q=${encodeURIComponent(query.trim())}`); results.innerHTML=orders.map(order=>`<button class="repair-order-result" type="button" data-order-id="${escapeHtml(order.id)}"><strong>${escapeHtml('№'+order.number)}</strong><br><span>${escapeHtml(order.client_name)} · ${escapeHtml(order.phone)}</span></button>`).join('')||'<div class="repair-loading">Заказы не найдены</div>'; results.querySelectorAll('[data-order-id]').forEach(button=>button.addEventListener('click',()=>selectOrder(orders.find(order=>order.id===button.dataset.orderId),form))); } catch(error){results.innerHTML=`<div class="repair-error">${escapeHtml(error.message)}</div>`;}
+    }
+    function selectOrder(order, form) { form.elements.order_id.value=order.id; form.elements.order_number.value=order.number; form.elements.client_name.value=order.client_name||''; form.elements.client_phone.value=order.phone||''; form.elements.client_email.value=order.email||''; const selected=body.querySelector('[data-order-selected]'); selected.hidden=false; selected.textContent=`Заказ №${order.number} · ${order.client_name}`; const positions=form.elements.order_item_id; positions.innerHTML='<option value="">Выберите конкретный товар</option>'+order.products.map(item=>`<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)} · ${escapeHtml(item.quantity)} шт.</option>`).join(''); body.querySelector('[data-order-results]').hidden=true; }
+    async function submitEditor(event) {
+        event.preventDefault(); const form=event.currentTarget; const errorNode=form.querySelector('#repairEditorError'); const payload=Object.fromEntries(new FormData(form)); payload.order_source=payload.has_order==='yes'?'our':'none'; delete payload.has_order; payload.product_name=payload.model; payload.idempotency_key=crypto.randomUUID(); if(payload.order_source==='none'){payload.order_id='';payload.order_number='';payload.order_item_id='';}
+        const submit=footer.querySelector('[type=submit]'); submit.disabled=true; errorNode.hidden=true;
+        try { const repair=await api(editingId?`/api/v1/repairs/${encodeURIComponent(editingId)}`:'/api/v1/repairs',{method:editingId?'PATCH':'POST',body:JSON.stringify(payload),headers:{'Idempotency-Key':payload.idempotency_key}}); toast(editingId?'Ремонт обновлён':'Ремонт создан'); renderDetail(repair); setTimeout(()=>window.location.reload(),450); } catch(error){errorNode.textContent=error.message;errorNode.hidden=false;submit.disabled=false;body.scrollTo({top:0,behavior:'smooth'});}
+    }
+
+    document.getElementById('repairAdd').addEventListener('click',()=>openEditor());
+    document.querySelectorAll('[data-open-repair],[data-repair-id]').forEach(node=>node.addEventListener('click',event=>{ if(event.target.closest('a'))return; event.stopPropagation(); loadRepair(node.dataset.openRepair||node.dataset.repairId); }));
+    document.querySelectorAll('[data-repair-id]').forEach(node=>node.addEventListener('keydown',event=>{if(event.key==='Enter')loadRepair(node.dataset.repairId);}));
+
+    const filterPanel=document.getElementById('repairFilterPanel'), columnsPanel=document.getElementById('repairColumnsPanel'), morePanel=document.getElementById('repairMorePanel');
+    function togglePanel(panel){[filterPanel,columnsPanel,morePanel].forEach(item=>{if(item!==panel)item.hidden=true;});panel.hidden=!panel.hidden;}
+    document.getElementById('repairFilterToggle').addEventListener('click',()=>togglePanel(filterPanel)); document.getElementById('repairColumnsToggle').addEventListener('click',()=>togglePanel(columnsPanel)); document.getElementById('repairMoreToggle').addEventListener('click',()=>togglePanel(morePanel));
+    let searchTimer=0; document.getElementById('repairSearch').addEventListener('input',event=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>{const url=new URL(location.href);if(event.target.value.trim())url.searchParams.set('q',event.target.value.trim());else url.searchParams.delete('q');url.searchParams.delete('page');location.assign(url.pathname+url.search);},450);});
+    const columnState=JSON.parse(localStorage.getItem('vechasu:repair-columns')||'{}'); document.querySelectorAll('[data-repair-column]').forEach(control=>{const key=control.dataset.repairColumn;control.checked=columnState[key]!==false;document.querySelectorAll(`[data-column="${key}"]`).forEach(node=>node.hidden=!control.checked);control.addEventListener('change',()=>{columnState[key]=control.checked;localStorage.setItem('vechasu:repair-columns',JSON.stringify(columnState));document.querySelectorAll(`[data-column="${key}"]`).forEach(node=>node.hidden=!control.checked);});});
+})();
+</script>
+</body>
+</html>

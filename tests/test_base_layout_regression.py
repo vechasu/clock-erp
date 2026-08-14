@@ -31,6 +31,7 @@ class BaseLayoutRegressionTest(unittest.TestCase):
                 ("sales", "Продажи", "/app/sales"),
                 ("receipts", "Приход", "/app/receipts"),
                 ("journal", "Журнал", "/app/journal"),
+                ("repair", "Ремонт", "/app/repairs"),
                 ("settings", "Настройки", "/app/settings"),
             ],
         )
@@ -57,7 +58,7 @@ class BaseLayoutRegressionTest(unittest.TestCase):
         self.assertNotIn("page-header__eyebrow", products)
         self.assertNotIn("summary-grid", products)
 
-        for template in ("sales.html", "receipts.html", "settings.html"):
+        for template in ("sales.html", "receipts.html", "repair.html", "settings.html"):
             source = self.source("app/templates/" + template)
             self.assertIn('{% include "_sidebar.html" %}', source)
             self.assertNotIn("page-header__eyebrow", source)
@@ -87,11 +88,13 @@ class BaseLayoutRegressionTest(unittest.TestCase):
         ):
             self.assertNotIn(marker, javascript)
 
-    def test_retired_routes_do_not_restore_removed_modules(self):
+    def test_retired_routes_redirect_while_repair_module_is_restored(self):
+        repair = self.client.get("/app/repairs")
+        self.assertEqual(repair.status_code, 200)
+        self.assertIn("Учёт ремонтных обращений", repair.get_data(as_text=True))
         redirects = {
-            "/repair": "/app/products",
+            "/repair": "/app/repairs",
             "/stock-operations": "/app/products",
-            "/app/repairs": "/app/products",
             "/app/warehouse": "/app/products",
             "/app/operations": "/app/products",
             "/receipt": "/app/receipts",
