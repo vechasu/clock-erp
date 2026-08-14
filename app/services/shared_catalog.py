@@ -459,7 +459,8 @@ class SharedCatalog:
             if query:
                 register_catalog_search(connection)
             brand_rows = connection.execute(
-                "SELECT b.id, b.name, b.active, COUNT(p.id) AS product_count, "
+                "SELECT b.id AS id, b.name AS name, b.active AS active, "
+                "COUNT(p.id) AS product_count, "
                 "COALESCE(SUM(CASE WHEN p.stock != 0 THEN 1 ELSE 0 END), 0) "
                 "AS nonzero_count, COALESCE(SUM(p.stock), 0) AS stock_total "
                 "FROM erp_brands b LEFT JOIN catalog_excel_products p "
@@ -472,10 +473,12 @@ class SharedCatalog:
             if brand_ids:
                 placeholders = ", ".join("?" for _ in brand_ids)
                 category_rows = connection.execute(
-                    "SELECT bc.brand_id, c.normalized_name AS category_key "
+                    "SELECT bc.brand_id AS brand_id, "
+                    "c.normalized_name AS category_key "
                     "FROM erp_brand_categories bc JOIN erp_categories c "
                     "ON c.id = bc.category_id AND c.active = 1 "
-                    "WHERE bc.brand_id IN ({0}) UNION SELECT p.brand_id, '' "
+                    "WHERE bc.brand_id IN ({0}) UNION SELECT "
+                    "p.brand_id AS brand_id, '' AS category_key "
                     "FROM catalog_excel_products p WHERE p.active = 1 "
                     "AND p.category_id IS NULL AND p.brand_id IN ({0})".format(
                         placeholders
