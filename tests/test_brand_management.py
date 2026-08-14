@@ -125,6 +125,45 @@ class BrandManagementTest(unittest.TestCase):
         self.assertEqual(summary["category_count"], 3)
         self.assertNotIn("categories", summary)
 
+    def test_list_summary_supports_legacy_sqlite_column_names(self):
+        product = self.product("A", "A", "Casio", "Часы", 3)
+        self.catalog.create_brand_category(product["brand_id"], "Ремешки")
+        original_connect = self.database.connect
+
+        class LegacyUnionConnection:
+            def __init__(self, connection):
+                self.connection = connection
+
+            def __enter__(self):
+                self.connection.__enter__()
+                return self
+
+            def __exit__(self, *args):
+                return self.connection.__exit__(*args)
+
+            def execute(self, statement, parameters=()):
+                if " UNION " not in statement:
+                    return self.connection.execute(statement, parameters)
+                self.connection.execute("PRAGMA short_column_names = OFF")
+                self.connection.execute("PRAGMA full_column_names = ON")
+                cursor = self.connection.execute(statement, parameters)
+                self.connection.execute("PRAGMA full_column_names = OFF")
+                self.connection.execute("PRAGMA short_column_names = ON")
+                return cursor
+
+        def legacy_connect():
+            return LegacyUnionConnection(original_connect())
+
+        self.database.cache_initialization = True
+        self.database._initialized = True
+        with mock.patch.object(
+            self.database, "connect", side_effect=legacy_connect
+        ):
+            summary = self.catalog.list_brand_summaries(limit=100)[0]
+
+        self.assertEqual(summary["name"], "Casio")
+        self.assertEqual(summary["category_count"], 2)
+
     def test_bulk_prevalidation_is_atomic_and_force_preserves_history(self):
         zero = self.product("Zero", "ZERO", "Casio", "Часы", 0)
         nonzero = self.product("Stock", "STOCK", "Casio", "Часы", 0)
