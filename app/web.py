@@ -1674,6 +1674,7 @@ def warehouse_page():
             offset=(page - 1) * per_page,
             sort_by=sort_by,
             sort_dir=sort_dir,
+            include_brands=False,
         )
         pages = max(1, (result["total"] + per_page - 1) // per_page)
         if page > pages:
@@ -1684,6 +1685,7 @@ def warehouse_page():
                 offset=(page - 1) * per_page,
                 sort_by=sort_by,
                 sort_dir=sort_dir,
+                include_brands=False,
             )
         return render_template(
             "warehouse_categories.html",
@@ -1707,7 +1709,7 @@ def warehouse_page():
             ))
         return render_template(
             "warehouse_brands.html",
-            brands=shared_catalog.list_brand_overviews(
+            brands=shared_catalog.list_brand_summaries(
                 query=(request.args.get("q") or "").strip(), limit=500,
             ),
             brand=brand,
@@ -1814,6 +1816,8 @@ def warehouse_page():
         created_to=created_date_to,
         brand_id=selected_brand_id or None,
         category_id=selected_category_id or None,
+        include_cell_item_names=False,
+        include_facets=False,
     )
     catalog_items = build_excel_warehouse_items(catalog["items"])
     items = get_excel_warehouse_items(catalog=catalog)
@@ -4029,10 +4033,15 @@ def repair_page():
     page = pagination["page"]
     visible_cases, page = paginate_erp_records(cases, page, per_page)
 
-    catalog_items = build_repair_catalog_items()
     prepared_cases = [prepare_repair_case(case) for case in visible_cases]
     repeat_candidates = [
-        prepare_repair_case(case)
+        {
+            "id": case.get("id"),
+            "client_name": case.get("client_name"),
+            "brand": case.get("brand"),
+            "model": case.get("model"),
+            "product_name": case.get("product_name"),
+        }
         for case in all_cases
         if case.get("status") == "completed"
     ]
@@ -4055,7 +4064,6 @@ def repair_page():
         return_method_labels=RETURN_METHOD_LABELS,
         completion_result_labels=COMPLETION_RESULT_LABELS,
         action_labels=REPAIR_ACTION_LABELS,
-        catalog_items=catalog_items,
         repeat_candidates=repeat_candidates,
     )
 
@@ -16979,13 +16987,41 @@ def create_api_repair(payload, idempotency_key=""):
 @app.route("/api/v1/repairs/catalog", methods=["GET"])
 def api_repairs_catalog():
     query = (request.args.get("q") or "").strip().casefold()
-    items = build_repair_catalog_items()
+    source_items = ExcelProductCatalog().list_repair_catalog_source_items(
+        limit=100000
+    )
+    for item in source_items:
+        try:
+            gallery = json.loads(item.get("bitrix_gallery_json") or "[]")
+        except (TypeError, ValueError):
+            gallery = []
+        first_file_id = next((
+            bitrix_image_file_id(image)
+            for image in gallery
+            if bitrix_image_file_id(image)
+        ), "")
+        item["thumbnail_url"] = (
+            "/warehouse/product/{}/image/{}".format(item["id"], first_file_id)
+            if item.get("bitrix_external_product_id") and first_file_id
+            else item.get("thumbnail_url")
+            or item.get("bitrix_thumbnail_url")
+            or item.get("bitrix_primary_image_url")
+            or (
+                "/warehouse/product/{}/thumbnail".format(
+                    item["moysklad_product_id"]
+                )
+                if item.get("moysklad_product_id") else ""
+            )
+        )
+    items = build_repair_catalog_items(
+        source_items
+    )
     if query:
         items = [
             item for item in items
             if query in str(item.get("search") or "")
         ]
-    limit = api_positive_int(request.args.get("limit"), 100, 200)
+    limit = api_positive_int(request.args.get("limit"), 100, 100000)
     return api_success(items[:limit], total=len(items))
 
 

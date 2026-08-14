@@ -84,6 +84,11 @@ class Stage2RepairsApiTest(unittest.TestCase):
                 "get_excel_warehouse_items",
                 return_value=[catalog_item()],
             ),
+            mock.patch.object(
+                web.ExcelProductCatalog,
+                "list_repair_catalog_source_items",
+                return_value=[catalog_item()],
+            ),
         ]
         for patcher in self.patchers:
             patcher.start()

@@ -204,6 +204,37 @@ class CatalogFilteringTest(unittest.TestCase):
         self.assertIn('"in_stock",\n                "page"', template)
         self.assertIn('in_stock: ["in_stock"]', template)
 
+    def test_stock_filter_preserves_fractional_and_legacy_value_semantics(self):
+        with self.database.transaction() as connection:
+            ids = [row[0] for row in connection.execute(
+                "SELECT id FROM catalog_excel_products WHERE brand_id = ? "
+                "ORDER BY id LIMIT 5", (self.brand["id"],)
+            ).fetchall()]
+            values = (0.5, 2.5, 0, -1, "legacy-invalid")
+            connection.executemany(
+                "UPDATE catalog_excel_products SET stock = ? WHERE id = ?",
+                list(zip(values, ids)),
+            )
+
+        result = self.excel.list_products(
+            brand_id=self.brand["id"], category_id=self.category_id,
+            hide_zero=True, sort_by="stock", sort_dir="asc", per_page=200,
+        )
+
+        self.assertEqual(result["total"], 2)
+        self.assertEqual([item["stock"] for item in result["items"]], [0.5, 2.5])
+
+    def test_repair_catalog_endpoint_uses_lightweight_catalog_projection(self):
+        response = self.client.get(
+            "/api/v1/repairs/catalog?q=barcelona%2000001&limit=10"
+        )
+        payload = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(payload["data"]), 1)
+        self.assertEqual(payload["data"][0]["name"], "Barcelona 00001")
+        self.assertEqual(payload["data"][0]["brand"], "666 Barcelona")
+
     def test_warehouse_brand_and_category_render_two_active_filter_chips(self):
         response = self.client.get(
             "/warehouse?brand_id={}&category_id={}&per_page=100".format(

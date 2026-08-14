@@ -747,7 +747,7 @@ class ExcelProductCatalog:
                       sort_dir="asc", page=1, per_page=50,
                       created_from="", created_to="", brand_id=None,
                       category_id=None, product_id=None,
-                      include_cell_item_names=True):
+                      include_cell_item_names=True, include_facets=True):
         self.database.initialize()
         page = max(1, int(page))
         per_page = max(1, min(int(per_page), 100000))
@@ -806,7 +806,7 @@ class ExcelProductCatalog:
                 where.append("trim(COALESCE(p.cell, '')) = ?")
                 parameters.append(cell)
         if hide_zero:
-            where.append("CAST(p.stock AS REAL) > 0")
+            where.append("p.stock > 0 AND CAST(p.stock AS REAL) > 0")
         if created_from:
             where.append("substr(p.created_at, 1, 10) >= ?")
             parameters.append(created_from)
@@ -892,69 +892,80 @@ class ExcelProductCatalog:
                 + " LIMIT ? OFFSET ?",
                 parameters + [per_page, (page - 1) * per_page],
             ).fetchall()
-            brand_groups = [dict(row) for row in connection.execute(
-                "SELECT trim(p.excel_brand) AS name, COUNT(*) AS count "
-                "FROM catalog_excel_products p JOIN catalog_excel_batches b "
-                "ON b.id = p.current_batch_id "
-                "LEFT JOIN catalog_products cp "
-                "ON cp.id = p.bitrix_catalog_product_id"
-                + brand_facet_where_sql + " "
-                "AND trim(COALESCE(p.excel_brand, '')) <> '' "
-                "AND trim(p.excel_brand) GLOB '*[^0-9]*' "
-                "GROUP BY trim(p.excel_brand) COLLATE NOCASE "
-                "HAVING COUNT(*) > 0 ORDER BY name COLLATE NOCASE",
-                brand_facet_parameters,
-            ).fetchall()]
-            brand_all_count = connection.execute(
-                "SELECT COUNT(*) FROM catalog_excel_products p "
-                "JOIN catalog_excel_batches b ON b.id = p.current_batch_id "
-                "LEFT JOIN catalog_products cp "
-                "ON cp.id = p.bitrix_catalog_product_id"
-                + brand_facet_where_sql,
-                brand_facet_parameters,
-            ).fetchone()[0]
-            brands = [group["name"] for group in brand_groups]
-            categories = [row[0] for row in connection.execute(
-                "SELECT DISTINCT COALESCE(p.excel_category, '') AS value "
-                "FROM catalog_excel_products p JOIN catalog_excel_batches b "
-                "ON b.id = p.current_batch_id WHERE p.active = 1 AND "
-                + visible_cards_sql + " "
-                "AND trim(COALESCE(p.excel_category, '')) <> '' "
-                "ORDER BY value"
-            ).fetchall()]
-            category_groups = [dict(row) for row in connection.execute(
-                "SELECT COALESCE(p.excel_category, '') AS name, "
-                "COUNT(*) AS count FROM catalog_excel_products p "
-                "JOIN catalog_excel_batches b ON b.id = p.current_batch_id "
-                "WHERE p.active = 1 AND " + visible_cards_sql + " "
-                "AND trim(COALESCE(p.excel_category, '')) <> '' "
-                "GROUP BY name ORDER BY name"
-            ).fetchall()]
-            cell_item_names_sql = (
-                ", GROUP_CONCAT(p.excel_name_raw, char(31)) AS item_names "
-                if include_cell_item_names
-                else ""
-            )
-            cell_groups = [dict(row) for row in connection.execute(
-                "SELECT CASE WHEN trim(COALESCE(p.cell, '')) = '' THEN 'Без ячейки' "
-                "ELSE trim(p.cell) END AS cell, COUNT(*) AS count, "
-                "COALESCE(SUM(p.stock), 0) AS stock "
-                + cell_item_names_sql
-                + "FROM catalog_excel_products p "
-                "JOIN catalog_excel_batches b ON b.id = p.current_batch_id "
-                "WHERE p.active = 1 AND " + visible_cards_sql + " "
-                "GROUP BY CASE WHEN trim(COALESCE(p.cell, '')) = '' "
-                "THEN 'Без ячейки' ELSE trim(p.cell) END "
-                "ORDER BY CASE WHEN trim(COALESCE(p.cell, '')) = '' THEN 1 ELSE 0 END, cell"
-            ).fetchall()]
-            status_counts = {
-                row["match_status"]: row["count"] for row in connection.execute(
-                    "SELECT p.match_status, COUNT(*) AS count FROM catalog_excel_products p "
+            brands = []
+            categories = []
+            brand_groups = []
+            category_groups = []
+            brand_all_count = 0
+            cell_groups = []
+            status_counts = {}
+            if include_facets:
+                brand_groups = [dict(row) for row in connection.execute(
+                    "SELECT trim(p.excel_brand) AS name, COUNT(*) AS count "
+                    "FROM catalog_excel_products p JOIN catalog_excel_batches b "
+                    "ON b.id = p.current_batch_id "
+                    "LEFT JOIN catalog_products cp "
+                    "ON cp.id = p.bitrix_catalog_product_id"
+                    + brand_facet_where_sql + " "
+                    "AND trim(COALESCE(p.excel_brand, '')) <> '' "
+                    "AND trim(p.excel_brand) GLOB '*[^0-9]*' "
+                    "GROUP BY trim(p.excel_brand) COLLATE NOCASE "
+                    "HAVING COUNT(*) > 0 ORDER BY name COLLATE NOCASE",
+                    brand_facet_parameters,
+                ).fetchall()]
+                brand_all_count = connection.execute(
+                    "SELECT COUNT(*) FROM catalog_excel_products p "
                     "JOIN catalog_excel_batches b ON b.id = p.current_batch_id "
-                    "WHERE p.active = 1 AND " + visible_cards_sql
-                    + " GROUP BY p.match_status"
-                ).fetchall()
-            }
+                    "LEFT JOIN catalog_products cp "
+                    "ON cp.id = p.bitrix_catalog_product_id"
+                    + brand_facet_where_sql,
+                    brand_facet_parameters,
+                ).fetchone()[0]
+                brands = [group["name"] for group in brand_groups]
+                categories = [row[0] for row in connection.execute(
+                    "SELECT DISTINCT COALESCE(p.excel_category, '') AS value "
+                    "FROM catalog_excel_products p JOIN catalog_excel_batches b "
+                    "ON b.id = p.current_batch_id WHERE p.active = 1 AND "
+                    + visible_cards_sql + " "
+                    "AND trim(COALESCE(p.excel_category, '')) <> '' "
+                    "ORDER BY value"
+                ).fetchall()]
+                category_groups = [dict(row) for row in connection.execute(
+                    "SELECT COALESCE(p.excel_category, '') AS name, "
+                    "COUNT(*) AS count FROM catalog_excel_products p "
+                    "JOIN catalog_excel_batches b ON b.id = p.current_batch_id "
+                    "WHERE p.active = 1 AND " + visible_cards_sql + " "
+                    "AND trim(COALESCE(p.excel_category, '')) <> '' "
+                    "GROUP BY name ORDER BY name"
+                ).fetchall()]
+                cell_item_names_sql = (
+                    ", GROUP_CONCAT(p.excel_name_raw, char(31)) AS item_names "
+                    if include_cell_item_names
+                    else ""
+                )
+                cell_groups = [dict(row) for row in connection.execute(
+                    "SELECT CASE WHEN trim(COALESCE(p.cell, '')) = '' THEN "
+                    "'Без ячейки' ELSE trim(p.cell) END AS cell, "
+                    "COUNT(*) AS count, COALESCE(SUM(p.stock), 0) AS stock "
+                    + cell_item_names_sql
+                    + "FROM catalog_excel_products p "
+                    "JOIN catalog_excel_batches b ON b.id = p.current_batch_id "
+                    "WHERE p.active = 1 AND " + visible_cards_sql + " "
+                    "GROUP BY CASE WHEN trim(COALESCE(p.cell, '')) = '' "
+                    "THEN 'Без ячейки' ELSE trim(p.cell) END "
+                    "ORDER BY CASE WHEN trim(COALESCE(p.cell, '')) = '' "
+                    "THEN 1 ELSE 0 END, cell"
+                ).fetchall()]
+                status_counts = {
+                    row["match_status"]: row["count"]
+                    for row in connection.execute(
+                        "SELECT p.match_status, COUNT(*) AS count "
+                        "FROM catalog_excel_products p "
+                        "JOIN catalog_excel_batches b "
+                        "ON b.id = p.current_batch_id WHERE p.active = 1 AND "
+                        + visible_cards_sql + " GROUP BY p.match_status"
+                    ).fetchall()
+                }
         items = [self._prepare_product(dict(row)) for row in rows]
         return {
             "items": items, "total": total, "page": page, "per_page": per_page,
@@ -982,6 +993,30 @@ class ExcelProductCatalog:
                 (int(product_id),),
             ).fetchone()
         return self._prepare_product(dict(row)) if row else None
+
+    def list_repair_catalog_source_items(self, limit=100000):
+        """Return only fields needed by the repair product selector."""
+        self.database.initialize()
+        limit = max(1, min(int(limit), 100000))
+        with self.database.connect() as connection:
+            rows = connection.execute(
+                "SELECT p.id, p.excel_name_raw AS name, "
+                "COALESCE(p.excel_brand, '') AS brand, "
+                "COALESCE(p.excel_article, '') AS article, "
+                "COALESCE(cp.barcode, '') AS barcode, '' AS model, "
+                "p.bitrix_external_product_id, p.bitrix_thumbnail_url, "
+                "p.bitrix_primary_image_url, p.bitrix_gallery_json, "
+                "p.moysklad_product_id "
+                "FROM catalog_excel_products p JOIN catalog_excel_batches b "
+                "ON b.id = p.current_batch_id LEFT JOIN catalog_products cp "
+                "ON cp.id = p.bitrix_catalog_product_id "
+                "WHERE p.active = 1 AND " + VISIBLE_PRODUCT_SQL +
+                " ORDER BY p.excel_brand COLLATE NOCASE, "
+                "p.excel_name_raw COLLATE NOCASE, "
+                "p.excel_article COLLATE NOCASE, p.id LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     def update_bitrix_images(self, product_id, external_product_id,
                              primary_url, thumbnail_url, gallery):

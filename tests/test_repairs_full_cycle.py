@@ -94,6 +94,18 @@ class RepairsFullCycleTest(unittest.TestCase):
             headers={"Idempotency-Key": payload["idempotency_key"]},
         )
 
+    def test_page_defers_product_catalog_until_editor_is_opened(self):
+        with mock.patch.object(
+            web, "build_repair_catalog_items",
+            side_effect=AssertionError("catalog must be lazy"),
+        ):
+            response = self.client.get("/app/repairs")
+
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("/api/v1/repairs/catalog?limit=100000", html)
+        self.assertIn('<option value="">Ввести вручную</option>', html)
+
     def test_create_from_order_requires_exact_position_and_keeps_snapshot(self):
         created = self.create(
             order_source="our",

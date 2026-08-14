@@ -223,7 +223,7 @@
             <label class="repair-field"><span>Где общаемся *</span><select class="repair-control" name="communication_channel">{% for value, label in channel_labels.items() %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></label>
         </div></section>
         <section class="repair-form-section"><h3>Товар и обращение</h3><div class="repair-form-grid">
-            <label class="repair-field full" data-manual-product><span>Товар из каталога</span><select class="repair-control" name="product_id"><option value="">Ввести вручную</option>{% for item in catalog_items %}<option value="{{ item.id }}" data-name="{{ item.name }}" data-brand="{{ item.brand }}" data-model="{{ item.model }}">{{ item.brand }} · {{ item.name }}</option>{% endfor %}</select></label>
+            <label class="repair-field full" data-manual-product><span>Товар из каталога</span><select class="repair-control" name="product_id"><option value="">Ввести вручную</option></select></label>
             <label class="repair-field"><span>Бренд</span><input class="repair-control" name="brand"></label>
             <label class="repair-field"><span>Модель или название *</span><input class="repair-control" name="model" required></label>
             <label class="repair-field"><span>Тип ремонта *</span><select class="repair-control" name="request_type">{% for value, label in type_labels.items() %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></label>
@@ -255,6 +255,7 @@
     const subtitle = document.getElementById('repairDrawerSubtitle');
     let activeRepair = null;
     let editingId = '';
+    let repairCatalogPromise = null;
 
     function escapeHtml(value) {
         return String(value ?? '').replace(/[&<>'"]/g, (character) => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[character]));
@@ -333,6 +334,14 @@
 
     async function loadRepair(id) { title.textContent='Карточка ремонта'; subtitle.textContent='Загрузка…'; body.innerHTML='<div class="repair-loading">Загружаем карточку…</div>'; footer.innerHTML=''; openDrawer(); try { renderDetail(await api(`/api/v1/repairs/${encodeURIComponent(id)}`)); } catch(error) { body.innerHTML=`<div class="repair-error">${escapeHtml(error.message)}</div>`; } }
 
+    function loadRepairCatalog() {
+        if (!repairCatalogPromise) repairCatalogPromise = api('/api/v1/repairs/catalog?limit=100000');
+        return repairCatalogPromise;
+    }
+    function populateRepairCatalog(select, items, selectedValue) {
+        select.innerHTML = '<option value="">Ввести вручную</option>' + items.map(item => `<option value="${escapeHtml(item.id)}" data-name="${escapeHtml(item.name)}" data-brand="${escapeHtml(item.brand)}" data-model="${escapeHtml(item.model)}">${escapeHtml([item.brand,item.name].filter(Boolean).join(' · '))}</option>`).join('');
+        select.value = selectedValue || '';
+    }
     function openEditor(repair = null) {
         editingId = repair?.id || '';
         const fragment = document.getElementById('repairCreateTemplate').content.cloneNode(true); body.replaceChildren(fragment); title.textContent = repair ? 'Редактировать ремонт' : 'Добавить ремонт'; subtitle.textContent = repair ? `${repair.order_label} · ${repair.client_name}` : 'Новое обращение';
@@ -341,7 +350,11 @@
         form.elements.request_type.addEventListener('change', () => { body.querySelector('[data-parent-field]').hidden = form.elements.request_type.value !== 'repeat_repair'; });
         form.elements.product_id.addEventListener('change', () => { const option=form.elements.product_id.selectedOptions[0]; if(option?.value){ form.elements.brand.value=option.dataset.brand||''; form.elements.model.value=option.dataset.model||option.dataset.name||''; } });
         let orderTimer=0; const search=body.querySelector('[data-order-search]'); search.addEventListener('input',()=>{ clearTimeout(orderTimer); orderTimer=setTimeout(()=>searchOrders(search.value,form),350); });
+        if (repair?.product_id) form.elements.product_id.innerHTML += `<option value="${escapeHtml(repair.product_id)}" data-name="${escapeHtml(repair.product_name)}" data-brand="${escapeHtml(repair.brand)}" data-model="${escapeHtml(repair.model)}">${escapeHtml([repair.brand,repair.product_name||repair.model].filter(Boolean).join(' · '))}</option>`;
         if (repair) fillEditor(form, repair); else { const tomorrow = new Date(Date.now()+86400000).toISOString().slice(0,10); form.elements.control_date.value=tomorrow; }
+        const selectedProductId = form.elements.product_id.value;
+        form.elements.product_id.disabled = true;
+        loadRepairCatalog().then(items => populateRepairCatalog(form.elements.product_id, items, selectedProductId)).catch(error => toast(error.message)).finally(() => { form.elements.product_id.disabled = false; });
         footer.innerHTML='<button class="repair-button" type="button" data-cancel-editor>Отмена</button><button class="repair-button primary" type="submit" form="repairEditor">Сохранить</button>';
         footer.querySelector('[data-cancel-editor]').addEventListener('click', () => repair ? renderDetail(repair) : closeDrawer());
         form.addEventListener('submit', submitEditor); openDrawer();
