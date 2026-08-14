@@ -3769,7 +3769,6 @@ select.erp-control {
     .warehouse-page .search-form.erp-toolbar > .warehouse-filter-actions,
     .warehouse-page .search-form.erp-toolbar > .warehouse-mobile-stock-controls,
     .warehouse-page .search-form.erp-toolbar > .warehouse-column-settings,
-    .warehouse-page .search-form.erp-toolbar > .warehouse-more-menu,
     .warehouse-page .search-form.erp-toolbar > .add-position-card {
         grid-column: 1;
         width: 100%;
@@ -3786,8 +3785,6 @@ select.erp-control {
         flex: 1 1 120px;
     }
 
-    .search-form.erp-toolbar .warehouse-more-menu,
-    .search-form.erp-toolbar .warehouse-more-trigger,
     .search-form.erp-toolbar .warehouse-reset-button,
     .search-form.erp-toolbar .add-position-card {
         width: 100%;
@@ -3796,12 +3793,6 @@ select.erp-control {
 
     .search-form.erp-toolbar .add-position-card {
         grid-column: 1 / -1;
-    }
-
-    .warehouse-more-dropdown {
-        right: auto;
-        left: 0;
-        width: min(252px, calc(100vw - 40px));
     }
 
     #filterDrawer.drawer {
@@ -3842,13 +3833,6 @@ select.erp-control {
 
     #filterDrawer .category-cell-form > button[type="submit"] {
         min-height: 46px;
-    }
-
-    #warehouseMapDrawer.map-modal {
-        width: calc(100vw - 16px);
-        max-width: calc(100vw - 16px);
-        max-height: calc(100dvh - 16px);
-        padding: 14px;
     }
 
     #editDrawer,
@@ -4102,16 +4086,6 @@ select.erp-control {
     .warehouse-products-table td[data-column-key="actions"] .row-actions form {
         width: auto;
         margin: 0;
-    }
-
-    body.warehouse-bulk-edit-open .warehouse-products-table td[data-column-key="photo"] {
-        overflow: visible;
-    }
-
-    body.warehouse-bulk-edit-open .warehouse-row-select {
-        width: 22px;
-        height: 22px;
-        flex-basis: 22px;
     }
 
     .sales-data-card .erp-table-card {
@@ -4961,7 +4935,6 @@ select.erp-control {
 .main h1,
 .drawer-title,
 .drawer-section-title,
-.warehouse-bulk-count,
 .pagination .active {
     font-weight: 800 !important;
 }

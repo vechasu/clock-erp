@@ -15,12 +15,23 @@ class ErpTableUxPolishTest(unittest.TestCase):
         toolbar = source.split('id="warehouseSearchForm"', 1)[1].split(
             "</form>", 1
         )[0]
-        more = toolbar.split('id="warehouseMoreDropdown"', 1)[1]
+        column_settings = source.split(
+            "function initializeWarehouseColumnSettings", 1
+        )[1].split("function initializeWarehouseTableView", 1)[0]
 
         self.assertIn('id="warehouseColumnSettingsTrigger"', toolbar)
         self.assertIn('id="warehouseColumnSettingsPanel"', toolbar)
-        self.assertIn('id="warehouseTableReset"', more)
-        self.assertIn("Сбросить вид таблицы", more)
+        self.assertNotIn('id="warehouseMoreMenu"', toolbar)
+        self.assertNotIn(">Ещё<", toolbar)
+        self.assertIn('reset.id = "warehouseTableReset"', column_settings)
+        self.assertIn(
+            'reset.textContent = "Сбросить вид таблицы"',
+            column_settings,
+        )
+        self.assertLess(
+            column_settings.index("warehouse-column-settings-divider"),
+            column_settings.index('reset.id = "warehouseTableReset"'),
+        )
         self.assertNotIn('class="warehouse-table-toolbar"', source)
 
     def test_stock_filter_is_in_drawer_not_stock_header(self):
