@@ -125,6 +125,26 @@ class BrandManagementTest(unittest.TestCase):
         self.assertEqual(summary["category_count"], 3)
         self.assertNotIn("categories", summary)
 
+    def test_list_summary_supports_legacy_sqlite_full_column_names(self):
+        product = self.product("A", "A", "Casio", "Часы", 3)
+        original_connect = self.database.connect
+
+        def connect_with_full_column_names():
+            connection = original_connect()
+            connection.execute("PRAGMA short_column_names = OFF")
+            connection.execute("PRAGMA full_column_names = ON")
+            return connection
+
+        with mock.patch.object(
+            self.database, "initialize", return_value=None
+        ), mock.patch.object(
+            self.database, "connect", side_effect=connect_with_full_column_names
+        ):
+            summary = self.catalog.list_brand_summaries(limit=100)[0]
+
+        self.assertEqual(summary["id"], product["brand_id"])
+        self.assertEqual(summary["category_count"], 1)
+
     def test_bulk_prevalidation_is_atomic_and_force_preserves_history(self):
         zero = self.product("Zero", "ZERO", "Casio", "Часы", 0)
         nonzero = self.product("Stock", "STOCK", "Casio", "Часы", 0)
