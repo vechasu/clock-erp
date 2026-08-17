@@ -1329,6 +1329,10 @@
         rel="stylesheet"
         href="{{ url_for('static', filename='css/catalog-combobox.css') }}"
     >
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='css/erp-focus-mode.css') }}"
+    >
     <script
         src="{{ url_for('static', filename='js/catalog-combobox.js') }}"
     ></script>
@@ -1337,6 +1341,10 @@
     ></script>
     <script defer src="{{ url_for('static', filename='js/table-scroll-hint.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/erp-modal-shell.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='js/erp-focus-mode.js') }}"></script>
+    {% if config.TESTING and request.args.get("sales_focus_mode_e2e") == "1" %}
+        <script defer src="{{ url_for('static', filename='js/sales-focus-mode-e2e.js') }}"></script>
+    {% endif %}
     {% if config.TESTING and request.args.get("datetime_e2e") == "1" %}
         <script defer src="{{ url_for('static', filename='js/datetime-cell-e2e.js') }}"></script>
     {% endif %}
@@ -1346,7 +1354,13 @@
 {% from "_catalog_combobox.html" import render_catalog_combobox %}
 {% from "_filter_count.html" import render_filter_count %}
 {% from "_datetime_cell.html" import render_erp_datetime %}
-<div class="app">
+<div
+    class="app"
+    data-erp-focus-mode
+    data-focus-mode-storage-key="vechasu.erp.sales.focus-mode.v1"
+    data-focus-mode-hide=".sales-page-header,.sales-tabs-scroll,.erp-workspace-metrics,#appSidebar,.mobile-erp-navigation,.mobile-erp-more-sheet,.mobile-erp-more-backdrop,#sidebarTooltip"
+    data-focus-mode-overlays=".modal.is-open,.sales-viewport-popover:not([hidden]),.sales-product-combobox-menu:not([hidden]),.catalog-create-modal:not([hidden]),.mobile-erp-more-sheet.is-open,.sales-action-menu[open]"
+>
     {% include "_sidebar.html" %}
 
     <main class="main">
@@ -1457,6 +1471,7 @@
         <section class="sales-data-card">
             <div
                 class="toolbar sales-data-toolbar erp-toolbar-card erp-toolbar"
+                data-erp-focus-mode-toolbar
             >
                 <div
                     class="sales-search-wrap search-input-wrap erp-search-wrap"
@@ -1860,6 +1875,45 @@
                         </div>
                     </div>
                 </div>
+
+                <button
+                    id="salesFocusModeToggle"
+                    class="sales-focus-toggle erp-secondary-action sales-toolbar-action"
+                    type="button"
+                    aria-label="Развернуть таблицу продаж"
+                    aria-pressed="false"
+                    title="Развернуть таблицу продаж"
+                    data-erp-focus-mode-toggle
+                >
+                    <span class="sales-toolbar-action-content">
+                        <span
+                            class="sales-toolbar-icon-slot"
+                            aria-hidden="true"
+                        >
+                            <svg
+                                class="sales-control-icon"
+                                viewBox="0 0 20 20"
+                                data-focus-expand-icon
+                            >
+                                <path d="M8 3H3v5M12 3h5v5M8 17H3v-5M12 17h5v-5"></path>
+                                <path d="m3 3 5 5m9-5-5 5M3 17l5-5m9 5-5-5"></path>
+                            </svg>
+                            <svg
+                                class="sales-control-icon"
+                                viewBox="0 0 20 20"
+                                data-focus-collapse-icon
+                                hidden
+                            >
+                                <path d="M8 8H3V3M12 8h5V3M8 12H3v5M12 12h5v5"></path>
+                                <path d="M8 8 3 3m9 5 5-5M8 12l-5 5m9-5 5 5"></path>
+                            </svg>
+                        </span>
+                        <span
+                            class="sales-focus-label"
+                            data-focus-mode-label
+                        >Развернуть</span>
+                    </span>
+                </button>
 
                 <label
                     class="mobile-erp-only mobile-erp-sort sales-mobile-sort"
