@@ -388,20 +388,21 @@ class CatalogFilteringTest(unittest.TestCase):
         self.assertIn(0, [item["stock"] for item in sales["data"]])
         self.assertIn(0, [item["stock"] for item in receipts["data"]])
 
-    def test_shared_options_do_not_apply_a_hidden_sales_stock_filter(self):
+    def test_sales_add_modal_only_requests_products_with_positive_stock(self):
         sales_template = (ROOT / "app/templates/sales.html").read_text(
             encoding="utf-8"
         )
         options = self.client.get(
             "/api/v1/catalog/options?type=product&limit=200"
-            "&brand_id={}&category_id={}".format(
+            "&brand_id={}&category_id={}&in_stock=1".format(
                 self.brand["id"], self.category_id
             )
         ).get_json()
 
-        self.assertNotIn('data-catalog-in-stock="true"', sales_template)
-        self.assertEqual(options["meta"]["total"], 120)
-        self.assertEqual(len(options["data"]), 120)
+        self.assertIn('data-catalog-in-stock="true"', sales_template)
+        self.assertEqual(options["meta"]["total"], 4)
+        self.assertEqual(len(options["data"]), 4)
+        self.assertTrue(all(item["stock"] > 0 for item in options["data"]))
 
     def test_large_catalog_is_bounded_but_searches_beyond_first_window(self):
         large_brand = self.shared.create_brand("Большой бренд")
