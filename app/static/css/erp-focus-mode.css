@@ -1,0 +1,165 @@
+/* Focus-mode layout is intentionally scoped to the sales workspace. */
+.sales-page .app.erp-focus-mode {
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    padding-left: 0;
+    overflow: hidden;
+}
+
+.sales-page .app.erp-focus-mode [hidden] {
+    display: none !important;
+}
+
+.sales-page .app.erp-focus-mode > .main {
+    height: 100%;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 18px 20px;
+    overflow: hidden;
+}
+
+.sales-page .app.erp-focus-mode .sales-data-card {
+    height: 100%;
+    min-height: 0;
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+}
+
+.sales-page .app.erp-focus-mode .sales-data-toolbar {
+    position: sticky;
+    z-index: 140;
+    top: 0;
+    flex: 0 0 auto;
+    border-color: #d9e1ec;
+    box-shadow:
+        0 8px 22px rgba(15, 23, 42, 0.08),
+        0 1px 0 rgba(15, 23, 42, 0.04);
+}
+
+.sales-page .app.erp-focus-mode .erp-active-filters {
+    flex: 0 0 auto;
+}
+
+.sales-page .app.erp-focus-mode .table-card {
+    min-height: 0;
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+}
+
+.sales-page .app.erp-focus-mode .table-wrap {
+    min-height: 0;
+    flex: 1 1 auto;
+    overflow: auto;
+    overscroll-behavior: contain;
+}
+
+.sales-page .app.erp-focus-mode .sales-table.erp-data-table thead th {
+    position: sticky;
+    z-index: 35;
+    top: 0;
+    box-shadow:
+        inset 0 -1px 0 #d1d9e4,
+        0 5px 10px rgba(15, 23, 42, 0.07);
+}
+
+.sales-page .app.erp-focus-mode .erp-pagination {
+    flex: 0 0 auto;
+    margin-bottom: 0;
+}
+
+.sales-page .sales-focus-toggle:focus-visible {
+    outline: 0;
+    border-color: #93b4ff;
+    box-shadow: var(--erp-focus-ring);
+}
+
+.sales-page .sales-focus-toggle[aria-pressed="true"] {
+    border-color: #b8cdfb;
+    background: #f3f7ff;
+    color: #1d4ed8;
+}
+
+.sales-page .sales-focus-toggle [hidden] {
+    display: none;
+}
+
+body.sales-page:has(.app.erp-focus-mode) {
+    height: 100vh;
+    height: 100dvh;
+    padding-bottom: 0;
+    overflow: hidden;
+}
+
+@media (max-width: 767px) {
+    .sales-page .sales-data-toolbar .sales-focus-toggle {
+        order: 4;
+    }
+
+    .sales-page .app.erp-focus-mode > .main {
+        padding: 16px;
+    }
+
+    .sales-page .app.erp-focus-mode .sales-data-card .erp-table-card {
+        display: flex;
+    }
+
+    .sales-page .app.erp-focus-mode .sales-mobile-list {
+        display: none;
+    }
+
+    .sales-page .app.erp-focus-mode .sales-data-toolbar .sales-column-settings {
+        display: block;
+        order: 4;
+    }
+
+    .sales-page .app.erp-focus-mode .sales-focus-toggle {
+        order: 5;
+    }
+
+    .sales-page .app.erp-focus-mode .sales-mobile-sort {
+        order: 6;
+    }
+}
+
+@media (max-width: 560px) {
+    .sales-page .app.erp-focus-mode > .main {
+        padding: 12px;
+    }
+
+    .sales-page .sales-focus-toggle {
+        width: 44px;
+        min-width: 44px;
+        padding-right: 10px;
+        padding-left: 10px;
+    }
+
+    .sales-page .sales-focus-toggle .sales-focus-label {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+    }
+
+    .sales-page .app.erp-focus-mode .sales-data-toolbar .sales-column-settings-trigger {
+        min-width: 44px;
+    }
+
+    .sales-page .app.erp-focus-mode .sales-column-settings-trigger .sales-toolbar-action-content > span:last-child {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+    }
+}
