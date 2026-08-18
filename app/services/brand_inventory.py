@@ -438,7 +438,10 @@ class BrandInventory:
                 "added": int(by_status.get("added", {}).get("count", 0)),
                 "pending": int(by_status.get("pending", {}).get("count", 0)),
                 "conflicts": int(by_status.get("conflict", {}).get("count", 0)),
-                "units_to_write_off": int(by_status.get("pending", {}).get("stock", 0)),
+                "units_to_write_off": 0,
+                "blocked_pending_units": int(
+                    by_status.get("pending", {}).get("stock", 0)
+                ),
             }
 
     def complete(self, session_id, user_name="", confirmation=False, failure_hook=None):
@@ -475,15 +478,16 @@ class BrandInventory:
                     )
                 return {"ok": False, "conflict": True, "count": len(conflicts),
                         "message": "Конфликтные позиции необходимо перепроверить."}
-            for row in pending:
-                if row["status"] != "pending":
-                    raise InventoryConflict("Исправьте ошибки позиций перед завершением.")
-                product = {"id": row["inventory_product_id"], "stock": row["stock"]}
-                key = "inventory:{}:missing:{}".format(session["id"], row["id"])
-                self._apply_confirmation(
-                    connection, row, product, 0, user_name, key, "missing",
-                    refresh_totals=False,
-                )
+            if pending:
+                return {
+                    "ok": False,
+                    "conflict": True,
+                    "count": len(pending),
+                    "message": (
+                        "Подтвердите все позиции перед завершением. "
+                        "Непроверенные товары не списываются автоматически."
+                    ),
+                }
             if failure_hook:
                 failure_hook(connection)
             now = utc_now()

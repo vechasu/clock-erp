@@ -123,11 +123,15 @@ class InventoryJournalTest(unittest.TestCase):
         self.assertEqual(document["summary"]["reactivated_positions"], 1)
         self.assertIn("Реактивирован", [item["result"] for item in document["positions"]])
 
-    def test_09_completion_marks_only_unchecked_snapshot_as_missing(self):
+    def test_09_completion_keeps_unchecked_snapshot_pending(self):
         session = self.start()
-        self.inventory.complete(session["id"], "Максим", confirmation=True)
+        result = self.inventory.complete(session["id"], "Максим", confirmation=True)
+        self.assertFalse(result["ok"])
         summary = self.read_model.get_document(session["id"])["summary"]
-        self.assertEqual((summary["status"], summary["missing_positions"], summary["pending_positions"]), ("completed", 1, 0))
+        self.assertEqual(
+            (summary["status"], summary["missing_positions"], summary["pending_positions"]),
+            ("active", 0, 1),
+        )
 
     def test_10_conflict_is_stored_and_visible(self):
         session = self.start()

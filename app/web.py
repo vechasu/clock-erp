@@ -14279,6 +14279,7 @@ JOURNAL_ACTION_LABELS = {
     "refused": "Отказ",
     "deleted": "Удалено",
     "comment_added": "Комментарий добавлен",
+    "restored": "Восстановлено",
 }
 JOURNAL_FIELD_LABELS = {
     "name": "Название", "article": "Артикул", "brand": "Бренд",
