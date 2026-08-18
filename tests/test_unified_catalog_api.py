@@ -1037,11 +1037,12 @@ class UnifiedCatalogApiTest(unittest.TestCase):
 
         self.assertEqual(created.status_code, 201)
         self.assertEqual(created.get_json()["data"]["name"], "Maxim Watch")
-        self.assertEqual(duplicate.status_code, 409)
+        self.assertEqual(duplicate.status_code, 200)
         self.assertEqual(
-            duplicate.get_json()["fields"]["existing"]["id"],
+            duplicate.get_json()["data"]["id"],
             created.get_json()["data"]["id"],
         )
+        self.assertFalse(duplicate.get_json()["meta"]["created"])
 
     def test_category_options_prioritize_used_then_offer_global_values(self):
         other_brand = self.client.post(

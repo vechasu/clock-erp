@@ -14506,8 +14506,8 @@ def api_brands_collection():
         except ValueError as error:
             return api_error("BRAND_VALIDATION_FAILED", str(error), 400)
         try:
-            created = _catalog_application.create_api_brand(
-                payload.get("name")
+            brand, resolution = _catalog_application.create_api_brand(
+                payload.get("name"), current_audit_actor()
             )
         except DuplicateCatalogValueError as error:
             return api_error(
@@ -14518,7 +14518,18 @@ def api_brands_collection():
             )
         except ValueError as error:
             return api_error("BRAND_VALIDATION_FAILED", str(error), 422)
-        return api_success(created, 201)
+        messages = {
+            "created": "Бренд создан.",
+            "existing": "Выбран существующий бренд.",
+            "reactivated": "Бренд восстановлен и выбран.",
+        }
+        return api_success(
+            brand,
+            201 if resolution == "created" else 200,
+            created=resolution == "created",
+            reactivated=resolution == "reactivated",
+            message=messages[resolution],
+        )
     return api_success(api_catalog_values("brand"))
 
 
