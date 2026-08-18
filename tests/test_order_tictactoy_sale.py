@@ -72,9 +72,14 @@ class OrderTictactoySaleTest(unittest.TestCase):
         with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5]:
             return self.client.get("/order/18593" + query)
 
-    def conduct(self, order=None, mappings=None):
+    def conduct(self, order=None, mappings=None, performed_at=None):
         patches = self.patches(order, mappings)
-        with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5]:
+        time_patch = mock.patch.object(
+            web,
+            "sale_now_iso",
+            return_value=performed_at or "2026-08-18T15:05:00+03:00",
+        )
+        with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], time_patch:
             return self.client.post("/order/18593/stock-writeoff", data={"csrf_token": "test-token"})
 
     def test_shared_catalog_finds_bradley_and_new_products_without_restart(self):
@@ -229,6 +234,43 @@ class OrderTictactoySaleTest(unittest.TestCase):
             automatic_overrides={},
         )
         self.assertEqual(web.calculate_sales_kpis(report)["sales_count"], 1)
+
+    def test_order_sale_uses_performed_time_and_preserves_order_time(self):
+        order = {
+            **self.order,
+            "created_at": "2026-08-18 00:11:36",
+        }
+        performed_at = "2026-08-18T15:05:00+03:00"
+
+        response = self.conduct(order=order, performed_at=performed_at)
+
+        self.assertEqual(urlsplit(response.location).path, "/sales")
+        rows = self.inventory.list_sales()
+        self.assertEqual({row["created_at"] for row in rows}, {performed_at})
+        self.assertEqual(
+            {row["order_created_at"] for row in rows},
+            {"2026-08-18 00:11:36"},
+        )
+        self.assertEqual(order["created_at"], "2026-08-18 00:11:36")
+
+        report = web.build_sales_report_records(
+            warehouse_items=[],
+            operations=[],
+            stored_manual_sales=rows,
+            automatic_overrides={},
+        )
+        self.assertEqual({row["created_at"] for row in report}, {performed_at})
+        serialized = web.serialize_api_sale(report[0])
+        self.assertEqual(serialized["created_at"], performed_at)
+
+        with mock.patch.object(
+            web, "build_sales_report_records", return_value=report
+        ), mock.patch.object(web, "get_warehouse_items", return_value=[]):
+            page = self.client.get("/sales?source=tictactoy")
+        html = page.get_data(as_text=True)
+        self.assertEqual(page.status_code, 200)
+        self.assertIn("18.08.2026", html)
+        self.assertIn("15:05", html)
 
     def test_repeated_post_is_idempotent(self):
         first = self.conduct()

@@ -93,6 +93,37 @@ class SalesInventoryTest(unittest.TestCase):
         self.assertEqual(movement["stock_after"], 2)
         self.assertEqual(movement["sale_id"], "sale-1")
 
+    def test_performed_time_precedes_source_created_time(self):
+        product = self.create_product(stock=2)
+        payload = self.payload(product)
+        payload.update({
+            "created_at": "2026-08-18 00:11:36",
+            "performed_at": "2026-08-18T15:05:00+03:00",
+        })
+
+        sale = self.inventory.create_sale(
+            payload, product["id"], 1, 1000
+        )
+
+        self.assertEqual(sale["created_at"], payload["performed_at"])
+        self.assertEqual(sale["performed_at"], payload["performed_at"])
+
+    def test_sale_without_explicit_date_uses_moscow_business_time(self):
+        product = self.create_product(stock=2)
+        payload = self.payload(product)
+        payload.pop("created_at")
+        expected = "2026-08-18T15:05:00+03:00"
+
+        with mock.patch(
+            "app.services.sales_inventory.sale_now_iso",
+            return_value=expected,
+        ):
+            sale = self.inventory.create_sale(
+                payload, product["id"], 1, 1000
+            )
+
+        self.assertEqual(sale["created_at"], expected)
+
     def test_return_status_cannot_be_used_to_create_sale(self):
         product = self.create_product(stock=3)
         payload = self.payload(product)

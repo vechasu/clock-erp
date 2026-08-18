@@ -60,6 +60,7 @@ from app.services.sales_inventory import (
     ReturnConflictError,
     SalesInventory,
     SalesInventoryError,
+    sale_now_iso,
     validate_performed_sale_update,
 )
 from app.services.brand_inventory import (
@@ -1069,19 +1070,20 @@ def _conduct_order_sale(order_id):
         or order_id
     )
     actor = current_sales_user_name()
+    order_created_at = str(
+        full_order.get("created_at")
+        or full_order.get("date")
+        or full_order.get("DATE_INSERT")
+        or ""
+    )
     payload = {
         "source": "tictactoy",
         "sale_type": "automatic",
         "order_number": str(order_number),
         "order_id": str(order_id),
         "external_order_id": str(order_id),
-        "created_at": str(
-            full_order.get("created_at")
-            or full_order.get("date")
-            or full_order.get("DATE_INSERT")
-            or datetime.now().strftime("%Y-%m-%d %H:%M")
-        ),
-        "performed_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "order_created_at": order_created_at,
+        "performed_at": sale_now_iso(),
         "performed_by": actor,
         "recipient_name": str(
             full_order.get("customer") or full_order.get("client") or ""
