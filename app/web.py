@@ -628,6 +628,10 @@ def orders_page():
         ),
         warehouse_items=get_warehouse_items(),
         product_mappings=load_product_mappings(),
+        sale_already_conducted=is_order_stock_written_off(
+            (selected_order or {}).get("id")
+            or (selected_order or {}).get("ID")
+        ),
     )
 
 
@@ -677,6 +681,7 @@ def order_page(order_id):
         selected_order_bitrix_url=bitrix_order_url,
         warehouse_items=get_warehouse_items(),
         product_mappings=load_product_mappings(),
+        sale_already_conducted=is_order_stock_written_off(order_id),
     )
 
 
@@ -684,6 +689,19 @@ def order_page(order_id):
 
 @app.route("/order/<int:order_id>/stock-writeoff", methods=["POST"])
 def order_stock_writeoff(order_id):
+    lock_directory = Path(app.instance_path) / "order_sale_locks"
+    lock_directory.mkdir(parents=True, exist_ok=True)
+    lock_path = lock_directory / "{}.lock".format(order_id)
+
+    with lock_path.open("a+") as lock_file:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        try:
+            return _conduct_order_sale(order_id)
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
+def _conduct_order_sale(order_id):
     full_order = get_order(order_id)
 
     if not full_order:
@@ -699,7 +717,21 @@ def order_stock_writeoff(order_id):
             "order_page",
             order_id=order_id,
             notice="error",
-            message="Этот заказ уже был списан со склада"
+            message="Продажа по этому заказу уже проведена"
+        ))
+
+    order_status = str(
+        full_order.get("status")
+        or full_order.get("STATUS_ID")
+        or full_order.get("status_id")
+        or ""
+    )
+    if order_status != "A":
+        return redirect(url_for(
+            "order_page",
+            order_id=order_id,
+            notice="error",
+            message="Сначала подтвердите заказ",
         ))
 
     products = full_order.get("products") or []
@@ -709,7 +741,7 @@ def order_stock_writeoff(order_id):
             "order_page",
             order_id=order_id,
             notice="error",
-            message="В заказе нет товаров для списания"
+            message="Заказ без товаров нельзя провести в продажу"
         ))
 
     mappings = load_product_mappings()
@@ -721,6 +753,9 @@ def order_stock_writeoff(order_id):
     }
 
     prepared_items = []
+    unmapped_items = []
+    missing_warehouse_items = []
+    invalid_quantity_items = []
 
     for product in products:
         bitrix_product_id = str(product.get("id") or product.get("ID") or "").strip()
@@ -731,36 +766,34 @@ def order_stock_writeoff(order_id):
         except Exception:
             quantity = 1.0
 
+        if not math.isfinite(quantity) or quantity <= 0:
+            invalid_quantity_items.append(bitrix_product_name)
+            continue
+
         mapping = mappings.get(bitrix_product_id)
 
         if not mapping:
-            return redirect(url_for(
-                "order_page",
-                order_id=order_id,
-                notice="error",
-                message=f"Товар не сопоставлен со складом: {bitrix_product_name}"
-            ))
+            unmapped_items.append(bitrix_product_name)
+            continue
 
         moysklad_product_id = str(mapping.get("moysklad_product_id") or "").strip()
         warehouse_item = warehouse_by_id.get(moysklad_product_id)
 
         if not warehouse_item:
-            return redirect(url_for(
-                "order_page",
-                order_id=order_id,
-                notice="error",
-                message=f"Товар склада не найден: {mapping.get('moysklad_product_name') or bitrix_product_name}"
-            ))
+            missing_warehouse_items.append(
+                mapping.get("moysklad_product_name")
+                or bitrix_product_name
+            )
+            continue
 
         current_stock = float(warehouse_item.get("stock") or 0)
 
-        if current_stock < quantity:
-            return redirect(url_for(
-                "order_page",
-                order_id=order_id,
-                notice="error",
-                message=f"Недостаточно остатка: {warehouse_item.get('name')} — нужно {quantity:g}, есть {current_stock:g}"
-            ))
+        try:
+            unit_price = float(str(
+                product.get("price") or product.get("PRICE") or 0
+            ).replace(",", "."))
+        except Exception:
+            unit_price = 0
 
         prepared_items.append({
             "bitrix_product_id": bitrix_product_id,
@@ -770,12 +803,74 @@ def order_stock_writeoff(order_id):
             "quantity": quantity,
             "stock_before": current_stock,
             "stock_after": current_stock - quantity,
+            "unit_price": unit_price,
         })
+
+    if unmapped_items:
+        return redirect(url_for(
+            "order_page",
+            order_id=order_id,
+            notice="error",
+            message="Товары не сопоставлены со складом: {}".format(
+                ", ".join(unmapped_items)
+            ),
+        ))
+
+    if invalid_quantity_items:
+        return redirect(url_for(
+            "order_page",
+            order_id=order_id,
+            notice="error",
+            message="Некорректное количество товара: {}".format(
+                ", ".join(invalid_quantity_items)
+            ),
+        ))
+
+    if missing_warehouse_items:
+        return redirect(url_for(
+            "order_page",
+            order_id=order_id,
+            notice="error",
+            message="Товары склада не найдены: {}".format(
+                ", ".join(missing_warehouse_items)
+            ),
+        ))
+
+    required_by_product = {}
+    stock_by_product = {}
+    name_by_product = {}
+    for item in prepared_items:
+        product_id = item["moysklad_product_id"]
+        required_by_product[product_id] = (
+            required_by_product.get(product_id, 0) + item["quantity"]
+        )
+        stock_by_product[product_id] = item["stock_before"]
+        name_by_product[product_id] = item["moysklad_product_name"]
+
+    shortages = []
+    for product_id, required in required_by_product.items():
+        available = stock_by_product[product_id]
+        if available < required:
+            shortages.append("{} — нужно {:g}, есть {:g}".format(
+                name_by_product[product_id], required, available,
+            ))
+
+    if shortages:
+        return redirect(url_for(
+            "order_page",
+            order_id=order_id,
+            notice="error",
+            message="Недостаточно остатка: {}".format(
+                "; ".join(shortages)
+            ),
+        ))
 
     client = MoySkladClient()
     order_number = full_order.get("number") or full_order.get("account_number") or full_order.get("ACCOUNT_NUMBER") or order_id
 
     try:
+        new_operations = []
+        remaining_stock = dict(stock_by_product)
         for item in prepared_items:
             reason = f"ТТТ ERP: списание по заказу №{order_number}. Товар Битрикс: {item['bitrix_product_name']}"
 
@@ -785,7 +880,10 @@ def order_stock_writeoff(order_id):
                 reason=reason
             )
 
-            add_stock_operation({
+            stock_before = remaining_stock[item["moysklad_product_id"]]
+            stock_after = stock_before - item["quantity"]
+            remaining_stock[item["moysklad_product_id"]] = stock_after
+            new_operations.append({
                 "id": str(uuid.uuid4()),
                 "created_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
                 "order_created_at": str(
@@ -800,15 +898,23 @@ def order_stock_writeoff(order_id):
                 "type": "writeoff",
                 "label": "Списание по заказу",
                 "quantity": item["quantity"],
-                "stock_before": item["stock_before"],
-                "stock_after": item["stock_after"],
+                "stock_before": stock_before,
+                "stock_after": stock_after,
                 "diff": -item["quantity"],
                 "source": "Заказ Битрикс",
+                "sales_source": "tictactoy",
                 "reason": f"Заказ №{order_number}",
                 "order_id": str(order_id),
                 "order_number": str(order_number),
                 "bitrix_product_id": item["bitrix_product_id"],
                 "bitrix_product_name": item["bitrix_product_name"],
+                "unit_price": item["unit_price"],
+                "customer": str(
+                    full_order.get("customer")
+                    or full_order.get("client")
+                    or full_order.get("USER_NAME")
+                    or ""
+                ),
                 "status": "success",
                 "moysklad_document_id": moysklad_document.get("id") if isinstance(moysklad_document, dict) else "",
                 "moysklad_document_name": moysklad_document.get("name") if isinstance(moysklad_document, dict) else "",
@@ -819,15 +925,18 @@ def order_stock_writeoff(order_id):
                 ),
             })
 
+        save_stock_operations(
+            (new_operations + load_stock_operations())[:1000]
+        )
+
         WAREHOUSE_CACHE["items"] = []
         WAREHOUSE_CACHE["loaded_at"] = 0
 
-        return redirect(url_for(
-            "order_page",
-            order_id=order_id,
-            notice="success",
-            message=f"Заказ №{order_number} списан со склада"
-        ))
+        return redirect("/sales?" + urlencode({
+            "source": "tictactoy",
+            "notice": "success",
+            "message": f"Заказ №{order_number} проведён в продажу",
+        }))
 
     except Exception as error:
         print(f"Ошибка списания заказа {order_id}: {error}")
@@ -835,7 +944,10 @@ def order_stock_writeoff(order_id):
             "order_page",
             order_id=order_id,
             notice="error",
-            message=f"Ошибка списания заказа: {error}"
+            message=(
+                "Не удалось провести продажу в МойСклад. "
+                "Продажа не отмечена как проведённая."
+            )
         ))
 
 
@@ -905,11 +1017,16 @@ def order_status_update(order_id):
     get_orders(force=True)
 
     if result.get("status") == "ok":
+        redirect_params = {
+            "order_id": order_id,
+            "notice": "success",
+            "message": "Статус заказа обновлен",
+        }
+        if new_status == "A" and not is_order_stock_written_off(order_id):
+            redirect_params["open_sale"] = "1"
         return redirect(url_for(
             "order_page",
-            order_id=order_id,
-            notice="success",
-            message="Статус заказа обновлен"
+            **redirect_params
         ))
 
     return redirect(url_for(
@@ -7652,8 +7769,16 @@ def build_sales_report_records(
         )
 
         stored_source = str(
-            override.get("source", "Tictactoy")
+            override.get(
+                "source",
+                operation.get("sales_source") or "Tictactoy",
+            )
             or "Tictactoy"
+        )
+        stored_unit_price = parse_sale_price(
+            override.get("unit_price")
+            if "unit_price" in override
+            else operation.get("unit_price")
         )
 
         automatic_sales.append({
@@ -7740,24 +7865,18 @@ def build_sales_report_records(
             ),
             **{
                 "unit_price": parse_sale_price(
-                    override.get("unit_price")
+                    stored_unit_price
                 ),
                 "unit_price_display": format_sale_money(
-                    parse_sale_price(
-                        override.get("unit_price")
-                    )
+                    stored_unit_price
                 ),
                 "total_amount": calculate_sale_amount(
-                    parse_sale_price(
-                        override.get("unit_price")
-                    ),
+                    stored_unit_price,
                     quantity_number,
                 ),
                 "total_amount_display": format_sale_money(
                     calculate_sale_amount(
-                        parse_sale_price(
-                            override.get("unit_price")
-                        ),
+                        stored_unit_price,
                         quantity_number,
                     )
                 ),
