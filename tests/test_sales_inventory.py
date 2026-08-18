@@ -1481,12 +1481,15 @@ class SalesInventoryWebTest(SalesInventoryTest):
         self.assertFalse(self.inventory.get_sale(sale["id"])["archived_at"])
 
     def test_today_filter_uses_moscow_date_of_performed_sale(self):
-        from datetime import datetime as real_datetime
+        from datetime import datetime as real_datetime, timedelta, timezone
 
         class FixedDatetime(real_datetime):
             @classmethod
             def now(cls, tz=None):
-                value = cls.fromisoformat("2026-08-18T12:00:00+03:00")
+                value = cls(
+                    2026, 8, 18, 12, 0,
+                    tzinfo=timezone(timedelta(hours=3)),
+                )
                 return value if tz is None else value.astimezone(tz)
 
         sales = [
