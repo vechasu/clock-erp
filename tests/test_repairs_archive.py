@@ -8,7 +8,11 @@ from unittest import mock
 from app import web
 from app.auth import AuthStore
 from app.services.audit_journal import AuditJournal
-from app.services.repair_cases import load_repair_file, migrate_repair_file
+from app.services.repair_cases import (
+    REPAIR_STATUS_LABELS,
+    load_repair_file,
+    migrate_repair_file,
+)
 from tests.test_repairs_full_cycle import base_payload
 
 
@@ -100,23 +104,84 @@ class RepairsArchiveTest(unittest.TestCase):
         self.assertNotIn(f'data-repair-id="{archived["id"]}"', active_html)
         self.assertIn(f'data-repair-id="{archived["id"]}"', archive_html)
 
-    def test_only_final_repair_archives_and_status_data_are_preserved(self):
-        repair = self.create(problem="Исходная неисправность", agreed_cost="1234")
-        rejected = self.archive(repair["id"])
-        self.assertEqual(rejected.status_code, 409)
-        self.assertIn("Сначала завершите ремонт", rejected.get_json()["message"])
+    def test_nonfinal_repair_has_table_menu_card_action_and_confirmation_copy(self):
+        repair = self.create()
+        detail = self.client.get(
+            "/api/v1/repairs/{}".format(repair["id"])
+        ).get_json()["data"]
+        page = self.client.get("/app/repairs?view=active").get_data(as_text=True)
 
-        self.set_status(repair["id"], "completed")
-        before = load_repair_file(self.store)[0]
-        archived = self.archive(repair["id"])
-        self.assertEqual(archived.status_code, 200)
-        stored = load_repair_file(self.store)[0]
-        self.assertEqual(stored["status"], "completed")
-        self.assertEqual(stored["problem"], before["problem"])
-        self.assertEqual(stored["agreed_cost"], before["agreed_cost"])
-        self.assertTrue(stored["archived_at"])
-        self.assertTrue(stored["archived_by"])
-        self.assertEqual(stored["history"][-1]["action"], "Ремонт перемещён в архив")
+        self.assertEqual(detail["status"], "new")
+        self.assertTrue(detail["can_archive"])
+        self.assertIn('data-repair-menu="{}"'.format(repair["id"]), page)
+        self.assertIn("data-archive-repair", page)
+        self.assertIn("Переместить ремонт в архив?", page)
+        self.assertIn(
+            "Ремонт исчезнет из активного списка, но его статус, данные и история сохранятся.",
+            page,
+        )
+
+    def test_every_repair_status_archives_and_restores_without_data_changes(self):
+        for index, status in enumerate(REPAIR_STATUS_LABELS):
+            with self.subTest(status=status):
+                repair = self.create(
+                    client_name="Клиент {}".format(index),
+                    problem="Исходная неисправность {}".format(index),
+                    agreed_cost=str(1200 + index),
+                )
+                self.set_status(repair["id"], status)
+                before = next(
+                    case for case in load_repair_file(self.store)
+                    if case["id"] == repair["id"]
+                )
+
+                archived = self.archive(repair["id"])
+                self.assertEqual(archived.status_code, 200)
+                stored = next(
+                    case for case in load_repair_file(self.store)
+                    if case["id"] == repair["id"]
+                )
+                self.assertEqual(stored["status"], status)
+                self.assertEqual(stored["problem"], before["problem"])
+                self.assertEqual(stored["agreed_cost"], before["agreed_cost"])
+                self.assertTrue(stored["archived_at"])
+                self.assertTrue(stored["archived_by"])
+                self.assertEqual(
+                    stored["history"][-1]["action"],
+                    "Ремонт перемещён в архив",
+                )
+                archived_history = list(stored["history"])
+                archived_updated_at = stored["updated_at"]
+
+                restored = self.client.post(
+                    "/api/v1/repairs/{}/restore".format(repair["id"]),
+                    json={},
+                )
+                self.assertEqual(restored.status_code, 200)
+                active = next(
+                    case for case in load_repair_file(self.store)
+                    if case["id"] == repair["id"]
+                )
+                self.assertEqual(active["status"], status)
+                self.assertEqual(active["archived_at"], "")
+                self.assertEqual(active["archived_by"], "")
+                self.assertEqual(active["updated_at"], archived_updated_at)
+                self.assertEqual(active["history"], archived_history)
+
+                events = AuditJournal().list_events(
+                    entity_type="repair", entity_id=repair["id"], limit=10,
+                )["events"]
+                self.assertEqual(
+                    [event["action"] for event in events],
+                    ["restored", "archived"],
+                )
+                for event in events:
+                    self.assertEqual(event["status_snapshot"], status)
+                    self.assertEqual(event["metadata"]["repair_status"], status)
+                    self.assertEqual(
+                        event["metadata"]["repair_status_label"],
+                        REPAIR_STATUS_LABELS[status],
+                    )
 
     def test_archive_restore_are_idempotent_audited_and_preserve_status(self):
         repair = self.create()
@@ -201,7 +266,6 @@ class RepairsArchiveTest(unittest.TestCase):
         with store.connect() as connection:
             connection.execute("UPDATE users SET role = 'employee' WHERE id = ?", (user_id,))
         repair = self.create()
-        self.set_status(repair["id"], "completed")
         web.app.config.update(AUTH_TESTING=True, AUTH_DATABASE=str(auth_path))
         client = web.app.test_client()
         with client.session_transaction() as session:

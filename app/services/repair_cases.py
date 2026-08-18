@@ -10,8 +10,6 @@ from pathlib import Path
 
 REPAIR_SCHEMA_VERSION = 4
 
-REPAIR_FINAL_STATUSES = {"completed", "cancelled"}
-
 REPAIR_STATUS_LABELS = {
     "new": "Новая",
     "waiting_customer_shipment": "Ожидаем отправку клиентом",

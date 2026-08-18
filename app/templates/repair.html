@@ -71,6 +71,9 @@
         .repair-open svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; }
         .repair-action-cell { display: flex; align-items: center; gap: 5px; }
         .repair-dots { width: 34px; height: 34px; border: 0; border-radius: 8px; background: transparent; color: #64748b; font-size: 20px; cursor: pointer; }
+        .repair-row-menu { position: fixed; z-index: 130; min-width: 180px; padding: 6px; border: 1px solid #d9e1eb; border-radius: 10px; background: #fff; box-shadow: 0 14px 36px rgba(15, 23, 42, .2); }
+        .repair-row-menu button { display: block; width: 100%; padding: 9px 11px; border: 0; border-radius: 7px; background: transparent; color: #334155; font-weight: 750; text-align: left; cursor: pointer; }
+        .repair-row-menu button:hover { background: #f1f5f9; }
         .repair-mobile-list { display: none; margin-top: 12px; gap: 10px; }
         .repair-mobile-card { padding: 14px; border: 1px solid #dfe5ed; border-radius: 12px; background: #fff; cursor: pointer; }
         .repair-mobile-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
@@ -196,7 +199,7 @@
             {% if active_filter_count %}<div class="repair-active-filters"><span class="repair-chip">Применено фильтров: {{ active_filter_count }}</span><a class="repair-chip" href="{{ url_for('repair_page', view=repair_view) }}">Сбросить все ×</a></div>{% endif %}
 
             <section class="repair-table-card" aria-label="Ремонтные обращения">
-                {% if data_error %}<div class="repair-empty"><strong>Не удалось загрузить ремонты</strong><br>{{ data_error }}</div>{% elif not cases %}<div class="repair-empty"><strong>{% if repair_view == 'archive' and not active_filter_count %}В архиве пока нет ремонтов{% else %}Ремонты не найдены{% endif %}</strong><br>{% if repair_view == 'archive' and not active_filter_count %}Завершённые ремонты можно переносить сюда, сохраняя всю историю.{% else %}Измените фильтры или добавьте первое обращение.{% endif %}</div>{% else %}
+                {% if data_error %}<div class="repair-empty"><strong>Не удалось загрузить ремонты</strong><br>{{ data_error }}</div>{% elif not cases %}<div class="repair-empty"><strong>{% if repair_view == 'archive' and not active_filter_count %}В архиве пока нет ремонтов{% else %}Ремонты не найдены{% endif %}</strong><br>{% if repair_view == 'archive' and not active_filter_count %}Любой ремонт можно перенести сюда, сохраняя статус, данные и историю.{% else %}Измените фильтры или добавьте первое обращение.{% endif %}</div>{% else %}
                 <div class="repair-table-wrap"><table class="repair-table erp-data-table"><thead><tr>
                     <th data-column="status" style="width:130px">Статус</th><th data-column="customer" style="width:180px">Заказ / клиент</th><th data-column="product" style="width:155px">Товар</th><th data-column="channel" style="width:115px">Связь</th><th data-column="problem" style="width:210px">Обращение</th><th data-column="location" style="width:130px">Где товар</th><th data-column="control" style="width:170px">{% if repair_view == 'archive' %}Архивирование{% else %}Контроль{% endif %}</th><th data-column="event" style="width:175px">Последнее событие</th><th style="width:82px">Действие</th>
                 </tr></thead><tbody>
@@ -209,7 +212,7 @@
                         <td data-column="location"><span class="repair-primary">{{ case.location_label }}</span></td>
                         <td data-column="control">{% if repair_view == 'archive' %}<span class="repair-primary">{{ case.archived_at_display or '—' }}</span><span class="repair-secondary">{{ case.archived_by or 'Пользователь не указан' }}</span>{% else %}<span class="repair-control-date {{ case.control_state }}">{{ case.control_date_display or '—' }}</span><span class="repair-secondary">{{ case.next_action or 'Нет активного действия' }}</span><span class="repair-secondary">{{ case.waiting_for_label }}</span>{% endif %}</td>
                         <td data-column="event"><span class="repair-primary">{{ case.latest_event.action if case.latest_event else 'Создано обращение' }}</span><span class="repair-secondary">{{ case.latest_event.timestamp if case.latest_event else case.created_at }}</span></td>
-                        <td><div class="repair-action-cell"><button class="repair-open" type="button" aria-label="Открыть карточку" data-open-repair="{{ case.id }}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 5h5v5M10 14 19 5M19 14v5H5V5h5"></path></svg></button><button class="repair-dots" type="button" aria-label="Контекстные действия" data-open-repair="{{ case.id }}">⋯</button></div></td>
+                        <td><div class="repair-action-cell"><button class="repair-open" type="button" aria-label="Открыть карточку" data-open-repair="{{ case.id }}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 5h5v5M10 14 19 5M19 14v5H5V5h5"></path></svg></button><button class="repair-dots" type="button" aria-label="Контекстные действия" aria-haspopup="menu" aria-expanded="false" data-repair-menu="{{ case.id }}" data-repair-archived="{{ '1' if case.is_archived else '0' }}">⋯</button></div></td>
                     </tr>{% endfor %}
                 </tbody></table></div>{% endif %}
                 {% if not data_error %}{{ render_erp_pagination(pagination, "Страницы ремонтов") }}{% endif %}
@@ -230,6 +233,7 @@
 </aside>
 
 <dialog id="repairConfirm" class="repair-confirm"><div class="repair-confirm-content"><h2 id="repairConfirmTitle"></h2><p id="repairConfirmText"></p></div><div class="repair-confirm-actions"><button class="repair-button" type="button" data-confirm-cancel>Отмена</button><button class="repair-button primary" type="button" data-confirm-submit></button></div></dialog>
+<div id="repairRowMenu" class="repair-row-menu" role="menu" hidden><button type="button" role="menuitem" data-row-archive></button></div>
 
 <template id="repairCreateTemplate">
     <form id="repairEditor" novalidate>
@@ -276,6 +280,7 @@
     const title = document.getElementById('repairDrawerTitle');
     const subtitle = document.getElementById('repairDrawerSubtitle');
     const confirmDialog = document.getElementById('repairConfirm');
+    const rowMenu = document.getElementById('repairRowMenu');
     let activeRepair = null;
     let editingId = '';
 
@@ -343,7 +348,7 @@
         body.querySelector('[data-repair-action-form]')?.addEventListener('submit', submitAction);
         footer.querySelector('[data-close-repair]').addEventListener('click', closeDrawer);
         footer.querySelector('[data-edit-repair]')?.addEventListener('click', () => openEditor(repair));
-        footer.querySelector('[data-archive-repair]')?.addEventListener('click', () => confirmRepairAction({title:'Переместить ремонт в архив?', text:'Ремонт исчезнет из активного списка, но все данные и история изменений сохранятся.', submitLabel:'В архив', action:async()=>{await api(`/api/v1/repairs/${encodeURIComponent(repair.id)}/archive`,{method:'POST'});toast('Ремонт перемещён в архив');setTimeout(()=>location.assign('/app/repairs?view=active'),350);}}));
+        footer.querySelector('[data-archive-repair]')?.addEventListener('click', () => confirmRepairAction({title:'Переместить ремонт в архив?', text:'Ремонт исчезнет из активного списка, но его статус, данные и история сохранятся.', submitLabel:'В архив', action:async()=>{await api(`/api/v1/repairs/${encodeURIComponent(repair.id)}/archive`,{method:'POST'});toast('Ремонт перемещён в архив');setTimeout(()=>location.assign('/app/repairs?view=active'),350);}}));
         footer.querySelector('[data-restore-repair]')?.addEventListener('click', () => confirmRepairAction({title:'Вернуть ремонт в активные?', text:'Ремонт снова появится в основном списке и станет доступен для работы.', submitLabel:'Вернуть в активные', action:async()=>{await api(`/api/v1/repairs/${encodeURIComponent(repair.id)}/restore`,{method:'POST'});toast('Ремонт возвращён в активные');setTimeout(()=>location.assign('/app/repairs?view=archive'),350);}}));
         footer.querySelector('[data-repeat-repair]')?.addEventListener('click', () => openRepeatRepair(repair));
     }
@@ -451,7 +456,38 @@
     }
 
     document.getElementById('repairAdd').addEventListener('click',()=>openEditor());
-    document.querySelectorAll('[data-open-repair],[data-repair-id]').forEach(node=>node.addEventListener('click',event=>{ if(event.target.closest('a'))return; event.stopPropagation(); loadRepair(node.dataset.openRepair||node.dataset.repairId); }));
+    function closeRowMenu() { rowMenu.hidden = true; document.querySelectorAll('[data-repair-menu]').forEach(button => button.setAttribute('aria-expanded', 'false')); }
+    document.querySelectorAll('[data-repair-menu]').forEach(button => button.addEventListener('click', event => {
+        event.stopPropagation();
+        const isArchived = button.dataset.repairArchived === '1';
+        const action = rowMenu.querySelector('[data-row-archive]');
+        const rect = button.getBoundingClientRect();
+        rowMenu.dataset.repairId = button.dataset.repairMenu;
+        rowMenu.dataset.archived = isArchived ? '1' : '0';
+        action.textContent = isArchived ? 'Вернуть в активные' : 'В архив';
+        rowMenu.hidden = false;
+        const menuWidth = rowMenu.offsetWidth;
+        const menuHeight = rowMenu.offsetHeight;
+        rowMenu.style.left = `${Math.max(8, Math.min(rect.right - menuWidth, innerWidth - menuWidth - 8))}px`;
+        rowMenu.style.top = `${Math.max(8, Math.min(rect.bottom + 4, innerHeight - menuHeight - 8))}px`;
+        document.querySelectorAll('[data-repair-menu]').forEach(item => item.setAttribute('aria-expanded', item === button ? 'true' : 'false'));
+    }));
+    rowMenu.querySelector('[data-row-archive]').addEventListener('click', () => {
+        const repairId = rowMenu.dataset.repairId;
+        const isArchived = rowMenu.dataset.archived === '1';
+        closeRowMenu();
+        confirmRepairAction(isArchived ? {
+            title:'Вернуть ремонт в активные?', text:'Ремонт снова появится в основном списке и станет доступен для работы.', submitLabel:'Вернуть в активные',
+            action:async()=>{await api(`/api/v1/repairs/${encodeURIComponent(repairId)}/restore`,{method:'POST'});toast('Ремонт возвращён в активные');setTimeout(()=>location.reload(),350);}
+        } : {
+            title:'Переместить ремонт в архив?', text:'Ремонт исчезнет из активного списка, но его статус, данные и история сохранятся.', submitLabel:'В архив',
+            action:async()=>{await api(`/api/v1/repairs/${encodeURIComponent(repairId)}/archive`,{method:'POST'});toast('Ремонт перемещён в архив');setTimeout(()=>location.reload(),350);}
+        });
+    });
+    document.addEventListener('click', event => { if (!event.target.closest('#repairRowMenu,[data-repair-menu]')) closeRowMenu(); });
+    window.addEventListener('scroll', closeRowMenu, true);
+    window.addEventListener('resize', closeRowMenu);
+    document.querySelectorAll('[data-open-repair],[data-repair-id]').forEach(node=>node.addEventListener('click',event=>{ if(event.target.closest('a,[data-repair-menu]'))return; event.stopPropagation(); loadRepair(node.dataset.openRepair||node.dataset.repairId); }));
     document.querySelectorAll('[data-repair-id]').forEach(node=>node.addEventListener('keydown',event=>{if(event.key==='Enter')loadRepair(node.dataset.repairId);}));
     const requestedRepair = new URL(location.href).searchParams.get('repair_id'); if (requestedRepair) loadRepair(requestedRepair);
 
