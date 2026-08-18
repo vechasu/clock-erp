@@ -590,6 +590,17 @@
             background: #fecaca;
         }
 
+        .sales-archive-form {
+            display: inline-flex;
+            margin: 0;
+        }
+
+        [data-sales-today].is-active {
+            color: var(--erp-accent, #2563eb);
+            border-color: currentColor;
+            background: color-mix(in srgb, currentColor 10%, transparent);
+        }
+
         .sales-action-menu {
             position: relative;
         }
@@ -1433,6 +1444,12 @@
                         {{ tab.label }}
                     </a>
                 {% endfor %}
+                <a
+                    class="sales-tab erp-section-tab{% if sales_view == 'archive' %} is-active{% endif %}"
+                    href="{{ archive_url }}"
+                    data-sales-archive-tab
+                    {% if sales_view == 'archive' %}aria-current="page"{% endif %}
+                >Архив</a>
             </div>
         </nav>
 
@@ -1626,6 +1643,13 @@
                     </div>
 
                 </div>
+
+                <a
+                    class="erp-secondary-action sales-toolbar-action{% if sales_filters.today == '1' %} is-active{% endif %}"
+                    href="{{ today_url }}"
+                    aria-pressed="{{ 'true' if sales_filters.today == '1' else 'false' }}"
+                    data-sales-today
+                >Сегодня</a>
 
                 <div class="sales-filter-settings">
                     <button
@@ -2064,6 +2088,21 @@
                                         data-system-column="actions"
                                     >
                                         <div class="sales-row-actions">
+                                            <form method="post" action="{{ url_for('sale_archive') }}" class="sales-archive-form">
+                                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                                <input type="hidden" name="sale_id" value="{{ sale.id }}">
+                                                <input type="hidden" name="sale_type" value="{{ sale.sale_type or ('manual' if sale.is_manual else 'automatic') }}">
+                                                <input type="hidden" name="archived" value="{{ '0' if sale.archived_at else '1' }}">
+                                                <input type="hidden" name="return_source" value="{{ active_source }}">
+                                                <button
+                                                    class="sales-row-action"
+                                                    type="submit"
+                                                    title="{{ 'Восстановить продажу' if sale.archived_at else 'Архивировать продажу' }}"
+                                                    aria-label="{{ 'Восстановить продажу' if sale.archived_at else 'Архивировать продажу' }}"
+                                                    {% if not sale.archived_at %}onclick="return confirm('Отправить продажу в архив?')"{% endif %}
+                                                >{{ '↥' if sale.archived_at else '▣' }}</button>
+                                            </form>
+                                            {% if sales_view != 'archive' %}
                                             {% if not sale.is_cancelled %}
                                                 <button
                                                     class="sales-row-action sales-row-edit"
@@ -2109,6 +2148,7 @@
                                                         onclick="openSaleDeleteModal(this)"
                                                     >Удалить запись</button>
                                                 </details>
+                                            {% endif %}
                                             {% endif %}
                                         </div>
                                     </td>
@@ -2232,6 +2272,17 @@
                         </details>
 
                         <div class="mobile-erp-card-actions">
+                            <form method="post" action="{{ url_for('sale_archive') }}" class="sales-archive-form">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input type="hidden" name="sale_id" value="{{ sale.id }}">
+                                <input type="hidden" name="sale_type" value="{{ sale.sale_type or ('manual' if sale.is_manual else 'automatic') }}">
+                                <input type="hidden" name="archived" value="{{ '0' if sale.archived_at else '1' }}">
+                                <input type="hidden" name="return_source" value="{{ active_source }}">
+                                <button type="submit" class="sales-mobile-edit" {% if not sale.archived_at %}onclick="return confirm('Отправить продажу в архив?')"{% endif %}>
+                                    {{ 'Восстановить' if sale.archived_at else 'В архив' }}
+                                </button>
+                            </form>
+                            {% if sales_view != 'archive' %}
                             {% if not sale.is_cancelled %}
                                 <button
                                     class="sales-mobile-edit"
@@ -2270,6 +2321,7 @@
                                         onclick="openSaleDeleteModal(this)"
                                     >Удалить запись</button>
                                 </details>
+                            {% endif %}
                             {% endif %}
                         </div>
                     </article>

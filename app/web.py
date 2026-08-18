@@ -60,6 +60,7 @@ from app.services.sales_inventory import (
     ReturnConflictError,
     SalesInventory,
     SalesInventoryError,
+    ERP_TIMEZONE,
     sale_now_iso,
     validate_performed_sale_update,
 )
@@ -8092,6 +8093,83 @@ def _sales_action_record(sale_id, sale_type):
     return None
 
 
+@app.route("/sales/archive", methods=["POST"])
+def sale_archive():
+    require_csrf_when_authenticated()
+    sale_id = str(request.form.get("sale_id") or "").strip()
+    sale_type = str(request.form.get("sale_type") or "").strip()
+    archived = str(request.form.get("archived") or "1") == "1"
+    if not sale_id:
+        return respond_to_sales_action(
+            "Продажа не найдена", notice="error", status_code=400,
+        )
+
+    actor = current_sales_user_name()
+    managed = SalesInventory().get_sale(sale_id)
+    if managed is not None:
+        try:
+            SalesInventory().set_archived(sale_id, archived, user_name=actor)
+        except SalesInventoryError as error:
+            return respond_to_sales_action(
+                str(error), notice="error", status_code=404,
+            )
+    else:
+        record = _sales_action_record(sale_id, sale_type)
+        if record is None:
+            return respond_to_sales_action(
+                "Продажа не найдена", notice="error", status_code=404,
+            )
+        changed_at = sale_now_iso()
+        target = None
+        archive_changed = False
+        if sale_type == "manual":
+            collection = load_manual_sales()
+            target = next(
+                item for item in collection
+                if str(item.get("id") or "") == sale_id
+            )
+            if bool(target.get("archived_at")) != archived:
+                archive_changed = True
+                target["archived_at"] = changed_at if archived else ""
+                target["archived_by"] = actor if archived else ""
+                save_manual_sales(collection)
+        elif sale_type == "automatic":
+            collection = load_automatic_sales_overrides()
+            target = collection.get(sale_id) or {}
+            if bool(target.get("archived_at")) != archived:
+                archive_changed = True
+                target["archived_at"] = changed_at if archived else ""
+                target["archived_by"] = actor if archived else ""
+                collection[sale_id] = target
+                save_automatic_sales_overrides(collection)
+        else:
+            return respond_to_sales_action(
+                "Неизвестный тип продажи", notice="error", status_code=400,
+            )
+        if archive_changed:
+            AuditJournal().record(
+                "sale", sale_id, "status_changed",
+                "Продажа #{}".format(
+                    record.get("order_number") or sale_id
+                ),
+                record.get("source") or "",
+                before={
+                    "archive_status": "active" if archived else "archived"
+                },
+                after={
+                    "archive_status": "archived" if archived else "active",
+                    "archived_at": changed_at if archived else "",
+                },
+                actor_id=actor, actor_name=actor,
+                status="archived" if archived else "active",
+                source=record.get("source") or "",
+            )
+    _cached_api_sales_records.cache_clear()
+    return respond_to_sales_action(
+        "Продажа отправлена в архив" if archived else "Продажа восстановлена"
+    )
+
+
 @app.route("/sales/cancel", methods=["POST"])
 def sale_cancel():
     require_csrf_when_authenticated()
@@ -8470,6 +8548,8 @@ def build_sales_report_records(
 
         automatic_sales.append({
             "id": operation_id,
+            "archived_at": str(override.get("archived_at") or ""),
+            "archived_by": str(override.get("archived_by") or ""),
             "sale_type": "automatic",
             "sale_type_label": "Автоматическая",
             "is_manual": False,
@@ -8777,6 +8857,8 @@ def build_sales_report_records(
             stored_sale_type = "manual"
         manual_sales.append({
             "id": str(stored_sale.get("id") or ""),
+            "archived_at": str(stored_sale.get("archived_at") or ""),
+            "archived_by": str(stored_sale.get("archived_by") or ""),
             "sale_type": stored_sale_type,
             "sale_type_label": (
                 "Автоматическая"
@@ -9029,6 +9111,7 @@ def get_sales_report_filters():
 
     filters = {
         "q": query_text("q"),
+        "today": query_text("today"),
         "date_from": query_text("date_from"),
         "date_to": query_text("date_to"),
         "sale_type": query_text("sale_type"),
@@ -9422,11 +9505,21 @@ def filter_sales_report_records(sales, filters, category_groups=None):
         if filters.get("date_from")
         else ""
     )
+    today_date = datetime.now(ERP_TIMEZONE).date().isoformat()
 
     for sale in sales:
-        sale_date = str(
-            sale.get("created_at") or ""
-        )[:10]
+        raw_sale_date = str(sale.get("created_at") or "")
+        try:
+            candidate = raw_sale_date.replace("Z", "+00:00")
+            parsed_sale_date = datetime.fromisoformat(candidate)
+            if parsed_sale_date.tzinfo is None:
+                parsed_sale_date = parsed_sale_date.replace(tzinfo=ERP_TIMEZONE)
+            sale_date = parsed_sale_date.astimezone(ERP_TIMEZONE).date().isoformat()
+        except ValueError:
+            sale_date = raw_sale_date[:10]
+
+        if filters.get("today") == "1" and sale_date != today_date:
+            continue
 
         if (
             filters.get("date_from")
@@ -10082,6 +10175,13 @@ def sales_page():
     )
 
     sales_kpis = calculate_sales_kpis(sales)
+    sales_view = (
+        "archive" if request.args.get("view") == "archive" else "active"
+    )
+    sales = [
+        sale for sale in sales
+        if bool(sale.get("archived_at")) == (sales_view == "archive")
+    ]
     total_filtered_sales = len(sales)
     page, per_page = parse_erp_pagination()
     allowed_sort_fields = {
@@ -10131,6 +10231,8 @@ def sales_page():
             "product_id",
             "status",
             "per_page",
+            "today",
+            "view",
         )
     }
 
@@ -10149,10 +10251,22 @@ def sales_page():
         {
             **tab,
             "url": source_url(tab["key"]),
-            "active": tab["key"] == active_source,
+            "active": tab["key"] == active_source and sales_view != "archive",
         }
         for tab in SALES_SOURCE_TABS
     ]
+    archive_query = {
+        key: value for key, value in preserved_filters.items()
+        if value and key != "view"
+    }
+    archive_query.update({"source": filters["source"], "view": "archive"})
+    today_query = {
+        key: value for key, value in preserved_filters.items()
+        if value and key != "today"
+    }
+    today_query["source"] = filters["source"]
+    if filters.get("today") != "1":
+        today_query["today"] = "1"
     report_query = {
         "source": filters["source"],
         **({"tab": "all"} if active_source == "all" else {}),
@@ -10167,6 +10281,9 @@ def sales_page():
         sales=sales,
         pagination=pagination,
         source_tabs=source_tabs,
+        sales_view=sales_view,
+        archive_url=url_for("sales_page", **archive_query),
+        today_url=url_for("sales_page", **today_query),
         active_source=active_source,
         active_source_label=(
             "Все продажи"

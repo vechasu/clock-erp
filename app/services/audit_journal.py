@@ -31,6 +31,7 @@ FIELD_WHITELISTS = {
         "status", "payment", "tracking", "quantity", "unit_price", "source",
         "comment", "order_number", "original_unit_price", "discount_type",
         "discount_value", "discount_amount", "discount_reason",
+        "archive_status", "archived_at",
     },
     "receipt": {
         "status", "quantity", "document", "comment", "receipt_date",

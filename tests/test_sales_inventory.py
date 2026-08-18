@@ -15,6 +15,7 @@ from app.services.sales_inventory import (
     SalesInventory,
     SalesInventoryError,
 )
+from app.services.audit_journal import AuditJournal
 
 
 class SalesInventoryTest(unittest.TestCase):
@@ -123,6 +124,39 @@ class SalesInventoryTest(unittest.TestCase):
             )
 
         self.assertEqual(sale["created_at"], expected)
+
+    def test_archive_and_restore_do_not_change_stock_or_movements(self):
+        product = self.create_product(stock=3)
+        sale = self.inventory.create_sale(
+            self.payload(product), product["id"], 1, 1000,
+            user_name="Автор",
+        )
+        movement_count = len(self.inventory.list_movements(product["id"]))
+
+        archived = self.inventory.set_archived(
+            sale["id"], True, user_name="Архиватор",
+        )
+        repeated = self.inventory.set_archived(
+            sale["id"], True, user_name="Архиватор",
+        )
+
+        self.assertTrue(archived["archived_at"])
+        self.assertEqual(repeated["archived_at"], archived["archived_at"])
+        self.assertEqual(self.stock(product["id"]), 2)
+        self.assertEqual(
+            len(self.inventory.list_movements(product["id"])), movement_count,
+        )
+        restored = self.inventory.set_archived(
+            sale["id"], False, user_name="Архиватор",
+        )
+        self.assertFalse(restored["archived_at"])
+        self.assertEqual(self.stock(product["id"]), 2)
+        events = AuditJournal(self.database).list_events(
+            entity_type="sale", entity_id=sale["id"], limit=100,
+        )["events"]
+        statuses = [event["status_snapshot"] for event in events]
+        self.assertIn("archived", statuses)
+        self.assertIn("active", statuses)
 
     def test_return_status_cannot_be_used_to_create_sale(self):
         product = self.create_product(stock=3)
@@ -1412,6 +1446,58 @@ class SalesInventoryWebTest(SalesInventoryTest):
 
         self.assertEqual(self.stock(self.product["id"]), before)
         self.assertEqual(sales[0]["id"], "legacy")
+
+    def test_archive_route_moves_sale_between_views_and_keeps_kpi(self):
+        sale = self.create_managed_sale(sale_id="archive-web")
+        response = self.client.post(
+            "/sales/archive",
+            data={
+                "sale_id": sale["id"],
+                "sale_type": "manual",
+                "archived": "1",
+                "return_source": "all",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        active = self.client.get("/app/sales?source=all").get_data(as_text=True)
+        archive = self.client.get(
+            "/app/sales?source=all&view=archive"
+        ).get_data(as_text=True)
+        self.assertNotIn('data-sale-id="archive-web"', active)
+        self.assertIn('data-sale-id="archive-web"', archive)
+        self.assertIn('id="statSales"', active)
+        self.assertIn(">1</span>", active)
+
+        restored = self.client.post(
+            "/sales/archive",
+            data={
+                "sale_id": sale["id"],
+                "sale_type": "manual",
+                "archived": "0",
+                "return_source": "all",
+            },
+        )
+        self.assertEqual(restored.status_code, 302)
+        self.assertFalse(self.inventory.get_sale(sale["id"])["archived_at"])
+
+    def test_today_filter_uses_moscow_date_of_performed_sale(self):
+        from datetime import datetime as real_datetime
+
+        class FixedDatetime(real_datetime):
+            @classmethod
+            def now(cls, tz=None):
+                value = cls.fromisoformat("2026-08-18T12:00:00+03:00")
+                return value if tz is None else value.astimezone(tz)
+
+        sales = [
+            {"id": "today", "created_at": "2026-08-17T21:30:00+00:00"},
+            {"id": "yesterday", "created_at": "2026-08-17T20:30:00+00:00"},
+        ]
+        with mock.patch.object(web, "datetime", FixedDatetime):
+            result = web.filter_sales_report_records(
+                sales, {"today": "1", "source": ""},
+            )
+        self.assertEqual([sale["id"] for sale in result], ["today"])
 
 
 if __name__ == "__main__":

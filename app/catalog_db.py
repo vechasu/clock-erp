@@ -642,6 +642,8 @@ CREATE TABLE IF NOT EXISTS erp_sales (
     cancelled_by TEXT,
     deleted_at TEXT,
     deleted_by TEXT,
+    archived_at TEXT,
+    archived_by TEXT,
     user_name TEXT,
     metadata_json TEXT NOT NULL DEFAULT '{}',
     inserted_at TEXT NOT NULL,
@@ -1490,6 +1492,8 @@ class CatalogDatabase:
                 ("cancelled_by", "TEXT"),
                 ("deleted_at", "TEXT"),
                 ("deleted_by", "TEXT"),
+                ("archived_at", "TEXT"),
+                ("archived_by", "TEXT"),
             ),
             "catalog_stock_movements": (
                 ("receipt_id", "TEXT REFERENCES erp_receipts(id) ON DELETE RESTRICT"),
