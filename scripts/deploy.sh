@@ -269,8 +269,23 @@ if [[ "$DATABASE_MIGRATION_REQUIRED" == "1" && -f instance/catalog.db ]]; then
             2>/dev/null || printf '0'
     )"
     if [[ "$active_inventory_count" != "0" ]]; then
+        active_inventory_details="$(
+            sqlite3 -separator ' | ' instance/catalog.db \
+                "SELECT s.id, b.name, s.status, s.started_at, "\
+"COALESCE(s.started_by, 'system'), COUNT(i.id), "\
+"SUM(CASE WHEN i.status IN ('confirmed','adjusted','added','missing') "\
+"THEN 1 ELSE 0 END), "\
+"SUM(CASE WHEN i.status IN ('pending','conflict','error') "\
+"THEN 1 ELSE 0 END) "\
+"FROM erp_inventory_sessions s "\
+"JOIN erp_brands b ON b.id=s.brand_id "\
+"LEFT JOIN erp_inventory_items i ON i.session_id=s.id "\
+"WHERE s.status='active' GROUP BY s.id ORDER BY s.started_at;"
+        )"
         printf 'DEPLOY_BLOCKED: %s active inventory session(s) require uninterrupted access\n' \
             "$active_inventory_count" >&2
+        printf 'DEPLOY_BLOCKED_DETAILS: id | brand | status | started_at | actor | positions | checked | remaining\n%s\n' \
+            "$active_inventory_details" >&2
         false
     fi
 fi

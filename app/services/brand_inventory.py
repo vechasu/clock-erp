@@ -158,6 +158,16 @@ class BrandInventory:
             ).fetchone()
             return self._detail(connection, row["id"]) if row else None
 
+    def list_active(self):
+        """Return every active inventory so none is hidden by brand filters."""
+        self.initialize()
+        with self.database.connect() as connection:
+            rows = connection.execute(
+                "SELECT id FROM erp_inventory_sessions "
+                "WHERE status = 'active' ORDER BY started_at DESC, id"
+            ).fetchall()
+            return [self._detail(connection, row["id"]) for row in rows]
+
     def list_items(self, session_id, query="", category_id=None, limit=250, offset=0):
         self.initialize()
         with self.database.connect() as connection:
@@ -513,6 +523,25 @@ class BrandInventory:
                 "cancelled_by = ?, "
                 "cancelled_at = ?, cancelled_reason = ?, updated_at = ? WHERE id = ?",
                 (user_name or None, now, reason, now, session["id"]),
+            )
+            AuditJournal(self.database).record(
+                "inventory", session["id"], "cancelled",
+                "Инвентаризация · {}".format(session["brand_name"]),
+                object_secondary=session["id"],
+                before={"status": "active"},
+                after={"status": "cancelled"},
+                metadata={
+                    "number": session["id"],
+                    "brand": session["brand_name"],
+                    "brand_id": session["brand_id"],
+                    "positions": session["start_positions"],
+                    "reason": reason,
+                    "text_snapshot": reason,
+                },
+                actor_id=user_name, actor_name=user_name,
+                actor_type="user" if user_name else "system",
+                occurred_at=now, status="cancelled",
+                connection=connection,
             )
             return self._detail(connection, session["id"])
 

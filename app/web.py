@@ -2303,6 +2303,7 @@ def warehouse_inventory_page():
         "warehouse_inventory.html",
         inventory=inventory,
         items=items,
+        active_inventories=service.list_active(),
         brands=SharedCatalog().list_brands(limit=500),
     )
 
