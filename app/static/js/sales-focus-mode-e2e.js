@@ -35,6 +35,63 @@
             && element.getClientRects().length > 0;
     }
 
+    function assertSparseTableFills(table, tableWrap) {
+        const keep = new Set([
+            "brand",
+            "order_status_label",
+            "track_number",
+        ]);
+        document.getElementById("salesColumnSettingsTrigger").click();
+        document.querySelectorAll("[data-column-visibility-key]")
+            .forEach(function (checkbox) {
+                const shouldShow = keep.has(
+                    checkbox.dataset.columnVisibilityKey
+                );
+                if (checkbox.checked !== shouldShow) {
+                    checkbox.click();
+                }
+            });
+        document.getElementById("salesColumnSettingsClose").click();
+        window.salesColumnSettings.relayout();
+
+        const visibleHeaders = Array.from(table.querySelectorAll(
+            "thead th[data-column-key]"
+        )).filter(function (header) {
+            return !header.hidden;
+        });
+        const actionHeader = table.querySelector(
+            'thead [data-system-column="actions"]'
+        );
+        const firstRow = table.querySelector("tbody .sale-row");
+        assert(visibleHeaders.length === 3, "sparse-visible-count");
+        assert(
+            Math.abs(table.getBoundingClientRect().width - tableWrap.clientWidth)
+                <= 1,
+            "sparse-card-width"
+        );
+        assert(
+            Math.abs(actionHeader.getBoundingClientRect().width - 78) <= 1,
+            "sparse-action-width"
+        );
+        visibleHeaders.forEach(function (header) {
+            const cell = firstRow.querySelector(
+                '[data-column-key="' + header.dataset.columnKey + '"]'
+            );
+            assert(
+                Math.abs(
+                    header.getBoundingClientRect().width
+                    - cell.getBoundingClientRect().width
+                ) <= 1,
+                "sparse-grid-alignment"
+            );
+        });
+        assert(
+            firstRow.querySelector(".sales-row-actions").scrollWidth
+                <= actionHeader.getBoundingClientRect().width,
+            "sparse-actions-nowrap"
+        );
+    }
+
     window.addEventListener("DOMContentLoaded", function () {
         window.setTimeout(function () {
             try {
@@ -127,17 +184,36 @@
                 assert(!visible(columnPanel), "columns-escape");
                 assert(controller.isEnabled(), "columns-escape-focus");
 
+                assertSparseTableFills(table, tableWrap);
+
                 pressEscape();
                 assert(!controller.isEnabled(), "exit-escape");
                 requestAnimationFrame(function () {
                     try {
+                        window.salesColumnSettings.relayout();
+                        assert(
+                            Math.abs(
+                                table.getBoundingClientRect().width
+                                - tableWrap.clientWidth
+                            ) <= 1,
+                            "sparse-exit-width"
+                        );
                         assert(document.activeElement === toggle, "exit-focus");
                         assert(!document.getElementById("appSidebar").hidden,
                             "sidebar-restored");
                         assert(search.value === "focus-check", "exit-search");
                         for (let index = 0; index < 3; index += 1) {
                             toggle.click();
+                            window.salesColumnSettings.relayout();
+                            assert(
+                                Math.abs(
+                                    table.getBoundingClientRect().width
+                                    - tableWrap.clientWidth
+                                ) <= 1,
+                                "repeat-enter-width"
+                            );
                             toggle.click();
+                            window.salesColumnSettings.relayout();
                         }
                         assert(document.querySelectorAll("#salesFocusModeToggle").length
                             === 1, "duplicate-toggle");

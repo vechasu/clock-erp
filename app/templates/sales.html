@@ -299,7 +299,7 @@
         }
 
         .sales-table {
-            width: max-content;
+            width: 100%;
             min-width: 0;
             border-collapse: separate;
             border-spacing: 0;
@@ -309,7 +309,7 @@
         .sales-table th,
         .sales-table td {
             min-width: 96px;
-            max-width: 520px;
+            max-width: none;
             padding: 9px 10px;
             border-right: 1px solid #d9dee5;
             border-bottom: 1px solid #d9dee5;
@@ -1350,6 +1350,7 @@
         src="{{ url_for('static', filename='js/period-picker.js') }}"
     ></script>
     <script defer src="{{ url_for('static', filename='js/table-scroll-hint.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/erp-table-layout.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/erp-modal-shell.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/erp-focus-mode.js') }}"></script>
     {% if config.TESTING and request.args.get("sales_focus_mode_e2e") == "1" %}
@@ -4543,7 +4544,34 @@
             invoice_number: 120,
         };
         const maximumWidth = 520;
+        const actionColumnWidth = 78;
+        const growWeights = {
+            created_at: 0.25,
+            order_number: 0.75,
+            track_number: 3,
+            barcode: 1.5,
+            source: 0.35,
+            brand: 2,
+            category: 2.5,
+            product_name: 5,
+            article: 2,
+            quantity_display: 0.2,
+            unit_price_display: 0.25,
+            commission: 2,
+            order_status_label: 0.5,
+            delivery_cost_display: 0.25,
+            region: 1.5,
+            city: 1.5,
+            payment_method: 1,
+            note: 4,
+            sticker_number: 1,
+            recipient_name: 2,
+            platform: 1.5,
+            country: 1,
+            invoice_number: 1,
+        };
         const settingsKey = salesTable.dataset.salesSettingsKey;
+        const tableWrap = salesTable.closest(".table-wrap");
         const settingsTrigger = document.getElementById(
             "salesColumnSettingsTrigger"
         );
@@ -4659,6 +4687,9 @@
             )
                 ? {...source.widths}
                 : {};
+            const suppliedCustomWidths = Array.isArray(
+                source.customWidths
+            ) ? source.customWidths : null;
 
             if (source.version !== settingsVersion) {
                 Object.entries(legacyDefaultWidths).forEach(
@@ -4678,6 +4709,18 @@
                 order,
                 hidden: sanitizeHidden(source.hidden, order),
                 widths: sanitizeWidths(sourceWidths),
+                customWidths: (suppliedCustomWidths || Object.keys(
+                    sourceWidths
+                ).filter((key) => (
+                    defaultOrder.includes(key)
+                    && Number.isFinite(Number(sourceWidths[key]))
+                    && Number(sourceWidths[key])
+                        !== (defaultWidths[key] || 130)
+                ))).filter(
+                    (key, index, values) =>
+                        defaultOrder.includes(key)
+                        && values.indexOf(key) === index
+                ),
             };
         }
 
@@ -4763,12 +4806,39 @@
             }
         }
 
-        function applyVisibilityAndWidths() {
-            let totalWidth = 0;
+        let actualWidths = {};
+        let lastContainerWidth = -1;
+        let layoutFrame = 0;
+        let layoutObserver = null;
+
+        function applyVisibilityAndWidths(force = false) {
+            const visibleKeys = view.order.filter(
+                (key) => !view.hidden.includes(key)
+            );
+            const containerWidth = tableWrap?.clientWidth || 0;
+            if (
+                !force
+                && Math.abs(containerWidth - lastContainerWidth) < 0.5
+            ) {
+                return;
+            }
+            lastContainerWidth = containerWidth;
+            const layout = window.ErpTableLayout.computeColumnWidths({
+                keys: visibleKeys,
+                preferredWidths: view.widths,
+                minimumWidths,
+                customWidths: view.customWidths,
+                growWeights,
+                containerWidth,
+                actionWidth: actionColumnWidth,
+            });
+            actualWidths = layout.widths;
 
             view.order.forEach((key) => {
                 const hidden = view.hidden.includes(key);
-                const width = view.widths[key];
+                const width = hidden
+                    ? view.widths[key]
+                    : actualWidths[key];
 
                 salesTable
                     .querySelectorAll(
@@ -4782,13 +4852,23 @@
                         }
                     });
 
-                if (!hidden) {
-                    totalWidth += width;
-                }
             });
 
-            salesTable.style.width = totalWidth + 78 + "px";
+            salesTable.style.width = layout.tableWidth + "px";
+            salesTable.dataset.horizontalOverflow = String(
+                layout.overflow
+            );
             updateEmptyRows();
+        }
+
+        function scheduleLayout(force = false) {
+            if (layoutFrame) {
+                cancelAnimationFrame(layoutFrame);
+            }
+            layoutFrame = requestAnimationFrame(() => {
+                layoutFrame = 0;
+                applyVisibilityAndWidths(force);
+            });
         }
 
         function applyView() {
@@ -4860,6 +4940,27 @@
         saveView();
         renderSettingsList();
 
+        if (typeof ResizeObserver === "function" && tableWrap) {
+            layoutObserver = new ResizeObserver(() => {
+                scheduleLayout();
+            });
+            layoutObserver.observe(tableWrap);
+        }
+        window.addEventListener("resize", scheduleLayout);
+        salesTable.closest("[data-erp-focus-mode]")?.addEventListener(
+            "erp:focus-mode-change",
+            () => scheduleLayout(true),
+        );
+        window.addEventListener("pagehide", () => {
+            layoutObserver?.disconnect();
+        });
+        window.addEventListener("pageshow", () => {
+            if (layoutObserver && tableWrap) {
+                layoutObserver.observe(tableWrap);
+            }
+            scheduleLayout(true);
+        });
+
         salesTable
             .querySelectorAll("thead th[data-column-key]")
             .forEach((header) => {
@@ -4895,7 +4996,10 @@
                                     ),
                                 ),
                             );
-                            applyVisibilityAndWidths();
+                            if (!view.customWidths.includes(key)) {
+                                view.customWidths.push(key);
+                            }
+                            applyVisibilityAndWidths(true);
                         }
 
                         function finishResize() {
@@ -5086,6 +5190,7 @@
             view.order = sanitizeOrder(defaultOrder);
             view.hidden = [];
             view.widths = sanitizeWidths({});
+            view.customWidths = [];
             applyView();
             renderSettingsList();
             saveView();
@@ -5116,7 +5221,7 @@
             view.hidden = checkbox.checked
                 ? view.hidden.filter((item) => item !== key)
                 : [...view.hidden, key];
-            applyVisibilityAndWidths();
+            applyVisibilityAndWidths(true);
             renderSettingsList();
             saveView();
             setSettingsMessage("");
@@ -5125,6 +5230,8 @@
         window.salesColumnSettings = {
             key: settingsKey,
             getView: () => JSON.parse(JSON.stringify(view)),
+            getActualWidths: () => ({...actualWidths}),
+            relayout: () => applyVisibilityAndWidths(true),
             reset: () => settingsReset.click(),
         };
     })();
