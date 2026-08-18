@@ -11,7 +11,7 @@
 
 | Модуль | Назначение и статус | URL и основные действия | Код | Целевые тесты | Ограничения |
 | --- | --- | --- | --- | --- | --- |
-| Заказы | `incomplete`: backend routes и Bitrix client присутствуют, но UI-шаблон отсутствует в Git | `/orders`, `/order/<id>`; POST для product map, статуса и stock writeoff | `app/web.py`, `app/clients/bitrix_orders.py` | `tests/test_bitrix_orders.py`, `tests/test_bitrix_erp_product_sync.py` | `app/web.py` рендерит отсутствующий `orders.html`; работоспособность страницы не подтверждена |
+| Заказы | `current`: карточка заказа, подтверждение в Bitrix и проведение продажи TicTacToy через складское списание | `/orders`, `/app/orders`, `/order/<id>`; POST для product map, статуса и проведения продажи с защитой от дублей | `app/web.py`, `app/clients/bitrix_orders.py`, `app/templates/orders.html` | `tests/test_bitrix_orders.py`, `tests/test_internal_orders.py`, `tests/test_order_tictactoy_sale.py` | Проведение требует сопоставления всех товаров и достаточных остатков; внешние записи выполняются только после полной локальной проверки |
 | Товары | `current`: каталог операционных товаров, карточки и изображения | `/warehouse`, `/app/products`; поиск, фильтры, сортировка, просмотр, создание, редактирование, архивирование, изменение остатка; `/products` перенаправляет на `/warehouse` | `app/web.py`, `app/catalog/application.py`, `app/services/excel_product_catalog.py`, `app/templates/warehouse.html` | `tests/test_excel_product_catalog.py`, `tests/test_product_deletion.py`, `tests/test_product_photo_ui.py`, `tests/test_warehouse_product_photos.py` | Часть интеграционных данных приходит из Bitrix и МойСклад; их доступность этим документом не проверялась |
 | Бренды | `current`: справочник брендов и связь с товарами/категориями | `/warehouse?view=brands`; создание, переименование, привязка категории, удаление с серверными проверками; JSON API `/api/v1/brands` | `app/web.py`, `app/catalog/application.py`, `app/templates/warehouse_brands.html` | `tests/test_brand_management.py`, `tests/test_catalog_cascade_unification.py` | Удаление может блокироваться связанными товарами; правила подтверждаются сервером, не только формой |
 | Категории | `current`: глобальные категории и разрез по брендам | `/warehouse?view=categories`; создание, переименование, связь с брендом, удаление; JSON API `/api/v1/categories` и `/api/v1/category-overviews` | `app/web.py`, `app/catalog/application.py`, `app/services/category_consolidation.py`, `app/templates/warehouse_categories.html` | `tests/test_category_management.py`, `tests/test_category_integrity_repair.py`, `tests/test_category_consolidation.py` | Исторические дубли и миграции требуют отдельных безопасных процедур |
@@ -32,8 +32,8 @@
 - PostgreSQL, S3-compatible off-site backup и единый источник истины не
   подтверждены как внедрённые решения.
 - Фактический production commit и доступность внешних интеграций — `unknown`.
-- `/overview`, `/orders` и `/analytics` ссылаются на отсутствующие в Git
-  `overview.html`, `orders.html` и `analytics.html`; эти UI нельзя считать
+- `/overview` и `/analytics` ссылаются на отсутствующие в Git
+  `overview.html` и `analytics.html`; эти UI нельзя считать
   подтверждённо работающими.
 
 Связанные документы: [архитектура](../architecture/README.md),
