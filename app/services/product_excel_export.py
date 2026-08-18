@@ -53,27 +53,33 @@ class ProductExcelExport:
         ids = [int(product["id"]) for product in products]
         if not ids:
             return products
-        placeholders = ", ".join("?" for _ in ids)
+        check_rows = []
+        inventory_rows = []
         with self.database.connect() as connection:
-            check_rows = connection.execute(
-                "SELECT c.product_id, k.platform, k.checked "
-                "FROM erp_out_of_stock_cycles c "
-                "JOIN erp_out_of_stock_checks k ON k.cycle_id=c.id "
-                "WHERE c.ended_at IS NULL AND c.product_id IN ({})"
-                .format(placeholders), ids,
-            ).fetchall()
-            rows = connection.execute(
-                "SELECT i.product_id, i.status FROM erp_inventory_items i "
-                "JOIN erp_inventory_sessions s ON s.id=i.session_id "
-                "WHERE s.status='active' AND i.product_id IN ({})"
-                .format(placeholders), ids,
-            ).fetchall()
+            for start in range(0, len(ids), 400):
+                chunk = ids[start:start + 400]
+                placeholders = ", ".join("?" for _ in chunk)
+                check_rows.extend(connection.execute(
+                    "SELECT c.product_id, k.platform, k.checked "
+                    "FROM erp_out_of_stock_cycles c "
+                    "JOIN erp_out_of_stock_checks k ON k.cycle_id=c.id "
+                    "WHERE c.ended_at IS NULL AND c.product_id IN ({})"
+                    .format(placeholders), chunk,
+                ).fetchall())
+                inventory_rows.extend(connection.execute(
+                    "SELECT i.product_id, i.status FROM erp_inventory_items i "
+                    "JOIN erp_inventory_sessions s ON s.id=i.session_id "
+                    "WHERE s.status='active' AND i.product_id IN ({})"
+                    .format(placeholders), chunk,
+                ).fetchall())
         checks = {}
         for row in check_rows:
             checks.setdefault(int(row["product_id"]), {"checks": {}})["checks"][
                 row["platform"]
             ] = {"checked": bool(row["checked"])}
-        inventory = {int(row["product_id"]): row["status"] for row in rows}
+        inventory = {
+            int(row["product_id"]): row["status"] for row in inventory_rows
+        }
         for product in products:
             product_checks = checks.get(int(product["id"]), {})
             if not product_checks and float(product.get("stock") or 0) <= 0:

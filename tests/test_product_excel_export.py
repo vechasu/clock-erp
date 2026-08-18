@@ -10,6 +10,7 @@ from openpyxl import load_workbook
 from app import web
 from app.catalog_db import CatalogDatabase
 from app.services.excel_product_catalog import ExcelProductCatalog
+from app.services.product_excel_export import ProductExcelExport
 
 
 class ProductExcelExportTest(unittest.TestCase):
@@ -112,6 +113,17 @@ class ProductExcelExportTest(unittest.TestCase):
         self.assertIn("scope=filtered", markup)
         self.assertIn("q=Celeste", markup)
         self.assertIn("check_state=unchecked", markup)
+
+    def test_export_enrichment_chunks_more_than_sqlite_variable_limit(self):
+        products = [
+            {"id": product_id, "stock": 1}
+            for product_id in range(1, 1002)
+        ]
+        enriched = ProductExcelExport(
+            CatalogDatabase(self.database_path)
+        ).enrich(products)
+        self.assertEqual(len(enriched), 1001)
+        self.assertTrue(all(not item["_export_inventory"] for item in enriched))
 
 
 if __name__ == "__main__":
