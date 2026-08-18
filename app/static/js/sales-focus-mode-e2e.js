@@ -42,15 +42,15 @@
             "track_number",
         ]);
         document.getElementById("salesColumnSettingsTrigger").click();
-        document.querySelectorAll("[data-column-visibility-key]")
-            .forEach(function (checkbox) {
-                const shouldShow = keep.has(
-                    checkbox.dataset.columnVisibilityKey
-                );
-                if (checkbox.checked !== shouldShow) {
-                    checkbox.click();
-                }
-            });
+        window.salesColumnSettings.getView().order.forEach(function (key) {
+            const checkbox = document.querySelector(
+                '[data-column-visibility-key="' + key + '"]'
+            );
+            const shouldShow = keep.has(key);
+            if (checkbox && checkbox.checked !== shouldShow) {
+                checkbox.click();
+            }
+        });
         document.getElementById("salesColumnSettingsClose").click();
         window.salesColumnSettings.relayout();
 
