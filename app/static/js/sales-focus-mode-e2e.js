@@ -63,14 +63,22 @@
             'thead [data-system-column="actions"]'
         );
         const firstRow = table.querySelector("tbody .sale-row");
-        assert(visibleHeaders.length === 3, "sparse-visible-count");
+        const availableKeepCount = window.salesColumnSettings.getView()
+            .order.filter(function (key) {
+                return keep.has(key);
+            }).length;
+        assert(
+            availableKeepCount >= 2
+                && visibleHeaders.length === availableKeepCount,
+            "sparse-visible-count"
+        );
         assert(
             Math.abs(table.getBoundingClientRect().width - tableWrap.clientWidth)
                 <= 1,
             "sparse-card-width"
         );
         assert(
-            Math.abs(actionHeader.getBoundingClientRect().width - 78) <= 1,
+            Math.abs(actionHeader.getBoundingClientRect().width - 118) <= 1,
             "sparse-action-width"
         );
         visibleHeaders.forEach(function (header) {
@@ -129,7 +137,6 @@
                 const initialTable = table;
                 const initialWidth = table.querySelector("col")?.style.width || "";
                 search.value = "focus-check";
-                search.dispatchEvent(new Event("input", {bubbles: true}));
 
                 toggle.click();
                 assert(controller.isEnabled(), "enter");

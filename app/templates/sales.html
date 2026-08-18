@@ -520,9 +520,9 @@
             position: sticky;
             z-index: 3;
             right: 0;
-            width: 78px;
-            min-width: 78px;
-            max-width: 78px;
+            width: 118px;
+            min-width: 118px;
+            max-width: 118px;
             padding: 7px 8px;
             overflow: visible;
             background-clip: padding-box;
@@ -1967,7 +1967,7 @@
                             {% endfor %}
                             <col
                                 data-system-column="actions"
-                                style="width: 78px"
+                                style="width: 118px"
                             >
                         </colgroup>
                         <thead>
@@ -4544,7 +4544,7 @@
             invoice_number: 120,
         };
         const maximumWidth = 520;
-        const actionColumnWidth = 78;
+        const actionColumnWidth = 118;
         const growWeights = {
             created_at: 0.25,
             order_number: 0.75,
@@ -4572,6 +4572,8 @@
         };
         const settingsKey = salesTable.dataset.salesSettingsKey;
         const tableWrap = salesTable.closest(".table-wrap");
+        const layoutResizeTarget = tableWrap?.closest(".table-card")
+            || tableWrap;
         const settingsTrigger = document.getElementById(
             "salesColumnSettingsTrigger"
         );
@@ -4808,7 +4810,9 @@
 
         let actualWidths = {};
         let lastContainerWidth = -1;
+        let lastObservedWidth = -1;
         let layoutFrame = 0;
+        let layoutObserver = null;
 
         function applyVisibilityAndWidths(force = false) {
             const visibleKeys = view.order.filter(
@@ -4939,6 +4943,17 @@
         saveView();
         renderSettingsList();
 
+        if (typeof ResizeObserver === "function" && layoutResizeTarget) {
+            layoutObserver = new ResizeObserver((entries) => {
+                const observedWidth = entries[0]?.contentRect.width || 0;
+                if (Math.abs(observedWidth - lastObservedWidth) < 0.5) {
+                    return;
+                }
+                lastObservedWidth = observedWidth;
+                scheduleLayout();
+            });
+            layoutObserver.observe(layoutResizeTarget);
+        }
         window.addEventListener("resize", scheduleLayout);
         const layoutRoot = salesTable.closest("[data-erp-focus-mode]");
         layoutRoot?.addEventListener(
@@ -4949,7 +4964,13 @@
             "erp:sidebar-change",
             () => scheduleLayout(true),
         );
+        window.addEventListener("pagehide", () => {
+            layoutObserver?.disconnect();
+        });
         window.addEventListener("pageshow", () => {
+            if (layoutObserver && layoutResizeTarget) {
+                layoutObserver.observe(layoutResizeTarget);
+            }
             scheduleLayout(true);
         });
 
