@@ -99,6 +99,7 @@ from app.services.repair_cases import (
     LEGACY_STATUS_MAP,
     REPAIR_ACTION_LABELS,
     REPAIR_CHANNEL_LABELS,
+    REPAIR_FINAL_STATUSES,
     REPAIR_LOCATION_LABELS,
     REPAIR_RESPONSIBILITY_GROUPS,
     REPAIR_RESPONSIBILITY_LABELS,
@@ -4318,6 +4319,94 @@ def current_repair_user_name():
     return full_name or str(user.get("email") or "").strip() or "Система"
 
 
+def current_repair_actor():
+    user = current_auth_user() or {}
+    return {
+        "id": str(user.get("id") or user.get("email") or "").strip(),
+        "name": current_repair_user_name(),
+        "type": "user" if user else "system",
+    }
+
+
+def record_repair_audit(case, action, before, after, metadata=None):
+    actor = current_repair_actor()
+    AuditJournal().record(
+        "repair",
+        case.get("id"),
+        action,
+        "Ремонт {}".format(case.get("repair_number") or case.get("id")),
+        "{} · {}".format(
+            case.get("client_name") or "Клиент не указан",
+            case.get("product_name") or case.get("model") or "Товар не указан",
+        ),
+        before=before,
+        after=after,
+        metadata={
+            "number": case.get("repair_number") or "",
+            **(metadata or {}),
+        },
+        actor_id=actor["id"],
+        actor_name=actor["name"],
+        actor_type=actor["type"],
+        status="archived" if case.get("archived_at") else "active",
+    )
+
+
+def set_repair_archive_state(case_id, archived):
+    actor = current_repair_actor()
+
+    def mutate(cases):
+        target = find_api_repair(case_id, cases)
+        if target is None:
+            return None
+        currently_archived = bool(target.get("archived_at"))
+        if currently_archived == archived:
+            return {"case": copy.deepcopy(target), "changed": False}
+        if archived and target.get("status") not in REPAIR_FINAL_STATUSES:
+            raise ValueError(
+                "Сначала завершите ремонт, затем его можно будет перенести в архив"
+            )
+        changed_at = repair_now()
+        before = {
+            "archive_status": "archived" if currently_archived else "active",
+            "archived_at": target.get("archived_at") or "",
+            "archived_by": target.get("archived_by") or "",
+        }
+        target["archived_at"] = changed_at if archived else ""
+        target["archived_by"] = actor["name"] if archived else ""
+        target["updated_at"] = changed_at
+        append_history_event(
+            target,
+            "Ремонт перемещён в архив" if archived else "Ремонт возвращён в активные",
+            actor=actor["name"],
+            field="archive_status",
+            old_value="Активный" if archived else "Архивный",
+            new_value="Архивный" if archived else "Активный",
+            timestamp=changed_at,
+        )
+        after = {
+            "archive_status": "archived" if archived else "active",
+            "archived_at": target["archived_at"],
+            "archived_by": target["archived_by"],
+        }
+        return {
+            "case": copy.deepcopy(target),
+            "changed": True,
+            "before": before,
+            "after": after,
+        }
+
+    result = mutate_repair_cases(mutate)
+    if result and result["changed"]:
+        record_repair_audit(
+            result["case"],
+            "archived" if archived else "restored",
+            result["before"],
+            result["after"],
+        )
+    return result
+
+
 def build_repair_catalog_items(items=None):
     if items is None:
         try:
@@ -4560,8 +4649,6 @@ def repair_case_matches(case, filters):
         ):
             return False
     lifecycle = _repair_text(filters.get("view")) or "active"
-    if lifecycle == "active" and case.get("status") in {"completed", "cancelled"}:
-        return False
     if lifecycle == "completed" and case.get("status") != "completed":
         return False
     if lifecycle == "cancelled" and case.get("status") != "cancelled":
@@ -4580,6 +4667,13 @@ def prepare_repair_case(case):
     prepared = dict(case)
     prepared.pop("legacy_snapshot", None)
     prepared["is_archived"] = bool(prepared.get("archived_at"))
+    prepared["can_archive"] = (
+        not prepared["is_archived"]
+        and prepared.get("status") in REPAIR_FINAL_STATUSES
+    )
+    prepared["archived_at_display"] = _repair_text(
+        prepared.get("archived_at")
+    )
     prepared["status_label"] = REPAIR_STATUS_LABELS.get(
         prepared.get("status"),
         prepared.get("status") or "—",
@@ -4968,7 +5062,7 @@ def add_repair_change_history(case, before, actor, comment=""):
 @app.route("/app/repairs")
 def repair_page():
     repair_view = _repair_text(request.args.get("view")) or "active"
-    if repair_view not in {"active", "completed", "cancelled", "all"}:
+    if repair_view not in {"active", "archive"}:
         repair_view = "active"
     filters = {
         "q": _repair_text(request.args.get("q")),
@@ -4992,7 +5086,11 @@ def repair_page():
         all_cases = []
         data_error = str(error)
 
-    cases = [case for case in all_cases if repair_case_matches(case, filters)]
+    cases = [
+        case for case in all_cases
+        if bool(case.get("archived_at")) == (repair_view == "archive")
+        and repair_case_matches(case, filters)
+    ]
     cases.sort(key=repair_attention_key)
 
     page, per_page = parse_erp_pagination()
@@ -5023,6 +5121,8 @@ def repair_page():
         data_error=data_error,
         pagination=pagination,
         total=total,
+        active_count=sum(1 for case in all_cases if not case.get("archived_at")),
+        archive_count=sum(1 for case in all_cases if case.get("archived_at")),
         status_labels=REPAIR_STATUS_LABELS,
         type_labels=REPAIR_TYPE_LABELS,
         location_labels=REPAIR_LOCATION_LABELS,
@@ -5069,6 +5169,7 @@ def repair_add():
             "created_at": now,
             "updated_at": now,
             "archived_at": "",
+            "archived_by": "",
             "shipments": [],
             "attachments": attachments,
             "history": [
@@ -5132,6 +5233,9 @@ def repair_update():
     case_id = _repair_text(request.form.get("case_id"))
     actor = current_repair_user_name()
     try:
+        current = find_api_repair(case_id)
+        if current and current.get("archived_at"):
+            raise ValueError("Архивный ремонт доступен только для просмотра")
         attachments = save_repair_uploads(case_id)
     except ValueError as error:
         return _repair_redirect(str(error), notice="error")
@@ -5140,6 +5244,8 @@ def repair_update():
         for case in cases:
             if case.get("id") != case_id:
                 continue
+            if case.get("archived_at"):
+                raise ValueError("Архивный ремонт доступен только для просмотра")
             before = copy.deepcopy(case)
             payload = build_repair_form_payload(
                 request.form,
@@ -5176,6 +5282,8 @@ def _change_repair_status(case_id, status, comment=""):
         for case in cases:
             if case.get("id") != case_id:
                 continue
+            if case.get("archived_at"):
+                raise ValueError("Архивный ремонт доступен только для просмотра")
             old_status = _repair_text(case.get("status"))
             if old_status == status:
                 return True
@@ -5213,7 +5321,7 @@ def repair_status():
             status,
             comment=_repair_text(request.form.get("comment")),
         )
-    except RepairDataError as error:
+    except (RepairDataError, ValueError) as error:
         if request.headers.get("X-Requested-With") == "XMLHttpRequest":
             return jsonify({"ok": False, "message": str(error)}), 409
         return _repair_redirect(str(error), notice="error")
@@ -5281,27 +5389,11 @@ def repair_action():
             if case.get("id") != case_id:
                 continue
             if action == "archive":
-                if not case.get("archived_at"):
-                    case["archived_at"] = repair_now()
-                    case["updated_at"] = case["archived_at"]
-                    append_history_event(
-                        case,
-                        "Ремонт перенесён в архив",
-                        actor=actor,
-                        comment=_repair_text(request.form.get("comment")),
-                    )
-                return "Ремонт перенесён в архив"
+                raise ValueError("Используйте отдельное действие архивирования")
             if action == "restore":
-                case["archived_at"] = ""
-                if case.get("status") == "completed":
-                    case["status"] = "at_us"
-                case["updated_at"] = repair_now()
-                append_history_event(
-                    case,
-                    "Ремонт восстановлен из архива",
-                    actor=actor,
-                )
-                return "Ремонт восстановлен"
+                raise ValueError("Используйте отдельное действие восстановления")
+            if case.get("archived_at"):
+                raise ValueError("Архивный ремонт доступен только для просмотра")
             if action not in action_settings:
                 return ""
             status, location, date_field, label = action_settings[action]
@@ -5342,7 +5434,7 @@ def repair_action():
 
     try:
         message = mutate_repair_cases(apply_action)
-    except RepairDataError as error:
+    except (RepairDataError, ValueError) as error:
         return _repair_redirect(str(error), notice="error")
     if message is None:
         return _repair_redirect("Ремонт не найден", notice="error")
@@ -5371,6 +5463,8 @@ def repair_logistics_add():
         for case in cases:
             if case.get("id") != case_id:
                 continue
+            if case.get("archived_at"):
+                raise ValueError("Архивный ремонт доступен только для просмотра")
             shipment = {
                 "id": str(uuid.uuid4()),
                 "direction": direction,
@@ -5408,7 +5502,7 @@ def repair_logistics_add():
 
     try:
         updated = mutate_repair_cases(add_shipment)
-    except RepairDataError as error:
+    except (RepairDataError, ValueError) as error:
         return _repair_redirect(str(error), notice="error")
     if not updated:
         return _repair_redirect("Ремонт не найден", notice="error")
@@ -5420,27 +5514,10 @@ def repair_delete():
     require_csrf_when_authenticated()
     case_id = _repair_text(request.form.get("case_id"))
     try:
-        actor = current_repair_user_name()
-
-        def archive_case(cases):
-            for case in cases:
-                if case.get("id") != case_id:
-                    continue
-                if not case.get("archived_at"):
-                    case["archived_at"] = repair_now()
-                    case["updated_at"] = case["archived_at"]
-                    append_history_event(
-                        case,
-                        "Ремонт перенесён в архив",
-                        actor=actor,
-                    )
-                return True
-            return False
-
-        updated = mutate_repair_cases(archive_case)
-    except RepairDataError as error:
+        result = set_repair_archive_state(case_id, True)
+    except (RepairDataError, ValueError) as error:
         return _repair_redirect(str(error), notice="error")
-    if not updated:
+    if not result:
         return _repair_redirect("Ремонт не найден", notice="error")
     return _repair_redirect(
         "Ремонт перенесён в архив",
@@ -14650,6 +14727,7 @@ JOURNAL_ENTITY_LABELS = {
     "sale": "Продажи",
     "receipt": "Приход",
     "inventory": "Инвентаризация",
+    "repair": "Ремонт",
 }
 JOURNAL_ACTION_LABELS = {
     "created": "Создано",
@@ -14664,6 +14742,7 @@ JOURNAL_ACTION_LABELS = {
     "deleted": "Удалено",
     "comment_added": "Комментарий добавлен",
     "restored": "Восстановлено",
+    "archived": "Перемещено в архив",
 }
 JOURNAL_FIELD_LABELS = {
     "name": "Название", "article": "Артикул", "brand": "Бренд",
@@ -14673,6 +14752,8 @@ JOURNAL_FIELD_LABELS = {
     "unit_price": "Цена", "source": "Источник", "comment": "Комментарий",
     "order_number": "Номер", "document": "Документ",
     "receipt_date": "Дата прихода", "purchase_price": "Закупочная цена",
+    "archive_status": "Состояние архива", "archived_at": "Дата архивации",
+    "archived_by": "Кто архивировал", "source_repair_id": "Исходный ремонт",
 }
 JOURNAL_MONTHS = (
     "января", "февраля", "марта", "апреля", "мая", "июня",
@@ -14852,6 +14933,12 @@ def format_journal_event(event):
         action_text = "Товар удалён"
     elif entity_type == "receipt" and action == "cancelled":
         action_text = "Приход отменён"
+    elif entity_type == "repair" and action == "archived":
+        action_text = "Ремонт перемещён в архив"
+    elif entity_type == "repair" and action == "restored":
+        action_text = "Ремонт возвращён в активные"
+    elif entity_type == "repair" and action == "created" and metadata.get("source_repair_id"):
+        action_text = "Создан повторный ремонт"
     elif action == "photo_added":
         action_text = "Добавлена фотография"
     elif action == "photo_replaced":
@@ -14910,7 +14997,7 @@ def serialize_journal_event(event):
 
 def journal_query_arguments():
     entity_type = str(request.args.get("entity_type") or "").strip()
-    if entity_type not in {"product", "brand", "category", "sale", "receipt", "inventory"}:
+    if entity_type not in {"product", "brand", "category", "sale", "receipt", "inventory", "repair"}:
         entity_type = ""
     return {
         "entity_type": entity_type,
@@ -14989,6 +15076,13 @@ def api_journal_event(event_id):
                 )
         elif event["entity_type"] == "inventory":
             object_url = "/app/products/inventory?inventory_id={}".format(event["entity_id"])
+        elif event["entity_type"] == "repair":
+            repair = find_api_repair(event["entity_id"])
+            if repair:
+                object_url = "/app/repairs?view={}&repair_id={}".format(
+                    "archive" if repair.get("archived_at") else "active",
+                    event["entity_id"],
+                )
     payload = serialize_journal_event(event)
     payload["object_url"] = object_url
     payload["object_deleted"] = not bool(object_url)
@@ -18151,6 +18245,14 @@ def api_sale_return(sale_id):
 
 def serialize_api_repair(case, include_history=True):
     prepared = prepare_repair_case(case)
+    if include_history:
+        for relation_field in ("parent_repair_id", "repeat_repair_id"):
+            relation_id = prepared.get(relation_field)
+            if relation_id:
+                related = find_api_repair(relation_id)
+                prepared[relation_field.replace("_id", "_number")] = (
+                    related.get("repair_number") if related else ""
+                )
     if not include_history:
         prepared.pop("history", None)
         prepared.pop("shipments", None)
@@ -18174,7 +18276,8 @@ def serialize_api_repair(case, include_history=True):
 def api_repair_stats(cases):
     active = [
         case for case in cases
-        if case.get("status") not in {"completed", "cancelled"}
+        if not case.get("archived_at")
+        and case.get("status") not in {"completed", "cancelled"}
     ]
     return {
         "active": len(active),
@@ -18199,6 +18302,7 @@ def api_repair_stats(cases):
         "completed": sum(1 for case in cases if case.get("status") == "completed"),
         "cancelled": sum(1 for case in cases if case.get("status") == "cancelled"),
         "archived": sum(1 for case in cases if case.get("archived_at")),
+        "active_records": sum(1 for case in cases if not case.get("archived_at")),
     }
 
 
@@ -18251,7 +18355,7 @@ def create_api_repair(payload, idempotency_key=""):
                 None,
             )
             if duplicate:
-                return duplicate["id"]
+                return {"id": duplicate["id"], "created": False}
         parent_id = _repair_text(normalized.get("parent_repair_id"))
         if normalized.get("request_type") == "repeat_repair" and not parent_id:
             candidates = [
@@ -18295,6 +18399,7 @@ def create_api_repair(payload, idempotency_key=""):
             "created_by": actor,
             "updated_by": actor,
             "archived_at": "",
+            "archived_by": "",
             "create_idempotency_key": idempotency_key,
             "shipments": [],
             "attachments": [],
@@ -18319,10 +18424,22 @@ def create_api_repair(payload, idempotency_key=""):
                 new_value=case_id,
             )
             parent["updated_at"] = now
-        return case_id
+        return {"id": case_id, "created": True}
 
-    mutate_repair_cases(create_case)
-    return find_api_repair(case_id)
+    result = mutate_repair_cases(create_case)
+    created = find_api_repair(result["id"])
+    if result["created"] and created and created.get("parent_repair_id"):
+        record_repair_audit(
+            created,
+            "created",
+            {},
+            {"source_repair_id": created.get("parent_repair_id")},
+            metadata={
+                "source_repair_id": created.get("parent_repair_id"),
+                "new_repair_id": created.get("id"),
+            },
+        )
+    return created
 
 
 @app.route("/api/repairs/catalog", methods=["GET"])
@@ -18442,7 +18559,7 @@ def api_repairs_collection():
     if view == "archive":
         cases = [case for case in all_cases if case.get("archived_at")]
     else:
-        cases = list(all_cases)
+        cases = [case for case in all_cases if not case.get("archived_at")]
     cases = [case for case in cases if repair_case_matches(case, filters)]
     sort_by = (request.args.get("sort_by") or "attention").strip()
     sort_dir = (request.args.get("sort_dir") or "desc").strip()
@@ -18525,27 +18642,18 @@ def api_repair_resource(case_id):
         return api_success(serialize_api_repair(case))
     require_csrf_when_authenticated()
     if request.method == "DELETE":
-        def archive_case(cases):
-            target = find_api_repair(case_id, cases)
-            if target is None:
-                return False
-            if not target.get("archived_at"):
-                target["archived_at"] = repair_now()
-                target["updated_at"] = target["archived_at"]
-                append_history_event(
-                    target,
-                    "Ремонт перенесён в архив",
-                    actor=current_repair_user_name(),
-                )
-            return True
-
         try:
-            updated = mutate_repair_cases(archive_case)
+            result = set_repair_archive_state(case_id, True)
+        except ValueError as error:
+            return api_error("REPAIR_ARCHIVE_INVALID", str(error), 409)
         except RepairDataError as error:
             return api_error("REPAIR_STORAGE_FAILED", str(error), 500)
-        if not updated:
+        if not result:
             return api_error("REPAIR_NOT_FOUND", "Ремонт не найден.", 404)
-        return api_success({"id": case_id, "archived": True})
+        return api_success(
+            serialize_api_repair(result["case"]),
+            repeated=not result["changed"],
+        )
 
     try:
         payload = api_json_payload()
@@ -18554,6 +18662,8 @@ def api_repair_resource(case_id):
             target = find_api_repair(case_id, cases)
             if target is None:
                 return False
+            if target.get("archived_at"):
+                raise ValueError("Архивный ремонт доступен только для просмотра")
             before = copy.deepcopy(target)
             merged = {**target, **payload}
             if (
@@ -18632,6 +18742,13 @@ def api_repair_status(case_id):
             _repair_text(payload.get("status")),
             _repair_text(payload.get("status")),
         )
+        current = find_api_repair(case_id)
+        if current and current.get("archived_at"):
+            return api_error(
+                "REPAIR_ARCHIVED_READ_ONLY",
+                "Архивный ремонт доступен только для просмотра.",
+                409,
+            )
         updated = _change_repair_status(
             case_id,
             status,
@@ -18663,6 +18780,8 @@ def api_repair_action(case_id, action):
             target = find_api_repair(case_id, cases)
             if target is None:
                 return None
+            if target.get("archived_at"):
+                raise ValueError("Архивный ремонт доступен только для просмотра")
             changed = apply_repair_action(
                 target,
                 action,
@@ -18689,29 +18808,34 @@ def api_repair_action(case_id, action):
 @app.route("/api/v1/repairs/<case_id>/restore", methods=["POST"])
 def api_repair_restore(case_id):
     require_csrf_when_authenticated()
-
-    def restore_case(cases):
-        target = find_api_repair(case_id, cases)
-        if target is None:
-            return False
-        target["archived_at"] = ""
-        if target.get("status") == "completed":
-            target["status"] = "waiting_diagnostics"
-        target["updated_at"] = repair_now()
-        append_history_event(
-            target,
-            "Ремонт восстановлен из архива",
-            actor=current_repair_user_name(),
-        )
-        return True
-
     try:
-        updated = mutate_repair_cases(restore_case)
+        result = set_repair_archive_state(case_id, False)
     except RepairDataError as error:
         return api_error("REPAIR_STORAGE_FAILED", str(error), 500)
-    if not updated:
+    if not result:
         return api_error("REPAIR_NOT_FOUND", "Ремонт не найден.", 404)
-    return api_success(serialize_api_repair(find_api_repair(case_id)))
+    return api_success(
+        serialize_api_repair(result["case"]),
+        repeated=not result["changed"],
+    )
+
+
+@app.route("/api/repairs/<case_id>/archive", methods=["POST"])
+@app.route("/api/v1/repairs/<case_id>/archive", methods=["POST"])
+def api_repair_archive(case_id):
+    require_csrf_when_authenticated()
+    try:
+        result = set_repair_archive_state(case_id, True)
+    except ValueError as error:
+        return api_error("REPAIR_ARCHIVE_INVALID", str(error), 409)
+    except RepairDataError as error:
+        return api_error("REPAIR_STORAGE_FAILED", str(error), 500)
+    if not result:
+        return api_error("REPAIR_NOT_FOUND", "Ремонт не найден.", 404)
+    return api_success(
+        serialize_api_repair(result["case"]),
+        repeated=not result["changed"],
+    )
 
 
 @app.route("/api/repairs/<case_id>/shipments", methods=["POST"])
@@ -18731,6 +18855,8 @@ def api_repair_shipment(case_id):
             target = find_api_repair(case_id, cases)
             if target is None:
                 return False
+            if target.get("archived_at"):
+                raise ValueError("Архивный ремонт доступен только для просмотра")
             shipment = {
                 "id": str(uuid.uuid4()),
                 "direction": direction,
@@ -18771,8 +18897,11 @@ def api_repair_shipment(case_id):
 def api_repair_attachments(case_id):
     require_csrf_when_authenticated()
     try:
-        if find_api_repair(case_id) is None:
+        current = find_api_repair(case_id)
+        if current is None:
             return api_error("REPAIR_NOT_FOUND", "Ремонт не найден.", 404)
+        if current.get("archived_at"):
+            raise ValueError("Архивный ремонт доступен только для просмотра")
         attachments = save_repair_uploads(case_id)
         if not attachments:
             raise ValueError("Выберите файл для загрузки.")

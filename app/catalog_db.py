@@ -845,7 +845,7 @@ CREATE INDEX IF NOT EXISTS idx_erp_inventory_items_product
 CREATE TABLE IF NOT EXISTS erp_audit_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     entity_type TEXT NOT NULL CHECK (
-        entity_type IN ('product', 'sale', 'receipt', 'brand', 'category', 'inventory')
+        entity_type IN ('product', 'sale', 'receipt', 'brand', 'category', 'inventory', 'repair')
     ),
     entity_id TEXT NOT NULL,
     action TEXT NOT NULL,
@@ -1023,7 +1023,7 @@ class CatalogDatabase:
             "SELECT sql FROM sqlite_master WHERE type = 'table' "
             "AND name = 'erp_audit_events'"
         ).fetchone()
-        if row is None or "'inventory'" in (row["sql"] or ""):
+        if row is None or "'repair'" in (row["sql"] or ""):
             return
         connection.commit()
         connection.execute("PRAGMA foreign_keys = OFF")
@@ -1034,7 +1034,7 @@ class CatalogDatabase:
                 "CREATE TABLE erp_audit_events ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                 "entity_type TEXT NOT NULL CHECK (entity_type IN "
-                "('product','sale','receipt','brand','category','inventory')), "
+                "('product','sale','receipt','brand','category','inventory','repair')), "
                 "entity_id TEXT NOT NULL, action TEXT NOT NULL, actor_id TEXT, "
                 "actor_type TEXT NOT NULL DEFAULT 'user' CHECK (actor_type IN "
                 "('user','system','external')), "
