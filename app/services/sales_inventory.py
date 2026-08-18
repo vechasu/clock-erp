@@ -4,6 +4,7 @@ import json
 import math
 import uuid
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from app.catalog_db import CatalogDatabase
 from app.services.audit_journal import AuditJournal
@@ -70,6 +71,29 @@ def validate_performed_sale_update(current, requested):
 
 def now_iso():
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+ERP_TIMEZONE = ZoneInfo("Europe/Moscow")
+
+
+def sale_now_iso():
+    """Return the current business time for a user-visible sale timestamp."""
+    return (
+        datetime.now(timezone.utc)
+        .astimezone(ERP_TIMEZONE)
+        .replace(microsecond=0)
+        .isoformat()
+    )
+
+
+def sale_created_at(payload):
+    """Resolve the sale operation time without substituting the order time."""
+    payload = payload or {}
+    return str(
+        payload.get("performed_at")
+        or payload.get("created_at")
+        or sale_now_iso()
+    )
 
 
 def format_number(value):
@@ -147,7 +171,7 @@ class SalesInventory:
             raise SalesInventoryError("Товар не найден.")
 
         sale_id = str(payload.get("id") or uuid.uuid4().hex)
-        created_at = str(payload.get("created_at") or now_iso())
+        created_at = sale_created_at(payload)
         source = str(payload.get("source") or "Tictactoy")
         external_order_id = (
             str(payload.get("order_number") or "").strip() or None
@@ -158,6 +182,7 @@ class SalesInventory:
         inserted_at = now_iso()
         stored_payload = dict(payload)
         stored_payload["id"] = sale_id
+        stored_payload["created_at"] = created_at
         stored_payload["product_id"] = str(product_id)
         stored_payload["quantity"] = quantity
         stored_payload["unit_price"] = unit_price
@@ -330,7 +355,7 @@ class SalesInventory:
             })
 
         sale_id = str(payload.get("id") or uuid.uuid4().hex)
-        created_at = str(payload.get("created_at") or now_iso())
+        created_at = sale_created_at(payload)
         source = str(payload.get("source") or "tictactoy").strip().casefold()
         external_order_id = (
             str(
@@ -348,6 +373,7 @@ class SalesInventory:
         stored_payload = dict(payload)
         stored_payload.update({
             "id": sale_id,
+            "created_at": created_at,
             "source": source,
             "inventory_managed": True,
             "automatic_stock_applied": True,
