@@ -105,9 +105,11 @@ class BrandInventory:
                 (brand["id"],),
             ).fetchall()
             connection.execute(
-                "INSERT INTO erp_inventory_sessions (id, brand_id, status, started_by, "
-                "started_at, start_positions, updated_at) VALUES (?, ?, 'active', ?, ?, ?, ?)",
-                (session_id, brand["id"], user_name or None, now, len(products), now),
+                "INSERT INTO erp_inventory_sessions (id, brand_id, active_brand_id, status, "
+                "started_by, started_at, start_positions, updated_at) "
+                "VALUES (?, ?, ?, 'active', ?, ?, ?, ?)",
+                (session_id, brand["id"], brand["id"], user_name or None,
+                 now, len(products), now),
             )
             for product in products:
                 connection.execute(
@@ -448,7 +450,8 @@ class BrandInventory:
             now = utc_now()
             self._refresh_totals(connection, session["id"])
             connection.execute(
-                "UPDATE erp_inventory_sessions SET status = 'completed', completed_by = ?, "
+                "UPDATE erp_inventory_sessions SET status = 'completed', active_brand_id = NULL, "
+                "completed_by = ?, "
                 "completed_at = ?, updated_at = ? WHERE id = ? AND status = 'active'",
                 (user_name or None, now, now, session["id"]),
             )
@@ -463,7 +466,8 @@ class BrandInventory:
             session = self._session(connection, session_id, active=True)
             now = utc_now()
             connection.execute(
-                "UPDATE erp_inventory_sessions SET status = 'cancelled', cancelled_by = ?, "
+                "UPDATE erp_inventory_sessions SET status = 'cancelled', active_brand_id = NULL, "
+                "cancelled_by = ?, "
                 "cancelled_at = ?, cancelled_reason = ?, updated_at = ? WHERE id = ?",
                 (user_name or None, now, reason, now, session["id"]),
             )
