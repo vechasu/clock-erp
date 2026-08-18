@@ -336,6 +336,31 @@ class BrandInventoryTest(unittest.TestCase):
         self.assertEqual(cancelled["status"], "cancelled")
         self.assertEqual((self.stock(one["id"]), self.stock(two["id"])), (5, 2))
 
+    def test_active_inventory_is_listed_until_cancelled_and_cancel_is_audited(self):
+        product = self.product()
+        session = self.start()
+
+        active = self.service.list_active()
+        self.assertEqual([item["id"] for item in active], [session["id"]])
+        self.assertEqual(active[0]["checked_positions"], 0)
+        self.assertEqual(active[0]["remaining"], 1)
+
+        cancelled = self.service.cancel(session["id"], "Техническая проверка", "Максим")
+        self.assertEqual(cancelled["status"], "cancelled")
+        self.assertEqual(self.service.list_active(), [])
+        self.assertEqual(self.stock(product["id"]), 4)
+        self.assertEqual(self.movement_count(product["id"]), 0)
+        with self.database.connect() as connection:
+            event = connection.execute(
+                "SELECT action, actor_display_name_snapshot, metadata_json "
+                "FROM erp_audit_events WHERE entity_type='inventory' "
+                "AND entity_id=? ORDER BY id DESC LIMIT 1",
+                (session["id"],),
+            ).fetchone()
+        self.assertEqual(event["action"], "cancelled")
+        self.assertEqual(event["actor_display_name_snapshot"], "Максим")
+        self.assertIn("Техническая проверка", event["metadata_json"])
+
 
 if __name__ == "__main__":
     unittest.main()
@@ -414,6 +439,20 @@ class BrandInventoryWebTest(unittest.TestCase):
         ).get_json()
         self.assertEqual(reloaded["items"], [])
         self.assertEqual(reloaded["session"]["checked_positions"], 1)
+
+    def test_unfiltered_inventory_page_lists_active_sessions(self):
+        started = self.client.post("/api/v1/inventories", json={"brand_id": self.brand_id})
+        self.assertEqual(started.status_code, 200)
+        session = started.get_json()["session"]
+
+        page = self.client.get("/app/products/inventory")
+        markup = page.get_data(as_text=True)
+        self.assertEqual(page.status_code, 200)
+        self.assertIn("Активные инвентаризации", markup)
+        self.assertIn(session["id"], markup)
+        self.assertIn("API Brand", markup)
+        self.assertIn("Проверено 0 из 1", markup)
+        self.assertIn("inventory_id={}".format(session["id"]), markup)
 
     def test_api_validation_and_product_brand_ownership(self):
         started = self.client.post("/api/v1/inventories", json={"brand_id": self.brand_id})

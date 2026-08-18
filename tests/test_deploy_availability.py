@@ -33,6 +33,9 @@ class DeployAvailabilityTest(unittest.TestCase):
             script,
         )
         self.assertIn("DEPLOY_BLOCKED:", script)
+        self.assertIn("DEPLOY_BLOCKED_DETAILS:", script)
+        self.assertIn("s.id, b.name, s.status, s.started_at", script)
+        self.assertIn("COUNT(i.id)", script)
         self.assertIn(
             'if [[ "$DATABASE_MIGRATION_REQUIRED" == "1" && -f instance/catalog.db ]]',
             script,
