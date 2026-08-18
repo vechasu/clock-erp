@@ -1155,6 +1155,12 @@
             border-radius: 8px;
         }
 
+        .sale-product-photo-images {
+            display: flex;
+            flex: 0 0 auto;
+            gap: 8px;
+        }
+
         .sale-product-photo img {
             object-fit: contain;
             background: #ffffff;
@@ -1167,6 +1173,10 @@
             color: #7b8798;
             font-size: 10px;
             font-weight: 800;
+        }
+
+        .sale-product-photo-placeholder[hidden] {
+            display: none;
         }
 
         .sales-product-combobox .brand-combobox-option {
@@ -2476,7 +2486,7 @@
 
                     <div class="field field-wide sale-product-summary">
                         <div id="saleProductPhoto" class="sale-product-photo">
-                            <img id="saleProductPhotoImage" alt="Фото выбранного товара" hidden>
+                            <span id="saleProductPhotoImages" class="sale-product-photo-images"></span>
                             <span id="saleProductPhotoPlaceholder" class="sale-product-photo-placeholder">Нет фото</span>
                             <div class="sale-product-summary-copy">
                                 <strong id="saleProductPhotoText">Выберите товар</strong>
@@ -5416,8 +5426,8 @@
     const productMeta = document.getElementById(
         "productMeta"
     );
-    const saleProductPhotoImage = document.getElementById(
-        "saleProductPhotoImage"
+    const saleProductPhotoImages = document.getElementById(
+        "saleProductPhotoImages"
     );
     const saleProductPhotoPlaceholder = document.getElementById(
         "saleProductPhotoPlaceholder"
@@ -5446,23 +5456,27 @@
     }
 
     function renderSaleProductPhoto(product) {
-        const source = String(
-            product?.image_url || product?.thumbnail_url || ""
-        ).trim();
-        saleProductPhotoImage.hidden = !source;
-        saleProductPhotoPlaceholder.hidden = Boolean(source);
-        saleProductPhotoText.textContent = product
-            ? (source ? "Фото выбранного товара" : "У товара нет фотографии")
-            : "Выберите товар";
-        if (source) {
-            saleProductPhotoImage.src = source;
-            saleProductPhotoImage.onerror = () => {
-                saleProductPhotoImage.hidden = true;
-                saleProductPhotoPlaceholder.hidden = false;
+        const sources = window.normalizeCatalogProductImageUrls(product);
+        saleProductPhotoImages.replaceChildren();
+        sources.forEach((source, index) => {
+            const image = document.createElement("img");
+            if (index === 0) image.id = "saleProductPhotoImage";
+            image.alt = "Фото выбранного товара";
+            image.src = source;
+            image.onerror = () => {
+                image.remove();
+                if (!saleProductPhotoImages.querySelector("img")) {
+                    saleProductPhotoPlaceholder.hidden = false;
+                    saleProductPhotoText.textContent =
+                        "У товара нет фотографии";
+                }
             };
-        } else {
-            saleProductPhotoImage.removeAttribute("src");
-        }
+            saleProductPhotoImages.appendChild(image);
+        });
+        saleProductPhotoPlaceholder.hidden = sources.length > 0;
+        saleProductPhotoText.textContent = product
+            ? (sources.length ? "Фото выбранного товара" : "У товара нет фотографии")
+            : "Выберите товар";
     }
 
     function resetProductFilters() {
