@@ -5619,7 +5619,7 @@ SALES_TABLE_COLUMNS = {
 SALE_STATUS_PRESENTATIONS = {
     "processing": {"label": "В обработке", "tone": "neutral"},
     "shipped": {"label": "Отправлен", "tone": "neutral"},
-    "completed": {"label": "Завершён успешно", "tone": "success"},
+    "completed": {"label": "Завершён", "tone": "success"},
     "refusal": {"label": "Отказ", "tone": "danger"},
     "cancelled": {"label": "Отменён", "tone": "warning"},
     "partially_returned": {

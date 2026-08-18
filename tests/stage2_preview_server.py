@@ -188,7 +188,7 @@ def sale_record(identifier, order_number, product, source, date, quantity, unit_
         "total_amount_display": "{} ₽".format(total),
         "returned_amount": 0,
         "order_status": "completed",
-        "order_status_label": "Завершён успешно",
+        "order_status_label": "Завершён",
         "is_cancelled": False,
         "cancelled_at": "",
         "cancellation_reason": "",
