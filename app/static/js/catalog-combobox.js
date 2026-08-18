@@ -1262,6 +1262,9 @@
         }
         if (kind === "product") {
             parameters.set("category_id", categoryId);
+            if (scope?.dataset.catalogInStock === "true") {
+                parameters.set("in_stock", "1");
+            }
             if (scope?.dataset.catalogOrderCounts === "true") {
                 parameters.set("include_order_counts", "1");
             }

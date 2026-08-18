@@ -7113,7 +7113,7 @@
                     activeClass: selected.classList.contains("is-active"),
                     sourceValue: sourceInput.value === label,
                     fieldsEnabled: !fields.disabled,
-                    submitEnabled: !submitButton.disabled,
+                    submitBlockedUntilProduct: submitButton.disabled,
                     description: description.textContent.trim()
                         === "Источник: " + label
                             + ". Он сохранится вместе с продажей.",
