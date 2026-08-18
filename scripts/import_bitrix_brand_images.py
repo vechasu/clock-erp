@@ -79,6 +79,7 @@ def main():
         report = plan
     report["bitrix_storage"] = payload["storage"]
     report["bitrix_image_fields"] = payload["image_fields"]
+    report["bitrix_source_ambiguities"] = payload["source_ambiguities"]
     report["backup_path"] = str(backup_path) if backup_path else None
     rendered = json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True)
     if args.output:

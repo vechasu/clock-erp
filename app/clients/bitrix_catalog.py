@@ -502,6 +502,7 @@ class BitrixCatalogReadOnlyClient:
             ],
             "storage": payload.get("storage") or {},
             "image_fields": payload.get("image_fields") or [],
+            "source_ambiguities": payload.get("source_ambiguities") or [],
         }
 
     def download_brand_image(self, image, max_bytes=5 * 1024 * 1024):
