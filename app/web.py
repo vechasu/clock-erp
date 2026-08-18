@@ -622,8 +622,14 @@ def overview_page():
 def orders_page():
     orders = get_orders()
     selected_order = orders[0] if orders else None
+    mappings = load_product_mappings()
+    order_counts = build_catalog_product_order_counts(
+        orders, mappings=mappings
+    )
     order_mappings = build_order_product_mapping_context(
-        (selected_order or {}).get("products") or []
+        (selected_order or {}).get("products") or [],
+        mappings=mappings,
+        order_counts=order_counts,
     )
     order_id = (
         (selected_order or {}).get("id")
@@ -689,7 +695,68 @@ def bitrix_order_product_identity(product):
     }
 
 
-def build_order_product_mapping_context(products, mappings=None, catalog=None):
+def build_catalog_product_order_counts(orders, mappings=None, catalog=None):
+    """Count unique, non-cancelled Bitrix orders per mapped ERP product."""
+    mappings = load_product_mappings() if mappings is None else mappings
+    direct = {}
+    legacy = {}
+    for external_product_id, row in mappings.items():
+        if not isinstance(row, dict):
+            continue
+        product_id = str(row.get("product_id") or "").strip()
+        if product_id:
+            direct[str(external_product_id)] = product_id
+            continue
+        moysklad_id = str(row.get("moysklad_product_id") or "").strip()
+        if moysklad_id:
+            legacy[str(external_product_id)] = moysklad_id
+
+    if legacy:
+        catalog = catalog or SharedCatalog()
+        candidates = catalog.products_by_moysklad_ids(legacy.values())
+        for external_product_id, moysklad_id in legacy.items():
+            matched = candidates.get(moysklad_id, [])
+            if len(matched) == 1:
+                direct[external_product_id] = str(matched[0]["id"])
+
+    order_ids_by_product = {}
+    for order in orders or []:
+        status = str(
+            order.get("status")
+            or order.get("STATUS_ID")
+            or order.get("status_id")
+            or ""
+        ).strip()
+        if status.upper() == "C":
+            continue
+        order_id = str(
+            order.get("id")
+            or order.get("ID")
+            or order.get("external_id")
+            or order.get("number")
+            or order.get("ACCOUNT_NUMBER")
+            or ""
+        ).strip()
+        if not order_id:
+            continue
+        for item in order.get("products") or []:
+            external_product_id = bitrix_order_product_identity(item)[
+                "bitrix_product_id"
+            ]
+            product_id = direct.get(external_product_id)
+            if product_id:
+                order_ids_by_product.setdefault(product_id, set()).add(
+                    order_id
+                )
+
+    return {
+        product_id: len(order_ids)
+        for product_id, order_ids in order_ids_by_product.items()
+    }
+
+
+def build_order_product_mapping_context(
+        products, mappings=None, catalog=None, order_counts=None):
     mappings = load_product_mappings() if mappings is None else mappings
     catalog = catalog or SharedCatalog()
     identities = [bitrix_order_product_identity(item) for item in products]
@@ -744,6 +811,11 @@ def build_order_product_mapping_context(products, mappings=None, catalog=None):
                     "product": selected,
                 })
             else:
+                selected = dict(selected)
+                if order_counts is not None:
+                    selected["orders_count"] = order_counts.get(
+                        str(selected["id"]), 0
+                    )
                 context.update({
                     "state": "mapped",
                     "state_label": "Сопоставлен",
@@ -754,7 +826,11 @@ def build_order_product_mapping_context(products, mappings=None, catalog=None):
                 str(saved.get("moysklad_product_id")), []
             )
             if len(candidates) == 1:
-                selected = candidates[0]
+                selected = dict(candidates[0])
+                if order_counts is not None:
+                    selected["orders_count"] = order_counts.get(
+                        str(selected["id"]), 0
+                    )
                 context.update({
                     "state": "mapped" if selected.get("active") else "archived",
                     "state_label": (
@@ -808,13 +884,26 @@ def order_page(order_id):
     if selected_order is None:
         abort(404)
 
+    count_orders = [
+        order for order in orders
+        if str(order.get("id") or order.get("ID") or "") != str(order_id)
+    ] + [selected_order]
+    mappings = load_product_mappings()
+    catalog = SharedCatalog()
+    order_counts = build_catalog_product_order_counts(
+        count_orders, mappings=mappings, catalog=catalog
+    )
+
     return render_template(
         "orders.html",
         orders=orders,
         selected_order=selected_order,
         selected_order_bitrix_url=bitrix_order_url,
         order_product_mappings=build_order_product_mapping_context(
-            selected_order.get("products") or []
+            selected_order.get("products") or [],
+            mappings=mappings,
+            catalog=catalog,
+            order_counts=order_counts,
         ),
         sale_already_conducted=is_order_stock_written_off(order_id),
         conducted_sale=get_order_conducted_sale(order_id),
@@ -15213,6 +15302,17 @@ def api_catalog_options():
                 422,
             )
         items, total = result
+        if kind == "product" and (
+            request.args.get("include_order_counts") or ""
+        ).strip().lower() in {"1", "true", "yes"}:
+            order_counts = build_catalog_product_order_counts(get_orders())
+            items = [
+                {
+                    **item,
+                    "orders_count": order_counts.get(str(item["id"]), 0),
+                }
+                for item in items
+            ]
     except (TypeError, ValueError) as error:
         return api_error("CATALOG_FILTER_INVALID", str(error), 422)
     return api_success(items, total=total, limit=limit)

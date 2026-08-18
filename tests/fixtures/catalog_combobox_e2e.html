@@ -7,7 +7,7 @@
     <style>
         * { box-sizing: border-box; }
         body { margin: 0; padding: 16px; font-family: Arial, sans-serif; }
-        .fixture { width: min(640px, 100%); }
+        .fixture { width: min(280px, 100%); }
         .brand-combobox-dropdown { position: relative; top: 0; margin-top: 7px; }
     </style>
 </head>
@@ -27,7 +27,7 @@
             <div data-brand-empty hidden></div>
         </div>
     </div>
-    <div class="fixture filter-combobox" data-shared-catalog-scope>
+    <div class="fixture filter-combobox" data-shared-catalog-scope data-catalog-order-counts="true">
         <div data-brand-combobox data-shared-catalog-kind="brand">
             <input class="brand-combobox-hidden" value="Тестовый бренд">
             <input class="catalog-combobox-id" value="1">
@@ -78,6 +78,7 @@
                     article: "SHORT-1",
                     stock: 12,
                     stock_display: "12",
+                    orders_count: 2,
                     image_url: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='44' height='44'%3E%3Crect width='44' height='44' fill='%23dbeafe'/%3E%3Ccircle cx='22' cy='22' r='14' fill='%232563eb'/%3E%3C/svg%3E",
                 },
                 {
@@ -141,6 +142,7 @@
                 const combobox = document.getElementById("productCombobox");
                 await window.loadSharedCatalogOptions(combobox, "");
                 window.setBrandDropdownOpen(combobox, true);
+                await new Promise((resolve) => requestAnimationFrame(resolve));
 
                 const brandPrefix = document.getElementById("brandPrefix");
                 window.filterBrandList("D", brandPrefix);
@@ -199,6 +201,12 @@
                         ".catalog-combobox-option-count"
                     ).textContent === "Остаток: 6 000"
                 );
+                result.orderCount = (
+                    options[0].querySelector(
+                        ".catalog-combobox-option-count"
+                    ).textContent.includes("2 заказа")
+                    && requests.at(-1).includes("include_order_counts=1")
+                );
                 result.longTitle = (
                     options[3].querySelector(
                         ".brand-combobox-option-label"
@@ -223,6 +231,14 @@
                 const detailsBox = options[0].querySelector(
                     ".catalog-combobox-option-details"
                 ).getBoundingClientRect();
+                const triggerBox = combobox.querySelector(
+                    ".brand-combobox-trigger"
+                ).getBoundingClientRect();
+                const longLabelStyle = getComputedStyle(
+                    options[3].querySelector(
+                        ".brand-combobox-option-label"
+                    )
+                );
                 result.fullWidth = Math.abs(
                     optionBox.left - optionsBox.left
                 ) <= 1 && optionBox.right <= optionsBox.right + 1
@@ -232,13 +248,28 @@
                 ) <= 1 && Math.abs(
                     searchBox.right - optionsBox.right
                 ) <= 1;
-                result.imageSize = Math.round(imageBox.width) === 44
-                    && Math.round(imageBox.height) === 44;
+                const expectedImageSize = window.innerWidth <= 560 ? 40 : 44;
+                result.imageSize = Math.round(imageBox.width) === expectedImageSize
+                    && Math.round(imageBox.height) === expectedImageSize;
                 result.noImageGap = Math.abs(
                     noImageCopyBox.left - optionBox.left
                 ) <= 12;
                 result.leftAligned = detailsBox.left < (
                     dropdownBox.left + dropdownBox.width / 2
+                );
+                result.dropdownWidth = (
+                    dropdownBox.width >= triggerBox.width
+                    && dropdownBox.width <= window.innerWidth - 16 + 1
+                    && (
+                        window.innerWidth <= 560
+                        || dropdownBox.width >= 500
+                    )
+                );
+                result.safeWords = (
+                    longLabelStyle.wordBreak === "normal"
+                    && ["normal", "break-word"].includes(
+                        longLabelStyle.overflowWrap
+                    )
                 );
                 result.listScrollOnly = optionsBox.height <= 340
                     && combobox.querySelector(
