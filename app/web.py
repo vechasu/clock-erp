@@ -17,6 +17,7 @@ import fcntl
 import uuid
 import click
 import requests
+from decimal import Decimal, InvalidOperation
 from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache, wraps
 from urllib.parse import parse_qsl, urlencode, urlsplit
@@ -28,6 +29,11 @@ from app.clients.bitrix_catalog import (
     BitrixCatalogReadOnlyClient,
     BitrixCatalogReadOnlyError,
     BitrixCatalogWriteError,
+)
+from app.clients.bitrix_orders import (
+    BitrixOrdersReadOnlyClient,
+    BitrixReadOnlyError,
+    normalize_order as normalize_bitrix_order,
 )
 from app.services.bitrix_catalog_importer import BitrixCatalogImporter
 from app.services.audit_journal import AuditJournal
@@ -248,7 +254,7 @@ def repair_product_classification_command(mode, backup_root):
         raise click.ClickException("Classification repair completed with errors")
 
 ORDERS_URL = "https://tictactoy.ru/api/orders.php"
-ORDER_URL = "https://tictactoy.ru/api/order.php?id="
+ORDER_URL = "https://tictactoy.ru/api/order.php"
 UPDATE_ORDER_STATUS_URL = "https://tictactoy.ru/api/update_order_status.php"
 BITRIX_ADMIN_ORDER_VIEW_URL = (
     "https://www.tictactoy.ru/bitrix/admin/sale_order_view.php"
@@ -257,6 +263,7 @@ BITRIX_ADMIN_ORDER_VIEW_URL = (
 ORDERS_CACHE = {
     "items": [],
     "loaded_at": 0,
+    "error": "",
 }
 
 ORDERS_CACHE_SECONDS = 60
@@ -409,12 +416,24 @@ def record_warehouse_created_at(product_id):
     return timestamp
 
 STATUS_NAMES = {
-    "N": "Не подтвержден",
-    "A": "Подтвержден",
+    "N": "Новый",
+    "O": "Новый",
+    "0": "Новый",
+    "A": "Подтверждён",
     "T": "Не дозвонились",
     "D": "Собран",
     "C": "Отказ",
     "c": "Отказ",
+}
+
+ORDER_STATUS_TRANSITIONS = {
+    "N": {"A", "T", "C"},
+    "O": {"A", "T", "C"},
+    "0": {"A", "T", "C"},
+    "T": {"A", "C"},
+    "A": {"D", "C"},
+    "D": set(),
+    "C": set(),
 }
 
 
@@ -534,110 +553,101 @@ def get_order_tracking(order):
 
 
 def calculate_products_total(products):
-    total = 0.0
+    total = Decimal("0")
 
     for product in products:
-        price = to_float(product.get("price") or product.get("PRICE"))
-        quantity = to_float(product.get("quantity") or product.get("QUANTITY") or 1)
+        try:
+            price = Decimal(str(
+                product.get("price") or product.get("PRICE") or "0"
+            ).replace(",", "."))
+            quantity = Decimal(str(
+                product.get("quantity") or product.get("QUANTITY") or "1"
+            ).replace(",", "."))
+        except (InvalidOperation, TypeError, ValueError):
+            return None
         total += price * quantity
 
-    return total
+    return float(total.quantize(Decimal("0.01")))
 
 
 def normalize_order(order):
-    if not order:
+    normalized = normalize_bitrix_order(order)
+    if normalized is None:
         return None
+    result = dict(order)
+    result.update(normalized)
+    result["id"] = normalized["external_id"]
+    result["number"] = normalized["number"] or normalized["external_id"]
+    result["date"] = normalized["created_at"]
+    result["price"] = normalized["total"]
+    result["track_number"] = normalized.get("tracking") or ""
+    result["paid_name"] = (
+        "Оплачен" if str(normalized.get("paid") or "").upper() == "Y"
+        else "Не оплачен"
+    )
+    products = []
+    for item in normalized["items"]:
+        product = dict(item.get("raw", {}) or {})
+        product.update({
+            "product_id": item["bitrix_product_id"],
+            "name": item["name"],
+            "quantity": item["quantity"],
+            "price": item["sale_unit_price"],
+            "base_price": item["original_unit_price"],
+            "discount": item["discount_per_unit"],
+            "line_total": item["line_total"],
+            "image_url": item["image_url"],
+            "brand": item["brand"],
+            "category": item["category"],
+        })
+        products.append(product)
+    result["products"] = products
+    return result
 
-    user = order.get("user") or {}
 
-    status = order.get("status") or order.get("STATUS_ID") or order.get("status_id") or "unknown"
-
-    customer = (
-        get_property(order, "FIO")
-        or user.get("name")
-        or order.get("customer")
-        or order.get("client")
-        or order.get("name")
-        or ""
+def bitrix_orders_client():
+    return BitrixOrdersReadOnlyClient(
+        orders_url=os.getenv("BITRIX_ORDERS_URL", ORDERS_URL),
+        order_url=os.getenv("BITRIX_ORDER_URL", ORDER_URL),
+        token=os.getenv("BITRIX_ORDERS_TOKEN"),
+        max_retries=int(os.getenv("BITRIX_API_MAX_RETRIES", "2")),
     )
 
-    phone = (
-        get_property(order, "PHONE")
-        or user.get("phone")
-        or order.get("phone")
-        or ""
-    )
 
-    email = (
-        get_property(order, "EMAIL")
-        or user.get("email")
-        or order.get("email")
-        or ""
-    )
+def get_order_overrides_path():
+    path = Path(app.instance_path)
+    path.mkdir(parents=True, exist_ok=True)
+    return path / "order_overrides.json"
 
-    address = (
-        get_property(order, "ADDRESS")
-        or order.get("address")
-        or ""
-    )
 
-    city = (
-        get_property(order, "CITY")
-        or order.get("city")
-        or ""
-    )
+def load_order_overrides():
+    path = get_order_overrides_path()
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        app.logger.warning("Order overrides could not be read")
+        return {}
+    return data if isinstance(data, dict) else {}
 
-    region = get_order_region(order)
-    tracking = get_order_tracking(order)
 
-    paid = order.get("paid") or order.get("PAYED") or ""
-    paid_name = "Оплачен" if paid == "Y" else "Не оплачен"
-
-    products = order.get("products") or []
-
-    order_total = to_float(
-        order.get("price")
-        or order.get("PRICE")
-        or order.get("sum")
-        or order.get("SUM")
-    )
-
-    products_total = calculate_products_total(products)
-    delivery_price = order_total - products_total
-
-    if delivery_price < 0:
-        delivery_price = 0.0
-
-    order["status"] = status
-    order["status_name"] = STATUS_NAMES.get(status, status)
-
-    order["customer"] = customer
-    order["phone"] = phone
-    order["email"] = email
-    order["address"] = address
-    order["city"] = city
-    order["region"] = region
-    order["track_number"] = tracking
-
-    order["paid"] = paid
-    order["paid_name"] = paid_name
-
-    order["products"] = products
-    order["products_count"] = len(products)
-
-    order["order_total"] = order_total
-    order["products_total"] = products_total
-    order["delivery_price"] = delivery_price
-
-    return order
+def save_order_overrides(rows):
+    path = get_order_overrides_path()
+    temporary = path.with_name("{}.{}.tmp".format(path.name, uuid.uuid4().hex))
+    with temporary.open("w", encoding="utf-8") as file:
+        json.dump(rows, file, ensure_ascii=False, indent=2)
+    temporary.replace(path)
 
 
 def get_order(order_id):
-    response = requests.get(ORDER_URL + str(order_id), timeout=1)
-    response.raise_for_status()
-
-    order = response.json().get("order")
-    return normalize_order(order)
+    order = bitrix_orders_client().get_order(order_id)
+    normalized = normalize_order(order)
+    override = load_order_overrides().get(str(order_id))
+    if normalized and isinstance(override, dict) and "tracking" in override:
+        normalized["tracking"] = str(override.get("tracking") or "")
+        normalized["track_number"] = normalized["tracking"]
+    return normalized
 
 
 def get_orders(force=False):
@@ -647,10 +657,18 @@ def get_orders(force=False):
         return ORDERS_CACHE["items"]
 
     try:
+        # The legacy list endpoint exposes a fixed recent window and ignores
+        # pagination parameters. Keep its established request contract, cap the
+        # local window, and load exactly one detail card only after selection.
         response = requests.get(ORDERS_URL, timeout=20)
         response.raise_for_status()
-
-        short_orders = response.json().get("orders", [])
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise BitrixReadOnlyError("Bitrix returned an unexpected JSON structure")
+        short_orders = payload.get("orders") or []
+        if not isinstance(short_orders, list):
+            raise BitrixReadOnlyError("Bitrix order list is not an array")
+        short_orders = short_orders[:50]
 
         orders = []
 
@@ -661,11 +679,15 @@ def get_orders(force=False):
 
         ORDERS_CACHE["items"] = orders
         ORDERS_CACHE["loaded_at"] = now
+        ORDERS_CACHE["error"] = ""
 
         return orders
 
-    except Exception as error:
-        print(f"Ошибка загрузки списка заказов: {error}")
+    except (BitrixReadOnlyError, requests.RequestException, ValueError) as error:
+        ORDERS_CACHE["error"] = type(error).__name__
+        app.logger.warning(
+            "Bitrix order list unavailable: %s", type(error).__name__
+        )
 
         if ORDERS_CACHE["items"]:
             return ORDERS_CACHE["items"]
@@ -734,8 +756,54 @@ def overview_page():
 @app.route("/orders")
 @app.route("/app/orders")
 def orders_page():
-    orders = get_orders()
-    selected_order = orders[0] if orders else None
+    orders = get_orders(force=request.args.get("retry") == "1")
+    query = str(request.args.get("q") or "").strip().casefold()
+    status_filter = str(request.args.get("status") or "all").strip().upper()
+    period = str(request.args.get("period") or "all").strip()
+    filtered_orders = []
+    now = datetime.now()
+    for order in orders:
+        search_text = " ".join(str(order.get(key) or "") for key in (
+            "number", "id", "customer", "phone"
+        )).casefold()
+        if query and query not in search_text:
+            continue
+        code = str(order.get("status") or "").upper()
+        if status_filter != "ALL" and code != status_filter:
+            continue
+        if period in {"today", "7d", "30d"}:
+            raw_date = str(order.get("created_at") or order.get("date") or "")[:10]
+            created = None
+            for date_format in ("%Y-%m-%d", "%d.%m.%Y"):
+                try:
+                    created = datetime.strptime(raw_date, date_format)
+                    break
+                except ValueError:
+                    continue
+            if created is None:
+                continue
+            days = 0 if period == "today" else 7 if period == "7d" else 30
+            if created.date() < (now - timedelta(days=days)).date():
+                continue
+        filtered_orders.append(order)
+    per_page = 20
+    try:
+        page = max(1, int(request.args.get("page") or 1))
+    except ValueError:
+        page = 1
+    total = len(filtered_orders)
+    page_count = max(1, math.ceil(total / per_page))
+    page = min(page, page_count)
+    orders_page_rows = filtered_orders[(page - 1) * per_page:page * per_page]
+    selected_order = orders_page_rows[0] if orders_page_rows else None
+    detail_error = ""
+    if selected_order and selected_order.get("id"):
+        try:
+            selected_order = get_order(selected_order["id"]) or selected_order
+        except BitrixReadOnlyError as error:
+            detail_error = type(error).__name__
+            selected_order = dict(selected_order)
+            selected_order["sync_state"] = "error"
     mappings = load_product_mappings()
     order_counts = build_catalog_product_order_counts(
         orders, mappings=mappings
@@ -749,23 +817,33 @@ def orders_page():
         (selected_order or {}).get("id")
         or (selected_order or {}).get("ID")
     )
+    already_conducted = is_order_stock_written_off(order_id)
 
     return render_template(
         "orders.html",
-        orders=orders,
+        orders=orders_page_rows,
         selected_order=selected_order,
         selected_order_bitrix_url=build_bitrix_order_url(
             (selected_order or {}).get("id")
             or (selected_order or {}).get("ID")
         ),
         order_product_mappings=order_mappings,
-        sale_already_conducted=is_order_stock_written_off(order_id),
+        order_sale_readiness=build_order_sale_readiness(
+            selected_order or {}, order_mappings, already_conducted
+        ),
+        sale_already_conducted=already_conducted,
         conducted_sale=get_order_conducted_sale(order_id),
         order_region=get_order_region(selected_order or {}),
         order_tracking=get_order_tracking(selected_order or {}),
         order_sale_pricing=build_order_sale_pricing(
             (selected_order or {}).get("products") or []
         ),
+        selected_order_explicit=False,
+        orders_total=total,
+        orders_page=page,
+        orders_page_count=page_count,
+        sync_error=detail_error or ORDERS_CACHE.get("error", ""),
+        last_sync_at=ORDERS_CACHE.get("loaded_at") or None,
     )
 
 
@@ -989,6 +1067,54 @@ def get_order_product_mapping(mapping_context, product):
     return mapping_context.get(identity["bitrix_product_id"]) or {}
 
 
+def build_order_sale_readiness(order, mapping_context, already_conducted=False):
+    issues = []
+    required = {}
+    stock = {}
+    status = str((order or {}).get("status") or "").strip().upper()
+    products = (order or {}).get("products") or []
+    if already_conducted:
+        issues.append("Продажа уже проведена")
+    if status != "A":
+        issues.append("Заказ не подтверждён")
+    if not products:
+        issues.append("Состав заказа не загружен")
+    if (order or {}).get("sync_state") in {"partial", "error"}:
+        issues.append("Карточка загружена не полностью")
+    if "calculation_complete" in (order or {}) and not order.get(
+        "calculation_complete"
+    ):
+        issues.append("Расчёт заказа неполный")
+    elif "calculation_consistent" in (order or {}) and not order.get(
+        "calculation_consistent"
+    ):
+        issues.append("Расчёт заказа не сходится")
+    for product in products:
+        identity = bitrix_order_product_identity(product)
+        mapping = mapping_context.get(identity["bitrix_product_id"]) or {}
+        selected = mapping.get("product")
+        if mapping.get("state") != "mapped" or not selected:
+            issues.append("Есть несопоставленные позиции")
+            continue
+        try:
+            quantity = Decimal(str(
+                first_order_product_value(product, "quantity", "QUANTITY") or 1
+            ).replace(",", "."))
+        except InvalidOperation:
+            issues.append("Есть некорректное количество")
+            continue
+        if quantity <= 0:
+            issues.append("Есть некорректное количество")
+            continue
+        product_id = str(selected["id"])
+        required[product_id] = required.get(product_id, Decimal("0")) + quantity
+        stock[product_id] = Decimal(str(selected.get("stock") or 0))
+    if any(stock.get(product_id, Decimal("0")) < quantity
+           for product_id, quantity in required.items()):
+        issues.append("Недостаточно остатка")
+    return {"ready": not issues, "issues": list(dict.fromkeys(issues))}
+
+
 @app.route("/order/<int:order_id>")
 def order_page(order_id):
     bitrix_order_url = build_bitrix_order_url(order_id)
@@ -1001,14 +1127,20 @@ def order_page(order_id):
         if str(order.get("id") or order.get("ID")) == str(order_id)
     ), None)
 
+    detail_error = ""
     try:
         full_order = get_order(order_id)
         if full_order:
             selected_order = full_order
-    except Exception as error:
-        print("Полная карточка заказа {} не загрузилась быстро: {}".format(
-            order_id, error,
-        ))
+    except BitrixReadOnlyError as error:
+        detail_error = type(error).__name__
+        app.logger.warning(
+            "Bitrix order card unavailable order_id=%s reason=%s",
+            order_id, type(error).__name__,
+        )
+        if selected_order:
+            selected_order = dict(selected_order)
+            selected_order["sync_state"] = "error"
 
     if selected_order is None:
         abort(404)
@@ -1023,24 +1155,33 @@ def order_page(order_id):
         count_orders, mappings=mappings, catalog=catalog
     )
 
+    mapping_context = build_order_product_mapping_context(
+        selected_order.get("products") or [], mappings=mappings,
+        catalog=catalog, order_counts=order_counts,
+    )
+    already_conducted = is_order_stock_written_off(order_id)
     return render_template(
         "orders.html",
         orders=orders,
         selected_order=selected_order,
         selected_order_bitrix_url=bitrix_order_url,
-        order_product_mappings=build_order_product_mapping_context(
-            selected_order.get("products") or [],
-            mappings=mappings,
-            catalog=catalog,
-            order_counts=order_counts,
+        order_product_mappings=mapping_context,
+        order_sale_readiness=build_order_sale_readiness(
+            selected_order, mapping_context, already_conducted
         ),
-        sale_already_conducted=is_order_stock_written_off(order_id),
+        sale_already_conducted=already_conducted,
         conducted_sale=get_order_conducted_sale(order_id),
         order_region=get_order_region(selected_order),
         order_tracking=get_order_tracking(selected_order),
         order_sale_pricing=build_order_sale_pricing(
             selected_order.get("products") or []
         ),
+        selected_order_explicit=True,
+        orders_total=len(orders),
+        orders_page=1,
+        orders_page_count=max(1, math.ceil(len(orders) / 20)),
+        sync_error=detail_error or ORDERS_CACHE.get("error", ""),
+        last_sync_at=time.time() if not detail_error else ORDERS_CACHE.get("loaded_at"),
     )
 
 
@@ -1061,7 +1202,13 @@ def order_stock_writeoff(order_id):
 
 
 def _conduct_order_sale(order_id):
-    full_order = get_order(order_id)
+    try:
+        full_order = get_order(order_id)
+    except BitrixReadOnlyError:
+        return redirect(url_for(
+            "order_page", order_id=order_id, notice="error",
+            message="Не удалось проверить заказ: Bitrix временно недоступен",
+        ))
 
     if not full_order:
         return redirect(url_for(
@@ -1123,6 +1270,16 @@ def _conduct_order_sale(order_id):
         issues.append("Сначала подтвердите заказ")
     if not products:
         issues.append("Заказ без товаров нельзя провести в продажу")
+    if full_order.get("sync_state") in {"partial", "error"}:
+        issues.append("Карточка заказа загружена не полностью")
+    if "calculation_complete" in full_order and not full_order.get(
+        "calculation_complete"
+    ):
+        issues.append("Bitrix не передал полный расчёт доставки и скидки")
+    elif "calculation_consistent" in full_order and not full_order.get(
+        "calculation_consistent"
+    ):
+        issues.append("Сумма заказа не сходится с товарами, скидкой и доставкой")
 
     for line_index, product in enumerate(products):
         identity = bitrix_order_product_identity(product)
@@ -1368,7 +1525,13 @@ def order_product_map(order_id):
             message="Выберите товар ERP из каталога"
         ))
 
-    full_order = get_order(order_id)
+    try:
+        full_order = get_order(order_id)
+    except BitrixReadOnlyError:
+        return redirect(url_for(
+            "order_page", order_id=order_id, notice="error",
+            message="Не удалось проверить позицию: Bitrix временно недоступен",
+        ))
     order_product = next((
         item for item in (full_order or {}).get("products") or []
         if bitrix_order_product_identity(item)["bitrix_product_id"]
@@ -1444,13 +1607,116 @@ def order_product_map(order_id):
     ))
 
 
+@app.route("/order/<int:order_id>/product-unmap", methods=["POST"])
+def order_product_unmap(order_id):
+    bitrix_product_id = str(
+        request.form.get("bitrix_product_id") or ""
+    ).strip()
+    if not bitrix_product_id:
+        return redirect(url_for(
+            "order_page", order_id=order_id, notice="error",
+            message="Не найден ID позиции Bitrix",
+        ))
+    try:
+        full_order = get_order(order_id)
+    except BitrixReadOnlyError:
+        return redirect(url_for(
+            "order_page", order_id=order_id, notice="error",
+            message="Не удалось проверить позицию: Bitrix временно недоступен",
+        ))
+    exists = any(
+        bitrix_order_product_identity(item)["bitrix_product_id"]
+        == bitrix_product_id
+        for item in (full_order or {}).get("products") or []
+    )
+    if not exists:
+        return redirect(url_for(
+            "order_page", order_id=order_id, notice="error",
+            message="Позиция Bitrix не найдена в этом заказе",
+        ))
+    mappings = load_product_mappings()
+    previous = mappings.pop(bitrix_product_id, None)
+    if previous is not None:
+        save_product_mappings(mappings)
+        try:
+            AuditJournal(CatalogDatabase()).record(
+                "sale", "bitrix-order:{}".format(order_id), "updated",
+                "Заказ #{}".format(order_id), "Удалено сопоставление позиции",
+                metadata={
+                    "bitrix_product_id": bitrix_product_id,
+                    "old_product_id": previous.get("product_id")
+                    if isinstance(previous, dict) else None,
+                },
+                **current_audit_actor()
+            )
+        except Exception:
+            app.logger.exception(
+                "Order product unmapping audit failed for %s", bitrix_product_id
+            )
+    return redirect(url_for(
+        "order_page", order_id=order_id, notice="success",
+        message="Сопоставление очищено",
+    ))
+
+
+@app.route("/order/<int:order_id>/tracking", methods=["POST"])
+def order_tracking_update(order_id):
+    tracking = str(request.form.get("tracking") or "").strip()
+    if len(tracking) > 255:
+        return redirect(url_for(
+            "order_page", order_id=order_id, notice="error",
+            message="Трекинг не должен быть длиннее 255 символов",
+        ))
+    try:
+        order = get_order(order_id)
+    except BitrixReadOnlyError:
+        order = None
+    if not order:
+        return redirect(url_for(
+            "order_page", order_id=order_id, notice="error",
+            message="Не удалось проверить заказ перед сохранением трекинга",
+        ))
+    rows = load_order_overrides()
+    previous = rows.get(str(order_id)) if isinstance(rows.get(str(order_id)), dict) else {}
+    rows[str(order_id)] = {
+        **previous,
+        "tracking": tracking,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    save_order_overrides(rows)
+    try:
+        AuditJournal(CatalogDatabase()).record(
+            "sale", "bitrix-order:{}".format(order_id), "updated", "Заказ #{}".format(order_id),
+            "Изменён трекинг",
+            before={"tracking": previous.get("tracking") or ""},
+            after={"tracking": tracking},
+            metadata={
+                "field": "tracking",
+                "old_present": bool(previous.get("tracking")),
+                "new_present": bool(tracking),
+            },
+            **current_audit_actor()
+        )
+    except Exception:
+        app.logger.exception("Order tracking audit failed: %s", order_id)
+    return redirect(url_for(
+        "order_page", order_id=order_id, notice="success",
+        message="Трекинг сохранён",
+    ))
+
+
+def validate_order_status_transition(current_status, new_status):
+    current = str(current_status or "").strip().upper()
+    target = str(new_status or "").strip().upper()
+    if current == target and current in ORDER_STATUS_TRANSITIONS:
+        return True
+    return target in ORDER_STATUS_TRANSITIONS.get(current, set())
+
+
 @app.route("/order/<int:order_id>/status", methods=["POST"])
 def order_status_update(order_id):
-    new_status = request.form.get("status", "")
-
-    if str(new_status).strip().upper() == "C" and is_order_stock_written_off(
-        order_id
-    ):
+    new_status = str(request.form.get("status", "")).strip()
+    if new_status.upper() == "C" and is_order_stock_written_off(order_id):
         return redirect(url_for(
             "order_page",
             order_id=order_id,
@@ -1460,11 +1726,45 @@ def order_status_update(order_id):
                 "и отмените её с восстановлением остатка."
             ),
         ))
+    current_order = next((
+        item for item in get_orders()
+        if str(item.get("id") or item.get("ID") or "") == str(order_id)
+    ), None)
+    if current_order is None:
+        try:
+            current_order = get_order(order_id)
+        except BitrixReadOnlyError:
+            current_order = None
+    current_status = str((current_order or {}).get("status") or "").strip()
+    if not current_status:
+        return redirect(url_for(
+            "order_page", order_id=order_id, notice="error",
+            message="Не удалось проверить текущий статус заказа",
+        ))
+    if not validate_order_status_transition(current_status, new_status):
+        return redirect(url_for(
+            "order_page", order_id=order_id, notice="error",
+            message="Недопустимый переход статуса",
+        ))
 
     result = update_order_status(order_id, new_status)
     get_orders(force=True)
 
     if result.get("status") == "ok":
+        try:
+            AuditJournal(CatalogDatabase()).record(
+                "sale", "bitrix-order:{}".format(order_id), "status_changed",
+                "Заказ #{}".format(order_id), "Изменён статус",
+                before={"status": current_status},
+                after={"status": new_status.upper()},
+                metadata={
+                    "old_status": current_status or None,
+                    "new_status": new_status.upper(),
+                },
+                **current_audit_actor()
+            )
+        except Exception:
+            app.logger.exception("Order status audit failed: %s", order_id)
         redirect_params = {
             "order_id": order_id,
             "notice": "success",
