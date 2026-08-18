@@ -47,7 +47,11 @@ def validate_image(content, filename, declared_mime=""):
     if mime not in MIME_EXTENSIONS:
         raise BrandImageValidationError("Недопустимый MIME-тип изображения.")
     detected = imghdr.what(None, content)
-    if detected == "jpeg":
+    if detected == "jpeg" or (
+        len(content) >= 4
+        and content[:3] == b"\xff\xd8\xff"
+        and content[-2:] == b"\xff\xd9"
+    ):
         detected_mime = "image/jpeg"
     elif detected == "png":
         detected_mime = "image/png"
