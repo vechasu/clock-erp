@@ -45,6 +45,7 @@ readonly BACKUP_DIR="/opt/clock-erp-backups"
 readonly BITRIX_ENDPOINT_SOURCE="$PROJECT_DIR/bitrix/catalog-export.php"
 readonly BITRIX_ENDPOINT_TARGET="/var/www/admin/data/www/tictactoy.ru/api/catalog-export.php"
 SERVICE_STOPPED=0
+DATABASE_MIGRATION_REQUIRED=0
 readonly HEALTHCHECK_URLS=(
     "http://127.0.0.1:5000/register"
     "http://127.0.0.1:5000/login"
@@ -206,6 +207,11 @@ if [[ "$CURRENT_COMMIT" != "$PREVIOUS_COMMIT" ]]; then
     DEPLOY_UPDATED=1
 fi
 
+if git diff --name-only "$PREVIOUS_COMMIT" "$CURRENT_COMMIT" |
+    grep -Eq '^(app/catalog_db\.py|scripts/(migrate_auth_mvp|migrate_unified_catalog|consolidate_global_categories)\.py)$'; then
+    DATABASE_MIGRATION_REQUIRED=1
+fi
+
 if [[ -x venv/bin/python ]]; then
     PYTHON_BIN="venv/bin/python"
 else
@@ -256,7 +262,20 @@ if [[ -f instance/repair_cases.json ]]; then
         --apply
 fi
 
-if [[ -f instance/auth.db ]]; then
+if [[ "$DATABASE_MIGRATION_REQUIRED" == "1" && -f instance/catalog.db ]]; then
+    active_inventory_count="$(
+        sqlite3 instance/catalog.db \
+            "SELECT COUNT(*) FROM erp_inventory_sessions WHERE status = 'active';" \
+            2>/dev/null || printf '0'
+    )"
+    if [[ "$active_inventory_count" != "0" ]]; then
+        printf 'DEPLOY_BLOCKED: %s active inventory session(s) require uninterrupted access\n' \
+            "$active_inventory_count" >&2
+        false
+    fi
+fi
+
+if [[ "$DATABASE_MIGRATION_REQUIRED" == "1" && -f instance/auth.db ]]; then
     systemctl stop "$SERVICE_NAME"
     SERVICE_STOPPED=1
     "$PYTHON_BIN" scripts/migrate_auth_mvp.py \
@@ -265,7 +284,7 @@ if [[ -f instance/auth.db ]]; then
         --apply
 fi
 
-if [[ -f instance/catalog.db ]]; then
+if [[ "$DATABASE_MIGRATION_REQUIRED" == "1" && -f instance/catalog.db ]]; then
     if [[ "$SERVICE_STOPPED" != "1" ]]; then
         systemctl stop "$SERVICE_NAME"
         SERVICE_STOPPED=1
@@ -299,8 +318,12 @@ PYTHON_PLAN
     printf 'CATEGORY_RESULT_PATH=%s\n' "$CATEGORY_RESULT_PATH"
 fi
 
-systemctl restart "$SERVICE_NAME"
-SERVICE_STOPPED=0
+if [[ "$SERVICE_STOPPED" == "1" ]]; then
+    systemctl start "$SERVICE_NAME"
+    SERVICE_STOPPED=0
+else
+    systemctl kill --kill-who=main --signal=HUP "$SERVICE_NAME"
+fi
 systemctl is-active --quiet "$SERVICE_NAME"
 
 for healthcheck_url in "${HEALTHCHECK_URLS[@]}"; do
