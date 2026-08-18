@@ -605,7 +605,12 @@
             position: relative;
         }
 
-        .sales-action-menu summary {
+        .sales-secondary-menu {
+            position: relative;
+        }
+
+        .sales-action-menu summary,
+        .sales-secondary-menu summary {
             display: inline-flex;
             width: 28px;
             height: 28px;
@@ -619,7 +624,8 @@
             list-style: none;
         }
 
-        .sales-action-menu summary::-webkit-details-marker {
+        .sales-action-menu summary::-webkit-details-marker,
+        .sales-secondary-menu summary::-webkit-details-marker {
             display: none;
         }
 
@@ -642,6 +648,33 @@
         .sales-action-menu--mobile button {
             right: auto;
             left: 0;
+        }
+
+        .sales-row-actions .sales-menu-panel {
+            position: absolute;
+            z-index: 20;
+            top: calc(100% + 4px);
+            right: 0;
+            display: grid;
+            min-width: 190px;
+            overflow: hidden;
+            border: 1px solid #dfe5ed;
+            border-radius: 9px;
+            background: #ffffff;
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.14);
+        }
+
+        .sales-row-actions .sales-menu-panel button {
+            position: static;
+            width: 100%;
+            min-width: 0;
+            border: 0;
+            border-radius: 0;
+            box-shadow: none;
+        }
+
+        .sales-row-actions .sales-menu-panel .sales-archive-form {
+            display: block;
         }
 
         .sales-mobile-card.is-cancelled {
@@ -1381,7 +1414,7 @@
     data-erp-focus-mode
     data-focus-mode-storage-key="vechasu.erp.sales.focus-mode.v1"
     data-focus-mode-hide=".sales-page-header,.sales-tabs-scroll,.erp-workspace-metrics,#appSidebar,.mobile-erp-navigation,.mobile-erp-more-sheet,.mobile-erp-more-backdrop,#sidebarTooltip"
-    data-focus-mode-overlays=".modal.is-open,.sales-viewport-popover:not([hidden]),.sales-product-combobox-menu:not([hidden]),.catalog-create-modal:not([hidden]),.mobile-erp-more-sheet.is-open,.sales-action-menu[open]"
+    data-focus-mode-overlays=".modal.is-open,.sales-viewport-popover:not([hidden]),.sales-product-combobox-menu:not([hidden]),.catalog-create-modal:not([hidden]),.mobile-erp-more-sheet.is-open,.sales-action-menu[open],.sales-secondary-menu[open]"
 >
     {% include "_sidebar.html" %}
 
@@ -2116,8 +2149,16 @@
                                                 >✓</span>
                                             {% endif %}
                                             {% endif %}
-                                            <details class="sales-action-menu">
+                                            <details class="{% if sales_view != 'archive' and sale.is_cancelled %}sales-action-menu{% else %}sales-secondary-menu{% endif %}">
                                                 <summary aria-label="Другие действия">⋯</summary>
+                                                <div class="sales-menu-panel">
+                                                {% if sales_view != 'archive' and sale.is_cancelled %}
+                                                    <button
+                                                        type="button"
+                                                        data-sale="{{ sale|tojson|forceescape }}"
+                                                        onclick="openSaleDeleteModal(this)"
+                                                    >Удалить запись</button>
+                                                {% endif %}
                                                 {% if sales_view != 'archive' and not sale.is_cancelled %}
                                                     <button
                                                         class="sales-row-edit"
@@ -2138,13 +2179,7 @@
                                                         {% if not sale.archived_at %}onclick="return confirm('Отправить продажу в архив?')"{% endif %}
                                                     >{{ 'Восстановить' if sale.archived_at else 'Архивировать' }}</button>
                                                 </form>
-                                                {% if sales_view != 'archive' and sale.is_cancelled %}
-                                                    <button
-                                                        type="button"
-                                                        data-sale="{{ sale|tojson|forceescape }}"
-                                                        onclick="openSaleDeleteModal(this)"
-                                                    >Удалить запись</button>
-                                                {% endif %}
+                                                </div>
                                             </details>
                                         </div>
                                     </td>
