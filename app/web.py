@@ -105,7 +105,6 @@ from app.services.repair_cases import (
     LEGACY_STATUS_MAP,
     REPAIR_ACTION_LABELS,
     REPAIR_CHANNEL_LABELS,
-    REPAIR_FINAL_STATUSES,
     REPAIR_LOCATION_LABELS,
     REPAIR_RESPONSIBILITY_GROUPS,
     REPAIR_RESPONSIBILITY_LABELS,
@@ -4643,12 +4642,16 @@ def record_repair_audit(case, action, before, after, metadata=None):
         after=after,
         metadata={
             "number": case.get("repair_number") or "",
+            "repair_status": case.get("status") or "",
+            "repair_status_label": REPAIR_STATUS_LABELS.get(
+                case.get("status"), case.get("status") or ""
+            ),
             **(metadata or {}),
         },
         actor_id=actor["id"],
         actor_name=actor["name"],
         actor_type=actor["type"],
-        status="archived" if case.get("archived_at") else "active",
+        status=case.get("status") or "",
     )
 
 
@@ -4662,10 +4665,6 @@ def set_repair_archive_state(case_id, archived):
         currently_archived = bool(target.get("archived_at"))
         if currently_archived == archived:
             return {"case": copy.deepcopy(target), "changed": False}
-        if archived and target.get("status") not in REPAIR_FINAL_STATUSES:
-            raise ValueError(
-                "Сначала завершите ремонт, затем его можно будет перенести в архив"
-            )
         changed_at = repair_now()
         before = {
             "archive_status": "archived" if currently_archived else "active",
@@ -4674,16 +4673,17 @@ def set_repair_archive_state(case_id, archived):
         }
         target["archived_at"] = changed_at if archived else ""
         target["archived_by"] = actor["name"] if archived else ""
-        target["updated_at"] = changed_at
-        append_history_event(
-            target,
-            "Ремонт перемещён в архив" if archived else "Ремонт возвращён в активные",
-            actor=actor["name"],
-            field="archive_status",
-            old_value="Активный" if archived else "Архивный",
-            new_value="Архивный" if archived else "Активный",
-            timestamp=changed_at,
-        )
+        if archived:
+            target["updated_at"] = changed_at
+            append_history_event(
+                target,
+                "Ремонт перемещён в архив",
+                actor=actor["name"],
+                field="archive_status",
+                old_value="Активный",
+                new_value="Архивный",
+                timestamp=changed_at,
+            )
         after = {
             "archive_status": "archived" if archived else "active",
             "archived_at": target["archived_at"],
@@ -4967,10 +4967,7 @@ def prepare_repair_case(case):
     prepared = dict(case)
     prepared.pop("legacy_snapshot", None)
     prepared["is_archived"] = bool(prepared.get("archived_at"))
-    prepared["can_archive"] = (
-        not prepared["is_archived"]
-        and prepared.get("status") in REPAIR_FINAL_STATUSES
-    )
+    prepared["can_archive"] = not prepared["is_archived"]
     prepared["archived_at_display"] = _repair_text(
         prepared.get("archived_at")
     )
