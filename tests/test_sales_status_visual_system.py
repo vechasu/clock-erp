@@ -7,7 +7,7 @@ from app import web
 class SalesStatusVisualSystemTest(unittest.TestCase):
     def test_business_status_mapping_uses_semantic_labels_and_tones(self):
         cases = (
-            ({"order_status": "completed"}, "completed", "Завершён успешно", "success"),
+            ({"order_status": "completed"}, "completed", "Завершён", "success"),
             ({"order_status": "cancelled"}, "cancelled", "Отменён", "warning"),
             ({"order_status": "returned"}, "returned", "Возврат", "warning"),
             (
@@ -42,7 +42,22 @@ class SalesStatusVisualSystemTest(unittest.TestCase):
         self.assertEqual(presentation["raw_value"], "legacy-awaiting-review")
         self.assertEqual(presentation["label"], "legacy-awaiting-review")
         self.assertEqual(presentation["tone"], "neutral")
-        self.assertNotEqual(presentation["label"], "Завершён успешно")
+        self.assertNotEqual(presentation["label"], "Завершён")
+
+    def test_completed_label_is_shared_by_all_channels_and_filters(self):
+        for source in web.DEFAULT_SALES_SOURCES:
+            with self.subTest(source=source):
+                sale = {"order_status": "completed", "source": source}
+                web.decorate_sale_status(sale)
+                self.assertEqual(sale["order_status_label"], "Завершён")
+
+        filters = web.build_sales_filter_options([], {})
+        status_labels = {
+            option["value"]: option["label"]
+            for option in filters["statuses"]
+        }
+        self.assertEqual(web.SALE_STATUS_LABELS["completed"], "Завершён")
+        self.assertEqual(status_labels["completed"], "Завершён")
 
     def test_refusal_filter_does_not_include_other_cancellations(self):
         refusal = {

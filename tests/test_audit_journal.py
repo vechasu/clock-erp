@@ -336,7 +336,7 @@ class AuditJournalTest(unittest.TestCase):
         )
         status = web.serialize_journal_event(self.journal.get_event(status_id))
         self.assertEqual(
-            status["summary"], "Статус: Отправлен → Завершён успешно"
+            status["summary"], "Статус: Отправлен → Завершён"
         )
 
     def test_feed_formatter_distinguishes_create_rename_and_scoped_actions(self):
@@ -418,7 +418,7 @@ class AuditJournalTest(unittest.TestCase):
         self.assertEqual(product_create["summary"], "Создан новый товар")
         self.assertEqual(product_update["summary"], "Остаток: 0 → 1")
         self.assertEqual(
-            sale_status["summary"], "Статус: Отправлен → Завершён успешно"
+            sale_status["summary"], "Статус: Отправлен → Завершён"
         )
         self.assertEqual(incomplete["summary"], "Создана категория")
 
