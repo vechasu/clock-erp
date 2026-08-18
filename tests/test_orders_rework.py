@@ -89,6 +89,22 @@ class OrdersReworkTest(unittest.TestCase):
         self.assertIn("vechasu:orders:view:v2", html)
         self.assertIn("@media (max-width:780px)", html)
         self.assertIn("Свернуть список", html)
+        self.assertIn('data-has-selected-order="1"', html)
+        self.assertNotIn("window.confirm", html)
+        self.assertIn("statusConfirmTrigger=event.submitter", html)
+        self.assertIn("event.key==='Escape'&&statusConfirm", html)
+
+    def test_mobile_list_page_does_not_force_first_order_card(self):
+        order = {"id": "7", "number": "7", "status": "N", "products": []}
+        with (
+            mock.patch.object(web, "get_orders", return_value=[order]),
+            mock.patch.object(web, "get_order", return_value=order),
+            mock.patch.object(web, "load_product_mappings", return_value={}),
+            mock.patch.object(web, "is_order_stock_written_off", return_value=False),
+            mock.patch.object(web, "get_order_conducted_sale", return_value=None),
+        ):
+            html = self.client.get("/app/orders").get_data(as_text=True)
+        self.assertIn('data-has-selected-order="0"', html)
 
     def test_incomplete_calculation_blocks_sale_before_inventory_change(self):
         order = {

@@ -264,16 +264,26 @@ class BitrixOrderNormalizationTest(unittest.TestCase):
         self.assertEqual(order["delivery_price"], 250.0)
         self.assertTrue(order["calculation_consistent"])
 
-    def test_total_is_never_relabelled_as_delivery(self):
+    def test_delivery_is_derived_only_from_fully_priced_reconciled_order(self):
         order = normalize_order({
             "id": 7, "status": "A", "price": "1250",
             "user": {"name": "Клиент", "phone": "+70000000000"},
             "products": [{"id": 1, "name": "Часы", "quantity": 1, "price": 1000}],
         })
         self.assertEqual(order["products_total"], 1000.0)
-        self.assertIsNone(order["delivery_price"])
-        self.assertFalse(order["calculation_complete"])
+        self.assertEqual(order["delivery_price"], 250.0)
+        self.assertEqual(
+            order["delivery_price_source"], "derived_reconciled_remainder"
+        )
+        self.assertTrue(order["calculation_complete"])
+        self.assertTrue(order["calculation_consistent"])
         self.assertEqual(order["sync_state"], "complete")
+
+    def test_total_is_not_used_as_delivery_without_priced_items(self):
+        order = normalize_order({"id": 7, "status": "A", "price": "1250"})
+        self.assertIsNone(order["delivery_price"])
+        self.assertIsNone(order["delivery_price_source"])
+        self.assertFalse(order["calculation_complete"])
 
     def test_unknown_status_never_exposes_raw_code_as_label(self):
         self.assertEqual(status_presentation("unexpected")["label"], "Неизвестный статус")

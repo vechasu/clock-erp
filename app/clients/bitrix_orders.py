@@ -309,14 +309,25 @@ def normalize_order(order):
         order, "delivery_price", "DELIVERY_PRICE", "price_delivery",
         "PRICE_DELIVERY", "shipment_price", "SHIPMENT_PRICE"
     ))
+    delivery_price_source = "api" if delivery_price is not None else None
     if delivery_price is None:
         delivery_price = money(
             properties.get("DELIVERY_PRICE") or properties.get("PRICE_DELIVERY")
         )
+        if delivery_price is not None:
+            delivery_price_source = "property"
     total = money(first_value(order, "price", "PRICE", "sum", "SUM", "total"))
     comparable = None not in (products_total, total)
     if comparable and discount is None:
         discount = 0.0
+    if comparable and delivery_price is None:
+        derived_delivery = (
+            Decimal(str(total)) - Decimal(str(products_total))
+            + Decimal(str(discount or 0))
+        ).quantize(Decimal("0.01"))
+        if derived_delivery >= 0:
+            delivery_price = money(derived_delivery)
+            delivery_price_source = "derived_reconciled_remainder"
     reconciliation_complete = comparable and delivery_price is not None
     reconciliation_ok = bool(
         reconciliation_complete
@@ -404,6 +415,7 @@ def normalize_order(order):
         "products_total": products_total,
         "discount": discount,
         "delivery_price": delivery_price,
+        "delivery_price_source": delivery_price_source,
         "total": total,
         "order_total": total,
         "calculation_complete": reconciliation_complete,

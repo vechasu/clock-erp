@@ -837,6 +837,7 @@ def orders_page():
         order_sale_pricing=build_order_sale_pricing(
             (selected_order or {}).get("products") or []
         ),
+        selected_order_explicit=False,
         orders_total=total,
         orders_page=page,
         orders_page_count=page_count,
@@ -1174,6 +1175,7 @@ def order_page(order_id):
         order_sale_pricing=build_order_sale_pricing(
             selected_order.get("products") or []
         ),
+        selected_order_explicit=True,
         orders_total=len(orders),
         orders_page=1,
         orders_page_count=max(1, math.ceil(len(orders) / 20)),
@@ -1199,7 +1201,13 @@ def order_stock_writeoff(order_id):
 
 
 def _conduct_order_sale(order_id):
-    full_order = get_order(order_id)
+    try:
+        full_order = get_order(order_id)
+    except BitrixReadOnlyError:
+        return redirect(url_for(
+            "order_page", order_id=order_id, notice="error",
+            message="Не удалось проверить заказ: Bitrix временно недоступен",
+        ))
 
     if not full_order:
         return redirect(url_for(
@@ -1516,7 +1524,13 @@ def order_product_map(order_id):
             message="Выберите товар ERP из каталога"
         ))
 
-    full_order = get_order(order_id)
+    try:
+        full_order = get_order(order_id)
+    except BitrixReadOnlyError:
+        return redirect(url_for(
+            "order_page", order_id=order_id, notice="error",
+            message="Не удалось проверить позицию: Bitrix временно недоступен",
+        ))
     order_product = next((
         item for item in (full_order or {}).get("products") or []
         if bitrix_order_product_identity(item)["bitrix_product_id"]
@@ -1602,7 +1616,13 @@ def order_product_unmap(order_id):
             "order_page", order_id=order_id, notice="error",
             message="Не найден ID позиции Bitrix",
         ))
-    full_order = get_order(order_id)
+    try:
+        full_order = get_order(order_id)
+    except BitrixReadOnlyError:
+        return redirect(url_for(
+            "order_page", order_id=order_id, notice="error",
+            message="Не удалось проверить позицию: Bitrix временно недоступен",
+        ))
     exists = any(
         bitrix_order_product_identity(item)["bitrix_product_id"]
         == bitrix_product_id
