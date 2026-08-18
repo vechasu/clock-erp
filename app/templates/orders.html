@@ -882,6 +882,136 @@
         }
         /* Конец трёхпозиционного ползунка */
 
+        .order-sale-modal {
+            position: fixed;
+            inset: 0;
+            z-index: 1000000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            background: rgba(15, 23, 42, 0.58);
+        }
+
+        .order-sale-modal.is-open {
+            display: flex;
+        }
+
+        .order-sale-dialog {
+            width: min(620px, 100%);
+            max-height: calc(100vh - 40px);
+            overflow: auto;
+            border-radius: 22px;
+            background: #fff;
+            box-shadow: 0 24px 70px rgba(15, 23, 42, 0.3);
+        }
+
+        .order-sale-dialog-header,
+        .order-sale-dialog-body,
+        .order-sale-dialog-actions {
+            padding: 20px 22px;
+        }
+
+        .order-sale-dialog-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 16px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .order-sale-dialog-header h2 {
+            margin: 0;
+            font-size: 22px;
+        }
+
+        .order-sale-close {
+            width: 38px;
+            height: 38px;
+            flex: 0 0 auto;
+            border: 0;
+            border-radius: 10px;
+            background: #f3f4f6;
+            color: #374151;
+            font-size: 24px;
+            line-height: 1;
+            cursor: pointer;
+        }
+
+        .order-sale-facts {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+            margin-bottom: 16px;
+        }
+
+        .order-sale-fact,
+        .order-sale-products {
+            padding: 12px;
+            border: 1px solid #e5e7eb;
+            border-radius: 14px;
+            background: #f9fafb;
+        }
+
+        .order-sale-fact span {
+            display: block;
+            margin-bottom: 4px;
+            color: #6b7280;
+            font-size: 12px;
+        }
+
+        .order-sale-products ul {
+            margin: 8px 0 0;
+            padding-left: 20px;
+        }
+
+        .order-sale-warning {
+            margin: 16px 0 0;
+            padding: 12px 14px;
+            border: 1px solid #fde68a;
+            border-radius: 14px;
+            background: #fffbeb;
+            color: #92400e;
+            font-weight: 700;
+        }
+
+        .order-sale-dialog-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            border-top: 1px solid #e5e7eb;
+        }
+
+        @media (max-width: 480px) {
+            .order-sale-modal {
+                align-items: flex-end;
+                padding: 8px;
+            }
+
+            .order-sale-dialog {
+                max-height: calc(100vh - 16px);
+                border-radius: 18px;
+            }
+
+            .order-sale-dialog-header,
+            .order-sale-dialog-body,
+            .order-sale-dialog-actions {
+                padding: 15px;
+            }
+
+            .order-sale-facts {
+                grid-template-columns: 1fr;
+            }
+
+            .order-sale-dialog-actions {
+                flex-direction: column-reverse;
+            }
+
+            .order-sale-dialog-actions .button {
+                width: 100%;
+            }
+        }
+
 </style>
 </head>
 
@@ -1300,16 +1430,25 @@
                                         {% endfor %}
                                     </div>
 
-                                        <form class="status-form" method="post" action="/order/{{ detail_id }}/stock-writeoff" style="margin-top: 14px;">
-                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                        <div style="margin-top: 14px;">
+                                            {% if sale_already_conducted %}
+                                            <button
+                                                class="button button-secondary"
+                                                type="button"
+                                                disabled
+                                            >
+                                                Продажа уже проведена
+                                            </button>
+                                            {% else %}
                                             <button
                                                 class="button button-primary"
-                                                type="submit"
-                                                onclick="return confirm('Списать товары этого заказа со склада? Это создаст документ списания в МойСклад.');"
+                                                type="button"
+                                                data-open-sale-dialog
                                             >
-                                                📉 Списать заказ со склада
+                                                Провести продажу
                                             </button>
-                                        </form>
+                                            {% endif %}
+                                        </div>
 
                                 {% else %}
                                     <div class="empty small">
@@ -1422,7 +1561,127 @@
     </main>
 </div>
 
+{% if selected_order and not sale_already_conducted %}
+<div
+    class="order-sale-modal"
+    id="orderSaleModal"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="orderSaleTitle"
+    aria-hidden="true"
+    data-auto-open="{{ '1' if request.args.get('open_sale') == '1' else '0' }}"
+>
+    <div class="order-sale-dialog">
+        <div class="order-sale-dialog-header">
+            <div>
+                <h2 id="orderSaleTitle">Провести продажу</h2>
+                <div class="detail-subtitle">Заказ №{{ detail_number }} · TicTacToy</div>
+            </div>
+            <button class="order-sale-close" type="button" data-close-sale-dialog aria-label="Закрыть">×</button>
+        </div>
+        <form method="post" action="/order/{{ detail_id }}/stock-writeoff" data-order-sale-form>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="order-sale-dialog-body">
+                <div class="order-sale-facts">
+                    <div class="order-sale-fact"><span>Номер заказа</span><strong>№{{ detail_number }}</strong></div>
+                    <div class="order-sale-fact"><span>Источник</span><strong>TicTacToy</strong></div>
+                    <div class="order-sale-fact"><span>Клиент</span><strong>{{ detail_customer or 'Не указан' }}</strong></div>
+                    <div class="order-sale-fact"><span>Телефон</span><strong>{{ detail_phone or 'Не указан' }}</strong></div>
+                    <div class="order-sale-fact"><span>Общая сумма</span><strong>{% if detail_order_total %}<span class="money-value" data-amount="{{ detail_order_total }}">{{ detail_order_total }}</span> ₽{% else %}Не указана{% endif %}</strong></div>
+                </div>
+                <div class="order-sale-products">
+                    <strong>Товары</strong>
+                    <ul>
+                        {% for product in detail_products %}
+                        <li>{{ product.get("name") or product.get("NAME") or "Товар без названия" }} — {{ product.get("quantity") or product.get("QUANTITY") or 1 }} шт.</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                <p class="order-sale-warning">Проведение продажи изменит складские остатки и создаст документы списания в МойСклад.</p>
+            </div>
+            <div class="order-sale-dialog-actions">
+                <button class="button button-secondary" type="button" data-close-sale-dialog>Отмена</button>
+                <button class="button button-primary" type="submit" data-sale-submit>Провести продажу</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
+
 <script>
+    (() => {
+        const modal = document.getElementById("orderSaleModal");
+        if (!modal) {
+            return;
+        }
+
+        const openButtons = Array.from(document.querySelectorAll("[data-open-sale-dialog]"));
+        const closeButtons = Array.from(modal.querySelectorAll("[data-close-sale-dialog]"));
+        const form = modal.querySelector("[data-order-sale-form]");
+        const submit = modal.querySelector("[data-sale-submit]");
+        const firstClose = modal.querySelector("[data-close-sale-dialog]");
+        let returnFocus = null;
+
+        const openModal = (trigger) => {
+            returnFocus = trigger || document.activeElement;
+            modal.classList.add("is-open");
+            modal.setAttribute("aria-hidden", "false");
+            document.body.style.overflow = "hidden";
+            window.requestAnimationFrame(() => firstClose && firstClose.focus());
+        };
+
+        const closeModal = () => {
+            modal.classList.remove("is-open");
+            modal.setAttribute("aria-hidden", "true");
+            document.body.style.overflow = "";
+            if (returnFocus && typeof returnFocus.focus === "function") {
+                returnFocus.focus();
+            }
+        };
+
+        openButtons.forEach((button) => button.addEventListener("click", () => openModal(button)));
+        closeButtons.forEach((button) => button.addEventListener("click", closeModal));
+        modal.addEventListener("click", (event) => {
+            if (event.target === modal) {
+                closeModal();
+            }
+        });
+        document.addEventListener("keydown", (event) => {
+            if (!modal.classList.contains("is-open")) {
+                return;
+            }
+            if (event.key === "Escape") {
+                closeModal();
+                return;
+            }
+            if (event.key === "Tab") {
+                const focusable = Array.from(modal.querySelectorAll(
+                    'button:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'
+                ));
+                if (!focusable.length) {
+                    return;
+                }
+                const first = focusable[0];
+                const last = focusable[focusable.length - 1];
+                if (event.shiftKey && document.activeElement === first) {
+                    event.preventDefault();
+                    last.focus();
+                } else if (!event.shiftKey && document.activeElement === last) {
+                    event.preventDefault();
+                    first.focus();
+                }
+            }
+        });
+        form.addEventListener("submit", () => {
+            submit.disabled = true;
+            submit.textContent = "Проводим продажу…";
+        });
+
+        if (modal.dataset.autoOpen === "1") {
+            openModal(openButtons[0] || null);
+        }
+    })();
+
     const searchInput = document.getElementById("orderSearch");
     const rows = Array.from(document.querySelectorAll(".order-row"));
     const filterButtons = Array.from(document.querySelectorAll(".filter"));
