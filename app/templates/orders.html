@@ -1,2162 +1,402 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <title>ТТТ ERP — Заказы</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Vechasu ERP — Заказы</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-combobox.css') }}">
     <script defer src="{{ url_for('static', filename='js/catalog-combobox.js') }}"></script>
-
     <style>
-        * {
-            box-sizing: border-box;
-        }
-
-        body {
-            margin: 0;
-            font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
-            background: #f6f7f9;
-            color: #111827;
-        }
-
-        .main {
-            min-width: 0;
-            padding: 16px 28px 24px;
-        }
-
-        .topbar {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 16px;
-            margin-bottom: 10px;
-        }
-
-        .title h1 {
-            margin: 0;
-            font-size: 27px;
-            line-height: 1.1;
-            letter-spacing: -0.04em;
-        }
-
-        .title p {
-            margin: 8px 0 0;
-            color: #6b7280;
-            font-size: 15px;
-        }
-
-        .sync-card {
-            min-width: 185px;
-            padding: 9px 13px;
-            background: white;
-            border: 1px solid #e5e7eb;
-            border-radius: 13px;
-            box-shadow: 0 5px 16px rgba(15, 23, 42, 0.035);
-        }
-
-        .sync-label {
-            margin-bottom: 2px;
-            color: #6b7280;
-            font-size: 11px;
-        }
-
-        .sync-status {
-            color: #16a34a;
-            font-size: 13px;
-            font-weight: 800;
-        }
-
-        .notice {
-            border-radius: 16px;
-            padding: 14px 16px;
-            margin-bottom: 18px;
-            font-size: 15px;
-            font-weight: 800;
-            border: 1px solid transparent;
-        }
-
-        .notice-success {
-            background: #dcfce7;
-            color: #166534;
-            border-color: #bbf7d0;
-        }
-
-        .notice-error {
-            background: #fee2e2;
-            color: #991b1b;
-            border-color: #fecaca;
-        }
-
-        .workspace {
-            display: grid;
-            grid-template-columns: minmax(420px, 560px) minmax(0, 1fr);
-            gap: 14px;
-            align-items: start;
-        }
-
-        .panel {
-            background: white;
-            border: 1px solid #e5e7eb;
-            border-radius: 22px;
-            box-shadow: 0 12px 30px rgba(15, 23, 42, 0.05);
-            overflow: hidden;
-        }
-
-        .panel-header {
-            padding: 12px 14px;
-            border-bottom: 1px solid #eef2f7;
-        }
-
-        .search {
-            width: 100%;
-            height: 40px;
-            padding: 0 13px;
-            border: 1px solid #e5e7eb;
-            border-radius: 11px;
-            background: #f9fafb;
-            font-size: 14px;
-            outline: none;
-        }
-
-        .search:focus {
-            background: white;
-            border-color: #2563eb;
-            box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.08);
-        }
-
-        .filters {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 6px;
-            margin-top: 8px;
-        }
-
-        .filter {
-            padding: 6px 9px;
-            border: 1px solid #e5e7eb;
-            border-radius: 999px;
-            background: white;
-            color: #374151;
-            font-size: 12px;
-            cursor: pointer;
-        }
-
-        .filter.active {
-            background: #111827;
-            color: white;
-            border-color: #111827;
-        }
-
-        .orders-list {
-            max-height: calc(100vh - 168px);
-            overflow: auto;
-        }
-
-        .order-row {
-            display: block;
-            padding: 12px 16px;
-            border-bottom: 1px solid #f1f5f9;
-            color: inherit;
-            text-decoration: none;
-            transition: background 0.15s ease;
-        }
-
-        .order-row:hover {
-            background: #f8fafc;
-        }
-
-        .order-row.active {
-            background: #eff6ff;
-            border-left: 4px solid #2563eb;
-            padding-left: 14px;
-        }
-
-        .order-top {
-            display: flex;
-            justify-content: space-between;
-            gap: 12px;
-            align-items: center;
-            margin-bottom: 8px;
-        }
-
-        .order-number {
-            font-size: 15px;
-            font-weight: 800;
-        }
-
-        .badge {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            padding: 5px 9px;
-            border-radius: 999px;
-            font-size: 12px;
-            font-weight: 700;
-            white-space: nowrap;
-            min-width: 72px;
-        }
-
-        .badge-new {
-            background: #dbeafe;
-            color: #1d4ed8;
-        }
-
-        .badge-work {
-            background: #fef3c7;
-            color: #92400e;
-        }
-
-        .badge-done {
-            background: #dcfce7;
-            color: #166534;
-        }
-
-        .badge-cancel {
-            background: #fee2e2;
-            color: #991b1b;
-        }
-
-        .badge-default {
-            background: #f3f4f6;
-            color: #374151;
-        }
-
-        .order-meta {
-            display: flex;
-            flex-direction: column;
-            gap: 5px;
-            color: #6b7280;
-            font-size: 13px;
-        }
-
-        .detail {
-            min-height: 520px;
-        }
-
-        .detail-header {
-            padding: 22px;
-            border-bottom: 1px solid #eef2f7;
-            display: flex;
-            justify-content: space-between;
-            gap: 20px;
-            align-items: flex-start;
-        }
-
-        .detail-title {
-            margin: 0;
-            font-size: 24px;
-            letter-spacing: -0.03em;
-        }
-
-        .detail-subtitle {
-            margin-top: 7px;
-            color: #6b7280;
-            font-size: 14px;
-        }
-
-        .detail-body {
-            padding: 22px;
-        }
-
-        .info-grid {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 14px;
-            margin-bottom: 22px;
-        }
-
-        .info-card {
-            border: 1px solid #eef2f7;
-            border-radius: 16px;
-            padding: 14px;
-            background: #fafafa;
-        }
-
-        .info-card.action-card {
-            background: #f8fafc;
-            border-color: #dbeafe;
-        }
-
-        .info-label {
-            color: #6b7280;
-            font-size: 12px;
-            margin-bottom: 6px;
-        }
-
-        .info-value {
-            font-size: 15px;
-            font-weight: 700;
-            word-break: break-word;
-        }
-
-        .muted-value {
-            color: #9ca3af;
-        }
-
-        .actions {
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-            margin-bottom: 22px;
-        }
-
-        .status-form {
-            margin: 0;
-        }
-
-        .button {
-            border: 0;
-            border-radius: 12px;
-            padding: 11px 14px;
-            font-size: 14px;
-            font-weight: 700;
-            cursor: pointer;
-            text-decoration: none;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            min-height: 44px;
-        }
-
-        .button-primary {
-            background: #2563eb;
-            color: white;
-        }
-
-        .button-secondary {
-            background: #f3f4f6;
-            color: #111827;
-        }
-
-        .button-danger {
-            background: #fee2e2;
-            color: #991b1b;
-        }
-
-        .button-disabled {
-            background: #f3f4f6;
-            color: #9ca3af;
-            cursor: not-allowed;
-            pointer-events: none;
-        }
-
-        .button-current {
-            outline: 2px solid #2563eb;
-            outline-offset: 2px;
-        }
-
-        .section-title {
-            font-size: 14px;
-            font-weight: 800;
-            margin: 0 0 12px;
-            color: #111827;
-        }
-
-        .order-sections {
-            display: grid;
-            gap: 18px;
-            margin-top: 22px;
-        }
-
-        .data-section {
-            border: 1px solid #eef2f7;
-            border-radius: 18px;
-            background: #ffffff;
-            overflow: hidden;
-        }
-
-        .data-section-header {
-            padding: 14px 16px;
-            border-bottom: 1px solid #eef2f7;
-            font-size: 14px;
-            font-weight: 800;
-            color: #111827;
-            background: #fafafa;
-        }
-
-        .product-list {
-            display: grid;
-        }
-
-        .product-row {
-            display: grid;
-            grid-template-columns: 1fr auto;
-            gap: 14px;
-            padding: 14px 16px;
-            border-bottom: 1px solid #f1f5f9;
-        }
-
-        .product-row:last-child {
-            border-bottom: 0;
-        }
-
-        .product-name {
-            font-size: 15px;
-            font-weight: 800;
-            color: #111827;
-            margin-bottom: 5px;
-        }
-
-        .product-meta {
-            font-size: 13px;
-            color: #6b7280;
-        }
-
-        .product-price {
-            font-size: 15px;
-            font-weight: 800;
-            color: #111827;
-            white-space: nowrap;
-        }
-
-        .order-summary {
-            padding: 16px;
-            display: grid;
-            gap: 10px;
-        }
-
-        .summary-row {
-            display: flex;
-            justify-content: space-between;
-            gap: 16px;
-            font-size: 15px;
-            color: #374151;
-        }
-
-        .summary-row strong {
-            color: #111827;
-        }
-
-        .summary-total {
-            margin-top: 8px;
-            padding-top: 12px;
-            border-top: 1px solid #eef2f7;
-            font-size: 17px;
-            font-weight: 900;
-            color: #111827;
-        }
-
-        .section-grid {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 14px;
-            padding: 16px;
-        }
-
-        .payment-status {
-            font-size: 15px;
-            font-weight: 800;
-        }
-
-        .payment-status.paid {
-            color: #16a34a;
-        }
-
-        .payment-status.unpaid {
-            color: #b45309;
-        }
-
-        .delivery-text {
-            font-size: 15px;
-            font-weight: 700;
-            line-height: 1.45;
-            word-break: break-word;
-        }
-
-        .empty {
-            padding: 50px 22px;
-            color: #6b7280;
-            text-align: center;
-        }
-
-        .empty.small {
-            padding: 22px;
-        }
-
-        .empty strong {
-            color: #111827;
-        }
-
-        @media (max-width: 1100px) {
-            .workspace {
-                grid-template-columns: 1fr;
-            }
-
-            .orders-list {
-                max-height: none;
-            }
-        }
-
-        @media (max-width: 720px) {
-            .main {
-                padding: 18px;
-            }
-
-            .topbar {
-                flex-direction: column;
-            }
-
-            .sync-card {
-                width: 100%;
-            }
-
-            .info-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .section-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .detail-header {
-                flex-direction: column;
-            }
-
-            .product-row {
-                grid-template-columns: 1fr;
-            }
-        }
-
-        /* product map searchable dropdown */
-        .product-row {
-            grid-template-columns: minmax(0, 1fr) auto;
-            overflow: visible;
-        }
-
-        .product-row > div:first-child {
-            min-width: 0;
-        }
-
-        .product-price {
-            white-space: nowrap;
-        }
-
-        .data-section,
-        .product-list,
-        .order-sections {
-            overflow: visible;
-        }
-
-        .product-map-form {
-            max-width: 100%;
-        }
-
-        .product-map-picker {
-            min-width: 0;
-        }
-
-        .product-map-options {
-            position: fixed !important;
-            z-index: 999999 !important;
-            right: auto !important;
-            max-height: 360px !important;
-            overflow-y: auto !important;
-            background: white !important;
-        }
-
-        .product-map-option {
-            white-space: normal !important;
-            line-height: 1.25 !important;
-        }
-
-
-        /* Заголовок страницы удалён для экономии места */
-        .main {
-            padding-top: 10px;
-        }
-        /* Конец компактного верха страницы */
-
-
-        /* Сворачивание списка заказов */
-        .workspace {
-            position: relative;
-            transition:
-                grid-template-columns 0.25s ease,
-                gap 0.25s ease;
-        }
-
-        .orders-list-panel {
-            min-width: 0;
-            transition:
-                opacity 0.2s ease,
-                transform 0.25s ease;
-        }
-
-        .order-detail-panel {
-            position: relative;
-            min-width: 0;
-        }
-
-        .order-detail-panel .detail-header {
-            padding-left: 66px;
-        }
-
-        .orders-panel-toggle {
-            position: absolute;
-            top: 14px;
-            left: 14px;
-            z-index: 25;
-            width: 38px;
-            height: 38px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 0;
-            border: 1px solid #dbe3ee;
-            border-radius: 11px;
-            background: #f8fafc;
-            color: #334155;
-            cursor: pointer;
-            box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
-            transition:
-                background 0.2s ease,
-                transform 0.2s ease;
-        }
-
-        .orders-panel-toggle:hover {
-            background: #eef2f7;
-            transform: translateY(-1px);
-        }
-
-        .orders-panel-toggle svg {
-            width: 19px;
-            height: 19px;
-            transition: transform 0.25s ease;
-        }
-
-        .workspace.orders-list-collapsed {
-            grid-template-columns: 0 minmax(0, 1fr);
-            gap: 0;
-        }
-
-        .workspace.orders-list-collapsed .orders-list-panel {
-            width: 0;
-            opacity: 0;
-            overflow: hidden;
-            border: 0;
-            box-shadow: none;
-            pointer-events: none;
-            transform: translateX(-16px);
-        }
-
-        .workspace.orders-list-collapsed .orders-panel-toggle svg {
-            transform: rotate(180deg);
-        }
-
-        @media (max-width: 1100px) {
-            .workspace.orders-list-collapsed {
-                grid-template-columns: 1fr;
-            }
-
-            .workspace.orders-list-collapsed .orders-list-panel {
-                display: none;
-            }
-        }
-        /* Конец сворачивания списка заказов */
-
-
-        /* Разворачивание списка всех заказов */
-        .orders-list-panel {
-            position: relative;
-        }
-
-        .orders-list-panel .panel-header {
-            padding-right: 62px;
-        }
-
-        .order-detail-toggle {
-            position: absolute;
-            top: 14px;
-            right: 14px;
-            z-index: 25;
-            width: 38px;
-            height: 38px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 0;
-            border: 1px solid #dbe3ee;
-            border-radius: 11px;
-            background: #f8fafc;
-            color: #334155;
-            cursor: pointer;
-            box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
-            transition:
-                background 0.2s ease,
-                transform 0.2s ease;
-        }
-
-        .order-detail-toggle:hover {
-            background: #eef2f7;
-            transform: translateY(-1px);
-        }
-
-        .order-detail-toggle svg {
-            width: 19px;
-            height: 19px;
-            transition: transform 0.25s ease;
-        }
-
-        .workspace.order-detail-collapsed {
-            grid-template-columns: minmax(0, 1fr) 0;
-            gap: 0;
-        }
-
-        .workspace.order-detail-collapsed .orders-list-panel {
-            width: 100%;
-            opacity: 1;
-            transform: none;
-            pointer-events: auto;
-        }
-
-        .workspace.order-detail-collapsed .order-detail-panel {
-            width: 0;
-            opacity: 0;
-            overflow: hidden;
-            border: 0;
-            box-shadow: none;
-            pointer-events: none;
-            transform: translateX(16px);
-        }
-
-        .workspace.order-detail-collapsed .order-detail-toggle svg {
-            transform: rotate(180deg);
-        }
-
-        @media (max-width: 1100px) {
-            .workspace.order-detail-collapsed {
-                grid-template-columns: 1fr;
-            }
-
-            .workspace.order-detail-collapsed .order-detail-panel {
-                display: none;
-            }
-        }
-        /* Конец разворачивания списка всех заказов */
-
-
-        /* Трёхпозиционный ползунок панелей заказов */
-        .workspace {
-            position: relative;
-            margin-top: 16px;
-            transition:
-                grid-template-columns 0.48s cubic-bezier(0.22, 1, 0.36, 1),
-                gap 0.48s cubic-bezier(0.22, 1, 0.36, 1);
-        }
-
-        .orders-list-panel,
-        .order-detail-panel {
-            min-width: 0;
-            transition:
-                opacity 0.30s ease,
-                transform 0.48s cubic-bezier(0.22, 1, 0.36, 1),
-                width 0.48s cubic-bezier(0.22, 1, 0.36, 1);
-        }
-
-        .orders-list-panel .panel-header {
-            padding-right: 14px;
-        }
-
-        .order-detail-panel .detail-header {
-            padding-left: 24px;
-        }
-
-        .orders-layout-switch {
-            --thumb-position: 44px;
-
-            position: absolute;
-            top: -11px;
-            left: 50%;
-            z-index: 50;
-            transform: translateX(-50%);
-
-            width: 138px;
-            height: 44px;
-            display: grid;
-            grid-template-columns: repeat(3, 42px);
-            gap: 2px;
-            padding: 4px;
-
-            border: 1px solid #d4deea;
-            border-radius: 15px;
-            background: rgba(255, 255, 255, 0.98);
-            box-shadow:
-                0 8px 22px rgba(15, 23, 42, 0.14),
-                0 1px 3px rgba(15, 23, 42, 0.08);
-
-            backdrop-filter: blur(12px);
-            user-select: none;
-        }
-
-        .orders-layout-switch[data-mode="list-only"] {
-            --thumb-position: 0px;
-        }
-
-        .orders-layout-switch[data-mode="both"] {
-            --thumb-position: 44px;
-        }
-
-        .orders-layout-switch[data-mode="detail-only"] {
-            --thumb-position: 88px;
-        }
-
-        .orders-layout-thumb {
-            position: absolute;
-            top: 4px;
-            left: 4px;
-            width: 42px;
-            height: 34px;
-            border-radius: 11px;
-            background: #2563eb;
-            box-shadow:
-                0 5px 14px rgba(37, 99, 235, 0.32),
-                inset 0 1px 0 rgba(255, 255, 255, 0.22);
-            transform: translateX(var(--thumb-position));
-            transition:
-                transform 0.38s cubic-bezier(0.22, 1, 0.36, 1),
-                box-shadow 0.25s ease;
-            pointer-events: none;
-        }
-
-        .orders-layout-option {
-            position: relative;
-            z-index: 2;
-            width: 42px;
-            height: 34px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 0;
-            border: 0;
-            border-radius: 11px;
-            background: transparent;
-            color: #64748b;
-            cursor: pointer;
-            touch-action: manipulation;
-            transition:
-                color 0.22s ease,
-                transform 0.16s ease,
-                background 0.22s ease;
-        }
-
-        .orders-layout-option:hover {
-            color: #1d4ed8;
-            background: rgba(37, 99, 235, 0.06);
-        }
-
-        .orders-layout-option:active {
-            transform: scale(0.92);
-        }
-
-        .orders-layout-option:focus-visible {
-            outline: 2px solid #60a5fa;
-            outline-offset: 2px;
-        }
-
-        .orders-layout-option[aria-checked="true"] {
-            color: white;
-            background: transparent;
-        }
-
-        .orders-layout-option[aria-checked="true"]:hover {
-            color: white;
-            background: transparent;
-        }
-
-        .orders-layout-option svg {
-            width: 18px;
-            height: 18px;
-            pointer-events: none;
-        }
-
-        @media (max-width: 1100px) {
-            .orders-layout-switch {
-                top: 8px;
-            }
-
-            .orders-list-panel .panel-header {
-                padding-top: 60px;
-            }
-
-            .order-detail-panel .detail-header {
-                padding-top: 60px;
-            }
-        }
-        /* Конец трёхпозиционного ползунка */
-
-        .order-sale-modal {
-            position: fixed;
-            inset: 0;
-            z-index: 1000000;
-            display: none;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
-            background: rgba(15, 23, 42, 0.58);
-        }
-
-        .order-sale-modal.is-open {
-            display: flex;
-        }
-
-        .order-sale-dialog {
-            width: min(620px, 100%);
-            max-height: calc(100vh - 40px);
-            overflow: auto;
-            border-radius: 22px;
-            background: #fff;
-            box-shadow: 0 24px 70px rgba(15, 23, 42, 0.3);
-        }
-
-        .order-sale-dialog-header,
-        .order-sale-dialog-body,
-        .order-sale-dialog-actions {
-            padding: 20px 22px;
-        }
-
-        .order-sale-dialog-header {
-            display: flex;
-            align-items: flex-start;
-            justify-content: space-between;
-            gap: 16px;
-            border-bottom: 1px solid #e5e7eb;
-        }
-
-        .order-sale-dialog-header h2 {
-            margin: 0;
-            font-size: 22px;
-        }
-
-        .order-sale-close {
-            width: 38px;
-            height: 38px;
-            flex: 0 0 auto;
-            border: 0;
-            border-radius: 10px;
-            background: #f3f4f6;
-            color: #374151;
-            font-size: 24px;
-            line-height: 1;
-            cursor: pointer;
-        }
-
-        .order-sale-facts {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 10px;
-            margin-bottom: 16px;
-        }
-
-        .order-sale-fact,
-        .order-sale-products {
-            padding: 12px;
-            border: 1px solid #e5e7eb;
-            border-radius: 14px;
-            background: #f9fafb;
-        }
-
-        .order-sale-fact span {
-            display: block;
-            margin-bottom: 4px;
-            color: #6b7280;
-            font-size: 12px;
-        }
-
-        .order-sale-products ul {
-            margin: 8px 0 0;
-            padding-left: 20px;
-        }
-
-        .order-sale-price-editor { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-top:10px; padding:10px; border-radius:10px; background:#fff; }
-        .order-sale-price-editor label { display:grid; gap:4px; color:#6b7280; font-size:11px; }
-        .order-sale-price-editor input, .order-sale-price-editor select { min-width:0; height:36px; padding:0 9px; border:1px solid #d1d5db; border-radius:8px; background:#fff; font:inherit; color:#172033; }
-        .order-sale-price-editor strong { grid-column:1/-1; color:#174887; }
-
-        .order-sale-tracking {
-            margin-top: 16px;
-        }
-
-        .order-sale-tracking label {
-            display: block;
-            margin-bottom: 7px;
-            color: #374151;
-            font-size: 14px;
-            font-weight: 700;
-        }
-
-        .order-sale-tracking input {
-            display: block;
-            width: 100%;
-            min-width: 0;
-            height: 44px;
-            padding: 0 13px;
-            border: 1px solid #d1d5db;
-            border-radius: 11px;
-            background: #fff;
-            color: #111827;
-            font: inherit;
-        }
-
-        .order-sale-tracking input:focus {
-            border-color: #2563eb;
-            outline: 0;
-            box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1);
-        }
-
-        .order-sale-warning {
-            margin: 16px 0 0;
-            padding: 12px 14px;
-            border: 1px solid #fde68a;
-            border-radius: 14px;
-            background: #fffbeb;
-            color: #92400e;
-            font-weight: 700;
-        }
-
-        .order-sale-dialog-actions {
-            display: flex;
-            justify-content: flex-end;
-            gap: 10px;
-            border-top: 1px solid #e5e7eb;
-        }
-
-        @media (max-width: 480px) {
-            .order-sale-modal {
-                align-items: flex-end;
-                padding: 8px;
-            }
-
-            .order-sale-dialog {
-                max-height: calc(100vh - 16px);
-                border-radius: 18px;
-            }
-
-            .order-sale-dialog-header,
-            .order-sale-dialog-body,
-            .order-sale-dialog-actions {
-                padding: 15px;
-            }
-
-            .order-sale-facts {
-                grid-template-columns: 1fr;
-            }
-
-            .order-sale-dialog-actions {
-                flex-direction: column-reverse;
-            }
-
-            .order-sale-dialog-actions .button {
-                width: 100%;
-            }
-        }
-
-        .order-map-form {
-            display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
-            gap: 10px;
-            align-items: end;
-            margin-top: 12px;
-            padding: 14px;
-            border: 1px solid #dbeafe;
-            border-radius: 16px;
-            background: #f8fbff;
-        }
-
-        .order-map-field {
-            min-width: 0;
-        }
-
-        .order-map-field > label {
-            display: block;
-            margin-bottom: 6px;
-            color: #475569;
-            font-size: 12px;
-            font-weight: 800;
-        }
-
-        .order-map-card {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            margin-top: 12px;
-            padding: 12px;
-            border: 1px solid #bbf7d0;
-            border-radius: 16px;
-            background: #f0fdf4;
-        }
-
-        .order-map-card.is-warning {
-            border-color: #fde68a;
-            background: #fffbeb;
-        }
-
-        .order-map-photo {
-            width: 54px;
-            height: 54px;
-            flex: 0 0 auto;
-            overflow: hidden;
-            border-radius: 12px;
-            background: #e5e7eb;
-            object-fit: cover;
-        }
-
-        .order-map-copy {
-            min-width: 0;
-            flex: 1;
-        }
-
-        .order-map-copy strong,
-        .order-map-copy span {
-            display: block;
-            overflow-wrap: anywhere;
-        }
-
-        .order-map-copy span {
-            margin-top: 3px;
-            color: #64748b;
-            font-size: 12px;
-        }
-
-        .order-map-state {
-            margin-top: 8px;
-            color: #991b1b;
-            font-size: 13px;
-            font-weight: 800;
-        }
-
-        @media (max-width: 720px) {
-            .order-map-form {
-                grid-template-columns: 1fr;
-            }
-
-            .order-map-form .button {
-                width: 100%;
-            }
-
-            .order-map-card {
-                align-items: flex-start;
-                flex-wrap: wrap;
-            }
-        }
-
-</style>
+        :root { --blue:#2563eb; --navy:#0f2747; --line:#dfe5ed; --muted:#64748b; --soft:#f6f8fb; --danger:#b42318; }
+        * { box-sizing:border-box; }
+        body { margin:0; background:#f4f6f9; color:#172033; font:14px/1.45 Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+        button,input,select { font:inherit; }
+        .app { min-height:100vh; }
+        .main { min-width:0; padding:18px 24px 24px; }
+        .page-head,.page-title-row,.view-switch,.card-head,.order-row-head,.actions,.customer-grid,.line-main,.line-price,.sync-state,.pagination,.filters { display:flex; align-items:center; }
+        .page-head { justify-content:space-between; gap:18px; margin-bottom:14px; }
+        .page-title-row { gap:14px; min-width:0; }
+        h1,h2,h3,p { margin:0; }
+        h1 { font-size:25px; letter-spacing:-.02em; }
+        .page-copy { color:var(--muted); margin-top:3px; }
+        .sync-state { gap:8px; padding:8px 11px; border:1px solid var(--line); border-radius:8px; background:#fff; font-size:12px; white-space:nowrap; }
+        .sync-dot { width:8px; height:8px; border-radius:50%; background:#16a34a; }
+        .sync-state.partial .sync-dot { background:#d97706; }
+        .sync-state.error .sync-dot { background:#dc2626; }
+        .sync-meta { color:var(--muted); font-weight:400; }
+        .view-switch { padding:3px; gap:2px; border:1px solid var(--line); border-radius:8px; background:#fff; }
+        .view-option { border:0; border-radius:6px; padding:7px 10px; color:#526176; background:transparent; cursor:pointer; }
+        .view-option[aria-checked="true"] { color:#fff; background:var(--blue); }
+        :focus-visible { outline:3px solid rgba(37,99,235,.28); outline-offset:2px; }
+        .notice,.warning { padding:11px 13px; margin-bottom:12px; border-radius:8px; border:1px solid; }
+        .notice-success { color:#166534; border-color:#bbf7d0; background:#f0fdf4; }
+        .notice-error,.warning { color:#9a3412; border-color:#fed7aa; background:#fff7ed; }
+        .workspace { display:grid; grid-template-columns:minmax(330px,38%) minmax(0,62%); gap:12px; height:calc(100vh - 112px); min-height:590px; }
+        .panel { min-width:0; min-height:0; border:1px solid var(--line); border-radius:10px; background:#fff; overflow:hidden; box-shadow:0 2px 10px rgba(15,39,71,.035); }
+        .orders-list-panel,.order-detail-panel { display:flex; flex-direction:column; }
+        .workspace[data-layout-mode="list"] { grid-template-columns:1fr; }
+        .workspace[data-layout-mode="list"] .order-detail-panel { display:none; }
+        .workspace[data-layout-mode="card"] { grid-template-columns:1fr; }
+        .workspace[data-layout-mode="card"] .orders-list-panel { display:none; }
+        .panel-toolbar { flex:0 0 auto; padding:12px; border-bottom:1px solid var(--line); }
+        .filters { gap:8px; flex-wrap:wrap; }
+        .field { min-width:0; height:38px; padding:0 10px; border:1px solid #cfd8e5; border-radius:7px; background:#fff; color:#25324a; }
+        .field-search { flex:1 1 210px; }
+        select.field { flex:0 1 150px; }
+        .button { display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:36px; padding:7px 11px; border:1px solid transparent; border-radius:7px; font-weight:650; text-decoration:none; cursor:pointer; }
+        .button-primary { color:#fff; background:var(--blue); }
+        .button-secondary { color:#34445b; border-color:#cfd8e5; background:#fff; }
+        .button-danger { color:var(--danger); border-color:#fecaca; background:#fff; }
+        .button:disabled { opacity:.48; cursor:not-allowed; }
+        .orders-list { flex:1 1 auto; min-height:0; overflow:auto; }
+        .order-row { display:block; padding:13px 15px; color:inherit; text-decoration:none; border-bottom:1px solid #edf0f4; border-left:3px solid transparent; }
+        .order-row:hover { background:#f8fafc; }
+        .order-row.active { border-left-color:var(--blue); background:#eff6ff; }
+        .order-row-head { justify-content:space-between; gap:10px; }
+        .order-number { font-weight:750; }
+        .order-meta { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:4px 10px; margin-top:7px; color:var(--muted); font-size:12px; }
+        .order-meta .phone { color:#334155; }
+        .badge { display:inline-flex; align-items:center; gap:5px; padding:3px 8px; border-radius:999px; font-size:11px; font-weight:700; white-space:nowrap; }
+        .badge::before { content:""; width:6px; height:6px; border-radius:50%; background:currentColor; }
+        .badge-new { color:#1d4ed8; background:#dbeafe; }
+        .badge-work { color:#a16207; background:#fef3c7; }
+        .badge-done { color:#15803d; background:#dcfce7; }
+        .badge-cancel { color:#b91c1c; background:#fee2e2; }
+        .badge-default { color:#475569; background:#e8edf3; }
+        .list-footer { flex:0 0 auto; justify-content:space-between; padding:10px 12px; color:var(--muted); border-top:1px solid var(--line); font-size:12px; }
+        .pagination { gap:5px; }
+        .page-link { padding:4px 7px; color:#334155; text-decoration:none; border:1px solid var(--line); border-radius:5px; background:#fff; }
+        .detail-scroll { min-height:0; overflow:auto; }
+        .card-head { position:sticky; top:0; z-index:8; justify-content:space-between; gap:14px; padding:14px 16px; border-bottom:1px solid var(--line); background:rgba(255,255,255,.96); backdrop-filter:blur(8px); }
+        .card-title { display:flex; align-items:center; gap:9px; flex-wrap:wrap; }
+        .card-title h2 { font-size:20px; }
+        .card-subtitle { margin-top:4px; color:var(--muted); font-size:12px; }
+        .actions { gap:7px; flex-wrap:wrap; justify-content:flex-end; }
+        details.more { position:relative; }
+        details.more summary { list-style:none; }
+        details.more summary::-webkit-details-marker { display:none; }
+        .more-menu { position:absolute; right:0; top:42px; z-index:20; width:210px; padding:7px; border:1px solid var(--line); border-radius:8px; background:#fff; box-shadow:0 14px 35px rgba(15,23,42,.14); }
+        .more-menu form,.more-menu .button { width:100%; }
+        .more-menu .button { justify-content:flex-start; margin:2px 0; }
+        .detail-body { padding:14px 16px 22px; }
+        .section { padding:14px 0; border-bottom:1px solid #edf0f4; }
+        .section:first-child { padding-top:0; }
+        .section:last-child { border-bottom:0; }
+        .section-head { display:flex; justify-content:space-between; gap:10px; align-items:center; margin-bottom:10px; }
+        .section h3 { font-size:15px; }
+        .customer-grid { align-items:flex-start; gap:18px; flex-wrap:wrap; padding:12px; border:1px solid var(--line); border-radius:8px; background:#fafbfc; }
+        .fact { min-width:135px; flex:1 1 150px; }
+        .fact-label { display:block; margin-bottom:3px; color:var(--muted); font-size:11px; }
+        .fact-value { font-weight:650; overflow-wrap:anywhere; }
+        .fact-value a { color:#1d4ed8; }
+        .tracking-form { display:flex; gap:6px; width:min(100%,410px); }
+        .tracking-form .field { flex:1; }
+        .product-list { display:grid; gap:9px; }
+        .product-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:14px; padding:12px; border:1px solid var(--line); border-radius:8px; }
+        .line-main { align-items:flex-start; gap:11px; min-width:0; }
+        .product-photo { width:58px; height:58px; flex:0 0 58px; border-radius:7px; object-fit:cover; background:#eef1f5; }
+        .product-copy { min-width:0; flex:1; }
+        .product-name { font-weight:700; overflow-wrap:anywhere; }
+        .product-note { margin-top:3px; color:var(--muted); font-size:12px; }
+        .mapping { margin-top:8px; padding-top:8px; border-top:1px dashed #d7dee8; }
+        .mapping-card { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+        .mapping-card img { width:38px; height:38px; object-fit:cover; border-radius:5px; background:#eef1f5; }
+        .mapping-copy { flex:1; min-width:150px; font-size:12px; }
+        .mapping-copy strong { display:block; }
+        .map-state { display:inline-flex; margin-top:5px; color:#a16207; font-size:12px; font-weight:700; }
+        .map-state.good { color:#15803d; }
+        .map-state.bad { color:#b91c1c; }
+        .order-map-form { display:grid; grid-template-columns:repeat(3,minmax(130px,1fr)) auto; gap:8px; align-items:end; margin-top:9px; }
+        .order-map-field label { display:block; margin-bottom:4px; color:var(--muted); font-size:11px; }
+        .map-actions { display:flex; gap:5px; margin-top:7px; }
+        .line-price { align-items:flex-end; flex-direction:column; min-width:105px; font-weight:750; }
+        .line-price small { color:var(--muted); font-weight:400; }
+        .summary { width:min(100%,420px); margin-left:auto; }
+        .summary-row { display:flex; justify-content:space-between; gap:14px; padding:6px 0; }
+        .summary-row.total { margin-top:5px; padding-top:10px; border-top:1px solid var(--line); font-size:16px; font-weight:750; }
+        .empty { padding:32px 20px; color:var(--muted); text-align:center; }
+        .back-list { display:none; }
+        .order-sale-modal { position:fixed; inset:0; z-index:1000; display:none; place-items:center; padding:20px; background:rgba(15,23,42,.56); }
+        .order-sale-modal.is-open { display:grid; }
+        .sale-dialog { width:min(760px,100%); max-height:calc(100vh - 40px); overflow:auto; border-radius:10px; background:#fff; box-shadow:0 25px 70px rgba(0,0,0,.25); }
+        .sale-dialog-head,.sale-dialog-body,.sale-dialog-actions { padding:16px 18px; }
+        .sale-dialog-head { display:flex; justify-content:space-between; border-bottom:1px solid var(--line); }
+        .sale-dialog-actions { display:flex; justify-content:flex-end; gap:8px; border-top:1px solid var(--line); }
+        .sale-lines { margin:12px 0; padding:0; list-style:none; }
+        .sale-lines li { padding:8px 0; border-bottom:1px solid #edf0f4; }
+        @media (max-width:1100px) {
+            .workspace { grid-template-columns:minmax(300px,42%) minmax(0,58%); }
+            .order-map-form { grid-template-columns:1fr 1fr; }
+        }
+        @media (max-width:780px) {
+            .main { padding:12px; }
+            .page-head { align-items:flex-start; flex-direction:column; }
+            .page-title-row { width:100%; justify-content:space-between; }
+            .sync-state { white-space:normal; }
+            .workspace { display:block; height:auto; min-height:0; }
+            .workspace[data-layout-mode="split"] .order-detail-panel { display:none; }
+            .workspace[data-layout-mode="split"] .orders-list-panel { display:flex; }
+            body[data-has-selected-order="1"] .workspace[data-layout-mode="split"] .orders-list-panel { display:none; }
+            body[data-has-selected-order="1"] .workspace[data-layout-mode="split"] .order-detail-panel { display:flex; }
+            .panel { min-height:calc(100vh - 180px); }
+            .orders-list { max-height:none; }
+            .back-list { display:inline-flex; }
+            .view-option[data-layout-mode="split"] { display:none; }
+            .card-head { position:static; align-items:flex-start; flex-direction:column; }
+            .actions { justify-content:flex-start; }
+            .product-row { grid-template-columns:1fr; }
+            .line-price { align-items:flex-start; padding-left:69px; }
+            .order-map-form { grid-template-columns:1fr; }
+            .tracking-form { flex-direction:column; }
+        }
+    </style>
 </head>
-
-<body>
+<body data-has-selected-order="{{ 1 if selected_order else 0 }}">
 {% from "_catalog_combobox.html" import render_catalog_combobox %}
+{% macro status_badge(code, label) -%}
+    {% set normalized = code|string|upper %}
+    {% set fallback = 'Новый' if normalized in ['N','O','0'] else 'Подтверждён' if normalized == 'A' else 'Не дозвонились' if normalized == 'T' else 'Собран' if normalized == 'D' else 'Отказ' if normalized == 'C' else 'Неизвестный статус' %}
+    <span class="badge {% if normalized in ['N','O','0'] %}badge-new{% elif normalized in ['A','T'] %}badge-work{% elif normalized == 'D' %}badge-done{% elif normalized == 'C' %}badge-cancel{% else %}badge-default{% endif %}">
+        {{ fallback if not label or label == 'Неизвестный статус' else label }}
+    </span>
+{%- endmacro %}
 <div class="app">
     {% include "_sidebar.html" %}
-
     <main class="main">
-        <div class="topbar">
-            <div class="title">
-                <h1>Заказы</h1>
-                <p>Заказы интернет-магазина и карточки клиентов</p>
+        <header class="page-head">
+            <div>
+                <div class="page-title-row">
+                    <div><h1>Заказы</h1><p class="page-copy">Заказы интернет-магазина, сопоставление и проведение продаж</p></div>
+                    <div class="view-switch" id="ordersLayoutSwitch" role="radiogroup" aria-label="Режим отображения заказов">
+                        <button class="view-option" type="button" data-layout-mode="list" role="radio">Список</button>
+                        <button class="view-option" type="button" data-layout-mode="split" role="radio">Разделение</button>
+                        <button class="view-option" type="button" data-layout-mode="card" role="radio">Карточка</button>
+                    </div>
+                </div>
             </div>
-            <div class="sync-card">
-                <div class="sync-label">Источник данных</div>
-                <div class="sync-status">Bitrix · подключён</div>
+            {% set selected_sync = selected_order.get('sync_state') if selected_order else '' %}
+            {% set sync_class = 'error' if sync_error or selected_sync == 'error' else 'partial' if selected_sync == 'partial' else '' %}
+            <div class="sync-state {{ sync_class }}" aria-live="polite">
+                <span class="sync-dot" aria-hidden="true"></span>
+                <strong>{% if sync_error or selected_sync == 'error' %}Ошибка синхронизации{% elif selected_sync == 'partial' %}Данные загружены частично{% elif selected_order %}Заказ синхронизирован{% else %}Bitrix подключён{% endif %}</strong>
+                {% if last_sync_at %}<span class="sync-meta">Последняя успешная: <span data-sync-time="{{ last_sync_at }}"></span></span>{% endif %}
+                {% if sync_error %}<a href="{{ request.path }}?retry=1">Повторить</a>{% endif %}
             </div>
-        </div>
+        </header>
 
-        {% if request.args.get("notice") and request.args.get("message") %}
-            <div class="notice notice-{{ request.args.get('notice') }}">
-                {{ request.args.get("message") }}
-            </div>
+        {% if request.args.get('notice') and request.args.get('message') %}
+            <div class="notice notice-{{ request.args.get('notice') }}" role="status">{{ request.args.get('message') }}</div>
         {% endif %}
 
-        <div class="workspace" id="ordersWorkspace">
-            <div
-                id="ordersLayoutSwitch"
-                class="orders-layout-switch"
-                data-mode="both"
-                role="radiogroup"
-                aria-label="Размер панелей заказов"
-            >
-                <div class="orders-layout-thumb"></div>
-
-                <button
-                    class="orders-layout-option"
-                    type="button"
-                    data-layout-mode="list-only"
-                    role="radio"
-                    aria-label="Все заказы на весь экран"
-                    title="Все заказы на весь экран"
-                >
-                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                        <rect x="4" y="4" width="16" height="16" rx="3"
-                              stroke="currentColor" stroke-width="2"/>
-                        <path d="M8 9H16M8 12H16M8 15H14"
-                              stroke="currentColor" stroke-width="2"
-                              stroke-linecap="round"/>
-                    </svg>
-                </button>
-
-                <button
-                    class="orders-layout-option"
-                    type="button"
-                    data-layout-mode="both"
-                    role="radio"
-                    aria-label="Показать обе панели"
-                    title="Показать обе панели"
-                >
-                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                        <rect x="3" y="4" width="18" height="16" rx="3"
-                              stroke="currentColor" stroke-width="2"/>
-                        <path d="M10 5V19"
-                              stroke="currentColor" stroke-width="2"/>
-                    </svg>
-                </button>
-
-                <button
-                    class="orders-layout-option"
-                    type="button"
-                    data-layout-mode="detail-only"
-                    role="radio"
-                    aria-label="Карточка заказа на весь экран"
-                    title="Карточка заказа на весь экран"
-                >
-                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                        <rect x="4" y="4" width="16" height="16" rx="3"
-                              stroke="currentColor" stroke-width="2"/>
-                        <path d="M8 9H16M8 13H13"
-                              stroke="currentColor" stroke-width="2"
-                              stroke-linecap="round"/>
-                    </svg>
-                </button>
-            </div>
-
-
-            <section class="panel orders-list-panel" id="ordersListPanel">
-
-                <div class="panel-header">
-                    <input
-                        class="search"
-                        id="orderSearch"
-                        type="text"
-                        placeholder="Поиск по номеру, клиенту, телефону..."
-                    >
-
-                    <div class="filters">
-                        <button class="filter active" type="button" data-filter="all">Все</button>
-                        <button class="filter" type="button" data-filter="N">Не подтвержденные</button>
-                        <button class="filter" type="button" data-filter="A">Подтвержденные</button>
-                        <button class="filter" type="button" data-filter="T">Не дозвонились</button>
-                        <button class="filter" type="button" data-filter="D">Собранные</button>
-                        <button class="filter" type="button" data-filter="C">Отказы</button>
-
-
-                    </div>
-                </div>
-
-                <div class="orders-list" id="ordersList">
-                    {% if orders %}
-                        {% for order in orders %}
-                            {% set order_id = order.get("id") or order.get("ID") %}
-                            {% set order_number = order.get("number") or order.get("account_number") or order.get("ACCOUNT_NUMBER") or order_id %}
-                            {% set status = order.get("status") or order.get("STATUS_ID") or order.get("status_id") or "unknown" %}
-                            {% set status_code = status|string %}
-                            {% set customer = order.get("customer") or order.get("client") or order.get("name") or order.get("USER_NAME") or order.get("user_name") or "" %}
-                            {% set phone = order.get("phone") or order.get("PHONE") or order.get("user_phone") or order.get("USER_PHONE") or "" %}
-                            {% set price = order.get("price") or order.get("PRICE") or order.get("sum") or order.get("SUM") or order.get("order_total") or "" %}
-                            {% set date = order.get("date") or order.get("DATE_INSERT") or order.get("created_at") or order.get("DATE_CREATE") or "" %}
-
-                            <a
-                                href="{{ url_for('order_page', order_id=order_id) if order_id else '#' }}"
-                                {% if not order_id %}aria-disabled="true"{% endif %}
-                                class="order-row {% if selected_order and (selected_order.get('id') == order_id or selected_order.get('ID') == order_id) %}active{% endif %}"
-                                data-status="{{ status_code }}"
-                                data-search="{{ order_number }} {{ customer }} {{ phone }}"
-                            >
-                                <div class="order-top">
-                                    <div class="order-number">Заказ №{{ order_number }}</div>
-
-                                    {% if status_code == "N" %}
-                                        <span class="badge badge-default">Не подтвержден</span>
-                                    {% elif status_code == "A" %}
-                                        <span class="badge badge-work">Подтвержден</span>
-                                    {% elif status_code == "T" %}
-                                        <span class="badge badge-default">Не дозвонились</span>
-                                    {% elif status_code == "D" %}
-                                        <span class="badge badge-done">Собран</span>
-                                    {% elif status_code == "C" or status_code == "c" %}
-                                        <span class="badge badge-cancel">Отказ</span>
-                                    {% else %}
-                                        <span class="badge badge-default">{{ status }}</span>
-                                    {% endif %}
-                                </div>
-
-                                <div class="order-meta">
-                                    {% if customer %}
-                                        <div>{{ customer }}</div>
-                                    {% else %}
-                                        <div class="muted-value">Клиент не указан</div>
-                                    {% endif %}
-
-                                    {% if phone %}
-                                        <div>{{ phone }}</div>
-                                    {% endif %}
-
-                                    {% if price %}
-                                        <div>
-                                            <span class="money-value" data-amount="{{ price }}">{{ price }}</span> ₽
-                                        </div>
-                                    {% endif %}
-
-                                    {% if date %}
-                                        <div>
-                                            <span class="date-value" data-date="{{ date }}">{{ date }}</span>
-                                        </div>
-                                    {% endif %}
-                                </div>
-                            </a>
+        <div class="workspace" id="ordersWorkspace" data-layout-mode="split">
+            <section class="panel orders-list-panel" aria-label="Список заказов">
+                <form class="panel-toolbar filters" method="get" action="{{ request.path }}">
+                    <input class="field field-search" id="orderSearch" name="q" value="{{ request.args.get('q','') }}" placeholder="Номер, клиент или телефон" aria-label="Поиск заказов">
+                    <select class="field" name="status" aria-label="Статус заказа">
+                        {% for value,label in [('all','Все статусы'),('N','Новые'),('O','Новые (O)'),('A','Подтверждённые'),('T','Не дозвонились'),('D','Собранные'),('C','Отказы')] %}
+                            <option value="{{ value }}" data-filter="{{ value }}"{% if request.args.get('status','all')|upper == value|upper %} selected{% endif %}>{{ label }}</option>
                         {% endfor %}
-                    {% else %}
-                        <div class="empty">
-                            <strong>Заказы не загружены.</strong><br>
-                            Битрикс ничего не вернул или подключение временно недоступно.
-                        </div>
-                    {% endif %}
+                    </select>
+                    <select class="field" name="period" aria-label="Период">
+                        {% for value,label in [('all','За всё время'),('today','Сегодня'),('7d','7 дней'),('30d','30 дней')] %}<option value="{{ value }}"{% if request.args.get('period','all') == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+                    </select>
+                    <button class="button button-primary" type="submit">Найти</button>
+                    {% if request.args.get('q') or request.args.get('status','all') != 'all' or request.args.get('period','all') != 'all' %}<a class="button button-secondary" href="{{ request.path }}">Сбросить</a>{% endif %}
+                </form>
+                <div class="orders-list" id="ordersList">
+                    {% for order in orders %}
+                        {% set oid = order.get('id') or order.get('ID') %}
+                        {% set number = order.get('number') or order.get('ACCOUNT_NUMBER') or oid or 'Без внешнего ID' %}
+                        {% set code = order.get('status') or 'UNKNOWN' %}
+                        {% set label = order.get('status_name') or '' %}
+                        {% set customer = order.get('customer') or '' %}
+                        {% set phone = order.get('phone') or '' %}
+                        {% set total = order.get('order_total') if order.get('order_total') is not none else order.get('price') %}
+                        {% set created = order.get('created_at') or order.get('date') or '' %}
+                        <a href="{{ url_for('order_page', order_id=oid) if oid else '#' }}"{% if not oid %} aria-disabled="true"{% endif %} class="order-row{% if selected_order and (selected_order.get('id')|string == oid|string) %} active{% endif %}" data-status="{{ code }}" data-search="{{ number }} {{ customer }} {{ phone }}">
+                            <div class="order-row-head"><span class="order-number">Заказ №{{ number }}</span>{{ status_badge(code,label) }}</div>
+                            <div class="order-meta">
+                                <span>{{ customer or 'Клиент не указан' }}</span><strong>{% if total is not none %}<span class="money-value" data-amount="{{ total }}"></span> ₽{% else %}—{% endif %}</strong>
+                                <span class="phone">{{ phone or 'Телефон не указан' }}</span><span class="date-value" data-date="{{ created }}"></span>
+                            </div>
+                        </a>
+                    {% else %}<div class="empty"><strong>Заказы не найдены</strong><br>Измените фильтры или повторите загрузку.</div>{% endfor %}
                 </div>
+                <footer class="list-footer pagination">
+                    <span>Найдено: {{ orders_total|default(orders|length) }}</span>
+                    <span class="pagination">
+                        {% if orders_page > 1 %}<a class="page-link" href="{{ request.path }}?page={{ orders_page - 1 }}&q={{ request.args.get('q','')|urlencode }}&status={{ request.args.get('status','all') }}&period={{ request.args.get('period','all') }}">←</a>{% endif %}
+                        <span>{{ orders_page }} / {{ orders_page_count }}</span>
+                        {% if orders_page < orders_page_count %}<a class="page-link" href="{{ request.path }}?page={{ orders_page + 1 }}&q={{ request.args.get('q','')|urlencode }}&status={{ request.args.get('status','all') }}&period={{ request.args.get('period','all') }}">→</a>{% endif %}
+                    </span>
+                </footer>
             </section>
 
-            <section class="panel detail order-detail-panel">
-                {% if selected_order %}
-                    {% set detail_id = selected_order.get("id") or selected_order.get("ID") %}
-                    {% set detail_number = selected_order.get("number") or selected_order.get("account_number") or selected_order.get("ACCOUNT_NUMBER") or detail_id %}
-                    {% set detail_status = selected_order.get("status") or selected_order.get("STATUS_ID") or selected_order.get("status_id") or "unknown" %}
-                    {% set detail_status_code = detail_status|string %}
-                    {% set detail_customer = selected_order.get("customer") or selected_order.get("client") or selected_order.get("name") or selected_order.get("USER_NAME") or selected_order.get("user_name") or "" %}
-                    {% set detail_phone = selected_order.get("phone") or selected_order.get("PHONE") or selected_order.get("user_phone") or selected_order.get("USER_PHONE") or "" %}
-                    {% set detail_price = selected_order.get("price") or selected_order.get("PRICE") or selected_order.get("sum") or selected_order.get("SUM") or "" %}
-                    {% set detail_date = selected_order.get("date") or selected_order.get("DATE_INSERT") or selected_order.get("created_at") or selected_order.get("DATE_CREATE") or "" %}
-                    {% set detail_email = selected_order.get("email") or selected_order.get("EMAIL") or "" %}
-                    {% set detail_address = selected_order.get("address") or selected_order.get("ADDRESS") or "" %}
-                    {% set detail_city = selected_order.get("city") or selected_order.get("CITY") or "" %}
-                    {% set detail_region = order_region or "" %}
-                    {% set detail_tracking = order_tracking or "" %}
-                    {% set detail_paid = selected_order.get("paid") or selected_order.get("PAYED") or "" %}
-                    {% set detail_paid_name = selected_order.get("paid_name") or "" %}
-                    {% set detail_products = selected_order.get("products") or [] %}
-                    {% set detail_order_total = selected_order.get("order_total") if selected_order.get("order_total") is not none else detail_price %}
-                    {% set detail_products_total = selected_order.get("products_total") if selected_order.get("products_total") is not none else "" %}
-                    {% set detail_delivery_price = selected_order.get("delivery_price") if selected_order.get("delivery_price") is not none else "" %}
-
-                    <div class="detail-header">
+            <section class="panel order-detail-panel" aria-label="Карточка заказа">
+            {% if selected_order %}
+                {% set detail_id = selected_order.get('id') or selected_order.get('ID') %}
+                {% set detail_number = selected_order.get('number') or detail_id %}
+                {% set detail_status_code = (selected_order.get('status') or 'UNKNOWN')|string|upper %}
+                {% set detail_status_name = selected_order.get('status_name') or 'Неизвестный статус' %}
+                {% set detail_products = selected_order.get('products') or [] %}
+                {% set detail_total = selected_order.get('order_total') %}
+                {% set detail_products_total = selected_order.get('products_total') %}
+                {% set detail_discount = selected_order.get('discount') %}
+                {% set detail_delivery = selected_order.get('delivery_price') %}
+                {% set mapping_state = namespace(all=true, stock=true) %}
+                {% for product in detail_products %}
+                    {% set pid = product.get('product_id') or product.get('PRODUCT_ID') or product.get('id') or product.get('ID') or '' %}
+                    {% set map = order_product_mappings.get(pid|string) if order_product_mappings else none %}
+                    {% if not map or map.state != 'mapped' %}{% set mapping_state.all = false %}{% endif %}
+                    {% if map and map.product and map.product.stock|float < (product.get('quantity') or 1)|float %}{% set mapping_state.stock = false %}{% endif %}
+                {% endfor %}
+                {% set legacy_calc_ok = selected_order.get('calculation_complete') is none %}
+                {% set safe_to_sell = order_sale_readiness.ready if order_sale_readiness is defined else (detail_status_code == 'A' and detail_products and mapping_state.all and mapping_state.stock and selected_order.get('sync_state') not in ['partial','error'] and (legacy_calc_ok or selected_order.get('calculation_consistent')) and not sale_already_conducted) %}
+                <div class="detail-scroll">
+                    <header class="card-head">
                         <div>
-                            <h2 class="detail-title">Заказ №{{ detail_number }}</h2>
-                            <div class="detail-subtitle">Карточка заказа из Битрикс</div>
+                            <button class="button button-secondary back-list" type="button" data-show-list>← Назад к заказам</button>
+                            <div class="card-title"><h2>Заказ №{{ detail_number }}</h2>{{ status_badge(detail_status_code,detail_status_name) }}</div>
+                            <div class="card-subtitle"><span class="date-value" data-date="{{ selected_order.get('created_at') or selected_order.get('date') }}"></span>{% if detail_total is not none %} · <strong><span class="money-value" data-amount="{{ detail_total }}"></span> ₽</strong>{% endif %}</div>
                         </div>
-
-                        {% if detail_status_code == "N" %}
-                            <span class="badge badge-default">Не подтвержден</span>
-                        {% elif detail_status_code == "A" %}
-                            <span class="badge badge-work">Подтвержден</span>
-                        {% elif detail_status_code == "T" %}
-                            <span class="badge badge-default">Не дозвонились</span>
-                        {% elif detail_status_code == "D" %}
-                            <span class="badge badge-done">Собран</span>
-                        {% elif detail_status_code == "C" or detail_status_code == "c" %}
-                            <span class="badge badge-cancel">Отказ</span>
-                        {% else %}
-                            <span class="badge badge-default">{{ detail_status }}</span>
-                        {% endif %}
-                    </div>
-
-                    <div class="detail-body">
-                        <div class="info-grid">
-                            <div class="info-card">
-                                <div class="info-label">Клиент</div>
-                                <div class="info-value">
-                                    {% if detail_customer %}
-                                        {{ detail_customer }}
-                                    {% else %}
-                                        <span class="muted-value">Не указан</span>
-                                    {% endif %}
-                                </div>
-                            </div>
-
-                            <div class="info-card">
-                                <div class="info-label">Телефон</div>
-                                <div class="info-value">
-                                    {% if detail_phone %}
-                                        {{ detail_phone }}
-                                    {% else %}
-                                        <span class="muted-value">Не указан</span>
-                                    {% endif %}
-                                </div>
-                            </div>
-
-                            <div class="info-card">
-                                <div class="info-label">Сумма</div>
-                                <div class="info-value">
-                                    {% if detail_order_total %}
-                                        <span class="money-value" data-amount="{{ detail_order_total }}">{{ detail_order_total }}</span> ₽
-                                    {% elif detail_price %}
-                                        <span class="money-value" data-amount="{{ detail_price }}">{{ detail_price }}</span> ₽
-                                    {% else %}
-                                        <span class="muted-value">Не указана</span>
-                                    {% endif %}
-                                </div>
-                            </div>
-
-                            <div class="info-card">
-                                <div class="info-label">Дата создания</div>
-                                <div class="info-value">
-                                    {% if detail_date %}
-                                        <span class="date-value" data-date="{{ detail_date }}">{{ detail_date }}</span>
-                                    {% else %}
-                                        <span class="muted-value">Не указана</span>
-                                    {% endif %}
-                                </div>
-                            </div>
-                        </div>
-
                         <div class="actions">
-                            {% if selected_order_bitrix_url %}
-                                <a
-                                    class="button button-secondary"
-                                    href="{{ selected_order_bitrix_url }}"
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                >
-                                    Открыть в Bitrix ↗
-                                </a>
-                            {% endif %}
-                            <form class="status-form" method="post" action="/order/{{ detail_id }}/status">
-                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                <input type="hidden" name="status" value="N">
-                                <button
-                                    class="button button-secondary {% if detail_status_code == 'N' %}button-current{% endif %}"
-                                    type="submit"
-                                >
-                                    Неподтвержден
-                                </button>
-                            </form>
-
-                            <form class="status-form" method="post" action="/order/{{ detail_id }}/status">
-                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                <input type="hidden" name="status" value="A">
-                                <button
-                                    class="button button-primary {% if detail_status_code == 'A' %}button-current{% endif %}"
-                                    type="submit"
-                                >
-                                    Подтвердить
-                                </button>
-                            </form>
-
-                            <form class="status-form" method="post" action="/order/{{ detail_id }}/status">
-                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                <input type="hidden" name="status" value="T">
-                                <button
-                                    class="button button-secondary {% if detail_status_code == 'T' %}button-current{% endif %}"
-                                    type="submit"
-                                >
-                                    Не дозвонились
-                                </button>
-                            </form>
-
-                            <form class="status-form" method="post" action="/order/{{ detail_id }}/status">
-                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                <input type="hidden" name="status" value="D">
-                                <button
-                                    class="button button-secondary {% if detail_status_code == 'D' %}button-current{% endif %}"
-                                    type="submit"
-                                >
-                                    Собран
-                                </button>
-                            </form>
-
-                            <form class="status-form" method="post" action="/order/{{ detail_id }}/status">
-                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                <input type="hidden" name="status" value="C">
-                                <button
-                                    class="button button-danger {% if detail_status_code == 'C' %}button-current{% endif %}"
-                                    type="submit"
-                                >
-                                    Отказ
-                                </button>
-                            </form>
+                            <button class="button button-secondary" type="button" data-collapse-list>Свернуть список</button>
+                            {% if detail_status_code in ['N','O','0','T'] %}
+                                <form method="post" action="/order/{{ detail_id }}/status"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="status" value="A"><button class="button button-primary" type="submit"{% if selected_order.get('sync_state') in ['partial','error'] %} disabled{% endif %}>Подтвердить заказ</button></form>
+                            {% elif safe_to_sell %}<button class="button button-primary" type="button" data-open-sale-dialog>Провести продажу</button>
+                            {% elif sale_already_conducted %}<a class="button button-secondary" href="/sales?source=tictactoy&sale_id={{ conducted_sale.id if conducted_sale else '' }}">Продажа проведена</a>{% endif %}
+                            {% if selected_order_bitrix_url %}<a class="button button-secondary" href="{{ selected_order_bitrix_url }}" target="_blank" rel="noopener noreferrer">Открыть в Bitrix ↗</a>{% endif %}
+                            <details class="more"><summary class="button button-secondary" aria-label="Дополнительные действия">…</summary><div class="more-menu">
+                                {% if detail_status_code in ['N','O','0'] %}<form method="post" action="/order/{{ detail_id }}/status"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="status" value="T"><button class="button button-secondary">Не дозвонились</button></form>{% endif %}
+                                {% if detail_status_code == 'A' %}<form method="post" action="/order/{{ detail_id }}/status"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="status" value="D"><button class="button button-secondary">Отметить собранным</button></form>{% endif %}
+                                {% if detail_status_code in ['N','O','0','T','A'] %}<form method="post" action="/order/{{ detail_id }}/status" data-dangerous-status><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="status" value="C"><button class="button button-danger">Отказ</button></form>{% endif %}
+                            </div></details>
                         </div>
+                    </header>
+                    <div class="detail-body">
+                        {% if selected_order.get('sync_state') == 'partial' %}<div class="warning">Карточка загружена частично. Недоступны: {{ selected_order.get('sync_missing')|join(', ') }}. Небезопасные действия заблокированы.</div>{% elif selected_order.get('sync_state') == 'error' %}<div class="warning">Не удалось загрузить полную карточку. <a href="{{ request.path }}?retry=1">Повторить загрузку</a>.</div>{% endif %}
+                        <section class="section">
+                            <div class="section-head"><h3>Клиент и доставка</h3></div>
+                            <div class="customer-grid">
+                                <div class="fact"><span class="fact-label">Клиент</span><span class="fact-value">{{ selected_order.get('customer') or 'Не указан' }}</span></div>
+                                <div class="fact"><span class="fact-label">Телефон</span><span class="fact-value">{% if selected_order.get('phone') %}<a href="tel:{{ selected_order.get('phone')|replace(' ','') }}">{{ selected_order.get('phone') }}</a>{% else %}Не указан{% endif %}</span></div>
+                                <div class="fact"><span class="fact-label">Регион</span><span class="fact-value">{{ order_region or selected_order.get('city') or 'Не указан' }}</span></div>
+                                <div class="fact"><span class="fact-label">Адрес</span><span class="fact-value">{{ selected_order.get('address') or 'Не указан' }}</span></div>
+                                <div class="fact" style="flex-basis:100%"><span class="fact-label">Трекинг</span><form class="tracking-form" method="post" action="/order/{{ detail_id }}/tracking"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input class="field" name="tracking" maxlength="255" value="{{ order_tracking or '' }}" placeholder="Номер отправления"><button class="button button-secondary" type="submit">Сохранить</button></form></div>
+                            </div>
+                        </section>
 
-                        <div class="order-sections">
-                            <section class="data-section">
-                                <div class="data-section-header">Состав заказа</div>
-
-                                {% if detail_products %}
-                                    <div class="product-list">
-                                        {% for product in detail_products %}
-                                            {% set product_name = product.get("name") or product.get("NAME") or "Товар без названия" %}
-                                            {% set product_quantity = product.get("quantity") or product.get("QUANTITY") or "1" %}
-                                            {% set product_price = product.get("price") or product.get("PRICE") or "" %}
-                                            {% set product_line_total = product_price|float * product_quantity|float %}
-
-                                            {% set bitrix_product_id = product.get("product_id") or product.get("PRODUCT_ID") or product.get("offer_id") or product.get("OFFER_ID") or product.get("sku_id") or product.get("SKU_ID") or product.get("id") or product.get("ID") or "" %}
-                                            {% set mapping = order_product_mappings.get(bitrix_product_id|string) if order_product_mappings else none %}
-                                            {% set mapped_product = mapping.product if mapping and mapping.product else none %}
-
-                                            <div class="product-row">
-                                                <div>
-                                                    <div class="product-name">{{ product_name }}</div>
-                                                    <div class="product-meta">
-                                                        Количество: {{ product_quantity|float|round(0, "floor")|int }} шт.
-                                                    </div>
-
-                                                    {% if mapped_product and mapping.state == "mapped" %}
-                                                    <div class="order-map-card{% if not mapped_product.moysklad_product_id %} is-warning{% endif %}">
-                                                        {% if mapped_product.image_url %}
-                                                        <img class="order-map-photo" src="{{ mapped_product.image_url }}" alt="">
-                                                        {% else %}
-                                                        <div class="order-map-photo"></div>
-                                                        {% endif %}
-                                                        <div class="order-map-copy">
-                                                            <strong>{{ mapped_product.name }}</strong>
-                                                            <span>{{ mapped_product.brand or "Без бренда" }} · {{ mapped_product.category or "Без категории" }}</span>
-                                                            <span>Артикул: {{ mapped_product.article or "—" }} · Штрихкод: {{ mapped_product.barcode or "—" }}</span>
-                                                            <span>Остаток: {{ mapped_product.stock_display }}{% if mapped_product.stock|float <= 0 %} · Нет в наличии{% endif %}</span>
-                                                            <span>Заказов: {{ mapped_product.orders_count or 0 }}</span>
-                                                            {% if not mapped_product.moysklad_product_id %}<span>Нет дополнительной связи с МойСклад</span>{% endif %}
-                                                        </div>
-                                                        <button class="button button-secondary" type="button" data-change-order-mapping>Изменить сопоставление</button>
-                                                    </div>
-                                                    {% else %}
-                                                    <div class="order-map-state">{{ mapping.state_label if mapping else "Не сопоставлен" }}</div>
-                                                    {% endif %}
-
-                                                    <form
-                                                        class="status-form order-map-form"
-                                                        method="post"
-                                                        action="/order/{{ detail_id }}/product-map"
-                                                        data-shared-catalog-scope
-                                                        data-catalog-order-counts="true"
-                                                        data-order-map-form
-                                                        {% if mapped_product and mapping.state == "mapped" %}hidden{% endif %}
-                                                    >
-                                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                                        <input type="hidden" name="bitrix_product_id" value="{{ bitrix_product_id }}">
-                                                        <div class="order-map-field">
-                                                            <label>Бренд</label>
-                                                            {{ render_catalog_combobox(
-                                                                "orderMapBrand" ~ loop.index,
-                                                                "selected_brand",
-                                                                [],
-                                                                selected_value=mapped_product.brand if mapped_product else "",
-                                                                selected_id=mapped_product.brand_id if mapped_product else "",
-                                                                selected_label=mapped_product.brand if mapped_product else "",
-                                                                item_label="бренд",
-                                                                action_kind="brand",
-                                                                action_label="Добавить новый бренд",
-                                                                shared_catalog_kind="brand",
-                                                                id_input_name="brand_id",
-                                                                component_class="filter-combobox"
-                                                            ) }}
-                                                        </div>
-                                                        <div class="order-map-field">
-                                                            <label>Категория</label>
-                                                            {{ render_catalog_combobox(
-                                                                "orderMapCategory" ~ loop.index,
-                                                                "selected_category",
-                                                                [],
-                                                                selected_value=mapped_product.category if mapped_product else "",
-                                                                selected_id=mapped_product.category_id if mapped_product else "",
-                                                                selected_label=mapped_product.category if mapped_product else "",
-                                                                item_label="категорию",
-                                                                disabled=not mapped_product,
-                                                                action_kind="category",
-                                                                action_label="Добавить новую категорию",
-                                                                shared_catalog_kind="category",
-                                                                id_input_name="category_id",
-                                                                component_class="filter-combobox"
-                                                            ) }}
-                                                        </div>
-                                                        <div class="order-map-field">
-                                                            <label>Товар</label>
-                                                            {{ render_catalog_combobox(
-                                                                "orderMapProduct" ~ loop.index,
-                                                                "product_id",
-                                                                [],
-                                                                selected_value=mapped_product.id if mapped_product else "",
-                                                                selected_label=mapped_product.name if mapped_product else "",
-                                                                selected_item=mapped_product if mapped_product else none,
-                                                                item_label="товар",
-                                                                disabled=not mapped_product,
-                                                                action_kind="product",
-                                                                action_label="Добавить новый товар",
-                                                                shared_catalog_kind="product",
-                                                                component_class="filter-combobox sales-product-combobox"
-                                                            ) }}
-                                                        </div>
-                                                        <button class="button button-primary" type="submit">Сопоставить</button>
-                                                    </form>
-                                                </div>
-
-                                                <div class="product-price">
-                                                    {% if product_price %}
-                                                        <span class="money-value" data-amount="{{ product_line_total }}">{{ product_line_total }}</span> ₽
-                                                    {% else %}
-                                                        —
-                                                    {% endif %}
-                                                </div>
+                        <section class="section">
+                            <div class="section-head"><h3>Состав заказа · {{ detail_products|length }}</h3></div>
+                            {% if detail_products %}<div class="product-list">
+                            {% for product in detail_products %}
+                                {% set pid = product.get('product_id') or product.get('PRODUCT_ID') or product.get('id') or product.get('ID') or '' %}
+                                {% set mapping = order_product_mappings.get(pid|string) if order_product_mappings else none %}
+                                {% set mapped = mapping.product if mapping and mapping.product else none %}
+                                {% set qty = product.get('quantity') or product.get('QUANTITY') or 1 %}
+                                {% set unit = product.get('price') if product.get('price') is not none else product.get('PRICE') %}
+                                {% set line = product.get('line_total') if product.get('line_total') is not none else (unit|float * qty|float if unit is not none else none) %}
+                                <article class="product-row">
+                                    <div class="line-main">
+                                        {% set photo = product.get('image_url') or (mapped.image_url if mapped else '') %}
+                                        {% if photo %}<img class="product-photo" src="{{ photo }}" alt="">{% else %}<div class="product-photo" aria-label="Нет изображения"></div>{% endif %}
+                                        <div class="product-copy">
+                                            <div class="product-name">{{ product.get('name') or product.get('NAME') or 'Товар без названия' }}</div>
+                                            <div class="product-note">{{ product.get('brand') or (mapped.brand if mapped else 'Бренд не указан') }} · {{ product.get('category') or (mapped.category if mapped else 'Категория не указана') }} · {{ qty }} шт.</div>
+                                            <div class="mapping">
+                                            {% if mapped and mapping.state == 'mapped' %}
+                                                <div class="mapping-card">{% if mapped.image_url %}<img src="{{ mapped.image_url }}" alt="">{% endif %}<div class="mapping-copy"><strong>ERP: {{ mapped.name }}</strong>{{ mapped.brand or 'Без бренда' }} · {{ mapped.category or 'Без категории' }} · остаток {{ mapped.stock_display }}</div><span class="map-state {% if mapped.stock|float >= qty|float %}good{% else %}bad{% endif %}">{% if mapped.stock|float >= qty|float %}Сопоставлено{% else %}Недостаточно остатка{% endif %}</span></div>
+                                                <div class="map-actions"><button class="button button-secondary" type="button" data-change-order-mapping>Заменить</button><form method="post" action="/order/{{ detail_id }}/product-unmap"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="bitrix_product_id" value="{{ pid }}"><button class="button button-secondary" type="submit">Очистить</button></form></div>
+                                            {% else %}<span class="map-state bad">{{ mapping.state_label if mapping else 'Не сопоставлено' }}</span>{% endif %}
+                                            <form class="order-map-form" method="post" action="/order/{{ detail_id }}/product-map" data-shared-catalog-scope data-catalog-order-counts="true" data-order-map-form{% if mapped and mapping.state == 'mapped' %} hidden{% endif %}>
+                                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="bitrix_product_id" value="{{ pid }}">
+                                                <div class="order-map-field"><label>Бренд</label>{{ render_catalog_combobox('orderMapBrand' ~ loop.index,'selected_brand',[],selected_value=mapped.brand if mapped else '',selected_id=mapped.brand_id if mapped else '',selected_label=mapped.brand if mapped else '',item_label='бренд',shared_catalog_kind='brand',id_input_name='brand_id',component_class='filter-combobox') }}</div>
+                                                <div class="order-map-field"><label>Категория</label>{{ render_catalog_combobox('orderMapCategory' ~ loop.index,'selected_category',[],selected_value=mapped.category if mapped else '',selected_id=mapped.category_id if mapped else '',selected_label=mapped.category if mapped else '',item_label='категорию',disabled=not mapped,shared_catalog_kind='category',id_input_name='category_id',component_class='filter-combobox') }}</div>
+                                                <div class="order-map-field"><label>Товар</label>{{ render_catalog_combobox('orderMapProduct' ~ loop.index,'product_id',[],selected_value=mapped.id if mapped else '',selected_label=mapped.name if mapped else '',selected_item=mapped if mapped else none,item_label='товар',disabled=not mapped,shared_catalog_kind='product',component_class='filter-combobox sales-product-combobox') }}</div>
+                                                <button class="button button-primary" type="submit">Сопоставить</button>
+                                            </form>
                                             </div>
-                                        {% endfor %}
-                                    </div>
-
-                                        <div style="margin-top: 14px;">
-                                            {% if sale_already_conducted %}
-                                            <button
-                                                class="button button-secondary"
-                                                type="button"
-                                                disabled
-                                            >
-                                                Продажа проведена
-                                            </button>
-                                            {% if conducted_sale %}
-                                            <div class="product-meta" style="margin-top: 8px;">
-                                                {{ conducted_sale.performed_at or conducted_sale.created_at }}
-                                                {% if conducted_sale.performed_by %}· {{ conducted_sale.performed_by }}{% endif %}
-                                                · <a href="/sales?source=tictactoy&sale_id={{ conducted_sale.id }}">Открыть продажу</a>
-                                            </div>
-                                            {% endif %}
-                                            {% else %}
-                                            <button
-                                                class="button button-primary"
-                                                type="button"
-                                                data-open-sale-dialog
-                                            >
-                                                Провести продажу
-                                            </button>
-                                            {% endif %}
-                                        </div>
-
-                                {% else %}
-                                    <div class="empty small">
-                                        Состав заказа пока не загружен.
-                                    </div>
-                                {% endif %}
-                            </section>
-
-                            <section class="data-section">
-                                <div class="data-section-header">Расчет заказа</div>
-
-                                <div class="order-summary">
-                                    <div class="summary-row">
-                                        <span>Товары</span>
-                                        <strong>
-                                            {% if detail_products_total != "" %}
-                                                <span class="money-value" data-amount="{{ detail_products_total }}">{{ detail_products_total }}</span> ₽
-                                            {% else %}
-                                                —
-                                            {% endif %}
-                                        </strong>
-                                    </div>
-
-                                    <div class="summary-row">
-                                        <span>Доставка</span>
-                                        <strong>
-                                            {% if detail_delivery_price != "" %}
-                                                <span class="money-value" data-amount="{{ detail_delivery_price }}">{{ detail_delivery_price }}</span> ₽
-                                            {% else %}
-                                                —
-                                            {% endif %}
-                                        </strong>
-                                    </div>
-
-                                    <div class="summary-row summary-total">
-                                        <span>Итого</span>
-                                        <strong>
-                                            {% if detail_order_total %}
-                                                <span class="money-value" data-amount="{{ detail_order_total }}">{{ detail_order_total }}</span> ₽
-                                            {% else %}
-                                                —
-                                            {% endif %}
-                                        </strong>
-                                    </div>
-                                </div>
-                            </section>
-
-                            <section class="data-section">
-                                <div class="data-section-header">Оплата и доставка</div>
-
-                                <div class="section-grid">
-                                    <div class="info-card">
-                                        <div class="info-label">Оплата</div>
-
-                                        {% if detail_paid == "Y" %}
-                                            <div class="payment-status paid">Оплачен</div>
-                                        {% elif detail_paid == "N" %}
-                                            <div class="payment-status unpaid">Не оплачен</div>
-                                        {% elif detail_paid_name %}
-                                            <div class="payment-status">{{ detail_paid_name }}</div>
-                                        {% else %}
-                                            <div class="info-value muted-value">Не указана</div>
-                                        {% endif %}
-                                    </div>
-
-                                    <div class="info-card">
-                                        <div class="info-label">Email</div>
-                                        <div class="info-value">
-                                            {% if detail_email %}
-                                                {{ detail_email }}
-                                            {% else %}
-                                                <span class="muted-value">Не указан</span>
-                                            {% endif %}
                                         </div>
                                     </div>
+                                    <div class="line-price">{% if line is not none %}<span><span class="money-value" data-amount="{{ line }}"></span> ₽</span><small>{% if unit is not none %}<span class="money-value" data-amount="{{ unit }}"></span> ₽ × {{ qty }}{% endif %}</small>{% else %}—<small>Ошибка данных</small>{% endif %}</div>
+                                </article>
+                            {% endfor %}</div>{% else %}<div class="empty">Состав заказа не загружен. Проведение продажи недоступно.</div>{% endif %}
+                        </section>
 
-                                    <div class="info-card">
-                                        <div class="info-label">Город</div>
-                                        <div class="info-value">
-                                            {% if detail_city %}
-                                                {{ detail_city }}
-                                            {% else %}
-                                                <span class="muted-value">Не указан</span>
-                                            {% endif %}
-                                        </div>
-                                    </div>
-
-                                    <div class="info-card">
-                                        <div class="info-label">Адрес доставки</div>
-                                        <div class="delivery-text">
-                                            {% if detail_address %}
-                                                {{ detail_address }}
-                                            {% else %}
-                                                <span class="muted-value">Не указан</span>
-                                            {% endif %}
-                                        </div>
-                                    </div>
-                                </div>
-                            </section>
-                        </div>
+                        <section class="section">
+                            <div class="section-head"><h3>Расчёт заказа</h3></div>
+                            <div class="summary">
+                                <div class="summary-row"><span>Товары</span><strong>{% if detail_products_total is not none %}<span class="money-value" data-amount="{{ detail_products_total }}"></span> ₽{% else %}—{% endif %}</strong></div>
+                                {% if detail_discount %}<div class="summary-row"><span>Скидка</span><strong>− <span class="money-value" data-amount="{{ detail_discount }}"></span> ₽</strong></div>{% endif %}
+                                <div class="summary-row"><span>Доставка</span><strong>{% if detail_delivery is not none %}<span class="money-value" data-amount="{{ detail_delivery }}"></span> ₽{% else %}Не передана Bitrix{% endif %}</strong></div>
+                                <div class="summary-row total"><span>Итого</span><strong>{% if detail_total is not none %}<span class="money-value" data-amount="{{ detail_total }}"></span> ₽{% else %}—{% endif %}</strong></div>
+                            </div>
+                            {% if not legacy_calc_ok and not selected_order.get('calculation_complete') %}<div class="warning">Bitrix не передал отдельную стоимость доставки. Итог не записан в доставку; проведение продажи заблокировано до получения полного расчёта.</div>{% elif not legacy_calc_ok and not selected_order.get('calculation_consistent') %}<div class="warning">Расчёт не сходится: товары − скидка + доставка ≠ итог. Проведение заблокировано.</div>{% endif %}
+                        </section>
+                        {% if not safe_to_sell and not sale_already_conducted %}<div class="warning">Проведение недоступно: {{ order_sale_readiness.issues|join(' · ') if order_sale_readiness is defined else 'заказ должен быть подтверждён, полностью синхронизирован, рассчитан, сопоставлен и обеспечен остатками' }}.</div>{% endif %}
                     </div>
-                {% else %}
-                    <div class="empty">
-                        <strong>Выбери заказ слева.</strong><br>
-                        После выбора здесь откроется карточка заказа.
-                    </div>
-                {% endif %}
+                </div>
+            {% else %}<div class="empty"><strong>Выберите заказ в списке</strong><br>Полная карточка загрузится отдельным безопасным запросом.</div>{% endif %}
             </section>
         </div>
     </main>
 </div>
 
-{% if selected_order and not sale_already_conducted %}
-<div
-    class="order-sale-modal"
-    id="orderSaleModal"
-    role="dialog"
-    aria-modal="true"
-    aria-labelledby="orderSaleTitle"
-    aria-hidden="true"
-    data-auto-open="{{ '1' if request.args.get('open_sale') == '1' else '0' }}"
->
-    <div class="order-sale-dialog">
-        <div class="order-sale-dialog-header">
-            <div>
-                <h2 id="orderSaleTitle">Провести продажу</h2>
-                <div class="detail-subtitle">Заказ №{{ detail_number }} · TicTacToy</div>
-            </div>
-            <button class="order-sale-close" type="button" data-close-sale-dialog aria-label="Закрыть">×</button>
-        </div>
-        <form method="post" action="/order/{{ detail_id }}/stock-writeoff" data-order-sale-form>
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <div class="order-sale-dialog-body">
-                <div class="order-sale-facts">
-                    <div class="order-sale-fact"><span>Номер заказа</span><strong>№{{ detail_number }}</strong></div>
-                    <div class="order-sale-fact"><span>Источник</span><strong>TicTacToy</strong></div>
-                    <div class="order-sale-fact"><span>Клиент</span><strong>{{ detail_customer or 'Не указан' }}</strong></div>
-                    <div class="order-sale-fact"><span>Телефон</span><strong>{{ detail_phone or 'Не указан' }}</strong></div>
-                    <div class="order-sale-fact"><span>Дата заказа</span><strong>{{ detail_date or 'Не указана' }}</strong></div>
-                    <div class="order-sale-fact"><span>Регион</span><strong>{{ detail_region or '—' }}</strong></div>
-                    <div class="order-sale-fact"><span>Доставка</span><strong><span class="money-value" data-amount="{{ detail_delivery_price or 0 }}">{{ detail_delivery_price or 0 }}</span> ₽</strong></div>
-                    <div class="order-sale-fact"><span>Общая сумма</span><strong>{% if detail_order_total %}<span class="money-value" data-amount="{{ detail_order_total }}">{{ detail_order_total }}</span> ₽{% else %}Не указана{% endif %}</strong></div>
-                </div>
-                <div class="order-sale-products">
-                    <strong>Товары</strong>
-                    <ul>
-                        {% for product in detail_products %}
-                        {% set modal_bitrix_id = product.get("product_id") or product.get("PRODUCT_ID") or product.get("offer_id") or product.get("OFFER_ID") or product.get("sku_id") or product.get("SKU_ID") or product.get("id") or product.get("ID") or "" %}
-                        {% set modal_mapping = order_product_mappings.get(modal_bitrix_id|string) if order_product_mappings else none %}
-                        {% set pricing = order_sale_pricing[loop.index0] %}
-                        <li>
-                            {{ product.get("name") or product.get("NAME") or "Товар без названия" }} — {{ product.get("quantity") or product.get("QUANTITY") or 1 }} шт.
-                            {% if product.get("price") or product.get("PRICE") %}× <span class="money-value" data-amount="{{ product.get('price') or product.get('PRICE') }}">{{ product.get("price") or product.get("PRICE") }}</span> ₽{% endif %}
-                            <br>
-                            {% if modal_mapping and modal_mapping.state == "mapped" %}
-                            <span>ERP: {{ modal_mapping.product.name }} · остаток {{ modal_mapping.product.stock_display }}</span>
-                            {% else %}
-                            <span class="order-map-state">{{ modal_mapping.state_label if modal_mapping else "Не сопоставлен" }}</span>
-                            {% endif %}
-                            <div class="order-sale-price-editor" data-order-price-row>
-                                <label>Исходная цена<input type="number" min="0" step="0.01" name="original_price_{{ loop.index0 }}" value="{{ pricing.original_unit_price or '' }}" data-original-price></label>
-                                <label>Способ скидки<select name="discount_type_{{ loop.index0 }}" data-discount-type><option value="none"{% if pricing.discount_type == 'none' %} selected{% endif %}>Без скидки</option><option value="percent"{% if pricing.discount_type == 'percent' %} selected{% endif %}>Процент</option><option value="fixed"{% if pricing.discount_type == 'fixed' %} selected{% endif %}>Сумма</option></select></label>
-                                <label>Скидка<input type="number" min="0" step="0.01" name="discount_value_{{ loop.index0 }}" value="{{ pricing.discount_value }}" data-discount-value></label>
-                                <label>Причина<input type="text" maxlength="240" name="discount_reason_{{ loop.index0 }}" value="{{ pricing.discount_reason }}" placeholder="Например, скидка из заказа"></label>
-                                <strong>Итог: <span data-final-price>{{ pricing.unit_price or '—' }}</span> ₽</strong>
-                            </div>
-                        </li>
-                        {% endfor %}
-                    </ul>
-                </div>
-                <div class="order-sale-tracking">
-                    <label for="orderSaleTracking">Трекинг</label>
-                    <input
-                        id="orderSaleTracking"
-                        type="text"
-                        name="tracking"
-                        value="{{ detail_tracking }}"
-                        placeholder="Введите номер отправления"
-                        maxlength="255"
-                        autocomplete="off"
-                        data-order-sale-tracking
-                    >
-                </div>
-                <p class="order-sale-warning">Проведение создаст одну продажу TicTacToy и атомарно изменит остатки единого каталога ERP. МойСклад не является источником истины для этой операции.</p>
-            </div>
-            <div class="order-sale-dialog-actions">
-                <button class="button button-secondary" type="button" data-close-sale-dialog>Отмена</button>
-                <button class="button button-primary" type="submit" data-sale-submit>Провести продажу</button>
-            </div>
+{% if selected_order and safe_to_sell %}
+<div class="order-sale-modal" id="orderSaleModal" role="dialog" aria-modal="true" aria-labelledby="orderSaleTitle" aria-hidden="true" data-auto-open="{{ '1' if request.args.get('open_sale') == '1' else '0' }}">
+    <div class="sale-dialog">
+        <div class="sale-dialog-head"><div><h2 id="orderSaleTitle">Провести продажу</h2><p class="card-subtitle">Заказ №{{ detail_number }} · Tictactoy</p></div><button class="button button-secondary" type="button" data-close-sale-dialog aria-label="Закрыть">×</button></div>
+        <form method="post" action="/order/{{ detail_id }}/stock-writeoff" data-order-sale-form><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="sale-dialog-body"><p>Проверьте позиции перед сохранением в разделе «Продажи».</p><div class="customer-grid" style="margin-top:12px"><div class="fact"><span>Регион</span><strong>{{ order_region or '—' }}</strong></div></div><ul class="sale-lines">{% for product in detail_products %}<li>{{ product.get('name') or product.get('NAME') }} · {{ product.get('quantity') or 1 }} шт.<input type="hidden" name="original_price_{{ loop.index0 }}" value="{{ product.get('base_price') or product.get('price') or '' }}"><input type="hidden" name="discount_type_{{ loop.index0 }}" value="none"><input type="hidden" name="discount_value_{{ loop.index0 }}" value="0"><input type="hidden" name="discount_reason_{{ loop.index0 }}" value=""></li>{% endfor %}</ul><label>Трекинг<input class="field" style="width:100%;margin-top:5px" name="tracking" maxlength="255" value="{{ order_tracking or '' }}" placeholder="Введите номер отправления" data-order-sale-tracking></label><div class="warning" style="margin-top:12px">Продажа создаётся атомарно с источником Tictactoy. Повторный запрос не создаст дубль и не спишет остаток повторно.</div></div>
+            <div class="sale-dialog-actions"><button class="button button-secondary" type="button" data-close-sale-dialog>Отмена</button><button class="button button-primary" type="submit" data-sale-submit>Провести продажу</button></div>
         </form>
     </div>
 </div>
 {% endif %}
 
 <script>
-    (() => {
-        const modal = document.getElementById("orderSaleModal");
-        if (!modal) {
-            return;
-        }
-
-        const openButtons = Array.from(document.querySelectorAll("[data-open-sale-dialog]"));
-        const closeButtons = Array.from(modal.querySelectorAll("[data-close-sale-dialog]"));
-        const form = modal.querySelector("[data-order-sale-form]");
-        const submit = modal.querySelector("[data-sale-submit]");
-        const tracking = modal.querySelector("[data-order-sale-tracking]");
-        const firstClose = modal.querySelector("[data-close-sale-dialog]");
-        const trackingStorageKey = "order-sale-tracking:{{ detail_id }}";
-        let returnFocus = null;
-
-        const roundMoney = (value) => Math.round((value + Number.EPSILON) * 100) / 100;
-        const recalculatePrice = (row) => {
-            const original = Math.max(0, Number(row.querySelector("[data-original-price]").value || 0));
-            const type = row.querySelector("[data-discount-type]").value;
-            const value = Math.max(0, Number(row.querySelector("[data-discount-value]").value || 0));
-            const discount = type === "percent"
-                ? roundMoney(original * Math.min(value, 100) / 100)
-                : type === "fixed" ? Math.min(value, original) : 0;
-            row.querySelector("[data-final-price]").textContent = roundMoney(Math.max(0, original - discount)).toFixed(2);
-        };
-        modal.querySelectorAll("[data-order-price-row]").forEach((row) => {
-            row.addEventListener("input", () => recalculatePrice(row));
-            row.addEventListener("change", () => recalculatePrice(row));
-            recalculatePrice(row);
-        });
-
-        if (tracking) {
-            try {
-                const savedTracking = window.sessionStorage.getItem(trackingStorageKey);
-                if (savedTracking !== null) {
-                    tracking.value = savedTracking;
-                }
-                tracking.addEventListener("input", () => {
-                    window.sessionStorage.setItem(trackingStorageKey, tracking.value);
-                });
-            } catch (error) {
-                // Поле остаётся рабочим, даже если storage недоступен.
-            }
-        }
-
-        const openModal = (trigger) => {
-            returnFocus = trigger || document.activeElement;
-            modal.classList.add("is-open");
-            modal.setAttribute("aria-hidden", "false");
-            document.body.style.overflow = "hidden";
-            window.requestAnimationFrame(() => firstClose && firstClose.focus());
-        };
-
-        const closeModal = () => {
-            modal.classList.remove("is-open");
-            modal.setAttribute("aria-hidden", "true");
-            document.body.style.overflow = "";
-            if (returnFocus && typeof returnFocus.focus === "function") {
-                returnFocus.focus();
-            }
-        };
-
-        openButtons.forEach((button) => button.addEventListener("click", () => openModal(button)));
-        closeButtons.forEach((button) => button.addEventListener("click", closeModal));
-        modal.addEventListener("click", (event) => {
-            if (event.target === modal) {
-                closeModal();
-            }
-        });
-        document.addEventListener("keydown", (event) => {
-            if (!modal.classList.contains("is-open")) {
-                return;
-            }
-            if (event.key === "Escape") {
-                closeModal();
-                return;
-            }
-            if (event.key === "Tab") {
-                const focusable = Array.from(modal.querySelectorAll(
-                    'button:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'
-                ));
-                if (!focusable.length) {
-                    return;
-                }
-                const first = focusable[0];
-                const last = focusable[focusable.length - 1];
-                if (event.shiftKey && document.activeElement === first) {
-                    event.preventDefault();
-                    last.focus();
-                } else if (!event.shiftKey && document.activeElement === last) {
-                    event.preventDefault();
-                    first.focus();
-                }
-            }
-        });
-        form.addEventListener("submit", () => {
-            submit.disabled = true;
-            submit.textContent = "Проводим продажу…";
-        });
-
-        if (modal.dataset.autoOpen === "1") {
-            openModal(openButtons[0] || null);
-        }
-    })();
-
-    const searchInput = document.getElementById("orderSearch");
-    const rows = Array.from(document.querySelectorAll(".order-row"));
-    const filterButtons = Array.from(document.querySelectorAll(".filter"));
-
-    let activeFilter = "all";
-
-    function formatMoney(value) {
-        if (value === null || value === undefined || value === "") {
-            return "";
-        }
-
-        const normalized = String(value).replace(",", ".").replace(/[^\d.]/g, "");
-        const number = Number.parseFloat(normalized);
-
-        if (Number.isNaN(number)) {
-            return String(value);
-        }
-
-        return new Intl.NumberFormat("ru-RU", {
-            maximumFractionDigits: 0
-        }).format(number);
+(() => {
+    const workspace=document.getElementById('ordersWorkspace');
+    const switcher=document.getElementById('ordersLayoutSwitch');
+    const options=Array.from(document.querySelectorAll('[data-layout-mode]')).filter(el=>el.closest('#ordersLayoutSwitch'));
+    const modes=['list','split','card'];
+    const storageKey='vechasu:orders:view:v2';
+    function applyMode(mode,save=true){
+        const safe=modes.includes(mode)?mode:'split'; workspace.dataset.layoutMode=safe;
+        options.forEach(option=>option.setAttribute('aria-checked',String(option.dataset.layoutMode===safe)));
+        if(save){try{localStorage.setItem(storageKey,safe)}catch(error){}}
     }
+    let initial='split'; try{initial=localStorage.getItem(storageKey)||'split'}catch(error){}
+    applyMode(initial,false);
+    options.forEach(option=>option.addEventListener('click',()=>applyMode(option.dataset.layoutMode)));
+    switcher?.addEventListener('keydown',event=>{if(!['ArrowLeft','ArrowRight'].includes(event.key))return;event.preventDefault();const current=modes.indexOf(workspace.dataset.layoutMode);const next=Math.max(0,Math.min(2,current+(event.key==='ArrowRight'?1:-1)));applyMode(modes[next]);options[next]?.focus();});
+    document.querySelector('[data-collapse-list]')?.addEventListener('click',()=>applyMode('card'));
+    document.querySelector('[data-show-list]')?.addEventListener('click',()=>applyMode('list'));
 
-    function formatDate(value) {
-        if (!value) {
-            return "";
-        }
+    function formatMoney(value){const number=Number(String(value??'').replace(',','.'));return Number.isFinite(number)?new Intl.NumberFormat('ru-RU',{minimumFractionDigits:Number.isInteger(number)?0:2,maximumFractionDigits:2}).format(number):'—';}
+    function formatDate(value){if(!value)return '';const date=new Date(String(value).replace(' ','T'));return Number.isNaN(date.getTime())?String(value):new Intl.DateTimeFormat('ru-RU',{dateStyle:'short',timeStyle:'short'}).format(date);}
+    document.querySelectorAll('.money-value').forEach(node=>node.textContent=formatMoney(node.dataset.amount));
+    document.querySelectorAll('.date-value').forEach(node=>node.textContent=formatDate(node.dataset.date));
+    document.querySelectorAll('[data-sync-time]').forEach(node=>{const raw=Number(node.dataset.syncTime);node.textContent=formatDate(raw?new Date(raw*1000).toISOString():node.dataset.syncTime);});
 
-        const raw = String(value).trim();
+    const searchInput=document.getElementById('orderSearch'); const rows=Array.from(document.querySelectorAll('.order-row'));
+    function applyFilters(){const query=(searchInput?.value||'').toLowerCase().trim();rows.forEach(row=>{const rowText=(row.dataset.search||'').toLowerCase();row.hidden=!rowText.includes(query);});}
+    searchInput?.addEventListener('input',applyFilters);
+    document.querySelectorAll('[data-change-order-mapping]').forEach(button=>button.addEventListener('click',()=>{const row=button.closest('.product-row');const form=row?.querySelector('[data-order-map-form]');if(form){form.hidden=false;window.initializeSharedCatalogCascades?.(form);form.querySelector('button,input')?.focus();}}));
+    document.querySelectorAll('[data-dangerous-status]').forEach(form=>form.addEventListener('submit',event=>{if(!window.confirm('Подтвердить отказ по заказу?'))event.preventDefault();}));
 
-        let match = raw.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
-        if (match) {
-            return `${match[3]}.${match[2]}.${match[1]}, ${match[4]}:${match[5]}`;
-        }
-
-        match = raw.match(/^(\d{2})\.(\d{2})\.(\d{4})[,\s]+(\d{2}):(\d{2})/);
-        if (match) {
-            return `${match[1]}.${match[2]}.${match[3]}, ${match[4]}:${match[5]}`;
-        }
-
-        return raw;
-    }
-
-    function applyValueFormatting() {
-        document.querySelectorAll(".money-value").forEach(item => {
-            const amount = item.dataset.amount || item.textContent;
-            item.textContent = formatMoney(amount);
-        });
-
-        document.querySelectorAll(".date-value").forEach(item => {
-            const date = item.dataset.date || item.textContent;
-            item.textContent = formatDate(date);
-        });
-    }
-
-    function applyFilters() {
-        const query = searchInput.value.toLowerCase().trim();
-
-        rows.forEach(row => {
-            const rowText = (row.dataset.search || "").toLowerCase();
-            const rowStatus = (row.dataset.status || "");
-
-            const matchesSearch = rowText.includes(query);
-            const matchesFilter = activeFilter === "all" || rowStatus === activeFilter;
-
-            row.style.display = matchesSearch && matchesFilter ? "block" : "none";
-        });
-    }
-
-    searchInput.addEventListener("input", applyFilters);
-
-    filterButtons.forEach(button => {
-        button.addEventListener("click", () => {
-            filterButtons.forEach(item => item.classList.remove("active"));
-            button.classList.add("active");
-
-            activeFilter = button.dataset.filter;
-            applyFilters();
-        });
-    });
-
-    applyValueFormatting();
+    const modal=document.getElementById('orderSaleModal'); if(!modal)return;
+    const tracking=modal.querySelector('[data-order-sale-tracking]'); const trackingStorageKey='order-sale-tracking:{{ detail_id if selected_order else "" }}';
+    if(tracking){try{const saved=window.sessionStorage.getItem(trackingStorageKey);if(saved!==null)tracking.value=saved;tracking.addEventListener('input',()=>window.sessionStorage.setItem(trackingStorageKey,tracking.value));}catch(error){}}
+    const open=()=>{modal.classList.add('is-open');modal.setAttribute('aria-hidden','false');modal.querySelector('[data-close-sale-dialog]')?.focus();};
+    const close=()=>{modal.classList.remove('is-open');modal.setAttribute('aria-hidden','true');};
+    document.querySelectorAll('[data-open-sale-dialog]').forEach(button=>button.addEventListener('click',open));
+    modal.querySelectorAll('[data-close-sale-dialog]').forEach(button=>button.addEventListener('click',close));
+    modal.addEventListener('click',event=>{if(event.target===modal)close();});
+    document.addEventListener('keydown',event=>{if(event.key==='Escape'&&modal.classList.contains('is-open'))close();});
+    modal.querySelector('[data-order-sale-form]')?.addEventListener('submit',()=>{const button=modal.querySelector('[data-sale-submit]');button.disabled=true;button.textContent='Проводим продажу…';});
+    if(modal.dataset.autoOpen==='1')open();
+})();
 </script>
-
-
-<script>
-    document.addEventListener("DOMContentLoaded", () => {
-        const workspace = document.getElementById(
-            "ordersWorkspace"
-        );
-
-        const switcher = document.getElementById(
-            "ordersLayoutSwitch"
-        );
-
-        const options = Array.from(
-            switcher
-                ? switcher.querySelectorAll("[data-layout-mode]")
-                : []
-        );
-
-        if (!workspace || !switcher || options.length !== 3) {
-            return;
-        }
-
-        const storageKey = "ttt-erp-orders-workspace-mode";
-
-        const modes = [
-            "list-only",
-            "both",
-            "detail-only"
-        ];
-
-        const applyMode = (mode, save = true) => {
-            const safeMode = modes.includes(mode)
-                ? mode
-                : "both";
-
-            workspace.classList.toggle(
-                "order-detail-collapsed",
-                safeMode === "list-only"
-            );
-
-            workspace.classList.toggle(
-                "orders-list-collapsed",
-                safeMode === "detail-only"
-            );
-
-            workspace.dataset.layoutMode = safeMode;
-            switcher.dataset.mode = safeMode;
-
-            options.forEach((option) => {
-                const active =
-                    option.dataset.layoutMode === safeMode;
-
-                option.setAttribute(
-                    "aria-checked",
-                    String(active)
-                );
-            });
-
-            if (!save) {
-                return;
-            }
-
-            try {
-                localStorage.setItem(
-                    storageKey,
-                    safeMode
-                );
-            } catch (error) {
-                // Переключение продолжит работать без сохранения.
-            }
-        };
-
-        let savedMode = "both";
-
-        try {
-            savedMode =
-                localStorage.getItem(storageKey) || "both";
-        } catch (error) {
-            savedMode = "both";
-        }
-
-        applyMode(savedMode, false);
-
-        options.forEach((option) => {
-            option.addEventListener("click", (event) => {
-                event.preventDefault();
-                event.stopPropagation();
-
-                applyMode(option.dataset.layoutMode);
-            });
-        });
-
-        switcher.addEventListener("keydown", (event) => {
-            if (
-                event.key !== "ArrowLeft"
-                && event.key !== "ArrowRight"
-            ) {
-                return;
-            }
-
-            event.preventDefault();
-
-            const currentMode =
-                switcher.dataset.mode || "both";
-
-            const currentIndex = modes.indexOf(currentMode);
-
-            const direction =
-                event.key === "ArrowRight" ? 1 : -1;
-
-            const nextIndex = Math.max(
-                0,
-                Math.min(2, currentIndex + direction)
-            );
-
-            const nextMode = modes[nextIndex];
-
-            applyMode(nextMode);
-
-            const nextOption = options.find(
-                (option) =>
-                    option.dataset.layoutMode === nextMode
-            );
-
-            if (nextOption) {
-                nextOption.focus();
-            }
-        });
-    });
-</script>
-
-<script>
-    document.addEventListener("click", (event) => {
-        const button = event.target.closest("[data-change-order-mapping]");
-        if (!button) {
-            return;
-        }
-        const row = button.closest(".product-row");
-        const form = row ? row.querySelector("[data-order-map-form]") : null;
-        if (!form) {
-            return;
-        }
-        form.hidden = false;
-        window.initializeSharedCatalogCascades?.(form);
-        form.querySelector(".brand-combobox-trigger")?.focus();
-    });
-</script>
-
 </body>
 </html>

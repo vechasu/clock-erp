@@ -7,6 +7,16 @@ import requests
 
 RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 
+STATUS_NAMES = {
+    "N": "Новый",
+    "O": "Новый",
+    "0": "Новый",
+    "A": "Подтверждён",
+    "T": "Не дозвонились",
+    "D": "Собран",
+    "C": "Отказ",
+}
+
 
 class BitrixReadOnlyError(RuntimeError):
     """A safe error that never includes credentials from a request URL."""
@@ -136,6 +146,28 @@ class BitrixOrdersReadOnlyClient:
             "request_count": request_count,
         }
 
+    def list_orders(self, limit=50):
+        """Return the bounded summary window without the N+1 detail requests."""
+        limit = max(1, min(int(limit), 100))
+        payload = self._get_json(self.orders_url, params={"limit": limit})
+        rows = payload.get("orders") or payload.get("result") or []
+        if isinstance(rows, dict):
+            rows = rows.get("orders") or rows.get("items") or []
+        if not isinstance(rows, list):
+            raise BitrixReadOnlyError("Bitrix order list is not an array")
+        return [row for row in rows[:limit] if isinstance(row, dict)]
+
+    def get_order(self, order_id):
+        payload = self._get_json(self.order_url, params={"id": str(order_id)})
+        order = payload.get("order") or payload.get("result")
+        if isinstance(order, dict) and isinstance(order.get("order"), dict):
+            order = order["order"]
+        if order is None:
+            return None
+        if not isinstance(order, dict):
+            raise BitrixReadOnlyError("Bitrix order card has an unexpected structure")
+        return order
+
 
 def money(value):
     if value in (None, ""):
@@ -165,18 +197,49 @@ def first_value(data, *keys):
     return None
 
 
-def normalize_order(order):
-    properties = {}
-    for prop in order.get("properties") or []:
+def property_values(order):
+    result = {}
+    raw_properties = order.get("properties") or order.get("PROPERTIES") or []
+    if isinstance(raw_properties, dict):
+        raw_properties = [
+            {"code": key, "value": value} for key, value in raw_properties.items()
+        ]
+    for prop in raw_properties:
         if not isinstance(prop, dict):
             continue
         code = str(prop.get("code") or prop.get("CODE") or "").strip().upper()
-        if code:
-            properties[code] = prop.get("value", prop.get("VALUE"))
+        name = str(prop.get("name") or prop.get("NAME") or "").strip().upper()
+        value = prop.get("value", prop.get("VALUE"))
+        if value not in (None, "", [], {}):
+            if code:
+                result[code] = value
+            if name:
+                result["NAME:" + name] = value
+    return result
+
+
+def status_presentation(value):
+    code = str(value if value not in (None, "") else "").strip()
+    normalized = code.upper()
+    return {
+        "code": normalized or "UNKNOWN",
+        "label": STATUS_NAMES.get(normalized, "Неизвестный статус"),
+        "known": normalized in STATUS_NAMES,
+    }
+
+
+def normalize_order(order):
+    if not isinstance(order, dict):
+        return None
+    properties = property_values(order)
 
     user = order.get("user") if isinstance(order.get("user"), dict) else {}
     items = []
-    for raw_item in order.get("products") or order.get("basket") or []:
+    raw_items = (
+        order.get("products") or order.get("PRODUCTS")
+        or order.get("basket") or order.get("BASKET") or []
+    )
+    for raw_item in raw_items:
         if not isinstance(raw_item, dict):
             continue
         quantity = number(first_value(raw_item, "quantity", "QUANTITY"), 1.0)
@@ -226,7 +289,67 @@ def normalize_order(order):
                 or first_value(order, "currency", "CURRENCY")
                 or ""
             ),
+            "image_url": str(first_value(
+                raw_item, "image", "IMAGE", "image_url", "IMAGE_URL", "picture"
+            ) or ""),
+            "brand": str(first_value(raw_item, "brand", "BRAND") or ""),
+            "category": str(first_value(raw_item, "category", "CATEGORY") or ""),
+            "raw": raw_item,
         })
+
+    status = status_presentation(first_value(order, "status", "STATUS_ID", "status_id"))
+    products_total = money(sum(
+        Decimal(str(item["line_total"])) for item in items
+        if item.get("line_total") is not None
+    )) if items and all(item.get("line_total") is not None for item in items) else None
+    discount = money(first_value(
+        order, "discount", "DISCOUNT", "discount_price", "DISCOUNT_PRICE"
+    ))
+    delivery_price = money(first_value(
+        order, "delivery_price", "DELIVERY_PRICE", "price_delivery",
+        "PRICE_DELIVERY", "shipment_price", "SHIPMENT_PRICE"
+    ))
+    if delivery_price is None:
+        delivery_price = money(
+            properties.get("DELIVERY_PRICE") or properties.get("PRICE_DELIVERY")
+        )
+    total = money(first_value(order, "price", "PRICE", "sum", "SUM", "total"))
+    comparable = None not in (products_total, total)
+    if comparable and discount is None:
+        discount = 0.0
+    reconciliation_complete = comparable and delivery_price is not None
+    reconciliation_ok = bool(
+        reconciliation_complete
+        and money(Decimal(str(products_total)) - Decimal(str(discount or 0))
+                  + Decimal(str(delivery_price))) == total
+    )
+
+    first_name = first_value(user, "first_name", "FIRST_NAME", "name", "NAME")
+    last_name = first_value(user, "last_name", "LAST_NAME")
+    user_name = " ".join(str(value).strip() for value in (first_name, last_name) if value)
+    customer = (
+        first_value(order, "customer", "client", "name", "USER_NAME")
+        or user_name or properties.get("FIO")
+    )
+    address = (
+        first_value(order, "address", "ADDRESS", "delivery_address")
+        or properties.get("ADDRESS")
+    )
+    city = first_value(order, "city", "CITY") or properties.get("CITY")
+    region = (
+        first_value(order, "region", "region_name", "REGION", "REGION_NAME")
+        or properties.get("REGION") or properties.get("REGION_NAME")
+        or properties.get("LOCATION")
+    )
+    required = {
+        "customer": customer,
+        "phone": first_value(order, "phone", "PHONE") or user.get("phone") or properties.get("PHONE"),
+        "items": items,
+        "total": total,
+        "status": status["known"],
+    }
+    missing = [key for key, value in required.items() if value in (None, "", [], False)]
+    sync_state = "complete" if not missing else "partial"
 
     return {
         "external_id": str(first_value(order, "id", "ID") or ""),
@@ -236,12 +359,10 @@ def normalize_order(order):
         ),
         "created_at": first_value(order, "date", "DATE_INSERT", "date_insert"),
         "updated_at": first_value(order, "date_update", "DATE_UPDATE", "updated_at"),
-        "status": first_value(order, "status", "STATUS_ID", "status_id"),
-        "customer": (
-            first_value(order, "customer", "client", "name")
-            or user.get("name")
-            or properties.get("FIO")
-        ),
+        "status": status["code"],
+        "status_name": status["label"],
+        "status_known": status["known"],
+        "customer": customer,
         "phone": (
             first_value(order, "phone")
             or user.get("phone")
@@ -270,8 +391,25 @@ def normalize_order(order):
         "comment": first_value(
             order, "comment", "USER_DESCRIPTION", "COMMENTS", "REASON_CANCELED"
         ),
+        "address": address,
+        "city": city,
+        "region": region,
+        "tracking": (
+            first_value(order, "tracking", "tracking_number", "TRACKING_NUMBER")
+            or properties.get("TRACKING_NUMBER")
+        ),
         "items": items,
-        "total": money(first_value(order, "price", "PRICE", "sum", "SUM")),
+        "products": [item["raw"] for item in items],
+        "products_count": len(items),
+        "products_total": products_total,
+        "discount": discount,
+        "delivery_price": delivery_price,
+        "total": total,
+        "order_total": total,
+        "calculation_complete": reconciliation_complete,
+        "calculation_consistent": reconciliation_ok,
+        "sync_state": sync_state,
+        "sync_missing": missing,
         "currency": str(first_value(order, "currency", "CURRENCY") or ""),
     }
 

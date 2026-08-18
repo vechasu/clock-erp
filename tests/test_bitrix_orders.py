@@ -12,6 +12,7 @@ from app.clients.bitrix_orders import (
     BitrixReadOnlyError,
     match_items,
     normalize_order,
+    status_presentation,
 )
 from scripts import bitrix_orders_dry_run
 
@@ -236,6 +237,59 @@ class BitrixOrdersDryRunSafetyTest(unittest.TestCase):
 
 
 class BitrixOrderNormalizationTest(unittest.TestCase):
+    def test_customer_phone_address_and_basket_variants_are_normalized(self):
+        order = normalize_order({
+            "ID": "42",
+            "ACCOUNT_NUMBER": "A-42",
+            "STATUS_ID": "A",
+            "PRICE": "1250.00",
+            "user": {"first_name": "Анна", "last_name": "Петрова"},
+            "PROPERTIES": {
+                "PHONE": "+7 900 000-00-00",
+                "CITY": "Москва",
+                "ADDRESS": "ул. Тестовая, 1",
+            },
+            "basket": [{
+                "PRODUCT_ID": "sku-1", "NAME": "Часы",
+                "QUANTITY": "1", "PRICE": "1000",
+            }],
+            "DELIVERY_PRICE": "250",
+        })
+        self.assertEqual(order["customer"], "Анна Петрова")
+        self.assertEqual(order["phone"], "+7 900 000-00-00")
+        self.assertEqual(order["city"], "Москва")
+        self.assertEqual(order["address"], "ул. Тестовая, 1")
+        self.assertEqual(order["items"][0]["bitrix_product_id"], "sku-1")
+        self.assertEqual(order["products_total"], 1000.0)
+        self.assertEqual(order["delivery_price"], 250.0)
+        self.assertTrue(order["calculation_consistent"])
+
+    def test_total_is_never_relabelled_as_delivery(self):
+        order = normalize_order({
+            "id": 7, "status": "A", "price": "1250",
+            "user": {"name": "Клиент", "phone": "+70000000000"},
+            "products": [{"id": 1, "name": "Часы", "quantity": 1, "price": 1000}],
+        })
+        self.assertEqual(order["products_total"], 1000.0)
+        self.assertIsNone(order["delivery_price"])
+        self.assertFalse(order["calculation_complete"])
+        self.assertEqual(order["sync_state"], "complete")
+
+    def test_unknown_status_never_exposes_raw_code_as_label(self):
+        self.assertEqual(status_presentation("unexpected")["label"], "Неизвестный статус")
+        self.assertEqual(status_presentation(0)["label"], "Новый")
+        order = normalize_order({"id": 1, "status": "?", "products": []})
+        self.assertEqual(order["status_name"], "Неизвестный статус")
+        self.assertEqual(order["sync_state"], "partial")
+        self.assertIn("status", order["sync_missing"])
+
+    def test_partial_response_keeps_missing_fields_explicit(self):
+        order = normalize_order({"id": 1, "status": "N", "price": "0"})
+        self.assertEqual(order["sync_state"], "partial")
+        self.assertIn("customer", order["sync_missing"])
+        self.assertIn("phone", order["sync_missing"])
+        self.assertIn("items", order["sync_missing"])
+
     def test_price_types_are_kept_separate(self):
         order = normalize_order({
             "id": 7,
