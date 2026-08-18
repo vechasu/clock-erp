@@ -38,13 +38,18 @@ def backup_runtime(database_path, image_root, backup_root):
             destination.close()
             destination = None
             (target / "catalog.db").unlink()
-            subprocess.check_call([
-                "sqlite3",
-                str(database_path),
-                ".timeout 10000\n.backup '{}'".format(
-                    str(target / "catalog.db").replace("'", "''")
-                ),
-            ])
+            process = subprocess.Popen(
+                ["sqlite3", str(database_path)],
+                stdin=subprocess.PIPE,
+            )
+            commands = ".timeout 10000\n.backup '{}'\n".format(
+                str(target / "catalog.db").replace("'", "''")
+            ).encode("utf-8")
+            process.communicate(commands)
+            if process.returncode:
+                raise subprocess.CalledProcessError(
+                    process.returncode, process.args
+                )
     finally:
         if destination is not None:
             destination.close()
