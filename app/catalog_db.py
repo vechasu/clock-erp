@@ -1542,12 +1542,40 @@ class CatalogDatabase:
             "CREATE INDEX IF NOT EXISTS idx_erp_sales_source_external "
             "ON erp_sales(source, external_order_id)"
         )
+        # Production still runs SQLite 3.7, which has no partial indexes.
+        # Triggers provide the same active source+external-order uniqueness
+        # while still allowing a new sale after a previous one is cancelled.
         connection.execute(
-            "CREATE UNIQUE INDEX IF NOT EXISTS "
-            "idx_erp_sales_tictactoy_active_order "
-            "ON erp_sales(source, external_order_id) "
-            "WHERE source = 'tictactoy' AND external_order_id IS NOT NULL "
-            "AND cancelled_at IS NULL AND deleted_at IS NULL"
+            "DROP INDEX IF EXISTS idx_erp_sales_tictactoy_active_order"
+        )
+        connection.execute(
+            "CREATE TRIGGER IF NOT EXISTS "
+            "trg_erp_sales_tictactoy_active_insert "
+            "BEFORE INSERT ON erp_sales "
+            "WHEN NEW.source = 'tictactoy' "
+            "AND NEW.external_order_id IS NOT NULL "
+            "AND NEW.cancelled_at IS NULL AND NEW.deleted_at IS NULL "
+            "BEGIN SELECT RAISE(ABORT, 'duplicate active tictactoy order') "
+            "WHERE EXISTS (SELECT 1 FROM erp_sales existing "
+            "WHERE existing.source = NEW.source "
+            "AND existing.external_order_id = NEW.external_order_id "
+            "AND existing.cancelled_at IS NULL "
+            "AND existing.deleted_at IS NULL); END"
+        )
+        connection.execute(
+            "CREATE TRIGGER IF NOT EXISTS "
+            "trg_erp_sales_tictactoy_active_update "
+            "BEFORE UPDATE OF source, external_order_id, cancelled_at, "
+            "deleted_at ON erp_sales "
+            "WHEN NEW.source = 'tictactoy' "
+            "AND NEW.external_order_id IS NOT NULL "
+            "AND NEW.cancelled_at IS NULL AND NEW.deleted_at IS NULL "
+            "BEGIN SELECT RAISE(ABORT, 'duplicate active tictactoy order') "
+            "WHERE EXISTS (SELECT 1 FROM erp_sales existing "
+            "WHERE existing.id <> NEW.id AND existing.source = NEW.source "
+            "AND existing.external_order_id = NEW.external_order_id "
+            "AND existing.cancelled_at IS NULL "
+            "AND existing.deleted_at IS NULL); END"
         )
         connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_catalog_stock_movements_receipt "
