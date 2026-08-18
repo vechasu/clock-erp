@@ -86,6 +86,7 @@ from app.services.inventory_lock import (
     assert_product_references_unlocked,
 )
 from app.services.out_of_stock import OutOfStockChecks
+from app.services.product_excel_export import ProductExcelExport
 from app.services.receipt_inventory import (
     ReceiptInventory,
 )
@@ -2994,6 +2995,12 @@ def warehouse_page():
                 catalog["total"] if out_of_stock
                 else catalog["stats"].get("zero_positions", 0)
             ),
+            export_filtered_url=url_for(
+                "warehouse_products_export", scope="filtered",
+                **{key: value for key, value in request.args.items()
+                   if key not in {"page", "scope"}}
+            ),
+            export_all_url=url_for("warehouse_products_export", scope="all"),
             warehouse_active_filter_count=warehouse_active_filter_count,
             warehouse_active_filter_label=warehouse_active_filter_label,
             open_add=request.args.get("open_add") == "1",
@@ -3055,6 +3062,100 @@ def warehouse_page():
     )
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
+    return response
+
+
+@app.route("/app/products/export.xlsx")
+def warehouse_products_export():
+    scope = (request.args.get("scope") or "filtered").strip()
+    if scope not in {"filtered", "all"}:
+        return jsonify(ok=False, message="Неизвестный режим экспорта."), 400
+
+    filters = {}
+    if scope == "filtered":
+        view = (request.args.get("view") or "products").strip()
+        check_state = (request.args.get("check_state") or "all").strip()
+        if check_state not in {"all", "unchecked", "partial", "complete"}:
+            check_state = "all"
+        sort_by = (request.args.get("sort_by") or "created_at").strip()
+        if sort_by not in {
+            "name", "article", "brand", "category", "stock", "created_at",
+            "cell", "model",
+        }:
+            sort_by = "created_at"
+        sort_dir = (request.args.get("sort_dir") or (
+            "desc" if sort_by == "created_at" else "asc"
+        )).strip()
+        if sort_dir not in {"asc", "desc"}:
+            sort_dir = "desc" if sort_by == "created_at" else "asc"
+        created_from = (request.args.get("date_from") or "").strip()
+        created_to = (request.args.get("date_to") or "").strip()
+        for value_name, value in (("from", created_from), ("to", created_to)):
+            try:
+                time.strptime(value, "%Y-%m-%d")
+            except (TypeError, ValueError):
+                if value_name == "from":
+                    created_from = ""
+                else:
+                    created_to = ""
+        if created_from and created_to and created_from > created_to:
+            created_from, created_to = created_to, created_from
+        brand_id = (request.args.get("brand_id") or "").strip()
+        category_id = (request.args.get("category_id") or "").strip()
+        filters = {
+            "query": (request.args.get("q") or "").strip(),
+            "brand": "" if brand_id.isdigit() else (request.args.get("brand") or "").strip(),
+            "category": "" if category_id.isdigit() else (request.args.get("category") or "").strip(),
+            "cell": (request.args.get("cell") or "").strip(),
+            "hide_zero": request.args.get("in_stock") == "1",
+            "sort_by": sort_by,
+            "sort_dir": sort_dir,
+            "created_from": created_from,
+            "created_to": created_to,
+            "brand_id": brand_id if brand_id.isdigit() else None,
+            "category_id": category_id if category_id.isdigit() else None,
+            "stock_state": "out" if view == "out_of_stock" else "all",
+            "check_state": check_state if view == "out_of_stock" else "all",
+        }
+    else:
+        filters = {"sort_by": "name", "sort_dir": "asc"}
+
+    catalog = ExcelProductCatalog()
+    page_size = 1000
+    first = catalog.list_products(
+        page=1, per_page=page_size, include_facets=False,
+        include_cell_item_names=False, **filters
+    )
+    exporter = ProductExcelExport(catalog.database)
+
+    def products():
+        page = 1
+        result = first
+        while True:
+            items = exporter.enrich(result["items"])
+            for item in items:
+                yield item
+            if page >= result["pages"]:
+                break
+            page += 1
+            result = catalog.list_products(
+                page=page, per_page=page_size, include_facets=False,
+                include_cell_item_names=False, **filters
+            )
+
+    payload = exporter.build(products(), first["total"])
+    filename = "products-{}-{}.xlsx".format(
+        "filtered" if scope == "filtered" else "all",
+        datetime.now(ERP_TIMEZONE).date().isoformat(),
+    )
+    response = Response(
+        payload,
+        mimetype=(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        ),
+        headers={"Content-Disposition": 'attachment; filename="{}"'.format(filename)},
+    )
+    response.headers["Cache-Control"] = "no-store"
     return response
 
 
