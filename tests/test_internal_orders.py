@@ -35,8 +35,9 @@ class InternalOrdersTest(unittest.TestCase):
     def get_orders_page(self, path="/app/orders", orders=None):
         with (
             mock.patch.object(web, "get_orders", return_value=self.orders if orders is None else orders),
-            mock.patch.object(web, "get_warehouse_items", return_value=[]),
-            mock.patch.object(web, "load_product_mappings", return_value={}),
+            mock.patch.object(web, "build_order_product_mapping_context", return_value={}),
+            mock.patch.object(web, "is_order_stock_written_off", return_value=False),
+            mock.patch.object(web, "get_order_conducted_sale", return_value=None),
         ):
             return self.client.get(path)
 

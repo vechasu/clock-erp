@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <title>ТТТ ERP — Заказы</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-combobox.css') }}">
+    <script defer src="{{ url_for('static', filename='js/catalog-combobox.js') }}"></script>
 
     <style>
         * {
@@ -1012,10 +1014,100 @@
             }
         }
 
+        .order-map-form {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+            gap: 10px;
+            align-items: end;
+            margin-top: 12px;
+            padding: 14px;
+            border: 1px solid #dbeafe;
+            border-radius: 16px;
+            background: #f8fbff;
+        }
+
+        .order-map-field {
+            min-width: 0;
+        }
+
+        .order-map-field > label {
+            display: block;
+            margin-bottom: 6px;
+            color: #475569;
+            font-size: 12px;
+            font-weight: 800;
+        }
+
+        .order-map-card {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-top: 12px;
+            padding: 12px;
+            border: 1px solid #bbf7d0;
+            border-radius: 16px;
+            background: #f0fdf4;
+        }
+
+        .order-map-card.is-warning {
+            border-color: #fde68a;
+            background: #fffbeb;
+        }
+
+        .order-map-photo {
+            width: 54px;
+            height: 54px;
+            flex: 0 0 auto;
+            overflow: hidden;
+            border-radius: 12px;
+            background: #e5e7eb;
+            object-fit: cover;
+        }
+
+        .order-map-copy {
+            min-width: 0;
+            flex: 1;
+        }
+
+        .order-map-copy strong,
+        .order-map-copy span {
+            display: block;
+            overflow-wrap: anywhere;
+        }
+
+        .order-map-copy span {
+            margin-top: 3px;
+            color: #64748b;
+            font-size: 12px;
+        }
+
+        .order-map-state {
+            margin-top: 8px;
+            color: #991b1b;
+            font-size: 13px;
+            font-weight: 800;
+        }
+
+        @media (max-width: 720px) {
+            .order-map-form {
+                grid-template-columns: 1fr;
+            }
+
+            .order-map-form .button {
+                width: 100%;
+            }
+
+            .order-map-card {
+                align-items: flex-start;
+                flex-wrap: wrap;
+            }
+        }
+
 </style>
 </head>
 
 <body>
+{% from "_catalog_combobox.html" import render_catalog_combobox %}
 <div class="app">
     {% include "_sidebar.html" %}
 
@@ -1361,8 +1453,9 @@
                                             {% set product_price = product.get("price") or product.get("PRICE") or "" %}
                                             {% set product_line_total = product_price|float * product_quantity|float %}
 
-                                            {% set product_id = product.get("id") or product.get("ID") or "" %}
-                                            {% set mapped_product = product_mappings.get(product_id|string) if product_mappings else none %}
+                                            {% set bitrix_product_id = product.get("product_id") or product.get("PRODUCT_ID") or product.get("offer_id") or product.get("OFFER_ID") or product.get("sku_id") or product.get("SKU_ID") or product.get("id") or product.get("ID") or "" %}
+                                            {% set mapping = order_product_mappings.get(bitrix_product_id|string) if order_product_mappings else none %}
+                                            {% set mapped_product = mapping.product if mapping and mapping.product else none %}
 
                                             <div class="product-row">
                                                 <div>
@@ -1371,52 +1464,90 @@
                                                         Количество: {{ product_quantity|float|round(0, "floor")|int }} шт.
                                                     </div>
 
-                                                    {% if not mapped_product %}
-                                                    <form class="status-form product-map-form" method="post" action="/order/{{ detail_id }}/product-map" style="margin-top: 10px; display: grid; grid-template-columns: minmax(0, 1fr) 130px; gap: 8px; position: relative;">
-                                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                                        <input type="hidden" name="bitrix_product_id" value="{{ product_id }}">
-                                                        <input type="hidden" name="bitrix_product_name" value="{{ product_name }}">
-                                                        <input type="hidden" class="product-map-hidden-id" name="moysklad_product_id" value="{% if mapped_product %}{{ mapped_product.moysklad_product_id }}{% endif %}">
-
-                                                        <div class="product-map-picker" style="position: relative;">
-                                                            <input
-                                                                type="text"
-                                                                class="product-map-combobox"
-                                                                value="{% if mapped_product %}{{ mapped_product.moysklad_product_name }}{% endif %}"
-                                                                placeholder="Сопоставить с товаром склада"
-                                                                autocomplete="off"
-                                                                style="width: 100%; height: 42px; border-radius: 12px; border: 1px solid #d1d5db; padding: 0 10px;"
-                                                            >
-
-                                                            <div class="product-map-options" style="display: none; position: absolute; z-index: 50; top: 48px; left: 0; right: 0; max-height: 260px; overflow: auto; background: white; border: 1px solid #d1d5db; border-radius: 12px; box-shadow: 0 14px 34px rgba(15, 23, 42, 0.18);">
-                                                                {% for item in warehouse_items or [] %}
-                                                                    <button
-                                                                        type="button"
-                                                                        class="product-map-option"
-                                                                        data-id="{{ item.id }}"
-                                                                        data-label="{{ item.name }} — остаток {{ item.stock_display or item.stock }}"
-                                                                        data-search="{{ item.name }} {{ item.article or '' }} {{ item.code or '' }} {{ item.category or '' }}"
-                                                                        style="width: 100%; text-align: left; display: block; padding: 10px 12px; border: 0; border-bottom: 1px solid #f1f5f9; background: white; color: #111827; font-weight: 700; cursor: pointer;"
-                                                                    >
-                                                                        {{ item.name }} — остаток {{ item.stock_display or item.stock }}
-                                                                    </button>
-                                                                {% endfor %}
-                                                            </div>
+                                                    {% if mapped_product and mapping.state == "mapped" %}
+                                                    <div class="order-map-card{% if not mapped_product.moysklad_product_id %} is-warning{% endif %}">
+                                                        {% if mapped_product.image_url %}
+                                                        <img class="order-map-photo" src="{{ mapped_product.image_url }}" alt="">
+                                                        {% else %}
+                                                        <div class="order-map-photo"></div>
+                                                        {% endif %}
+                                                        <div class="order-map-copy">
+                                                            <strong>{{ mapped_product.name }}</strong>
+                                                            <span>{{ mapped_product.brand or "Без бренда" }} · {{ mapped_product.category or "Без категории" }}</span>
+                                                            <span>Артикул: {{ mapped_product.article or "—" }} · Штрихкод: {{ mapped_product.barcode or "—" }}</span>
+                                                            <span>Остаток: {{ mapped_product.stock_display }}{% if mapped_product.stock|float <= 0 %} · Нет в наличии{% endif %}</span>
+                                                            {% if not mapped_product.moysklad_product_id %}<span>Нет дополнительной связи с МойСклад</span>{% endif %}
                                                         </div>
-
-                                                        <button type="submit">Сопоставить</button>
-                                                    </form>
-                                                    {% endif %}
-
-                                                    {% if mapped_product %}
-                                                        <div class="product-meta" style="margin-top: 8px; color: #166534; font-weight: 800;">
-                                                            ✅ Склад: {{ mapped_product.moysklad_product_name }}
-                                                        </div>
+                                                        <button class="button button-secondary" type="button" data-change-order-mapping>Изменить сопоставление</button>
+                                                    </div>
                                                     {% else %}
-                                                        <div class="product-meta" style="margin-top: 8px; color: #991b1b; font-weight: 800;">
-                                                            ⚠️ Товар ещё не сопоставлен со складом
-                                                        </div>
+                                                    <div class="order-map-state">{{ mapping.state_label if mapping else "Не сопоставлен" }}</div>
                                                     {% endif %}
+
+                                                    <form
+                                                        class="status-form order-map-form"
+                                                        method="post"
+                                                        action="/order/{{ detail_id }}/product-map"
+                                                        data-shared-catalog-scope
+                                                        data-order-map-form
+                                                        {% if mapped_product and mapping.state == "mapped" %}hidden{% endif %}
+                                                    >
+                                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                                        <input type="hidden" name="bitrix_product_id" value="{{ bitrix_product_id }}">
+                                                        <div class="order-map-field">
+                                                            <label>Бренд</label>
+                                                            {{ render_catalog_combobox(
+                                                                "orderMapBrand" ~ loop.index,
+                                                                "selected_brand",
+                                                                [],
+                                                                selected_value=mapped_product.brand if mapped_product else "",
+                                                                selected_id=mapped_product.brand_id if mapped_product else "",
+                                                                selected_label=mapped_product.brand if mapped_product else "",
+                                                                item_label="бренд",
+                                                                action_kind="brand",
+                                                                action_label="Добавить новый бренд",
+                                                                shared_catalog_kind="brand",
+                                                                id_input_name="brand_id",
+                                                                component_class="filter-combobox"
+                                                            ) }}
+                                                        </div>
+                                                        <div class="order-map-field">
+                                                            <label>Категория</label>
+                                                            {{ render_catalog_combobox(
+                                                                "orderMapCategory" ~ loop.index,
+                                                                "selected_category",
+                                                                [],
+                                                                selected_value=mapped_product.category if mapped_product else "",
+                                                                selected_id=mapped_product.category_id if mapped_product else "",
+                                                                selected_label=mapped_product.category if mapped_product else "",
+                                                                item_label="категорию",
+                                                                disabled=not mapped_product,
+                                                                action_kind="category",
+                                                                action_label="Добавить новую категорию",
+                                                                shared_catalog_kind="category",
+                                                                id_input_name="category_id",
+                                                                component_class="filter-combobox"
+                                                            ) }}
+                                                        </div>
+                                                        <div class="order-map-field">
+                                                            <label>Товар</label>
+                                                            {{ render_catalog_combobox(
+                                                                "orderMapProduct" ~ loop.index,
+                                                                "product_id",
+                                                                [],
+                                                                selected_value=mapped_product.id if mapped_product else "",
+                                                                selected_label=mapped_product.name if mapped_product else "",
+                                                                selected_item=mapped_product if mapped_product else none,
+                                                                item_label="товар",
+                                                                disabled=not mapped_product,
+                                                                action_kind="product",
+                                                                action_label="Добавить новый товар",
+                                                                shared_catalog_kind="product",
+                                                                component_class="filter-combobox sales-product-combobox"
+                                                            ) }}
+                                                        </div>
+                                                        <button class="button button-primary" type="submit">Сопоставить</button>
+                                                    </form>
                                                 </div>
 
                                                 <div class="product-price">
@@ -1437,8 +1568,15 @@
                                                 type="button"
                                                 disabled
                                             >
-                                                Продажа уже проведена
+                                                Продажа проведена
                                             </button>
+                                            {% if conducted_sale %}
+                                            <div class="product-meta" style="margin-top: 8px;">
+                                                {{ conducted_sale.performed_at or conducted_sale.created_at }}
+                                                {% if conducted_sale.performed_by %}· {{ conducted_sale.performed_by }}{% endif %}
+                                                · <a href="/sales?source=tictactoy&sale_id={{ conducted_sale.id }}">Открыть продажу</a>
+                                            </div>
+                                            {% endif %}
                                             {% else %}
                                             <button
                                                 class="button button-primary"
@@ -1587,17 +1725,30 @@
                     <div class="order-sale-fact"><span>Источник</span><strong>TicTacToy</strong></div>
                     <div class="order-sale-fact"><span>Клиент</span><strong>{{ detail_customer or 'Не указан' }}</strong></div>
                     <div class="order-sale-fact"><span>Телефон</span><strong>{{ detail_phone or 'Не указан' }}</strong></div>
+                    <div class="order-sale-fact"><span>Дата заказа</span><strong>{{ detail_date or 'Не указана' }}</strong></div>
+                    <div class="order-sale-fact"><span>Доставка</span><strong><span class="money-value" data-amount="{{ detail_delivery_price or 0 }}">{{ detail_delivery_price or 0 }}</span> ₽</strong></div>
                     <div class="order-sale-fact"><span>Общая сумма</span><strong>{% if detail_order_total %}<span class="money-value" data-amount="{{ detail_order_total }}">{{ detail_order_total }}</span> ₽{% else %}Не указана{% endif %}</strong></div>
                 </div>
                 <div class="order-sale-products">
                     <strong>Товары</strong>
                     <ul>
                         {% for product in detail_products %}
-                        <li>{{ product.get("name") or product.get("NAME") or "Товар без названия" }} — {{ product.get("quantity") or product.get("QUANTITY") or 1 }} шт.</li>
+                        {% set modal_bitrix_id = product.get("product_id") or product.get("PRODUCT_ID") or product.get("offer_id") or product.get("OFFER_ID") or product.get("sku_id") or product.get("SKU_ID") or product.get("id") or product.get("ID") or "" %}
+                        {% set modal_mapping = order_product_mappings.get(modal_bitrix_id|string) if order_product_mappings else none %}
+                        <li>
+                            {{ product.get("name") or product.get("NAME") or "Товар без названия" }} — {{ product.get("quantity") or product.get("QUANTITY") or 1 }} шт.
+                            {% if product.get("price") or product.get("PRICE") %}× <span class="money-value" data-amount="{{ product.get('price') or product.get('PRICE') }}">{{ product.get("price") or product.get("PRICE") }}</span> ₽{% endif %}
+                            <br>
+                            {% if modal_mapping and modal_mapping.state == "mapped" %}
+                            <span>ERP: {{ modal_mapping.product.name }} · остаток {{ modal_mapping.product.stock_display }}</span>
+                            {% else %}
+                            <span class="order-map-state">{{ modal_mapping.state_label if modal_mapping else "Не сопоставлен" }}</span>
+                            {% endif %}
+                        </li>
                         {% endfor %}
                     </ul>
                 </div>
-                <p class="order-sale-warning">Проведение продажи изменит складские остатки и создаст документы списания в МойСклад.</p>
+                <p class="order-sale-warning">Проведение создаст одну продажу TicTacToy и атомарно изменит остатки единого каталога ERP. МойСклад не является источником истины для этой операции.</p>
             </div>
             <div class="order-sale-dialog-actions">
                 <button class="button button-secondary" type="button" data-close-sale-dialog>Отмена</button>
@@ -1768,192 +1919,6 @@
 
 
 <script>
-    document.addEventListener("focusin", function(event) {
-        if (!event.target.classList.contains("product-map-combobox")) {
-            return;
-        }
-
-        const picker = event.target.closest(".product-map-picker");
-        const options = picker ? picker.querySelector(".product-map-options") : null;
-
-        if (options) {
-            options.style.display = "block";
-        }
-    });
-
-    document.addEventListener("input", function(event) {
-        if (!event.target.classList.contains("product-map-combobox")) {
-            return;
-        }
-
-        const input = event.target;
-        const form = input.closest(".product-map-form");
-        const hiddenId = form ? form.querySelector(".product-map-hidden-id") : null;
-        const picker = input.closest(".product-map-picker");
-        const optionsBox = picker ? picker.querySelector(".product-map-options") : null;
-
-        if (hiddenId) {
-            hiddenId.value = "";
-        }
-
-        if (!optionsBox) {
-            return;
-        }
-
-        optionsBox.style.display = "block";
-
-        const query = input.value.trim().toLowerCase();
-        let visibleCount = 0;
-
-        optionsBox.querySelectorAll(".product-map-option").forEach(function(option) {
-            const text = (option.dataset.search || option.textContent || "").toLowerCase();
-            const isVisible = !query || text.includes(query);
-
-            option.style.display = isVisible ? "block" : "none";
-
-            if (isVisible) {
-                visibleCount += 1;
-            }
-        });
-    });
-
-    document.addEventListener("click", function(event) {
-        const option = event.target.closest(".product-map-option");
-
-        if (option) {
-            const form = option.closest(".product-map-form");
-            const input = form ? form.querySelector(".product-map-combobox") : null;
-            const hiddenId = form ? form.querySelector(".product-map-hidden-id") : null;
-            const optionsBox = form ? form.querySelector(".product-map-options") : null;
-
-            if (input) {
-                input.value = option.dataset.label || option.textContent.trim();
-            }
-
-            if (hiddenId) {
-                hiddenId.value = option.dataset.id || "";
-            }
-
-            if (optionsBox) {
-                optionsBox.style.display = "none";
-            }
-
-            return;
-        }
-
-        document.querySelectorAll(".product-map-picker").forEach(function(picker) {
-            if (!picker.contains(event.target)) {
-                const optionsBox = picker.querySelector(".product-map-options");
-
-                if (optionsBox) {
-                    optionsBox.style.display = "none";
-                }
-            }
-        });
-    });
-</script>
-
-
-<script>
-    function positionProductMapDropdown(input) {
-        const form = input.closest(".product-map-form");
-        const optionsBox = form ? form.querySelector(".product-map-options") : null;
-
-        if (!optionsBox) {
-            return;
-        }
-
-        const rect = input.getBoundingClientRect();
-        const minWidth = 460;
-        const viewportPadding = 12;
-        const width = Math.min(
-            Math.max(rect.width, minWidth),
-            window.innerWidth - viewportPadding * 2
-        );
-
-        let left = rect.left;
-
-        if (left + width > window.innerWidth - viewportPadding) {
-            left = window.innerWidth - width - viewportPadding;
-        }
-
-        if (left < viewportPadding) {
-            left = viewportPadding;
-        }
-
-        const spaceBelow = window.innerHeight - rect.bottom - viewportPadding;
-        const spaceAbove = rect.top - viewportPadding;
-
-        let top = rect.bottom + 6;
-        let maxHeight = Math.min(360, Math.max(180, spaceBelow));
-
-        if (spaceBelow < 180 && spaceAbove > spaceBelow) {
-            maxHeight = Math.min(360, Math.max(180, spaceAbove));
-            top = rect.top - maxHeight - 6;
-        }
-
-        optionsBox.style.left = left + "px";
-        optionsBox.style.top = top + "px";
-        optionsBox.style.width = width + "px";
-        optionsBox.style.maxHeight = maxHeight + "px";
-        optionsBox.style.zIndex = "999999";
-    }
-
-    document.addEventListener("focusin", function(event) {
-        if (!event.target.classList.contains("product-map-combobox")) {
-            return;
-        }
-
-        const form = event.target.closest(".product-map-form");
-        const optionsBox = form ? form.querySelector(".product-map-options") : null;
-
-        if (optionsBox) {
-            positionProductMapDropdown(event.target);
-            optionsBox.style.display = "block";
-        }
-    });
-
-    document.addEventListener("input", function(event) {
-        if (!event.target.classList.contains("product-map-combobox")) {
-            return;
-        }
-
-        positionProductMapDropdown(event.target);
-    });
-
-    window.addEventListener("scroll", function() {
-        document.querySelectorAll(".product-map-options").forEach(function(optionsBox) {
-            if (optionsBox.style.display !== "block") {
-                return;
-            }
-
-            const form = optionsBox.closest(".product-map-form");
-            const input = form ? form.querySelector(".product-map-combobox") : null;
-
-            if (input) {
-                positionProductMapDropdown(input);
-            }
-        });
-    }, true);
-
-    window.addEventListener("resize", function() {
-        document.querySelectorAll(".product-map-options").forEach(function(optionsBox) {
-            if (optionsBox.style.display !== "block") {
-                return;
-            }
-
-            const form = optionsBox.closest(".product-map-form");
-            const input = form ? form.querySelector(".product-map-combobox") : null;
-
-            if (input) {
-                positionProductMapDropdown(input);
-            }
-        });
-    });
-</script>
-
-
-<script>
     document.addEventListener("DOMContentLoaded", () => {
         const workspace = document.getElementById(
             "ordersWorkspace"
@@ -2079,6 +2044,23 @@
                 nextOption.focus();
             }
         });
+    });
+</script>
+
+<script>
+    document.addEventListener("click", (event) => {
+        const button = event.target.closest("[data-change-order-mapping]");
+        if (!button) {
+            return;
+        }
+        const row = button.closest(".product-row");
+        const form = row ? row.querySelector("[data-order-map-form]") : null;
+        if (!form) {
+            return;
+        }
+        form.hidden = false;
+        window.initializeSharedCatalogCascades?.(form);
+        form.querySelector(".brand-combobox-trigger")?.focus();
     });
 </script>
 

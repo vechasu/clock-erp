@@ -11,7 +11,7 @@
 
 | Модуль | Назначение и статус | URL и основные действия | Код | Целевые тесты | Ограничения |
 | --- | --- | --- | --- | --- | --- |
-| Заказы | `current`: карточка заказа, подтверждение в Bitrix и проведение продажи TicTacToy через складское списание | `/orders`, `/app/orders`, `/order/<id>`; POST для product map, статуса и проведения продажи с защитой от дублей | `app/web.py`, `app/clients/bitrix_orders.py`, `app/templates/orders.html` | `tests/test_bitrix_orders.py`, `tests/test_internal_orders.py`, `tests/test_order_tictactoy_sale.py` | Проведение требует сопоставления всех товаров и достаточных остатков; внешние записи выполняются только после полной локальной проверки |
+| Заказы | `current`: карточка заказа, подтверждение в Bitrix, каскадное сопоставление с единым каталогом и проведение одной многопозиционной продажи TicTacToy | `/orders`, `/app/orders`, `/order/<id>`; POST для product map, статуса и атомарного проведения продажи с защитой от дублей | `app/web.py`, `app/clients/bitrix_orders.py`, `app/templates/orders.html`, `app/services/shared_catalog.py`, `app/services/sales_inventory.py` | `tests/test_bitrix_orders.py`, `tests/test_internal_orders.py`, `tests/test_order_tictactoy_sale.py`, `tests/test_sales_inventory.py` | Проведение требует сопоставления всех товаров и достаточных агрегированных остатков; источником локального остатка является ERP, а связь с МойСклад дополнительна |
 | Товары | `current`: каталог операционных товаров, карточки и изображения | `/warehouse`, `/app/products`; поиск, фильтры, сортировка, просмотр, создание, редактирование, архивирование, изменение остатка; `/products` перенаправляет на `/warehouse` | `app/web.py`, `app/catalog/application.py`, `app/services/excel_product_catalog.py`, `app/templates/warehouse.html` | `tests/test_excel_product_catalog.py`, `tests/test_product_deletion.py`, `tests/test_product_photo_ui.py`, `tests/test_warehouse_product_photos.py` | Часть интеграционных данных приходит из Bitrix и МойСклад; их доступность этим документом не проверялась |
 | Бренды | `current`: справочник брендов и связь с товарами/категориями | `/warehouse?view=brands`; создание, переименование, привязка категории, удаление с серверными проверками; JSON API `/api/v1/brands` | `app/web.py`, `app/catalog/application.py`, `app/templates/warehouse_brands.html` | `tests/test_brand_management.py`, `tests/test_catalog_cascade_unification.py` | Удаление может блокироваться связанными товарами; правила подтверждаются сервером, не только формой |
 | Категории | `current`: глобальные категории и разрез по брендам | `/warehouse?view=categories`; создание, переименование, связь с брендом, удаление; JSON API `/api/v1/categories` и `/api/v1/category-overviews` | `app/web.py`, `app/catalog/application.py`, `app/services/category_consolidation.py`, `app/templates/warehouse_categories.html` | `tests/test_category_management.py`, `tests/test_category_integrity_repair.py`, `tests/test_category_consolidation.py` | Исторические дубли и миграции требуют отдельных безопасных процедур |
@@ -38,3 +38,32 @@
 
 Связанные документы: [архитектура](../architecture/README.md),
 [UX](../ux/README.md), [Definition of Done](../quality/definition-of-done.md).
+
+## Заказ Bitrix → продажа TicTacToy
+
+Сопоставление в карточке заказа использует тот же серверный каскад
+`SharedCatalog`, что и форма продаж: активный бренд → его категория → активный
+товар из `catalog_excel_products`. Поиск выполняется на сервере по названию,
+артикулу и штрихкоду; нулевой остаток не скрывает товар. В HTML не встраивается
+полный каталог, а выбранная запись восстанавливается запросом по ID.
+
+Связь хранит отдельно стабильный `bitrix_product_id` товара/предложения,
+`bitrix_sku_id`, диагностический `bitrix_order_line_id`, внутренние `product_id`,
+`brand_id`, `category_id` ERP и необязательный `moysklad_product_id`.
+Переименование не ломает связь. Старые записи только с `moysklad_product_id`
+сохраняются и разрешаются через единый каталог лишь при однозначном совпадении;
+неоднозначные, отсутствующие и архивные связи требуют ручного выбора. Поэтому
+разрушающая миграция `product_mappings.json` не нужна.
+
+Подтверждение статуса `A` само остаток не меняет. Отдельное проведение создаёт
+одну запись `erp_sales`, несколько `erp_sale_items` и движения по каждой строке
+в одной SQLite-транзакции. Количество одинаковых товаров проверяется суммарно,
+а снимок названий, идентификаторов, цен и данных заказа сохраняется в продаже.
+Источник истины для этой операции — локальный каталог ERP; отдельное списание
+МойСклад и legacy JSON-операция не создаются.
+
+Повторное проведение защищено нормализованным источником `tictactoy`, внешним
+ID заказа, idempotency key, повторной проверкой внутри `BEGIN IMMEDIATE` и
+условным обновлением `stock >= quantity`. Отказ проведённого заказа блокируется:
+сотрудник сначала отменяет связанную продажу штатным механизмом, который
+возвращает остаток обратным движением и сохраняет историю.
