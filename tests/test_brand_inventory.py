@@ -242,23 +242,31 @@ class BrandInventoryTest(unittest.TestCase):
             detail["total_positions"],
         )
 
-    def test_completion_writes_pending_to_zero_atomically(self):
+    def test_completion_never_writes_pending_to_zero(self):
         one = self.product(stock=4)
         two = self.product(stock=2, name="Часы Beta", article="B-2")
         session = self.start()
         result = self.service.complete(session["id"], confirmation=True)
-        self.assertTrue(result["ok"])
-        self.assertEqual((self.stock(one["id"]), self.stock(two["id"])), (0, 0))
+        self.assertFalse(result["ok"])
+        self.assertTrue(result["conflict"])
+        self.assertIn("не списываются автоматически", result["message"])
+        self.assertEqual((self.stock(one["id"]), self.stock(two["id"])), (4, 2))
         with self.database.connect() as connection:
             statuses = {row[0] for row in connection.execute(
                 "SELECT status FROM erp_inventory_items WHERE session_id = ?", (session["id"],)
             )}
-        self.assertEqual(statuses, {"missing"})
+        self.assertEqual(statuses, {"pending"})
+        self.assertEqual(self.service.get(session["id"])["status"], "active")
 
-    def test_completion_failure_rolls_back_every_pending_item(self):
+    def test_completion_failure_rolls_back_completed_state(self):
         one = self.product(stock=4)
         two = self.product(stock=2, name="Часы Beta", article="B-2")
         session = self.start()
+        for item in self.service.list_items(session["id"]):
+            self.service.confirm(
+                session["id"], item["id"], item["snapshot_stock"],
+                idempotency_key="confirmed-{}".format(item["id"]),
+            )
         with self.assertRaises(RuntimeError):
             self.service.complete(
                 session["id"], confirmation=True,

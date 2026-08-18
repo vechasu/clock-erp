@@ -208,6 +208,11 @@ class InventoryLockModeTest(unittest.TestCase):
         )
 
         completed = self.inventory.start(self.brand_id, "Максим")[0]
+        for item in self.inventory.list_items(completed["id"]):
+            self.inventory.confirm(
+                completed["id"], item["id"], item["snapshot_stock"],
+                idempotency_key="complete-{}".format(item["id"]),
+            )
         self.inventory.complete(completed["id"], "Максим", confirmation=True)
         self.assertIsNone(self.inventory.active_for_brand(self.brand_id))
         self.assertEqual(

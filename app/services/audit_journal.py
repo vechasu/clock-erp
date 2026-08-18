@@ -20,6 +20,7 @@ ACTION_TYPES = {
     "deleted",
     "comment_added",
     "system_created",
+    "restored",
 }
 FIELD_WHITELISTS = {
     "product": {
@@ -35,7 +36,7 @@ FIELD_WHITELISTS = {
     },
     "brand": {"name"},
     "category": {"name"},
-    "inventory": set(),
+    "inventory": {"stock"},
 }
 SENSITIVE_MARKERS = {
     "password", "passwd", "secret", "token", "authorization", "credential",
