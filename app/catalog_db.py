@@ -752,6 +752,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_catalog_stock_movements_idempotency
 CREATE TABLE IF NOT EXISTS erp_inventory_sessions (
     id TEXT PRIMARY KEY,
     brand_id INTEGER NOT NULL REFERENCES erp_brands(id) ON DELETE RESTRICT,
+    active_brand_id INTEGER UNIQUE REFERENCES erp_brands(id) ON DELETE RESTRICT,
     status TEXT NOT NULL CHECK (status IN ('draft', 'active', 'completed', 'cancelled')),
     started_by TEXT,
     completed_by TEXT,
@@ -769,8 +770,8 @@ CREATE TABLE IF NOT EXISTS erp_inventory_sessions (
     updated_at TEXT NOT NULL
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_erp_inventory_one_active_brand
-    ON erp_inventory_sessions(brand_id) WHERE status = 'active';
+CREATE INDEX IF NOT EXISTS idx_erp_inventory_brand_status
+    ON erp_inventory_sessions(brand_id, status);
 CREATE INDEX IF NOT EXISTS idx_erp_inventory_sessions_status
     ON erp_inventory_sessions(status, started_at DESC);
 
@@ -906,7 +907,35 @@ class CatalogDatabase:
             self._ensure_optional_price_constraints(connection)
             self._ensure_shared_catalog(connection)
             self._ensure_brand_category_relations(connection)
+            self._ensure_inventory_constraints(connection)
             self._ensure_stock_movement_constraints(connection)
+
+    @staticmethod
+    def _ensure_inventory_constraints(connection):
+        """Keep active-session uniqueness compatible with production SQLite 3.7."""
+        columns = {
+            row["name"]
+            for row in connection.execute(
+                "PRAGMA table_info(erp_inventory_sessions)"
+            ).fetchall()
+        }
+        if "active_brand_id" not in columns:
+            connection.execute(
+                "ALTER TABLE erp_inventory_sessions ADD COLUMN active_brand_id INTEGER "
+                "REFERENCES erp_brands(id) ON DELETE RESTRICT"
+            )
+        connection.execute(
+            "UPDATE erp_inventory_sessions SET active_brand_id = brand_id "
+            "WHERE status = 'active' AND active_brand_id IS NULL"
+        )
+        connection.execute(
+            "UPDATE erp_inventory_sessions SET active_brand_id = NULL "
+            "WHERE status <> 'active' AND active_brand_id IS NOT NULL"
+        )
+        connection.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_erp_inventory_one_active_brand "
+            "ON erp_inventory_sessions(active_brand_id)"
+        )
 
     @staticmethod
     def _ensure_audit_entity_constraints(connection):
