@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import shutil
 import sqlite3
+import subprocess
 import sys
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -31,9 +32,22 @@ def backup_runtime(database_path, image_root, backup_root):
     source = sqlite3.connect(str(database_path))
     destination = sqlite3.connect(str(target / "catalog.db"))
     try:
-        source.backup(destination)
+        if hasattr(source, "backup"):
+            source.backup(destination)
+        else:
+            destination.close()
+            destination = None
+            (target / "catalog.db").unlink()
+            subprocess.check_call([
+                "sqlite3",
+                str(database_path),
+                ".timeout 10000\n.backup '{}'".format(
+                    str(target / "catalog.db").replace("'", "''")
+                ),
+            ])
     finally:
-        destination.close()
+        if destination is not None:
+            destination.close()
         source.close()
     if Path(image_root).is_dir():
         shutil.copytree(str(image_root), str(target / "brand_images"))
