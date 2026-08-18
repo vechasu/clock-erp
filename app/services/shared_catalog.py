@@ -1975,6 +1975,46 @@ class SharedCatalog:
             ],
         }
 
+    def products_by_moysklad_ids(self, moysklad_product_ids):
+        """Return every ERP product linked to each requested MoySklad ID."""
+        ids = sorted({
+            str(value or "").strip()
+            for value in moysklad_product_ids
+            if str(value or "").strip()
+        })
+        if not ids:
+            return {}
+        self.database.initialize()
+        grouped = {value: [] for value in ids}
+        with self.database.connect() as connection:
+            for offset in range(0, len(ids), 500):
+                chunk = ids[offset:offset + 500]
+                placeholders = ",".join("?" for _ in chunk)
+                rows = connection.execute(
+                    "SELECT p.id, COALESCE(p.moysklad_product_id, "
+                    "mm.moysklad_product_id, '') AS moysklad_product_id "
+                    "FROM catalog_excel_products p "
+                    "LEFT JOIN catalog_products cp "
+                    "ON cp.id = p.bitrix_catalog_product_id "
+                    "LEFT JOIN catalog_moysklad_mappings mm "
+                    "ON mm.product_id = cp.id AND mm.confirmed = 1 "
+                    "WHERE COALESCE(p.moysklad_product_id, "
+                    "mm.moysklad_product_id, '') IN ({})".format(
+                        placeholders
+                    ),
+                    chunk,
+                ).fetchall()
+                products = self.products_by_ids(
+                    [row["id"] for row in rows], include_archived=True
+                )
+                for row in rows:
+                    product = products.get(str(row["id"]))
+                    if product is not None:
+                        grouped.setdefault(
+                            str(row["moysklad_product_id"]), []
+                        ).append(product)
+        return grouped
+
     @staticmethod
     def _brand(row):
         stock_total = normalized_stock_value(

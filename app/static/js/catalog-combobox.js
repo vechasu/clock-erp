@@ -1047,6 +1047,9 @@
                 : "",
             count: product
                 ? "Остаток: " + sharedCatalogStockValue(item)
+                    + (Number(item.stock || 0) <= 0
+                        ? " · Нет в наличии"
+                        : "")
                 : kind === "category" && hideCategoryCount
                     ? ""
                     : sharedCatalogStockDisplay(item),

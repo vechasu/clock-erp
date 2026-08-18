@@ -617,6 +617,13 @@ def overview_page():
 def orders_page():
     orders = get_orders()
     selected_order = orders[0] if orders else None
+    order_mappings = build_order_product_mapping_context(
+        (selected_order or {}).get("products") or []
+    )
+    order_id = (
+        (selected_order or {}).get("id")
+        or (selected_order or {}).get("ID")
+    )
 
     return render_template(
         "orders.html",
@@ -626,12 +633,9 @@ def orders_page():
             (selected_order or {}).get("id")
             or (selected_order or {}).get("ID")
         ),
-        warehouse_items=get_warehouse_items(),
-        product_mappings=load_product_mappings(),
-        sale_already_conducted=is_order_stock_written_off(
-            (selected_order or {}).get("id")
-            or (selected_order or {}).get("ID")
-        ),
+        order_product_mappings=order_mappings,
+        sale_already_conducted=is_order_stock_written_off(order_id),
+        conducted_sale=get_order_conducted_sale(order_id),
     )
 
 
@@ -648,6 +652,131 @@ def build_bitrix_order_url(order_id):
         ("ID", order_id),
         ("lang", "ru"),
     ])
+
+
+def first_order_product_value(product, *keys):
+    for key in keys:
+        value = product.get(key)
+        if value not in (None, ""):
+            return value
+    return ""
+
+
+def bitrix_order_product_identity(product):
+    product_id = str(first_order_product_value(
+        product,
+        "product_id", "PRODUCT_ID", "offer_id", "OFFER_ID",
+        "sku_id", "SKU_ID", "id", "ID",
+    )).strip()
+    sku_id = str(first_order_product_value(
+        product,
+        "offer_id", "OFFER_ID", "sku_id", "SKU_ID",
+        "product_id", "PRODUCT_ID",
+    )).strip()
+    line_id = str(first_order_product_value(
+        product,
+        "basket_id", "BASKET_ID", "row_id", "ROW_ID", "id", "ID",
+    )).strip()
+    return {
+        "bitrix_product_id": product_id,
+        "bitrix_sku_id": sku_id,
+        "bitrix_order_line_id": line_id,
+    }
+
+
+def build_order_product_mapping_context(products, mappings=None, catalog=None):
+    mappings = load_product_mappings() if mappings is None else mappings
+    catalog = catalog or SharedCatalog()
+    identities = [bitrix_order_product_identity(item) for item in products]
+    saved_rows = [
+        mappings.get(identity["bitrix_product_id"])
+        for identity in identities
+    ]
+    product_ids = [
+        row.get("product_id")
+        for row in saved_rows
+        if isinstance(row, dict) and row.get("product_id") not in (None, "")
+    ]
+    legacy_ids = [
+        row.get("moysklad_product_id")
+        for row in saved_rows
+        if isinstance(row, dict)
+        and not row.get("product_id")
+        and row.get("moysklad_product_id")
+    ]
+    products_by_id = catalog.products_by_ids(
+        product_ids, include_archived=True
+    )
+    products_by_moysklad = catalog.products_by_moysklad_ids(legacy_ids)
+    result = {}
+
+    for product, identity, saved in zip(products, identities, saved_rows):
+        key = identity["bitrix_product_id"]
+        context = {
+            **identity,
+            "state": "unmapped",
+            "state_label": "Не сопоставлен",
+            "product": None,
+            "legacy": False,
+            "saved": saved if isinstance(saved, dict) else {},
+        }
+        if not key:
+            context.update({
+                "state": "missing_external_id",
+                "state_label": "У позиции нет стабильного ID Bitrix",
+            })
+        elif isinstance(saved, dict) and saved.get("product_id"):
+            selected = products_by_id.get(str(saved.get("product_id")))
+            if selected is None:
+                context.update({
+                    "state": "missing",
+                    "state_label": "Связанный товар отсутствует",
+                })
+            elif not selected.get("active"):
+                context.update({
+                    "state": "archived",
+                    "state_label": "Связанный товар архивирован",
+                    "product": selected,
+                })
+            else:
+                context.update({
+                    "state": "mapped",
+                    "state_label": "Сопоставлен",
+                    "product": selected,
+                })
+        elif isinstance(saved, dict) and saved.get("moysklad_product_id"):
+            candidates = products_by_moysklad.get(
+                str(saved.get("moysklad_product_id")), []
+            )
+            if len(candidates) == 1:
+                selected = candidates[0]
+                context.update({
+                    "state": "mapped" if selected.get("active") else "archived",
+                    "state_label": (
+                        "Сопоставлен через legacy-связь"
+                        if selected.get("active")
+                        else "Legacy-связь ведёт на архивный товар"
+                    ),
+                    "product": selected,
+                    "legacy": True,
+                })
+            else:
+                context.update({
+                    "state": "stale",
+                    "state_label": (
+                        "Legacy-связь неоднозначна"
+                        if len(candidates) > 1
+                        else "Legacy-связь не найдена в каталоге ERP"
+                    ),
+                    "legacy": True,
+                })
+        result[key or "line:{}".format(len(result))] = context
+    return result
+
+
+def get_order_product_mapping(mapping_context, product):
+    identity = bitrix_order_product_identity(product)
+    return mapping_context.get(identity["bitrix_product_id"]) or {}
 
 
 @app.route("/order/<int:order_id>")
@@ -679,9 +808,11 @@ def order_page(order_id):
         orders=orders,
         selected_order=selected_order,
         selected_order_bitrix_url=bitrix_order_url,
-        warehouse_items=get_warehouse_items(),
-        product_mappings=load_product_mappings(),
+        order_product_mappings=build_order_product_mapping_context(
+            selected_order.get("products") or []
+        ),
         sale_already_conducted=is_order_stock_written_off(order_id),
+        conducted_sale=get_order_conducted_sale(order_id),
     )
 
 
@@ -712,12 +843,18 @@ def _conduct_order_sale(order_id):
             message="Заказ не найден"
         ))
 
-    if is_order_stock_written_off(order_id):
+    inventory = SalesInventory()
+    existing_sale = inventory.find_active_sale("tictactoy", order_id)
+    if existing_sale or is_order_stock_written_off(order_id):
+        record_order_sale_attempt(
+            inventory, order_id, "already_completed", existing_sale
+        )
         return redirect(url_for(
             "order_page",
             order_id=order_id,
             notice="error",
-            message="Продажа по этому заказу уже проведена"
+            message="Продажа по этому заказу уже проведена",
+            open_sale="1",
         ))
 
     order_status = str(
@@ -726,236 +863,226 @@ def _conduct_order_sale(order_id):
         or full_order.get("status_id")
         or ""
     )
-    if order_status != "A":
-        return redirect(url_for(
-            "order_page",
-            order_id=order_id,
-            notice="error",
-            message="Сначала подтвердите заказ",
-        ))
-
     products = full_order.get("products") or []
-
-    if not products:
-        return redirect(url_for(
-            "order_page",
-            order_id=order_id,
-            notice="error",
-            message="Заказ без товаров нельзя провести в продажу"
-        ))
-
-    mappings = load_product_mappings()
-    warehouse_items = get_warehouse_items(force=True)
-
-    warehouse_by_id = {
-        str(item.get("id") or ""): item
-        for item in warehouse_items
-    }
-
+    mapping_context = build_order_product_mapping_context(products)
+    issues = []
     prepared_items = []
-    unmapped_items = []
-    missing_warehouse_items = []
-    invalid_quantity_items = []
+    required_by_product = {}
+    product_by_id = {}
 
-    for product in products:
-        bitrix_product_id = str(product.get("id") or product.get("ID") or "").strip()
-        bitrix_product_name = str(product.get("name") or product.get("NAME") or "Товар без названия").strip()
+    if order_status != "A":
+        issues.append("Сначала подтвердите заказ")
+    if not products:
+        issues.append("Заказ без товаров нельзя провести в продажу")
+
+    for line_index, product in enumerate(products):
+        identity = bitrix_order_product_identity(product)
+        bitrix_product_name = str(
+            product.get("name") or product.get("NAME") or "Товар без названия"
+        ).strip()
 
         try:
-            quantity = float(str(product.get("quantity") or product.get("QUANTITY") or "1").replace(",", "."))
-        except Exception:
-            quantity = 1.0
-
-        if not math.isfinite(quantity) or quantity <= 0:
-            invalid_quantity_items.append(bitrix_product_name)
-            continue
-
-        mapping = mappings.get(bitrix_product_id)
-
-        if not mapping:
-            unmapped_items.append(bitrix_product_name)
-            continue
-
-        moysklad_product_id = str(mapping.get("moysklad_product_id") or "").strip()
-        warehouse_item = warehouse_by_id.get(moysklad_product_id)
-
-        if not warehouse_item:
-            missing_warehouse_items.append(
-                mapping.get("moysklad_product_name")
-                or bitrix_product_name
+            raw_quantity = first_order_product_value(
+                product, "quantity", "QUANTITY"
             )
-            continue
-
-        current_stock = float(warehouse_item.get("stock") or 0)
-
-        try:
-            unit_price = float(str(
-                product.get("price") or product.get("PRICE") or 0
+            quantity = float(str(
+                "1" if raw_quantity in (None, "") else raw_quantity
             ).replace(",", "."))
         except Exception:
-            unit_price = 0
+            quantity = 0
+
+        if not math.isfinite(quantity) or quantity <= 0:
+            issues.append(
+                "{} — некорректное количество".format(bitrix_product_name)
+            )
+            continue
+
+        mapping = mapping_context.get(identity["bitrix_product_id"]) or {}
+        if mapping.get("state") != "mapped" or not mapping.get("product"):
+            issues.append("{} — {}".format(
+                bitrix_product_name,
+                str(mapping.get("state_label") or "не сопоставлен").lower(),
+            ))
+            continue
+        catalog_product = mapping["product"]
+        product_id = int(catalog_product["id"])
+
+        raw_price = first_order_product_value(product, "price", "PRICE")
+        if raw_price in (None, ""):
+            unit_price = None
+        else:
+            try:
+                unit_price = float(str(raw_price).replace(",", "."))
+            except Exception:
+                unit_price = None
+
+        discount = product.get("discount")
+        if discount is None:
+            discount = product.get("DISCOUNT_PRICE")
 
         prepared_items.append({
-            "bitrix_product_id": bitrix_product_id,
-            "bitrix_product_name": bitrix_product_name,
-            "moysklad_product_id": moysklad_product_id,
-            "moysklad_product_name": warehouse_item.get("name"),
+            "product_id": product_id,
             "quantity": quantity,
-            "stock_before": current_stock,
-            "stock_after": current_stock - quantity,
             "unit_price": unit_price,
+            "discount": discount,
+            "line_index": line_index,
+            **identity,
+            "bitrix_product_name": bitrix_product_name,
+            "product_name": catalog_product.get("name") or "",
+            "brand": catalog_product.get("brand") or "",
+            "category": catalog_product.get("category") or "",
+            "brand_id": catalog_product.get("brand_id"),
+            "category_id": catalog_product.get("category_id"),
+            "article": catalog_product.get("article") or "",
+            "barcode": catalog_product.get("barcode") or "",
+            "moysklad_product_id": (
+                catalog_product.get("moysklad_product_id") or ""
+            ),
         })
-
-    if unmapped_items:
-        return redirect(url_for(
-            "order_page",
-            order_id=order_id,
-            notice="error",
-            message="Товары не сопоставлены со складом: {}".format(
-                ", ".join(unmapped_items)
-            ),
-        ))
-
-    if invalid_quantity_items:
-        return redirect(url_for(
-            "order_page",
-            order_id=order_id,
-            notice="error",
-            message="Некорректное количество товара: {}".format(
-                ", ".join(invalid_quantity_items)
-            ),
-        ))
-
-    if missing_warehouse_items:
-        return redirect(url_for(
-            "order_page",
-            order_id=order_id,
-            notice="error",
-            message="Товары склада не найдены: {}".format(
-                ", ".join(missing_warehouse_items)
-            ),
-        ))
-
-    required_by_product = {}
-    stock_by_product = {}
-    name_by_product = {}
-    for item in prepared_items:
-        product_id = item["moysklad_product_id"]
         required_by_product[product_id] = (
-            required_by_product.get(product_id, 0) + item["quantity"]
+            required_by_product.get(product_id, 0) + quantity
         )
-        stock_by_product[product_id] = item["stock_before"]
-        name_by_product[product_id] = item["moysklad_product_name"]
+        product_by_id[product_id] = catalog_product
 
-    shortages = []
     for product_id, required in required_by_product.items():
-        available = stock_by_product[product_id]
+        available = float(product_by_id[product_id].get("stock") or 0)
         if available < required:
-            shortages.append("{} — нужно {:g}, есть {:g}".format(
-                name_by_product[product_id], required, available,
+            issues.append("{} — требуется {:g}, доступно {:g}".format(
+                product_by_id[product_id].get("name") or "Товар",
+                required,
+                available,
             ))
 
-    if shortages:
+    if issues:
+        record_order_sale_attempt(
+            inventory,
+            order_id,
+            "validation_failed",
+            metadata={"issues_count": len(issues)},
+        )
         return redirect(url_for(
             "order_page",
             order_id=order_id,
             notice="error",
-            message="Недостаточно остатка: {}".format(
-                "; ".join(shortages)
-            ),
+            message="Проведение невозможно: {}".format(" • ".join(issues)),
+            open_sale="1",
         ))
 
-    client = MoySkladClient()
-    order_number = full_order.get("number") or full_order.get("account_number") or full_order.get("ACCOUNT_NUMBER") or order_id
+    order_number = (
+        full_order.get("number")
+        or full_order.get("account_number")
+        or full_order.get("ACCOUNT_NUMBER")
+        or order_id
+    )
+    actor = current_sales_user_name()
+    payload = {
+        "source": "tictactoy",
+        "sale_type": "automatic",
+        "order_number": str(order_number),
+        "order_id": str(order_id),
+        "external_order_id": str(order_id),
+        "created_at": str(
+            full_order.get("created_at")
+            or full_order.get("date")
+            or full_order.get("DATE_INSERT")
+            or datetime.now().strftime("%Y-%m-%d %H:%M")
+        ),
+        "performed_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "performed_by": actor,
+        "recipient_name": str(
+            full_order.get("customer") or full_order.get("client") or ""
+        ),
+        "phone": str(full_order.get("phone") or ""),
+        "delivery_address": str(full_order.get("address") or ""),
+        "delivery_cost": full_order.get("delivery_price") or 0,
+        "order_total": full_order.get("order_total"),
+        "order_status": "completed",
+    }
 
     try:
-        new_operations = []
-        remaining_stock = dict(stock_by_product)
-        for item in prepared_items:
-            reason = f"ТТТ ERP: списание по заказу №{order_number}. Товар Битрикс: {item['bitrix_product_name']}"
-
-            moysklad_document = client.create_stock_loss(
-                product_id=item["moysklad_product_id"],
-                quantity=item["quantity"],
-                reason=reason
-            )
-
-            stock_before = remaining_stock[item["moysklad_product_id"]]
-            stock_after = stock_before - item["quantity"]
-            remaining_stock[item["moysklad_product_id"]] = stock_after
-            new_operations.append({
-                "id": str(uuid.uuid4()),
-                "created_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                "order_created_at": str(
-                    full_order.get("created_at")
-                    or full_order.get("date")
-                    or full_order.get("DATE_INSERT")
-                    or full_order.get("date_insert")
-                    or ""
-                ),
-                "product_id": item["moysklad_product_id"],
-                "product_name": item["moysklad_product_name"],
-                "type": "writeoff",
-                "label": "Списание по заказу",
-                "quantity": item["quantity"],
-                "stock_before": stock_before,
-                "stock_after": stock_after,
-                "diff": -item["quantity"],
-                "source": "Заказ Битрикс",
-                "sales_source": "tictactoy",
-                "reason": f"Заказ №{order_number}",
-                "order_id": str(order_id),
-                "order_number": str(order_number),
-                "bitrix_product_id": item["bitrix_product_id"],
-                "bitrix_product_name": item["bitrix_product_name"],
-                "unit_price": item["unit_price"],
-                "customer": str(
-                    full_order.get("customer")
-                    or full_order.get("client")
-                    or full_order.get("USER_NAME")
-                    or ""
-                ),
-                "status": "success",
-                "moysklad_document_id": moysklad_document.get("id") if isinstance(moysklad_document, dict) else "",
-                "moysklad_document_name": moysklad_document.get("name") if isinstance(moysklad_document, dict) else "",
-                "moysklad_document_url": (
-                    f"https://online.moysklad.ru/app/#loss/edit?id={moysklad_document.get('id')}"
-                    if isinstance(moysklad_document, dict) and moysklad_document.get("id")
-                    else ""
-                ),
-            })
-
-        save_stock_operations(
-            (new_operations + load_stock_operations())[:1000]
+        sale = inventory.create_sale_batch(
+            payload,
+            prepared_items,
+            user_name=actor,
+            idempotency_key="bitrix-order:{}".format(order_id),
+            enforce_external_unique=True,
         )
-
         WAREHOUSE_CACHE["items"] = []
         WAREHOUSE_CACHE["loaded_at"] = 0
-
+        _cached_api_sales_records.cache_clear()
         return redirect("/sales?" + urlencode({
             "source": "tictactoy",
             "notice": "success",
             "message": f"Заказ №{order_number} проведён в продажу",
+            "sale_id": str(sale.get("id") or ""),
+            "order_number": str(order_number),
         }))
-
-    except Exception as error:
-        print(f"Ошибка списания заказа {order_id}: {error}")
+    except (SalesInventoryError, InsufficientStockError) as error:
+        record_order_sale_attempt(
+            inventory,
+            order_id,
+            "inventory_rejected",
+            metadata={"error_type": type(error).__name__},
+        )
+        app.logger.info(
+            "Order sale rejected order_id=%s reason=%s",
+            order_id,
+            type(error).__name__,
+        )
         return redirect(url_for(
             "order_page",
             order_id=order_id,
             notice="error",
-            message=(
-                "Не удалось провести продажу в МойСклад. "
-                "Продажа не отмечена как проведённая."
-            )
+            message="Продажа не проведена: {}".format(str(error)),
+            open_sale="1",
         ))
+    except Exception:
+        app.logger.exception("Transactional Bitrix order sale failed: %s", order_id)
+        return redirect(url_for(
+            "order_page",
+            order_id=order_id,
+            notice="error",
+            message="Продажа не проведена. Остатки не изменены.",
+            open_sale="1",
+        ))
+
+
+def record_order_sale_attempt(
+    inventory, order_id, reason, existing_sale=None, metadata=None
+):
+    """Audit a rejected/repeated attempt without customer data."""
+    actor = current_sales_user_name()
+    sale_id = str((existing_sale or {}).get("id") or "bitrix-order:{}".format(
+        order_id
+    ))
+    try:
+        AuditJournal(inventory.database).record(
+            "sale",
+            sale_id,
+            "refused",
+            "Продажа по заказу #{}".format(order_id),
+            "tictactoy",
+            metadata={
+                "number": str(order_id),
+                "reason": str(reason),
+                **(metadata or {}),
+            },
+            actor_id=actor,
+            actor_name=actor or "tictactoy",
+            actor_type="user" if actor else "external",
+            status="refused",
+            source="tictactoy",
+        )
+    except Exception:
+        app.logger.exception("Order sale attempt audit failed: %s", order_id)
 
 
 @app.route("/order/<int:order_id>/product-map", methods=["POST"])
 def order_product_map(order_id):
     bitrix_product_id = (request.form.get("bitrix_product_id") or "").strip()
-    bitrix_product_name = (request.form.get("bitrix_product_name") or "").strip()
-    moysklad_product_id = (request.form.get("moysklad_product_id") or "").strip()
+    product_id = (request.form.get("product_id") or "").strip()
+    brand_id = (request.form.get("brand_id") or "").strip()
+    category_id = (request.form.get("category_id") or "").strip()
 
     if not bitrix_product_id:
         return redirect(url_for(
@@ -965,53 +1092,106 @@ def order_product_map(order_id):
             message="Не найден ID товара Битрикс"
         ))
 
-    if not moysklad_product_id:
+    if not product_id:
         return redirect(url_for(
             "order_page",
             order_id=order_id,
             notice="error",
-            message="Выбери товар склада для сопоставления"
+            message="Выберите товар ERP из каталога"
         ))
 
-    warehouse_items = get_warehouse_items()
-    selected_item = None
-
-    for item in warehouse_items:
-        if str(item.get("id") or "") == str(moysklad_product_id):
-            selected_item = item
-            break
-
-    if not selected_item:
+    full_order = get_order(order_id)
+    order_product = next((
+        item for item in (full_order or {}).get("products") or []
+        if bitrix_order_product_identity(item)["bitrix_product_id"]
+        == bitrix_product_id
+    ), None)
+    if order_product is None:
         return redirect(url_for(
             "order_page",
             order_id=order_id,
             notice="error",
-            message="Товар склада не найден"
+            message="Позиция Bitrix не найдена в этом заказе"
+        ))
+
+    selected_item = SharedCatalog().get_product(
+        product_id, include_archived=True
+    )
+    if selected_item is None or not selected_item.get("active"):
+        return redirect(url_for(
+            "order_page", order_id=order_id, notice="error",
+            message="Товар ERP не найден или архивирован",
+        ))
+    if str(selected_item.get("brand_id") or "") != brand_id:
+        return redirect(url_for(
+            "order_page", order_id=order_id, notice="error",
+            message="Выбранный товар не относится к указанному бренду",
+        ))
+    if str(selected_item.get("category_id") or 0) != str(category_id or 0):
+        return redirect(url_for(
+            "order_page", order_id=order_id, notice="error",
+            message="Выбранный товар не относится к указанной категории",
         ))
 
     mappings = load_product_mappings()
-
+    previous = mappings.get(bitrix_product_id)
+    identity = bitrix_order_product_identity(order_product)
     mappings[bitrix_product_id] = {
-        "bitrix_product_id": bitrix_product_id,
-        "bitrix_product_name": bitrix_product_name,
-        "moysklad_product_id": selected_item.get("id"),
-        "moysklad_product_name": selected_item.get("name"),
-        "moysklad_product_stock": selected_item.get("stock"),
+        **identity,
+        "product_id": str(selected_item["id"]),
+        "brand_id": selected_item.get("brand_id"),
+        "category_id": selected_item.get("category_id"),
+        "moysklad_product_id": selected_item.get("moysklad_product_id") or "",
+        "mapped_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
     }
-
     save_product_mappings(mappings)
+    try:
+        AuditJournal(CatalogDatabase()).record(
+            "product",
+            selected_item["id"],
+            "updated" if previous else "created",
+            selected_item.get("name") or "Товар",
+            "Сопоставление позиции заказа Bitrix",
+            metadata={
+                "bitrix_product_id": bitrix_product_id,
+                "old_product_id": (
+                    previous.get("product_id")
+                    if isinstance(previous, dict) else None
+                ),
+                "new_product_id": str(selected_item["id"]),
+                "order_id": str(order_id),
+            },
+            **current_audit_actor()
+        )
+    except Exception:
+        app.logger.exception(
+            "Order product mapping audit failed for %s", bitrix_product_id
+        )
 
     return redirect(url_for(
         "order_page",
         order_id=order_id,
         notice="success",
-        message="Товар сопоставлен со складом"
+        message="Товар сопоставлен с единым каталогом ERP"
     ))
 
 
 @app.route("/order/<int:order_id>/status", methods=["POST"])
 def order_status_update(order_id):
     new_status = request.form.get("status", "")
+
+    if str(new_status).strip().upper() == "C" and is_order_stock_written_off(
+        order_id
+    ):
+        return redirect(url_for(
+            "order_page",
+            order_id=order_id,
+            notice="error",
+            message=(
+                "По заказу уже проведена продажа. Сначала откройте продажу "
+                "и отмените её с восстановлением остатка."
+            ),
+        ))
 
     result = update_order_status(order_id, new_status)
     get_orders(force=True)
@@ -1062,9 +1242,12 @@ def load_product_mappings():
 
 def save_product_mappings(mappings):
     path = get_product_mappings_path()
-
-    with path.open("w", encoding="utf-8") as file:
+    temporary_path = path.with_name(
+        "{}.{}.tmp".format(path.name, uuid.uuid4().hex)
+    )
+    with temporary_path.open("w", encoding="utf-8") as file:
         json.dump(mappings, file, ensure_ascii=False, indent=2)
+    temporary_path.replace(path)
 
 
 def format_stock_number(value):
@@ -2832,11 +3015,27 @@ def get_catalog_stock_history(product_id=None, limit=5000):
 def is_order_stock_written_off(order_id):
     order_id = str(order_id or "")
 
+    if get_order_conducted_sale(order_id) is not None:
+        return True
+
     for operation in load_stock_operations():
         if str(operation.get("order_id") or "") == order_id and operation.get("source") == "Заказ Битрикс":
             return True
 
     return False
+
+
+def get_order_conducted_sale(order_id):
+    order_id = str(order_id or "").strip()
+    if not order_id:
+        return None
+    try:
+        return SalesInventory().find_active_sale("tictactoy", order_id)
+    except Exception:
+        app.logger.exception(
+            "Failed to inspect conducted order sale: %s", order_id
+        )
+        return None
 
 
 def is_recent_duplicate_stock_operation(product_id, operation_type, quantity, stock_before, stock_after, seconds=120):
@@ -8083,11 +8282,20 @@ def build_sales_report_records(
             stored_sale.get("source")
         )
 
+        stored_sale_type = str(
+            stored_sale.get("sale_type") or "manual"
+        ).strip().lower()
+        if stored_sale_type not in {"manual", "automatic"}:
+            stored_sale_type = "manual"
         manual_sales.append({
             "id": str(stored_sale.get("id") or ""),
-            "sale_type": "manual",
-            "sale_type_label": "Ручная",
-            "is_manual": True,
+            "sale_type": stored_sale_type,
+            "sale_type_label": (
+                "Автоматическая"
+                if stored_sale_type == "automatic"
+                else "Ручная"
+            ),
+            "is_manual": stored_sale_type == "manual",
             "created_at": str(
                 stored_sale.get("created_at") or ""
             ),

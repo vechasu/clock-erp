@@ -1,4 +1,4 @@
-{% macro render_catalog_combobox(component_id, input_name, options, selected_value="", include_all=false, item_label="значение", all_label="Все", disabled=false, prefix_search=true, empty_label="Ничего не найдено", component_class="", clear_selection_on_search_clear=false, input_id="", search_enabled=true, form_id="", action_kind="", action_label="", all_count=none, shared_catalog_kind="", selected_id="", id_input_name="", selected_label="") %}
+{% macro render_catalog_combobox(component_id, input_name, options, selected_value="", include_all=false, item_label="значение", all_label="Все", disabled=false, prefix_search=true, empty_label="Ничего не найдено", component_class="", clear_selection_on_search_clear=false, input_id="", search_enabled=true, form_id="", action_kind="", action_label="", all_count=none, shared_catalog_kind="", selected_id="", id_input_name="", selected_label="", selected_item=none) %}
     <div
         id="{{ component_id }}"
         class="brand-combobox{% if component_class %} {{ component_class }}{% endif %}"
@@ -7,6 +7,7 @@
             data-shared-catalog-kind="{{ shared_catalog_kind }}"
             data-shared-catalog-selected-id="{{ selected_id }}"
             data-shared-catalog-selected-label="{{ selected_label or selected_value }}"
+            {% if selected_item %}data-shared-catalog-selected-item="{{ selected_item|tojson|forceescape }}"{% endif %}
         {% endif %}
         data-prefix-search="{{ 'true' if prefix_search else 'false' }}"
         data-search-enabled="{{ 'true' if search_enabled else 'false' }}"

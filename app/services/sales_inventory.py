@@ -295,6 +295,257 @@ class SalesInventory:
 
         return self.get_sale(sale_id)
 
+    def create_sale_batch(
+        self,
+        payload,
+        items,
+        user_name="",
+        idempotency_key="",
+        enforce_external_unique=False,
+        failure_hook=None,
+    ):
+        """Create one sale with all item rows and stock movements atomically."""
+        payload = dict(payload or {})
+        if not isinstance(items, list) or not items:
+            raise SalesInventoryError("В продаже нет товаров.")
+
+        prepared = []
+        for index, item in enumerate(items):
+            if not isinstance(item, dict):
+                raise SalesInventoryError("Товар продажи не найден.")
+            try:
+                product_id = int(item.get("product_id"))
+            except (TypeError, ValueError):
+                raise SalesInventoryError("Товар продажи не найден.")
+            quantity = positive_number(item.get("quantity"), "Количество")
+            unit_price = optional_nonnegative_number(
+                item.get("unit_price"), "Цена продажи"
+            )
+            prepared.append({
+                **item,
+                "line_index": index,
+                "product_id": product_id,
+                "quantity": quantity,
+                "unit_price": unit_price,
+            })
+
+        sale_id = str(payload.get("id") or uuid.uuid4().hex)
+        created_at = str(payload.get("created_at") or now_iso())
+        source = str(payload.get("source") or "tictactoy").strip().casefold()
+        external_order_id = (
+            str(
+                payload.get("external_order_id")
+                or payload.get("order_id")
+                or payload.get("order_number")
+                or ""
+            ).strip()
+            or None
+            if enforce_external_unique
+            else None
+        )
+        idempotency_key = str(idempotency_key or "").strip() or None
+        inserted_at = now_iso()
+        stored_payload = dict(payload)
+        stored_payload.update({
+            "id": sale_id,
+            "source": source,
+            "inventory_managed": True,
+            "automatic_stock_applied": True,
+        })
+
+        required_by_product = {}
+        for item in prepared:
+            required_by_product[item["product_id"]] = (
+                required_by_product.get(item["product_id"], 0)
+                + item["quantity"]
+            )
+
+        self.initialize()
+        with self.database.transaction() as connection:
+            existing = connection.execute(
+                "SELECT id FROM erp_sales WHERE id = ? "
+                "OR (? IS NOT NULL AND idempotency_key = ?) "
+                "OR (? IS NOT NULL AND source = ? AND external_order_id = ? "
+                "AND cancelled_at IS NULL AND deleted_at IS NULL) "
+                "LIMIT 1",
+                (
+                    sale_id,
+                    idempotency_key,
+                    idempotency_key,
+                    external_order_id,
+                    source,
+                    external_order_id,
+                ),
+            ).fetchone()
+            if existing is not None:
+                return self._sale_from_connection(connection, existing["id"])
+
+            placeholders = ",".join("?" for _ in required_by_product)
+            product_rows = connection.execute(
+                "SELECT p.id, p.stock, p.brand_id, p.category_id, "
+                "p.excel_name_raw AS name FROM catalog_excel_products p "
+                "WHERE p.active = 1 AND p.id IN ({})".format(placeholders),
+                list(required_by_product),
+            ).fetchall()
+            products = {int(row["id"]): row for row in product_rows}
+            if len(products) != len(required_by_product):
+                raise SalesInventoryError(
+                    "Один или несколько товаров отсутствуют или архивированы."
+                )
+
+            for product_id, required in required_by_product.items():
+                product = products[product_id]
+                available = float(product["stock"] or 0)
+                cursor = connection.execute(
+                    "UPDATE catalog_excel_products SET stock = stock - ?, "
+                    "stock_source = 'sale', updated_at = ? WHERE id = ? "
+                    "AND active = 1 AND stock >= ?",
+                    (required, inserted_at, product_id, required),
+                )
+                if cursor.rowcount != 1:
+                    latest = connection.execute(
+                        "SELECT stock FROM catalog_excel_products WHERE id = ?",
+                        (product_id,),
+                    ).fetchone()
+                    raise InsufficientStockError(
+                        latest["stock"] if latest else available
+                    )
+
+            connection.execute(
+                "INSERT INTO erp_sales ("
+                "id, source, external_order_id, idempotency_key, status, "
+                "created_at, user_name, metadata_json, inserted_at, updated_at"
+                ") VALUES (?, ?, ?, ?, 'completed', ?, ?, '{}', ?, ?)",
+                (
+                    sale_id,
+                    source,
+                    external_order_id,
+                    idempotency_key,
+                    created_at,
+                    str(user_name or "") or None,
+                    inserted_at,
+                    inserted_at,
+                ),
+            )
+
+            remaining_stock = {
+                product_id: float(row["stock"] or 0)
+                for product_id, row in products.items()
+            }
+            item_snapshots = []
+            for item in prepared:
+                product = products[item["product_id"]]
+                connection.execute(
+                    "INSERT INTO erp_sale_items ("
+                    "sale_id, product_id, brand_id, category_id, quantity, "
+                    "unit_price, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        sale_id,
+                        item["product_id"],
+                        product["brand_id"],
+                        product["category_id"],
+                        item["quantity"],
+                        item["unit_price"],
+                        created_at,
+                    ),
+                )
+                item_id = connection.execute(
+                    "SELECT last_insert_rowid()"
+                ).fetchone()[0]
+                stock_after = (
+                    remaining_stock[item["product_id"]] - item["quantity"]
+                )
+                remaining_stock[item["product_id"]] = stock_after
+                movement_key = (
+                    "{}:item:{}".format(idempotency_key, item["line_index"])
+                    if idempotency_key
+                    else None
+                )
+                connection.execute(
+                    "INSERT INTO catalog_stock_movements ("
+                    "id, product_id, movement_type, quantity_delta, stock_after, "
+                    "sale_id, sale_item_id, idempotency_key, source, user_name, "
+                    "comment, created_at) VALUES (?, ?, 'sale', ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        str(uuid.uuid4()),
+                        item["product_id"],
+                        -item["quantity"],
+                        stock_after,
+                        sale_id,
+                        item_id,
+                        movement_key,
+                        source,
+                        str(user_name or "") or None,
+                        "Продажа №{}".format(
+                            stored_payload.get("order_number") or sale_id
+                        ),
+                        inserted_at,
+                    ),
+                )
+                item_snapshots.append({
+                    **item,
+                    "sale_item_id": int(item_id),
+                    "product_id": str(item["product_id"]),
+                })
+
+            stored_payload["items"] = item_snapshots
+            connection.execute(
+                "UPDATE erp_sales SET metadata_json = ? WHERE id = ?",
+                (
+                    json.dumps(stored_payload, ensure_ascii=False, sort_keys=True),
+                    sale_id,
+                ),
+            )
+            if failure_hook:
+                failure_hook(connection)
+            AuditJournal(self.database).record(
+                "sale",
+                sale_id,
+                "created" if user_name else "system_created",
+                "Продажа #{}".format(
+                    stored_payload.get("order_number") or sale_id
+                ),
+                source,
+                after={
+                    "status": "completed",
+                    "items_count": len(prepared),
+                    "quantity": sum(item["quantity"] for item in prepared),
+                    "source": source,
+                    "order_number": stored_payload.get("order_number") or sale_id,
+                },
+                metadata={
+                    "number": stored_payload.get("order_number") or sale_id,
+                    "external_order_id": external_order_id,
+                },
+                actor_id=user_name,
+                actor_name=user_name or source,
+                actor_type="user" if user_name else "external",
+                status="completed",
+                source=source,
+                connection=connection,
+            )
+
+        return self.get_sale(sale_id)
+
+    def find_active_sale(self, source, external_order_id):
+        if not self.exists():
+            return None
+        with self.database.connect() as connection:
+            row = connection.execute(
+                "SELECT id FROM erp_sales WHERE source = ? "
+                "AND external_order_id = ? AND cancelled_at IS NULL "
+                "AND deleted_at IS NULL ORDER BY inserted_at DESC LIMIT 1",
+                (
+                    str(source or "").strip().casefold(),
+                    str(external_order_id or "").strip(),
+                ),
+            ).fetchone()
+            return (
+                self._sale_from_connection(connection, row["id"])
+                if row is not None
+                else None
+            )
+
     def return_sale(
         self,
         sale_id,
@@ -1057,6 +1308,13 @@ class SalesInventory:
     @staticmethod
     def _sale_payload(row, movement_plan=None):
         payload = SalesInventory._metadata(row)
+        item_snapshot = next((
+            item for item in payload.get("items", [])
+            if isinstance(item, dict)
+            and int(item.get("sale_item_id") or 0) == int(row["item_id"])
+        ), None)
+        if item_snapshot:
+            payload.update(item_snapshot)
         quantity = float(row["quantity"])
         returned_quantity = float(row["returned_quantity"] or 0)
         stored_order_status = str(payload.get("order_status") or "completed")

@@ -156,6 +156,72 @@ class SalesInventoryTest(unittest.TestCase):
             [],
         )
 
+    def test_batch_sale_is_one_sale_with_multiple_items_and_movements(self):
+        watch = self.create_product(stock=5, name="Bradley Steel", article="B-1")
+        strap = self.create_product(stock=3, name="Ремешок", article="S-1")
+        sale = self.inventory.create_sale_batch(
+            {
+                "source": "tictactoy", "order_number": "18593",
+                "external_order_id": "18593", "sale_type": "automatic",
+            },
+            [
+                {"product_id": watch["id"], "quantity": 2, "unit_price": 7500,
+                 "product_name": "Bradley Steel"},
+                {"product_id": strap["id"], "quantity": 1, "unit_price": 2400,
+                 "product_name": "Ремешок"},
+            ],
+            idempotency_key="bitrix-order:18593",
+            enforce_external_unique=True,
+        )
+
+        rows = self.inventory.list_sales()
+        self.assertEqual(len(rows), 2)
+        self.assertEqual({row["id"] for row in rows}, {sale["id"]})
+        self.assertEqual(self.stock(watch["id"]), 3)
+        self.assertEqual(self.stock(strap["id"]), 2)
+        self.assertEqual(len(self.inventory.list_movements(watch["id"])), 1)
+        self.assertEqual(len(self.inventory.list_movements(strap["id"])), 1)
+
+    def test_batch_failure_rolls_back_every_item(self):
+        watch = self.create_product(stock=5, name="Bradley Steel", article="B-2")
+        strap = self.create_product(stock=3, name="Ремешок", article="S-2")
+
+        with self.assertRaisesRegex(RuntimeError, "forced batch rollback"):
+            self.inventory.create_sale_batch(
+                {"source": "tictactoy", "external_order_id": "18594"},
+                [
+                    {"product_id": watch["id"], "quantity": 2, "unit_price": 1},
+                    {"product_id": strap["id"], "quantity": 1, "unit_price": 1},
+                ],
+                idempotency_key="bitrix-order:18594",
+                enforce_external_unique=True,
+                failure_hook=lambda _connection: (_ for _ in ()).throw(
+                    RuntimeError("forced batch rollback")
+                ),
+            )
+
+        self.assertEqual(self.stock(watch["id"]), 5)
+        self.assertEqual(self.stock(strap["id"]), 3)
+        self.assertEqual(self.inventory.list_sales(), [])
+
+    def test_concurrent_batch_retry_changes_stock_once(self):
+        product = self.create_product(stock=5, name="Bradley Steel", article="B-3")
+
+        def create(_index):
+            return self.inventory.create_sale_batch(
+                {"source": "tictactoy", "external_order_id": "18595"},
+                [{"product_id": product["id"], "quantity": 2, "unit_price": 1}],
+                idempotency_key="bitrix-order:18595",
+                enforce_external_unique=True,
+            )
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            sales = list(executor.map(create, range(2)))
+
+        self.assertEqual(sales[0]["id"], sales[1]["id"])
+        self.assertEqual(self.stock(product["id"]), 3)
+        self.assertEqual(len({row["id"] for row in self.inventory.list_sales()}), 1)
+
     def test_metadata_edit_does_not_change_stock_or_movement_history(self):
         product = self.create_product(stock=3)
         sale = self.inventory.create_sale(

@@ -1458,6 +1458,13 @@ class CatalogDatabase:
             "ON erp_sales(source, external_order_id)"
         )
         connection.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS "
+            "idx_erp_sales_tictactoy_active_order "
+            "ON erp_sales(source, external_order_id) "
+            "WHERE source = 'tictactoy' AND external_order_id IS NOT NULL "
+            "AND cancelled_at IS NULL AND deleted_at IS NULL"
+        )
+        connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_catalog_stock_movements_receipt "
             "ON catalog_stock_movements(receipt_id, created_at)"
         )
