@@ -4572,6 +4572,8 @@
         };
         const settingsKey = salesTable.dataset.salesSettingsKey;
         const tableWrap = salesTable.closest(".table-wrap");
+        const layoutResizeTarget = tableWrap?.closest(".table-card")
+            || tableWrap;
         const settingsTrigger = document.getElementById(
             "salesColumnSettingsTrigger"
         );
@@ -4808,6 +4810,7 @@
 
         let actualWidths = {};
         let lastContainerWidth = -1;
+        let lastObservedWidth = -1;
         let layoutFrame = 0;
         let layoutObserver = null;
 
@@ -4940,11 +4943,16 @@
         saveView();
         renderSettingsList();
 
-        if (typeof ResizeObserver === "function" && tableWrap) {
-            layoutObserver = new ResizeObserver(() => {
+        if (typeof ResizeObserver === "function" && layoutResizeTarget) {
+            layoutObserver = new ResizeObserver((entries) => {
+                const observedWidth = entries[0]?.contentRect.width || 0;
+                if (Math.abs(observedWidth - lastObservedWidth) < 0.5) {
+                    return;
+                }
+                lastObservedWidth = observedWidth;
                 scheduleLayout();
             });
-            layoutObserver.observe(tableWrap);
+            layoutObserver.observe(layoutResizeTarget);
         }
         window.addEventListener("resize", scheduleLayout);
         salesTable.closest("[data-erp-focus-mode]")?.addEventListener(
@@ -4955,8 +4963,8 @@
             layoutObserver?.disconnect();
         });
         window.addEventListener("pageshow", () => {
-            if (layoutObserver && tableWrap) {
-                layoutObserver.observe(tableWrap);
+            if (layoutObserver && layoutResizeTarget) {
+                layoutObserver.observe(layoutResizeTarget);
             }
             scheduleLayout(true);
         });
