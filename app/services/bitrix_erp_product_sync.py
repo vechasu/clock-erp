@@ -10,6 +10,11 @@ from pathlib import Path
 from app.catalog_db import CatalogDatabase
 from app.services.brand_values import normalize_brand
 from app.services.excel_product_catalog import load_bitrix_enrichment
+from app.services.inventory_lock import (
+    assert_named_brand_without_active_inventory,
+    assert_product_can_join_brand,
+    assert_products_unlocked,
+)
 from app.services.product_classification import classify_product
 from app.services.product_reconciliation import article_quality, normalize_text, reliable_article
 
@@ -245,6 +250,9 @@ class BitrixERPProductSync:
         enrichment = load_bitrix_enrichment(connection, catalog_product["id"])
         existing = match.get("product")
         if existing is None:
+            assert_named_brand_without_active_inventory(
+                connection, enrichment.get("bitrix_brand")
+            )
             product_id = self._insert_card(connection, product, enrichment)
             return {
                 "status": "created",
@@ -256,6 +264,19 @@ class BitrixERPProductSync:
             }
         changes = self._card_changes(connection, existing, product, enrichment)
         if changes:
+            assert_products_unlocked(connection, [existing["id"]])
+            desired_brand = self._desired_card_values(
+                connection, existing, product, enrichment
+            ).get("excel_brand")
+            brand = connection.execute(
+                "SELECT id FROM erp_brands "
+                "WHERE active = 1 AND lower(trim(name)) = lower(trim(?)) LIMIT 1",
+                (desired_brand or "",),
+            ).fetchone()
+            if brand is not None:
+                assert_product_can_join_brand(
+                    connection, existing["id"], brand["id"]
+                )
             self._update_card(connection, existing, product, enrichment, changes)
         return {
             "status": "updated" if changes else "unchanged",

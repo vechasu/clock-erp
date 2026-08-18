@@ -6,6 +6,7 @@ from pathlib import Path
 
 from app.catalog_db import CatalogDatabase
 from app.services.excel_product_catalog import ExcelProductCatalog
+from app.services.inventory_lock import assert_products_unlocked
 from app.services.product_reconciliation import normalize_text
 from app.services.receipt_inventory import ReceiptInventory, utc_now
 from app.services.shared_catalog import DuplicateCatalogValueError, SharedCatalog
@@ -65,6 +66,17 @@ class ReceiptRecovery:
                 "WHERE i.receipt_id = ? AND i.active = 1 ORDER BY i.id",
                 (receipt_id,),
             ).fetchall()
+            missing_movement_product_ids = [
+                item["product_id"] for item in items
+                if self._receipt_movement(
+                    connection, receipt_id, item["id"]
+                ) is None
+            ]
+            assert_products_unlocked(
+                connection,
+                missing_movement_product_ids,
+                ReceiptRecoveryError,
+            )
             for item in items:
                 movement = self._receipt_movement(
                     connection,

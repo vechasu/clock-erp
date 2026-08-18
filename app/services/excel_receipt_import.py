@@ -29,6 +29,11 @@ from app.services.excel_product_catalog import (
     _restore_columns,
     utc_now,
 )
+from app.services.inventory_lock import (
+    assert_named_brand_without_active_inventory,
+    assert_product_can_join_brand,
+    assert_products_unlocked,
+)
 from app.services.product_reconciliation import (
     AUTOMATIC_STATUSES,
     ProductReconciler,
@@ -453,6 +458,37 @@ class ExcelReceiptImportService:
                 raise ExcelDraftBlockedError(
                     "Каждая строка прихода должна иметь точное соответствие Bitrix."
                 )
+            preexisting = [dict(row) for row in connection.execute(
+                "SELECT * FROM catalog_excel_products WHERE active = 1 ORDER BY id"
+            ).fetchall()]
+            claimed_product_ids = set()
+            for result in matches:
+                existing = self._find_existing_product(
+                    preexisting, result, claimed_product_ids
+                )
+                if existing is None:
+                    assert_named_brand_without_active_inventory(
+                        connection,
+                        result.get("excel_brand"),
+                        ExcelDraftBlockedError,
+                    )
+                    continue
+                claimed_product_ids.add(existing["id"])
+                assert_products_unlocked(
+                    connection, [existing["id"]], ExcelDraftBlockedError
+                )
+                target_brand = connection.execute(
+                    "SELECT id FROM erp_brands "
+                    "WHERE active = 1 AND lower(trim(name)) = lower(trim(?)) LIMIT 1",
+                    (result.get("excel_brand") or "",),
+                ).fetchone()
+                if target_brand is not None:
+                    assert_product_can_join_brand(
+                        connection,
+                        existing["id"],
+                        target_brand["id"],
+                        ExcelDraftBlockedError,
+                    )
             deleted_match = next(
                 (
                     result

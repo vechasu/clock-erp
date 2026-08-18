@@ -7,6 +7,10 @@ import unicodedata
 
 from app.catalog_db import CatalogDatabase
 from app.services.audit_journal import AuditJournal
+from app.services.inventory_lock import (
+    assert_brand_without_active_inventory,
+    unlocked_product_sql,
+)
 
 
 class DuplicateCatalogValueError(ValueError):
@@ -1349,11 +1353,14 @@ class SharedCatalog:
         category_id=None,
         include_archived=False,
         in_stock=False,
+        include_inventory_locked=False,
     ):
         where = []
         parameters = []
         if not include_archived:
             where.append("p.active = 1")
+        if not include_inventory_locked:
+            where.append(unlocked_product_sql("p"))
         if brand_id not in (None, ""):
             if int(brand_id) == 0:
                 where.append("p.brand_id IS NULL")
@@ -1391,6 +1398,7 @@ class SharedCatalog:
         category_id=None,
         include_archived=False,
         in_stock=False,
+        include_inventory_locked=False,
     ):
         self.database.initialize()
         where_sql, parameters = self._product_filter_sql(
@@ -1399,6 +1407,7 @@ class SharedCatalog:
             category_id=category_id,
             include_archived=include_archived,
             in_stock=in_stock,
+            include_inventory_locked=include_inventory_locked,
         )
         with self.database.connect() as connection:
             if catalog_search_key(query):
@@ -1420,6 +1429,7 @@ class SharedCatalog:
         limit=50,
         include_archived=False,
         in_stock=False,
+        include_inventory_locked=False,
     ):
         self.database.initialize()
         where_sql, parameters = self._product_filter_sql(
@@ -1428,6 +1438,7 @@ class SharedCatalog:
             category_id=category_id,
             include_archived=include_archived,
             in_stock=in_stock,
+            include_inventory_locked=include_inventory_locked,
         )
         parameters.append(max(1, min(int(limit), 200)))
         with self.database.connect() as connection:
@@ -1764,6 +1775,9 @@ class SharedCatalog:
             raise ValueError("Название бренда обязательно.")
         self.database.initialize()
         with self.database.transaction() as connection:
+            assert_brand_without_active_inventory(
+                connection, brand_id, CatalogReferenceError
+            )
             current = ensure_brand(
                 connection,
                 brand_id=brand_id,
@@ -1896,6 +1910,9 @@ class SharedCatalog:
     def archive_brand(self, brand_id):
         self.database.initialize()
         with self.database.transaction() as connection:
+            assert_brand_without_active_inventory(
+                connection, brand_id, CatalogReferenceError
+            )
             count = connection.execute(
                 "SELECT COUNT(*) FROM catalog_excel_products "
                 "WHERE brand_id = ? AND active = 1",

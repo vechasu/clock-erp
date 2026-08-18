@@ -67,6 +67,9 @@ from app.services.brand_inventory import (
     BrandInventory,
     InventoryError,
 )
+from app.services.inventory_lock import (
+    assert_product_references_unlocked,
+)
 from app.services.receipt_inventory import (
     ReceiptInventory,
 )
@@ -2144,7 +2147,17 @@ def inventory_start_api():
         session, created = BrandInventory().start(
             payload.get("brand_id"), _inventory_actor()
         )
-        return {"ok": True, "created": created, "session": session}
+        return {
+            "ok": True,
+            "created": created,
+            "session": session,
+            "message": (
+                "Инвентаризация начата."
+                if created else
+                "Для бренда {} уже проводится инвентаризация."
+                .format(session["brand_name"])
+            ),
+        }
     return _inventory_json(action)
 
 
@@ -2434,6 +2447,21 @@ def warehouse_page():
         items = filtered_items
     taxonomy = load_catalog_taxonomy()
     shared_brand_groups = shared_catalog.list_brands(limit=200)
+    inventory_brand_id = selected_brand_id
+    if not inventory_brand_id and selected_brand:
+        inventory_brand_match = next(
+            (
+                item for item in shared_brand_groups
+                if str(item.get("name") or "").casefold()
+                == selected_brand.casefold()
+            ),
+            None,
+        )
+        if inventory_brand_match:
+            inventory_brand_id = inventory_brand_match.get("id")
+    active_brand_inventory = BrandInventory().active_for_brand(
+        inventory_brand_id
+    )
     filter_brand_groups = merge_catalog_groups(shared_brand_groups, [])
     brand_groups = merge_catalog_groups(
         shared_brand_groups,
@@ -2526,6 +2554,7 @@ def warehouse_page():
             total_found=catalog["total"],
             pagination=pagination,
             stock_operations=get_catalog_stock_history(),
+            active_brand_inventory=active_brand_inventory,
             warehouse_table_ui_e2e=(
                 app.testing
                 and request.args.get("table_ui_e2e") == "1"
@@ -12307,6 +12336,18 @@ def receipt_create():
             message="Добавьте хотя бы один товар",
         ))
 
+    try:
+        with CatalogDatabase(cache_initialization=True).connect() as connection:
+            assert_product_references_unlocked(
+                connection,
+                [position["product_id"] for position in positions],
+            )
+    except ValueError as error:
+        return redirect(url_for(
+            "receipts_page", notice="error", message=str(error),
+            open_receipt_modal="1",
+        ))
+
     receipts = load_receipts()
     receipt_id = str(uuid.uuid4())
     receipt_number = (
@@ -12778,6 +12819,10 @@ def receipt_update():
     reason = ". ".join(reason_parts)
 
     try:
+        with CatalogDatabase(cache_initialization=True).connect() as connection:
+            assert_product_references_unlocked(
+                connection, [old_product_id, updated_position["product_id"]]
+            )
         client = MoySkladClient()
 
         result = client.update_stock_enter_many(
@@ -12946,6 +12991,15 @@ def receipt_delete():
 
     try:
         client = MoySkladClient()
+
+        with CatalogDatabase(cache_initialization=True).connect() as connection:
+            assert_product_references_unlocked(
+                connection,
+                [
+                    position.get("product_id")
+                    for position in (receipt.get("positions") or [receipt])
+                ],
+            )
 
         if receipt.get("inventory_managed"):
             ReceiptInventory().can_cancel(receipt_id)
@@ -16165,6 +16219,14 @@ def api_receipts_collection():
                     existing_receipt,
                     shared_catalog=receipt_catalog,
                 ))
+        try:
+            with receipt_database.connect() as connection:
+                assert_product_references_unlocked(
+                    connection,
+                    [position["product_id"] for position in positions],
+                )
+        except ValueError as error:
+            return api_error("INVENTORY_LOCKED", str(error), 409)
         receipt_id = str(uuid.uuid4())
         receipt_number = requested_document_number or generate_receipt_number(receipts)
         first_position = positions[0]
@@ -16517,6 +16579,14 @@ def api_receipt_resource(receipt_id):
         )
     if request.method == "DELETE":
         try:
+            with CatalogDatabase(cache_initialization=True).connect() as connection:
+                assert_product_references_unlocked(
+                    connection,
+                    [
+                        position.get("product_id")
+                        for position in (receipt.get("positions") or [receipt])
+                    ],
+                )
             if receipt.get("inventory_managed"):
                 ReceiptInventory().can_cancel(receipt_id)
             if not MoySkladClient().delete_stock_enter(document_id):
@@ -16618,6 +16688,15 @@ def api_receipt_resource(receipt_id):
                 "Товар проведённого прихода изменить нельзя. "
                 "Отмените приход и создайте новый."
             )
+        old_quantity = sum(
+            parse_receipt_number(item.get("quantity"))
+            for item in (receipt.get("positions") or [])
+        )
+        if abs(old_quantity - positions[0]["quantity"]) >= 0.000001:
+            with CatalogDatabase(cache_initialization=True).connect() as connection:
+                assert_product_references_unlocked(
+                    connection, [positions[0]["product_id"]]
+                )
     except ValueError as error:
         return api_error("RECEIPT_VALIDATION_FAILED", str(error), 422)
     position = positions[0]
