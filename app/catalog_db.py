@@ -665,6 +665,13 @@ CREATE TABLE IF NOT EXISTS erp_sale_items (
     brand_id INTEGER REFERENCES erp_brands(id) ON DELETE RESTRICT,
     category_id INTEGER REFERENCES erp_categories(id) ON DELETE RESTRICT,
     quantity REAL NOT NULL CHECK (quantity > 0),
+    original_unit_price TEXT,
+    discount_type TEXT NOT NULL DEFAULT 'none' CHECK (
+        discount_type IN ('none', 'percent', 'fixed')
+    ),
+    discount_value TEXT NOT NULL DEFAULT '0.00',
+    discount_amount TEXT NOT NULL DEFAULT '0.00',
+    discount_reason TEXT,
     unit_price REAL CHECK (unit_price >= 0),
     returned_quantity REAL NOT NULL DEFAULT 0 CHECK (
         returned_quantity >= 0 AND returned_quantity <= quantity
@@ -1494,6 +1501,11 @@ class CatalogDatabase:
             "erp_sale_items": (
                 ("brand_id", "INTEGER REFERENCES erp_brands(id) ON DELETE RESTRICT"),
                 ("category_id", "INTEGER REFERENCES erp_categories(id) ON DELETE RESTRICT"),
+                ("original_unit_price", "TEXT"),
+                ("discount_type", "TEXT NOT NULL DEFAULT 'none'"),
+                ("discount_value", "TEXT NOT NULL DEFAULT '0.00'"),
+                ("discount_amount", "TEXT NOT NULL DEFAULT '0.00'"),
+                ("discount_reason", "TEXT"),
             ),
             "erp_receipt_items": (
                 ("active", "INTEGER NOT NULL DEFAULT 1"),

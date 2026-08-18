@@ -63,6 +63,10 @@ from app.services.sales_inventory import (
     sale_now_iso,
     validate_performed_sale_update,
 )
+from app.services.sale_pricing import (
+    calculate_sale_pricing,
+    order_line_pricing,
+)
 from app.services.brand_inventory import (
     BrandInventory,
     InventoryError,
@@ -756,6 +760,9 @@ def orders_page():
         conducted_sale=get_order_conducted_sale(order_id),
         order_region=get_order_region(selected_order or {}),
         order_tracking=get_order_tracking(selected_order or {}),
+        order_sale_pricing=build_order_sale_pricing(
+            (selected_order or {}).get("products") or []
+        ),
     )
 
 
@@ -780,6 +787,16 @@ def first_order_product_value(product, *keys):
         if value not in (None, ""):
             return value
     return ""
+
+
+def build_order_sale_pricing(products):
+    result = []
+    for product in products or []:
+        try:
+            result.append(order_line_pricing(product))
+        except ValueError:
+            result.append(calculate_sale_pricing(None))
+    return result
 
 
 def bitrix_order_product_identity(product):
@@ -1018,6 +1035,9 @@ def order_page(order_id):
         conducted_sale=get_order_conducted_sale(order_id),
         order_region=get_order_region(selected_order),
         order_tracking=get_order_tracking(selected_order),
+        order_sale_pricing=build_order_sale_pricing(
+            selected_order.get("products") or []
+        ),
     )
 
 
@@ -1133,24 +1153,34 @@ def _conduct_order_sale(order_id):
         catalog_product = mapping["product"]
         product_id = int(catalog_product["id"])
 
-        raw_price = first_order_product_value(product, "price", "PRICE")
-        if raw_price in (None, ""):
-            unit_price = None
-        else:
-            try:
-                unit_price = float(str(raw_price).replace(",", "."))
-            except Exception:
-                unit_price = None
-
-        discount = product.get("discount")
-        if discount is None:
-            discount = product.get("DISCOUNT_PRICE")
+        try:
+            order_pricing = order_line_pricing(product)
+            pricing = calculate_sale_pricing(
+                request.form.get(
+                    "original_price_{}".format(line_index),
+                    order_pricing["original_unit_price"],
+                ),
+                request.form.get(
+                    "discount_type_{}".format(line_index),
+                    order_pricing["discount_type"],
+                ),
+                request.form.get(
+                    "discount_value_{}".format(line_index),
+                    order_pricing["discount_value"],
+                ),
+                request.form.get(
+                    "discount_reason_{}".format(line_index),
+                    order_pricing["discount_reason"],
+                ),
+            )
+        except ValueError as error:
+            issues.append("{} — {}".format(bitrix_product_name, error))
+            continue
 
         prepared_items.append({
             "product_id": product_id,
             "quantity": quantity,
-            "unit_price": unit_price,
-            "discount": discount,
+            **pricing,
             "line_index": line_index,
             **identity,
             "bitrix_product_name": bitrix_product_name,
@@ -1225,6 +1255,12 @@ def _conduct_order_sale(order_id):
         "delivery_address": str(full_order.get("address") or ""),
         "delivery_cost": full_order.get("delivery_price") or 0,
         "order_total": full_order.get("order_total"),
+        "comment": str(
+            full_order.get("comment")
+            or full_order.get("USER_DESCRIPTION")
+            or full_order.get("COMMENTS")
+            or ""
+        ),
         "order_status": "completed",
     }
 
@@ -6335,6 +6371,23 @@ def validate_optional_sale_price(value):
     return price
 
 
+def sale_pricing_from_mapping(values, existing=None):
+    existing = existing or {}
+    original = (
+        values.get("original_unit_price")
+        if values.get("original_unit_price") not in (None, "")
+        else values.get("unit_price")
+        if values.get("unit_price") not in (None, "")
+        else existing.get("original_unit_price", existing.get("unit_price"))
+    )
+    return calculate_sale_pricing(
+        original,
+        values.get("discount_type", existing.get("discount_type", "none")),
+        values.get("discount_value", existing.get("discount_value", 0)),
+        values.get("discount_reason", existing.get("discount_reason", "")),
+    )
+
+
 def parse_sale_commission(value):
     from decimal import Decimal, InvalidOperation
 
@@ -7158,11 +7211,14 @@ def manual_sale_add():
     require_csrf_when_authenticated()
     quantity = parse_manual_sale_quantity(request.form.get("quantity"))
 
-    # === MANUAL SALE ADD PRICE V1 ===
     try:
-        unit_price = validate_optional_sale_price(request.form.get("unit_price"))
+        pricing = sale_pricing_from_mapping(request.form)
     except ValueError as error:
         return redirect_to_sales(str(error), notice="error")
+    unit_price = (
+        float(pricing["unit_price"])
+        if pricing["unit_price"] is not None else None
+    )
     total_amount = calculate_sale_amount(
         unit_price,
         quantity,
@@ -7307,6 +7363,7 @@ def manual_sale_add():
         "brand_id": catalog_product.get("brand_id"),
         "category_id": catalog_product.get("category_id"),
         "quantity": quantity,
+        **pricing,
         "unit_price": unit_price,
         "total_amount": total_amount,
         "order_number": (
@@ -7392,19 +7449,21 @@ def manual_sale_update():
     product_name = (request.form.get("product_name") or "").strip()
     quantity = parse_manual_sale_quantity(request.form.get("quantity"))
 
-    # === SALES PRICE EDIT AND TABLE V2 ===
     try:
-        unit_price = validate_optional_sale_price(request.form.get("unit_price"))
+        pricing = sale_pricing_from_mapping(request.form)
     except ValueError as error:
         return respond_to_sales_action(
             str(error), notice="error", status_code=400
         )
 
+    unit_price = (
+        float(pricing["unit_price"])
+        if pricing["unit_price"] is not None else None
+    )
     total_amount = calculate_sale_amount(
         unit_price,
         quantity,
     )
-    # === SALES PRICE EDIT AND TABLE V2 END ===
 
     if not sale_id:
         return respond_to_sales_action(
@@ -7559,6 +7618,7 @@ def manual_sale_update():
         sale["brand_id"] = product_metadata.get("brand_id")
         sale["category_id"] = product_metadata.get("category_id")
         sale["quantity"] = quantity
+        sale.update(pricing)
         sale["unit_price"] = unit_price
         sale["total_amount"] = total_amount
         sale["order_number"] = str(
@@ -17269,10 +17329,10 @@ def normalize_api_sale_payload(payload, existing=None, require_catalog=False):
     )
     if quantity <= 0:
         raise ValueError("Выберите количество от 1 до 25.")
-    unit_price = validate_optional_sale_price(
-        payload.get("unit_price")
-        if "unit_price" in payload
-        else existing.get("unit_price")
+    pricing = sale_pricing_from_mapping(payload, existing=existing)
+    unit_price = (
+        float(pricing["unit_price"])
+        if pricing["unit_price"] is not None else None
     )
     if product is not None and quantity > float(product["stock"]):
         if not existing.get("inventory_managed"):
@@ -17370,6 +17430,7 @@ def normalize_api_sale_payload(payload, existing=None, require_catalog=False):
             or existing.get("category_id")
         ),
         "quantity": quantity,
+        **pricing,
         "unit_price": unit_price,
         "total_amount": calculate_sale_amount(unit_price, quantity),
         **{
@@ -17384,6 +17445,13 @@ def normalize_api_sale_payload(payload, existing=None, require_catalog=False):
         "region": location_fields["region"],
         "city": location_fields["city"],
         **optional_fields,
+        "_pricing_explicit": any(
+            field in payload
+            for field in (
+                "original_unit_price", "discount_type",
+                "discount_value", "discount_reason",
+            )
+        ),
     }
     return normalized
 
