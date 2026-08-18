@@ -30,6 +30,7 @@ class InventoryJournal:
         with self.database.connect() as connection:
             rows = connection.execute(
                 "SELECT s.*, b.name AS brand_name, COUNT(i.id) AS total_positions, "
+                "SUM(CASE WHEN i.status IN ('confirmed','adjusted','added','missing') THEN 1 ELSE 0 END) AS calculated_checked_positions, "
                 "SUM(CASE WHEN i.status = 'confirmed' THEN 1 ELSE 0 END) AS unchanged_positions, "
                 "SUM(CASE WHEN i.status = 'conflict' THEN 1 ELSE 0 END) AS conflict_positions, "
                 "SUM(CASE WHEN i.status = 'error' THEN 1 ELSE 0 END) AS error_positions, "
@@ -56,6 +57,7 @@ class InventoryJournal:
         with self.database.connect() as connection:
             event_rows = connection.execute(
                 "SELECT s.*, b.name AS brand_name, COUNT(i.id) AS total_positions, "
+                "SUM(CASE WHEN i.status IN ('confirmed','adjusted','added','missing') THEN 1 ELSE 0 END) AS calculated_checked_positions, "
                 "SUM(CASE WHEN i.status = 'confirmed' THEN 1 ELSE 0 END) AS unchanged_positions, "
                 "SUM(CASE WHEN i.status = 'conflict' THEN 1 ELSE 0 END) AS conflict_positions, "
                 "SUM(CASE WHEN i.status = 'error' THEN 1 ELSE 0 END) AS error_positions, "
@@ -94,10 +96,12 @@ class InventoryJournal:
             "missing_positions", "total_delta", "total_positions", "unchanged_positions",
             "conflict_positions", "error_positions", "pending_positions", "increased_positions",
             "decreased_positions", "positive_delta", "negative_delta", "reactivated_positions",
+            "calculated_checked_positions",
         )
         for key in numeric:
             row[key] = int(row.get(key) or 0)
         row["status_label"] = STATUS_LABELS.get(row.get("status"), row.get("status", ""))
+        row["checked_positions"] = row["calculated_checked_positions"]
         return row
 
     @staticmethod
@@ -121,4 +125,7 @@ class InventoryJournal:
             "result": result, "status": row["status"], "user": row.get("confirmed_by") or "",
             "timestamp": row.get("confirmed_at") or row.get("snapshot_at"),
             "movement_id": row.get("linked_movement_id"), "error": row.get("error_message") or "",
+            "action_type": (
+                "inventory_item_confirmed" if row.get("confirmed_at") else ""
+            ),
         }

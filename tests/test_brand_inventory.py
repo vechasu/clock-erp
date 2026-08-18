@@ -86,14 +86,26 @@ class BrandInventoryTest(unittest.TestCase):
     def test_matching_quantity_is_confirmed_without_movement(self):
         product = self.product()
         session = self.start()
+        item = self.first_item(session)
         result = self.service.confirm(
-            session["id"], self.first_item(session)["id"], 4,
+            session["id"], item["id"], 4,
             idempotency_key="same",
         )
         self.assertEqual(result["status"], "confirmed")
         self.assertEqual(self.stock(product["id"]), 4)
         self.assertEqual(self.movement_count(product["id"]), 0)
-        self.assertEqual(self.service.get(session["id"])["remaining"], 0)
+        detail = self.service.get(session["id"])
+        self.assertEqual(detail["remaining"], 0)
+        self.assertEqual(result["state"], "confirmed")
+        self.assertTrue(result["checked"])
+        self.assertEqual(result["action_type"], "inventory_item_confirmed")
+        self.assertEqual(detail["checked_positions"], 1)
+        repeated = self.service.confirm(
+            session["id"], item["id"], 4, idempotency_key="same",
+        )
+        self.assertEqual(repeated["result"], "already_confirmed")
+        self.assertEqual(self.service.get(session["id"])["checked_positions"], 1)
+        self.assertEqual(self.movement_count(product["id"]), 0)
 
     def test_adjust_up_and_down_use_canonical_movements(self):
         products = [
@@ -167,6 +179,49 @@ class BrandInventoryTest(unittest.TestCase):
             session["id"], item["id"], 4, idempotency_key="fresh"
         )
         self.assertEqual(adjusted["delta"], 1)
+
+    def test_conflict_refresh_then_matching_confirmation_uses_confirm_state(self):
+        product = self.product()
+        session = self.start()
+        item = self.first_item(session)
+        SalesInventory(self.database).create_sale(
+            {"id": "sale-match", "product_name": "Часы Alpha", "source": "Tictactoy"},
+            product["id"], 1, 100,
+        )
+        conflict = self.service.confirm(
+            session["id"], item["id"], 3, idempotency_key="stale-match"
+        )
+        self.assertTrue(conflict["needs_recheck"])
+        refreshed = self.service.refresh_conflict(session["id"], item["id"])
+        self.assertEqual(refreshed["state"], "unverified")
+        self.assertFalse(refreshed["needs_recheck"])
+        with self.assertRaisesRegex(InventoryConflict, "Позиция не требует перепроверки"):
+            self.service.refresh_conflict(session["id"], item["id"])
+        confirmed = self.service.confirm(
+            session["id"], item["id"], 3, idempotency_key="fresh-match"
+        )
+        self.assertEqual(confirmed["status"], "confirmed")
+        self.assertEqual(confirmed["delta"], 0)
+        self.assertEqual(self.stock(product["id"]), 3)
+        self.assertEqual(self.movement_count(product["id"]), 0)
+
+    def test_kpi_uses_total_positions_as_canonical_invariant(self):
+        self.product()
+        session = self.start()
+        self.service.add_new(
+            session["id"], "Найденная позиция", "FOUND", 2,
+            idempotency_key="found-kpi",
+        )
+        detail = self.service.get(session["id"])
+        self.assertEqual(detail["start_positions"], 1)
+        self.assertEqual(detail["added_positions"], 1)
+        self.assertEqual(detail["total_positions"], 2)
+        self.assertEqual(detail["checked_positions"], 1)
+        self.assertEqual(detail["remaining"], 1)
+        self.assertEqual(
+            detail["checked_positions"] + detail["remaining"],
+            detail["total_positions"],
+        )
 
     def test_completion_writes_pending_to_zero_atomically(self):
         one = self.product(stock=4)
@@ -317,7 +372,10 @@ class BrandInventoryWebTest(unittest.TestCase):
         self.assertIn("Добавить найденный товар", markup)
         self.assertIn("@media(max-width:650px)", markup)
         self.assertIn("tr.classList.add('removing')", markup)
-        self.assertIn("Не удалось провести товар — изменения не сохранены", markup)
+        self.assertIn("toast(e.message,true)", markup)
+        self.assertIn("button.removeAttribute('data-refresh')", markup)
+        self.assertIn("item.needs_recheck", markup)
+        self.assertIn("Всего позиций", markup)
 
         confirmed = self.client.post(
             "/api/v1/inventories/{}/items/{}/confirm".format(session["id"], item["id"]),
@@ -334,11 +392,17 @@ class BrandInventoryWebTest(unittest.TestCase):
     def test_api_validation_and_product_brand_ownership(self):
         started = self.client.post("/api/v1/inventories", json={"brand_id": self.brand_id})
         session = started.get_json()["session"]
+        item_id = self.client.get(
+            "/api/v1/inventories/{}/items".format(session["id"])
+        ).get_json()["items"][0]["id"]
+        empty = self.client.post(
+            "/api/v1/inventories/{}/items/{}/confirm".format(session["id"], item_id),
+            json={"actual_stock": "", "idempotency_key": "empty"},
+        )
+        self.assertEqual(empty.status_code, 400)
         invalid = self.client.post(
             "/api/v1/inventories/{}/items/{}/confirm".format(
-                session["id"], self.client.get(
-                    "/api/v1/inventories/{}/items".format(session["id"])
-                ).get_json()["items"][0]["id"]
+                session["id"], item_id
             ),
             json={"actual_stock": -1, "idempotency_key": "invalid"},
         )

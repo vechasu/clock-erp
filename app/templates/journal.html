@@ -515,7 +515,7 @@
                 cell.append(label, strong); values.append(cell);
             });
             const result = document.createElement("div"); result.className = "inventory-position-result";
-            const details = [position.result, position.user, inventoryTimestamp(position.timestamp), position.movement_id ? "Движение " + position.movement_id : "", position.error].filter(Boolean);
+            const details = [position.result, position.action_type, position.user, inventoryTimestamp(position.timestamp), position.movement_id ? "Движение " + position.movement_id : "", position.error].filter(Boolean);
             result.textContent = details.join(" · ");
             body.append(name, article, values, result); row.append(photo, body); content.append(row);
         });
