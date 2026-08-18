@@ -86,6 +86,9 @@ class InventoryJournalTest(unittest.TestCase):
         self.inventory.confirm(session["id"], self.item(session)["id"], 4, "Максим", "same")
         document = self.read_model.get_document(session["id"])
         self.assertEqual(document["positions"][0]["result"], "Подтверждён")
+        self.assertEqual(
+            document["positions"][0]["action_type"], "inventory_item_confirmed"
+        )
         self.assertIsNone(document["positions"][0]["movement_id"])
 
     def test_05_positive_adjustment_has_totals_and_canonical_movement(self):
