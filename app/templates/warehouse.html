@@ -4015,6 +4015,16 @@
                 <div class="erp-workspace-actions">
                     <a
                         class="erp-workspace-primary"
+                        href="{{ export_filtered_url }}"
+                        style="background:#fff;color:#174887;border:1px solid #b8c8dc;text-decoration:none"
+                    >Экспортировать найденные</a>
+                    <a
+                        class="erp-workspace-primary"
+                        href="{{ export_all_url }}"
+                        style="background:#fff;color:#174887;border:1px solid #b8c8dc;text-decoration:none"
+                    >Экспортировать все товары</a>
+                    <a
+                        class="erp-workspace-primary"
                         href="{{ url_for('warehouse_inventory_page') }}"
                         style="background:#fff;color:#174887;border:1px solid #b8c8dc;text-decoration:none"
                     >Инвентаризация</a>
