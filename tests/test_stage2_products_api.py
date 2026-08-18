@@ -548,7 +548,12 @@ class Stage2ProductsApiTest(unittest.TestCase):
         brand = self.client.post("/api/brands", json={"name": "Casio"})
         self.assertEqual(brand.status_code, 201)
         duplicate = self.client.post("/api/brands", json={"name": "casio"})
-        self.assertEqual(duplicate.status_code, 409)
+        self.assertEqual(duplicate.status_code, 200)
+        self.assertEqual(
+            duplicate.get_json()["data"]["id"],
+            brand.get_json()["data"]["id"],
+        )
+        self.assertFalse(duplicate.get_json()["meta"]["created"])
         category = self.client.post(
             "/api/categories",
             json={"brand": "Casio", "name": "G-Shock"},
@@ -558,6 +563,55 @@ class Stage2ProductsApiTest(unittest.TestCase):
             {"brand": "Casio", "name": "G-Shock", "count": 0},
             self.client.get("/api/categories").get_json()["data"],
         )
+
+    def test_archived_brand_is_reactivated_and_reused_for_product_flow(self):
+        first = self.client.post(
+            "/api/v1/brands", json={"name": "  666 Barcelona  "}
+        )
+        brand_id = first.get_json()["data"]["id"]
+        catalog = web.SharedCatalog(CatalogDatabase(self.database_path))
+        catalog.archive_brand(brand_id)
+
+        hidden = self.client.get(
+            "/api/v1/catalog/options?type=brand&q=666%20Barcelona"
+        )
+        self.assertEqual(hidden.get_json()["data"], [])
+
+        reused = self.client.post(
+            "/api/v1/brands", json={"name": "666 barcelona"}
+        )
+        self.assertEqual(reused.status_code, 200)
+        self.assertEqual(reused.get_json()["data"]["id"], brand_id)
+        self.assertTrue(reused.get_json()["meta"]["reactivated"])
+
+        visible = self.client.get(
+            "/api/v1/catalog/options?type=brand&q=666%20Barcelona"
+        ).get_json()["data"]
+        self.assertEqual([item["id"] for item in visible], [brand_id])
+
+        category = self.client.post(
+            "/api/v1/categories",
+            json={"brand_id": brand_id, "name": "Barcelona Watches"},
+        )
+        self.assertEqual(category.status_code, 201)
+        product = self.client.post(
+            "/api/v1/products",
+            json={
+                "name": "Barcelona Test Watch",
+                "brand_id": brand_id,
+                "category_id": category.get_json()["data"]["id"],
+                "stock": 0,
+            },
+        )
+        self.assertEqual(product.status_code, 201)
+        self.assertEqual(product.get_json()["data"]["brand_id"], brand_id)
+
+        with CatalogDatabase(self.database_path).connect() as connection:
+            count = connection.execute(
+                "SELECT COUNT(*) FROM erp_brands WHERE normalized_name = ?",
+                ("666 barcelona",),
+            ).fetchone()[0]
+        self.assertEqual(count, 1)
 
     def test_removed_product_extras_are_not_routable(self):
         requests = (

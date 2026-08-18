@@ -214,10 +214,17 @@ class CatalogApplication:
             for item in values
         ]
 
-    def create_api_brand(self, name):
-        created = self._shared_catalog_factory().create_brand(name)
-        self._remember_classification(created["name"])
-        return {**created, "count": created["product_count"]}
+    def create_api_brand(self, name, actor=None):
+        brand, resolution = (
+            self._shared_catalog_factory().resolve_or_create_brand(
+                name, **(actor or {})
+            )
+        )
+        self._remember_classification(brand["name"])
+        return (
+            {**brand, "count": brand["product_count"]},
+            resolution,
+        )
 
     def create_api_category(self, brand_id, brand_name, name):
         brand_name = self._normalize_label(brand_name)

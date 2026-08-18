@@ -1625,6 +1625,61 @@ class SharedCatalog:
             )
             return self._brand(row)
 
+    def resolve_or_create_brand(self, name, **actor):
+        """Return the exact normalized brand, restoring it when archived."""
+        name = catalog_name(name)
+        if not name:
+            raise ValueError("Название бренда обязательно.")
+        key = normalized_name(name)
+        self.database.initialize()
+        with self.database.transaction() as connection:
+            existing = connection.execute(
+                "SELECT * FROM erp_brands WHERE normalized_name = ?",
+                (key,),
+            ).fetchone()
+            if existing is not None:
+                resolution = "existing"
+                if not existing["active"]:
+                    connection.execute(
+                        "UPDATE erp_brands SET active = 1, updated_at = ? "
+                        "WHERE id = ?",
+                        (utc_now(), existing["id"]),
+                    )
+                    existing = connection.execute(
+                        "SELECT * FROM erp_brands WHERE id = ?",
+                        (existing["id"],),
+                    ).fetchone()
+                    resolution = "reactivated"
+                    AuditJournal(self.database).record(
+                        "brand", existing["id"], "updated", existing["name"],
+                        metadata={"reactivated": True},
+                        connection=connection, **actor
+                    )
+                return self._brand(existing), resolution
+
+            alias = next(
+                (
+                    row
+                    for row in connection.execute(
+                        "SELECT * FROM erp_brands ORDER BY id"
+                    ).fetchall()
+                    if potential_alias_key(row["name"])
+                    == potential_alias_key(name)
+                ),
+                None,
+            )
+            if alias is not None:
+                raise DuplicateCatalogValueError(
+                    "Такой бренд уже существует: {}.".format(alias["name"]),
+                    self._brand(alias),
+                )
+            row = ensure_brand(connection, name=name)
+            AuditJournal(self.database).record(
+                "brand", row["id"], "created", row["name"],
+                after={"name": row["name"]}, connection=connection, **actor
+            )
+            return self._brand(row), "created"
+
     def set_moysklad_product_id(self, product_id, moysklad_product_id):
         product_id = int(product_id)
         moysklad_product_id = display_name(moysklad_product_id)

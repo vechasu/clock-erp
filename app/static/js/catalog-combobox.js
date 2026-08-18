@@ -1585,13 +1585,16 @@
                 } finally {
                     delete combobox.dataset.catalogInlineCreating;
                 }
-                combobox.dataset.sharedCatalogNewValue = "true";
+                combobox.dataset.sharedCatalogNewValue =
+                    result?.meta?.created === false ? "false" : "true";
                 combobox.dispatchEvent(
                     new CustomEvent("shared-catalog:created", {
                         bubbles: true,
                         detail: {
                             kind,
                             item: result.data,
+                            created: result?.meta?.created !== false,
+                            reactivated: result?.meta?.reactivated === true,
                         },
                     })
                 );
