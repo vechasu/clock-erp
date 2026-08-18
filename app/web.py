@@ -67,6 +67,10 @@ from app.services.brand_inventory import (
     BrandInventory,
     InventoryError,
 )
+from app.services.brand_images import (
+    BrandImageStore,
+    BrandImageValidationError,
+)
 from app.services.inventory_lock import (
     assert_product_references_unlocked,
 )
@@ -2442,14 +2446,18 @@ def warehouse_page():
                 "warehouse_page", view="brands", notice="error",
                 message="Бренд не найден.",
             ))
+        brands = shared_catalog.list_brand_summaries(
+            query=(request.args.get("q") or "").strip(), limit=500,
+        )
+        brand = _with_brand_image_url(brand) if brand else None
+        brands = [_with_brand_image_url(item) for item in brands]
         return render_template(
             "warehouse_brands.html",
-            brands=shared_catalog.list_brand_summaries(
-                query=(request.args.get("q") or "").strip(), limit=500,
-            ),
+            brands=brands,
             brand=brand,
             query=(request.args.get("q") or "").strip(),
             can_force_delete=_product_force_delete_allowed(),
+            can_manage_brand_images=_product_force_delete_allowed(),
         )
     query = request.args.get("q", "").strip()
     selected_category = request.args.get("category", "").strip()
@@ -13583,6 +13591,40 @@ def _brands_redirect(brand_id=None, notice="success", message=""):
     return redirect(url_for("warehouse_page", **arguments))
 
 
+def _with_brand_image_url(brand):
+    prepared = dict(brand or {})
+    prepared["image_url"] = (
+        url_for("brand_image_file", filename=Path(prepared["image_path"]).name)
+        if prepared.get("image_path")
+        else None
+    )
+    return prepared
+
+
+@app.route("/brand-images/<filename>")
+def brand_image_file(filename):
+    from flask import send_from_directory
+
+    safe_name = Path(filename).name
+    if safe_name != filename:
+        abort(404)
+    database = CatalogDatabase(cache_initialization=True)
+    database.initialize()
+    with database.connect() as connection:
+        exists = connection.execute(
+            "SELECT 1 FROM erp_brands WHERE image_path = ? LIMIT 1",
+            (safe_name,),
+        ).fetchone()
+    if exists is None:
+        abort(404)
+    return send_from_directory(
+        BrandImageStore(database).root,
+        safe_name,
+        conditional=True,
+        max_age=86400,
+    )
+
+
 def _categories_redirect(category_id=None, notice="success", message=""):
     arguments = {"view": "categories", "notice": notice, "message": message}
     if category_id is not None:
@@ -13705,6 +13747,39 @@ def warehouse_rename_brand(brand_id):
         )
 
 
+@app.route("/warehouse/brands/<int:brand_id>/image", methods=["POST"])
+def warehouse_upload_brand_image(brand_id):
+    require_csrf_when_authenticated()
+    if not _product_force_delete_allowed():
+        abort(403)
+    uploaded = request.files.get("image")
+    if uploaded is None or not uploaded.filename:
+        return _brands_redirect(
+            brand_id, notice="error", message="Выберите изображение."
+        )
+    try:
+        BrandImageStore().set_manual_image(brand_id, uploaded)
+        return _brands_redirect(brand_id, message="Изображение бренда сохранено.")
+    except (BrandImageValidationError, ValueError) as error:
+        return _brands_redirect(
+            brand_id, notice="error", message=str(error)
+        )
+
+
+@app.route("/warehouse/brands/<int:brand_id>/image/delete", methods=["POST"])
+def warehouse_delete_brand_image(brand_id):
+    require_csrf_when_authenticated()
+    if not _product_force_delete_allowed():
+        abort(403)
+    try:
+        BrandImageStore().remove_image(brand_id)
+        return _brands_redirect(brand_id, message="Изображение бренда удалено.")
+    except ValueError as error:
+        return _brands_redirect(
+            brand_id, notice="error", message=str(error)
+        )
+
+
 @app.route("/warehouse/brands/<int:brand_id>/categories", methods=["POST"])
 def warehouse_create_brand_category(brand_id):
     require_csrf_when_authenticated()
@@ -13752,7 +13827,10 @@ def warehouse_rename_global_category(brand_id, category_id):
 @app.route("/api/v1/brands", methods=["GET"])
 def api_brand_overviews():
     query = (request.args.get("q") or "").strip()
-    brands = _catalog_application.brand_overviews(query)
+    brands = [
+        _with_brand_image_url(item)
+        for item in _catalog_application.brand_overviews(query)
+    ]
     return api_success({"items": brands, "query": query})
 
 

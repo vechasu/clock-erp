@@ -245,6 +245,12 @@ CREATE TABLE IF NOT EXISTS erp_brands (
     name TEXT NOT NULL,
     normalized_name TEXT NOT NULL UNIQUE,
     active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+    bitrix_brand_id TEXT UNIQUE,
+    image_path TEXT,
+    image_source TEXT CHECK (image_source IN ('bitrix', 'manual')),
+    image_sha256 TEXT,
+    image_external_id TEXT,
+    image_updated_at TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -932,9 +938,37 @@ class CatalogDatabase:
             self._ensure_receipt_constraints(connection)
             self._ensure_optional_price_constraints(connection)
             self._ensure_shared_catalog(connection)
+            self._ensure_brand_image_columns(connection)
             self._ensure_brand_category_relations(connection)
             self._ensure_inventory_constraints(connection)
             self._ensure_stock_movement_constraints(connection)
+
+    @staticmethod
+    def _ensure_brand_image_columns(connection):
+        """Add optional brand-image metadata without touching catalog links."""
+        columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(erp_brands)").fetchall()
+        }
+        additions = (
+            ("bitrix_brand_id", "TEXT"),
+            ("image_path", "TEXT"),
+            ("image_source", "TEXT"),
+            ("image_sha256", "TEXT"),
+            ("image_external_id", "TEXT"),
+            ("image_updated_at", "TEXT"),
+        )
+        for name, declaration in additions:
+            if name not in columns:
+                connection.execute(
+                    "ALTER TABLE erp_brands ADD COLUMN {} {}".format(
+                        name, declaration
+                    )
+                )
+        connection.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_erp_brands_bitrix_id "
+            "ON erp_brands(bitrix_brand_id)"
+        )
 
     @staticmethod
     def _ensure_inventory_constraints(connection):
