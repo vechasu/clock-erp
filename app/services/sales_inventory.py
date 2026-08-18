@@ -1222,6 +1222,54 @@ class SalesInventory:
             )
         return self.get_sale(sale_id)
 
+    def set_archived(self, sale_id, archived, user_name=""):
+        """Archive or restore a sale without creating stock movements."""
+        sale_id = str(sale_id or "").strip()
+        self.initialize()
+        changed_at = now_iso()
+        with self.database.transaction() as connection:
+            sale = connection.execute(
+                "SELECT * FROM erp_sales WHERE id = ?", (sale_id,)
+            ).fetchone()
+            if sale is None or sale["deleted_at"]:
+                raise SalesInventoryError("Продажа не найдена.")
+            metadata = self._metadata(sale)
+            currently_archived = bool(
+                sale["archived_at"] or metadata.get("archived_at")
+            )
+            if currently_archived == bool(archived):
+                return self._sale_from_connection(connection, sale_id)
+            archived_at = changed_at if archived else None
+            archived_by = str(user_name or "") or None if archived else None
+            if archived:
+                metadata["archived_at"] = archived_at
+                metadata["archived_by"] = archived_by or ""
+            else:
+                metadata.pop("archived_at", None)
+                metadata.pop("archived_by", None)
+            connection.execute(
+                "UPDATE erp_sales SET archived_at = ?, archived_by = ?, "
+                "metadata_json = ?, updated_at = ? WHERE id = ?",
+                (
+                    archived_at, archived_by,
+                    json.dumps(metadata, ensure_ascii=False, sort_keys=True),
+                    changed_at, sale_id,
+                ),
+            )
+            AuditJournal(self.database).record(
+                "sale", sale_id, "status_changed",
+                "Продажа #{}".format(self._sale_number(sale)), sale["source"],
+                before={"archive_status": "archived" if currently_archived else "active"},
+                after={"archive_status": "archived" if archived else "active",
+                       "archived_at": archived_at or ""},
+                metadata={"number": self._sale_number(sale)},
+                actor_id=user_name, actor_name=user_name,
+                actor_type="user" if user_name else "system",
+                status="archived" if archived else "active",
+                source=sale["source"], connection=connection,
+            )
+        return self.get_sale(sale_id)
+
     def update_metadata(self, sale_id, payload, unit_price):
         sale_id = str(sale_id or "").strip()
         self.initialize()
@@ -1448,6 +1496,7 @@ class SalesInventory:
         inventory_status = str(row["status"] or "completed")
         cancelled_at = row["cancelled_at"] or payload.get("cancelled_at") or ""
         deleted_at = row["deleted_at"] or payload.get("deleted_at") or ""
+        archived_at = row["archived_at"] or payload.get("archived_at") or ""
         movement_plan = movement_plan or {
             "safe": True, "quantity": 0, "movement_count": 0,
         }
@@ -1511,6 +1560,9 @@ class SalesInventory:
             ),
             "deleted_at": deleted_at,
             "deleted_by": row["deleted_by"] or payload.get("deleted_by") or "",
+            "archived_at": archived_at,
+            "archived_by": row["archived_by"] or payload.get("archived_by") or "",
+            "is_archived": bool(archived_at),
             "cancellation_quantity": movement_plan["quantity"],
             "cancellation_safe": movement_plan["safe"],
             "cancellation_has_movements": bool(movement_plan["movement_count"]),

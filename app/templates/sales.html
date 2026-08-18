@@ -590,11 +590,27 @@
             background: #fecaca;
         }
 
+        .sales-archive-form {
+            display: inline-flex;
+            margin: 0;
+        }
+
+        [data-sales-today].is-active {
+            color: var(--erp-accent, #2563eb);
+            border-color: currentColor;
+            background: color-mix(in srgb, currentColor 10%, transparent);
+        }
+
         .sales-action-menu {
             position: relative;
         }
 
-        .sales-action-menu summary {
+        .sales-secondary-menu {
+            position: relative;
+        }
+
+        .sales-action-menu summary,
+        .sales-secondary-menu summary {
             display: inline-flex;
             width: 28px;
             height: 28px;
@@ -608,7 +624,8 @@
             list-style: none;
         }
 
-        .sales-action-menu summary::-webkit-details-marker {
+        .sales-action-menu summary::-webkit-details-marker,
+        .sales-secondary-menu summary::-webkit-details-marker {
             display: none;
         }
 
@@ -631,6 +648,33 @@
         .sales-action-menu--mobile button {
             right: auto;
             left: 0;
+        }
+
+        .sales-row-actions .sales-menu-panel {
+            position: absolute;
+            z-index: 20;
+            top: calc(100% + 4px);
+            right: 0;
+            display: grid;
+            min-width: 190px;
+            overflow: hidden;
+            border: 1px solid #dfe5ed;
+            border-radius: 9px;
+            background: #ffffff;
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.14);
+        }
+
+        .sales-row-actions .sales-menu-panel button {
+            position: static;
+            width: 100%;
+            min-width: 0;
+            border: 0;
+            border-radius: 0;
+            box-shadow: none;
+        }
+
+        .sales-row-actions .sales-menu-panel .sales-archive-form {
+            display: block;
         }
 
         .sales-mobile-card.is-cancelled {
@@ -1370,7 +1414,7 @@
     data-erp-focus-mode
     data-focus-mode-storage-key="vechasu.erp.sales.focus-mode.v1"
     data-focus-mode-hide=".sales-page-header,.sales-tabs-scroll,.erp-workspace-metrics,#appSidebar,.mobile-erp-navigation,.mobile-erp-more-sheet,.mobile-erp-more-backdrop,#sidebarTooltip"
-    data-focus-mode-overlays=".modal.is-open,.sales-viewport-popover:not([hidden]),.sales-product-combobox-menu:not([hidden]),.catalog-create-modal:not([hidden]),.mobile-erp-more-sheet.is-open,.sales-action-menu[open]"
+    data-focus-mode-overlays=".modal.is-open,.sales-viewport-popover:not([hidden]),.sales-product-combobox-menu:not([hidden]),.catalog-create-modal:not([hidden]),.mobile-erp-more-sheet.is-open,.sales-action-menu[open],.sales-secondary-menu[open]"
 >
     {% include "_sidebar.html" %}
 
@@ -1433,6 +1477,12 @@
                         {{ tab.label }}
                     </a>
                 {% endfor %}
+                <a
+                    class="sales-tab erp-section-tab{% if sales_view == 'archive' %} is-active{% endif %}"
+                    href="{{ archive_url }}"
+                    data-sales-archive-tab
+                    {% if sales_view == 'archive' %}aria-current="page"{% endif %}
+                >Архив</a>
             </div>
         </nav>
 
@@ -1626,6 +1676,13 @@
                     </div>
 
                 </div>
+
+                <a
+                    class="erp-secondary-action sales-toolbar-action{% if sales_filters.today == '1' %} is-active{% endif %}"
+                    href="{{ today_url }}"
+                    aria-pressed="{{ 'true' if sales_filters.today == '1' else 'false' }}"
+                    data-sales-today
+                >Сегодня</a>
 
                 <div class="sales-filter-settings">
                     <button
@@ -2064,16 +2121,7 @@
                                         data-system-column="actions"
                                     >
                                         <div class="sales-row-actions">
-                                            {% if not sale.is_cancelled %}
-                                                <button
-                                                    class="sales-row-action sales-row-edit"
-                                                    type="button"
-                                                    title="Редактировать данные продажи"
-                                                    aria-label="Редактировать данные продажи"
-                                                    data-sale="{{ sale|tojson|forceescape }}"
-                                                    onclick="openSaleEditor(this)"
-                                                >✎</button>
-                                            {% endif %}
+                                            {% if sales_view != 'archive' %}
                                             {% if not sale.is_cancelled and sale.return_status != 'returned' %}
                                                 <button
                                                     class="sales-row-action sales-row-cancel"
@@ -2100,16 +2148,39 @@
                                                     aria-label="Возврат оформлен"
                                                 >✓</span>
                                             {% endif %}
-                                            {% if sale.is_cancelled %}
-                                                <details class="sales-action-menu">
-                                                    <summary aria-label="Другие действия">⋯</summary>
+                                            {% endif %}
+                                            <details class="{% if sales_view != 'archive' and sale.is_cancelled %}sales-action-menu{% else %}sales-secondary-menu{% endif %}">
+                                                <summary aria-label="Другие действия">⋯</summary>
+                                                <div class="sales-menu-panel">
+                                                {% if sales_view != 'archive' and sale.is_cancelled %}
                                                     <button
                                                         type="button"
                                                         data-sale="{{ sale|tojson|forceescape }}"
                                                         onclick="openSaleDeleteModal(this)"
                                                     >Удалить запись</button>
-                                                </details>
-                                            {% endif %}
+                                                {% endif %}
+                                                {% if sales_view != 'archive' and not sale.is_cancelled %}
+                                                    <button
+                                                        class="sales-row-edit"
+                                                        type="button"
+                                                        title="Редактировать данные продажи"
+                                                        data-sale="{{ sale|tojson|forceescape }}"
+                                                        onclick="openSaleEditor(this)"
+                                                    >Редактировать данные продажи</button>
+                                                {% endif %}
+                                                <form method="post" action="{{ url_for('sale_archive') }}" class="sales-archive-form">
+                                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                                    <input type="hidden" name="sale_id" value="{{ sale.id }}">
+                                                    <input type="hidden" name="sale_type" value="{{ sale.sale_type or ('manual' if sale.is_manual else 'automatic') }}">
+                                                    <input type="hidden" name="archived" value="{{ '0' if sale.archived_at else '1' }}">
+                                                    <input type="hidden" name="return_source" value="{{ active_source }}">
+                                                    <button
+                                                        type="submit"
+                                                        {% if not sale.archived_at %}onclick="return confirm('Отправить продажу в архив?')"{% endif %}
+                                                    >{{ 'Восстановить' if sale.archived_at else 'Архивировать' }}</button>
+                                                </form>
+                                                </div>
+                                            </details>
                                         </div>
                                     </td>
                                 </tr>
@@ -2232,6 +2303,17 @@
                         </details>
 
                         <div class="mobile-erp-card-actions">
+                            <form method="post" action="{{ url_for('sale_archive') }}" class="sales-archive-form">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input type="hidden" name="sale_id" value="{{ sale.id }}">
+                                <input type="hidden" name="sale_type" value="{{ sale.sale_type or ('manual' if sale.is_manual else 'automatic') }}">
+                                <input type="hidden" name="archived" value="{{ '0' if sale.archived_at else '1' }}">
+                                <input type="hidden" name="return_source" value="{{ active_source }}">
+                                <button type="submit" class="sales-mobile-edit" {% if not sale.archived_at %}onclick="return confirm('Отправить продажу в архив?')"{% endif %}>
+                                    {{ 'Восстановить' if sale.archived_at else 'В архив' }}
+                                </button>
+                            </form>
+                            {% if sales_view != 'archive' %}
                             {% if not sale.is_cancelled %}
                                 <button
                                     class="sales-mobile-edit"
@@ -2270,6 +2352,7 @@
                                         onclick="openSaleDeleteModal(this)"
                                     >Удалить запись</button>
                                 </details>
+                            {% endif %}
                             {% endif %}
                         </div>
                     </article>
