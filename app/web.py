@@ -84,6 +84,7 @@ from app.services.brand_images import (
 )
 from app.services.inventory_lock import (
     assert_product_references_unlocked,
+    locked_products,
 )
 from app.services.out_of_stock import OutOfStockChecks
 from app.services.product_excel_export import ProductExcelExport
@@ -6809,7 +6810,7 @@ def parse_manual_sale_quantity(value):
 
     quantity = int(parsed)
 
-    return quantity if 1 <= quantity <= 25 else 0
+    return quantity if quantity >= 1 else 0
 
 # === SALES PRICE FUNCTIONS V1 ===
 def parse_sale_price(value):
@@ -7704,7 +7705,7 @@ def manual_sale_add():
 
     if quantity <= 0:
         return redirect_to_sales(
-            "Выберите количество от 1 до 25",
+            "Укажите положительное целое количество",
             notice="error",
         )
 
@@ -7818,7 +7819,7 @@ def manual_sale_add():
 
     if quantity > catalog_product["stock"]:
         return redirect_to_sales(
-            "Недостаточно товара на складе. Доступно: {}".format(
+            "Недостаточно товара. Сейчас доступно: {} шт.".format(
                 format_stock_number(catalog_product["stock"])
             ),
             notice="error",
@@ -7865,6 +7866,7 @@ def manual_sale_add():
                 quantity=quantity,
                 unit_price=unit_price,
                 user_name=current_sales_user_name(),
+                idempotency_key=request.form.get("idempotency_key") or "",
             )
         except (InsufficientStockError, SalesInventoryError) as error:
             return redirect_to_sales(
@@ -10697,11 +10699,35 @@ def sales_page():
         },
     )
     sales, page = paginate_erp_records(sales, page, per_page)
+    sale_product_ids = {
+        str(sale.get("product_id") or "").strip()
+        for sale in sales
+        if str(sale.get("product_id") or "").strip().isdigit()
+    }
+    current_sale_products = SharedCatalog().products_by_ids(
+        sale_product_ids,
+        include_archived=True,
+    )
+    sales_database = CatalogDatabase(cache_initialization=True)
+    sales_database.initialize()
+    with sales_database.connect() as connection:
+        inventory_locked_products = locked_products(
+            connection,
+            sale_product_ids,
+        )
     pagination = build_erp_pagination(
         "sales_page", total_filtered_sales, page, per_page
     )
     for sale in sales:
         sale["search_text"] = build_sales_search_text(sale, active_source)
+        product_id = str(sale.get("product_id") or "").strip()
+        current_product = current_sale_products.get(product_id)
+        sale["product_currently_available"] = bool(
+            current_product
+            and current_product.get("active")
+            and float(current_product.get("stock") or 0) > 0
+            and int(product_id) not in inventory_locked_products
+        )
     preserved_filters = {
         key: (request.args.get(key) or "").strip()
         for key in (
@@ -16276,6 +16302,10 @@ def api_catalog_options():
             in_stock=(
                 (request.args.get("in_stock") or "").strip().lower()
                 in {"1", "true", "yes"}
+            ),
+            available_for_sale=(
+                (request.args.get("available_for_sale") or "")
+                .strip().lower() in {"1", "true", "yes"}
             ),
         )
         if result is None:

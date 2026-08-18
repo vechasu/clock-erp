@@ -4,6 +4,7 @@ import unittest
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 from unittest import mock
 
 from app.catalog_db import CatalogDatabase
@@ -950,7 +951,7 @@ class SalesInventoryWebTest(SalesInventoryTest):
             patcher.stop()
         super().tearDown()
 
-    def add_sale(self, quantity=1):
+    def add_sale(self, quantity=1, idempotency_key=""):
         return self.client.post(
             "/sales/manual/add",
             data={
@@ -963,8 +964,26 @@ class SalesInventoryWebTest(SalesInventoryTest):
                 "quantity": str(quantity),
                 "unit_price": "1000",
                 "order_number": "125",
+                "idempotency_key": idempotency_key,
             },
         )
+
+    def test_manual_sale_post_is_idempotent_and_respects_current_stock(self):
+        first = self.add_sale(quantity=2, idempotency_key="manual-repeat")
+        repeated = self.add_sale(quantity=2, idempotency_key="manual-repeat")
+
+        self.assertEqual((first.status_code, repeated.status_code), (302, 302))
+        self.assertEqual(len(self.inventory.list_sales()), 1)
+        self.assertEqual(self.stock(self.product["id"]), 1)
+
+        insufficient = self.add_sale(quantity=2, idempotency_key="too-many")
+        self.assertEqual(insufficient.status_code, 302)
+        self.assertIn(
+            "Сейчас доступно: 1 шт.",
+            parse_qs(urlparse(insufficient.headers["Location"]).query)["message"][0],
+        )
+        self.assertEqual(len(self.inventory.list_sales()), 1)
+        self.assertEqual(self.stock(self.product["id"]), 1)
 
     def test_new_sale_form_does_not_offer_return_status(self):
         self.assertNotIn("returned", web.SALE_FORM_STATUS_LABELS)

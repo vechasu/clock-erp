@@ -2460,6 +2460,7 @@
                     value="{{ csrf_token() }}"
                 >
                 <input id="saleEditId" type="hidden" disabled>
+                <input id="manualSaleRequestId" type="hidden" name="idempotency_key">
                 <input id="saleSource" type="hidden" name="source">
                 <input
                     id="product_name"
@@ -2595,18 +2596,22 @@
 
                     <div class="field sale-core-field">
                         <label for="quantity">Количество</label>
-                        <select
+                        <input
                             id="quantity"
                             class="control"
+                            type="number"
                             name="quantity"
+                            min="1"
+                            max="1"
+                            step="1"
+                            inputmode="numeric"
+                            value="1"
+                            aria-describedby="saleAvailableQuantity"
                             required
                         >
-                            {% for quantity in range(1, 26) %}
-                                <option value="{{ quantity }}">
-                                    {{ quantity }}
-                                </option>
-                            {% endfor %}
-                        </select>
+                        <span id="saleAvailableQuantity" class="product-meta-preview">
+                            Сначала выберите товар
+                        </span>
                     </div>
 
                     <div class="field sale-core-field">
@@ -5414,6 +5419,9 @@
         "saleModalStatusBadge"
     );
     const saleEditId = document.getElementById("saleEditId");
+    const manualSaleRequestId = document.getElementById(
+        "manualSaleRequestId"
+    );
     const saleSubmitButton = manualSaleForm.querySelector(
         '.form-actions button[type="submit"]'
     );
@@ -5488,6 +5496,9 @@
             ? "Сохранить изменения"
             : "Добавить продажу в " + sourceLabels[sourceKey];
         saleSubmitButton.disabled = false;
+        if (!isEditing) {
+            validateSaleQuantity();
+        }
         sourceChoicePanel
             .querySelectorAll("[data-sale-source]")
             .forEach((button) => {
@@ -5546,6 +5557,8 @@
 
     function resetModalView() {
         manualSaleForm.reset();
+        manualSaleRequestId.value = window.crypto?.randomUUID?.()
+            || [Date.now(), Math.random().toString(36).slice(2)].join("-");
         manualSaleForm.action = "{{ url_for('manual_sale_add') }}";
         manualSaleForm.dataset.editing = "0";
         editingSale = null;
@@ -5668,6 +5681,49 @@
     const saleDiscountType = document.getElementById("discount_type");
     const saleDiscountValue = document.getElementById("discount_value");
     const saleFinalPrice = document.getElementById("unit_price");
+    const saleQuantityInput = document.getElementById("quantity");
+    const saleAvailableQuantity = document.getElementById(
+        "saleAvailableQuantity"
+    );
+
+    function resetSaleQuantity() {
+        saleQuantityInput.value = "1";
+        saleQuantityInput.max = "1";
+        saleQuantityInput.setCustomValidity("");
+        saleAvailableQuantity.textContent = "Сначала выберите товар";
+    }
+
+    function validateSaleQuantity() {
+        if (manualSaleForm.dataset.editing === "1") {
+            saleQuantityInput.setCustomValidity("");
+            return true;
+        }
+        const available = Math.floor(Number(
+            sharedSelectedSaleProduct?.stock || 0
+        ));
+        const quantity = Number(saleQuantityInput.value);
+        const valid = Boolean(sharedSelectedSaleProduct)
+            && Number.isInteger(quantity)
+            && quantity >= 1
+            && quantity <= available;
+        const message = !sharedSelectedSaleProduct
+            ? "Выберите товар из каталога."
+            : quantity > available
+                ? "Недостаточно товара. Сейчас доступно: "
+                    + available + " шт."
+                : "Количество должно быть целым числом не меньше 1.";
+        saleQuantityInput.setCustomValidity(valid ? "" : message);
+        saleSubmitButton.disabled = !valid;
+        if (!valid && sharedSelectedSaleProduct) {
+            setSaleFormError(message);
+        } else if (saleFormError.textContent === message || valid) {
+            setSaleFormError();
+        }
+        return valid;
+    }
+
+    saleQuantityInput.addEventListener("input", validateSaleQuantity);
+    saleQuantityInput.addEventListener("change", validateSaleQuantity);
 
     function recalculateSalePrice() {
         const original = Math.max(0, Number(saleOriginalPrice.value || 0));
@@ -5727,6 +5783,7 @@
 
     function resetProductFilters() {
         sharedSelectedSaleProduct = null;
+        resetSaleQuantity();
         window.restoreSharedCatalogCascade(
             manualSaleForm,
             {
@@ -5929,6 +5986,14 @@
 
                 const item = event.detail.item;
                 sharedSelectedSaleProduct = item;
+                const available = Math.max(
+                    1,
+                    Math.floor(Number(item.stock || 0)),
+                );
+                saleQuantityInput.value = "1";
+                saleQuantityInput.max = String(available);
+                saleAvailableQuantity.textContent =
+                    "Доступно: " + available + " шт.";
                 productNameInput.value = item.name || "";
                 renderSaleProductPhoto(item);
                 productMeta.textContent = [
@@ -5936,6 +6001,7 @@
                     "Артикул: " + (item.article || "—"),
                     "Остаток: " + (item.stock_display ?? item.stock ?? 0),
                 ].join(" · ");
+                validateSaleQuantity();
             },
     );
     manualSaleForm.addEventListener(
@@ -5946,10 +6012,12 @@
                     || event.target === saleCategoryCombobox
                 ) {
                     sharedSelectedSaleProduct = null;
+                    resetSaleQuantity();
                     productNameInput.value = "";
                     productMeta.textContent =
                         "Баркод, артикул и остаток появятся после выбора товара.";
                     renderSaleProductPhoto(null);
+                    validateSaleQuantity();
                 }
             },
     );
@@ -6049,6 +6117,9 @@
         recalculateSalePrice();
         productMeta.textContent = [
             "Артикул: " + (sale.article || "—"),
+            sale.product_currently_available
+                ? "Товар доступен для новых продаж"
+                : "Товар сейчас недоступен для нового выбора",
             "Товарные данные защищены после проведения",
         ].join(" · ");
         setProtectedSaleFieldsLocked(true);
@@ -6078,9 +6149,17 @@
             return;
         }
 
+        if (!isEditing && !validateSaleQuantity()) {
+            event.preventDefault();
+            saleQuantityInput.reportValidity();
+            return;
+        }
+
         rememberSalesPosition();
 
         if (!isEditing) {
+            saleSubmitButton.disabled = true;
+            manualSaleForm.setAttribute("aria-busy", "true");
             return;
         }
 

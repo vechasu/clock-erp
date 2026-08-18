@@ -19,7 +19,7 @@ class InsufficientStockError(SalesInventoryError):
     def __init__(self, available):
         self.available = float(available or 0)
         super().__init__(
-            "Недостаточно товара на складе. Доступно: {}".format(
+            "Недостаточно товара. Сейчас доступно: {} шт.".format(
                 format_number(self.available)
             )
         )
