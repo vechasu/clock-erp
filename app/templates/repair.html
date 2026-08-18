@@ -20,6 +20,10 @@
         .repair-button.primary { border-color: #2563eb; background: #2563eb; color: #fff; }
         .repair-button.primary:hover { background: #1d4ed8; }
         .repair-button.danger { color: #b91c1c; }
+        .repair-tabs { display: flex; gap: 6px; margin-top: 18px; overflow-x: auto; }
+        .repair-tab { display: inline-flex; flex: 0 0 auto; align-items: center; padding: 9px 13px; border: 1px solid #d7dee8; border-radius: 10px; background: #fff; color: #526074; font-size: 13px; font-weight: 800; text-decoration: none; }
+        .repair-tab.is-active { border-color: #2563eb; background: #eaf2ff; color: #2456a6; }
+        .repair-archive-banner { margin-bottom: 14px; padding: 11px 13px; border: 1px solid #c9d9ef; border-radius: 10px; background: #f0f6ff; color: #315b8f; font-size: 13px; font-weight: 750; }
         .repair-toolbar { position: relative; display: flex; align-items: center; gap: 8px; margin-top: 18px; padding: 12px; border: 1px solid #dfe5ed; border-radius: 12px; background: #fff; box-shadow: 0 2px 10px rgba(15, 23, 42, .025); }
         .repair-search { position: relative; flex: 1 1 480px; min-width: 220px; }
         .repair-search svg { position: absolute; top: 50%; left: 12px; width: 17px; height: 17px; transform: translateY(-50%); fill: none; stroke: #7b8798; stroke-width: 1.8; pointer-events: none; }
@@ -113,6 +117,12 @@
         .repair-error { margin-bottom: 14px; padding: 10px 12px; border-radius: 9px; background: #fff0f0; color: #b42318; font-size: 13px; }
         .repair-loading { padding: 34px 10px; color: #748095; text-align: center; }
         .repair-toast { position: fixed; right: 24px; bottom: 24px; z-index: 120; max-width: min(390px, calc(100vw - 30px)); padding: 12px 15px; border-radius: 10px; background: #172033; color: #fff; box-shadow: 0 12px 35px rgba(15, 23, 42, .28); }
+        .repair-confirm { width: min(460px, calc(100vw - 28px)); padding: 0; border: 0; border-radius: 14px; color: #253044; box-shadow: 0 24px 70px rgba(15, 23, 42, .28); }
+        .repair-confirm::backdrop { background: rgba(15, 23, 42, .38); }
+        .repair-confirm-content { padding: 22px; }
+        .repair-confirm h2 { margin: 0; font-size: 20px; }
+        .repair-confirm p { margin: 10px 0 0; color: #64748b; line-height: 1.5; }
+        .repair-confirm-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 22px; border-top: 1px solid #e3e8ef; }
         @media (max-width: 900px) {
             .repair-main { padding: 16px 14px 92px; }
             .repair-toolbar { flex-wrap: wrap; }
@@ -149,12 +159,18 @@
                 </div>
             </header>
 
+            <nav class="repair-tabs" aria-label="Состояние архива">
+                <a class="repair-tab{% if repair_view == 'active' %} is-active{% endif %}" href="{{ url_for('repair_page', view='active') }}">Активные · {{ active_count }}</a>
+                <a class="repair-tab{% if repair_view == 'archive' %} is-active{% endif %}" href="{{ url_for('repair_page', view='archive') }}">Архив · {{ archive_count }}</a>
+            </nav>
+
             <form id="repairFilters" class="repair-toolbar" method="get">
+                <input type="hidden" name="view" value="{{ repair_view }}">
                 <div class="repair-search">
                     <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"></circle><path d="m12.5 12.5 4 4"></path></svg>
                     <input id="repairSearch" class="repair-control" type="search" name="q" value="{{ filters.q }}" placeholder="Поиск по заказу, клиенту, телефону или товару" autocomplete="off">
                 </div>
-                {% set active_filter_count = [filters.status, filters.type, filters.location, filters.order_link, filters.channel, filters.waiting_for, filters.control, filters.attention, repair_view if repair_view != 'active' else ''] | select | list | length %}
+                {% set active_filter_count = [filters.status, filters.type, filters.location, filters.order_link, filters.channel, filters.waiting_for, filters.control, filters.attention] | select | list | length %}
                 <button id="repairFilterToggle" class="repair-button repair-toolbar-action" type="button">Фильтры{% if active_filter_count %}<span class="repair-filter-count">{{ active_filter_count }}</span>{% endif %}</button>
                 <button id="repairColumnsToggle" class="repair-button repair-toolbar-action" type="button">Столбцы</button>
                 <button id="repairMoreToggle" class="repair-button repair-toolbar-action" type="button">Ещё</button>
@@ -167,23 +183,22 @@
                         <label class="repair-field"><span>Где общаемся</span><select class="repair-control" name="channel"><option value="">Все каналы</option>{% for value, label in channel_labels.items() %}<option value="{{ value }}"{% if filters.channel == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
                         <label class="repair-field"><span>Ожидаем действие</span><select class="repair-control" name="waiting_for"><option value="">От любой стороны</option>{% for value, label in responsibility_labels.items() %}<option value="{{ value }}"{% if filters.waiting_for == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
                         <label class="repair-field"><span>Контрольная дата</span><select class="repair-control" name="control"><option value="">Любая дата</option><option value="overdue"{% if filters.control == 'overdue' %} selected{% endif %}>Просрочено</option><option value="today"{% if filters.control == 'today' %} selected{% endif %}>Сегодня</option><option value="future"{% if filters.control == 'future' %} selected{% endif %}>В будущем</option></select></label>
-                        <label class="repair-field"><span>Состояние</span><select class="repair-control" name="view"><option value="active"{% if repair_view == 'active' %} selected{% endif %}>Активные</option><option value="completed"{% if repair_view == 'completed' %} selected{% endif %}>Завершённые</option><option value="cancelled"{% if repair_view == 'cancelled' %} selected{% endif %}>Отменённые</option><option value="all"{% if repair_view == 'all' %} selected{% endif %}>Все</option></select></label>
                         <label class="repair-check"><input type="checkbox" name="attention" value="1"{% if filters.attention %} checked{% endif %}> Только требующие внимания</label>
                     </div>
-                    <div class="repair-filter-actions"><a class="repair-button" href="{{ url_for('repair_page') }}">Сбросить</a><button class="repair-button primary" type="submit">Применить</button></div>
+                    <div class="repair-filter-actions"><a class="repair-button" href="{{ url_for('repair_page', view=repair_view) }}">Сбросить</a><button class="repair-button primary" type="submit">Применить</button></div>
                 </div>
                 <div id="repairColumnsPanel" class="repair-columns-panel" hidden>
                     {% for key, label in [('status','Статус'),('customer','Заказ / клиент'),('product','Товар'),('channel','Связь'),('problem','Обращение'),('location','Где товар'),('control','Контроль'),('event','Последнее событие')] %}<label class="repair-check"><input type="checkbox" data-repair-column="{{ key }}" checked> {{ label }}</label>{% endfor %}
                 </div>
-                <div id="repairMorePanel" class="repair-more-panel" hidden><a class="repair-button" href="{{ url_for('repair_page', view='all') }}">Показать все</a></div>
+                <div id="repairMorePanel" class="repair-more-panel" hidden><a class="repair-button" href="{{ url_for('repair_page', view=repair_view) }}">Сбросить фильтры</a></div>
             </form>
 
-            {% if active_filter_count %}<div class="repair-active-filters"><span class="repair-chip">Применено фильтров: {{ active_filter_count }}</span><a class="repair-chip" href="{{ url_for('repair_page') }}">Сбросить все ×</a></div>{% endif %}
+            {% if active_filter_count %}<div class="repair-active-filters"><span class="repair-chip">Применено фильтров: {{ active_filter_count }}</span><a class="repair-chip" href="{{ url_for('repair_page', view=repair_view) }}">Сбросить все ×</a></div>{% endif %}
 
             <section class="repair-table-card" aria-label="Ремонтные обращения">
-                {% if data_error %}<div class="repair-empty"><strong>Не удалось загрузить ремонты</strong><br>{{ data_error }}</div>{% elif not cases %}<div class="repair-empty"><strong>Ремонты не найдены</strong><br>Измените фильтры или добавьте первое обращение.</div>{% else %}
+                {% if data_error %}<div class="repair-empty"><strong>Не удалось загрузить ремонты</strong><br>{{ data_error }}</div>{% elif not cases %}<div class="repair-empty"><strong>{% if repair_view == 'archive' and not active_filter_count %}В архиве пока нет ремонтов{% else %}Ремонты не найдены{% endif %}</strong><br>{% if repair_view == 'archive' and not active_filter_count %}Завершённые ремонты можно переносить сюда, сохраняя всю историю.{% else %}Измените фильтры или добавьте первое обращение.{% endif %}</div>{% else %}
                 <div class="repair-table-wrap"><table class="repair-table erp-data-table"><thead><tr>
-                    <th data-column="status" style="width:130px">Статус</th><th data-column="customer" style="width:180px">Заказ / клиент</th><th data-column="product" style="width:155px">Товар</th><th data-column="channel" style="width:115px">Связь</th><th data-column="problem" style="width:210px">Обращение</th><th data-column="location" style="width:130px">Где товар</th><th data-column="control" style="width:170px">Контроль</th><th data-column="event" style="width:175px">Последнее событие</th><th style="width:82px">Действие</th>
+                    <th data-column="status" style="width:130px">Статус</th><th data-column="customer" style="width:180px">Заказ / клиент</th><th data-column="product" style="width:155px">Товар</th><th data-column="channel" style="width:115px">Связь</th><th data-column="problem" style="width:210px">Обращение</th><th data-column="location" style="width:130px">Где товар</th><th data-column="control" style="width:170px">{% if repair_view == 'archive' %}Архивирование{% else %}Контроль{% endif %}</th><th data-column="event" style="width:175px">Последнее событие</th><th style="width:82px">Действие</th>
                 </tr></thead><tbody>
                     {% for case in cases %}<tr class="{% if case.control_state == 'overdue' %}is-overdue{% endif %}" data-repair-id="{{ case.id }}" tabindex="0">
                         <td data-column="status"><span class="repair-status" data-status="{{ case.status }}">{{ case.status_label }}</span></td>
@@ -192,7 +207,7 @@
                         <td data-column="channel"><span class="repair-primary">{{ case.channel_label }}</span><span class="repair-secondary">{{ case.contact or '—' }}</span></td>
                         <td data-column="problem"><span class="repair-problem">{{ case.problem or '—' }}</span></td>
                         <td data-column="location"><span class="repair-primary">{{ case.location_label }}</span></td>
-                        <td data-column="control"><span class="repair-control-date {{ case.control_state }}">{{ case.control_date_display or '—' }}</span><span class="repair-secondary">{{ case.next_action or 'Нет активного действия' }}</span><span class="repair-secondary">{{ case.waiting_for_label }}</span></td>
+                        <td data-column="control">{% if repair_view == 'archive' %}<span class="repair-primary">{{ case.archived_at_display or '—' }}</span><span class="repair-secondary">{{ case.archived_by or 'Пользователь не указан' }}</span>{% else %}<span class="repair-control-date {{ case.control_state }}">{{ case.control_date_display or '—' }}</span><span class="repair-secondary">{{ case.next_action or 'Нет активного действия' }}</span><span class="repair-secondary">{{ case.waiting_for_label }}</span>{% endif %}</td>
                         <td data-column="event"><span class="repair-primary">{{ case.latest_event.action if case.latest_event else 'Создано обращение' }}</span><span class="repair-secondary">{{ case.latest_event.timestamp if case.latest_event else case.created_at }}</span></td>
                         <td><div class="repair-action-cell"><button class="repair-open" type="button" aria-label="Открыть карточку" data-open-repair="{{ case.id }}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 5h5v5M10 14 19 5M19 14v5H5V5h5"></path></svg></button><button class="repair-dots" type="button" aria-label="Контекстные действия" data-open-repair="{{ case.id }}">⋯</button></div></td>
                     </tr>{% endfor %}
@@ -201,7 +216,7 @@
             </section>
 
             <section class="repair-mobile-list" aria-label="Ремонтные обращения">
-                {% for case in cases %}<article class="repair-mobile-card" data-repair-id="{{ case.id }}" tabindex="0"><div class="repair-mobile-head"><span class="repair-status" data-status="{{ case.status }}">{{ case.status_label }}</span><span class="repair-control-date {{ case.control_state }}">{{ case.control_date_display or '—' }}</span></div><h2>{{ case.brand }} {{ case.model or case.product_name }}</h2><p><strong>{{ case.order_label }}</strong> · {{ case.client_name }} · {{ case.contact or case.client_phone }}</p><p>{{ case.problem }}</p><p>{{ case.location_label }} · {{ case.next_action }}</p><button class="repair-button" type="button" data-open-repair="{{ case.id }}">Открыть</button></article>{% else %}<div class="repair-empty">Ремонты не найдены.</div>{% endfor %}
+                {% for case in cases %}<article class="repair-mobile-card" data-repair-id="{{ case.id }}" tabindex="0"><div class="repair-mobile-head"><span class="repair-status" data-status="{{ case.status }}">{{ case.status_label }}</span><span class="repair-control-date {{ case.control_state }}">{% if repair_view == 'archive' %}{{ case.archived_at_display or '—' }}{% else %}{{ case.control_date_display or '—' }}{% endif %}</span></div><h2>{{ case.brand }} {{ case.model or case.product_name }}</h2><p><strong>{{ case.order_label }}</strong> · {{ case.client_name }} · {{ case.contact or case.client_phone }}</p><p>{{ case.problem }}</p><p>{% if repair_view == 'archive' %}Архивировал: {{ case.archived_by or 'не указан' }}{% else %}{{ case.location_label }} · {{ case.next_action }}{% endif %}</p><button class="repair-button" type="button" data-open-repair="{{ case.id }}">Открыть</button></article>{% else %}<div class="repair-empty">{% if repair_view == 'archive' %}В архиве пока нет ремонтов{% else %}Ремонты не найдены{% endif %}.</div>{% endfor %}
             </section>
         </div>
     </main>
@@ -213,6 +228,8 @@
     <div id="repairDrawerBody" class="repair-drawer-body"></div>
     <div id="repairDrawerFooter" class="repair-drawer-footer"></div>
 </aside>
+
+<dialog id="repairConfirm" class="repair-confirm"><div class="repair-confirm-content"><h2 id="repairConfirmTitle"></h2><p id="repairConfirmText"></p></div><div class="repair-confirm-actions"><button class="repair-button" type="button" data-confirm-cancel>Отмена</button><button class="repair-button primary" type="button" data-confirm-submit></button></div></dialog>
 
 <template id="repairCreateTemplate">
     <form id="repairEditor" novalidate>
@@ -258,6 +275,7 @@
     const footer = document.getElementById('repairDrawerFooter');
     const title = document.getElementById('repairDrawerTitle');
     const subtitle = document.getElementById('repairDrawerSubtitle');
+    const confirmDialog = document.getElementById('repairConfirm');
     let activeRepair = null;
     let editingId = '';
 
@@ -283,28 +301,51 @@
     function toast(message) { const node = document.createElement('div'); node.className='repair-toast'; node.textContent=message; document.body.append(node); setTimeout(() => node.remove(), 2800); }
     function field(label, value) { return `<div class="repair-detail-item"><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value || '—')}</dd></div>`; }
 
+    function confirmRepairAction({title, text, submitLabel, action}) {
+        document.getElementById('repairConfirmTitle').textContent = title;
+        document.getElementById('repairConfirmText').textContent = text;
+        const submit = confirmDialog.querySelector('[data-confirm-submit]');
+        const cancel = confirmDialog.querySelector('[data-confirm-cancel]');
+        submit.textContent = submitLabel;
+        submit.disabled = false;
+        const close = () => { if (confirmDialog.open) confirmDialog.close(); };
+        cancel.onclick = close;
+        submit.onclick = async () => {
+            submit.disabled = true;
+            cancel.disabled = true;
+            try { await action(); close(); }
+            catch (error) { toast(error.message); submit.disabled = false; }
+            finally { cancel.disabled = false; }
+        };
+        confirmDialog.showModal();
+    }
+
     function renderDetail(repair) {
         activeRepair = repair;
         title.textContent = 'Карточка ремонта';
         subtitle.textContent = `${repair.order_label} · ${repair.client_name || 'Клиент не указан'}`;
         const history = (repair.history || []).slice().reverse().map(event => `<li><strong>${escapeHtml(event.action)}</strong>${event.comment ? `<div>${escapeHtml(event.comment)}</div>` : ''}<time>${escapeHtml(event.timestamp)} · ${escapeHtml(event.actor)}</time></li>`).join('');
         const orderLink = repair.order_url ? `<a class="repair-order-link" href="${escapeHtml(repair.order_url)}" target="_blank" rel="noopener noreferrer">Открыть заказ ${escapeHtml(repair.order_label)} ↗</a>` : 'Без заказа';
-        const relationLinks = [repair.parent_repair_id ? `<button class="repair-button" data-related="${escapeHtml(repair.parent_repair_id)}">Предыдущее обращение</button>` : '', repair.repeat_repair_id ? `<button class="repair-button" data-related="${escapeHtml(repair.repeat_repair_id)}">Повторное обращение</button>` : ''].join('');
+        const relationLinks = [repair.parent_repair_id ? `<button class="repair-button" data-related="${escapeHtml(repair.parent_repair_id)}">Повторный ремонт по заявке №${escapeHtml(repair.parent_repair_number || repair.parent_repair_id)}</button>` : '', repair.repeat_repair_id ? `<button class="repair-button" data-related="${escapeHtml(repair.repeat_repair_id)}">Повторная заявка №${escapeHtml(repair.repeat_repair_number || repair.repeat_repair_id)}</button>` : ''].join('');
         body.innerHTML = `
+            ${repair.is_archived ? '<div class="repair-archive-banner">Ремонт находится в архиве</div>' : ''}
             <section class="repair-detail-section"><div class="repair-detail-summary"><div><span class="repair-status" data-status="${escapeHtml(repair.status)}">${escapeHtml(repair.status_label)}</span><div class="repair-detail-product">${escapeHtml([repair.brand, repair.model || repair.product_name].filter(Boolean).join(' '))}</div><div class="repair-secondary">${escapeHtml(repair.problem)}</div></div></div></section>
             <section class="repair-detail-section"><h3>Клиент и связь</h3><dl class="repair-detail-grid">${field('Заказ', repair.order_label)}${field('Клиент', repair.client_name)}${field('Основной контакт', repair.contact || repair.client_phone || repair.client_email || repair.client_messenger)}${field('Где общаемся', repair.channel_label)}</dl><div style="margin-top:12px">${orderLink}</div></section>
             <section class="repair-detail-section"><h3>Основная информация</h3><dl class="repair-detail-grid">${field('Тип ремонта', repair.request_type_label)}${field('Где товар', repair.location_label)}${field('Краткая проблема', repair.problem)}${field('Полное описание', repair.problem_details)}${field('Комплектация', repair.equipment)}${field('Внешнее состояние', repair.external_condition)}${field('Примечание', repair.note)}</dl></section>
             <section class="repair-detail-section"><h3>Логистика</h3><dl class="repair-detail-grid">${field('Входящая накладная', repair.incoming_waybill)}${field('Способ возврата', repair.return_method_label)}${field('Исходящая накладная', repair.outgoing_waybill)}</dl></section>
             <section class="repair-detail-section"><h3>Диагностика и решение</h3><dl class="repair-detail-grid">${field('Результат диагностики', repair.diagnostic_result)}${field('Предложенное решение', repair.proposed_solution)}${field('Решение клиента', repair.customer_decision)}${field('Согласованная стоимость', repair.agreed_cost)}${field('Оплачено', repair.payment_amount)}${field('Дата оплаты', repair.paid_at)}${field('Итог работ', repair.work_result)}${field('Результат завершения', repair.completion_result_label)}</dl></section>
-            <section class="repair-detail-section"><h3>Контроль</h3><dl class="repair-detail-grid">${field('Следующее действие', repair.next_action)}${field('Ожидаем действие', repair.waiting_for_label)}${field('Контрольная дата', repair.control_date_display)}</dl></section>
+            <section class="repair-detail-section"><h3>${repair.is_archived ? 'Архивирование' : 'Контроль'}</h3><dl class="repair-detail-grid">${repair.is_archived ? field('Дата и время', repair.archived_at_display) + field('Пользователь', repair.archived_by) : field('Следующее действие', repair.next_action) + field('Ожидаем действие', repair.waiting_for_label) + field('Контрольная дата', repair.control_date_display)}</dl></section>
             ${relationLinks ? `<section class="repair-detail-section"><h3>Связи</h3>${relationLinks}</section>` : ''}
-            <section class="repair-detail-section"><h3>Действия</h3>${renderActionForm(repair)}</section>
+            ${repair.is_archived ? '' : `<section class="repair-detail-section"><h3>Действия</h3>${renderActionForm(repair)}</section>`}
             <section class="repair-detail-section"><h3>История</h3><ul class="repair-history">${history || '<li>Событий пока нет</li>'}</ul></section>`;
-        footer.innerHTML = `<button class="repair-button" type="button" data-edit-repair>Редактировать</button><button class="repair-button" type="button" data-close-repair>Закрыть</button>`;
+        footer.innerHTML = `${repair.is_archived && repair.status === 'completed' ? '<button class="repair-button" type="button" data-repeat-repair>Создать повторный ремонт</button>' : ''}${repair.is_archived ? '<button class="repair-button primary" type="button" data-restore-repair>Вернуть в активные</button>' : repair.can_archive ? '<button class="repair-button" type="button" data-archive-repair>В архив</button>' : ''}${repair.is_archived ? '' : '<button class="repair-button" type="button" data-edit-repair>Редактировать</button>'}<button class="repair-button" type="button" data-close-repair>Закрыть</button>`;
         body.querySelectorAll('[data-related]').forEach(button => button.addEventListener('click', () => loadRepair(button.dataset.related)));
         body.querySelector('[data-repair-action-form]')?.addEventListener('submit', submitAction);
         footer.querySelector('[data-close-repair]').addEventListener('click', closeDrawer);
-        footer.querySelector('[data-edit-repair]').addEventListener('click', () => openEditor(repair));
+        footer.querySelector('[data-edit-repair]')?.addEventListener('click', () => openEditor(repair));
+        footer.querySelector('[data-archive-repair]')?.addEventListener('click', () => confirmRepairAction({title:'Переместить ремонт в архив?', text:'Ремонт исчезнет из активного списка, но все данные и история изменений сохранятся.', submitLabel:'В архив', action:async()=>{await api(`/api/v1/repairs/${encodeURIComponent(repair.id)}/archive`,{method:'POST'});toast('Ремонт перемещён в архив');setTimeout(()=>location.assign('/app/repairs?view=active'),350);}}));
+        footer.querySelector('[data-restore-repair]')?.addEventListener('click', () => confirmRepairAction({title:'Вернуть ремонт в активные?', text:'Ремонт снова появится в основном списке и станет доступен для работы.', submitLabel:'Вернуть в активные', action:async()=>{await api(`/api/v1/repairs/${encodeURIComponent(repair.id)}/restore`,{method:'POST'});toast('Ремонт возвращён в активные');setTimeout(()=>location.assign('/app/repairs?view=archive'),350);}}));
+        footer.querySelector('[data-repeat-repair]')?.addEventListener('click', () => openRepeatRepair(repair));
     }
 
     function renderActionForm(repair) {
@@ -373,9 +414,13 @@
             },300);
         });
     }
-    function openEditor(repair = null) {
-        editingId = repair?.id || '';
+    function openRepeatRepair(source) {
+        openEditor({client_name:source.client_name,client_phone:source.client_phone,client_email:source.client_email,client_messenger:source.client_messenger,contact:source.contact,communication_channel:source.communication_channel,order_id:source.order_id,order_number:source.order_number,order_item_id:source.order_item_id,order_item_name:source.order_item_name,product_id:source.product_id,product_name:source.product_name,brand:source.brand,model:source.model,article:source.article,request_type:'repeat_repair',parent_repair_id:source.id,location:'with_customer',waiting_for:'us',next_action:'Связаться с клиентом',control_date:new Date(Date.now()+86400000).toISOString().slice(0,10),problem:''}, true);
+    }
+    function openEditor(repair = null, createCopy = false) {
+        editingId = createCopy ? '' : (repair?.id || '');
         const fragment = document.getElementById('repairCreateTemplate').content.cloneNode(true); body.replaceChildren(fragment); title.textContent = repair ? 'Редактировать ремонт' : 'Добавить ремонт'; subtitle.textContent = repair ? `${repair.order_label} · ${repair.client_name}` : 'Новое обращение';
+        if (createCopy) { title.textContent='Создать повторный ремонт'; subtitle.textContent=`По заявке №${repair.parent_repair_id}`; }
         const form = body.querySelector('#repairEditor'); const orderFields = body.querySelectorAll('[data-order-fields]');
         form.elements.has_order.forEach(radio => radio.addEventListener('change', () => orderFields.forEach(node => node.hidden = radio.value !== 'yes' || !radio.checked)));
         form.elements.request_type.addEventListener('change', () => { body.querySelector('[data-parent-field]').hidden = form.elements.request_type.value !== 'repeat_repair'; });
@@ -385,7 +430,7 @@
         if (repair) fillEditor(form, repair); else { const tomorrow = new Date(Date.now()+86400000).toISOString().slice(0,10); form.elements.control_date.value=tomorrow; }
         bindRepairCatalogSearch(form,repair);
         footer.innerHTML='<button class="repair-button" type="button" data-cancel-editor>Отмена</button><button class="repair-button primary" type="submit" form="repairEditor">Сохранить</button>';
-        footer.querySelector('[data-cancel-editor]').addEventListener('click', () => repair ? renderDetail(repair) : closeDrawer());
+        footer.querySelector('[data-cancel-editor]').addEventListener('click', () => createCopy ? loadRepair(repair.parent_repair_id) : repair ? renderDetail(repair) : closeDrawer());
         form.addEventListener('submit', submitEditor); openDrawer();
     }
     function fillEditor(form, repair) {
@@ -408,6 +453,7 @@
     document.getElementById('repairAdd').addEventListener('click',()=>openEditor());
     document.querySelectorAll('[data-open-repair],[data-repair-id]').forEach(node=>node.addEventListener('click',event=>{ if(event.target.closest('a'))return; event.stopPropagation(); loadRepair(node.dataset.openRepair||node.dataset.repairId); }));
     document.querySelectorAll('[data-repair-id]').forEach(node=>node.addEventListener('keydown',event=>{if(event.key==='Enter')loadRepair(node.dataset.repairId);}));
+    const requestedRepair = new URL(location.href).searchParams.get('repair_id'); if (requestedRepair) loadRepair(requestedRepair);
 
     const filterPanel=document.getElementById('repairFilterPanel'), columnsPanel=document.getElementById('repairColumnsPanel'), morePanel=document.getElementById('repairMorePanel');
     function togglePanel(panel){[filterPanel,columnsPanel,morePanel].forEach(item=>{if(item!==panel)item.hidden=true;});panel.hidden=!panel.hidden;}
