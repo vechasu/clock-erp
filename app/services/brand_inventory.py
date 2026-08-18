@@ -188,7 +188,11 @@ class BrandInventory:
                 (int(product["stock"]), now,
                  self._latest_movement_rowid(connection, product["id"]), item["id"]),
             )
-            return {"item_id": item["id"], "system_stock": int(product["stock"])}
+            return {
+                "item_id": item["id"], "system_stock": int(product["stock"]),
+                "status": "pending", "state": "unverified",
+                "checked": False, "needs_recheck": False,
+            }
 
     def confirm(self, session_id, item_id, actual_stock, user_name="",
                 idempotency_key="", confirm_zero=False, failure_hook=None):
@@ -223,6 +227,8 @@ class BrandInventory:
                 return {
                     "ok": False, "conflict": True, "item_id": item["id"],
                     "snapshot_stock": int(item["snapshot_stock"]), "current_stock": current,
+                    "status": "conflict", "state": "needs_recheck",
+                    "checked": False, "needs_recheck": True,
                     "message": "Товар изменился после начала инвентаризации — перепроверьте",
                 }
             return self._apply_confirmation(
@@ -566,10 +572,17 @@ class BrandInventory:
     def _detail(self, connection, session_id):
         row = self._session(connection, session_id)
         data = dict(row)
-        data["remaining"] = int(connection.execute(
-            "SELECT COUNT(*) FROM erp_inventory_items WHERE session_id = ? "
-            "AND status IN ('pending','conflict','error')", (row["id"],)
-        ).fetchone()[0])
+        totals = connection.execute(
+            "SELECT COUNT(*) AS total_positions, "
+            "SUM(CASE WHEN status IN ('confirmed','adjusted','added','missing') "
+            "THEN 1 ELSE 0 END) AS checked_positions, "
+            "SUM(CASE WHEN status IN ('pending','conflict','error') "
+            "THEN 1 ELSE 0 END) AS remaining, "
+            "SUM(CASE WHEN status = 'added' THEN 1 ELSE 0 END) AS added_positions "
+            "FROM erp_inventory_items WHERE session_id = ?", (row["id"],)
+        ).fetchone()
+        for key in ("total_positions", "checked_positions", "remaining", "added_positions"):
+            data[key] = int(totals[key] or 0)
         data["categories"] = [dict(item) for item in connection.execute(
             "SELECT DISTINCT c.id, c.name FROM erp_inventory_items i "
             "JOIN catalog_excel_products p ON p.id = i.product_id "
@@ -584,6 +597,13 @@ class BrandInventory:
         for key in ("snapshot_stock", "actual_stock", "final_stock", "quantity_delta", "current_stock"):
             if data.get(key) is not None:
                 data[key] = int(data[key])
+        data["checked"] = data.get("status") in FINAL_STATUSES
+        data["needs_recheck"] = data.get("status") == "conflict"
+        data["state"] = (
+            "needs_recheck" if data["needs_recheck"]
+            else "confirmed" if data["checked"]
+            else "unverified"
+        )
         return data
 
     @staticmethod
@@ -595,6 +615,9 @@ class BrandInventory:
             "ok": True, "repeated": repeated, "item_id": item["id"],
             "status": item["status"], "stock_before": before, "stock_after": after,
             "delta": int(item["quantity_delta"] or 0), "movement_id": item["movement_id"],
+            "state": "confirmed", "checked": True, "needs_recheck": False,
+            "result": "already_confirmed" if repeated else "confirmed",
+            "action_type": "inventory_item_confirmed",
             "message": (
                 "Остаток изменён с {} на {}".format(before, after)
                 if changed else "Проведено успешно"
