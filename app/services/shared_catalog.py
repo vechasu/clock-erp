@@ -281,7 +281,13 @@ class SharedCatalog:
     def __init__(self, database=None):
         self.database = database or CatalogDatabase(cache_initialization=True)
 
-    def list_brands(self, query="", limit=50, include_archived=False):
+    def list_brands(
+        self,
+        query="",
+        limit=50,
+        include_archived=False,
+        available_for_sale=False,
+    ):
         self.database.initialize()
         where = []
         if not include_archived:
@@ -297,6 +303,13 @@ class SharedCatalog:
             if query else (max(1, min(int(limit), 200)),)
         )
         where_sql = " WHERE " + " AND ".join(where) if where else ""
+        product_availability_sql = (
+            " AND p.stock > 0 AND " + unlocked_product_sql("p")
+            if available_for_sale else ""
+        )
+        available_having_sql = (
+            " HAVING COUNT(p.id) > 0" if available_for_sale else ""
+        )
         with self.database.connect() as connection:
             if query:
                 register_catalog_search(connection)
@@ -307,14 +320,20 @@ class SharedCatalog:
                 "COALESCE(SUM(p.stock), 0) AS stock_total "
                 "FROM erp_brands b LEFT JOIN catalog_excel_products p "
                 "ON p.brand_id = b.id AND p.active = 1 "
+                + product_availability_sql
                 + where_sql
-                + " GROUP BY b.id UNION ALL "
+                + " GROUP BY b.id"
+                + available_having_sql
+                + " UNION ALL "
                 "SELECT 0 AS id, 'Без бренда' AS name, "
                 "'без бренда' AS normalized_name, 1 AS active, "
                 "COUNT(p.id) AS product_count, "
                 "COALESCE(SUM(p.stock), 0) AS stock_total "
                 "FROM catalog_excel_products p "
-                "WHERE p.active = 1 AND p.brand_id IS NULL) AS brand_options "
+                "WHERE p.active = 1 AND p.brand_id IS NULL"
+                + product_availability_sql
+                + available_having_sql
+                + ") AS brand_options "
                 + query_filter
                 + "ORDER BY name COLLATE NOCASE LIMIT ?",
                 parameters,
@@ -1187,6 +1206,7 @@ class SharedCatalog:
         query="",
         limit=50,
         only_used_by_brand=False,
+        available_for_sale=False,
     ):
         """Return global categories, optionally limited to a brand's products."""
         self.database.initialize()
@@ -1200,6 +1220,16 @@ class SharedCatalog:
             parameters.append(catalog_prefix_pattern(query))
         selected_brand_id = (
             int(brand_id) if brand_id not in (None, "") else None
+        )
+        product_availability_sql = (
+            " AND p.stock > 0 AND " + unlocked_product_sql("p")
+            if available_for_sale else ""
+        )
+        brand_category_mapping_sql = (
+            "" if available_for_sale else
+            " OR EXISTS ("
+            "SELECT 1 FROM erp_brand_categories bc "
+            "WHERE bc.brand_id = ? AND bc.category_id = c.id)"
         )
         with self.database.connect() as connection:
             if query:
@@ -1215,15 +1245,15 @@ class SharedCatalog:
                 "THEN p.stock ELSE 0 END), 0) AS selected_stock_total, "
                 "MAX(CASE WHEN p.brand_id = ? "
                 "OR (? = 0 AND p.brand_id IS NULL) "
-                "THEN 1 ELSE 0 END) OR EXISTS ("
-                "SELECT 1 FROM erp_brand_categories bc "
-                "WHERE bc.brand_id = ? AND bc.category_id = c.id"
-                ") AS used_by_brand "
+                "THEN 1 ELSE 0 END)"
+                + brand_category_mapping_sql
+                + " AS used_by_brand "
                 "FROM erp_categories c "
                 "JOIN erp_brands b ON b.id = c.brand_id "
                 "LEFT JOIN catalog_excel_products p "
                 "ON p.category_id = c.id AND p.active = 1 "
-                "WHERE " + " AND ".join(where) + " "
+                + product_availability_sql
+                + "WHERE " + " AND ".join(where) + " "
                 "GROUP BY c.id UNION ALL "
                 "SELECT 0 AS id, 0 AS brand_id, "
                 "'Без категории' AS name, 'без категории' AS normalized_name, "
@@ -1238,7 +1268,8 @@ class SharedCatalog:
                 "THEN 1 ELSE 0 END) AS used_by_brand "
                 "FROM catalog_excel_products p "
                 "WHERE p.active = 1 AND p.category_id IS NULL "
-                "GROUP BY p.category_id "
+                + product_availability_sql
+                + "GROUP BY p.category_id "
                 "HAVING COUNT(p.id) > 0 "
                 "AND (? = '' OR 'без категории' LIKE ? ESCAPE '\\')) "
                 "AS category_rows "
@@ -1249,8 +1280,8 @@ class SharedCatalog:
                     selected_brand_id,
                     selected_brand_id,
                     selected_brand_id,
-                    selected_brand_id,
-                ] + parameters + [
+                ] + ([] if available_for_sale else [selected_brand_id])
+                + parameters + [
                     selected_brand_id,
                     selected_brand_id,
                     selected_brand_id,

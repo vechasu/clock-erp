@@ -388,18 +388,33 @@ class CatalogFilteringTest(unittest.TestCase):
         self.assertIn(0, [item["stock"] for item in sales["data"]])
         self.assertIn(0, [item["stock"] for item in receipts["data"]])
 
-    def test_sales_add_modal_only_requests_products_with_positive_stock(self):
+    def test_sales_add_modal_requests_only_available_cascade_options(self):
         sales_template = (ROOT / "app/templates/sales.html").read_text(
             encoding="utf-8"
         )
         options = self.client.get(
             "/api/v1/catalog/options?type=product&limit=200"
-            "&brand_id={}&category_id={}&in_stock=1".format(
+            "&brand_id={}&category_id={}&available_for_sale=1".format(
                 self.brand["id"], self.category_id
             )
         ).get_json()
+        brands = self.client.get(
+            "/api/v1/catalog/options?type=brand&limit=200"
+            "&available_for_sale=1"
+        ).get_json()
+        categories = self.client.get(
+            "/api/v1/catalog/options?type=category&limit=200"
+            "&category_scope=brand&brand_id={}"
+            "&available_for_sale=1".format(self.brand["id"])
+        ).get_json()
 
         self.assertIn('data-catalog-in-stock="true"', sales_template)
+        self.assertEqual(
+            [item["id"] for item in brands["data"]],
+            [self.brand["id"]],
+        )
+        self.assertEqual(len(categories["data"]), 1)
+        self.assertEqual(categories["data"][0]["name"].strip().casefold(), "наручные часы")
         self.assertEqual(options["meta"]["total"], 4)
         self.assertEqual(len(options["data"]), 4)
         self.assertTrue(all(item["stock"] > 0 for item in options["data"]))

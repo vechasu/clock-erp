@@ -269,6 +269,13 @@ class InventoryLockModeWebTest(unittest.TestCase):
             "/api/v1/sales/catalog?brand_id={}".format(self.brand_id)
         ).get_json()
         self.assertEqual(sale_catalog["data"], [])
+        sale_brands = self.client.get(
+            "/api/v1/catalog/options?type=brand&available_for_sale=1"
+        ).get_json()
+        self.assertNotIn(
+            self.brand_id,
+            {item["id"] for item in sale_brands["data"]},
+        )
 
         item = self.inventory.list_items(self.session["id"])[0]
         self.inventory.confirm(
@@ -280,6 +287,13 @@ class InventoryLockModeWebTest(unittest.TestCase):
         self.assertIn("Проверено 1 из 1", markup)
         self.assertNotIn("На инвентаризации:", markup)
         self.assertIn("UI Locked", markup)
+        available_brands = self.client.get(
+            "/api/v1/catalog/options?type=brand&available_for_sale=1"
+        ).get_json()
+        self.assertIn(
+            self.brand_id,
+            {item["id"] for item in available_brands["data"]},
+        )
 
     def test_direct_sale_and_receipt_posts_are_guarded_server_side(self):
         sale = self.client.post(

@@ -1257,6 +1257,9 @@
                     : "brand"
             );
         }
+        if (scope?.dataset.catalogInStock === "true") {
+            parameters.set("available_for_sale", "1");
+        }
         if (kind === "product") {
             parameters.set("category_id", categoryId);
             if (scope?.dataset.catalogInStock === "true") {

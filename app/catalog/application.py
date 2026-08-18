@@ -286,16 +286,22 @@ class CatalogApplication:
         category_id=None,
         only_used_by_brand=False,
         in_stock=False,
+        available_for_sale=False,
     ):
         catalog = self._shared_catalog_factory()
         if kind == "brand":
-            items = catalog.list_brands(query=query, limit=limit)
+            items = catalog.list_brands(
+                query=query,
+                limit=limit,
+                available_for_sale=available_for_sale,
+            )
         elif kind == "category":
             items = catalog.list_category_options(
                 brand_id=brand_id,
                 query=query,
                 limit=limit,
                 only_used_by_brand=only_used_by_brand,
+                available_for_sale=available_for_sale,
             )
         elif kind == "product":
             items = catalog.list_products(
@@ -303,7 +309,7 @@ class CatalogApplication:
                 category_id=category_id,
                 query=query,
                 limit=limit,
-                in_stock=in_stock,
+                in_stock=in_stock or available_for_sale,
             )
         else:
             return None
@@ -317,7 +323,7 @@ class CatalogApplication:
                 query=query,
                 brand_id=brand_id,
                 category_id=category_id,
-                in_stock=in_stock,
+                in_stock=in_stock or available_for_sale,
             )
             if kind == "product"
             else len(items)
