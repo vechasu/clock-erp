@@ -967,6 +967,37 @@
             padding-left: 20px;
         }
 
+        .order-sale-tracking {
+            margin-top: 16px;
+        }
+
+        .order-sale-tracking label {
+            display: block;
+            margin-bottom: 7px;
+            color: #374151;
+            font-size: 14px;
+            font-weight: 700;
+        }
+
+        .order-sale-tracking input {
+            display: block;
+            width: 100%;
+            min-width: 0;
+            height: 44px;
+            padding: 0 13px;
+            border: 1px solid #d1d5db;
+            border-radius: 11px;
+            background: #fff;
+            color: #111827;
+            font: inherit;
+        }
+
+        .order-sale-tracking input:focus {
+            border-color: #2563eb;
+            outline: 0;
+            box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1);
+        }
+
         .order-sale-warning {
             margin: 16px 0 0;
             padding: 12px 14px;
@@ -1297,6 +1328,8 @@
                     {% set detail_email = selected_order.get("email") or selected_order.get("EMAIL") or "" %}
                     {% set detail_address = selected_order.get("address") or selected_order.get("ADDRESS") or "" %}
                     {% set detail_city = selected_order.get("city") or selected_order.get("CITY") or "" %}
+                    {% set detail_region = order_region or "" %}
+                    {% set detail_tracking = order_tracking or "" %}
                     {% set detail_paid = selected_order.get("paid") or selected_order.get("PAYED") or "" %}
                     {% set detail_paid_name = selected_order.get("paid_name") or "" %}
                     {% set detail_products = selected_order.get("products") or [] %}
@@ -1728,6 +1761,7 @@
                     <div class="order-sale-fact"><span>Клиент</span><strong>{{ detail_customer or 'Не указан' }}</strong></div>
                     <div class="order-sale-fact"><span>Телефон</span><strong>{{ detail_phone or 'Не указан' }}</strong></div>
                     <div class="order-sale-fact"><span>Дата заказа</span><strong>{{ detail_date or 'Не указана' }}</strong></div>
+                    <div class="order-sale-fact"><span>Регион</span><strong>{{ detail_region or '—' }}</strong></div>
                     <div class="order-sale-fact"><span>Доставка</span><strong><span class="money-value" data-amount="{{ detail_delivery_price or 0 }}">{{ detail_delivery_price or 0 }}</span> ₽</strong></div>
                     <div class="order-sale-fact"><span>Общая сумма</span><strong>{% if detail_order_total %}<span class="money-value" data-amount="{{ detail_order_total }}">{{ detail_order_total }}</span> ₽{% else %}Не указана{% endif %}</strong></div>
                 </div>
@@ -1749,6 +1783,19 @@
                         </li>
                         {% endfor %}
                     </ul>
+                </div>
+                <div class="order-sale-tracking">
+                    <label for="orderSaleTracking">Трекинг</label>
+                    <input
+                        id="orderSaleTracking"
+                        type="text"
+                        name="tracking"
+                        value="{{ detail_tracking }}"
+                        placeholder="Введите номер отправления"
+                        maxlength="255"
+                        autocomplete="off"
+                        data-order-sale-tracking
+                    >
                 </div>
                 <p class="order-sale-warning">Проведение создаст одну продажу TicTacToy и атомарно изменит остатки единого каталога ERP. МойСклад не является источником истины для этой операции.</p>
             </div>
@@ -1772,8 +1819,24 @@
         const closeButtons = Array.from(modal.querySelectorAll("[data-close-sale-dialog]"));
         const form = modal.querySelector("[data-order-sale-form]");
         const submit = modal.querySelector("[data-sale-submit]");
+        const tracking = modal.querySelector("[data-order-sale-tracking]");
         const firstClose = modal.querySelector("[data-close-sale-dialog]");
+        const trackingStorageKey = "order-sale-tracking:{{ detail_id }}";
         let returnFocus = null;
+
+        if (tracking) {
+            try {
+                const savedTracking = window.sessionStorage.getItem(trackingStorageKey);
+                if (savedTracking !== null) {
+                    tracking.value = savedTracking;
+                }
+                tracking.addEventListener("input", () => {
+                    window.sessionStorage.setItem(trackingStorageKey, tracking.value);
+                });
+            } catch (error) {
+                // Поле остаётся рабочим, даже если storage недоступен.
+            }
+        }
 
         const openModal = (trigger) => {
             returnFocus = trigger || document.activeElement;

@@ -417,11 +417,104 @@ def get_property(order, code):
     properties = order.get("properties") or []
 
     for prop in properties:
-        if prop.get("code") == code:
-            value = prop.get("value")
+        if not isinstance(prop, dict):
+            continue
+        property_code = str(
+            prop.get("code") or prop.get("CODE") or ""
+        ).strip().upper()
+        if property_code == str(code or "").strip().upper():
+            value = prop.get("value", prop.get("VALUE"))
             if value is not None and value != "":
                 return value
 
+    return ""
+
+
+def order_text_value(value):
+    """Return a display-safe scalar from a structured order field."""
+    if isinstance(value, dict):
+        for key in ("name", "NAME", "value", "VALUE", "title", "TITLE"):
+            nested = value.get(key)
+            if nested not in (None, "", [], {}):
+                return order_text_value(nested)
+        return ""
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            normalized = order_text_value(item)
+            if normalized:
+                return normalized
+        return ""
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def first_order_text(data, keys):
+    if not isinstance(data, dict):
+        return ""
+    for key in keys:
+        value = order_text_value(data.get(key))
+        if value:
+            return value
+    return ""
+
+
+ORDER_REGION_KEYS = (
+    "region", "region_name", "state", "province", "delivery_region",
+    "address_region", "REGION", "REGION_NAME", "STATE", "PROVINCE",
+    "DELIVERY_REGION", "ADDRESS_REGION",
+)
+ORDER_TRACKING_KEYS = (
+    "tracking", "tracking_number", "track_number", "shipment_tracking",
+    "delivery_tracking", "waybill", "TRACKING", "TRACKING_NUMBER",
+    "TRACK_NUMBER", "SHIPMENT_TRACKING", "DELIVERY_TRACKING", "WAYBILL",
+)
+
+
+def get_order_region(order):
+    """Resolve the existing structured Bitrix/ERP region without guessing."""
+    value = first_order_text(order, ORDER_REGION_KEYS)
+    if value:
+        return value
+    for code in ORDER_REGION_KEYS:
+        value = order_text_value(get_property(order, code))
+        if value:
+            return value
+    # A nested address/delivery object is a safe fallback; free-form address
+    # text is intentionally not parsed or guessed.
+    for container_key in (
+        "delivery", "shipment", "address", "location",
+        "DELIVERY", "SHIPMENT", "ADDRESS", "LOCATION",
+    ):
+        value = first_order_text(order.get(container_key), ORDER_REGION_KEYS)
+        if value:
+            return value
+    return ""
+
+
+def get_order_tracking(order):
+    """Resolve an existing shipment identifier from the source order."""
+    value = first_order_text(order, ORDER_TRACKING_KEYS)
+    if value:
+        return value
+    for code in ORDER_TRACKING_KEYS:
+        value = order_text_value(get_property(order, code))
+        if value:
+            return value
+    for container_key in (
+        "delivery", "shipment", "shipments", "DELIVERY", "SHIPMENT",
+        "SHIPMENTS",
+    ):
+        container = order.get(container_key)
+        if isinstance(container, (list, tuple)):
+            for item in container:
+                value = first_order_text(item, ORDER_TRACKING_KEYS)
+                if value:
+                    return value
+        else:
+            value = first_order_text(container, ORDER_TRACKING_KEYS)
+            if value:
+                return value
     return ""
 
 
@@ -479,6 +572,9 @@ def normalize_order(order):
         or ""
     )
 
+    region = get_order_region(order)
+    tracking = get_order_tracking(order)
+
     paid = order.get("paid") or order.get("PAYED") or ""
     paid_name = "Оплачен" if paid == "Y" else "Не оплачен"
 
@@ -505,6 +601,8 @@ def normalize_order(order):
     order["email"] = email
     order["address"] = address
     order["city"] = city
+    order["region"] = region
+    order["track_number"] = tracking
 
     order["paid"] = paid
     order["paid_name"] = paid_name
@@ -648,6 +746,8 @@ def orders_page():
         order_product_mappings=order_mappings,
         sale_already_conducted=is_order_stock_written_off(order_id),
         conducted_sale=get_order_conducted_sale(order_id),
+        order_region=get_order_region(selected_order or {}),
+        order_tracking=get_order_tracking(selected_order or {}),
     )
 
 
@@ -908,6 +1008,8 @@ def order_page(order_id):
         ),
         sale_already_conducted=is_order_stock_written_off(order_id),
         conducted_sale=get_order_conducted_sale(order_id),
+        order_region=get_order_region(selected_order),
+        order_tracking=get_order_tracking(selected_order),
     )
 
 
@@ -949,6 +1051,27 @@ def _conduct_order_sale(order_id):
             order_id=order_id,
             notice="error",
             message="Продажа по этому заказу уже проведена",
+            open_sale="1",
+        ))
+
+    tracking = str(
+        request.form.get("tracking")
+        if "tracking" in request.form
+        else get_order_tracking(full_order)
+        or ""
+    ).strip()
+    if len(tracking) > 255:
+        record_order_sale_attempt(
+            inventory,
+            order_id,
+            "tracking_too_long",
+            metadata={"tracking_length": len(tracking)},
+        )
+        return redirect(url_for(
+            "order_page",
+            order_id=order_id,
+            notice="error",
+            message="Трекинг не должен быть длиннее 255 символов",
             open_sale="1",
         ))
 
@@ -1089,6 +1212,8 @@ def _conduct_order_sale(order_id):
             full_order.get("customer") or full_order.get("client") or ""
         ),
         "phone": str(full_order.get("phone") or ""),
+        "region": get_order_region(full_order),
+        "track_number": tracking,
         "delivery_address": str(full_order.get("address") or ""),
         "delivery_cost": full_order.get("delivery_price") or 0,
         "order_total": full_order.get("order_total"),

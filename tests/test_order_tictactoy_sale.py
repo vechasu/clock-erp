@@ -72,7 +72,7 @@ class OrderTictactoySaleTest(unittest.TestCase):
         with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5]:
             return self.client.get("/order/18593" + query)
 
-    def conduct(self, order=None, mappings=None, performed_at=None):
+    def conduct(self, order=None, mappings=None, performed_at=None, **data):
         patches = self.patches(order, mappings)
         time_patch = mock.patch.object(
             web,
@@ -80,7 +80,10 @@ class OrderTictactoySaleTest(unittest.TestCase):
             return_value=performed_at or "2026-08-18T15:05:00+03:00",
         )
         with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], time_patch:
-            return self.client.post("/order/18593/stock-writeoff", data={"csrf_token": "test-token"})
+            return self.client.post(
+                "/order/18593/stock-writeoff",
+                data={"csrf_token": "test-token", **data},
+            )
 
     def test_shared_catalog_finds_bradley_and_new_products_without_restart(self):
         found = self.shared.list_products(query="Bradley Steel")
@@ -195,6 +198,46 @@ class OrderTictactoySaleTest(unittest.TestCase):
         self.assertIn('name="csrf_token"', html)
         self.assertIn('type="button" data-close-sale-dialog', html)
 
+    def test_dialog_shows_region_and_prefills_existing_tracking(self):
+        order = {
+            **self.order,
+            "properties": [
+                {"CODE": "REGION", "VALUE": "Московская область"},
+                {"code": "TRACKING_NUMBER", "value": "  001-AB  "},
+            ],
+        }
+        html = self.render_order_for(order)
+        self.assertIn("<span>Регион</span><strong>Московская область</strong>", html)
+        self.assertIn('name="tracking"', html)
+        self.assertIn('value="001-AB"', html)
+        self.assertIn('placeholder="Введите номер отправления"', html)
+        self.assertIn('maxlength="255"', html)
+        self.assertIn("window.sessionStorage.setItem", html)
+        self.assertIn("window.sessionStorage.getItem", html)
+
+    def render_order_for(self, order, query=""):
+        patches = self.patches(order=order)
+        with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5]:
+            return self.client.get("/order/18593" + query).get_data(as_text=True)
+
+    def test_dialog_uses_dash_when_region_is_missing(self):
+        html = self.render_order_for(self.order)
+        self.assertIn("<span>Регион</span><strong>—</strong>", html)
+
+    def test_region_uses_structured_address_but_does_not_guess_from_text(self):
+        self.assertEqual(
+            web.get_order_region({
+                "address": {"region_name": "Ленинградская область"},
+            }),
+            "Ленинградская область",
+        )
+        self.assertEqual(
+            web.get_order_region({
+                "address": "Москва, Ленинградская область, улица Тестовая",
+            }),
+            "",
+        )
+
     def test_successful_bitrix_confirmation_opens_dialog_but_does_not_sell(self):
         with (
             mock.patch.object(web, "update_order_status", return_value={"status": "ok"}),
@@ -271,6 +314,50 @@ class OrderTictactoySaleTest(unittest.TestCase):
         self.assertEqual(page.status_code, 200)
         self.assertIn("18.08.2026", html)
         self.assertIn("15:05", html)
+
+    def test_tracking_and_region_are_snapshotted_in_sale(self):
+        order = {
+            **self.order,
+            "region_name": "Санкт-Петербург",
+            "tracking_number": "SOURCE-TRACK",
+        }
+        response = self.conduct(order=order, tracking="  001-AB  ")
+        self.assertEqual(urlsplit(response.location).path, "/sales")
+        rows = self.inventory.list_sales()
+        self.assertEqual({row["region"] for row in rows}, {"Санкт-Петербург"})
+        self.assertEqual({row["track_number"] for row in rows}, {"001-AB"})
+
+    def test_existing_tracking_is_used_when_submitted_from_prefilled_field(self):
+        order = {**self.order, "delivery": {"waybill": "ZX-009"}}
+        self.conduct(order=order)
+        self.assertEqual(
+            {row["track_number"] for row in self.inventory.list_sales()},
+            {"ZX-009"},
+        )
+
+    def test_empty_tracking_is_allowed_and_region_cannot_be_spoofed(self):
+        order = {**self.order, "region": "Москва"}
+        response = self.conduct(
+            order=order,
+            tracking="   ",
+            region="Подменённый регион",
+        )
+        self.assertEqual(urlsplit(response.location).path, "/sales")
+        rows = self.inventory.list_sales()
+        self.assertEqual({row["track_number"] for row in rows}, {""})
+        self.assertEqual({row["region"] for row in rows}, {"Москва"})
+
+    def test_tracking_over_limit_is_rejected_without_stock_change(self):
+        response = self.conduct(tracking="X" * 256)
+        self.assertIn(
+            "255 символов",
+            parse_qs(urlsplit(response.location).query)["message"][0],
+        )
+        self.assertEqual(self.inventory.list_sales(), [])
+        self.assertEqual(
+            ExcelProductCatalog(self.database).get_product(self.watch["id"])["stock"],
+            5,
+        )
 
     def test_repeated_post_is_idempotent(self):
         first = self.conduct()
