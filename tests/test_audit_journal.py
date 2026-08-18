@@ -486,7 +486,8 @@ class AuditJournalUiTest(unittest.TestCase):
         with web.app.test_request_context("/app/journal"):
             labels = [item["label"] for item in web.get_navigation_items()]
         self.assertEqual(labels, [
-            "Товары", "Продажи", "Приход", "Журнал", "Ремонт", "Настройки",
+            "Заказы", "Товары", "Продажи", "Приход", "Журнал", "Ремонт",
+            "Настройки",
         ])
         self.assertEqual(self.client.post("/api/journal").status_code, 405)
         self.assertEqual(self.client.delete("/api/journal/1").status_code, 405)
