@@ -20,7 +20,7 @@ import requests
 from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache, wraps
 from urllib.parse import parse_qsl, urlencode, urlsplit
-from app.time_ranking import erp_timestamp, receipt_business_timestamp
+from app.time_ranking import erp_timestamp, parse_erp_datetime, receipt_business_timestamp
 from app.clients.moysklad import MoySkladClient
 from app.catalog_db import CatalogDatabase
 from app.clients.bitrix_catalog import (
@@ -9518,13 +9518,13 @@ def filter_sales_report_records(sales, filters, category_groups=None):
 
     for sale in sales:
         raw_sale_date = str(sale.get("created_at") or "")
-        try:
-            candidate = raw_sale_date.replace("Z", "+00:00")
-            parsed_sale_date = datetime.fromisoformat(candidate)
+        parsed = parse_erp_datetime(raw_sale_date)
+        if parsed is not None:
+            parsed_sale_date = parsed[0]
             if parsed_sale_date.tzinfo is None:
                 parsed_sale_date = parsed_sale_date.replace(tzinfo=ERP_TIMEZONE)
             sale_date = parsed_sale_date.astimezone(ERP_TIMEZONE).date().isoformat()
-        except ValueError:
+        else:
             sale_date = raw_sale_date[:10]
 
         if filters.get("today") == "1" and sale_date != today_date:
