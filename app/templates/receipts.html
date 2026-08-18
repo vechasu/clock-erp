@@ -2988,9 +2988,9 @@
     }
 
     function renderReceiptSelectedPhoto(product) {
-        const source = String(
-            product?.image_url || product?.thumbnail_url || ""
-        ).trim();
+        const source = (
+            window.normalizeCatalogProductImageUrls(product)[0] || ""
+        );
         if (receiptSelectedPhotoPicture) {
             receiptSelectedPhotoPicture.hidden = !source;
             if (source) {

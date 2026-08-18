@@ -185,6 +185,99 @@
             .replaceAll("ё", "е");
     };
 
+    window.normalizeCatalogProductImageUrls = function(product) {
+        if (!product || typeof product !== "object") return [];
+
+        const urls = [];
+        const seenUrls = new Set();
+        const seenIds = new Set();
+        const baseUrl = document.baseURI || window.location?.href;
+        const allowedProtocols = new Set([
+            "http:", "https:", "blob:", "data:",
+        ]);
+
+        function append(rawImage) {
+            if (Array.isArray(rawImage)) {
+                rawImage.forEach(append);
+                return;
+            }
+
+            const image = rawImage && typeof rawImage === "object"
+                ? rawImage
+                : null;
+            const rawUrl = image
+                ? (
+                    image.original_url
+                    || image.download_url
+                    || image.url
+                    || image.src
+                    || image.thumbnail_url
+                    || image.image_url
+                )
+                : rawImage;
+            const url = typeof rawUrl === "string" ? rawUrl.trim() : "";
+            if (!url) return;
+            if ([
+                "null", "undefined", "none", "false", "[object object]",
+            ].includes(url.toLowerCase())) return;
+
+            let normalizedUrl;
+            try {
+                const parsed = new URL(url, baseUrl);
+                if (
+                    !allowedProtocols.has(parsed.protocol)
+                    || (
+                        parsed.protocol === "data:"
+                        && !url.toLowerCase().startsWith("data:image/")
+                    )
+                ) {
+                    return;
+                }
+                parsed.hash = "";
+                normalizedUrl = parsed.href;
+            } catch (_error) {
+                return;
+            }
+
+            const rawId = image
+                ? (
+                    image.id
+                    ?? image.file_id
+                    ?? image.external_file_id
+                    ?? image.ID
+                )
+                : "";
+            const imageId = String(rawId ?? "").trim();
+            if (
+                seenUrls.has(normalizedUrl)
+                || (imageId && seenIds.has(imageId))
+            ) {
+                return;
+            }
+
+            seenUrls.add(normalizedUrl);
+            if (imageId) seenIds.add(imageId);
+            urls.push(url);
+        }
+
+        [
+            product.image_url,
+            product.thumbnail_url,
+            product.detail_image_url,
+            product.preview_image_url,
+            product.detail_image,
+            product.preview_image,
+            product.DETAIL_PICTURE,
+            product.PREVIEW_PICTURE,
+            product.gallery,
+            product.images,
+            product.GALLERY,
+            product.MORE_PHOTO,
+        ].forEach(append);
+
+        return urls;
+    };
+
     function catalogOptionStartsWith(option, query) {
         if (
             option.closest("[data-shared-catalog-kind]")

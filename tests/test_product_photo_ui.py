@@ -41,12 +41,25 @@ class ProductPhotoUiTest(unittest.TestCase):
 
     def test_sales_selected_product_photo_is_read_only(self):
         self.assertIn('id="saleProductPhoto"', self.sales)
-        self.assertIn('id="saleProductPhotoImage"', self.sales)
+        self.assertIn('id="saleProductPhotoImages"', self.sales)
+        self.assertIn("normalizeCatalogProductImageUrls(product)", self.sales)
+        self.assertIn("sale-product-photo-placeholder[hidden]", self.sales)
         self.assertIn("renderSaleProductPhoto(item)", self.sales)
         form = self.sales.split('id="manualSaleForm"', 1)[1]
         form = form.split("</form>", 1)[0]
         self.assertNotIn('name="product_image"', form)
         self.assertNotIn('type="file"', form)
+
+    def test_shared_product_picker_normalizes_photo_sources(self):
+        component = Path("app/static/js/catalog-combobox.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("normalizeCatalogProductImageUrls", component)
+        self.assertIn("seenUrls.has(normalizedUrl)", component)
+        self.assertIn("seenIds.has(imageId)", component)
+        self.assertIn("product.DETAIL_PICTURE", component)
+        self.assertIn("product.PREVIEW_PICTURE", component)
+        self.assertIn("product.gallery", component)
 
 
 if __name__ == "__main__":
