@@ -2527,7 +2527,31 @@
                     </div>
 
                     <div class="field sale-core-field">
-                        <label for="unit_price">Цена</label>
+                        <label for="original_unit_price">Исходная цена</label>
+                        <input id="original_unit_price" class="control" type="number" name="original_unit_price" min="0" step="0.01" inputmode="decimal" placeholder="Не указана" data-sale-pricing>
+                    </div>
+
+                    <div class="field sale-core-field">
+                        <label for="discount_type">Способ скидки</label>
+                        <select id="discount_type" class="control" name="discount_type" data-sale-pricing>
+                            <option value="none">Без скидки</option>
+                            <option value="percent">Процент</option>
+                            <option value="fixed">Фиксированная сумма</option>
+                        </select>
+                    </div>
+
+                    <div class="field sale-core-field">
+                        <label for="discount_value">Размер скидки</label>
+                        <input id="discount_value" class="control" type="number" name="discount_value" min="0" step="0.01" inputmode="decimal" value="0" data-sale-pricing>
+                    </div>
+
+                    <div class="field sale-core-field">
+                        <label for="discount_reason">Причина скидки</label>
+                        <input id="discount_reason" class="control" type="text" name="discount_reason" maxlength="240" placeholder="Например, промокод">
+                    </div>
+
+                    <div class="field sale-core-field">
+                        <label for="unit_price">Итоговая цена</label>
                         <input
                             id="unit_price"
                             class="control"
@@ -2537,6 +2561,7 @@
                             step="0.01"
                             inputmode="decimal"
                             placeholder="Не указана"
+                            readonly
                         >
                     </div>
 
@@ -5373,7 +5398,7 @@
         }
         modalDescription.textContent =
             isEditing
-                ? "Товар, бренд, категория, название, количество и цена защищены. Для их изменения отмените проведение и проведите продажу заново."
+                ? "Товар, бренд, категория, название и количество защищены; для их изменения отмените проведение. Скидку можно уточнить без повторного изменения остатка."
                 : "Источник: " + sourceLabels[sourceKey]
                     + ". Он сохранится вместе с продажей.";
         saleSubmitButton.textContent = isEditing
@@ -5556,6 +5581,25 @@
         "saleProductPhotoText"
     );
     let sharedSelectedSaleProduct = null;
+    const saleOriginalPrice = document.getElementById("original_unit_price");
+    const saleDiscountType = document.getElementById("discount_type");
+    const saleDiscountValue = document.getElementById("discount_value");
+    const saleFinalPrice = document.getElementById("unit_price");
+
+    function recalculateSalePrice() {
+        const original = Math.max(0, Number(saleOriginalPrice.value || 0));
+        const value = Math.max(0, Number(saleDiscountValue.value || 0));
+        const amount = saleDiscountType.value === "percent"
+            ? Math.round((original * Math.min(value, 100) / 100 + Number.EPSILON) * 100) / 100
+            : saleDiscountType.value === "fixed" ? Math.min(value, original) : 0;
+        saleFinalPrice.value = saleOriginalPrice.value === ""
+            ? ""
+            : (Math.round((Math.max(0, original - amount) + Number.EPSILON) * 100) / 100).toFixed(2);
+    }
+    [saleOriginalPrice, saleDiscountType, saleDiscountValue].forEach((control) => {
+        control.addEventListener("input", recalculateSalePrice);
+        control.addEventListener("change", recalculateSalePrice);
+    });
 
     function setProtectedSaleFieldsLocked(locked) {
         [saleBrandCombobox, saleCategoryCombobox, saleProductCombobox]
@@ -5569,7 +5613,6 @@
         [
             productNameInput,
             document.getElementById("quantity"),
-            document.getElementById("unit_price"),
         ].forEach((control) => {
             control.disabled = locked;
         });
@@ -5901,6 +5944,10 @@
                 ? saleDateValue + "T00:00"
                 : saleDateValue,
             quantity: sale.quantity_value || sale.quantity || 1,
+            original_unit_price: sale.original_unit_price ?? sale.unit_price ?? "",
+            discount_type: sale.discount_type || "none",
+            discount_value: sale.discount_value ?? 0,
+            discount_reason: sale.discount_reason || "",
             unit_price: sale.unit_price ?? "",
             order_number: sale.order_number || "",
             track_number: sale.track_number || "",
@@ -5916,6 +5963,7 @@
                     control.value = value;
                 });
         });
+        recalculateSalePrice();
         productMeta.textContent = [
             "Артикул: " + (sale.article || "—"),
             "Товарные данные защищены после проведения",

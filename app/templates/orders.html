@@ -967,6 +967,11 @@
             padding-left: 20px;
         }
 
+        .order-sale-price-editor { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-top:10px; padding:10px; border-radius:10px; background:#fff; }
+        .order-sale-price-editor label { display:grid; gap:4px; color:#6b7280; font-size:11px; }
+        .order-sale-price-editor input, .order-sale-price-editor select { min-width:0; height:36px; padding:0 9px; border:1px solid #d1d5db; border-radius:8px; background:#fff; font:inherit; color:#172033; }
+        .order-sale-price-editor strong { grid-column:1/-1; color:#174887; }
+
         .order-sale-tracking {
             margin-top: 16px;
         }
@@ -1771,6 +1776,7 @@
                         {% for product in detail_products %}
                         {% set modal_bitrix_id = product.get("product_id") or product.get("PRODUCT_ID") or product.get("offer_id") or product.get("OFFER_ID") or product.get("sku_id") or product.get("SKU_ID") or product.get("id") or product.get("ID") or "" %}
                         {% set modal_mapping = order_product_mappings.get(modal_bitrix_id|string) if order_product_mappings else none %}
+                        {% set pricing = order_sale_pricing[loop.index0] %}
                         <li>
                             {{ product.get("name") or product.get("NAME") or "Товар без названия" }} — {{ product.get("quantity") or product.get("QUANTITY") or 1 }} шт.
                             {% if product.get("price") or product.get("PRICE") %}× <span class="money-value" data-amount="{{ product.get('price') or product.get('PRICE') }}">{{ product.get("price") or product.get("PRICE") }}</span> ₽{% endif %}
@@ -1780,6 +1786,13 @@
                             {% else %}
                             <span class="order-map-state">{{ modal_mapping.state_label if modal_mapping else "Не сопоставлен" }}</span>
                             {% endif %}
+                            <div class="order-sale-price-editor" data-order-price-row>
+                                <label>Исходная цена<input type="number" min="0" step="0.01" name="original_price_{{ loop.index0 }}" value="{{ pricing.original_unit_price or '' }}" data-original-price></label>
+                                <label>Способ скидки<select name="discount_type_{{ loop.index0 }}" data-discount-type><option value="none"{% if pricing.discount_type == 'none' %} selected{% endif %}>Без скидки</option><option value="percent"{% if pricing.discount_type == 'percent' %} selected{% endif %}>Процент</option><option value="fixed"{% if pricing.discount_type == 'fixed' %} selected{% endif %}>Сумма</option></select></label>
+                                <label>Скидка<input type="number" min="0" step="0.01" name="discount_value_{{ loop.index0 }}" value="{{ pricing.discount_value }}" data-discount-value></label>
+                                <label>Причина<input type="text" maxlength="240" name="discount_reason_{{ loop.index0 }}" value="{{ pricing.discount_reason }}" placeholder="Например, скидка из заказа"></label>
+                                <strong>Итог: <span data-final-price>{{ pricing.unit_price or '—' }}</span> ₽</strong>
+                            </div>
                         </li>
                         {% endfor %}
                     </ul>
@@ -1823,6 +1836,22 @@
         const firstClose = modal.querySelector("[data-close-sale-dialog]");
         const trackingStorageKey = "order-sale-tracking:{{ detail_id }}";
         let returnFocus = null;
+
+        const roundMoney = (value) => Math.round((value + Number.EPSILON) * 100) / 100;
+        const recalculatePrice = (row) => {
+            const original = Math.max(0, Number(row.querySelector("[data-original-price]").value || 0));
+            const type = row.querySelector("[data-discount-type]").value;
+            const value = Math.max(0, Number(row.querySelector("[data-discount-value]").value || 0));
+            const discount = type === "percent"
+                ? roundMoney(original * Math.min(value, 100) / 100)
+                : type === "fixed" ? Math.min(value, original) : 0;
+            row.querySelector("[data-final-price]").textContent = roundMoney(Math.max(0, original - discount)).toFixed(2);
+        };
+        modal.querySelectorAll("[data-order-price-row]").forEach((row) => {
+            row.addEventListener("input", () => recalculatePrice(row));
+            row.addEventListener("change", () => recalculatePrice(row));
+            recalculatePrice(row);
+        });
 
         if (tracking) {
             try {
