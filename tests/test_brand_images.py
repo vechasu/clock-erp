@@ -139,6 +139,14 @@ class BrandImageTest(unittest.TestCase):
                 "image/png",
             )
 
+    def test_jpeg_with_adobe_app_marker_is_accepted(self):
+        content = b"\xff\xd8\xff\xee\x00\x0eAdobe\x00\x64\x00\x00\xff\xd9"
+        extension, digest = validate_image(
+            content, "m2z_banner.jpg", "image/jpeg"
+        )
+        self.assertEqual(extension, "jpg")
+        self.assertEqual(len(digest), 64)
+
     def test_catalog_data_and_relationships_are_unchanged(self):
         products = ExcelProductCatalog(self.database)
         with self.database.transaction() as connection:
