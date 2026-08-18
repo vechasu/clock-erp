@@ -20,6 +20,7 @@ from app.services.inventory_lock import (
     assert_products_unlocked,
     unlocked_product_sql,
 )
+from app.services.out_of_stock import OutOfStockChecks
 from app.services.product_reconciliation import (
     AUTOMATIC_STATUSES,
     article_quality,
@@ -55,7 +56,7 @@ VISIBLE_PRODUCT_SQL = (
 
 PRODUCT_MUTABLE_COLUMNS = (
     "current_batch_id", "active", "raw_excel_json", "excel_row",
-    "excel_name_raw", "normalized_name", "excel_article", "article_quality",
+    "excel_name_raw", "model", "normalized_name", "excel_article", "article_quality",
     "excel_brand", "excel_category", "stock", "cell", "stock_source",
     "file_sha256", "match_status", "match_method", "match_confidence",
     "match_decision", "candidates_json", "bitrix_link_cardinality",
@@ -639,6 +640,10 @@ class ExcelProductBatchService:
             "raw_excel_json": _json(raw_excel),
             "excel_row": int(result.get("excel_row") or 0),
             "excel_name_raw": text(result.get("excel_name")),
+            "model": (
+                text(product["model"]) or None
+                if product is not None else text(result.get("model")) or None
+            ),
             "normalized_name": normalize_text(result.get("excel_name")),
             "excel_article": text(result.get("excel_article")) or None,
             "article_quality": result.get("article_quality") or article_quality(result.get("excel_article")),
@@ -758,12 +763,16 @@ class ExcelProductCatalog:
                       created_from="", created_to="", brand_id=None,
                       category_id=None, product_id=None,
                       include_cell_item_names=True, include_facets=True,
-                      include_inventory_locked=False):
+                      include_inventory_locked=False, stock_state="all",
+                      check_state="all"):
         self.database.initialize()
+        if stock_state == "out" or check_state != "all":
+            OutOfStockChecks(self.database).sync()
         page = max(1, int(page))
         per_page = max(1, min(int(per_page), 100000))
         allowed_sort_fields = {
             "name": "p.excel_name_raw COLLATE NOCASE",
+            "model": "COALESCE(p.model, '')",
             "article": "COALESCE(p.excel_article, '')",
             "brand": "COALESCE(p.excel_brand, '')",
             "category": "COALESCE(p.excel_category, '')",
@@ -784,10 +793,11 @@ class ExcelProductCatalog:
             prefix_pattern = catalog_prefix_pattern(query)
             where.append(
                 "(catalog_search_key(p.excel_name_raw) LIKE ? ESCAPE '\\' "
+                "OR catalog_search_key(p.model) LIKE ? ESCAPE '\\' "
                 "OR catalog_search_key(p.excel_article) LIKE ? ESCAPE '\\' "
                 "OR catalog_search_key(cp.barcode) LIKE ? ESCAPE '\\')"
             )
-            parameters.extend([prefix_pattern, prefix_pattern, prefix_pattern])
+            parameters.extend([prefix_pattern] * 4)
         if category:
             where.append(
                 "(COALESCE(p.excel_category, '') = ? OR "
@@ -820,6 +830,23 @@ class ExcelProductCatalog:
                 parameters.append(cell)
         if hide_zero:
             where.append("p.stock > 0 AND CAST(p.stock AS REAL) > 0")
+        if stock_state == "out":
+            where.append("p.stock <= 0")
+        elif stock_state == "in":
+            where.append("p.stock > 0")
+        if check_state in {"unchecked", "partial", "complete"}:
+            count_sql = (
+                "SELECT COUNT(*) FROM erp_out_of_stock_checks k "
+                "JOIN erp_out_of_stock_cycles cycle ON cycle.id = k.cycle_id "
+                "WHERE cycle.product_id = p.id AND cycle.ended_at IS NULL "
+                "AND k.checked = 1"
+            )
+            if check_state == "unchecked":
+                where.append("({}) = 0".format(count_sql))
+            elif check_state == "partial":
+                where.append("({}) BETWEEN 1 AND 2".format(count_sql))
+            else:
+                where.append("({}) = 3".format(count_sql))
         if created_from:
             where.append("substr(p.created_at, 1, 10) >= ?")
             parameters.append(created_from)
@@ -1042,7 +1069,7 @@ class ExcelProductCatalog:
                 "SELECT p.id, p.excel_name_raw AS name, "
                 "COALESCE(p.excel_brand, '') AS brand, "
                 "COALESCE(p.excel_article, '') AS article, "
-                "'' AS model "
+                "COALESCE(p.model, '') AS model "
                 "FROM catalog_excel_products p JOIN catalog_excel_batches b "
                 "ON b.id = p.current_batch_id LEFT JOIN catalog_products cp "
                 "ON cp.id = p.bitrix_catalog_product_id "
@@ -1089,11 +1116,12 @@ class ExcelProductCatalog:
             self, name, article="", brand="", category="", cell="", stock=0,
             brand_id=None, category_id=None, price=None, enforce_unique=False,
             moysklad_product_id=None, actor_id="", actor_name="",
-            actor_type="system"):
+            actor_type="system", model=""):
         name = text(name)
         if not name:
             raise ValueError("Название товара обязательно.")
         article = text(article)
+        model = text(model)
         if is_numeric_brand(brand):
             raise ValueError("Бренд не может состоять только из цифр.")
         brand = normalize_brand(brand)
@@ -1170,7 +1198,7 @@ class ExcelProductCatalog:
             )
             columns = (
                 "source_key", "created_batch_id", "current_batch_id", "active",
-                "raw_excel_json", "excel_row", "excel_name_raw", "normalized_name",
+                "raw_excel_json", "excel_row", "excel_name_raw", "model", "normalized_name",
                 "excel_article", "article_quality", "excel_brand", "excel_category",
                 "brand_id", "category_id",
                 "stock", "cell", "stock_source", "file_sha256", "match_status",
@@ -1182,10 +1210,10 @@ class ExcelProductCatalog:
             )
             values = (
                 source_key, batch["id"], batch["id"], 1,
-                _json({"source": "manual", "name": name, "article": article,
+                _json({"source": "manual", "name": name, "model": model, "article": article,
                        "brand": brand, "category": category, "cell": cell,
                        "stock": stock, "price": enrichment["bitrix_price_amount"]}),
-                excel_row, name, normalize_text(name), article or None,
+                excel_row, name, model or None, normalize_text(name), article or None,
                 article_quality(article), brand, category or None,
                 brand_row["id"] if brand_row else None,
                 category_row["id"] if category_row else None,
@@ -1217,7 +1245,7 @@ class ExcelProductCatalog:
                 "created" if actor_name else "system_created",
                 name, article,
                 after={
-                    "name": name, "article": article, "brand": brand,
+                    "name": name, "model": model, "article": article, "brand": brand,
                     "category": category, "price": price, "cell": cell,
                     "stock": stock,
                 },
@@ -1230,7 +1258,8 @@ class ExcelProductCatalog:
     def update_product(self, product_id, name=None, article=None, brand=None,
                        category=None, cell=None, stock=None, stock_reason="",
                        brand_id=None, category_id=None, price=UNSET,
-                       actor_id="", actor_name="", actor_type="system"):
+                       actor_id="", actor_name="", actor_type="system",
+                       model=None):
         self.database.initialize()
         with self.database.transaction() as connection:
             product = connection.execute(
@@ -1246,6 +1275,8 @@ class ExcelProductCatalog:
                 if not values["excel_name_raw"]:
                     raise ValueError("Название товара обязательно.")
                 values["normalized_name"] = normalize_text(values["excel_name_raw"])
+            if model is not None:
+                values["model"] = text(model) or None
             if article is not None:
                 normalized_article = text(article) or None
                 if normalized_article != (text(product["excel_article"]) or None):
@@ -1348,6 +1379,7 @@ class ExcelProductCatalog:
             raw_excel = _load_json(values.get("raw_excel_json"), {})
             raw_excel.update({
                 "excel_name": values["excel_name_raw"],
+                "model": values.get("model"),
                 "excel_article": values["excel_article"],
                 "excel_brand": values["excel_brand"],
                 "category": values["excel_category"],
@@ -1375,6 +1407,7 @@ class ExcelProductCatalog:
                 )
             before = {
                 "name": product["excel_name_raw"],
+                "model": product["model"],
                 "article": product["excel_article"],
                 "brand": product["excel_brand"],
                 "category": product["excel_category"],
@@ -1384,6 +1417,7 @@ class ExcelProductCatalog:
             }
             after = {
                 "name": values["excel_name_raw"],
+                "model": values.get("model"),
                 "article": values["excel_article"],
                 "brand": values["excel_brand"],
                 "category": values["excel_category"],

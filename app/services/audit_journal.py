@@ -24,7 +24,8 @@ ACTION_TYPES = {
 }
 FIELD_WHITELISTS = {
     "product": {
-        "name", "article", "brand", "category", "price", "cell", "stock",
+        "name", "model", "article", "brand", "category", "price", "cell", "stock",
+        "check_ziiiro", "check_wildberries", "check_tictactoy",
     },
     "sale": {
         "status", "payment", "tracking", "quantity", "unit_price", "source",
