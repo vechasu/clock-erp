@@ -205,6 +205,24 @@ def normalize_image(raw, base_url="", order=0, kind="gallery"):
     }
 
 
+def normalize_brand_record(raw, base_url=""):
+    raw = raw if isinstance(raw, dict) else {}
+    images = []
+    for order, item in enumerate(raw.get("images") or []):
+        image = normalize_image(item, base_url, order, item.get("kind", "brand"))
+        image["updated_at"] = _text(_first(item, "updated_at", "TIMESTAMP_X"))
+        if image["url"]:
+            images.append(image)
+    return {
+        "id": _text(_first(raw, "id", "ID")),
+        "iblock_id": _text(_first(raw, "iblock_id", "IBLOCK_ID")),
+        "name": _text(_first(raw, "name", "NAME")),
+        "active": _boolean(_first(raw, "active", "ACTIVE"), True),
+        "updated_at": _text(_first(raw, "updated_at", "TIMESTAMP_X")),
+        "images": images,
+    }
+
+
 def normalize_price(raw):
     raw = raw if isinstance(raw, dict) else {"value": raw}
     name = _text(_first(raw, "type_name", "name", "NAME", "price_name", "CATALOG_GROUP_NAME"))
@@ -466,6 +484,69 @@ class BitrixCatalogReadOnlyClient:
 
     def get_meta(self):
         return self._get_json({"mode": "meta"})
+
+    def get_brands(self, include_inactive=True):
+        payload = self._get_json({
+            "mode": "brands",
+            "include_inactive": 1 if include_inactive else 0,
+        })
+        rows = payload.get("brands") or []
+        if not isinstance(rows, list):
+            raise BitrixCatalogReadOnlyError(
+                "Bitrix catalog brands is not an array"
+            )
+        return {
+            "brands": [
+                normalize_brand_record(row, self.base_url)
+                for row in rows if isinstance(row, dict)
+            ],
+            "storage": payload.get("storage") or {},
+            "image_fields": payload.get("image_fields") or [],
+        }
+
+    def download_brand_image(self, image, max_bytes=5 * 1024 * 1024):
+        url = _text((image or {}).get("original_url") or (image or {}).get("url"))
+        source = urlsplit(url)
+        expected = urlsplit(self.base_url)
+        if (
+            source.scheme not in {"http", "https"}
+            or source.hostname != expected.hostname
+            or source.username
+            or source.password
+        ):
+            raise BitrixCatalogReadOnlyError("Bitrix returned an unsafe image URL")
+        try:
+            response = self.session.get(
+                url, headers={"Accept": "image/*"}, timeout=self.timeout,
+                stream=True,
+            )
+        except (requests.Timeout, requests.ConnectionError) as error:
+            raise BitrixCatalogReadOnlyError(
+                "Bitrix brand image download failed"
+            ) from error
+        if response.status_code != 200:
+            raise BitrixCatalogReadOnlyError(
+                "Bitrix brand image request failed: HTTP {}".format(
+                    response.status_code
+                )
+            )
+        declared_size = int(response.headers.get("Content-Length") or 0)
+        if declared_size > max_bytes:
+            raise BitrixCatalogReadOnlyError("Bitrix brand image is too large")
+        chunks = []
+        size = 0
+        for chunk in response.iter_content(64 * 1024):
+            if not chunk:
+                continue
+            size += len(chunk)
+            if size > max_bytes:
+                raise BitrixCatalogReadOnlyError("Bitrix brand image is too large")
+            chunks.append(chunk)
+        return (
+            b"".join(chunks),
+            response.headers.get("Content-Type") or image.get("mime_type") or "",
+            image.get("filename") or source.path.rsplit("/", 1)[-1],
+        )
 
     def get_products_page(self, page=1, limit=100, updated_from=None, include_inactive=False):
         params = {"page": max(1, int(page)), "limit": max(1, min(int(limit), 200))}
