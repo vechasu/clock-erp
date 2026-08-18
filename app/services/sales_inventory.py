@@ -1265,6 +1265,7 @@ class SalesInventory:
             "sale": "Продажа",
             "return": "Возврат",
             "manual_adjustment": "Ручная корректировка",
+            "inventory_adjustment": "Инвентаризация",
             "cancellation": "Отмена",
         }
         result = []

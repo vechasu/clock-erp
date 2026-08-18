@@ -715,7 +715,8 @@ CREATE TABLE IF NOT EXISTS catalog_stock_movements (
             'sale',
             'return',
             'cancellation',
-            'manual_adjustment'
+            'manual_adjustment',
+            'inventory_adjustment'
         )
     ),
     quantity_delta REAL NOT NULL CHECK (quantity_delta != 0),
@@ -744,6 +745,61 @@ CREATE INDEX IF NOT EXISTS idx_catalog_stock_movements_product
     ON catalog_stock_movements(product_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_catalog_stock_movements_sale
     ON catalog_stock_movements(sale_id, created_at);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_catalog_stock_movements_idempotency
+    ON catalog_stock_movements(idempotency_key);
+
+CREATE TABLE IF NOT EXISTS erp_inventory_sessions (
+    id TEXT PRIMARY KEY,
+    brand_id INTEGER NOT NULL REFERENCES erp_brands(id) ON DELETE RESTRICT,
+    status TEXT NOT NULL CHECK (status IN ('draft', 'active', 'completed', 'cancelled')),
+    started_by TEXT,
+    completed_by TEXT,
+    cancelled_by TEXT,
+    started_at TEXT NOT NULL,
+    completed_at TEXT,
+    cancelled_at TEXT,
+    cancelled_reason TEXT,
+    start_positions INTEGER NOT NULL DEFAULT 0,
+    checked_positions INTEGER NOT NULL DEFAULT 0,
+    adjusted_positions INTEGER NOT NULL DEFAULT 0,
+    added_positions INTEGER NOT NULL DEFAULT 0,
+    missing_positions INTEGER NOT NULL DEFAULT 0,
+    total_delta INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_erp_inventory_one_active_brand
+    ON erp_inventory_sessions(brand_id) WHERE status = 'active';
+CREATE INDEX IF NOT EXISTS idx_erp_inventory_sessions_status
+    ON erp_inventory_sessions(status, started_at DESC);
+
+CREATE TABLE IF NOT EXISTS erp_inventory_items (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL REFERENCES erp_inventory_sessions(id) ON DELETE RESTRICT,
+    product_id INTEGER NOT NULL REFERENCES catalog_excel_products(id) ON DELETE RESTRICT,
+    snapshot_stock INTEGER NOT NULL CHECK (snapshot_stock >= 0),
+    actual_stock INTEGER CHECK (actual_stock >= 0),
+    final_stock INTEGER CHECK (final_stock >= 0),
+    quantity_delta INTEGER,
+    status TEXT NOT NULL CHECK (status IN (
+        'pending', 'confirmed', 'adjusted', 'conflict', 'added', 'missing', 'error'
+    )),
+    appearance TEXT NOT NULL CHECK (appearance IN ('snapshot', 'existing', 'new')),
+    snapshot_at TEXT NOT NULL,
+    snapshot_movement_rowid INTEGER NOT NULL DEFAULT 0,
+    confirmed_by TEXT,
+    confirmed_at TEXT,
+    movement_id TEXT REFERENCES catalog_stock_movements(id) ON DELETE RESTRICT,
+    idempotency_key TEXT UNIQUE,
+    error_message TEXT,
+    UNIQUE (session_id, product_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_erp_inventory_items_queue
+    ON erp_inventory_items(session_id, status, id);
+CREATE INDEX IF NOT EXISTS idx_erp_inventory_items_product
+    ON erp_inventory_items(product_id, snapshot_at);
 
 CREATE TABLE IF NOT EXISTS erp_audit_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1642,7 +1698,10 @@ class CatalogDatabase:
             "SELECT sql FROM sqlite_master "
             "WHERE type = 'table' AND name = 'catalog_stock_movements'"
         ).fetchone()
-        if table is None or "'cancellation'" in (table["sql"] or ""):
+        if table is None:
+            return
+        table_sql = table["sql"] or ""
+        if "'cancellation'" in table_sql and "'inventory_adjustment'" in table_sql:
             return
 
         connection.commit()
@@ -1656,7 +1715,8 @@ class CatalogDatabase:
                 "catalog_excel_products(id) ON DELETE RESTRICT, "
                 "movement_type TEXT NOT NULL CHECK (movement_type IN ("
                 "'initial_stock', 'receipt', 'sale', 'return', "
-                "'cancellation', 'manual_adjustment')), "
+                "'cancellation', 'manual_adjustment', "
+                "'inventory_adjustment')), "
                 "quantity_delta REAL NOT NULL CHECK (quantity_delta != 0), "
                 "stock_before REAL, "
                 "stock_after REAL NOT NULL CHECK (stock_after >= 0), "

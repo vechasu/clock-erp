@@ -61,6 +61,10 @@ from app.services.sales_inventory import (
     SalesInventoryError,
     validate_performed_sale_update,
 )
+from app.services.brand_inventory import (
+    BrandInventory,
+    InventoryError,
+)
 from app.services.receipt_inventory import (
     ReceiptInventory,
 )
@@ -1994,6 +1998,157 @@ def sort_erp_records(records, field, direction, numeric_fields=()):
     )
     missing.sort(key=identifier, reverse=direction == "desc")
     return present + missing
+
+
+def _inventory_actor():
+    user = current_auth_user() or {}
+    return " ".join(filter(None, (
+        str(user.get("first_name") or "").strip(),
+        str(user.get("last_name") or "").strip(),
+    ))) or str(user.get("email") or user.get("id") or "").strip()
+
+
+def _inventory_payload():
+    return request.get_json(silent=True) or request.form
+
+
+def _inventory_json(action):
+    try:
+        return jsonify(action())
+    except InventoryError as error:
+        return jsonify(ok=False, message=str(error)), error.status_code
+    except (TypeError, ValueError):
+        return jsonify(ok=False, message="Переданы некорректные данные."), 400
+
+
+@app.route("/app/products/inventory")
+def warehouse_inventory_page():
+    service = BrandInventory()
+    inventory_id = (request.args.get("inventory_id") or "").strip()
+    inventory = None
+    items = []
+    if inventory_id:
+        try:
+            inventory = service.get(inventory_id)
+            items = service.list_items(inventory_id)
+        except InventoryError:
+            return redirect(url_for(
+                "warehouse_inventory_page", notice="error",
+                message="Инвентаризация не найдена.",
+            ))
+    return render_template(
+        "warehouse_inventory.html",
+        inventory=inventory,
+        items=items,
+        brands=SharedCatalog().list_brands(limit=500),
+    )
+
+
+@app.route("/api/v1/inventories", methods=["POST"])
+def inventory_start_api():
+    require_csrf_when_authenticated()
+    payload = _inventory_payload()
+    def action():
+        session, created = BrandInventory().start(
+            payload.get("brand_id"), _inventory_actor()
+        )
+        return {"ok": True, "created": created, "session": session}
+    return _inventory_json(action)
+
+
+@app.route("/api/v1/inventories/<inventory_id>")
+def inventory_detail_api(inventory_id):
+    return _inventory_json(lambda: {
+        "ok": True, "session": BrandInventory().get(inventory_id)
+    })
+
+
+@app.route("/api/v1/inventories/<inventory_id>/items")
+def inventory_items_api(inventory_id):
+    return _inventory_json(lambda: {
+        "ok": True,
+        "items": BrandInventory().list_items(
+            inventory_id, request.args.get("q", ""), request.args.get("category_id"),
+            request.args.get("limit", 250), request.args.get("offset", 0),
+        ),
+        "session": BrandInventory().get(inventory_id),
+    })
+
+
+@app.route("/api/v1/inventories/<inventory_id>/items/<item_id>/confirm", methods=["POST"])
+def inventory_confirm_api(inventory_id, item_id):
+    require_csrf_when_authenticated()
+    payload = _inventory_payload()
+    return _inventory_json(lambda: BrandInventory().confirm(
+        inventory_id, item_id, payload.get("actual_stock"), _inventory_actor(),
+        payload.get("idempotency_key"), payload.get("confirm_zero") is True,
+    ))
+
+
+@app.route("/api/v1/inventories/<inventory_id>/items/<item_id>/refresh", methods=["POST"])
+def inventory_refresh_api(inventory_id, item_id):
+    require_csrf_when_authenticated()
+    return _inventory_json(lambda: {
+        "ok": True, **BrandInventory().refresh_conflict(inventory_id, item_id)
+    })
+
+
+@app.route("/api/v1/inventories/<inventory_id>/products/search")
+def inventory_product_search_api(inventory_id):
+    return _inventory_json(lambda: {
+        "ok": True,
+        "items": BrandInventory().search_products(inventory_id, request.args.get("q", "")),
+    })
+
+
+@app.route("/api/v1/inventories/<inventory_id>/items/existing", methods=["POST"])
+def inventory_add_existing_api(inventory_id):
+    require_csrf_when_authenticated()
+    payload = _inventory_payload()
+    return _inventory_json(lambda: BrandInventory().add_existing(
+        inventory_id, payload.get("product_id"), payload.get("actual_stock"),
+        _inventory_actor(), payload.get("idempotency_key"),
+        payload.get("confirm_zero") is True,
+    ))
+
+
+@app.route("/api/v1/inventories/<inventory_id>/items/new", methods=["POST"])
+def inventory_add_new_api(inventory_id):
+    require_csrf_when_authenticated()
+    payload = _inventory_payload()
+    return _inventory_json(lambda: BrandInventory().add_new(
+        inventory_id, payload.get("name"), payload.get("article"),
+        payload.get("actual_stock"), _inventory_actor(),
+        payload.get("idempotency_key"), payload.get("category_id"),
+    ))
+
+
+@app.route("/api/v1/inventories/<inventory_id>/completion-preview")
+def inventory_completion_preview_api(inventory_id):
+    return _inventory_json(lambda: {
+        "ok": True, **BrandInventory().completion_preview(inventory_id)
+    })
+
+
+@app.route("/api/v1/inventories/<inventory_id>/complete", methods=["POST"])
+def inventory_complete_api(inventory_id):
+    require_csrf_when_authenticated()
+    payload = _inventory_payload()
+    return _inventory_json(lambda: BrandInventory().complete(
+        inventory_id, _inventory_actor(), payload.get("confirmation") is True,
+    ))
+
+
+@app.route("/api/v1/inventories/<inventory_id>/cancel", methods=["POST"])
+def inventory_cancel_api(inventory_id):
+    require_csrf_when_authenticated()
+    payload = _inventory_payload()
+    return _inventory_json(lambda: {
+        "ok": True,
+        "session": BrandInventory().cancel(
+            inventory_id, payload.get("reason"), _inventory_actor()
+        ),
+    })
 
 
 @app.route("/warehouse")
