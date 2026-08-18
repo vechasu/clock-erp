@@ -70,6 +70,7 @@ from app.services.brand_inventory import (
 from app.services.inventory_lock import (
     assert_product_references_unlocked,
 )
+from app.services.out_of_stock import OutOfStockChecks
 from app.services.receipt_inventory import (
     ReceiptInventory,
 )
@@ -2017,6 +2018,7 @@ def build_excel_warehouse_items(products):
         item = {
             "id": product["id"],
             "name": product.get("excel_name_raw") or "",
+            "model": product.get("model") or "",
             "article": product.get("excel_article") or "",
             "barcode": product.get("bitrix_barcode") or "",
             "moysklad_product_id": product.get("moysklad_product_id") or "",
@@ -2484,6 +2486,10 @@ def warehouse_page():
     created_date_from = request.args.get("date_from", "").strip()
     created_date_to = request.args.get("date_to", "").strip()
     in_stock = request.args.get("in_stock", "").strip() == "1"
+    out_of_stock = warehouse_view == "out_of_stock"
+    check_state = (request.args.get("check_state") or "all").strip()
+    if check_state not in {"all", "unchecked", "partial", "complete"}:
+        check_state = "all"
     requested_sort_by = request.args.get("sort_by")
     sort_by = (requested_sort_by or "created_at").strip()
     sort_dir = (
@@ -2500,6 +2506,7 @@ def warehouse_page():
         "stock",
         "created_at",
         "cell",
+        "model",
     }
 
     if sort_by not in allowed_sort_fields:
@@ -2530,6 +2537,7 @@ def warehouse_page():
         bool(selected_cell),
         bool(created_date_from or created_date_to),
         in_stock,
+        check_state != "all",
     ))
     warehouse_active_filter_label = format_active_filter_label(
         warehouse_active_filter_count
@@ -2551,9 +2559,17 @@ def warehouse_page():
         category_id=selected_category_id or None,
         include_cell_item_names=False,
         include_facets=False,
+        stock_state="out" if out_of_stock else "all",
+        check_state=check_state if out_of_stock else "all",
     )
     catalog_items = build_excel_warehouse_items(catalog["items"])
     items = get_excel_warehouse_items(catalog=catalog)
+    if out_of_stock:
+        cycles = OutOfStockChecks().current_for_products(
+            [item["id"] for item in items]
+        )
+        for item in items:
+            item["out_of_stock_cycle"] = cycles.get(item["id"], {})
     if items != catalog_items and (created_date_from or created_date_to):
         filtered_items = []
         for item in items:
@@ -2645,6 +2661,13 @@ def warehouse_page():
             created_date_from=created_date_from,
             created_date_to=created_date_to,
             in_stock=in_stock,
+            warehouse_view=warehouse_view,
+            out_of_stock=out_of_stock,
+            check_state=check_state,
+            out_of_stock_count=(
+                catalog["total"] if out_of_stock
+                else catalog["stats"].get("zero_positions", 0)
+            ),
             warehouse_active_filter_count=warehouse_active_filter_count,
             warehouse_active_filter_label=warehouse_active_filter_label,
             open_add=request.args.get("open_add") == "1",
@@ -3096,6 +3119,7 @@ def warehouse_update_cell():
 @app.route("/warehouse/add", methods=["POST"])
 def warehouse_add_product():
     name = request.form.get("name", "").strip()
+    model = request.form.get("model", "").strip()
     article = request.form.get("article", "").strip()
     brand = request.form.get("brand", "").strip()
     category = request.form.get("category", "").strip()
@@ -3134,6 +3158,7 @@ def warehouse_add_product():
     try:
         ExcelProductCatalog().create_product(
             name=name,
+            model=model,
             article=article,
             brand=brand,
             category=category,
@@ -3163,6 +3188,7 @@ def warehouse_edit_product():
             "q", "brand", "brand_id", "category", "category_id",
             "cell", "date_from", "date_to",
             "in_stock", "sort_by", "sort_dir", "page", "per_page",
+            "view", "check_state",
         }
     }
 
@@ -3176,6 +3202,7 @@ def warehouse_edit_product():
 
     product_id = request.form.get("product_id", "").strip()
     name = request.form.get("name", "").strip()
+    model = request.form.get("model", "").strip()
     article = request.form.get("article", "").strip()
     brand = request.form.get("brand", "").strip()
     category = request.form.get("category", "").strip()
@@ -3193,7 +3220,7 @@ def warehouse_edit_product():
 
     try:
         ExcelProductCatalog().update_product(
-            product_id, name=name, article=article, brand=brand,
+            product_id, name=name, model=model, article=article, brand=brand,
             category=category, cell=cell, stock=stock, stock_reason=stock_reason,
             brand_id=brand_id, category_id=category_id,
         )
@@ -14782,7 +14809,7 @@ def api_product_request_payload():
         payload = {
             key: request.form.get(key)
             for key in (
-                "name", "article", "brand", "category", "brand_id",
+                "name", "model", "article", "brand", "category", "brand_id",
                 "category_id", "cell", "stock", "stock_reason", "price",
             )
         }
@@ -14802,7 +14829,7 @@ def api_product_update_request_payload():
         return api_json_payload(), None, "keep", ""
 
     allowed_names = (
-        "name", "article", "brand", "category", "brand_id",
+        "name", "model", "article", "brand", "category", "brand_id",
         "category_id", "cell", "stock", "stock_reason", "price",
     )
     payload = {
@@ -14941,6 +14968,7 @@ def api_products_collection():
                     raise RuntimeError("МойСклад не создал карточку с фотографией.")
             product = catalog_service.create_product(
                 name=name,
+                model=payload.get("model", ""),
                 article=payload.get("article", ""),
                 brand=payload.get("brand", ""),
                 category=payload.get("category", ""),
@@ -15003,7 +15031,7 @@ def api_products_collection():
         sort_by = sort_by[1:]
         sort_dir = "desc"
     if sort_by not in {
-        "name", "article", "brand", "category", "stock", "cell",
+        "name", "model", "article", "brand", "category", "stock", "cell",
         "created_at", "price", "match_status",
     }:
         sort_by = "created_at"
@@ -15043,6 +15071,8 @@ def api_products_collection():
         category_id=request.args.get("category_id"),
         product_id=request.args.get("product_id"),
         include_cell_item_names=not request.path.startswith("/api/v1/"),
+        stock_state=(request.args.get("stock_state") or "all").strip(),
+        check_state=(request.args.get("check_state") or "all").strip(),
     )
     return api_success(
         [serialize_api_product(item) for item in listing.get("items", [])],
@@ -15104,7 +15134,7 @@ def api_product_resource(product_id):
             api_product_update_request_payload()
         )
         allowed_fields = {
-            "name", "article", "brand", "category", "brand_id", "category_id",
+            "name", "model", "article", "brand", "category", "brand_id", "category_id",
             "cell", "stock", "stock_reason", "price",
         }
         unknown_fields = set(payload) - allowed_fields
@@ -15294,6 +15324,29 @@ def api_product_resource(product_id):
         serialize_api_product(updated),
         image_message=image_message,
     )
+
+
+@app.route(
+    "/api/v1/products/<int:product_id>/out-of-stock-checks/<platform>",
+    methods=["POST"],
+)
+def api_out_of_stock_check(product_id, platform):
+    require_csrf_when_authenticated()
+    try:
+        payload = api_json_payload()
+        if not isinstance(payload.get("checked"), bool):
+            raise ValueError("Поле checked должно быть логическим значением.")
+        actor = current_audit_actor()
+        cycle = OutOfStockChecks().set_check(
+            product_id,
+            platform,
+            payload["checked"],
+            actor_id=actor["actor_id"],
+            actor_name=actor["actor_name"],
+        )
+    except ValueError as error:
+        return api_error("OUT_OF_STOCK_CHECK_INVALID", str(error), 422)
+    return api_success(cycle)
 
 
 @app.route("/api/products/<int:product_id>/movements", methods=["GET"])

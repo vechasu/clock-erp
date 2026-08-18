@@ -543,6 +543,10 @@
             font-size: 13px;
             font-weight: 700;
         }
+        .out-of-stock-checks { display:grid; gap:6px; min-width:180px; }
+        .out-of-stock-check { display:flex; align-items:center; gap:7px; font-size:12px; font-weight:700; }
+        .out-of-stock-check.is-pending { color:#b42318; }
+        .out-of-stock-check input { width:17px; height:17px; accent-color:#174887; }
 
         .warehouse-pagination {
             display: flex;
@@ -4026,7 +4030,8 @@
             </header>
 
             <nav class="erp-section-tabs" aria-label="Раздел товаров">
-                <a class="erp-section-tab is-active" href="{{ url_for('warehouse_page') }}" aria-current="page">Товары</a>
+                <a class="erp-section-tab{% if not out_of_stock %} is-active{% endif %}" href="{{ url_for('warehouse_page') }}"{% if not out_of_stock %} aria-current="page"{% endif %}>Товары</a>
+                <a class="erp-section-tab{% if out_of_stock %} is-active{% endif %}" href="{{ url_for('warehouse_page', view='out_of_stock') }}"{% if out_of_stock %} aria-current="page"{% endif %}>Часы закончились <span>{{ out_of_stock_count }}</span></a>
                 <a class="erp-section-tab" href="{{ url_for('warehouse_page', view='brands') }}">Бренды</a>
                 <a class="erp-section-tab" href="{{ url_for('warehouse_page', view='categories') }}">Категории</a>
             </nav>
@@ -4168,6 +4173,7 @@
 
             <div class="search-card erp-toolbar-card">
                 <form id="warehouseSearchForm" class="search-form erp-toolbar" method="get" action="/warehouse">
+                    {% if out_of_stock %}<input type="hidden" name="view" value="out_of_stock">{% endif %}
                     <input type="hidden" name="sort_by" value="{{ sort_by }}">
                     <input type="hidden" name="sort_dir" value="{{ sort_dir }}">
                     <input type="hidden" name="per_page" value="{{ per_page }}">
@@ -4221,7 +4227,18 @@
                     </div>
 
                     <div class="warehouse-filter-actions">
-                        <label class="zero-stock-toggle" for="warehouseInStockToggle">
+                        {% if out_of_stock %}
+                            <label class="warehouse-add-field">
+                                <span class="sr-only">Статус проверки</span>
+                                <select name="check_state" onchange="this.form.submit()" aria-label="Статус проверки площадок">
+                                    <option value="all"{% if check_state == 'all' %} selected{% endif %}>Все проверки</option>
+                                    <option value="unchecked"{% if check_state == 'unchecked' %} selected{% endif %}>Не проверены</option>
+                                    <option value="partial"{% if check_state == 'partial' %} selected{% endif %}>Проверены частично</option>
+                                    <option value="complete"{% if check_state == 'complete' %} selected{% endif %}>Проверены полностью</option>
+                                </select>
+                            </label>
+                        {% endif %}
+                        {% if not out_of_stock %}<label class="zero-stock-toggle" for="warehouseInStockToggle">
                             <span class="zero-stock-toggle-text">Только в наличии</span>
                             <span class="toggle-switch">
                                 <input
@@ -4232,7 +4249,7 @@
                                 >
                                 <span class="toggle-slider" aria-hidden="true"></span>
                             </span>
-                        </label>
+                        </label>{% endif %}
                         <button
                             id="warehouseFilterTrigger"
                             class="search-tool-button erp-secondary-action erp-filter-trigger{% if warehouse_active_filter_count %} is-active{% endif %}"
@@ -4477,6 +4494,10 @@
                     <section class="warehouse-add-section warehouse-add-data-section">
                         <h3 class="warehouse-add-section-title">Данные товара</h3>
                         <div class="warehouse-add-grid">
+                            <label class="warehouse-add-field" for="warehouseProductModel">
+                                <span>Модель часов</span>
+                                <input id="warehouseProductModel" type="text" name="model" placeholder="Например, Celeste">
+                            </label>
                             <label class="warehouse-add-field" for="warehouseProductArticle">
                                 <span>Артикул</span>
                                 <input
@@ -4563,6 +4584,7 @@
                         <colgroup>
                             <col class="warehouse-col-photo" data-column-key="photo">
                             <col class="warehouse-col-name" data-column-key="name">
+                            <col data-column-key="model">
                             <col class="warehouse-col-price" data-column-key="price">
                             <col class="warehouse-col-article" data-column-key="article">
                             <col class="warehouse-col-brand" data-column-key="brand">
@@ -4570,6 +4592,7 @@
                             <col class="warehouse-col-stock" data-column-key="stock">
                             <col class="warehouse-col-created" data-column-key="created">
                             <col class="warehouse-col-cell" data-column-key="cell">
+                            {% if out_of_stock %}<col data-column-key="platform_checks">{% endif %}
                             <col class="warehouse-col-actions" data-column-key="actions">
                         </colgroup>
                         <thead>
@@ -4594,6 +4617,8 @@
                                         </span>
                                     </span>
                                 </th>
+
+                                <th data-column-key="model">Модель</th>
 
                                 <th data-column-key="price">Цена</th>
 
@@ -4693,6 +4718,8 @@
                                     </span>
                                 </th>
 
+                                {% if out_of_stock %}<th data-column-key="platform_checks">Проверка отключения</th>{% endif %}
+
                                 <th data-column-key="actions">Действие</th>
                             </tr>
                         </thead>
@@ -4741,6 +4768,8 @@
                                         </div>
                                     </td>
 
+                                    <td data-column-key="model">{{ item.model or "—" }}</td>
+
                                     <td data-column-key="price">{{ item.price_display or "—" }}</td>
 
                                     <td data-column-key="article">{{ item.article or "—" }}</td>
@@ -4761,6 +4790,20 @@
                                         <div>{{ item.cell or "—" }}</div>
                                     </td>
 
+                                    {% if out_of_stock %}
+                                    <td data-column-key="platform_checks">
+                                        <div class="out-of-stock-checks" data-cycle-id="{{ item.out_of_stock_cycle.cycle_id }}">
+                                            {% for platform, label in (("ziiiro", "Ziiiro"), ("wildberries", "WB"), ("tictactoy", "TTT")) %}
+                                                {% set check = item.out_of_stock_cycle.checks.get(platform, {}) %}
+                                                <label class="out-of-stock-check{% if not check.checked %} is-pending{% endif %}">
+                                                    <input type="checkbox" data-product-id="{{ item.id }}" data-platform="{{ platform }}"{% if check.checked %} checked{% endif %} onchange="updateOutOfStockCheck(this)">
+                                                    <span>Отключён на {{ label }}</span>
+                                                </label>
+                                            {% endfor %}
+                                        </div>
+                                    </td>
+                                    {% endif %}
+
                                     <td data-column-key="actions">
                                         {% if item.id %}
                                             <details class="mobile-erp-only mobile-erp-card-details warehouse-mobile-details">
@@ -4780,6 +4823,7 @@
                                                     aria-label="Открыть карточку"
                                                     data-id="{{ item.id|e }}"
                                                     data-name="{{ item.name|e }}"
+                                                    data-model="{{ item.model|e }}"
                                                     data-article="{{ (item.article or '')|e }}"
                                                     data-price="{{ item.price if item.price is not none else '' }}"
                                                     data-price-display="{{ item.price_display|e }}"
@@ -4959,6 +5003,7 @@
             data-catalog-category-without-brand="true"
         >
             <input type="hidden" name="per_page" value="{{ per_page }}">
+            {% if out_of_stock %}<input type="hidden" name="view" value="out_of_stock"><input type="hidden" name="check_state" value="{{ check_state }}">{% endif %}
             {% if query %}
                 <input type="hidden" name="q" value="{{ query }}">
             {% endif %}
@@ -5151,6 +5196,12 @@
                 <div class="product-detail-label">Артикул</div>
                 <div id="detailArticle" class="product-detail-value">—</div>
                 <input id="editArticle" class="product-detail-input" type="text" name="article">
+            </div>
+
+            <div class="product-detail-card">
+                <div class="product-detail-label">Модель часов</div>
+                <div id="detailModel" class="product-detail-value">—</div>
+                <input id="editModel" class="product-detail-input" type="text" name="model">
             </div>
 
             <div class="product-detail-card">
@@ -6016,6 +6067,36 @@
             );
         });
 
+        async function updateOutOfStockCheck(input) {
+            const previous = !input.checked;
+            input.disabled = true;
+            try {
+                const response = await fetch(
+                    "/api/v1/products/" + encodeURIComponent(input.dataset.productId)
+                    + "/out-of-stock-checks/" + encodeURIComponent(input.dataset.platform),
+                    {
+                        method: "POST",
+                        credentials: "same-origin",
+                        headers: {
+                            "Content-Type": "application/json",
+                            "X-CSRF-Token": {{ csrf_token()|tojson }},
+                        },
+                        body: JSON.stringify({checked: input.checked}),
+                    }
+                );
+                const payload = await response.json();
+                if (!response.ok || payload.error) {
+                    throw new Error(payload.message || payload?.error?.message || "Не удалось сохранить проверку.");
+                }
+                input.closest("label")?.classList.toggle("is-pending", !input.checked);
+            } catch (error) {
+                input.checked = previous;
+                window.alert(error.message);
+            } finally {
+                input.disabled = false;
+            }
+        }
+
         async function openEditDrawer(button) {
             warehouseDrawerReturnFocus = button;
             closeAllDrawers(false);
@@ -6040,6 +6121,7 @@
             renderDetailProductGallery();
 
             document.getElementById("detailName").textContent = productName;
+            document.getElementById("detailModel").textContent = button.dataset.model || "—";
             document.getElementById("detailArticle").textContent = productArticle;
             document.getElementById("detailPrice").textContent =
                 button.dataset.priceDisplay || "—";
@@ -6075,6 +6157,7 @@
             document.getElementById("editProductId").value = button.dataset.id || "";
             const editableValues = {
                 editName: button.dataset.name || "",
+                editModel: button.dataset.model || "",
                 editArticle: button.dataset.article || "",
                 editPrice: button.dataset.price ?? "",
                 editStock: productStock,
@@ -6826,23 +6909,23 @@
         const warehouseTableLegacyStorageKey = "vechasu.warehouse.table-view.v1";
         const warehouseTableStorageKey = "vechasu.warehouse.table-view.v2";
         const warehouseTableDefaults = {
-            order: ["photo", "name", "price", "article", "brand", "category", "stock", "created", "cell", "actions"],
-            widths: { photo: 64, name: 256, price: 80, article: 96, brand: 95, category: 150, stock: 104, created: 106, cell: 75, actions: 82 },
+            order: ["photo", "name", "model", "price", "article", "brand", "category", "stock", "created", "cell", "platform_checks", "actions"],
+            widths: { photo: 64, name: 256, model: 120, price: 80, article: 96, brand: 95, category: 150, stock: 104, created: 106, cell: 75, platform_checks: 210, actions: 82 },
             hidden: []
         };
         const warehouseTableRequiredColumns = ["photo", "name", "actions"];
         const warehouseTableColumnLabels = {
-            photo: "Фото", name: "Название", price: "Цена", article: "Артикул",
+            photo: "Фото", name: "Название", model: "Модель", price: "Цена", article: "Артикул",
             brand: "Бренд", category: "Категория", stock: "Остаток",
-            created: "Добавлен", cell: "Ячейка", actions: "Действие"
+            created: "Добавлен", cell: "Ячейка", platform_checks: "Проверка отключения", actions: "Действие"
         };
         const warehouseTableMinimumWidths = {
-            photo: 60, name: 196, price: 72, article: 86, brand: 84,
-            category: 138, stock: 98, created: 96, cell: 68, actions: 82
+            photo: 60, name: 196, model: 90, price: 72, article: 86, brand: 84,
+            category: 138, stock: 98, created: 96, cell: 68, platform_checks: 180, actions: 82
         };
         const warehouseTableMaximumWidths = {
-            photo: 160, name: 520, price: 180, article: 240, brand: 260,
-            category: 360, stock: 200, created: 220, cell: 180, actions: 160
+            photo: 160, name: 520, model: 300, price: 180, article: 240, brand: 260,
+            category: 360, stock: 200, created: 220, cell: 180, platform_checks: 360, actions: 160
         };
         let warehouseTableSuppressSortUntil = 0;
 
@@ -7443,6 +7526,7 @@
             warehouseProductLoadController?.abort();
             warehouseProductLoadController = null;
             warehouseAddControl(form, "name").value = "";
+            warehouseAddControl(form, "model").value = "";
             warehouseAddControl(form, "article").value = "";
             warehouseAddControl(form, "stock").value = "0";
             warehouseAddControl(form, "cell").value = "";
@@ -7513,6 +7597,7 @@
                 const product = payload.data || fallback;
                 warehouseSelectedProduct = product;
                 warehouseAddControl(form, "name").value = product.name || "";
+                warehouseAddControl(form, "model").value = product.model || "";
                 warehouseAddControl(form, "article").value = product.article || "";
                 warehouseAddControl(form, "stock").value = String(
                     product.stock ?? 0

@@ -332,6 +332,7 @@ CREATE TABLE IF NOT EXISTS catalog_excel_products (
     raw_excel_json TEXT NOT NULL,
     excel_row INTEGER NOT NULL,
     excel_name_raw TEXT NOT NULL,
+    model TEXT,
     normalized_name TEXT NOT NULL,
     excel_article TEXT,
     article_quality TEXT NOT NULL,
@@ -374,6 +375,29 @@ CREATE TABLE IF NOT EXISTS catalog_excel_products (
     deleted_source_key TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS erp_out_of_stock_cycles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id INTEGER NOT NULL
+        REFERENCES catalog_excel_products(id) ON DELETE RESTRICT,
+    started_at TEXT NOT NULL,
+    ended_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_erp_out_of_stock_cycles_product
+    ON erp_out_of_stock_cycles(product_id, started_at DESC);
+
+CREATE TABLE IF NOT EXISTS erp_out_of_stock_checks (
+    cycle_id INTEGER NOT NULL
+        REFERENCES erp_out_of_stock_cycles(id) ON DELETE CASCADE,
+    platform TEXT NOT NULL CHECK (platform IN ('ziiiro', 'wildberries', 'tictactoy')),
+    checked INTEGER NOT NULL DEFAULT 0 CHECK (checked IN (0, 1)),
+    changed_at TEXT NOT NULL,
+    changed_by TEXT,
+    PRIMARY KEY (cycle_id, platform)
 );
 
 CREATE INDEX IF NOT EXISTS idx_catalog_excel_products_active
@@ -904,6 +928,7 @@ class CatalogDatabase:
             self._ensure_excel_receipt_constraints(connection)
             self._ensure_excel_cardinality_columns(connection)
             self._ensure_product_deletion_columns(connection)
+            self._ensure_product_workflow_columns(connection)
             self._ensure_receipt_constraints(connection)
             self._ensure_optional_price_constraints(connection)
             self._ensure_shared_catalog(connection)
@@ -1235,6 +1260,20 @@ class CatalogDatabase:
                         definition,
                     )
                 )
+
+    @staticmethod
+    def _ensure_product_workflow_columns(connection):
+        """Add optional catalog fields without rewriting existing product rows."""
+        columns = {
+            row[1]
+            for row in connection.execute(
+                "PRAGMA table_info(catalog_excel_products)"
+            )
+        }
+        if "model" not in columns:
+            connection.execute(
+                "ALTER TABLE catalog_excel_products ADD COLUMN model TEXT"
+            )
 
     @staticmethod
     def _ensure_receipt_constraints(connection):
