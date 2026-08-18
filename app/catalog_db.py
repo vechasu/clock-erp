@@ -794,6 +794,7 @@ CREATE TABLE IF NOT EXISTS erp_inventory_items (
     movement_id TEXT REFERENCES catalog_stock_movements(id) ON DELETE RESTRICT,
     idempotency_key TEXT UNIQUE,
     error_message TEXT,
+    reactivated INTEGER NOT NULL DEFAULT 0 CHECK (reactivated IN (0, 1)),
     UNIQUE (session_id, product_id)
 );
 
@@ -805,7 +806,7 @@ CREATE INDEX IF NOT EXISTS idx_erp_inventory_items_product
 CREATE TABLE IF NOT EXISTS erp_audit_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     entity_type TEXT NOT NULL CHECK (
-        entity_type IN ('product', 'sale', 'receipt', 'brand', 'category')
+        entity_type IN ('product', 'sale', 'receipt', 'brand', 'category', 'inventory')
     ),
     entity_id TEXT NOT NULL,
     action TEXT NOT NULL,
@@ -924,6 +925,17 @@ class CatalogDatabase:
                 "ALTER TABLE erp_inventory_sessions ADD COLUMN active_brand_id INTEGER "
                 "REFERENCES erp_brands(id) ON DELETE RESTRICT"
             )
+        item_columns = {
+            row["name"]
+            for row in connection.execute(
+                "PRAGMA table_info(erp_inventory_items)"
+            ).fetchall()
+        }
+        if "reactivated" not in item_columns:
+            connection.execute(
+                "ALTER TABLE erp_inventory_items ADD COLUMN reactivated INTEGER "
+                "NOT NULL DEFAULT 0 CHECK (reactivated IN (0, 1))"
+            )
         connection.execute(
             "UPDATE erp_inventory_sessions SET active_brand_id = brand_id "
             "WHERE status = 'active' AND active_brand_id IS NULL"
@@ -943,7 +955,7 @@ class CatalogDatabase:
             "SELECT sql FROM sqlite_master WHERE type = 'table' "
             "AND name = 'erp_audit_events'"
         ).fetchone()
-        if row is None or "'brand'" in (row["sql"] or ""):
+        if row is None or "'inventory'" in (row["sql"] or ""):
             return
         connection.commit()
         connection.execute("PRAGMA foreign_keys = OFF")
@@ -954,7 +966,7 @@ class CatalogDatabase:
                 "CREATE TABLE erp_audit_events ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                 "entity_type TEXT NOT NULL CHECK (entity_type IN "
-                "('product','sale','receipt','brand','category')), "
+                "('product','sale','receipt','brand','category','inventory')), "
                 "entity_id TEXT NOT NULL, action TEXT NOT NULL, actor_id TEXT, "
                 "actor_type TEXT NOT NULL DEFAULT 'user' CHECK (actor_type IN "
                 "('user','system','external')), "
@@ -986,6 +998,10 @@ class CatalogDatabase:
             connection.execute(
                 "CREATE INDEX idx_erp_audit_actor ON "
                 "erp_audit_events(actor_id, occurred_at DESC)"
+            )
+            connection.execute(
+                "CREATE INDEX idx_erp_audit_action ON "
+                "erp_audit_events(action, occurred_at DESC)"
             )
             connection.commit()
         except Exception:
