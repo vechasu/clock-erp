@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from app.catalog_db import CatalogDatabase
 from app.services.audit_journal import AuditJournal
 from app.services.inventory_lock import assert_products_unlocked
+from app.services.sale_pricing import calculate_sale_pricing
 
 
 class SalesInventoryError(ValueError):
@@ -156,7 +157,15 @@ class SalesInventory:
         failure_hook=None,
     ):
         quantity = positive_number(quantity, "Количество")
-        unit_price = optional_nonnegative_number(unit_price, "Цена продажи")
+        pricing = calculate_sale_pricing(
+            (payload or {}).get("original_unit_price", unit_price),
+            (payload or {}).get("discount_type", "none"),
+            (payload or {}).get("discount_value", 0),
+            (payload or {}).get("discount_reason", ""),
+        )
+        unit_price = optional_nonnegative_number(
+            pricing["unit_price"], "Цена продажи"
+        )
         requested_status = str(
             (payload or {}).get("order_status") or "completed"
         ).strip().lower()
@@ -186,6 +195,7 @@ class SalesInventory:
         stored_payload["product_id"] = str(product_id)
         stored_payload["quantity"] = quantity
         stored_payload["unit_price"] = unit_price
+        stored_payload.update(pricing)
         stored_payload["inventory_managed"] = True
         stored_payload["automatic_stock_applied"] = True
 
@@ -264,13 +274,20 @@ class SalesInventory:
             connection.execute(
                 "INSERT INTO erp_sale_items ("
                 "sale_id, product_id, brand_id, category_id, quantity, "
-                "unit_price, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "original_unit_price, discount_type, discount_value, "
+                "discount_amount, discount_reason, unit_price, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     sale_id,
                     product_id,
                     product["brand_id"],
                     product["category_id"],
                     quantity,
+                    pricing["original_unit_price"],
+                    pricing["discount_type"],
+                    pricing["discount_value"],
+                    pricing["discount_amount"],
+                    pricing["discount_reason"] or None,
                     unit_price,
                     created_at,
                 ),
@@ -347,14 +364,21 @@ class SalesInventory:
             except (TypeError, ValueError):
                 raise SalesInventoryError("Товар продажи не найден.")
             quantity = positive_number(item.get("quantity"), "Количество")
+            pricing = calculate_sale_pricing(
+                item.get("original_unit_price", item.get("unit_price")),
+                item.get("discount_type", "none"),
+                item.get("discount_value", 0),
+                item.get("discount_reason", ""),
+            )
             unit_price = optional_nonnegative_number(
-                item.get("unit_price"), "Цена продажи"
+                pricing["unit_price"], "Цена продажи"
             )
             prepared.append({
                 **item,
                 "line_index": index,
                 "product_id": product_id,
                 "quantity": quantity,
+                **pricing,
                 "unit_price": unit_price,
             })
 
@@ -472,13 +496,20 @@ class SalesInventory:
                 connection.execute(
                     "INSERT INTO erp_sale_items ("
                     "sale_id, product_id, brand_id, category_id, quantity, "
-                    "unit_price, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    "original_unit_price, discount_type, discount_value, "
+                    "discount_amount, discount_reason, unit_price, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         sale_id,
                         item["product_id"],
                         product["brand_id"],
                         product["category_id"],
                         item["quantity"],
+                        item["original_unit_price"],
+                        item["discount_type"],
+                        item["discount_value"],
+                        item["discount_amount"],
+                        item["discount_reason"] or None,
                         item["unit_price"],
                         created_at,
                     ),
@@ -855,8 +886,52 @@ class SalesInventory:
                 "quantity": requested_quantity,
                 "unit_price": requested_price,
             })
+            pricing_explicit = bool(requested.pop("_pricing_explicit", False))
+            if pricing_explicit:
+                protected_request.pop("unit_price", None)
             validate_performed_sale_update(canonical, protected_request)
             product_id = int(item["product_id"])
+
+            if pricing_explicit:
+                pricing = calculate_sale_pricing(
+                    requested.get("original_unit_price", current_price),
+                    requested.get("discount_type", "none"),
+                    requested.get("discount_value", 0),
+                    requested.get("discount_reason", ""),
+                )
+                current_pricing = {
+                    "original_unit_price": item["original_unit_price"] or current_price,
+                    "discount_type": item["discount_type"] or "none",
+                    "discount_value": item["discount_value"] or "0.00",
+                    "discount_amount": item["discount_amount"] or "0.00",
+                    "discount_reason": item["discount_reason"] or "",
+                    "unit_price": current_price,
+                }
+                requested_price = (
+                    None if pricing["unit_price"] is None
+                    else float(pricing["unit_price"])
+                )
+                connection.execute(
+                    "UPDATE erp_sale_items SET original_unit_price = ?, "
+                    "discount_type = ?, discount_value = ?, discount_amount = ?, "
+                    "discount_reason = ?, unit_price = ? WHERE id = ?",
+                    (
+                        pricing["original_unit_price"], pricing["discount_type"],
+                        pricing["discount_value"], pricing["discount_amount"],
+                        pricing["discount_reason"] or None, requested_price,
+                        item["id"],
+                    ),
+                )
+            else:
+                pricing = {
+                    "original_unit_price": item["original_unit_price"] or current_price,
+                    "discount_type": item["discount_type"] or "none",
+                    "discount_value": item["discount_value"] or "0.00",
+                    "discount_amount": item["discount_amount"] or "0.00",
+                    "discount_reason": item["discount_reason"] or "",
+                }
+                current_pricing = {**pricing, "unit_price": current_price}
+                requested_price = current_price
 
             metadata = dict(current)
             metadata.update(requested)
@@ -867,7 +942,8 @@ class SalesInventory:
                 "brand": current.get("brand"),
                 "category": current.get("category"),
                 "quantity": float(item["quantity"]),
-                "unit_price": current_price,
+                **pricing,
+                "unit_price": requested_price,
                 "inventory_managed": True,
                 "automatic_stock_applied": True,
             })
@@ -909,6 +985,7 @@ class SalesInventory:
                 "tracking": current.get("tracking_number"),
                 "quantity": float(item["quantity"]),
                 "unit_price": current_price,
+                **current_pricing,
                 "source": sale["source"],
                 "comment": current.get("comment") or current.get("note"),
                 "order_number": current.get("order_number") or sale_id,
@@ -918,7 +995,8 @@ class SalesInventory:
                 "payment": metadata.get("payment_status"),
                 "tracking": metadata.get("tracking_number"),
                 "quantity": float(item["quantity"]),
-                "unit_price": current_price,
+                **pricing,
+                "unit_price": requested_price,
                 "source": updated_source,
                 "comment": metadata.get("comment") or metadata.get("note"),
                 "order_number": metadata.get("order_number") or sale_id,
@@ -1190,7 +1268,9 @@ class SalesInventory:
     def _sale_from_connection(cls, connection, sale_id):
         row = connection.execute(
             "SELECT s.*, i.id AS item_id, i.product_id, i.quantity, "
-            "i.unit_price, i.returned_quantity, i.status AS item_status, "
+            "i.original_unit_price, i.discount_type, i.discount_value, "
+            "i.discount_amount, i.discount_reason, i.unit_price, "
+            "i.returned_quantity, i.status AS item_status, "
             "i.returned_at AS item_returned_at, "
             "i.return_reason AS item_return_reason "
             "FROM erp_sales s JOIN erp_sale_items i ON i.sale_id = s.id "
@@ -1207,7 +1287,9 @@ class SalesInventory:
             return []
         query = (
             "SELECT s.*, i.id AS item_id, i.product_id, i.quantity, "
-            "i.unit_price, i.returned_quantity, i.status AS item_status, "
+            "i.original_unit_price, i.discount_type, i.discount_value, "
+            "i.discount_amount, i.discount_reason, i.unit_price, "
+            "i.returned_quantity, i.status AS item_status, "
             "i.returned_at AS item_returned_at, "
             "i.return_reason AS item_return_reason "
             "FROM erp_sales s JOIN erp_sale_items i ON i.sale_id = s.id"
@@ -1380,6 +1462,15 @@ class SalesInventory:
                 if row["unit_price"] is not None
                 else None
             ),
+            "original_unit_price": (
+                row["original_unit_price"]
+                if row["original_unit_price"] is not None
+                else row["unit_price"]
+            ),
+            "discount_type": row["discount_type"] or "none",
+            "discount_value": row["discount_value"] or "0.00",
+            "discount_amount": row["discount_amount"] or "0.00",
+            "discount_reason": row["discount_reason"] or "",
             "status": inventory_status,
             "order_status": (
                 "cancelled"
