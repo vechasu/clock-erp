@@ -91,10 +91,15 @@ class SalesTableLayoutContractTest(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn("window.ErpTableLayout.computeColumnWidths", template)
-        self.assertIn("new ResizeObserver", template)
         self.assertIn('"erp:focus-mode-change"', template)
+        self.assertIn('"erp:sidebar-change"', template)
         self.assertIn("customWidths", template)
         self.assertIn("getActualWidths", template)
+
+        sidebar = (PROJECT_ROOT / "app/static/js/sidebar.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('new CustomEvent("erp:sidebar-change"', sidebar)
 
 
 if __name__ == "__main__":

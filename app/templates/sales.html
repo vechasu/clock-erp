@@ -4572,8 +4572,6 @@
         };
         const settingsKey = salesTable.dataset.salesSettingsKey;
         const tableWrap = salesTable.closest(".table-wrap");
-        const layoutResizeTarget = tableWrap?.closest(".table-card")
-            || tableWrap;
         const settingsTrigger = document.getElementById(
             "salesColumnSettingsTrigger"
         );
@@ -4810,9 +4808,7 @@
 
         let actualWidths = {};
         let lastContainerWidth = -1;
-        let lastObservedWidth = -1;
         let layoutFrame = 0;
-        let layoutObserver = null;
 
         function applyVisibilityAndWidths(force = false) {
             const visibleKeys = view.order.filter(
@@ -4943,29 +4939,17 @@
         saveView();
         renderSettingsList();
 
-        if (typeof ResizeObserver === "function" && layoutResizeTarget) {
-            layoutObserver = new ResizeObserver((entries) => {
-                const observedWidth = entries[0]?.contentRect.width || 0;
-                if (Math.abs(observedWidth - lastObservedWidth) < 0.5) {
-                    return;
-                }
-                lastObservedWidth = observedWidth;
-                scheduleLayout();
-            });
-            layoutObserver.observe(layoutResizeTarget);
-        }
         window.addEventListener("resize", scheduleLayout);
-        salesTable.closest("[data-erp-focus-mode]")?.addEventListener(
+        const layoutRoot = salesTable.closest("[data-erp-focus-mode]");
+        layoutRoot?.addEventListener(
             "erp:focus-mode-change",
             () => scheduleLayout(true),
         );
-        window.addEventListener("pagehide", () => {
-            layoutObserver?.disconnect();
-        });
+        layoutRoot?.addEventListener(
+            "erp:sidebar-change",
+            () => scheduleLayout(true),
+        );
         window.addEventListener("pageshow", () => {
-            if (layoutObserver && layoutResizeTarget) {
-                layoutObserver.observe(layoutResizeTarget);
-            }
             scheduleLayout(true);
         });
 

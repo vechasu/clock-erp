@@ -40,6 +40,9 @@
             toggle.setAttribute("aria-label", label);
             toggle.title = label;
             hideSidebarTooltip();
+            root.dispatchEvent(new CustomEvent("erp:sidebar-change", {
+                detail: {collapsed: collapsed},
+            }));
         };
 
         applySidebarState(root.classList.contains("sidebar-collapsed"));
