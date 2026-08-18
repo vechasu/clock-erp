@@ -489,7 +489,7 @@ class RepairsFullCycleTest(unittest.TestCase):
         self.assertIn("Выберите конкретную позицию заказа", html)
         self.assertIn("if(order.products.length===1)", html)
 
-    def test_v3_migration_preserves_unknown_legacy_data_and_creates_backup(self):
+    def test_v4_migration_preserves_unknown_legacy_data_and_creates_backup(self):
         legacy = [{
             "id": "legacy-1", "schema_version": 2, "status": "at_master",
             "request_type": "paid_repair", "location": "with_master",
@@ -501,10 +501,12 @@ class RepairsFullCycleTest(unittest.TestCase):
         backup = self.root / "backups"
         report = migrate_repair_file(self.store, apply=True, backup_dir=backup)
         migrated = json.loads(self.store.read_text(encoding="utf-8"))[0]
-        self.assertEqual(report["schema_version"], 3)
+        self.assertEqual(report["schema_version"], 4)
         self.assertTrue(Path(report["backup_path"]).is_file())
         self.assertEqual(migrated["unknown_business_field"], "Сохранить")
         self.assertEqual(migrated["status"], "diagnostics")
+        self.assertEqual(migrated["archived_at"], "")
+        self.assertEqual(migrated["archived_by"], "")
         self.assertEqual(migrated["legacy_snapshot"]["unknown_business_field"], "Сохранить")
 
     def test_authenticated_mutation_requires_csrf_and_employee_cannot_manual_status(self):

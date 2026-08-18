@@ -169,9 +169,13 @@ class Stage2RepairsApiTest(unittest.TestCase):
             "diagnostic.txt",
         )
 
+        cases = web.load_repair_cases()
+        cases[0]["status"] = "completed"
+        web.save_repair_cases(cases)
+
         archived = self.client.delete(f"/api/repairs/{repair_id}")
         self.assertEqual(archived.status_code, 200)
-        self.assertTrue(archived.get_json()["data"]["archived"])
+        self.assertTrue(archived.get_json()["data"]["is_archived"])
         self.assertEqual(
             self.client.get("/api/repairs?view=archive").get_json()["meta"]["total"],
             1,
