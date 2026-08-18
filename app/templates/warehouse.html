@@ -219,6 +219,76 @@
             margin-bottom: 10px;
         }
 
+        .inventory-lock-panel {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 14px;
+            padding: 16px 18px;
+            border: 1px solid #bfdbfe;
+            border-radius: 16px;
+            background: #eff6ff;
+            color: #173a69;
+        }
+
+        .inventory-lock-panel h2 {
+            margin: 0;
+            font-size: 17px;
+        }
+
+        .inventory-lock-copy {
+            margin: 5px 0 10px;
+            color: #475569;
+            font-size: 14px;
+            font-weight: 650;
+        }
+
+        .inventory-lock-progress {
+            height: 8px;
+            overflow: hidden;
+            border-radius: 999px;
+            background: #dbeafe;
+        }
+
+        .inventory-lock-progress > span {
+            display: block;
+            width: var(--inventory-progress);
+            height: 100%;
+            border-radius: inherit;
+            background: #2563eb;
+        }
+
+        .inventory-lock-actions {
+            display: grid;
+            justify-items: end;
+            gap: 8px;
+        }
+
+        .inventory-lock-badge {
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: #dbeafe;
+            font-size: 13px;
+            font-weight: 800;
+        }
+
+        .inventory-lock-link {
+            color: #174887;
+            font-size: 14px;
+            font-weight: 800;
+        }
+
+        @media (max-width: 650px) {
+            .inventory-lock-panel {
+                grid-template-columns: 1fr;
+            }
+
+            .inventory-lock-actions {
+                justify-items: start;
+            }
+        }
+
         .stat {
             min-height: 48px;
             display: flex;
@@ -3980,6 +4050,26 @@
                     {% endif %}
                     {{ request.args.get("message") }}
                 </div>
+            {% endif %}
+
+            {% if active_brand_inventory %}
+                <section class="inventory-lock-panel" aria-label="Статус инвентаризации бренда">
+                    <div>
+                        <h2>{{ active_brand_inventory.brand_name }} находится на инвентаризации</h2>
+                        <p class="inventory-lock-copy">
+                            Проверено {{ active_brand_inventory.checked_positions }} из {{ active_brand_inventory.total_positions }} позиций · {{ active_brand_inventory.progress_percent }}%
+                        </p>
+                        <div class="inventory-lock-progress" style="--inventory-progress: {{ active_brand_inventory.progress_percent }}%" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ active_brand_inventory.progress_percent }}">
+                            <span></span>
+                        </div>
+                    </div>
+                    <div class="inventory-lock-actions">
+                        {% if active_brand_inventory.locked_positions %}
+                            <span class="inventory-lock-badge">На инвентаризации: {{ active_brand_inventory.locked_positions }} {{ 'позиция' if active_brand_inventory.locked_positions == 1 else 'позиций' }}</span>
+                        {% endif %}
+                        <a class="inventory-lock-link" href="{{ url_for('warehouse_inventory_page', inventory_id=active_brand_inventory.id) }}">Открыть инвентаризацию</a>
+                    </div>
+                </section>
             {% endif %}
 
             <div class="stats erp-stats erp-workspace-metrics">

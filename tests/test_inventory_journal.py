@@ -9,7 +9,6 @@ from app.services.audit_journal import AuditJournal
 from app.services.brand_inventory import BrandInventory
 from app.services.excel_product_catalog import ExcelProductCatalog
 from app.services.inventory_journal import InventoryJournal
-from app.services.sales_inventory import SalesInventory
 
 
 class InventoryJournalTest(unittest.TestCase):
@@ -132,10 +131,19 @@ class InventoryJournalTest(unittest.TestCase):
 
     def test_10_conflict_is_stored_and_visible(self):
         session = self.start()
-        SalesInventory(self.database).create_sale(
-            {"id": "sale", "product_name": "Часы Alpha", "source": "Tictactoy"},
-            self.product["id"], 1, 100,
-        )
+        with self.database.transaction() as connection:
+            connection.execute(
+                "UPDATE catalog_excel_products SET stock = 3 WHERE id = ?",
+                (self.product["id"],),
+            )
+            connection.execute(
+                "INSERT INTO catalog_stock_movements "
+                "(id, product_id, movement_type, quantity_delta, stock_before, "
+                "stock_after, source, created_at) VALUES "
+                "('external-conflict', ?, 'manual_adjustment', -1, 4, 3, "
+                "'test', '2026-08-18T10:00:00+00:00')",
+                (self.product["id"],),
+            )
         self.inventory.confirm(session["id"], self.item(session)["id"], 4, "Максим", "conflict")
         position = self.read_model.get_document(session["id"])["positions"][0]
         self.assertEqual(position["result"], "Конфликт")

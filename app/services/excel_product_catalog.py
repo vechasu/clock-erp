@@ -13,6 +13,13 @@ from datetime import datetime, timezone
 from app.catalog_db import CatalogDatabase
 from app.services.audit_journal import AuditJournal
 from app.services.brand_values import is_numeric_brand, normalize_brand
+from app.services.inventory_lock import (
+    assert_brand_without_active_inventory,
+    assert_no_active_inventory,
+    assert_product_can_join_brand,
+    assert_products_unlocked,
+    unlocked_product_sql,
+)
 from app.services.product_reconciliation import (
     AUTOMATIC_STATUSES,
     article_quality,
@@ -385,6 +392,7 @@ class ExcelProductBatchService:
             ).fetchone()
             if existing_batch is not None:
                 return self._batch_result(connection, existing_batch, already_applied=True)
+            assert_no_active_inventory(connection, BatchBlockedError)
 
             now = utc_now()
             previous_batch = connection.execute(
@@ -527,6 +535,7 @@ class ExcelProductBatchService:
                 return self._batch_result(connection, batch, already_applied=True)
             if batch["status"] != "active":
                 raise ValueError("Only the active Excel batch can be rolled back")
+            assert_no_active_inventory(connection)
             now = utc_now()
             changes = connection.execute(
                 "SELECT * FROM catalog_excel_batch_rows WHERE batch_id = ? ORDER BY id DESC",
@@ -748,7 +757,8 @@ class ExcelProductCatalog:
                       sort_dir="asc", page=1, per_page=50,
                       created_from="", created_to="", brand_id=None,
                       category_id=None, product_id=None,
-                      include_cell_item_names=True, include_facets=True):
+                      include_cell_item_names=True, include_facets=True,
+                      include_inventory_locked=False):
         self.database.initialize()
         page = max(1, int(page))
         per_page = max(1, min(int(per_page), 100000))
@@ -767,6 +777,8 @@ class ExcelProductCatalog:
         sort_dir = sort_dir if sort_dir in {"asc", "desc"} else "asc"
         visible_cards_sql = VISIBLE_PRODUCT_SQL
         where = ["p.active = 1", visible_cards_sql]
+        if not include_inventory_locked:
+            where.append(unlocked_product_sql("p"))
         parameters = []
         if query:
             prefix_pattern = catalog_prefix_pattern(query)
@@ -1098,6 +1110,10 @@ class ExcelProductCatalog:
                 brand_id=brand_id,
                 create=True,
             )
+            if brand_row is not None:
+                assert_brand_without_active_inventory(
+                    connection, brand_row["id"]
+                )
             category_row = ensure_category(
                 connection,
                 brand_row["id"] if brand_row else None,
@@ -1223,6 +1239,7 @@ class ExcelProductCatalog:
             ).fetchone()
             if product is None:
                 raise ValueError("Товар не найден.")
+            assert_products_unlocked(connection, [product_id])
             values = dict(product)
             if name is not None:
                 values["excel_name_raw"] = text(name)
@@ -1254,6 +1271,10 @@ class ExcelProductCatalog:
                     brand_id=brand_id,
                     create=True,
                 )
+                if brand_row is not None:
+                    assert_product_can_join_brand(
+                        connection, product_id, brand_row["id"]
+                    )
                 values["brand_id"] = brand_row["id"] if brand_row else None
                 values["excel_brand"] = brand_row["name"] if brand_row else ""
                 if not category_changed:
@@ -1410,6 +1431,7 @@ class ExcelProductCatalog:
             ).fetchone()
             if product is None:
                 raise ValueError("Товар не найден.")
+            assert_products_unlocked(connection, [product_id])
             if float(product["stock"] or 0) != 0:
                 raise ProductDeleteBlockedError(
                     "Товар с ненулевым остатком нельзя удалить."
@@ -1437,6 +1459,7 @@ class ExcelProductCatalog:
             ).fetchone()
             if product is None:
                 raise ValueError("Товар не найден.")
+            assert_products_unlocked(connection, [product_id])
             self._validate_products_for_delete([product], force)
             result = self._delete_product_in_transaction(
                 connection, product, force=force, actor_id=actor_id,
@@ -1499,6 +1522,7 @@ class ExcelProductCatalog:
             ).fetchone()
             if brand is None:
                 raise ValueError("Бренд не найден.")
+            assert_brand_without_active_inventory(connection, brand["id"])
             category = None
             parameters = [int(brand_id)]
             product_where = "p.brand_id = ? AND p.active = 1"

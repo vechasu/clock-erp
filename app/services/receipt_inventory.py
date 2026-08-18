@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 
 from app.catalog_db import CatalogDatabase
 from app.services.audit_journal import AuditJournal
+from app.services.inventory_lock import assert_products_unlocked
 
 
 class ReceiptInventoryError(ValueError):
@@ -388,6 +389,14 @@ class ReceiptInventory:
                 product_id: new_totals[product_id] - old_totals[product_id]
                 for product_id in set(old_totals) | set(new_totals)
             }
+            assert_products_unlocked(
+                connection,
+                [
+                    product_id for product_id, delta in deltas.items()
+                    if abs(delta) >= 0.000001
+                ],
+                ReceiptInventoryError,
+            )
             for product_id, delta in deltas.items():
                 stock = float(products[product_id]["stock"] or 0)
                 if stock + delta < -0.000001:
@@ -556,6 +565,11 @@ class ReceiptInventory:
                 "WHERE i.receipt_id = ? AND i.active = 1 GROUP BY i.product_id",
                 (receipt_id,),
             ).fetchall()
+            assert_products_unlocked(
+                connection,
+                [row["product_id"] for row in rows],
+                ReceiptInventoryError,
+            )
             for row in rows:
                 if float(row["stock"] or 0) < float(row["quantity"] or 0):
                     raise ReceiptInventoryError(
@@ -604,6 +618,9 @@ class ReceiptInventory:
                             product_id
                         )
                     )
+            assert_products_unlocked(
+                connection, totals, ReceiptInventoryError
+            )
             for index, (product_id, quantity) in enumerate(sorted(totals.items())):
                 stock_before = float(products[product_id]["stock"] or 0)
                 stock_after = stock_before - quantity
@@ -820,6 +837,9 @@ class ReceiptInventory:
         products = cls._load_products(
             connection,
             [{"product_id": item["product_id"]} for item in items],
+        )
+        assert_products_unlocked(
+            connection, products, ReceiptInventoryError
         )
         for item in items:
             product_id = int(item["product_id"])

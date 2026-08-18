@@ -59,6 +59,31 @@ class BrandInventoryTest(unittest.TestCase):
                 "AND movement_type='inventory_adjustment'", (product_id,)
             ).fetchone()[0]
 
+    def external_stock_change(self, product_id, stock_after):
+        with self.database.transaction() as connection:
+            stock_before = float(connection.execute(
+                "SELECT stock FROM catalog_excel_products WHERE id = ?",
+                (product_id,),
+            ).fetchone()[0])
+            connection.execute(
+                "UPDATE catalog_excel_products SET stock = ? WHERE id = ?",
+                (stock_after, product_id),
+            )
+            connection.execute(
+                "INSERT INTO catalog_stock_movements "
+                "(id, product_id, movement_type, quantity_delta, stock_before, "
+                "stock_after, source, created_at) VALUES (?, ?, "
+                "'manual_adjustment', ?, ?, ?, 'test', ?)",
+                (
+                    "external-{}-{}".format(product_id, stock_after),
+                    product_id,
+                    stock_after - stock_before,
+                    stock_before,
+                    stock_after,
+                    "2026-08-18T10:00:00+00:00",
+                ),
+            )
+
     def start(self):
         session, created = self.service.start(self.brand_id(), "Максим")
         self.assertTrue(created)
@@ -164,10 +189,7 @@ class BrandInventoryTest(unittest.TestCase):
         product = self.product()
         session = self.start()
         item = self.first_item(session)
-        SalesInventory(self.database).create_sale(
-            {"id": "sale", "product_name": "Часы Alpha", "source": "Tictactoy"},
-            product["id"], 1, 100,
-        )
+        self.external_stock_change(product["id"], 3)
         result = self.service.confirm(
             session["id"], item["id"], 4, idempotency_key="stale"
         )
@@ -184,10 +206,7 @@ class BrandInventoryTest(unittest.TestCase):
         product = self.product()
         session = self.start()
         item = self.first_item(session)
-        SalesInventory(self.database).create_sale(
-            {"id": "sale-match", "product_name": "Часы Alpha", "source": "Tictactoy"},
-            product["id"], 1, 100,
-        )
+        self.external_stock_change(product["id"], 3)
         conflict = self.service.confirm(
             session["id"], item["id"], 3, idempotency_key="stale-match"
         )
@@ -252,10 +271,7 @@ class BrandInventoryTest(unittest.TestCase):
         product = self.product()
         session = self.start()
         item = self.first_item(session)
-        SalesInventory(self.database).create_sale(
-            {"id": "sale", "product_name": "Часы Alpha", "source": "Tictactoy"},
-            product["id"], 1, 100,
-        )
+        self.external_stock_change(product["id"], 3)
         result = self.service.complete(session["id"], confirmation=True)
         self.assertTrue(result["conflict"])
         self.assertEqual(self.stock(product["id"]), 3)
@@ -376,6 +392,8 @@ class BrandInventoryWebTest(unittest.TestCase):
         self.assertIn("button.removeAttribute('data-refresh')", markup)
         self.assertIn("item.needs_recheck", markup)
         self.assertIn("Всего позиций", markup)
+        self.assertIn("На инвентаризации", markup)
+        self.assertIn("progressPercent", markup)
 
         confirmed = self.client.post(
             "/api/v1/inventories/{}/items/{}/confirm".format(session["id"], item["id"]),

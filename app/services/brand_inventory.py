@@ -128,6 +128,7 @@ class BrandInventory:
                     "number": session_id,
                     "brand": brand["name"],
                     "brand_id": brand["id"],
+                    "positions": len(products),
                 },
                 actor_id=user_name, actor_name=user_name,
                 actor_type="user" if user_name else "system",
@@ -139,6 +140,23 @@ class BrandInventory:
         self.initialize()
         with self.database.connect() as connection:
             return self._detail(connection, session_id)
+
+    def active_for_brand(self, brand_id):
+        """Return canonical active progress for the warehouse brand banner."""
+        if brand_id in (None, ""):
+            return None
+        try:
+            brand_id = int(brand_id)
+        except (TypeError, ValueError):
+            return None
+        self.initialize()
+        with self.database.connect() as connection:
+            row = connection.execute(
+                "SELECT id FROM erp_inventory_sessions "
+                "WHERE brand_id = ? AND status = 'active' LIMIT 1",
+                (brand_id,),
+            ).fetchone()
+            return self._detail(connection, row["id"]) if row else None
 
     def list_items(self, session_id, query="", category_id=None, limit=250, offset=0):
         self.initialize()
@@ -583,6 +601,13 @@ class BrandInventory:
         ).fetchone()
         for key in ("total_positions", "checked_positions", "remaining", "added_positions"):
             data[key] = int(totals[key] or 0)
+        data["locked_positions"] = (
+            data["remaining"] if data["status"] == "active" else 0
+        )
+        data["progress_percent"] = (
+            int(round(100.0 * data["checked_positions"] / data["total_positions"]))
+            if data["total_positions"] else 100
+        )
         data["categories"] = [dict(item) for item in connection.execute(
             "SELECT DISTINCT c.id, c.name FROM erp_inventory_items i "
             "JOIN catalog_excel_products p ON p.id = i.product_id "

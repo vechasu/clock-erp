@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 from app.catalog_db import CatalogDatabase
 from app.services.audit_journal import AuditJournal
+from app.services.inventory_lock import assert_products_unlocked
 
 
 class SalesInventoryError(ValueError):
@@ -219,6 +220,10 @@ class SalesInventory:
             if product is None:
                 raise SalesInventoryError("Товар не найден.")
 
+            assert_products_unlocked(
+                connection, [product_id], SalesInventoryError
+            )
+
             available = float(product["stock"] or 0)
             cursor = connection.execute(
                 "UPDATE catalog_excel_products "
@@ -417,6 +422,10 @@ class SalesInventory:
                 raise SalesInventoryError(
                     "Один или несколько товаров отсутствуют или архивированы."
                 )
+
+            assert_products_unlocked(
+                connection, required_by_product, SalesInventoryError
+            )
 
             for product_id, required in required_by_product.items():
                 product = products[product_id]
@@ -617,6 +626,10 @@ class SalesInventory:
                 raise ReturnConflictError("Продажа удалена.")
             if sale["cancelled_at"]:
                 raise ReturnConflictError("Отменённую продажу нельзя вернуть.")
+
+            assert_products_unlocked(
+                connection, [item["product_id"]], ReturnConflictError
+            )
 
             movement_plan = self._movement_plan_from_connection(
                 connection, sale_id
@@ -971,6 +984,12 @@ class SalesInventory:
                 raise CancellationConflictError(
                     "Возвращённую продажу нельзя отменить."
                 )
+
+            assert_products_unlocked(
+                connection,
+                [item["product_id"] for item in items],
+                CancellationConflictError,
+            )
 
             plan = self._movement_plan_from_connection(connection, sale_id)
             if not plan["safe"]:
