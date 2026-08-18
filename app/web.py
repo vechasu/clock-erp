@@ -3523,6 +3523,8 @@ def resolve_repair_order_binding(order_id, order_item_id):
     order_item_id = _repair_text(order_item_id)
     if not order_id:
         raise ValueError("Выберите заказ")
+    if not order_item_id:
+        raise ValueError("Выберите конкретную позицию заказа")
     try:
         order = get_order(order_id)
     except Exception as error:
@@ -16923,9 +16925,16 @@ def create_api_repair(payload, idempotency_key=""):
     case_id = str(uuid.uuid4())
     order_snapshot = None
     order_item = None
-    if _repair_text(payload.get("order_id")):
+    order_source = _repair_text(payload.get("order_source"))
+    order_id = _repair_text(payload.get("order_id"))
+    if order_source == "our" and not order_id:
+        order_number = _repair_text(payload.get("order_number"))
+        if order_number:
+            raise ValueError(f"Заказ {order_number} не найден")
+        raise ValueError("Выберите заказ")
+    if order_id:
         order_snapshot, order_item = resolve_repair_order_binding(
-            payload.get("order_id"), payload.get("order_item_id")
+            order_id, payload.get("order_item_id")
         )
     normalized = build_repair_form_payload(
         payload,
@@ -17051,12 +17060,27 @@ def api_repair_orders():
     query = _repair_text(request.args.get("q")).casefold()
     if len(query) < 2:
         return api_success([], total=0)
+    exact_order = None
+    if query.isdigit():
+        try:
+            candidate = get_order(query)
+            candidate_snapshot = serialize_repair_order(candidate)
+            if query in {
+                candidate_snapshot["id"].casefold(),
+                candidate_snapshot["number"].casefold(),
+            }:
+                exact_order = candidate_snapshot
+        except Exception as error:
+            app.logger.info(
+                "Exact repair order lookup failed for %s: %s", query, error
+            )
     try:
         orders = get_orders()
     except Exception:
         app.logger.exception("Repair order search failed")
         return api_error("REPAIR_ORDER_LOOKUP_FAILED", "Не удалось загрузить заказы.", 502)
-    result = []
+    result = [exact_order] if exact_order else []
+    seen_ids = {exact_order["id"]} if exact_order else set()
     for order in orders:
         snapshot = serialize_repair_order(order)
         haystack = " ".join((
@@ -17065,7 +17089,10 @@ def api_repair_orders():
         )).casefold()
         if query not in haystack:
             continue
+        if snapshot["id"] in seen_ids:
+            continue
         result.append(snapshot)
+        seen_ids.add(snapshot["id"])
         if len(result) >= 20:
             break
     return api_success(result, total=len(result))
@@ -17235,6 +17262,14 @@ def api_repair_resource(case_id):
                 return False
             before = copy.deepcopy(target)
             merged = {**target, **payload}
+            if (
+                _repair_text(merged.get("order_source")) == "our"
+                and not _repair_text(merged.get("order_id"))
+            ):
+                order_number = _repair_text(merged.get("order_number"))
+                if order_number:
+                    raise ValueError(f"Заказ {order_number} не найден")
+                raise ValueError("Выберите заказ")
             order_snapshot = None
             order_item = None
             if (

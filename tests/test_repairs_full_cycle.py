@@ -150,6 +150,70 @@ class RepairsFullCycleTest(unittest.TestCase):
         stored = self.client.get(f"/api/v1/repairs/{created['id']}").get_json()["data"]
         self.assertEqual(stored["client_name"], "Иван Петров")
 
+    def test_exact_order_search_falls_back_to_detail_beyond_recent_list(self):
+        requested = order_fixture()
+        requested["id"] = "19686"
+        requested["number"] = "19686"
+        with mock.patch.object(web, "get_orders", return_value=[self.order]), mock.patch.object(
+            web, "get_order", return_value=requested
+        ):
+            response = self.client.get("/api/v1/repairs/orders?q=19686")
+
+        self.assertEqual(response.status_code, 200)
+        orders = response.get_json()["data"]
+        self.assertEqual([order["number"] for order in orders], ["19686"])
+        self.assertEqual(len(orders[0]["products"]), 2)
+
+    def test_our_order_requires_selected_order(self):
+        response = self.client.post(
+            "/api/v1/repairs",
+            json=base_payload(
+                order_source="our", order_number="19686", order_id=""
+            ),
+        )
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.get_json()["message"], "Заказ 19686 не найден")
+        self.assertEqual(load_repair_file(self.store), [])
+
+    def test_our_order_requires_selected_position(self):
+        response = self.client.post(
+            "/api/v1/repairs",
+            json=base_payload(
+                order_source="our", order_id="20735", order_item_id=""
+            ),
+        )
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(
+            response.get_json()["message"],
+            "Выберите конкретную позицию заказа",
+        )
+        self.assertEqual(load_repair_file(self.store), [])
+
+    def test_missing_order_returns_validation_error_instead_of_500(self):
+        with mock.patch.object(web, "get_order", return_value=None), mock.patch.object(
+            web, "get_orders", return_value=[]
+        ):
+            response = self.client.post(
+                "/api/v1/repairs",
+                json=base_payload(
+                    order_source="our",
+                    order_id="missing",
+                    order_item_id="missing-position",
+                ),
+            )
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.get_json()["message"], "Заказ не найден")
+        self.assertNotEqual(response.status_code, 500)
+
+    def test_update_cannot_keep_our_source_without_order(self):
+        repair = self.create()
+        response = self.client.patch(
+            f"/api/v1/repairs/{repair['id']}",
+            json={"order_source": "our", "order_number": "19686"},
+        )
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.get_json()["message"], "Заказ 19686 не найден")
+
     def test_position_from_another_order_is_rejected(self):
         response = self.client.post(
             "/api/v1/repairs",
@@ -416,6 +480,14 @@ class RepairsFullCycleTest(unittest.TestCase):
         self.assertNotIn("Номер ремонта", html)
         self.assertNotIn("Серийный номер", html)
         self.assertNotIn("KPI", html)
+
+    def test_editor_validates_order_and_position_before_submit(self):
+        html = self.client.get("/app/repairs").get_data(as_text=True)
+        self.assertIn("data-order-error", html)
+        self.assertIn("data-order-item-error", html)
+        self.assertIn("Заказ ${body.querySelector", html)
+        self.assertIn("Выберите конкретную позицию заказа", html)
+        self.assertIn("if(order.products.length===1)", html)
 
     def test_v3_migration_preserves_unknown_legacy_data_and_creates_backup(self):
         legacy = [{
