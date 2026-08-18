@@ -3,8 +3,7 @@
 import json
 import math
 import uuid
-from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
+from datetime import datetime, timedelta, timezone
 
 from app.catalog_db import CatalogDatabase
 from app.services.audit_journal import AuditJournal
@@ -74,7 +73,7 @@ def now_iso():
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
-ERP_TIMEZONE = ZoneInfo("Europe/Moscow")
+ERP_TIMEZONE = timezone(timedelta(hours=3), "Europe/Moscow")
 
 
 def sale_now_iso():
