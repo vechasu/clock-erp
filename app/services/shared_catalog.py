@@ -338,7 +338,9 @@ class SharedCatalog:
             if query:
                 register_catalog_search(connection)
             brand_rows = connection.execute(
-                "SELECT b.id, b.name, b.active, COUNT(p.id) AS product_count, "
+                "SELECT b.id, b.name, b.active, b.bitrix_brand_id, b.image_path, "
+                "b.image_source, b.image_sha256, b.image_external_id, "
+                "b.image_updated_at, COUNT(p.id) AS product_count, "
                 "COALESCE(SUM(CASE WHEN p.stock != 0 THEN 1 ELSE 0 END), 0) "
                 "AS nonzero_count, COALESCE(SUM(p.stock), 0) AS stock_total "
                 "FROM erp_brands b LEFT JOIN catalog_excel_products p "
@@ -464,6 +466,11 @@ class SharedCatalog:
                 register_catalog_search(connection)
             brand_rows = connection.execute(
                 "SELECT b.id AS id, b.name AS name, b.active AS active, "
+                "b.bitrix_brand_id AS bitrix_brand_id, "
+                "b.image_path AS image_path, b.image_source AS image_source, "
+                "b.image_sha256 AS image_sha256, "
+                "b.image_external_id AS image_external_id, "
+                "b.image_updated_at AS image_updated_at, "
                 "COUNT(p.id) AS product_count, "
                 "COALESCE(SUM(CASE WHEN p.stock != 0 THEN 1 ELSE 0 END), 0) "
                 "AS nonzero_count, COALESCE(SUM(p.stock), 0) AS stock_total "
@@ -2041,6 +2048,30 @@ class SharedCatalog:
             "id": int(row["id"]),
             "name": row["name"],
             "active": bool(row["active"]),
+            "bitrix_brand_id": (
+                row["bitrix_brand_id"]
+                if "bitrix_brand_id" in row.keys()
+                else None
+            ),
+            "image_path": (
+                row["image_path"] if "image_path" in row.keys() else None
+            ),
+            "image_source": (
+                row["image_source"] if "image_source" in row.keys() else None
+            ),
+            "image_sha256": (
+                row["image_sha256"] if "image_sha256" in row.keys() else None
+            ),
+            "image_external_id": (
+                row["image_external_id"]
+                if "image_external_id" in row.keys()
+                else None
+            ),
+            "image_updated_at": (
+                row["image_updated_at"]
+                if "image_updated_at" in row.keys()
+                else None
+            ),
             "product_count": int(
                 row["product_count"]
                 if "product_count" in row.keys()

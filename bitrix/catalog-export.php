@@ -525,6 +525,7 @@ function fileMap(array $fileIds): array
             'width' => (int) $file['WIDTH'],
             'height' => (int) $file['HEIGHT'],
             'file_size' => (int) $file['FILE_SIZE'],
+            'updated_at' => isoDate($file['TIMESTAMP_X']),
         );
     }
     return $result;
@@ -665,17 +666,314 @@ function metaResponse(array $properties, array $categories): array
     );
 }
 
+function normalizedSourceName(string $value): string
+{
+    $value = trim((string) preg_replace('/\s+/u', ' ', $value));
+    return function_exists('mb_strtolower')
+        ? mb_strtolower($value, 'UTF-8')
+        : strtolower($value);
+}
+
+function listBrandResponse(array $brandProperty): array
+{
+    $brands = array();
+    $names = array();
+    $enumCursor = CIBlockPropertyEnum::GetList(
+        array('SORT' => 'ASC', 'ID' => 'ASC'),
+        array('PROPERTY_ID' => (int) $brandProperty['ID'])
+    );
+    while ($enum = $enumCursor->Fetch()) {
+        $name = trim((string) $enum['VALUE']);
+        if ($name === '') {
+            continue;
+        }
+        $brands[(int) $enum['ID']] = array(
+            'id' => (string) $enum['ID'],
+            'iblock_id' => '',
+            'xml_id' => (string) ($enum['XML_ID'] ?? ''),
+            'code' => '',
+            'name' => $name,
+            'active' => true,
+            'updated_at' => null,
+            'images' => array(),
+        );
+        $names[] = $name;
+    }
+
+    $candidates = array();
+    $fileIds = array();
+    if ($names !== array()) {
+        $elementCursor = CIBlockElement::GetList(
+            array('ID' => 'ASC'),
+            array(
+                'NAME' => array_values(array_unique($names)),
+                '!IBLOCK_ID' => CATALOG_EXPORT_IBLOCK_ID,
+                'CHECK_PERMISSIONS' => 'N',
+            ),
+            false,
+            false,
+            array(
+                'ID', 'IBLOCK_ID', 'NAME', 'ACTIVE', 'TIMESTAMP_X',
+                'PREVIEW_PICTURE', 'DETAIL_PICTURE',
+            )
+        );
+        while ($element = $elementCursor->Fetch()) {
+            $ids = array_values(array_filter(array(
+                (int) ($element['DETAIL_PICTURE'] ?? 0),
+                (int) ($element['PREVIEW_PICTURE'] ?? 0),
+            )));
+            if ($ids === array()) {
+                continue;
+            }
+            $candidate = array(
+                'kind' => 'iblock_element',
+                'id' => (string) $element['ID'],
+                'iblock_id' => (string) $element['IBLOCK_ID'],
+                'updated_at' => isoDate($element['TIMESTAMP_X'] ?? null),
+                'file_ids' => $ids,
+            );
+            $candidates[normalizedSourceName((string) $element['NAME'])][] = $candidate;
+            $fileIds = array_merge($fileIds, $ids);
+        }
+
+        $sectionCursor = CIBlockSection::GetList(
+            array('ID' => 'ASC'),
+            array(
+                'NAME' => array_values(array_unique($names)),
+                '!IBLOCK_ID' => CATALOG_EXPORT_IBLOCK_ID,
+                'CHECK_PERMISSIONS' => 'N',
+            ),
+            false,
+            array(
+                'ID', 'IBLOCK_ID', 'NAME', 'ACTIVE', 'TIMESTAMP_X',
+                'PICTURE', 'DETAIL_PICTURE',
+            )
+        );
+        while ($section = $sectionCursor->Fetch()) {
+            $ids = array_values(array_filter(array(
+                (int) ($section['DETAIL_PICTURE'] ?? 0),
+                (int) ($section['PICTURE'] ?? 0),
+            )));
+            if ($ids === array()) {
+                continue;
+            }
+            $candidate = array(
+                'kind' => 'iblock_section',
+                'id' => (string) $section['ID'],
+                'iblock_id' => (string) $section['IBLOCK_ID'],
+                'updated_at' => isoDate($section['TIMESTAMP_X'] ?? null),
+                'file_ids' => $ids,
+            );
+            $candidates[normalizedSourceName((string) $section['NAME'])][] = $candidate;
+            $fileIds = array_merge($fileIds, $ids);
+        }
+    }
+
+    $files = fileMap($fileIds);
+    $ambiguities = array();
+    foreach ($brands as $enumId => &$brand) {
+        $matches = $candidates[normalizedSourceName((string) $brand['name'])] ?? array();
+        if (count($matches) > 1) {
+            $ambiguities[] = array(
+                'brand_id' => (string) $enumId,
+                'name' => (string) $brand['name'],
+                'candidates' => array_map(
+                    static function (array $candidate): array {
+                        unset($candidate['file_ids']);
+                        return $candidate;
+                    },
+                    $matches
+                ),
+            );
+            continue;
+        }
+        if ($matches === array()) {
+            continue;
+        }
+        $match = $matches[0];
+        $brand['image_source'] = array(
+            'kind' => $match['kind'],
+            'id' => $match['id'],
+            'iblock_id' => $match['iblock_id'],
+        );
+        $brand['updated_at'] = $match['updated_at'];
+        foreach ($match['file_ids'] as $sort => $fileId) {
+            if (isset($files[$fileId])) {
+                $brand['images'][] = imageRecord(
+                    $files[$fileId],
+                    $sort === 0 ? 'detail' : 'preview',
+                    $sort,
+                    $sort === 0
+                );
+            }
+        }
+    }
+    unset($brand);
+
+    return array(
+        'api_version' => CATALOG_EXPORT_API_VERSION,
+        'generated_at' => date(DATE_ATOM),
+        'storage' => array(
+            'kind' => 'list_enumeration_with_exact_iblock_image_match',
+            'product_property_id' => (string) $brandProperty['ID'],
+            'product_property_code' => (string) $brandProperty['CODE'],
+        ),
+        'image_fields' => array(
+            'ELEMENT_DETAIL_PICTURE', 'ELEMENT_PREVIEW_PICTURE',
+            'SECTION_DETAIL_PICTURE', 'SECTION_PICTURE',
+        ),
+        'source_ambiguities' => $ambiguities,
+        'brands' => array_values($brands),
+        'total' => count($brands),
+    );
+}
+
+function brandResponse(array $productProperties, bool $includeInactive): array
+{
+    $brandProperty = null;
+    foreach ($productProperties as $property) {
+        if ((string) ($property['CODE'] ?? '') === 'BRAND_MODEL') {
+            $brandProperty = $property;
+            break;
+        }
+    }
+    if (!is_array($brandProperty)) {
+        exportError('brand_property_unavailable', 503);
+    }
+    if ((string) ($brandProperty['PROPERTY_TYPE'] ?? '') === 'L') {
+        return listBrandResponse($brandProperty);
+    }
+    $brandIblockId = (int) ($brandProperty['LINK_IBLOCK_ID'] ?? 0);
+    if ((string) ($brandProperty['PROPERTY_TYPE'] ?? '') !== 'E' || $brandIblockId < 1) {
+        exportError('brand_storage_unsupported', 503);
+    }
+
+    $fileProperties = array();
+    $propertyCursor = CIBlockProperty::GetList(
+        array('SORT' => 'ASC', 'ID' => 'ASC'),
+        array('IBLOCK_ID' => $brandIblockId, 'PROPERTY_TYPE' => 'F', 'CHECK_PERMISSIONS' => 'N')
+    );
+    while ($property = $propertyCursor->Fetch()) {
+        $fileProperties[(int) $property['ID']] = $property;
+    }
+
+    $filter = array('IBLOCK_ID' => $brandIblockId, 'CHECK_PERMISSIONS' => 'N');
+    if (!$includeInactive) {
+        $filter['ACTIVE'] = 'Y';
+    }
+    $rawBrands = array();
+    $cursor = CIBlockElement::GetList(
+        array('NAME' => 'ASC', 'ID' => 'ASC'),
+        $filter,
+        false,
+        false,
+        array(
+            'ID', 'IBLOCK_ID', 'XML_ID', 'CODE', 'NAME', 'ACTIVE',
+            'TIMESTAMP_X', 'PREVIEW_PICTURE', 'DETAIL_PICTURE',
+        )
+    );
+    while ($row = $cursor->Fetch()) {
+        $rawBrands[(int) $row['ID']] = $row;
+    }
+    $brandIds = array_keys($rawBrands);
+    $propertyValues = array_fill_keys($brandIds, array());
+    if ($brandIds !== array() && $fileProperties !== array()) {
+        CIBlockElement::GetPropertyValuesArray(
+            $propertyValues,
+            $brandIblockId,
+            array('ID' => $brandIds, 'CHECK_PERMISSIONS' => 'N')
+        );
+    }
+
+    $fileIds = array();
+    foreach ($rawBrands as $brandId => $brand) {
+        foreach (array('DETAIL_PICTURE', 'PREVIEW_PICTURE') as $field) {
+            if ((int) ($brand[$field] ?? 0) > 0) {
+                $fileIds[] = (int) $brand[$field];
+            }
+        }
+        foreach ($fileProperties as $propertyId => $definition) {
+            $valueRow = $propertyValues[$brandId][(string) $definition['CODE']]
+                ?? $propertyValues[$brandId][$propertyId]
+                ?? array();
+            foreach (scalarValues(is_array($valueRow) ? ($valueRow['VALUE'] ?? null) : null) as $value) {
+                if ((int) $value > 0) {
+                    $fileIds[] = (int) $value;
+                }
+            }
+        }
+    }
+    $files = fileMap($fileIds);
+    $brands = array();
+    foreach ($rawBrands as $brandId => $brand) {
+        $images = array();
+        $sort = 0;
+        foreach (array('DETAIL_PICTURE' => 'detail', 'PREVIEW_PICTURE' => 'preview') as $field => $kind) {
+            $fileId = (int) ($brand[$field] ?? 0);
+            if ($fileId > 0 && isset($files[$fileId])) {
+                $images[] = imageRecord($files[$fileId], $kind, $sort++, $sort === 1);
+            }
+        }
+        foreach ($fileProperties as $propertyId => $definition) {
+            $valueRow = $propertyValues[$brandId][(string) $definition['CODE']]
+                ?? $propertyValues[$brandId][$propertyId]
+                ?? array();
+            foreach (scalarValues(is_array($valueRow) ? ($valueRow['VALUE'] ?? null) : null) as $value) {
+                $fileId = (int) $value;
+                if ($fileId > 0 && isset($files[$fileId])) {
+                    $images[] = imageRecord(
+                        $files[$fileId],
+                        'property:' . strtolower((string) $definition['CODE']),
+                        $sort++,
+                        $sort === 1
+                    );
+                }
+            }
+        }
+        $brands[] = array(
+            'id' => (string) $brandId,
+            'iblock_id' => (string) $brandIblockId,
+            'xml_id' => (string) ($brand['XML_ID'] ?? ''),
+            'code' => (string) ($brand['CODE'] ?? ''),
+            'name' => trim((string) $brand['NAME']),
+            'active' => ((string) $brand['ACTIVE'] === 'Y'),
+            'updated_at' => isoDate($brand['TIMESTAMP_X'] ?? null),
+            'images' => deduplicateImages($images),
+        );
+    }
+    $imageFields = array('DETAIL_PICTURE', 'PREVIEW_PICTURE');
+    foreach ($fileProperties as $property) {
+        $imageFields[] = 'PROPERTY_' . (string) $property['CODE'];
+    }
+    return array(
+        'api_version' => CATALOG_EXPORT_API_VERSION,
+        'generated_at' => date(DATE_ATOM),
+        'storage' => array(
+            'kind' => 'element_link',
+            'product_property_id' => (string) $brandProperty['ID'],
+            'product_property_code' => (string) $brandProperty['CODE'],
+            'brand_iblock_id' => (string) $brandIblockId,
+        ),
+        'image_fields' => $imageFields,
+        'brands' => $brands,
+        'total' => count($brands),
+    );
+}
+
 try {
     $properties = propertyDefinitions();
     $categories = categoryMap();
     if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         handleImageMutation($properties);
     }
-    if (isset($_GET['mode']) && (string) $_GET['mode'] !== 'meta') {
+    if (isset($_GET['mode']) && !in_array((string) $_GET['mode'], array('meta', 'brands'), true)) {
         exportError('invalid_mode', 400);
     }
     if (isset($_GET['mode']) && (string) $_GET['mode'] === 'meta') {
         exportResponse(metaResponse($properties, $categories));
+    }
+    if (isset($_GET['mode']) && (string) $_GET['mode'] === 'brands') {
+        exportResponse(brandResponse($properties, booleanParameter('include_inactive')));
     }
 
     $page = positiveIntegerParameter('page', 1);
