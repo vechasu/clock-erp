@@ -31,10 +31,12 @@
             window.innerHeight - edge,
             dialogRect?.bottom ?? window.innerHeight - edge
         );
-        const width = Math.min(
-            triggerRect.width,
-            Math.max(0, rightBoundary - leftBoundary)
-        );
+        const availableWidth = Math.max(0, rightBoundary - leftBoundary);
+        const kind = combobox.dataset.sharedCatalogKind || "";
+        const preferredWidth = kind === "product"
+            ? Math.max(triggerRect.width, 520)
+            : Math.max(triggerRect.width, 320);
+        const width = Math.min(preferredWidth, availableWidth);
         const left = Math.max(
             leftBoundary,
             Math.min(triggerRect.left, rightBoundary - width)
@@ -967,6 +969,24 @@
         return sharedCatalogStockValue(item) + " ед.";
     }
 
+    function sharedCatalogOrderCountDisplay(item) {
+        if (item.orders_count === undefined || item.orders_count === null) {
+            return "";
+        }
+
+        const count = Math.max(0, Number(item.orders_count) || 0);
+        const lastTwo = count % 100;
+        const last = count % 10;
+        const noun = lastTwo >= 11 && lastTwo <= 14
+            ? "заказов"
+            : last === 1
+                ? "заказ"
+                : last >= 2 && last <= 4
+                    ? "заказа"
+                    : "заказов";
+        return count + " " + noun;
+    }
+
     window.updateCatalogCreateAction = function(
         combobox,
         rawQuery
@@ -1046,10 +1066,13 @@
                 ? "Артикул: " + (item.article || "—")
                 : "",
             count: product
-                ? "Остаток: " + sharedCatalogStockValue(item)
-                    + (Number(item.stock || 0) <= 0
-                        ? " · Нет в наличии"
-                        : "")
+                ? [
+                    "Остаток: " + sharedCatalogStockValue(item)
+                        + (Number(item.stock || 0) <= 0
+                            ? " · Нет в наличии"
+                            : ""),
+                    sharedCatalogOrderCountDisplay(item),
+                ].filter(Boolean).join(" · ")
                 : kind === "category" && hideCategoryCount
                     ? ""
                     : sharedCatalogStockDisplay(item),
@@ -1238,6 +1261,9 @@
             parameters.set("category_id", categoryId);
             if (scope?.dataset.catalogInStock === "true") {
                 parameters.set("in_stock", "1");
+            }
+            if (scope?.dataset.catalogOrderCounts === "true") {
+                parameters.set("include_order_counts", "1");
             }
         }
 

@@ -86,6 +86,98 @@ class OrderTictactoySaleTest(unittest.TestCase):
         )
         self.assertIn(str(created["id"]), [item["id"] for item in self.shared.list_products(query="BRADLEY-NEW")])
 
+    def test_order_counts_use_distinct_existing_non_cancelled_orders(self):
+        orders = [
+            self.order,
+            {
+                **self.order,
+                "id": "18594",
+                "number": "18594",
+                "products": [
+                    {"product_id": "bx-watch", "name": "Часы"},
+                    {"product_id": "bx-watch", "name": "Часы повторно"},
+                ],
+            },
+            {
+                **self.order,
+                "id": "18595",
+                "number": "18595",
+                "status": "C",
+                "products": [
+                    {"product_id": "bx-watch", "name": "Отменённые часы"},
+                ],
+            },
+        ]
+
+        counts = web.build_catalog_product_order_counts(
+            orders, mappings=self.mappings, catalog=self.shared
+        )
+
+        self.assertEqual(counts[str(self.watch["id"])], 2)
+        self.assertEqual(counts[str(self.strap["id"])], 1)
+        product_without_orders = ExcelProductCatalog(self.database).create_product(
+            name="Без заказов", article="NO-ORDERS", brand="Bradley",
+            category="Часы", stock=1,
+        )
+        self.assertEqual(counts.get(str(product_without_orders["id"]), 0), 0)
+
+    def test_order_counts_follow_mapping_created_after_order_and_remapping(self):
+        external_id = "bx-watch"
+        mappings = {}
+        before = web.build_catalog_product_order_counts(
+            [self.order], mappings=mappings, catalog=self.shared
+        )
+        self.assertEqual(before.get(str(self.watch["id"]), 0), 0)
+
+        mappings[external_id] = {"product_id": str(self.watch["id"])}
+        first = web.build_catalog_product_order_counts(
+            [self.order], mappings=mappings, catalog=self.shared
+        )
+        mappings[external_id] = {"product_id": str(self.watch["id"])}
+        repeated = web.build_catalog_product_order_counts(
+            [self.order], mappings=mappings, catalog=self.shared
+        )
+        self.assertEqual(first[str(self.watch["id"])], 1)
+        self.assertEqual(repeated[str(self.watch["id"])], 1)
+
+        mappings[external_id] = {"product_id": str(self.strap["id"])}
+        moved = web.build_catalog_product_order_counts(
+            [self.order], mappings=mappings, catalog=self.shared
+        )
+        self.assertEqual(moved.get(str(self.watch["id"]), 0), 0)
+        self.assertEqual(moved[str(self.strap["id"])], 1)
+
+    def test_mapping_context_exposes_current_order_count(self):
+        counts = web.build_catalog_product_order_counts(
+            [self.order], mappings=self.mappings, catalog=self.shared
+        )
+        context = web.build_order_product_mapping_context(
+            self.order["products"], mappings=self.mappings,
+            catalog=self.shared, order_counts=counts,
+        )
+        self.assertEqual(context["bx-watch"]["product"]["orders_count"], 1)
+        self.assertEqual(context["bx-strap"]["product"]["orders_count"], 1)
+
+    def test_catalog_options_can_include_order_counts_in_one_response(self):
+        product = self.shared.get_product(self.watch["id"])
+        with (
+            mock.patch.object(
+                web._catalog_application,
+                "catalog_options",
+                return_value=([product], 1),
+            ),
+            mock.patch.object(web, "get_orders", return_value=[self.order]),
+            mock.patch.object(web, "load_product_mappings", return_value=self.mappings),
+        ):
+            response = self.client.get(
+                "/api/v1/catalog/options?type=product"
+                "&brand_id={}&category_id={}&include_order_counts=1".format(
+                    product["brand_id"], product["category_id"]
+                )
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["data"][0]["orders_count"], 1)
+
     def test_dialog_and_shared_cascade_are_rendered(self):
         html = self.render_order("?open_sale=1").get_data(as_text=True)
         self.assertIn('id="orderSaleModal"', html)

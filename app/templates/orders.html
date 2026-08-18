@@ -1476,6 +1476,7 @@
                                                             <span>{{ mapped_product.brand or "Без бренда" }} · {{ mapped_product.category or "Без категории" }}</span>
                                                             <span>Артикул: {{ mapped_product.article or "—" }} · Штрихкод: {{ mapped_product.barcode or "—" }}</span>
                                                             <span>Остаток: {{ mapped_product.stock_display }}{% if mapped_product.stock|float <= 0 %} · Нет в наличии{% endif %}</span>
+                                                            <span>Заказов: {{ mapped_product.orders_count or 0 }}</span>
                                                             {% if not mapped_product.moysklad_product_id %}<span>Нет дополнительной связи с МойСклад</span>{% endif %}
                                                         </div>
                                                         <button class="button button-secondary" type="button" data-change-order-mapping>Изменить сопоставление</button>
@@ -1489,6 +1490,7 @@
                                                         method="post"
                                                         action="/order/{{ detail_id }}/product-map"
                                                         data-shared-catalog-scope
+                                                        data-catalog-order-counts="true"
                                                         data-order-map-form
                                                         {% if mapped_product and mapping.state == "mapped" %}hidden{% endif %}
                                                     >

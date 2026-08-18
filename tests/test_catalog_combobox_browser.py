@@ -32,17 +32,22 @@ class CatalogComboboxStructureTest(unittest.TestCase):
             script,
         )
         self.assertIn(
-            '? "Остаток: " + sharedCatalogStockValue(item)',
+            '"Остаток: " + sharedCatalogStockValue(item)',
             script,
         )
         self.assertIn("catalog-combobox-option-details", script)
         self.assertIn("catalog-combobox-option-image", script)
         self.assertIn("positionComboboxDropdown", script)
+        self.assertIn("Math.max(triggerRect.width, 520)", script)
+        self.assertIn("Math.max(triggerRect.width, 320)", script)
+        self.assertIn("include_order_counts", script)
         stylesheet = (
             PROJECT_ROOT / "app/static/css/catalog-combobox.css"
         ).read_text(encoding="utf-8")
         self.assertIn("max-height: 340px", stylesheet)
         self.assertIn("width: 44px", stylesheet)
+        self.assertIn("word-break: normal", stylesheet)
+        self.assertNotIn("overflow-wrap: anywhere", stylesheet)
         self.assertNotIn(
             ".brand-combobox-option span:last-child",
             stylesheet,
