@@ -1,0 +1,1827 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>ТТТ ERP — Заказы</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+            background: #f6f7f9;
+            color: #111827;
+        }
+
+        .main {
+            min-width: 0;
+            padding: 16px 28px 24px;
+        }
+
+        .topbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 10px;
+        }
+
+        .title h1 {
+            margin: 0;
+            font-size: 27px;
+            line-height: 1.1;
+            letter-spacing: -0.04em;
+        }
+
+        .title p {
+            margin: 8px 0 0;
+            color: #6b7280;
+            font-size: 15px;
+        }
+
+        .sync-card {
+            min-width: 185px;
+            padding: 9px 13px;
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 13px;
+            box-shadow: 0 5px 16px rgba(15, 23, 42, 0.035);
+        }
+
+        .sync-label {
+            margin-bottom: 2px;
+            color: #6b7280;
+            font-size: 11px;
+        }
+
+        .sync-status {
+            color: #16a34a;
+            font-size: 13px;
+            font-weight: 800;
+        }
+
+        .notice {
+            border-radius: 16px;
+            padding: 14px 16px;
+            margin-bottom: 18px;
+            font-size: 15px;
+            font-weight: 800;
+            border: 1px solid transparent;
+        }
+
+        .notice-success {
+            background: #dcfce7;
+            color: #166534;
+            border-color: #bbf7d0;
+        }
+
+        .notice-error {
+            background: #fee2e2;
+            color: #991b1b;
+            border-color: #fecaca;
+        }
+
+        .workspace {
+            display: grid;
+            grid-template-columns: minmax(420px, 560px) minmax(0, 1fr);
+            gap: 14px;
+            align-items: start;
+        }
+
+        .panel {
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 22px;
+            box-shadow: 0 12px 30px rgba(15, 23, 42, 0.05);
+            overflow: hidden;
+        }
+
+        .panel-header {
+            padding: 12px 14px;
+            border-bottom: 1px solid #eef2f7;
+        }
+
+        .search {
+            width: 100%;
+            height: 40px;
+            padding: 0 13px;
+            border: 1px solid #e5e7eb;
+            border-radius: 11px;
+            background: #f9fafb;
+            font-size: 14px;
+            outline: none;
+        }
+
+        .search:focus {
+            background: white;
+            border-color: #2563eb;
+            box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.08);
+        }
+
+        .filters {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 8px;
+        }
+
+        .filter {
+            padding: 6px 9px;
+            border: 1px solid #e5e7eb;
+            border-radius: 999px;
+            background: white;
+            color: #374151;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .filter.active {
+            background: #111827;
+            color: white;
+            border-color: #111827;
+        }
+
+        .orders-list {
+            max-height: calc(100vh - 168px);
+            overflow: auto;
+        }
+
+        .order-row {
+            display: block;
+            padding: 12px 16px;
+            border-bottom: 1px solid #f1f5f9;
+            color: inherit;
+            text-decoration: none;
+            transition: background 0.15s ease;
+        }
+
+        .order-row:hover {
+            background: #f8fafc;
+        }
+
+        .order-row.active {
+            background: #eff6ff;
+            border-left: 4px solid #2563eb;
+            padding-left: 14px;
+        }
+
+        .order-top {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .order-number {
+            font-size: 15px;
+            font-weight: 800;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 5px 9px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 700;
+            white-space: nowrap;
+            min-width: 72px;
+        }
+
+        .badge-new {
+            background: #dbeafe;
+            color: #1d4ed8;
+        }
+
+        .badge-work {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .badge-done {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .badge-cancel {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .badge-default {
+            background: #f3f4f6;
+            color: #374151;
+        }
+
+        .order-meta {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            color: #6b7280;
+            font-size: 13px;
+        }
+
+        .detail {
+            min-height: 520px;
+        }
+
+        .detail-header {
+            padding: 22px;
+            border-bottom: 1px solid #eef2f7;
+            display: flex;
+            justify-content: space-between;
+            gap: 20px;
+            align-items: flex-start;
+        }
+
+        .detail-title {
+            margin: 0;
+            font-size: 24px;
+            letter-spacing: -0.03em;
+        }
+
+        .detail-subtitle {
+            margin-top: 7px;
+            color: #6b7280;
+            font-size: 14px;
+        }
+
+        .detail-body {
+            padding: 22px;
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px;
+            margin-bottom: 22px;
+        }
+
+        .info-card {
+            border: 1px solid #eef2f7;
+            border-radius: 16px;
+            padding: 14px;
+            background: #fafafa;
+        }
+
+        .info-card.action-card {
+            background: #f8fafc;
+            border-color: #dbeafe;
+        }
+
+        .info-label {
+            color: #6b7280;
+            font-size: 12px;
+            margin-bottom: 6px;
+        }
+
+        .info-value {
+            font-size: 15px;
+            font-weight: 700;
+            word-break: break-word;
+        }
+
+        .muted-value {
+            color: #9ca3af;
+        }
+
+        .actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 22px;
+        }
+
+        .status-form {
+            margin: 0;
+        }
+
+        .button {
+            border: 0;
+            border-radius: 12px;
+            padding: 11px 14px;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 44px;
+        }
+
+        .button-primary {
+            background: #2563eb;
+            color: white;
+        }
+
+        .button-secondary {
+            background: #f3f4f6;
+            color: #111827;
+        }
+
+        .button-danger {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .button-disabled {
+            background: #f3f4f6;
+            color: #9ca3af;
+            cursor: not-allowed;
+            pointer-events: none;
+        }
+
+        .button-current {
+            outline: 2px solid #2563eb;
+            outline-offset: 2px;
+        }
+
+        .section-title {
+            font-size: 14px;
+            font-weight: 800;
+            margin: 0 0 12px;
+            color: #111827;
+        }
+
+        .order-sections {
+            display: grid;
+            gap: 18px;
+            margin-top: 22px;
+        }
+
+        .data-section {
+            border: 1px solid #eef2f7;
+            border-radius: 18px;
+            background: #ffffff;
+            overflow: hidden;
+        }
+
+        .data-section-header {
+            padding: 14px 16px;
+            border-bottom: 1px solid #eef2f7;
+            font-size: 14px;
+            font-weight: 800;
+            color: #111827;
+            background: #fafafa;
+        }
+
+        .product-list {
+            display: grid;
+        }
+
+        .product-row {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 14px;
+            padding: 14px 16px;
+            border-bottom: 1px solid #f1f5f9;
+        }
+
+        .product-row:last-child {
+            border-bottom: 0;
+        }
+
+        .product-name {
+            font-size: 15px;
+            font-weight: 800;
+            color: #111827;
+            margin-bottom: 5px;
+        }
+
+        .product-meta {
+            font-size: 13px;
+            color: #6b7280;
+        }
+
+        .product-price {
+            font-size: 15px;
+            font-weight: 800;
+            color: #111827;
+            white-space: nowrap;
+        }
+
+        .order-summary {
+            padding: 16px;
+            display: grid;
+            gap: 10px;
+        }
+
+        .summary-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+            font-size: 15px;
+            color: #374151;
+        }
+
+        .summary-row strong {
+            color: #111827;
+        }
+
+        .summary-total {
+            margin-top: 8px;
+            padding-top: 12px;
+            border-top: 1px solid #eef2f7;
+            font-size: 17px;
+            font-weight: 900;
+            color: #111827;
+        }
+
+        .section-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px;
+            padding: 16px;
+        }
+
+        .payment-status {
+            font-size: 15px;
+            font-weight: 800;
+        }
+
+        .payment-status.paid {
+            color: #16a34a;
+        }
+
+        .payment-status.unpaid {
+            color: #b45309;
+        }
+
+        .delivery-text {
+            font-size: 15px;
+            font-weight: 700;
+            line-height: 1.45;
+            word-break: break-word;
+        }
+
+        .empty {
+            padding: 50px 22px;
+            color: #6b7280;
+            text-align: center;
+        }
+
+        .empty.small {
+            padding: 22px;
+        }
+
+        .empty strong {
+            color: #111827;
+        }
+
+        @media (max-width: 1100px) {
+            .workspace {
+                grid-template-columns: 1fr;
+            }
+
+            .orders-list {
+                max-height: none;
+            }
+        }
+
+        @media (max-width: 720px) {
+            .main {
+                padding: 18px;
+            }
+
+            .topbar {
+                flex-direction: column;
+            }
+
+            .sync-card {
+                width: 100%;
+            }
+
+            .info-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .section-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .detail-header {
+                flex-direction: column;
+            }
+
+            .product-row {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* product map searchable dropdown */
+        .product-row {
+            grid-template-columns: minmax(0, 1fr) auto;
+            overflow: visible;
+        }
+
+        .product-row > div:first-child {
+            min-width: 0;
+        }
+
+        .product-price {
+            white-space: nowrap;
+        }
+
+        .data-section,
+        .product-list,
+        .order-sections {
+            overflow: visible;
+        }
+
+        .product-map-form {
+            max-width: 100%;
+        }
+
+        .product-map-picker {
+            min-width: 0;
+        }
+
+        .product-map-options {
+            position: fixed !important;
+            z-index: 999999 !important;
+            right: auto !important;
+            max-height: 360px !important;
+            overflow-y: auto !important;
+            background: white !important;
+        }
+
+        .product-map-option {
+            white-space: normal !important;
+            line-height: 1.25 !important;
+        }
+
+
+        /* Заголовок страницы удалён для экономии места */
+        .main {
+            padding-top: 10px;
+        }
+        /* Конец компактного верха страницы */
+
+
+        /* Сворачивание списка заказов */
+        .workspace {
+            position: relative;
+            transition:
+                grid-template-columns 0.25s ease,
+                gap 0.25s ease;
+        }
+
+        .orders-list-panel {
+            min-width: 0;
+            transition:
+                opacity 0.2s ease,
+                transform 0.25s ease;
+        }
+
+        .order-detail-panel {
+            position: relative;
+            min-width: 0;
+        }
+
+        .order-detail-panel .detail-header {
+            padding-left: 66px;
+        }
+
+        .orders-panel-toggle {
+            position: absolute;
+            top: 14px;
+            left: 14px;
+            z-index: 25;
+            width: 38px;
+            height: 38px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            border: 1px solid #dbe3ee;
+            border-radius: 11px;
+            background: #f8fafc;
+            color: #334155;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+            transition:
+                background 0.2s ease,
+                transform 0.2s ease;
+        }
+
+        .orders-panel-toggle:hover {
+            background: #eef2f7;
+            transform: translateY(-1px);
+        }
+
+        .orders-panel-toggle svg {
+            width: 19px;
+            height: 19px;
+            transition: transform 0.25s ease;
+        }
+
+        .workspace.orders-list-collapsed {
+            grid-template-columns: 0 minmax(0, 1fr);
+            gap: 0;
+        }
+
+        .workspace.orders-list-collapsed .orders-list-panel {
+            width: 0;
+            opacity: 0;
+            overflow: hidden;
+            border: 0;
+            box-shadow: none;
+            pointer-events: none;
+            transform: translateX(-16px);
+        }
+
+        .workspace.orders-list-collapsed .orders-panel-toggle svg {
+            transform: rotate(180deg);
+        }
+
+        @media (max-width: 1100px) {
+            .workspace.orders-list-collapsed {
+                grid-template-columns: 1fr;
+            }
+
+            .workspace.orders-list-collapsed .orders-list-panel {
+                display: none;
+            }
+        }
+        /* Конец сворачивания списка заказов */
+
+
+        /* Разворачивание списка всех заказов */
+        .orders-list-panel {
+            position: relative;
+        }
+
+        .orders-list-panel .panel-header {
+            padding-right: 62px;
+        }
+
+        .order-detail-toggle {
+            position: absolute;
+            top: 14px;
+            right: 14px;
+            z-index: 25;
+            width: 38px;
+            height: 38px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            border: 1px solid #dbe3ee;
+            border-radius: 11px;
+            background: #f8fafc;
+            color: #334155;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+            transition:
+                background 0.2s ease,
+                transform 0.2s ease;
+        }
+
+        .order-detail-toggle:hover {
+            background: #eef2f7;
+            transform: translateY(-1px);
+        }
+
+        .order-detail-toggle svg {
+            width: 19px;
+            height: 19px;
+            transition: transform 0.25s ease;
+        }
+
+        .workspace.order-detail-collapsed {
+            grid-template-columns: minmax(0, 1fr) 0;
+            gap: 0;
+        }
+
+        .workspace.order-detail-collapsed .orders-list-panel {
+            width: 100%;
+            opacity: 1;
+            transform: none;
+            pointer-events: auto;
+        }
+
+        .workspace.order-detail-collapsed .order-detail-panel {
+            width: 0;
+            opacity: 0;
+            overflow: hidden;
+            border: 0;
+            box-shadow: none;
+            pointer-events: none;
+            transform: translateX(16px);
+        }
+
+        .workspace.order-detail-collapsed .order-detail-toggle svg {
+            transform: rotate(180deg);
+        }
+
+        @media (max-width: 1100px) {
+            .workspace.order-detail-collapsed {
+                grid-template-columns: 1fr;
+            }
+
+            .workspace.order-detail-collapsed .order-detail-panel {
+                display: none;
+            }
+        }
+        /* Конец разворачивания списка всех заказов */
+
+
+        /* Трёхпозиционный ползунок панелей заказов */
+        .workspace {
+            position: relative;
+            margin-top: 16px;
+            transition:
+                grid-template-columns 0.48s cubic-bezier(0.22, 1, 0.36, 1),
+                gap 0.48s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        .orders-list-panel,
+        .order-detail-panel {
+            min-width: 0;
+            transition:
+                opacity 0.30s ease,
+                transform 0.48s cubic-bezier(0.22, 1, 0.36, 1),
+                width 0.48s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        .orders-list-panel .panel-header {
+            padding-right: 14px;
+        }
+
+        .order-detail-panel .detail-header {
+            padding-left: 24px;
+        }
+
+        .orders-layout-switch {
+            --thumb-position: 44px;
+
+            position: absolute;
+            top: -11px;
+            left: 50%;
+            z-index: 50;
+            transform: translateX(-50%);
+
+            width: 138px;
+            height: 44px;
+            display: grid;
+            grid-template-columns: repeat(3, 42px);
+            gap: 2px;
+            padding: 4px;
+
+            border: 1px solid #d4deea;
+            border-radius: 15px;
+            background: rgba(255, 255, 255, 0.98);
+            box-shadow:
+                0 8px 22px rgba(15, 23, 42, 0.14),
+                0 1px 3px rgba(15, 23, 42, 0.08);
+
+            backdrop-filter: blur(12px);
+            user-select: none;
+        }
+
+        .orders-layout-switch[data-mode="list-only"] {
+            --thumb-position: 0px;
+        }
+
+        .orders-layout-switch[data-mode="both"] {
+            --thumb-position: 44px;
+        }
+
+        .orders-layout-switch[data-mode="detail-only"] {
+            --thumb-position: 88px;
+        }
+
+        .orders-layout-thumb {
+            position: absolute;
+            top: 4px;
+            left: 4px;
+            width: 42px;
+            height: 34px;
+            border-radius: 11px;
+            background: #2563eb;
+            box-shadow:
+                0 5px 14px rgba(37, 99, 235, 0.32),
+                inset 0 1px 0 rgba(255, 255, 255, 0.22);
+            transform: translateX(var(--thumb-position));
+            transition:
+                transform 0.38s cubic-bezier(0.22, 1, 0.36, 1),
+                box-shadow 0.25s ease;
+            pointer-events: none;
+        }
+
+        .orders-layout-option {
+            position: relative;
+            z-index: 2;
+            width: 42px;
+            height: 34px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            border: 0;
+            border-radius: 11px;
+            background: transparent;
+            color: #64748b;
+            cursor: pointer;
+            touch-action: manipulation;
+            transition:
+                color 0.22s ease,
+                transform 0.16s ease,
+                background 0.22s ease;
+        }
+
+        .orders-layout-option:hover {
+            color: #1d4ed8;
+            background: rgba(37, 99, 235, 0.06);
+        }
+
+        .orders-layout-option:active {
+            transform: scale(0.92);
+        }
+
+        .orders-layout-option:focus-visible {
+            outline: 2px solid #60a5fa;
+            outline-offset: 2px;
+        }
+
+        .orders-layout-option[aria-checked="true"] {
+            color: white;
+            background: transparent;
+        }
+
+        .orders-layout-option[aria-checked="true"]:hover {
+            color: white;
+            background: transparent;
+        }
+
+        .orders-layout-option svg {
+            width: 18px;
+            height: 18px;
+            pointer-events: none;
+        }
+
+        @media (max-width: 1100px) {
+            .orders-layout-switch {
+                top: 8px;
+            }
+
+            .orders-list-panel .panel-header {
+                padding-top: 60px;
+            }
+
+            .order-detail-panel .detail-header {
+                padding-top: 60px;
+            }
+        }
+        /* Конец трёхпозиционного ползунка */
+
+</style>
+</head>
+
+<body>
+<div class="app">
+    {% include "_sidebar.html" %}
+
+    <main class="main">
+        <div class="topbar">
+            <div class="title">
+                <h1>Заказы</h1>
+                <p>Заказы интернет-магазина и карточки клиентов</p>
+            </div>
+            <div class="sync-card">
+                <div class="sync-label">Источник данных</div>
+                <div class="sync-status">Bitrix · подключён</div>
+            </div>
+        </div>
+
+        {% if request.args.get("notice") and request.args.get("message") %}
+            <div class="notice notice-{{ request.args.get('notice') }}">
+                {{ request.args.get("message") }}
+            </div>
+        {% endif %}
+
+        <div class="workspace" id="ordersWorkspace">
+            <div
+                id="ordersLayoutSwitch"
+                class="orders-layout-switch"
+                data-mode="both"
+                role="radiogroup"
+                aria-label="Размер панелей заказов"
+            >
+                <div class="orders-layout-thumb"></div>
+
+                <button
+                    class="orders-layout-option"
+                    type="button"
+                    data-layout-mode="list-only"
+                    role="radio"
+                    aria-label="Все заказы на весь экран"
+                    title="Все заказы на весь экран"
+                >
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <rect x="4" y="4" width="16" height="16" rx="3"
+                              stroke="currentColor" stroke-width="2"/>
+                        <path d="M8 9H16M8 12H16M8 15H14"
+                              stroke="currentColor" stroke-width="2"
+                              stroke-linecap="round"/>
+                    </svg>
+                </button>
+
+                <button
+                    class="orders-layout-option"
+                    type="button"
+                    data-layout-mode="both"
+                    role="radio"
+                    aria-label="Показать обе панели"
+                    title="Показать обе панели"
+                >
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <rect x="3" y="4" width="18" height="16" rx="3"
+                              stroke="currentColor" stroke-width="2"/>
+                        <path d="M10 5V19"
+                              stroke="currentColor" stroke-width="2"/>
+                    </svg>
+                </button>
+
+                <button
+                    class="orders-layout-option"
+                    type="button"
+                    data-layout-mode="detail-only"
+                    role="radio"
+                    aria-label="Карточка заказа на весь экран"
+                    title="Карточка заказа на весь экран"
+                >
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <rect x="4" y="4" width="16" height="16" rx="3"
+                              stroke="currentColor" stroke-width="2"/>
+                        <path d="M8 9H16M8 13H13"
+                              stroke="currentColor" stroke-width="2"
+                              stroke-linecap="round"/>
+                    </svg>
+                </button>
+            </div>
+
+
+            <section class="panel orders-list-panel" id="ordersListPanel">
+
+                <div class="panel-header">
+                    <input
+                        class="search"
+                        id="orderSearch"
+                        type="text"
+                        placeholder="Поиск по номеру, клиенту, телефону..."
+                    >
+
+                    <div class="filters">
+                        <button class="filter active" type="button" data-filter="all">Все</button>
+                        <button class="filter" type="button" data-filter="N">Не подтвержденные</button>
+                        <button class="filter" type="button" data-filter="A">Подтвержденные</button>
+                        <button class="filter" type="button" data-filter="T">Не дозвонились</button>
+                        <button class="filter" type="button" data-filter="D">Собранные</button>
+                        <button class="filter" type="button" data-filter="C">Отказы</button>
+
+
+                    </div>
+                </div>
+
+                <div class="orders-list" id="ordersList">
+                    {% if orders %}
+                        {% for order in orders %}
+                            {% set order_id = order.get("id") or order.get("ID") %}
+                            {% set order_number = order.get("number") or order.get("account_number") or order.get("ACCOUNT_NUMBER") or order_id %}
+                            {% set status = order.get("status") or order.get("STATUS_ID") or order.get("status_id") or "unknown" %}
+                            {% set status_code = status|string %}
+                            {% set customer = order.get("customer") or order.get("client") or order.get("name") or order.get("USER_NAME") or order.get("user_name") or "" %}
+                            {% set phone = order.get("phone") or order.get("PHONE") or order.get("user_phone") or order.get("USER_PHONE") or "" %}
+                            {% set price = order.get("price") or order.get("PRICE") or order.get("sum") or order.get("SUM") or order.get("order_total") or "" %}
+                            {% set date = order.get("date") or order.get("DATE_INSERT") or order.get("created_at") or order.get("DATE_CREATE") or "" %}
+
+                            <a
+                                href="{{ url_for('order_page', order_id=order_id) if order_id else '#' }}"
+                                {% if not order_id %}aria-disabled="true"{% endif %}
+                                class="order-row {% if selected_order and (selected_order.get('id') == order_id or selected_order.get('ID') == order_id) %}active{% endif %}"
+                                data-status="{{ status_code }}"
+                                data-search="{{ order_number }} {{ customer }} {{ phone }}"
+                            >
+                                <div class="order-top">
+                                    <div class="order-number">Заказ №{{ order_number }}</div>
+
+                                    {% if status_code == "N" %}
+                                        <span class="badge badge-default">Не подтвержден</span>
+                                    {% elif status_code == "A" %}
+                                        <span class="badge badge-work">Подтвержден</span>
+                                    {% elif status_code == "T" %}
+                                        <span class="badge badge-default">Не дозвонились</span>
+                                    {% elif status_code == "D" %}
+                                        <span class="badge badge-done">Собран</span>
+                                    {% elif status_code == "C" or status_code == "c" %}
+                                        <span class="badge badge-cancel">Отказ</span>
+                                    {% else %}
+                                        <span class="badge badge-default">{{ status }}</span>
+                                    {% endif %}
+                                </div>
+
+                                <div class="order-meta">
+                                    {% if customer %}
+                                        <div>{{ customer }}</div>
+                                    {% else %}
+                                        <div class="muted-value">Клиент не указан</div>
+                                    {% endif %}
+
+                                    {% if phone %}
+                                        <div>{{ phone }}</div>
+                                    {% endif %}
+
+                                    {% if price %}
+                                        <div>
+                                            <span class="money-value" data-amount="{{ price }}">{{ price }}</span> ₽
+                                        </div>
+                                    {% endif %}
+
+                                    {% if date %}
+                                        <div>
+                                            <span class="date-value" data-date="{{ date }}">{{ date }}</span>
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            </a>
+                        {% endfor %}
+                    {% else %}
+                        <div class="empty">
+                            <strong>Заказы не загружены.</strong><br>
+                            Битрикс ничего не вернул или подключение временно недоступно.
+                        </div>
+                    {% endif %}
+                </div>
+            </section>
+
+            <section class="panel detail order-detail-panel">
+                {% if selected_order %}
+                    {% set detail_id = selected_order.get("id") or selected_order.get("ID") %}
+                    {% set detail_number = selected_order.get("number") or selected_order.get("account_number") or selected_order.get("ACCOUNT_NUMBER") or detail_id %}
+                    {% set detail_status = selected_order.get("status") or selected_order.get("STATUS_ID") or selected_order.get("status_id") or "unknown" %}
+                    {% set detail_status_code = detail_status|string %}
+                    {% set detail_customer = selected_order.get("customer") or selected_order.get("client") or selected_order.get("name") or selected_order.get("USER_NAME") or selected_order.get("user_name") or "" %}
+                    {% set detail_phone = selected_order.get("phone") or selected_order.get("PHONE") or selected_order.get("user_phone") or selected_order.get("USER_PHONE") or "" %}
+                    {% set detail_price = selected_order.get("price") or selected_order.get("PRICE") or selected_order.get("sum") or selected_order.get("SUM") or "" %}
+                    {% set detail_date = selected_order.get("date") or selected_order.get("DATE_INSERT") or selected_order.get("created_at") or selected_order.get("DATE_CREATE") or "" %}
+                    {% set detail_email = selected_order.get("email") or selected_order.get("EMAIL") or "" %}
+                    {% set detail_address = selected_order.get("address") or selected_order.get("ADDRESS") or "" %}
+                    {% set detail_city = selected_order.get("city") or selected_order.get("CITY") or "" %}
+                    {% set detail_paid = selected_order.get("paid") or selected_order.get("PAYED") or "" %}
+                    {% set detail_paid_name = selected_order.get("paid_name") or "" %}
+                    {% set detail_products = selected_order.get("products") or [] %}
+                    {% set detail_order_total = selected_order.get("order_total") if selected_order.get("order_total") is not none else detail_price %}
+                    {% set detail_products_total = selected_order.get("products_total") if selected_order.get("products_total") is not none else "" %}
+                    {% set detail_delivery_price = selected_order.get("delivery_price") if selected_order.get("delivery_price") is not none else "" %}
+
+                    <div class="detail-header">
+                        <div>
+                            <h2 class="detail-title">Заказ №{{ detail_number }}</h2>
+                            <div class="detail-subtitle">Карточка заказа из Битрикс</div>
+                        </div>
+
+                        {% if detail_status_code == "N" %}
+                            <span class="badge badge-default">Не подтвержден</span>
+                        {% elif detail_status_code == "A" %}
+                            <span class="badge badge-work">Подтвержден</span>
+                        {% elif detail_status_code == "T" %}
+                            <span class="badge badge-default">Не дозвонились</span>
+                        {% elif detail_status_code == "D" %}
+                            <span class="badge badge-done">Собран</span>
+                        {% elif detail_status_code == "C" or detail_status_code == "c" %}
+                            <span class="badge badge-cancel">Отказ</span>
+                        {% else %}
+                            <span class="badge badge-default">{{ detail_status }}</span>
+                        {% endif %}
+                    </div>
+
+                    <div class="detail-body">
+                        <div class="info-grid">
+                            <div class="info-card">
+                                <div class="info-label">Клиент</div>
+                                <div class="info-value">
+                                    {% if detail_customer %}
+                                        {{ detail_customer }}
+                                    {% else %}
+                                        <span class="muted-value">Не указан</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+
+                            <div class="info-card">
+                                <div class="info-label">Телефон</div>
+                                <div class="info-value">
+                                    {% if detail_phone %}
+                                        {{ detail_phone }}
+                                    {% else %}
+                                        <span class="muted-value">Не указан</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+
+                            <div class="info-card">
+                                <div class="info-label">Сумма</div>
+                                <div class="info-value">
+                                    {% if detail_order_total %}
+                                        <span class="money-value" data-amount="{{ detail_order_total }}">{{ detail_order_total }}</span> ₽
+                                    {% elif detail_price %}
+                                        <span class="money-value" data-amount="{{ detail_price }}">{{ detail_price }}</span> ₽
+                                    {% else %}
+                                        <span class="muted-value">Не указана</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+
+                            <div class="info-card">
+                                <div class="info-label">Дата создания</div>
+                                <div class="info-value">
+                                    {% if detail_date %}
+                                        <span class="date-value" data-date="{{ detail_date }}">{{ detail_date }}</span>
+                                    {% else %}
+                                        <span class="muted-value">Не указана</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="actions">
+                            {% if selected_order_bitrix_url %}
+                                <a
+                                    class="button button-secondary"
+                                    href="{{ selected_order_bitrix_url }}"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                >
+                                    Открыть в Bitrix ↗
+                                </a>
+                            {% endif %}
+                            <form class="status-form" method="post" action="/order/{{ detail_id }}/status">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input type="hidden" name="status" value="N">
+                                <button
+                                    class="button button-secondary {% if detail_status_code == 'N' %}button-current{% endif %}"
+                                    type="submit"
+                                >
+                                    Неподтвержден
+                                </button>
+                            </form>
+
+                            <form class="status-form" method="post" action="/order/{{ detail_id }}/status">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input type="hidden" name="status" value="A">
+                                <button
+                                    class="button button-primary {% if detail_status_code == 'A' %}button-current{% endif %}"
+                                    type="submit"
+                                >
+                                    Подтвердить
+                                </button>
+                            </form>
+
+                            <form class="status-form" method="post" action="/order/{{ detail_id }}/status">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input type="hidden" name="status" value="T">
+                                <button
+                                    class="button button-secondary {% if detail_status_code == 'T' %}button-current{% endif %}"
+                                    type="submit"
+                                >
+                                    Не дозвонились
+                                </button>
+                            </form>
+
+                            <form class="status-form" method="post" action="/order/{{ detail_id }}/status">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input type="hidden" name="status" value="D">
+                                <button
+                                    class="button button-secondary {% if detail_status_code == 'D' %}button-current{% endif %}"
+                                    type="submit"
+                                >
+                                    Собран
+                                </button>
+                            </form>
+
+                            <form class="status-form" method="post" action="/order/{{ detail_id }}/status">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input type="hidden" name="status" value="C">
+                                <button
+                                    class="button button-danger {% if detail_status_code == 'C' %}button-current{% endif %}"
+                                    type="submit"
+                                >
+                                    Отказ
+                                </button>
+                            </form>
+                        </div>
+
+                        <div class="order-sections">
+                            <section class="data-section">
+                                <div class="data-section-header">Состав заказа</div>
+
+                                {% if detail_products %}
+                                    <div class="product-list">
+                                        {% for product in detail_products %}
+                                            {% set product_name = product.get("name") or product.get("NAME") or "Товар без названия" %}
+                                            {% set product_quantity = product.get("quantity") or product.get("QUANTITY") or "1" %}
+                                            {% set product_price = product.get("price") or product.get("PRICE") or "" %}
+                                            {% set product_line_total = product_price|float * product_quantity|float %}
+
+                                            {% set product_id = product.get("id") or product.get("ID") or "" %}
+                                            {% set mapped_product = product_mappings.get(product_id|string) if product_mappings else none %}
+
+                                            <div class="product-row">
+                                                <div>
+                                                    <div class="product-name">{{ product_name }}</div>
+                                                    <div class="product-meta">
+                                                        Количество: {{ product_quantity|float|round(0, "floor")|int }} шт.
+                                                    </div>
+
+                                                    {% if not mapped_product %}
+                                                    <form class="status-form product-map-form" method="post" action="/order/{{ detail_id }}/product-map" style="margin-top: 10px; display: grid; grid-template-columns: minmax(0, 1fr) 130px; gap: 8px; position: relative;">
+                                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                                        <input type="hidden" name="bitrix_product_id" value="{{ product_id }}">
+                                                        <input type="hidden" name="bitrix_product_name" value="{{ product_name }}">
+                                                        <input type="hidden" class="product-map-hidden-id" name="moysklad_product_id" value="{% if mapped_product %}{{ mapped_product.moysklad_product_id }}{% endif %}">
+
+                                                        <div class="product-map-picker" style="position: relative;">
+                                                            <input
+                                                                type="text"
+                                                                class="product-map-combobox"
+                                                                value="{% if mapped_product %}{{ mapped_product.moysklad_product_name }}{% endif %}"
+                                                                placeholder="Сопоставить с товаром склада"
+                                                                autocomplete="off"
+                                                                style="width: 100%; height: 42px; border-radius: 12px; border: 1px solid #d1d5db; padding: 0 10px;"
+                                                            >
+
+                                                            <div class="product-map-options" style="display: none; position: absolute; z-index: 50; top: 48px; left: 0; right: 0; max-height: 260px; overflow: auto; background: white; border: 1px solid #d1d5db; border-radius: 12px; box-shadow: 0 14px 34px rgba(15, 23, 42, 0.18);">
+                                                                {% for item in warehouse_items or [] %}
+                                                                    <button
+                                                                        type="button"
+                                                                        class="product-map-option"
+                                                                        data-id="{{ item.id }}"
+                                                                        data-label="{{ item.name }} — остаток {{ item.stock_display or item.stock }}"
+                                                                        data-search="{{ item.name }} {{ item.article or '' }} {{ item.code or '' }} {{ item.category or '' }}"
+                                                                        style="width: 100%; text-align: left; display: block; padding: 10px 12px; border: 0; border-bottom: 1px solid #f1f5f9; background: white; color: #111827; font-weight: 700; cursor: pointer;"
+                                                                    >
+                                                                        {{ item.name }} — остаток {{ item.stock_display or item.stock }}
+                                                                    </button>
+                                                                {% endfor %}
+                                                            </div>
+                                                        </div>
+
+                                                        <button type="submit">Сопоставить</button>
+                                                    </form>
+                                                    {% endif %}
+
+                                                    {% if mapped_product %}
+                                                        <div class="product-meta" style="margin-top: 8px; color: #166534; font-weight: 800;">
+                                                            ✅ Склад: {{ mapped_product.moysklad_product_name }}
+                                                        </div>
+                                                    {% else %}
+                                                        <div class="product-meta" style="margin-top: 8px; color: #991b1b; font-weight: 800;">
+                                                            ⚠️ Товар ещё не сопоставлен со складом
+                                                        </div>
+                                                    {% endif %}
+                                                </div>
+
+                                                <div class="product-price">
+                                                    {% if product_price %}
+                                                        <span class="money-value" data-amount="{{ product_line_total }}">{{ product_line_total }}</span> ₽
+                                                    {% else %}
+                                                        —
+                                                    {% endif %}
+                                                </div>
+                                            </div>
+                                        {% endfor %}
+                                    </div>
+
+                                        <form class="status-form" method="post" action="/order/{{ detail_id }}/stock-writeoff" style="margin-top: 14px;">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                            <button
+                                                class="button button-primary"
+                                                type="submit"
+                                                onclick="return confirm('Списать товары этого заказа со склада? Это создаст документ списания в МойСклад.');"
+                                            >
+                                                📉 Списать заказ со склада
+                                            </button>
+                                        </form>
+
+                                {% else %}
+                                    <div class="empty small">
+                                        Состав заказа пока не загружен.
+                                    </div>
+                                {% endif %}
+                            </section>
+
+                            <section class="data-section">
+                                <div class="data-section-header">Расчет заказа</div>
+
+                                <div class="order-summary">
+                                    <div class="summary-row">
+                                        <span>Товары</span>
+                                        <strong>
+                                            {% if detail_products_total != "" %}
+                                                <span class="money-value" data-amount="{{ detail_products_total }}">{{ detail_products_total }}</span> ₽
+                                            {% else %}
+                                                —
+                                            {% endif %}
+                                        </strong>
+                                    </div>
+
+                                    <div class="summary-row">
+                                        <span>Доставка</span>
+                                        <strong>
+                                            {% if detail_delivery_price != "" %}
+                                                <span class="money-value" data-amount="{{ detail_delivery_price }}">{{ detail_delivery_price }}</span> ₽
+                                            {% else %}
+                                                —
+                                            {% endif %}
+                                        </strong>
+                                    </div>
+
+                                    <div class="summary-row summary-total">
+                                        <span>Итого</span>
+                                        <strong>
+                                            {% if detail_order_total %}
+                                                <span class="money-value" data-amount="{{ detail_order_total }}">{{ detail_order_total }}</span> ₽
+                                            {% else %}
+                                                —
+                                            {% endif %}
+                                        </strong>
+                                    </div>
+                                </div>
+                            </section>
+
+                            <section class="data-section">
+                                <div class="data-section-header">Оплата и доставка</div>
+
+                                <div class="section-grid">
+                                    <div class="info-card">
+                                        <div class="info-label">Оплата</div>
+
+                                        {% if detail_paid == "Y" %}
+                                            <div class="payment-status paid">Оплачен</div>
+                                        {% elif detail_paid == "N" %}
+                                            <div class="payment-status unpaid">Не оплачен</div>
+                                        {% elif detail_paid_name %}
+                                            <div class="payment-status">{{ detail_paid_name }}</div>
+                                        {% else %}
+                                            <div class="info-value muted-value">Не указана</div>
+                                        {% endif %}
+                                    </div>
+
+                                    <div class="info-card">
+                                        <div class="info-label">Email</div>
+                                        <div class="info-value">
+                                            {% if detail_email %}
+                                                {{ detail_email }}
+                                            {% else %}
+                                                <span class="muted-value">Не указан</span>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+
+                                    <div class="info-card">
+                                        <div class="info-label">Город</div>
+                                        <div class="info-value">
+                                            {% if detail_city %}
+                                                {{ detail_city }}
+                                            {% else %}
+                                                <span class="muted-value">Не указан</span>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+
+                                    <div class="info-card">
+                                        <div class="info-label">Адрес доставки</div>
+                                        <div class="delivery-text">
+                                            {% if detail_address %}
+                                                {{ detail_address }}
+                                            {% else %}
+                                                <span class="muted-value">Не указан</span>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                </div>
+                            </section>
+                        </div>
+                    </div>
+                {% else %}
+                    <div class="empty">
+                        <strong>Выбери заказ слева.</strong><br>
+                        После выбора здесь откроется карточка заказа.
+                    </div>
+                {% endif %}
+            </section>
+        </div>
+    </main>
+</div>
+
+<script>
+    const searchInput = document.getElementById("orderSearch");
+    const rows = Array.from(document.querySelectorAll(".order-row"));
+    const filterButtons = Array.from(document.querySelectorAll(".filter"));
+
+    let activeFilter = "all";
+
+    function formatMoney(value) {
+        if (value === null || value === undefined || value === "") {
+            return "";
+        }
+
+        const normalized = String(value).replace(",", ".").replace(/[^\d.]/g, "");
+        const number = Number.parseFloat(normalized);
+
+        if (Number.isNaN(number)) {
+            return String(value);
+        }
+
+        return new Intl.NumberFormat("ru-RU", {
+            maximumFractionDigits: 0
+        }).format(number);
+    }
+
+    function formatDate(value) {
+        if (!value) {
+            return "";
+        }
+
+        const raw = String(value).trim();
+
+        let match = raw.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
+        if (match) {
+            return `${match[3]}.${match[2]}.${match[1]}, ${match[4]}:${match[5]}`;
+        }
+
+        match = raw.match(/^(\d{2})\.(\d{2})\.(\d{4})[,\s]+(\d{2}):(\d{2})/);
+        if (match) {
+            return `${match[1]}.${match[2]}.${match[3]}, ${match[4]}:${match[5]}`;
+        }
+
+        return raw;
+    }
+
+    function applyValueFormatting() {
+        document.querySelectorAll(".money-value").forEach(item => {
+            const amount = item.dataset.amount || item.textContent;
+            item.textContent = formatMoney(amount);
+        });
+
+        document.querySelectorAll(".date-value").forEach(item => {
+            const date = item.dataset.date || item.textContent;
+            item.textContent = formatDate(date);
+        });
+    }
+
+    function applyFilters() {
+        const query = searchInput.value.toLowerCase().trim();
+
+        rows.forEach(row => {
+            const rowText = (row.dataset.search || "").toLowerCase();
+            const rowStatus = (row.dataset.status || "");
+
+            const matchesSearch = rowText.includes(query);
+            const matchesFilter = activeFilter === "all" || rowStatus === activeFilter;
+
+            row.style.display = matchesSearch && matchesFilter ? "block" : "none";
+        });
+    }
+
+    searchInput.addEventListener("input", applyFilters);
+
+    filterButtons.forEach(button => {
+        button.addEventListener("click", () => {
+            filterButtons.forEach(item => item.classList.remove("active"));
+            button.classList.add("active");
+
+            activeFilter = button.dataset.filter;
+            applyFilters();
+        });
+    });
+
+    applyValueFormatting();
+</script>
+
+
+<script>
+    document.addEventListener("focusin", function(event) {
+        if (!event.target.classList.contains("product-map-combobox")) {
+            return;
+        }
+
+        const picker = event.target.closest(".product-map-picker");
+        const options = picker ? picker.querySelector(".product-map-options") : null;
+
+        if (options) {
+            options.style.display = "block";
+        }
+    });
+
+    document.addEventListener("input", function(event) {
+        if (!event.target.classList.contains("product-map-combobox")) {
+            return;
+        }
+
+        const input = event.target;
+        const form = input.closest(".product-map-form");
+        const hiddenId = form ? form.querySelector(".product-map-hidden-id") : null;
+        const picker = input.closest(".product-map-picker");
+        const optionsBox = picker ? picker.querySelector(".product-map-options") : null;
+
+        if (hiddenId) {
+            hiddenId.value = "";
+        }
+
+        if (!optionsBox) {
+            return;
+        }
+
+        optionsBox.style.display = "block";
+
+        const query = input.value.trim().toLowerCase();
+        let visibleCount = 0;
+
+        optionsBox.querySelectorAll(".product-map-option").forEach(function(option) {
+            const text = (option.dataset.search || option.textContent || "").toLowerCase();
+            const isVisible = !query || text.includes(query);
+
+            option.style.display = isVisible ? "block" : "none";
+
+            if (isVisible) {
+                visibleCount += 1;
+            }
+        });
+    });
+
+    document.addEventListener("click", function(event) {
+        const option = event.target.closest(".product-map-option");
+
+        if (option) {
+            const form = option.closest(".product-map-form");
+            const input = form ? form.querySelector(".product-map-combobox") : null;
+            const hiddenId = form ? form.querySelector(".product-map-hidden-id") : null;
+            const optionsBox = form ? form.querySelector(".product-map-options") : null;
+
+            if (input) {
+                input.value = option.dataset.label || option.textContent.trim();
+            }
+
+            if (hiddenId) {
+                hiddenId.value = option.dataset.id || "";
+            }
+
+            if (optionsBox) {
+                optionsBox.style.display = "none";
+            }
+
+            return;
+        }
+
+        document.querySelectorAll(".product-map-picker").forEach(function(picker) {
+            if (!picker.contains(event.target)) {
+                const optionsBox = picker.querySelector(".product-map-options");
+
+                if (optionsBox) {
+                    optionsBox.style.display = "none";
+                }
+            }
+        });
+    });
+</script>
+
+
+<script>
+    function positionProductMapDropdown(input) {
+        const form = input.closest(".product-map-form");
+        const optionsBox = form ? form.querySelector(".product-map-options") : null;
+
+        if (!optionsBox) {
+            return;
+        }
+
+        const rect = input.getBoundingClientRect();
+        const minWidth = 460;
+        const viewportPadding = 12;
+        const width = Math.min(
+            Math.max(rect.width, minWidth),
+            window.innerWidth - viewportPadding * 2
+        );
+
+        let left = rect.left;
+
+        if (left + width > window.innerWidth - viewportPadding) {
+            left = window.innerWidth - width - viewportPadding;
+        }
+
+        if (left < viewportPadding) {
+            left = viewportPadding;
+        }
+
+        const spaceBelow = window.innerHeight - rect.bottom - viewportPadding;
+        const spaceAbove = rect.top - viewportPadding;
+
+        let top = rect.bottom + 6;
+        let maxHeight = Math.min(360, Math.max(180, spaceBelow));
+
+        if (spaceBelow < 180 && spaceAbove > spaceBelow) {
+            maxHeight = Math.min(360, Math.max(180, spaceAbove));
+            top = rect.top - maxHeight - 6;
+        }
+
+        optionsBox.style.left = left + "px";
+        optionsBox.style.top = top + "px";
+        optionsBox.style.width = width + "px";
+        optionsBox.style.maxHeight = maxHeight + "px";
+        optionsBox.style.zIndex = "999999";
+    }
+
+    document.addEventListener("focusin", function(event) {
+        if (!event.target.classList.contains("product-map-combobox")) {
+            return;
+        }
+
+        const form = event.target.closest(".product-map-form");
+        const optionsBox = form ? form.querySelector(".product-map-options") : null;
+
+        if (optionsBox) {
+            positionProductMapDropdown(event.target);
+            optionsBox.style.display = "block";
+        }
+    });
+
+    document.addEventListener("input", function(event) {
+        if (!event.target.classList.contains("product-map-combobox")) {
+            return;
+        }
+
+        positionProductMapDropdown(event.target);
+    });
+
+    window.addEventListener("scroll", function() {
+        document.querySelectorAll(".product-map-options").forEach(function(optionsBox) {
+            if (optionsBox.style.display !== "block") {
+                return;
+            }
+
+            const form = optionsBox.closest(".product-map-form");
+            const input = form ? form.querySelector(".product-map-combobox") : null;
+
+            if (input) {
+                positionProductMapDropdown(input);
+            }
+        });
+    }, true);
+
+    window.addEventListener("resize", function() {
+        document.querySelectorAll(".product-map-options").forEach(function(optionsBox) {
+            if (optionsBox.style.display !== "block") {
+                return;
+            }
+
+            const form = optionsBox.closest(".product-map-form");
+            const input = form ? form.querySelector(".product-map-combobox") : null;
+
+            if (input) {
+                positionProductMapDropdown(input);
+            }
+        });
+    });
+</script>
+
+
+<script>
+    document.addEventListener("DOMContentLoaded", () => {
+        const workspace = document.getElementById(
+            "ordersWorkspace"
+        );
+
+        const switcher = document.getElementById(
+            "ordersLayoutSwitch"
+        );
+
+        const options = Array.from(
+            switcher
+                ? switcher.querySelectorAll("[data-layout-mode]")
+                : []
+        );
+
+        if (!workspace || !switcher || options.length !== 3) {
+            return;
+        }
+
+        const storageKey = "ttt-erp-orders-workspace-mode";
+
+        const modes = [
+            "list-only",
+            "both",
+            "detail-only"
+        ];
+
+        const applyMode = (mode, save = true) => {
+            const safeMode = modes.includes(mode)
+                ? mode
+                : "both";
+
+            workspace.classList.toggle(
+                "order-detail-collapsed",
+                safeMode === "list-only"
+            );
+
+            workspace.classList.toggle(
+                "orders-list-collapsed",
+                safeMode === "detail-only"
+            );
+
+            workspace.dataset.layoutMode = safeMode;
+            switcher.dataset.mode = safeMode;
+
+            options.forEach((option) => {
+                const active =
+                    option.dataset.layoutMode === safeMode;
+
+                option.setAttribute(
+                    "aria-checked",
+                    String(active)
+                );
+            });
+
+            if (!save) {
+                return;
+            }
+
+            try {
+                localStorage.setItem(
+                    storageKey,
+                    safeMode
+                );
+            } catch (error) {
+                // Переключение продолжит работать без сохранения.
+            }
+        };
+
+        let savedMode = "both";
+
+        try {
+            savedMode =
+                localStorage.getItem(storageKey) || "both";
+        } catch (error) {
+            savedMode = "both";
+        }
+
+        applyMode(savedMode, false);
+
+        options.forEach((option) => {
+            option.addEventListener("click", (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+
+                applyMode(option.dataset.layoutMode);
+            });
+        });
+
+        switcher.addEventListener("keydown", (event) => {
+            if (
+                event.key !== "ArrowLeft"
+                && event.key !== "ArrowRight"
+            ) {
+                return;
+            }
+
+            event.preventDefault();
+
+            const currentMode =
+                switcher.dataset.mode || "both";
+
+            const currentIndex = modes.indexOf(currentMode);
+
+            const direction =
+                event.key === "ArrowRight" ? 1 : -1;
+
+            const nextIndex = Math.max(
+                0,
+                Math.min(2, currentIndex + direction)
+            );
+
+            const nextMode = modes[nextIndex];
+
+            applyMode(nextMode);
+
+            const nextOption = options.find(
+                (option) =>
+                    option.dataset.layoutMode === nextMode
+            );
+
+            if (nextOption) {
+                nextOption.focus();
+            }
+        });
+    });
+</script>
+
+</body>
+</html>

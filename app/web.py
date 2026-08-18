@@ -143,7 +143,6 @@ configure_auth(app, PROJECT_ROOT)
 LEGACY_FRONTEND_REDIRECTS = {
     "/": "/app/products",
     "/overview": "/app/products",
-    "/orders": "/app/products",
     "/products": "/app/products",
     "/stock-operations": "/app/products",
     "/repair": "/app/repairs",
@@ -614,6 +613,7 @@ def overview_page():
 
 
 @app.route("/orders")
+@app.route("/app/orders")
 def orders_page():
     orders = get_orders()
     selected_order = orders[0] if orders else None
@@ -622,6 +622,10 @@ def orders_page():
         "orders.html",
         orders=orders,
         selected_order=selected_order,
+        selected_order_bitrix_url=build_bitrix_order_url(
+            (selected_order or {}).get("id")
+            or (selected_order or {}).get("ID")
+        ),
         warehouse_items=get_warehouse_items(),
         product_mappings=load_product_mappings(),
     )
@@ -644,10 +648,36 @@ def build_bitrix_order_url(order_id):
 
 @app.route("/order/<int:order_id>")
 def order_page(order_id):
-    order_url = build_bitrix_order_url(order_id)
-    if not order_url:
+    bitrix_order_url = build_bitrix_order_url(order_id)
+    if not bitrix_order_url:
         abort(404)
-    return redirect(order_url)
+
+    orders = get_orders()
+    selected_order = next((
+        order for order in orders
+        if str(order.get("id") or order.get("ID")) == str(order_id)
+    ), None)
+
+    try:
+        full_order = get_order(order_id)
+        if full_order:
+            selected_order = full_order
+    except Exception as error:
+        print("Полная карточка заказа {} не загрузилась быстро: {}".format(
+            order_id, error,
+        ))
+
+    if selected_order is None:
+        abort(404)
+
+    return render_template(
+        "orders.html",
+        orders=orders,
+        selected_order=selected_order,
+        selected_order_bitrix_url=bitrix_order_url,
+        warehouse_items=get_warehouse_items(),
+        product_mappings=load_product_mappings(),
+    )
 
 
 
@@ -13351,13 +13381,26 @@ DEFAULT_APP_SETTINGS = {
 # removed modules.
 NAVIGATION_DEFINITIONS = [
     {
+        "key": "orders",
+        "label": "Заказы",
+        "description": "Заказы интернет-магазина и карточки заказов.",
+        "icon": "orders",
+        "href": "/app/orders",
+        "mobile_href": "/app/orders",
+        "position": 1,
+        "group": "main",
+        "mobile_primary": False,
+        "active_exact": [],
+        "active_prefixes": ["/app/orders", "/orders", "/order/"],
+    },
+    {
         "key": "products",
         "label": "Товары",
         "description": "Каталог товаров.",
         "icon": "products",
         "href": "/app/products",
         "mobile_href": "/app/products",
-        "position": 1,
+        "position": 2,
         "group": "main",
         "mobile_primary": True,
         "active_exact": [],
@@ -13370,7 +13413,7 @@ NAVIGATION_DEFINITIONS = [
         "icon": "sales",
         "href": "/app/sales",
         "mobile_href": "/app/sales",
-        "position": 2,
+        "position": 3,
         "group": "main",
         "mobile_primary": True,
         "active_exact": [],
@@ -13383,7 +13426,7 @@ NAVIGATION_DEFINITIONS = [
         "icon": "receipts",
         "href": "/app/receipts",
         "mobile_href": "/app/receipts",
-        "position": 3,
+        "position": 4,
         "group": "main",
         "mobile_primary": True,
         "active_exact": [],
@@ -13396,7 +13439,7 @@ NAVIGATION_DEFINITIONS = [
         "icon": "journal",
         "href": "/app/journal",
         "mobile_href": "/app/journal",
-        "position": 4,
+        "position": 5,
         "group": "main",
         "mobile_primary": True,
         "active_exact": [],
@@ -13409,7 +13452,7 @@ NAVIGATION_DEFINITIONS = [
         "icon": "repair",
         "href": "/app/repairs",
         "mobile_href": "/app/repairs",
-        "position": 5,
+        "position": 6,
         "group": "main",
         "mobile_primary": False,
         "active_exact": [],
@@ -13422,7 +13465,7 @@ NAVIGATION_DEFINITIONS = [
         "icon": "settings",
         "href": "/app/settings",
         "mobile_href": "/app/settings",
-        "position": 6,
+        "position": 7,
         "group": "system",
         "mobile_primary": False,
         "active_exact": [],

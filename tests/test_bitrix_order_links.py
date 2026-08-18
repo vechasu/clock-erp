@@ -20,11 +20,27 @@ class BitrixOrderLinksTest(unittest.TestCase):
         web.app.config.clear()
         web.app.config.update(self.original_config)
 
-    def test_order_route_redirects_to_bitrix_admin_card(self):
-        response = self.client.get("/order/18593")
+    def test_order_route_renders_internal_card_with_bitrix_action(self):
+        order = {
+            "id": "18593",
+            "number": "18593",
+            "status": "A",
+            "customer": "Иван Иванов",
+            "products": [],
+        }
+        with (
+            mock.patch.object(web, "get_orders", return_value=[order]),
+            mock.patch.object(web, "get_order", return_value=order),
+            mock.patch.object(web, "get_warehouse_items", return_value=[]),
+            mock.patch.object(web, "load_product_mappings", return_value={}),
+        ):
+            response = self.client.get("/order/18593")
 
-        self.assertEqual(response.status_code, 302)
-        self.assertEqual(response.headers["Location"], BITRIX_ORDER_URL)
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn("Заказ №18593", html)
+        self.assertIn(BITRIX_ORDER_URL.replace("&", "&amp;"), html)
+        self.assertIn("Открыть в Bitrix", html)
 
     def test_order_id_is_normalized_and_invalid_values_are_rejected(self):
         self.assertEqual(web.build_bitrix_order_url("0018593"), BITRIX_ORDER_URL)
@@ -90,12 +106,14 @@ class BitrixOrderLinksTest(unittest.TestCase):
         })
         self.assertEqual(prepared["order_url"], "")
 
-    def test_order_route_does_not_render_removed_orders_template(self):
-        with mock.patch.object(web, "render_template") as renderer:
+    def test_missing_order_returns_not_found(self):
+        with (
+            mock.patch.object(web, "get_orders", return_value=[]),
+            mock.patch.object(web, "get_order", return_value=None),
+        ):
             response = self.client.get("/order/18593")
 
-        self.assertEqual(response.status_code, 302)
-        renderer.assert_not_called()
+        self.assertEqual(response.status_code, 404)
 
 
 if __name__ == "__main__":
