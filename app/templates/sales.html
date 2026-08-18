@@ -520,9 +520,9 @@
             position: sticky;
             z-index: 3;
             right: 0;
-            width: 158px;
-            min-width: 158px;
-            max-width: 158px;
+            width: 118px;
+            min-width: 118px;
+            max-width: 118px;
             padding: 7px 8px;
             overflow: visible;
             background-clip: padding-box;
@@ -2088,31 +2088,7 @@
                                         data-system-column="actions"
                                     >
                                         <div class="sales-row-actions">
-                                            <form method="post" action="{{ url_for('sale_archive') }}" class="sales-archive-form">
-                                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                                <input type="hidden" name="sale_id" value="{{ sale.id }}">
-                                                <input type="hidden" name="sale_type" value="{{ sale.sale_type or ('manual' if sale.is_manual else 'automatic') }}">
-                                                <input type="hidden" name="archived" value="{{ '0' if sale.archived_at else '1' }}">
-                                                <input type="hidden" name="return_source" value="{{ active_source }}">
-                                                <button
-                                                    class="sales-row-action"
-                                                    type="submit"
-                                                    title="{{ 'Восстановить продажу' if sale.archived_at else 'Архивировать продажу' }}"
-                                                    aria-label="{{ 'Восстановить продажу' if sale.archived_at else 'Архивировать продажу' }}"
-                                                    {% if not sale.archived_at %}onclick="return confirm('Отправить продажу в архив?')"{% endif %}
-                                                >{{ '↥' if sale.archived_at else '▣' }}</button>
-                                            </form>
                                             {% if sales_view != 'archive' %}
-                                            {% if not sale.is_cancelled %}
-                                                <button
-                                                    class="sales-row-action sales-row-edit"
-                                                    type="button"
-                                                    title="Редактировать данные продажи"
-                                                    aria-label="Редактировать данные продажи"
-                                                    data-sale="{{ sale|tojson|forceescape }}"
-                                                    onclick="openSaleEditor(this)"
-                                                >✎</button>
-                                            {% endif %}
                                             {% if not sale.is_cancelled and sale.return_status != 'returned' %}
                                                 <button
                                                     class="sales-row-action sales-row-cancel"
@@ -2139,17 +2115,37 @@
                                                     aria-label="Возврат оформлен"
                                                 >✓</span>
                                             {% endif %}
-                                            {% if sale.is_cancelled %}
-                                                <details class="sales-action-menu">
-                                                    <summary aria-label="Другие действия">⋯</summary>
+                                            {% endif %}
+                                            <details class="sales-action-menu">
+                                                <summary aria-label="Другие действия">⋯</summary>
+                                                {% if sales_view != 'archive' and not sale.is_cancelled %}
+                                                    <button
+                                                        class="sales-row-edit"
+                                                        type="button"
+                                                        title="Редактировать данные продажи"
+                                                        data-sale="{{ sale|tojson|forceescape }}"
+                                                        onclick="openSaleEditor(this)"
+                                                    >Редактировать данные продажи</button>
+                                                {% endif %}
+                                                <form method="post" action="{{ url_for('sale_archive') }}" class="sales-archive-form">
+                                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                                    <input type="hidden" name="sale_id" value="{{ sale.id }}">
+                                                    <input type="hidden" name="sale_type" value="{{ sale.sale_type or ('manual' if sale.is_manual else 'automatic') }}">
+                                                    <input type="hidden" name="archived" value="{{ '0' if sale.archived_at else '1' }}">
+                                                    <input type="hidden" name="return_source" value="{{ active_source }}">
+                                                    <button
+                                                        type="submit"
+                                                        {% if not sale.archived_at %}onclick="return confirm('Отправить продажу в архив?')"{% endif %}
+                                                    >{{ 'Восстановить' if sale.archived_at else 'Архивировать' }}</button>
+                                                </form>
+                                                {% if sales_view != 'archive' and sale.is_cancelled %}
                                                     <button
                                                         type="button"
                                                         data-sale="{{ sale|tojson|forceescape }}"
                                                         onclick="openSaleDeleteModal(this)"
                                                     >Удалить запись</button>
-                                                </details>
-                                            {% endif %}
-                                            {% endif %}
+                                                {% endif %}
+                                            </details>
                                         </div>
                                     </td>
                                 </tr>
@@ -4621,7 +4617,7 @@
             invoice_number: 120,
         };
         const maximumWidth = 520;
-        const actionColumnWidth = 158;
+        const actionColumnWidth = 118;
         const growWeights = {
             created_at: 0.25,
             order_number: 0.75,
