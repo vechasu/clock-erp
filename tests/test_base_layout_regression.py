@@ -27,6 +27,7 @@ class BaseLayoutRegressionTest(unittest.TestCase):
                 for item in web.NAVIGATION_DEFINITIONS
             ],
             [
+                ("orders", "Заказы", "/app/orders"),
                 ("products", "Товары", "/app/products"),
                 ("sales", "Продажи", "/app/sales"),
                 ("receipts", "Приход", "/app/receipts"),
