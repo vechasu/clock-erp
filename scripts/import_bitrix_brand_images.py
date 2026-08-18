@@ -69,8 +69,6 @@ def main():
     if args.apply:
         if not args.backup_dir:
             parser.error("--backup-dir is required with --apply")
-        if plan["ambiguous"]:
-            parser.error("apply refused: ambiguous brand matches exist")
         backup_path = backup_runtime(
             Path(args.database), Path(args.image_root), Path(args.backup_dir)
         )
