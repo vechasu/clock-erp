@@ -7,7 +7,7 @@ from datetime import datetime, time as datetime_time, timedelta, timezone
 from app.catalog_db import CatalogDatabase
 
 
-ENTITY_TYPES = {"product", "sale", "receipt", "brand", "category"}
+ENTITY_TYPES = {"product", "sale", "receipt", "brand", "category", "inventory"}
 ACTION_TYPES = {
     "created",
     "updated",
@@ -35,6 +35,7 @@ FIELD_WHITELISTS = {
     },
     "brand": {"name"},
     "category": {"name"},
+    "inventory": set(),
 }
 SENSITIVE_MARKERS = {
     "password", "passwd", "secret", "token", "authorization", "credential",
@@ -205,8 +206,14 @@ class AuditJournal:
             conditions.append("action = ?")
             parameters.append(action)
         if actor:
-            conditions.append("actor_display_name_snapshot = ?")
-            parameters.append(str(actor))
+            conditions.append(
+                "(actor_display_name_snapshot = ? OR (entity_type = 'inventory' AND EXISTS ("
+                "SELECT 1 FROM erp_inventory_sessions ais WHERE ais.id = entity_id AND "
+                "(? IN (COALESCE(ais.started_by,''), COALESCE(ais.completed_by,''), "
+                "COALESCE(ais.cancelled_by,'')) OR EXISTS (SELECT 1 FROM erp_inventory_items aii "
+                "WHERE aii.session_id = ais.id AND aii.confirmed_by = ?)))))"
+            )
+            parameters.extend([str(actor), str(actor), str(actor)])
         if status and entity_type == "sale":
             conditions.append("status_snapshot = ?")
             parameters.append(str(status))
@@ -214,9 +221,18 @@ class AuditJournal:
             conditions.append("source_snapshot = ?")
             parameters.append(str(source))
         if query:
-            conditions.append("search_text LIKE ? ESCAPE '\\'")
+            conditions.append(
+                "(search_text LIKE ? ESCAPE '\\' OR (entity_type = 'inventory' AND EXISTS ("
+                "SELECT 1 FROM erp_inventory_items qi JOIN catalog_excel_products qp "
+                "ON qp.id = qi.product_id WHERE qi.session_id = entity_id AND "
+                "(qp.excel_name_raw LIKE ? ESCAPE '\\' OR "
+                "COALESCE(qp.excel_article,'') LIKE ? ESCAPE '\\'))))"
+            )
             escaped = str(query).casefold().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-            parameters.append("%{}%".format(escaped))
+            term = "%{}%".format(escaped)
+            raw_escaped = str(query).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            raw_term = "%{}%".format(raw_escaped)
+            parameters.extend([term, raw_term, raw_term])
         try:
             parsed_from = datetime.strptime(
                 str(date_from)[:10], "%Y-%m-%d"
@@ -271,8 +287,13 @@ class AuditJournal:
         self.database.initialize()
         with self.database.connect() as connection:
             actors = [row[0] for row in connection.execute(
-                "SELECT DISTINCT actor_display_name_snapshot FROM erp_audit_events "
-                "ORDER BY actor_display_name_snapshot"
+                "SELECT DISTINCT name FROM ("
+                "SELECT actor_display_name_snapshot AS name FROM erp_audit_events UNION ALL "
+                "SELECT started_by FROM erp_inventory_sessions UNION ALL "
+                "SELECT completed_by FROM erp_inventory_sessions UNION ALL "
+                "SELECT cancelled_by FROM erp_inventory_sessions UNION ALL "
+                "SELECT confirmed_by FROM erp_inventory_items) "
+                "WHERE COALESCE(name,'') <> '' ORDER BY name"
             ).fetchall()]
             actions = [row[0] for row in connection.execute(
                 "SELECT DISTINCT action FROM erp_audit_events ORDER BY action"

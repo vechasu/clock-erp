@@ -96,6 +96,19 @@
         .journal-object-link::after { content: "↗"; font-size: 14px; }
         html[data-theme] .journal-object-link { color: #fff !important; }
         .journal-deleted-note { margin-top: 18px; color: #7a8495; font-weight: 700; }
+        .inventory-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 14px 0 18px; }
+        .inventory-summary-item { padding: 10px; border: 1px solid #e3e9f1; border-radius: 9px; background: #f8fafc; }
+        .inventory-summary-item span { display: block; color: #718096; font-size: 11px; line-height: 1.25; }
+        .inventory-summary-item strong { display: block; margin-top: 3px; color: #253044; font-size: 15px; overflow-wrap: anywhere; }
+        .inventory-position { display: grid; grid-template-columns: 42px minmax(0, 1fr); gap: 10px; padding: 13px 0; border-bottom: 1px solid #e8edf3; }
+        .inventory-position-photo { width: 42px; height: 42px; border-radius: 8px; background: #eef2f7; object-fit: cover; }
+        .inventory-position-photo-empty { display: grid; place-items: center; color: #94a3b8; font-size: 16px; font-weight: 800; }
+        .inventory-position-name { color: #253044; font-size: 13px; font-weight: 800; line-height: 1.35; }
+        .inventory-position-article { margin-top: 2px; color: #7a8798; font-size: 11px; }
+        .inventory-position-values { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; margin-top: 8px; }
+        .inventory-position-values span { padding: 5px 6px; border-radius: 6px; background: #f3f6fa; color: #687386; font-size: 10px; line-height: 1.35; }
+        .inventory-position-values strong { display: block; color: #2d3748; font-size: 12px; }
+        .inventory-position-result { margin-top: 7px; color: #334155; font-size: 11px; line-height: 1.45; overflow-wrap: anywhere; }
         @media (max-width: 900px) {
             .journal-main { padding: 16px 14px 92px; }
             .journal-header h1 { font-size: 26px; }
@@ -125,6 +138,8 @@
             .journal-drawer-content { padding: 0 15px 22px; }
             .journal-detail-values { align-items: flex-start; flex-wrap: wrap; }
             .journal-detail-value-wrap { max-width: 100%; }
+            .inventory-summary { grid-template-columns: 1fr 1fr; }
+            .inventory-position-values { grid-template-columns: 1fr 1fr; }
         }
     </style>
 </head>
@@ -142,7 +157,7 @@
             </header>
 
             <nav class="journal-tabs erp-section-tabs" aria-label="Раздел журнала">
-                {% for value, label in [("", "Все"), ("product", "Товары"), ("brand", "Бренды"), ("category", "Категории"), ("sale", "Продажи"), ("receipt", "Приход")] %}
+                {% for value, label in [("", "Все"), ("product", "Товары"), ("brand", "Бренды"), ("category", "Категории"), ("sale", "Продажи"), ("receipt", "Приход"), ("inventory", "Инвентаризация")] %}
                     <a class="journal-tab erp-section-tab{% if filters.entity_type == value %} active{% endif %}" href="#" data-journal-tab="{{ value }}"{% if filters.entity_type == value %} aria-current="page"{% endif %}>{{ label }}</a>
                 {% endfor %}
             </nav>
@@ -180,6 +195,7 @@
                             <option value="category">Категории</option>
                             <option value="sale">Продажи</option>
                             <option value="receipt">Приход</option>
+                            <option value="inventory">Инвентаризация</option>
                         </select>
                     {% endif %}
                     <select class="journal-control" name="action" aria-label="Тип события">
@@ -224,7 +240,7 @@
                         <span class="journal-event-rail"><span class="journal-event-dot"></span></span>
                         <span class="journal-event-card">
                             <span class="journal-event-icon" aria-hidden="true">
-                                {{ navigation_icon("products" if event.entity_type == "product" else "brand" if event.entity_type == "brand" else "category" if event.entity_type == "category" else "sales" if event.entity_type == "sale" else "receipts", "journal-event-icon-svg") }}
+                                {{ navigation_icon("products" if event.entity_type in ["product", "inventory"] else "brand" if event.entity_type == "brand" else "category" if event.entity_type == "category" else "sales" if event.entity_type == "sale" else "receipts", "journal-event-icon-svg") }}
                             </span>
                             <span class="journal-event-copy">
                                 <span class="journal-event-title">{{ event.object_label_snapshot }}</span>
@@ -321,6 +337,7 @@
         category: ["M4 6h6l2 2h8v10H4V6Z", "M4 10h16"],
         sale: ["M6 8h12l1 12H5L6 8Z", "M9 9V6a3 3 0 0 1 6 0v3"],
         receipt: ["M4 13h4l2 3h4l2-3h4v7H4v-7Z", "M12 3v9m0 0 3-3m-3 3L9 9"],
+        inventory: ["M4 6h16v14H4V6Z", "M8 3v6m8-6v6M8 13h8m-8 4h5"],
     };
 
     function eventIcon(entityType) {
@@ -442,6 +459,68 @@
         return wrapper;
     }
 
+    function inventoryValue(value) {
+        return value === null || value === undefined || value === "" ? "—" : String(value);
+    }
+
+    function inventoryTimestamp(value) {
+        if (!value) return "";
+        const parsed = new Date(value);
+        return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString("ru-RU");
+    }
+
+    function inventoryDetails(documentData) {
+        const summary = documentData.summary;
+        const grid = document.createElement("div");
+        grid.className = "inventory-summary";
+        [
+            ["Статус", summary.status_label],
+            ["Начал", [summary.started_by, inventoryTimestamp(summary.started_at)].filter(Boolean).join(" · ")],
+            [summary.status === "cancelled" ? "Отменил" : "Завершил", [summary.status === "cancelled" ? summary.cancelled_by : summary.completed_by, inventoryTimestamp(summary.status === "cancelled" ? summary.cancelled_at : summary.completed_at)].filter(Boolean).join(" · ")],
+            ["Проверено", summary.checked_positions + " из " + summary.total_positions],
+            ["Без изменений", summary.unchanged_positions],
+            ["Увеличено", summary.increased_positions + " / +" + summary.positive_delta],
+            ["Уменьшено", summary.decreased_positions + " / " + summary.negative_delta],
+            ["Добавлено", summary.added_positions],
+            ["Реактивировано", summary.reactivated_positions],
+            ["Не найдено", summary.missing_positions],
+            ["Конфликты", summary.conflict_positions],
+            ["Причина отмены", summary.cancelled_reason],
+        ].forEach(([label, value]) => {
+            const item = document.createElement("div");
+            item.className = "inventory-summary-item";
+            const caption = document.createElement("span"); caption.textContent = label;
+            const strong = document.createElement("strong"); strong.textContent = inventoryValue(value);
+            item.append(caption, strong); grid.append(item);
+        });
+        content.append(grid, detailHeading("Позиции"));
+        documentData.positions.forEach((position) => {
+            const row = document.createElement("div"); row.className = "inventory-position";
+            let photo;
+            if (position.photo_url) {
+                photo = document.createElement("img"); photo.src = position.photo_url;
+                photo.alt = ""; photo.loading = "lazy"; photo.className = "inventory-position-photo";
+            } else {
+                photo = document.createElement("span");
+                photo.className = "inventory-position-photo inventory-position-photo-empty";
+                photo.textContent = "□";
+            }
+            const body = document.createElement("div");
+            const name = document.createElement("div"); name.className = "inventory-position-name"; name.textContent = position.name;
+            const article = document.createElement("div"); article.className = "inventory-position-article"; article.textContent = "Артикул: " + (position.article || "—");
+            const values = document.createElement("div"); values.className = "inventory-position-values";
+            [["До", position.stock_before], ["Факт", position.actual_stock], ["После", position.stock_after], ["Δ", position.delta]].forEach(([label, value]) => {
+                const cell = document.createElement("span");
+                const strong = document.createElement("strong"); strong.textContent = inventoryValue(value);
+                cell.append(label, strong); values.append(cell);
+            });
+            const result = document.createElement("div"); result.className = "inventory-position-result";
+            const details = [position.result, position.user, inventoryTimestamp(position.timestamp), position.movement_id ? "Движение " + position.movement_id : "", position.error].filter(Boolean);
+            result.textContent = details.join(" · ");
+            body.append(name, article, values, result); row.append(photo, body); content.append(row);
+        });
+    }
+
     async function openDrawer(eventId) {
         const response = await fetch("/api/journal/" + encodeURIComponent(eventId));
         const payload = await response.json();
@@ -453,11 +532,14 @@
         meta.className = "journal-detail-meta";
         meta.textContent = event.timestamp_display + " · " + event.actor_display_name_snapshot + " · " + event.entity_label + (event.source_snapshot ? " · " + event.source_snapshot : "");
         content.append(meta);
+        if (event.inventory) {
+            inventoryDetails(event.inventory);
+        }
         const actionOnly = new Set([
             "created", "system_created", "deleted",
             "photo_added", "photo_replaced", "photo_removed",
         ]).has(event.action);
-        const fieldChanges = actionOnly ? [] : event.field_changes;
+        const fieldChanges = event.inventory || actionOnly ? [] : event.field_changes;
         if (fieldChanges.length > 1) {
             content.append(detailHeading(changedFieldsLabel(fieldChanges.length)));
         }
@@ -473,7 +555,7 @@
             const after = detailValue("Стало", change.after, true);
             values.append(before, arrow, after); row.append(label, values); content.append(row);
         });
-        if (!fieldChanges.length) {
+        if (!fieldChanges.length && !event.inventory) {
             content.append(detailHeading("Действие"));
             const actionValue = document.createElement("div");
             actionValue.className = "journal-detail-action";
@@ -495,6 +577,7 @@
                 product: "Открыть товар",
                 sale: "Открыть продажу",
                 receipt: "Открыть приход",
+                inventory: "Открыть инвентаризацию",
             }[event.entity_type] || "Открыть объект";
             content.append(link);
         } else {

@@ -31,6 +31,7 @@ from app.clients.bitrix_catalog import (
 )
 from app.services.bitrix_catalog_importer import BitrixCatalogImporter
 from app.services.audit_journal import AuditJournal
+from app.services.inventory_journal import InventoryJournal
 from app.services.brand_values import normalize_brand
 from app.services.catalog_reader import CatalogReader
 from app.catalog.application import CatalogApplication
@@ -13994,6 +13995,7 @@ JOURNAL_ENTITY_LABELS = {
     "category": "Категории",
     "sale": "Продажи",
     "receipt": "Приход",
+    "inventory": "Инвентаризация",
 }
 JOURNAL_ACTION_LABELS = {
     "created": "Создано",
@@ -14114,7 +14116,23 @@ def format_journal_event(event):
 
     action_text = ""
 
-    if action in {"created", "system_created"}:
+    if entity_type == "inventory":
+        inventory = event.get("inventory_summary") or {}
+        status = inventory.get("status")
+        checked = int(inventory.get("checked_positions") or 0)
+        total = int(inventory.get("total_positions") or 0)
+        if status == "active":
+            action_text = "Активна · проверено {} из {}".format(checked, total)
+        elif status == "cancelled":
+            action_text = "Отменена · проверено {} из {}".format(checked, total)
+        else:
+            action_text = "Завершена · проверено {} · корректировок {} · добавлено {} · не найдено {}".format(
+                checked, int(inventory.get("adjusted_positions") or 0),
+                int(inventory.get("added_positions") or 0),
+                int(inventory.get("missing_positions") or 0),
+            )
+
+    if not action_text and action in {"created", "system_created"}:
         if entity_type == "brand":
             action_text = "Создан новый бренд"
         elif entity_type == "category":
@@ -14221,6 +14239,10 @@ def serialize_journal_event(event):
         "day_key": local.date().isoformat(),
         "day_label": _journal_day_label(event["occurred_at"]),
         "tone": (
+            "warning" if event["entity_type"] == "inventory" and (event.get("inventory_summary") or {}).get("status") == "cancelled"
+            else "success" if event["entity_type"] == "inventory" and (event.get("inventory_summary") or {}).get("status") == "completed"
+            else "info" if event["entity_type"] == "inventory"
+            else
             "success" if event["action"] in {"created", "system_created"}
             else "danger" if event["action"] in {"deleted", "refused"}
             else "warning" if event["action"] == "cancelled"
@@ -14233,7 +14255,7 @@ def serialize_journal_event(event):
 
 def journal_query_arguments():
     entity_type = str(request.args.get("entity_type") or "").strip()
-    if entity_type not in {"product", "brand", "category", "sale", "receipt"}:
+    if entity_type not in {"product", "brand", "category", "sale", "receipt", "inventory"}:
         entity_type = ""
     return {
         "entity_type": entity_type,
@@ -14255,6 +14277,7 @@ def journal_page():
     journal = AuditJournal()
     filters = journal_query_arguments()
     listing = journal.list_events(**filters, limit=30)
+    InventoryJournal(journal.database).enrich_events(listing["events"])
     return render_template(
         "journal.html",
         events=[serialize_journal_event(event) for event in listing["events"]],
@@ -14269,7 +14292,9 @@ def journal_page():
 @app.route("/api/v1/journal")
 def api_journal_collection():
     filters = journal_query_arguments()
-    listing = AuditJournal().list_events(**filters, limit=30)
+    journal = AuditJournal()
+    listing = journal.list_events(**filters, limit=30)
+    InventoryJournal(journal.database).enrich_events(listing["events"])
     return api_success({
         "events": [serialize_journal_event(event) for event in listing["events"]],
         "next_cursor": listing["next_cursor"],
@@ -14280,10 +14305,12 @@ def api_journal_collection():
 @app.route("/api/journal/<int:event_id>")
 @app.route("/api/v1/journal/<int:event_id>")
 def api_journal_event(event_id):
-    event = AuditJournal().get_event(event_id)
+    journal = AuditJournal()
+    event = journal.get_event(event_id)
     if event is None:
         return api_error("JOURNAL_EVENT_NOT_FOUND", "Событие не найдено.", 404)
     object_url = ""
+    InventoryJournal(journal.database).enrich_events([event])
     if event["action"] != "deleted":
         if event["entity_type"] == "product":
             if ExcelProductCatalog().get_product(event["entity_id"]):
@@ -14305,9 +14332,15 @@ def api_journal_event(event_id):
                 object_url = url_for(
                     "warehouse_page", view="brands", brand_id=brand_id
                 )
+        elif event["entity_type"] == "inventory":
+            object_url = "/app/products/inventory?inventory_id={}".format(event["entity_id"])
     payload = serialize_journal_event(event)
     payload["object_url"] = object_url
     payload["object_deleted"] = not bool(object_url)
+    if event["entity_type"] == "inventory":
+        payload["inventory"] = InventoryJournal(journal.database).get_document(
+            event["entity_id"]
+        )
     return api_success(payload)
 
 

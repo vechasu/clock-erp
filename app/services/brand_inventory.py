@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime, timezone
 
 from app.catalog_db import CatalogDatabase
+from app.services.audit_journal import AuditJournal
 from app.services.excel_product_catalog import (
     _empty_enrichment,
     _json,
@@ -119,6 +120,19 @@ class BrandInventory:
                     (uuid.uuid4().hex, session_id, product["id"], int(product["stock"]),
                      now, int(product["movement_rowid"])),
                 )
+            AuditJournal(self.database).record(
+                "inventory", session_id, "created",
+                "Инвентаризация · {}".format(brand["name"]),
+                object_secondary=session_id,
+                metadata={
+                    "number": session_id,
+                    "brand": brand["name"],
+                    "brand_id": brand["id"],
+                },
+                actor_id=user_name, actor_name=user_name,
+                actor_type="user" if user_name else "system",
+                occurred_at=now, connection=connection,
+            )
             return self._detail(connection, session_id), True
 
     def get(self, session_id):
@@ -266,6 +280,7 @@ class BrandInventory:
                 )
             now = utc_now()
             item_id = uuid.uuid4().hex
+            reactivated = 0 if product["active"] else 1
             connection.execute(
                 "UPDATE catalog_excel_products SET active = 1, "
                 "source_key = COALESCE(deleted_source_key, source_key), "
@@ -275,10 +290,10 @@ class BrandInventory:
             )
             connection.execute(
                 "INSERT INTO erp_inventory_items (id, session_id, product_id, snapshot_stock, "
-                "status, appearance, snapshot_at, snapshot_movement_rowid) "
-                "VALUES (?, ?, ?, ?, 'pending', 'existing', ?, ?)",
+                "status, appearance, snapshot_at, snapshot_movement_rowid, reactivated) "
+                "VALUES (?, ?, ?, ?, 'pending', 'existing', ?, ?, ?)",
                 (item_id, session["id"], product["id"], int(product["stock"]), now,
-                 self._latest_movement_rowid(connection, product["id"])),
+                 self._latest_movement_rowid(connection, product["id"]), reactivated),
             )
             item = connection.execute(
                 "SELECT * FROM erp_inventory_items WHERE id = ?", (item_id,)
