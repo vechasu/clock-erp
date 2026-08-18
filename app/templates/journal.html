@@ -196,6 +196,7 @@
                             <option value="sale">Продажи</option>
                             <option value="receipt">Приход</option>
                             <option value="inventory">Инвентаризация</option>
+                            <option value="repair">Ремонт</option>
                         </select>
                     {% endif %}
                     <select class="journal-control" name="action" aria-label="Тип события">
@@ -240,7 +241,7 @@
                         <span class="journal-event-rail"><span class="journal-event-dot"></span></span>
                         <span class="journal-event-card">
                             <span class="journal-event-icon" aria-hidden="true">
-                                {{ navigation_icon("products" if event.entity_type in ["product", "inventory"] else "brand" if event.entity_type == "brand" else "category" if event.entity_type == "category" else "sales" if event.entity_type == "sale" else "receipts", "journal-event-icon-svg") }}
+                                {{ navigation_icon("products" if event.entity_type in ["product", "inventory"] else "brand" if event.entity_type == "brand" else "category" if event.entity_type == "category" else "sales" if event.entity_type == "sale" else "repair" if event.entity_type == "repair" else "receipts", "journal-event-icon-svg") }}
                             </span>
                             <span class="journal-event-copy">
                                 <span class="journal-event-title">{{ event.object_label_snapshot }}</span>

@@ -8,7 +8,9 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 
-REPAIR_SCHEMA_VERSION = 3
+REPAIR_SCHEMA_VERSION = 4
+
+REPAIR_FINAL_STATUSES = {"completed", "cancelled"}
 
 REPAIR_STATUS_LABELS = {
     "new": "Новая",
@@ -172,6 +174,7 @@ DEFAULT_FIELDS = {
     "created_at": "",
     "updated_at": "",
     "archived_at": "",
+    "archived_by": "",
     "responsible": "",
     "order_number": "",
     "order_id": "",
@@ -307,6 +310,8 @@ def normalize_date(value, field_label="Дата"):
 
 
 def available_repair_actions(case):
+    if _text(case.get("archived_at")):
+        return []
     status = _text(case.get("status"))
     return [
         action
@@ -346,6 +351,8 @@ def repair_attention_key(case, today=None):
 
 def apply_repair_action(case, action, payload, actor="Система"):
     """Validate and atomically mutate one repair workflow state."""
+    if _text(case.get("archived_at")):
+        raise ValueError("Архивный ремонт доступен только для просмотра")
     if action not in REPAIR_TRANSITIONS:
         raise ValueError("Неизвестное действие ремонта")
     payload = payload if isinstance(payload, dict) else {}
@@ -894,13 +901,6 @@ def migrate_repair_case(source, migrated_at=None):
             existing_comments.add(comment)
             mapped_fields += 1
     case["history"] = history
-
-    if (
-        previous_version < REPAIR_SCHEMA_VERSION
-        and status == "completed"
-        and not _text(case.get("archived_at"))
-    ):
-        case["archived_at"] = case["updated_at"]
 
     case["schema_version"] = REPAIR_SCHEMA_VERSION
     case["migration"] = {
