@@ -2522,8 +2522,6 @@
                             empty_label="Ничего не найдено",
                             component_class="filter-combobox",
                             clear_selection_on_search_clear=true,
-                            action_kind="brand",
-                            action_label="Добавить новый бренд",
                             shared_catalog_kind="brand",
                             id_input_name="brand_id"
                         ) }}
@@ -2543,8 +2541,6 @@
                             empty_label="Ничего не найдено",
                             component_class="filter-combobox",
                             clear_selection_on_search_clear=true,
-                            action_kind="category",
-                            action_label="Добавить новую категорию",
                             shared_catalog_kind="category",
                             id_input_name="category_id"
                         ) }}
@@ -2563,8 +2559,6 @@
                             component_class="filter-combobox sales-product-combobox",
                             clear_selection_on_search_clear=true,
                             input_id="product_id",
-                            action_kind="product",
-                            action_label="Добавить новый товар",
                             shared_catalog_kind="product"
                         ) }}
                     </div>
@@ -6668,12 +6662,12 @@
                 throw new Error("category-search");
             }
 
-            const createdProductName = "Alpha New E2E";
-            await searchWithKeyboard(product, createdProductName);
+            const missingProductName = "Alpha Missing E2E";
+            await searchWithKeyboard(product, missingProductName);
             await new Promise((resolve) =>
                 window.setTimeout(resolve, 650)
             );
-            const createdProductOption = Array.from(
+            const missingProductOption = Array.from(
                 product.querySelectorAll(
                     ".brand-combobox-option"
                 )
@@ -6681,22 +6675,22 @@
                 try {
                     return JSON.parse(
                         option.dataset.catalogItem || "{}"
-                    ).name === createdProductName;
+                    ).name === missingProductName;
                 } catch (error) {
                     return false;
                 }
             });
 
             if (
-                !/^\d+$/.test(productInput.value)
+                productInput.value
                 || brandInput.value !== "Alpha"
                 || categoryInput.value !== "Часы/Мужские"
-                || !createdProductOption
+                || missingProductOption
                 || document.querySelector(
                     "[data-shared-catalog-create-modal]"
                 )
             ) {
-                throw new Error("product-inline-create");
+                throw new Error("product-create-disabled");
             }
 
             await searchWithKeyboard(product, "ARTICLE-ONE");
