@@ -18105,12 +18105,13 @@ def api_sales_catalog():
         brand_id=request.args.get("brand_id"),
         category_id=request.args.get("category_id"),
         limit=limit,
-        in_stock=False,
+        in_stock=True,
     )
     total = SharedCatalog().count_products(
         query=request.args.get("q") or "",
         brand_id=request.args.get("brand_id"),
         category_id=request.args.get("category_id"),
+        in_stock=True,
     )
     return api_success(items, total=total, limit=limit)
 

@@ -371,7 +371,7 @@ class CatalogFilteringTest(unittest.TestCase):
         self.assertIn("checked", html)
         self.assertEqual(html.count('data-product-id="'), 4)
 
-    def test_sales_and_receipts_return_complete_zero_stock_catalog(self):
+    def test_sales_uses_positive_stock_while_receipts_keep_full_catalog(self):
         query = "brand_id={}&category_id={}&limit=200".format(
             self.brand["id"],
             self.category_id,
@@ -381,11 +381,11 @@ class CatalogFilteringTest(unittest.TestCase):
             "/api/v1/receipts/catalog?" + query
         ).get_json()
 
-        self.assertEqual(sales["meta"]["total"], 120)
+        self.assertEqual(sales["meta"]["total"], 4)
         self.assertEqual(receipts["meta"]["total"], 120)
-        self.assertEqual(len(sales["data"]), 120)
+        self.assertEqual(len(sales["data"]), 4)
         self.assertEqual(len(receipts["data"]), 120)
-        self.assertIn(0, [item["stock"] for item in sales["data"]])
+        self.assertTrue(all(item["stock"] > 0 for item in sales["data"]))
         self.assertIn(0, [item["stock"] for item in receipts["data"]])
 
     def test_sales_add_modal_requests_only_available_cascade_options(self):
@@ -409,6 +409,9 @@ class CatalogFilteringTest(unittest.TestCase):
         ).get_json()
 
         self.assertIn('data-catalog-in-stock="true"', sales_template)
+        self.assertNotIn("Добавить новый бренд", sales_template)
+        self.assertNotIn("Добавить новую категорию", sales_template)
+        self.assertNotIn("Добавить новый товар", sales_template)
         self.assertEqual(
             [item["id"] for item in brands["data"]],
             [self.brand["id"]],
@@ -418,6 +421,35 @@ class CatalogFilteringTest(unittest.TestCase):
         self.assertEqual(options["meta"]["total"], 4)
         self.assertEqual(len(options["data"]), 4)
         self.assertTrue(all(item["stock"] > 0 for item in options["data"]))
+
+    def test_sale_channels_share_catalog_excel_stock(self):
+        expected_product_ids = None
+
+        for source in ("Tictactoy", "Wildberries", "Amazon"):
+            with self.subTest(source=source):
+                query = (
+                    "source={}&brand_id={}&category_id={}&limit=200"
+                ).format(source, self.brand["id"], self.category_id)
+                products = self.client.get(
+                    "/api/v1/sales/catalog?" + query
+                ).get_json()
+                brands = self.client.get(
+                    "/api/v1/catalog/options?type=brand"
+                    "&available_for_sale=1&source=" + source
+                ).get_json()
+
+                product_ids = [item["id"] for item in products["data"]]
+                if expected_product_ids is None:
+                    expected_product_ids = product_ids
+                self.assertEqual(product_ids, expected_product_ids)
+                self.assertEqual(len(product_ids), 4)
+                self.assertTrue(all(
+                    item["stock"] > 0 for item in products["data"]
+                ))
+                self.assertIn(
+                    self.brand["id"],
+                    {item["id"] for item in brands["data"]},
+                )
 
     def test_large_catalog_is_bounded_but_searches_beyond_first_window(self):
         large_brand = self.shared.create_brand("Большой бренд")

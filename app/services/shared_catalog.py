@@ -332,6 +332,7 @@ class SharedCatalog:
                 "FROM catalog_excel_products p "
                 "WHERE p.active = 1 AND p.brand_id IS NULL"
                 + product_availability_sql
+                + " GROUP BY p.brand_id"
                 + available_having_sql
                 + ") AS brand_options "
                 + query_filter
