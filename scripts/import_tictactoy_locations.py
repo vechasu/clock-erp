@@ -164,6 +164,28 @@ def build_location_catalog(items):
         return sorted(city_names, key=str.casefold)
 
     countries = {}
+    locations_by_id = {}
+
+    country_names_by_id = {
+        country_id: country_name
+        for country_name, country_id in COUNTRY_IDS.items()
+    }
+
+    def location_path(node_id):
+        path = []
+        visited = set()
+
+        while node_id and node_id not in visited:
+            visited.add(node_id)
+            if node_id in country_names_by_id:
+                return country_names_by_id[node_id], list(reversed(path))
+            node = nodes.get(node_id)
+            if node is None:
+                break
+            path.append(node)
+            node_id = node["parent_id"]
+
+        return "", []
 
     for country_name, country_id in COUNTRY_IDS.items():
         regions = {}
@@ -186,9 +208,33 @@ def build_location_catalog(items):
 
         countries[country_name] = regions
 
+    for node_id, node in nodes.items():
+        if node["type_id"] not in {"2", "3"}:
+            continue
+        country, path = location_path(node_id)
+        if not country:
+            continue
+
+        region_node = next(
+            (item for item in path if item["type_id"] == "2"),
+            None,
+        )
+        city_node = next(
+            (item for item in reversed(path) if item["type_id"] == "3"),
+            None,
+        )
+        region = region_node["name"] if region_node else ""
+        city = city_node["name"] if city_node else ""
+        if city and not region:
+            # Federal cities are direct children of the country in Bitrix.
+            region = city
+
+        locations_by_id[node_id] = "\t".join((country, region, city))
+
     return {
         "source": SOURCE_URL,
         "countries": countries,
+        "locations_by_id": locations_by_id,
     }
 
 

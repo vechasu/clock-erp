@@ -354,7 +354,11 @@ def normalize_order(order):
     region = (
         first_value(order, "region", "region_name", "REGION", "REGION_NAME")
         or properties.get("REGION") or properties.get("REGION_NAME")
+    )
+    location_id = (
+        first_value(order, "location_id", "LOCATION_ID")
         or properties.get("LOCATION")
+        or properties.get("LOCATION_ID")
     )
     required = {
         "customer": customer,
@@ -410,6 +414,7 @@ def normalize_order(order):
         "country": country,
         "city": city,
         "region": region,
+        "location_id": str(location_id or "").strip(),
         "tracking": (
             first_value(order, "tracking", "tracking_number", "TRACKING_NUMBER")
             or properties.get("TRACKING_NUMBER")

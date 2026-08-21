@@ -266,6 +266,20 @@ class BitrixOrderNormalizationTest(unittest.TestCase):
         self.assertEqual(order["delivery_price"], 250.0)
         self.assertTrue(order["calculation_consistent"])
 
+    def test_bitrix_location_property_is_preserved_as_id_not_region_name(self):
+        order = normalize_order({
+            "id": "21110",
+            "status": "A",
+            "properties": [
+                {"code": "LOCATION", "value": "107"},
+                {"code": "CITY", "value": None},
+            ],
+        })
+
+        self.assertEqual(order["location_id"], "107")
+        self.assertIsNone(order["region"])
+        self.assertIsNone(order["city"])
+
     def test_delivery_is_derived_only_from_fully_priced_reconciled_order(self):
         order = normalize_order({
             "id": 7, "status": "A", "price": "1250",

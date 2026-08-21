@@ -309,13 +309,18 @@ class OrderTictactoySaleTest(unittest.TestCase):
         self.assertIn('value="Московская область"', html)
         self.assertIn('name="city"', html)
         self.assertIn('value="Химки"', html)
-        self.assertEqual(html.count("data-order-sale-geography"), 4)
+        self.assertIn('id="orderSaleCountry"', html)
+        self.assertIn('id="orderSaleRegion"', html)
+        self.assertIn('id="orderSaleCity"', html)
+        self.assertGreaterEqual(html.count("brand-combobox-search"), 3)
+        self.assertIn("catalog-combobox:change", html)
         self.assertIn('name="tracking"', html)
         self.assertIn('value="001-AB"', html)
         self.assertIn('placeholder="Введите номер отправления"', html)
         self.assertIn('maxlength="255"', html)
         self.assertIn("window.sessionStorage.setItem", html)
         self.assertIn("window.sessionStorage.getItem", html)
+        self.assertNotIn("order-sale-geography:", html)
 
     def render_order_for(self, order, query=""):
         patches = self.patches(order=order)
@@ -324,9 +329,36 @@ class OrderTictactoySaleTest(unittest.TestCase):
 
     def test_dialog_keeps_unknown_geography_empty(self):
         html = self.render_order_for(self.order)
-        self.assertIn('name="country" maxlength="255" value=""', html)
-        self.assertIn('name="region" maxlength="255" value=""', html)
-        self.assertIn('name="city" maxlength="255" value=""', html)
+        self.assertIn('id="orderSaleCountry"', html)
+        self.assertIn('id="orderSaleRegion"', html)
+        self.assertIn('id="orderSaleCity"', html)
+        self.assertGreaterEqual(html.count('value=""'), 3)
+
+    def test_order_21110_location_id_resolves_to_moscow(self):
+        order = web.normalize_order({
+            "id": "21110",
+            "status": "A",
+            "properties": [
+                {"code": "LOCATION", "name": "Местоположение", "value": "107"},
+                {"code": "CITY", "name": "Город", "value": None},
+                {"code": "ADDRESS", "name": "Адрес доставки", "value": "ПВЗ СДЭК"},
+            ],
+        })
+
+        self.assertEqual(
+            web.get_order_geography(order),
+            {"country": "Россия", "region": "Москва", "city": "Москва"},
+        )
+
+    def test_other_bitrix_location_id_resolves_without_hardcoding_107(self):
+        self.assertEqual(
+            web.get_order_geography({"location_id": "468"}),
+            {
+                "country": "Россия",
+                "region": "Московская область",
+                "city": "Красногорск",
+            },
+        )
 
     def test_geography_prefers_structured_fields_and_parses_missing_address_parts(self):
         self.assertEqual(
@@ -472,16 +504,29 @@ class OrderTictactoySaleTest(unittest.TestCase):
         response = self.conduct(
             order=order,
             tracking="   ",
-            country="Армения",
-            region="Лорийская область",
-            city="село Одзун",
+            country="Беларусь",
+            region="Минская область",
+            city="Минск",
         )
         self.assertEqual(urlsplit(response.location).path, "/sales")
         rows = self.inventory.list_sales()
         self.assertEqual({row["track_number"] for row in rows}, {""})
-        self.assertEqual({row["country"] for row in rows}, {"Армения"})
-        self.assertEqual({row["region"] for row in rows}, {"Лорийская область"})
-        self.assertEqual({row["city"] for row in rows}, {"село Одзун"})
+        self.assertEqual({row["country"] for row in rows}, {"Беларусь"})
+        self.assertEqual({row["region"] for row in rows}, {"Минская область"})
+        self.assertEqual({row["city"] for row in rows}, {"Минск"})
+
+    def test_internal_location_id_is_normalized_before_sale_is_saved(self):
+        response = self.conduct(
+            country="Россия",
+            region="107",
+            city="",
+        )
+
+        self.assertEqual(urlsplit(response.location).path, "/sales")
+        rows = self.inventory.list_sales()
+        self.assertEqual({row["country"] for row in rows}, {"Россия"})
+        self.assertEqual({row["region"] for row in rows}, {"Москва"})
+        self.assertEqual({row["city"] for row in rows}, {"Москва"})
 
     def test_address_geography_is_snapshotted_and_returned_by_sale_api(self):
         order = {
