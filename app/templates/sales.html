@@ -520,21 +520,31 @@
             position: sticky;
             z-index: 3;
             right: 0;
-            width: 118px;
-            min-width: 118px;
-            max-width: 118px;
-            padding: 7px 8px;
+            width: 224px;
+            min-width: 224px;
+            max-width: 224px;
+            padding: 7px 10px;
             overflow: visible;
+            background: #ffffff;
             background-clip: padding-box;
             text-align: center;
             box-shadow:
                 -1px 0 0 #d9e0e8,
-                -8px 0 15px -14px #334155;
+                -12px 0 20px -18px #334155;
         }
 
         .sales-table.erp-data-table thead .col-actions {
             z-index: 7;
-            background: #f3f6f9;
+            background: #ffffff;
+        }
+
+        .sales-table.erp-data-table tbody td.col-actions,
+        .sales-table.erp-data-table tbody tr:hover td.col-actions,
+        .sales-table.erp-data-table tbody tr:focus-within td.col-actions,
+        .sales-table.erp-data-table .sale-row.is-cancelled td.col-actions,
+        .sales-table.erp-data-table .sale-row.is-returned td.col-actions,
+        .sales-table.erp-data-table .sale-row.is-partially-returned td.col-actions {
+            background: #ffffff;
         }
 
         .sales-row-actions {
@@ -544,50 +554,84 @@
             gap: 6px;
         }
 
-        .sales-row-action {
+        .sales-edit-action,
+        .sales-more-trigger {
             display: inline-flex;
-            width: 28px;
-            min-width: 28px;
-            height: 28px;
-            min-height: 28px;
+            height: 34px;
+            min-height: 34px;
             align-items: center;
             justify-content: center;
-            padding: 0;
-            border: 0;
-            border-radius: 7px;
-            background: #dbeafe;
+            gap: 7px;
+            padding: 0 11px;
+            border: 1px solid #bfdbfe;
+            border-radius: 9px;
+            background: #eff6ff;
             color: #1d4ed8;
+            cursor: pointer;
+            font: inherit;
+            font-size: 12px;
+            font-weight: 800;
+            line-height: 1;
+            white-space: nowrap;
         }
 
-        .sales-row-action:hover,
-        .sales-row-action:focus-visible {
-            background: #bfdbfe;
+        .sales-edit-action:hover {
+            border-color: #93c5fd;
+            background: #dbeafe;
         }
 
-        .sales-row-action:focus-visible {
+        .sales-edit-action:focus-visible,
+        .sales-more-trigger:focus-visible,
+        .sales-actions-menu-panel button:focus-visible {
             outline: 2px solid #2563eb;
             outline-offset: 2px;
         }
 
-        .sales-row-action svg {
-            width: 13px;
-            height: 13px;
+        .sales-edit-action:disabled,
+        .sales-more-trigger:disabled,
+        .sales-actions-menu-panel button:disabled {
+            border-color: #e2e8f0;
+            background: #f8fafc;
+            color: #94a3b8;
+            cursor: not-allowed;
+            opacity: 0.72;
+        }
+
+        .sales-edit-action svg {
+            width: 15px;
+            height: 15px;
+            flex: 0 0 15px;
+            fill: none;
             pointer-events: none;
+            stroke: currentColor;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            stroke-width: 1.8;
         }
 
-        .sales-row-return {
-            background: #fff7ed;
-            color: #c2410c;
+        .sales-more-trigger {
+            min-width: 48px;
+            padding: 0 9px;
+            border-color: #d8e0e9;
+            background: #ffffff;
+            color: #475569;
         }
 
-        .sales-row-cancel {
-            background: #fee2e2;
-            color: #b91c1c;
+        .sales-more-trigger:hover,
+        .sales-more-trigger[aria-expanded="true"] {
+            border-color: #b8c5d6;
+            background: #f1f5f9;
+            color: #1e293b;
         }
 
-        .sales-row-cancel:hover,
-        .sales-row-cancel:focus-visible {
-            background: #fecaca;
+        .sales-more-dots {
+            font-size: 16px;
+            line-height: 1;
+            transform: translateY(-1px);
+        }
+
+        .sales-more-label {
+            display: none;
         }
 
         .sales-archive-form {
@@ -601,97 +645,61 @@
             background: color-mix(in srgb, currentColor 10%, transparent);
         }
 
-        .sales-action-menu {
-            position: relative;
-        }
-
-        .sales-secondary-menu {
-            position: relative;
-        }
-
-        .sales-action-menu summary,
-        .sales-secondary-menu summary {
-            display: inline-flex;
-            width: 28px;
-            height: 28px;
-            align-items: center;
-            justify-content: center;
-            border-radius: 7px;
-            background: #f1f5f9;
-            color: #475569;
-            cursor: pointer;
-            font-size: 18px;
-            list-style: none;
-        }
-
-        .sales-action-menu summary::-webkit-details-marker,
-        .sales-secondary-menu summary::-webkit-details-marker {
-            display: none;
-        }
-
-        .sales-action-menu button {
-            position: absolute;
-            z-index: 20;
-            top: calc(100% + 4px);
-            right: 0;
-            min-width: 150px;
-            padding: 9px 12px;
-            border: 1px solid #fecaca;
-            border-radius: 9px;
-            background: #ffffff;
-            color: #b91c1c;
-            font-weight: 750;
-            text-align: left;
-            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.14);
-        }
-
-        .sales-action-menu--mobile button {
-            right: auto;
-            left: 0;
-        }
-
-        .sales-row-actions .sales-menu-panel {
-            position: absolute;
-            z-index: 20;
-            top: calc(100% + 4px);
-            right: 0;
+        .sales-actions-menu-panel {
             display: grid;
+            width: 210px;
             min-width: 190px;
             overflow: hidden;
             border: 1px solid #dfe5ed;
-            border-radius: 9px;
+            border-radius: 11px;
             background: #ffffff;
-            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.14);
+            box-shadow: 0 14px 34px rgba(15, 23, 42, 0.18);
         }
 
-        .sales-row-actions .sales-menu-panel button {
-            position: static;
+        .sales-actions-menu-panel[hidden] {
+            display: none;
+        }
+
+        .sales-actions-menu-panel button {
             width: 100%;
-            min-width: 0;
+            min-height: 40px;
+            padding: 9px 12px;
             border: 0;
             border-radius: 0;
-            box-shadow: none;
+            background: #ffffff;
+            color: #334155;
+            cursor: pointer;
+            font: inherit;
+            font-size: 13px;
+            font-weight: 750;
+            text-align: left;
         }
 
-        .sales-row-actions .sales-menu-panel .sales-archive-form {
+        .sales-actions-menu-panel button:hover {
+            background: #f1f5f9;
+            color: #0f172a;
+        }
+
+        .sales-actions-menu-panel button.sales-menu-danger {
+            color: #b91c1c;
+        }
+
+        .sales-actions-menu-panel button.sales-menu-danger:hover {
+            background: #fef2f2;
+        }
+
+        .sales-actions-menu-panel .sales-archive-form {
             display: block;
+        }
+
+        .sales-actions-menu-panel > * + * {
+            border-top: 1px solid #edf1f5;
         }
 
         .sales-mobile-card.is-cancelled {
             border-color: #cbd5e1;
             background: #f8fafc;
             color: #64748b;
-        }
-
-        .sales-row-return:hover,
-        .sales-row-return:focus-visible {
-            background: #ffedd5;
-        }
-
-        .sales-row-return.is-complete {
-            cursor: default;
-            background: #fee2e2;
-            color: #b91c1c;
         }
 
         .sales-mobile-card.is-returned {
@@ -1295,6 +1303,32 @@
                 min-width: 0;
             }
 
+            .sales-table.erp-data-table .col-actions {
+                width: 104px;
+                min-width: 104px;
+                max-width: 104px;
+            }
+
+            .sales-table col[data-system-column="actions"] {
+                width: 104px !important;
+            }
+
+            .sales-table .sales-edit-label {
+                display: none;
+            }
+
+            .sales-table .sales-edit-action {
+                width: 36px;
+                min-width: 36px;
+                padding: 0;
+            }
+
+            .sales-table .sales-more-trigger {
+                width: 40px;
+                min-width: 40px;
+                padding: 0;
+            }
+
             .modal {
                 align-items: flex-end;
                 padding: 10px;
@@ -1336,6 +1370,19 @@
 
             .sales-date-clear {
                 width: 100%;
+            }
+
+            .mobile-erp-card-actions > .sales-edit-action {
+                min-height: 44px;
+                flex: 1 1 auto;
+            }
+
+            .mobile-erp-card-actions > .sales-more-trigger {
+                width: 44px;
+                min-width: 44px;
+                min-height: 44px;
+                flex: 0 0 44px;
+                padding: 0;
             }
 
             .manual-form-grid {
@@ -2024,7 +2071,7 @@
                             {% endfor %}
                             <col
                                 data-system-column="actions"
-                                style="width: 118px"
+                                style="width: 224px"
                             >
                         </colgroup>
                         <thead>
@@ -2121,52 +2168,72 @@
                                         data-system-column="actions"
                                     >
                                         <div class="sales-row-actions">
-                                            {% if sales_view != 'archive' %}
-                                            {% if not sale.is_cancelled and sale.return_status != 'returned' %}
-                                                <button
-                                                    class="sales-row-action sales-row-cancel"
-                                                    type="button"
-                                                    title="Отменить продажу"
-                                                    aria-label="Отменить продажу"
+                                            <button
+                                                class="sales-edit-action sales-row-edit"
+                                                type="button"
+                                                aria-label="Редактировать данные продажи"
+                                                {% if sales_view != 'archive' and not sale.is_cancelled %}
                                                     data-sale="{{ sale|tojson|forceescape }}"
-                                                    onclick="openCancellationModal(this)"
-                                                >↶</button>
-                                            {% endif %}
-                                            {% if not sale.is_cancelled and sale.inventory_managed and sale.return_available_quantity > 0 %}
-                                                <button
-                                                    class="sales-row-action sales-row-return"
-                                                    type="button"
-                                                    title="Оформить возврат"
-                                                    aria-label="Оформить возврат"
-                                                    data-sale="{{ sale|tojson|forceescape }}"
-                                                    onclick="openReturnModal(this)"
-                                                >↩</button>
-                                            {% elif not sale.is_cancelled and sale.inventory_managed %}
-                                                <span
-                                                    class="sales-row-action sales-row-return is-complete"
-                                                    title="Возврат оформлен"
-                                                    aria-label="Возврат оформлен"
-                                                >✓</span>
-                                            {% endif %}
-                                            {% endif %}
-                                            <details class="{% if sales_view != 'archive' and sale.is_cancelled %}sales-action-menu{% else %}sales-secondary-menu{% endif %}">
-                                                <summary aria-label="Другие действия">⋯</summary>
-                                                <div class="sales-menu-panel">
+                                                    onclick="openSaleEditor(this)"
+                                                {% else %}
+                                                    disabled
+                                                    aria-disabled="true"
+                                                    title="Редактирование недоступно"
+                                                {% endif %}
+                                            >
+                                                <svg viewBox="0 0 20 20" aria-hidden="true">
+                                                    <path d="M4 13.75V16h2.25L15 7.25 12.75 5 4 13.75Z"></path>
+                                                    <path d="m11.75 6 2.25 2.25"></path>
+                                                </svg>
+                                                <span class="sales-edit-label">Редактировать</span>
+                                            </button>
+                                            <button
+                                                class="sales-more-trigger"
+                                                type="button"
+                                                aria-haspopup="menu"
+                                                aria-label="Другие действия"
+                                                aria-expanded="false"
+                                                aria-controls="sales-actions-menu-{{ loop.index }}"
+                                                data-sales-actions-trigger
+                                            >
+                                                <span class="sales-more-label">Ещё</span>
+                                                <span class="sales-more-dots" aria-hidden="true">⋯</span>
+                                            </button>
+                                            <div
+                                                id="sales-actions-menu-{{ loop.index }}"
+                                                class="sales-actions-menu-panel"
+                                                role="menu"
+                                                data-sales-actions-menu
+                                                hidden
+                                            >
+                                                {% if sales_view != 'archive' and not sale.is_cancelled and sale.inventory_managed and sale.return_available_quantity > 0 %}
+                                                    <button
+                                                        class="sales-row-return"
+                                                        type="button"
+                                                        role="menuitem"
+                                                        data-sale="{{ sale|tojson|forceescape }}"
+                                                        onclick="openReturnModal(this)"
+                                                    >Вернуть</button>
+                                                {% elif sales_view != 'archive' and not sale.is_cancelled and sale.inventory_managed %}
+                                                    <button type="button" role="menuitem" disabled>Возврат оформлен</button>
+                                                {% endif %}
+                                                {% if sales_view != 'archive' and not sale.is_cancelled and sale.return_status != 'returned' %}
+                                                    <button
+                                                        class="sales-row-cancel sales-menu-danger"
+                                                        type="button"
+                                                        role="menuitem"
+                                                        data-sale="{{ sale|tojson|forceescape }}"
+                                                        onclick="openCancellationModal(this)"
+                                                    >Отменить продажу</button>
+                                                {% endif %}
                                                 {% if sales_view != 'archive' and sale.is_cancelled %}
                                                     <button
+                                                        class="sales-row-delete sales-menu-danger"
                                                         type="button"
+                                                        role="menuitem"
                                                         data-sale="{{ sale|tojson|forceescape }}"
                                                         onclick="openSaleDeleteModal(this)"
                                                     >Удалить запись</button>
-                                                {% endif %}
-                                                {% if sales_view != 'archive' and not sale.is_cancelled %}
-                                                    <button
-                                                        class="sales-row-edit"
-                                                        type="button"
-                                                        title="Редактировать данные продажи"
-                                                        data-sale="{{ sale|tojson|forceescape }}"
-                                                        onclick="openSaleEditor(this)"
-                                                    >Редактировать данные продажи</button>
                                                 {% endif %}
                                                 <form method="post" action="{{ url_for('sale_archive') }}" class="sales-archive-form">
                                                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -2176,11 +2243,11 @@
                                                     <input type="hidden" name="return_source" value="{{ active_source }}">
                                                     <button
                                                         type="submit"
+                                                        role="menuitem"
                                                         {% if not sale.archived_at %}onclick="return confirm('Отправить продажу в архив?')"{% endif %}
                                                     >{{ 'Восстановить' if sale.archived_at else 'Архивировать' }}</button>
                                                 </form>
-                                                </div>
-                                            </details>
+                                            </div>
                                         </div>
                                     </td>
                                 </tr>
@@ -2303,57 +2370,84 @@
                         </details>
 
                         <div class="mobile-erp-card-actions">
-                            <form method="post" action="{{ url_for('sale_archive') }}" class="sales-archive-form">
-                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                <input type="hidden" name="sale_id" value="{{ sale.id }}">
-                                <input type="hidden" name="sale_type" value="{{ sale.sale_type or ('manual' if sale.is_manual else 'automatic') }}">
-                                <input type="hidden" name="archived" value="{{ '0' if sale.archived_at else '1' }}">
-                                <input type="hidden" name="return_source" value="{{ active_source }}">
-                                <button type="submit" class="sales-mobile-edit" {% if not sale.archived_at %}onclick="return confirm('Отправить продажу в архив?')"{% endif %}>
-                                    {{ 'Восстановить' if sale.archived_at else 'В архив' }}
-                                </button>
-                            </form>
-                            {% if sales_view != 'archive' %}
-                            {% if not sale.is_cancelled %}
-                                <button
-                                    class="sales-mobile-edit"
-                                    type="button"
+                            <button
+                                class="sales-edit-action sales-row-edit sales-mobile-edit"
+                                type="button"
+                                aria-label="Редактировать данные продажи"
+                                {% if sales_view != 'archive' and not sale.is_cancelled %}
                                     data-sale="{{ sale|tojson|forceescape }}"
                                     onclick="openSaleEditor(this)"
-                                >Редактировать данные</button>
-                            {% endif %}
-                            {% if not sale.is_cancelled and sale.return_status != 'returned' %}
-                                <button
-                                    class="sales-mobile-delete sales-row-cancel"
-                                    type="button"
-                                    data-sale="{{ sale|tojson|forceescape }}"
-                                    onclick="openCancellationModal(this)"
-                                >Отменить продажу</button>
-                            {% endif %}
-                            {% if not sale.is_cancelled and sale.inventory_managed and sale.return_available_quantity > 0 %}
-                                <button
-                                    class="sales-mobile-delete sales-row-return"
-                                    type="button"
-                                    data-sale="{{ sale|tojson|forceescape }}"
-                                    onclick="openReturnModal(this)"
-                                >
-                                    Оформить возврат
-                                </button>
-                            {% elif not sale.is_cancelled and sale.inventory_managed %}
-                                <span class="sales-return-badge">
-                                    Возврат оформлен
-                                </span>
-                            {% elif sale.is_cancelled %}
-                                <details class="sales-action-menu sales-action-menu--mobile">
-                                    <summary aria-label="Другие действия">⋯</summary>
+                                {% else %}
+                                    disabled
+                                    aria-disabled="true"
+                                    title="Редактирование недоступно"
+                                {% endif %}
+                            >
+                                <svg viewBox="0 0 20 20" aria-hidden="true">
+                                    <path d="M4 13.75V16h2.25L15 7.25 12.75 5 4 13.75Z"></path>
+                                    <path d="m11.75 6 2.25 2.25"></path>
+                                </svg>
+                                <span class="sales-edit-label">Редактировать</span>
+                            </button>
+                            <button
+                                class="sales-more-trigger"
+                                type="button"
+                                aria-haspopup="menu"
+                                aria-label="Другие действия"
+                                aria-expanded="false"
+                                aria-controls="sales-mobile-actions-menu-{{ loop.index }}"
+                                data-sales-actions-trigger
+                            >
+                                <span class="sales-more-label">Ещё</span>
+                                <span class="sales-more-dots" aria-hidden="true">⋯</span>
+                            </button>
+                            <div
+                                id="sales-mobile-actions-menu-{{ loop.index }}"
+                                class="sales-actions-menu-panel"
+                                role="menu"
+                                data-sales-actions-menu
+                                hidden
+                            >
+                                {% if sales_view != 'archive' and not sale.is_cancelled and sale.inventory_managed and sale.return_available_quantity > 0 %}
                                     <button
+                                        class="sales-row-return"
                                         type="button"
+                                        role="menuitem"
+                                        data-sale="{{ sale|tojson|forceescape }}"
+                                        onclick="openReturnModal(this)"
+                                    >Вернуть</button>
+                                {% elif sales_view != 'archive' and not sale.is_cancelled and sale.inventory_managed %}
+                                    <button type="button" role="menuitem" disabled>Возврат оформлен</button>
+                                {% endif %}
+                                {% if sales_view != 'archive' and not sale.is_cancelled and sale.return_status != 'returned' %}
+                                    <button
+                                        class="sales-row-cancel sales-menu-danger"
+                                        type="button"
+                                        role="menuitem"
+                                        data-sale="{{ sale|tojson|forceescape }}"
+                                        onclick="openCancellationModal(this)"
+                                    >Отменить продажу</button>
+                                {% endif %}
+                                {% if sales_view != 'archive' and sale.is_cancelled %}
+                                    <button
+                                        class="sales-row-delete sales-menu-danger"
+                                        type="button"
+                                        role="menuitem"
                                         data-sale="{{ sale|tojson|forceescape }}"
                                         onclick="openSaleDeleteModal(this)"
                                     >Удалить запись</button>
-                                </details>
-                            {% endif %}
-                            {% endif %}
+                                {% endif %}
+                                <form method="post" action="{{ url_for('sale_archive') }}" class="sales-archive-form">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <input type="hidden" name="sale_id" value="{{ sale.id }}">
+                                    <input type="hidden" name="sale_type" value="{{ sale.sale_type or ('manual' if sale.is_manual else 'automatic') }}">
+                                    <input type="hidden" name="archived" value="{{ '0' if sale.archived_at else '1' }}">
+                                    <input type="hidden" name="return_source" value="{{ active_source }}">
+                                    <button type="submit" role="menuitem" {% if not sale.archived_at %}onclick="return confirm('Отправить продажу в архив?')"{% endif %}>
+                                        {{ 'Восстановить' if sale.archived_at else 'Архивировать' }}
+                                    </button>
+                                </form>
+                            </div>
                         </div>
                     </article>
                 {% else %}
@@ -3772,6 +3866,55 @@
     const salesTableBody = salesTable?.querySelector("tbody");
     const salesColumnDefinitions = {{ sales_columns | tojson }};
 
+    document.querySelectorAll("[data-sales-actions-trigger]")
+        .forEach((trigger) => {
+            const panel = document.getElementById(
+                trigger.getAttribute("aria-controls")
+            );
+
+            if (!panel) return;
+
+            const popover = salesPopoverManager.register({
+                trigger,
+                panel,
+            });
+            const enabledItems = () => Array.from(
+                panel.querySelectorAll(
+                    '[role="menuitem"]:not([disabled])'
+                )
+            );
+
+            trigger.addEventListener("click", (event) => {
+                event.stopPropagation();
+                popover.toggle();
+            });
+            panel.addEventListener("click", (event) => {
+                const item = event.target.closest('[role="menuitem"]');
+
+                if (item && !item.disabled) {
+                    requestAnimationFrame(() => popover.close());
+                }
+            });
+            panel.addEventListener("keydown", (event) => {
+                if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(
+                    event.key
+                )) {
+                    return;
+                }
+
+                const items = enabledItems();
+                const currentIndex = items.indexOf(document.activeElement);
+                let nextIndex = event.key === "Home" ? 0
+                    : event.key === "End" ? items.length - 1
+                        : event.key === "ArrowDown"
+                            ? (currentIndex + 1) % items.length
+                            : (currentIndex - 1 + items.length) % items.length;
+
+                event.preventDefault();
+                items[nextIndex]?.focus();
+            });
+        });
+
     let salesFilterEmptyRow = null;
 
     if (salesTableBody && saleRows.length) {
@@ -4651,7 +4794,9 @@
             invoice_number: 120,
         };
         const maximumWidth = 520;
-        const actionColumnWidth = 118;
+        const actionColumnWidth = () => (
+            window.matchMedia("(max-width: 900px)").matches ? 104 : 224
+        );
         const growWeights = {
             created_at: 0.25,
             order_number: 0.75,
@@ -4940,9 +5085,16 @@
                 customWidths: view.customWidths,
                 growWeights,
                 containerWidth,
-                actionWidth: actionColumnWidth,
+                actionWidth: actionColumnWidth(),
             });
             actualWidths = layout.widths;
+
+            const actionColumn = salesTable.querySelector(
+                'col[data-system-column="actions"]'
+            );
+            if (actionColumn) {
+                actionColumn.style.width = actionColumnWidth() + "px";
+            }
 
             view.order.forEach((key) => {
                 const hidden = view.hidden.includes(key);
@@ -7726,9 +7878,8 @@
                 && getComputedStyle(actionHeader).right === "0px"
                 && actionCells.every(
                     (cell) =>
-                        cell.querySelector(
-                            ".sales-row-cancel, .sales-action-menu"
-                        )
+                        cell.querySelector(".sales-edit-action")
+                        && cell.querySelector(".sales-more-trigger")
                         && cell === cell.parentElement.lastElementChild
                 )
                 && !document.querySelector(
@@ -8266,7 +8417,21 @@
             document.querySelectorAll(selector)
         ).find((element) => element.getClientRects().length > 0);
         try {
-            const cancelButton = visible(".sales-row-cancel");
+            const menuTrigger = Array.from(
+                document.querySelectorAll("[data-sales-actions-trigger]")
+            ).find((element) => {
+                const panel = document.getElementById(
+                    element.getAttribute("aria-controls")
+                );
+                return element.getClientRects().length > 0
+                    && panel?.querySelector(".sales-row-cancel");
+            });
+            if (!menuTrigger) throw new Error("actions-menu");
+            menuTrigger.click();
+            await new Promise((resolve) => setTimeout(resolve, 80));
+            const cancelButton = visible(
+                ".sales-actions-menu-panel .sales-row-cancel"
+            );
             if (!cancelButton) throw new Error("cancel-missing");
             cancelButton.click();
             await new Promise((resolve) => setTimeout(resolve, 80));
@@ -8295,10 +8460,21 @@
             }
             window.closeCancellationModal();
 
-            const menuSummary = visible(".sales-action-menu summary");
-            if (!menuSummary) throw new Error("delete-menu");
-            menuSummary.click();
-            const deleteButton = visible(".sales-action-menu button");
+            const cancelledMenuTrigger = Array.from(
+                document.querySelectorAll("[data-sales-actions-trigger]")
+            ).find((element) => {
+                const panel = document.getElementById(
+                    element.getAttribute("aria-controls")
+                );
+                return element.getClientRects().length > 0
+                    && panel?.querySelector(".sales-row-delete");
+            });
+            if (!cancelledMenuTrigger) throw new Error("delete-menu");
+            cancelledMenuTrigger.click();
+            await new Promise((resolve) => setTimeout(resolve, 80));
+            const deleteButton = visible(
+                ".sales-actions-menu-panel .sales-row-delete"
+            );
             if (!deleteButton) throw new Error("delete-menu");
             deleteButton.click();
             await new Promise((resolve) => setTimeout(resolve, 80));
