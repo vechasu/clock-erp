@@ -7,6 +7,7 @@ from urllib.parse import parse_qs, urlsplit
 from app import web
 from app.catalog_db import CatalogDatabase
 from app.services.excel_product_catalog import ExcelProductCatalog
+from app.services.order_status import OrderStatusService
 from app.services.sales_inventory import SalesInventory
 from app.services.shared_catalog import SharedCatalog
 
@@ -225,6 +226,42 @@ class OrderTictactoySaleTest(unittest.TestCase):
         self.assertIn("Нет в наличии", Path("app/static/js/catalog-combobox.js").read_text())
         self.assertIn('name="csrf_token"', html)
         self.assertIn('type="button" data-close-sale-dialog', html)
+
+    def test_order_21110_sale_dialog_opens_while_another_writer_holds_database(self):
+        order = {**self.order, "id": "21110", "number": "21110"}
+        statuses = OrderStatusService(self.database)
+        statuses.ingest("21110", "A")
+        self.shared.database.cache_initialization = True
+        self.shared.database.initialize()
+        writer = self.database.connect()
+        writer.execute("BEGIN IMMEDIATE")
+        try:
+            with (
+                mock.patch.object(web, "get_orders", return_value=[order]),
+                mock.patch.object(
+                    web,
+                    "get_order",
+                    side_effect=lambda _order_id: statuses.overlay(order),
+                ),
+                mock.patch.object(
+                    web, "load_product_mappings", return_value=self.mappings
+                ),
+                mock.patch.object(web, "SharedCatalog", return_value=self.shared),
+                mock.patch.object(
+                    web, "SalesInventory", return_value=self.inventory
+                ),
+                mock.patch.object(web, "load_stock_operations", return_value=[]),
+            ):
+                response = self.client.get("/order/21110?open_sale=1")
+                regular_response = self.client.get("/order/21110")
+        finally:
+            writer.rollback()
+            writer.close()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(regular_response.status_code, 200)
+        self.assertIn('id="orderSaleModal"', response.get_data(as_text=True))
+        self.assertIn('data-auto-open="1"', response.get_data(as_text=True))
 
     def test_dialog_shows_geography_and_prefills_existing_tracking(self):
         order = {
