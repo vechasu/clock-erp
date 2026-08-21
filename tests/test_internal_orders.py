@@ -66,6 +66,33 @@ class InternalOrdersTest(unittest.TestCase):
         self.assertIn("function applyFilters()", html)
         self.assertIn("rowText.includes(query)", html)
 
+    def test_detail_route_keeps_server_pagination_and_four_status_kpis(self):
+        orders = [
+            {
+                "id": str(index), "number": str(index),
+                "status": ("N", "A", "D")[index % 3], "products": [],
+            }
+            for index in range(1, 46)
+        ]
+        with (
+            mock.patch.object(web, "get_orders", return_value=orders),
+            mock.patch.object(web, "get_order", return_value=orders[0]),
+            mock.patch.object(web, "build_order_product_mapping_context", return_value={}),
+            mock.patch.object(web, "is_order_stock_written_off", return_value=False),
+            mock.patch.object(web, "get_order_conducted_sale", return_value=None),
+        ):
+            html = self.client.get("/order/1?page=2").get_data(as_text=True)
+
+        self.assertEqual(
+            html.count('class="order-row"')
+            + html.count('class="order-row active"'),
+            20,
+        )
+        self.assertIn("Найдено: 45", html)
+        self.assertIn(">2 / 3<", html)
+        for value in ("45", "15"):
+            self.assertIn('class="erp-stat-value">{}</strong>'.format(value), html)
+
     def test_order_without_bitrix_id_does_not_break_the_list(self):
         response = self.get_orders_page(orders=[{
             "number": "Без внешнего ID",

@@ -284,6 +284,10 @@ class OrderStatusFrontendContractTests(unittest.TestCase):
         template = (
             Path(__file__).resolve().parents[1] / "app/templates/orders.html"
         ).read_text(encoding="utf-8")
+        styles = (
+            Path(__file__).resolve().parents[1]
+            / "app/static/css/orders.css"
+        ).read_text(encoding="utf-8")
         self.assertIn("('N','Не подтверждён')", template)
         self.assertIn("('A','Подтверждён')", template)
         self.assertIn("('D','Собран')", template)
@@ -292,7 +296,7 @@ class OrderStatusFrontendContractTests(unittest.TestCase):
         self.assertIn(">Провести продажу</button>", template)
         self.assertNotIn("Отметить собранным", template)
         self.assertNotIn("Не дозвонились", template)
-        self.assertIn("@media (max-width:780px)", template)
+        self.assertIn("@media (max-width:780px)", styles)
 
 
 if __name__ == "__main__":

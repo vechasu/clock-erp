@@ -58,6 +58,16 @@ class OrdersReworkTest(unittest.TestCase):
         self.assertEqual(parse_qs(urlsplit(response.location).query)["notice"], ["success"])
         journal.record.assert_called_once()
 
+    def test_tracking_validation_preserves_submitted_value(self):
+        tracking = "T" * 256
+        response = self.client.post(
+            "/order/7/tracking",
+            data={"csrf_token": "test-token", "tracking": tracking},
+        )
+        query = parse_qs(urlsplit(response.location).query)
+        self.assertEqual(query["notice"], ["error"])
+        self.assertEqual(query["tracking_value"], [tracking])
+
     def test_readiness_aggregates_duplicate_lines_for_stock(self):
         order = {
             "status": "A",
@@ -91,7 +101,11 @@ class OrdersReworkTest(unittest.TestCase):
         for mode in ("list", "split", "card"):
             self.assertIn('data-layout-mode="{}"'.format(mode), html)
         self.assertIn("vechasu:orders:view:v2", html)
-        self.assertIn("@media (max-width:780px)", html)
+        styles = (
+            Path(__file__).resolve().parents[1]
+            / "app/static/css/orders.css"
+        ).read_text(encoding="utf-8")
+        self.assertIn("@media (max-width:780px)", styles)
         self.assertIn("Свернуть список", html)
         self.assertIn('data-has-selected-order="1"', html)
         self.assertNotIn("window.confirm", html)
