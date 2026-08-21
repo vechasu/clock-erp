@@ -242,6 +242,25 @@ class OrderStatusService:
                 current = self.get(order_id, connection)
             old = current["erp_status"]
             if old == target:
+                if target == ERP_ASSEMBLED and sale_id:
+                    linked_sale_id = str(current.get("sale_id") or "").strip()
+                    if linked_sale_id and linked_sale_id != str(sale_id):
+                        raise OrderStatusError(
+                            "Заказ уже связан с другой продажей"
+                        )
+                    if not linked_sale_id:
+                        now = _now()
+                        connection.execute(
+                            "UPDATE erp_order_statuses SET sale_id=?, "
+                            "updated_at=? WHERE external_order_id=?",
+                            (str(sale_id), now, str(order_id)),
+                        )
+                        result = self.get(order_id, connection)
+                        if owns:
+                            context.__exit__(None, None, None)
+                        return result
+                if owns:
+                    context.__exit__(None, None, None)
                 return current
             allowed = (
                 old == ERP_UNCONFIRMED and target == ERP_CONFIRMED
