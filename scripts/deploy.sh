@@ -42,6 +42,8 @@ readonly REMOTE_NAME="origin"
 readonly PROJECT_DIR="/opt/clock-erp"
 readonly SERVICE_NAME="clock-erp"
 readonly BACKUP_DIR="/opt/clock-erp-backups"
+readonly RETENTION_TOOL="/usr/local/sbin/clock-erp-backup-retention"
+readonly MAX_BACKUP_DISK_USAGE=85
 readonly BITRIX_ENDPOINT_SOURCE="$PROJECT_DIR/bitrix/catalog-export.php"
 readonly BITRIX_ENDPOINT_TARGET="/var/www/admin/data/www/tictactoy.ru/api/catalog-export.php"
 SERVICE_STOPPED=0
@@ -149,6 +151,39 @@ PREVIOUS_COMMIT="$(git rev-parse HEAD)"
 
 mkdir -p "$BACKUP_DIR"
 chmod 700 "$BACKUP_DIR"
+
+if [[ -x "$RETENTION_TOOL" ]]; then
+    "$RETENTION_TOOL" \
+        --backup-root "$BACKUP_DIR" \
+        --apply
+elif [[ -f scripts/retain_erp_backups.py ]]; then
+    python3 scripts/retain_erp_backups.py \
+        --backup-root "$BACKUP_DIR" \
+        --apply
+else
+    printf 'BACKUP_ERROR: retention tool is not installed\n' >&2
+    false
+fi
+
+check_backup_disk_usage() {
+    local backup_disk_usage
+    backup_disk_usage="$(
+        df -P "$BACKUP_DIR" |
+            awk 'NR == 2 { gsub(/%/, "", $5); print $5 }'
+    )"
+    if [[ ! "$backup_disk_usage" =~ ^[0-9]+$ ]]; then
+        printf 'BACKUP_ERROR: cannot determine disk usage for %s\n' \
+            "$BACKUP_DIR" >&2
+        return 1
+    fi
+    if (( backup_disk_usage >= MAX_BACKUP_DISK_USAGE )); then
+        printf 'BACKUP_ERROR: disk usage is %s%% (limit %s%%); deployment stopped before backup\n' \
+            "$backup_disk_usage" "$MAX_BACKUP_DISK_USAGE" >&2
+        return 1
+    fi
+}
+
+check_backup_disk_usage
 BACKUP_PATH="$BACKUP_DIR/clock-erp-$(date +%Y%m%d-%H%M%S).tar.gz"
 backup_items=()
 [[ -f .env ]] && backup_items+=(".env")
@@ -291,6 +326,7 @@ if [[ "$DATABASE_MIGRATION_REQUIRED" == "1" && -f instance/catalog.db ]]; then
 fi
 
 if [[ "$DATABASE_MIGRATION_REQUIRED" == "1" && -f instance/auth.db ]]; then
+    check_backup_disk_usage
     systemctl stop "$SERVICE_NAME"
     SERVICE_STOPPED=1
     "$PYTHON_BIN" scripts/migrate_auth_mvp.py \
@@ -300,6 +336,7 @@ if [[ "$DATABASE_MIGRATION_REQUIRED" == "1" && -f instance/auth.db ]]; then
 fi
 
 if [[ "$DATABASE_MIGRATION_REQUIRED" == "1" && -f instance/catalog.db ]]; then
+    check_backup_disk_usage
     if [[ "$SERVICE_STOPPED" != "1" ]]; then
         systemctl stop "$SERVICE_NAME"
         SERVICE_STOPPED=1
