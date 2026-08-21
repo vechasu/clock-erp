@@ -47,7 +47,13 @@ PUBLIC_ENDPOINTS = {
 }
 ALLOWED_ROLES = {
     "employee": "Сотрудник",
-    "admin": "Администратор",
+    "superadmin": "Суперадминистратор",
+}
+LEGACY_SUPERADMIN_ROLE = "admin"
+SUPERADMIN_ROLES = {"superadmin", LEGACY_SUPERADMIN_ROLE}
+ROLE_PERMISSIONS = {
+    "employee": frozenset({"erp.use"}),
+    "superadmin": frozenset({"erp.use", "access.manage", "security.audit"}),
 }
 COMMON_PASSWORDS = {
     "12345678",
@@ -67,6 +73,16 @@ LOGIN_IP_RATE_LIMIT = 60
 LOGIN_GLOBAL_RATE_LIMIT = 500
 AUTH_IDLE_TIMEOUT_SECONDS = 12 * 60 * 60
 AUTH_ABSOLUTE_TIMEOUT_SECONDS = 7 * 24 * 60 * 60
+SESSION_LAST_SEEN_THROTTLE_SECONDS = 60
+INVITATION_PUBLIC_ERROR = "Приглашение недействительно или недоступно."
+REGISTRATION_CLOSED_MESSAGE = (
+    "Регистрация доступна только сотрудникам TicTacToy по приглашению администратора."
+)
+SENSITIVE_CONFIRMATION_VALUE = "ПОДТВЕРЖДАЮ"
+SECURITY_SECRET_FIELDS = {
+    "password", "password_hash", "token", "token_hash", "session",
+    "session_token", "invitation", "invitation_token", "temporary_password",
+}
 LOGGER = logging.getLogger(__name__)
 
 
@@ -159,6 +175,43 @@ class AuthStore:
             connection.execute("PRAGMA journal_mode = WAL")
             connection.executescript(
                 """
+                CREATE TABLE IF NOT EXISTS roles (
+                    code TEXT PRIMARY KEY,
+                    label TEXT NOT NULL,
+                    is_privileged INTEGER NOT NULL DEFAULT 0
+                );
+
+                INSERT OR IGNORE INTO roles (code, label, is_privileged)
+                VALUES ('employee', 'Сотрудник', 0);
+                INSERT OR IGNORE INTO roles (code, label, is_privileged)
+                VALUES ('superadmin', 'Суперадминистратор', 1);
+
+                CREATE TABLE IF NOT EXISTS permissions (
+                    code TEXT PRIMARY KEY,
+                    description TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS role_permissions (
+                    role_code TEXT NOT NULL,
+                    permission_code TEXT NOT NULL,
+                    PRIMARY KEY (role_code, permission_code),
+                    FOREIGN KEY (role_code) REFERENCES roles(code),
+                    FOREIGN KEY (permission_code) REFERENCES permissions(code)
+                );
+                INSERT OR IGNORE INTO permissions (code, description)
+                VALUES ('erp.use', 'Работа в ERP');
+                INSERT OR IGNORE INTO permissions (code, description)
+                VALUES ('access.manage', 'Управление сотрудниками и доступом');
+                INSERT OR IGNORE INTO permissions (code, description)
+                VALUES ('security.audit', 'Просмотр журнала безопасности');
+                INSERT OR IGNORE INTO role_permissions (role_code, permission_code)
+                VALUES ('employee', 'erp.use');
+                INSERT OR IGNORE INTO role_permissions (role_code, permission_code)
+                VALUES ('superadmin', 'erp.use');
+                INSERT OR IGNORE INTO role_permissions (role_code, permission_code)
+                VALUES ('superadmin', 'access.manage');
+                INSERT OR IGNORE INTO role_permissions (role_code, permission_code)
+                VALUES ('superadmin', 'security.audit');
+
                 CREATE TABLE IF NOT EXISTS users (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     first_name TEXT NOT NULL,
@@ -166,7 +219,7 @@ class AuthStore:
                     email TEXT NOT NULL,
                     email_normalized TEXT NOT NULL UNIQUE,
                     password_hash TEXT NOT NULL,
-                    role TEXT NOT NULL CHECK (role IN ('employee', 'admin')),
+                    role TEXT NOT NULL DEFAULT 'employee',
                     active INTEGER NOT NULL DEFAULT 1,
                     created_at INTEGER NOT NULL
                 );
@@ -176,7 +229,7 @@ class AuthStore:
                     token_hash TEXT NOT NULL UNIQUE,
                     email TEXT,
                     email_normalized TEXT,
-                    role TEXT NOT NULL CHECK (role IN ('employee', 'admin')),
+                    role TEXT NOT NULL,
                     expires_at INTEGER NOT NULL,
                     state TEXT NOT NULL DEFAULT 'active'
                         CHECK (state IN ('active', 'used', 'revoked')),
@@ -230,8 +283,148 @@ class AuthStore:
 
                 CREATE INDEX IF NOT EXISTS auth_sessions_user
                     ON auth_sessions(user_id);
+
+                CREATE TABLE IF NOT EXISTS security_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    occurred_at INTEGER NOT NULL,
+                    actor_user_id INTEGER,
+                    action TEXT NOT NULL,
+                    target_type TEXT,
+                    target_id TEXT,
+                    result TEXT NOT NULL,
+                    ip_address TEXT,
+                    user_agent TEXT,
+                    metadata_json TEXT NOT NULL DEFAULT '{}',
+                    FOREIGN KEY (actor_user_id) REFERENCES users(id)
+                );
+                CREATE INDEX IF NOT EXISTS security_events_time
+                    ON security_events(occurred_at DESC);
+                CREATE INDEX IF NOT EXISTS security_events_actor
+                    ON security_events(actor_user_id, occurred_at DESC);
                 """
             )
+            users_sql = connection.execute(
+                "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'users'"
+            ).fetchone()[0]
+            if "CHECK (role IN ('employee', 'admin'))" in users_sql:
+                legacy_columns = {
+                    row[1] for row in connection.execute("PRAGMA table_info(users)")
+                }
+                optional_user_values = {
+                    "email_verified_at": "email_verified_at" if "email_verified_at" in legacy_columns else "created_at",
+                    "updated_at": "updated_at" if "updated_at" in legacy_columns else "created_at",
+                    "session_version": "session_version" if "session_version" in legacy_columns else "1",
+                    "last_login_at": "last_login_at" if "last_login_at" in legacy_columns else "NULL",
+                    "force_password_change": "force_password_change" if "force_password_change" in legacy_columns else "0",
+                    "archived_at": "archived_at" if "archived_at" in legacy_columns else "NULL",
+                    "two_factor_enrolled_at": "two_factor_enrolled_at" if "two_factor_enrolled_at" in legacy_columns else "NULL",
+                }
+                connection.execute("PRAGMA foreign_keys = OFF")
+                connection.execute("BEGIN IMMEDIATE")
+                try:
+                    connection.execute(
+                        """
+                        CREATE TABLE users_new (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            first_name TEXT NOT NULL,
+                            last_name TEXT NOT NULL,
+                            email TEXT NOT NULL,
+                            email_normalized TEXT NOT NULL UNIQUE,
+                            password_hash TEXT NOT NULL,
+                            role TEXT NOT NULL DEFAULT 'employee',
+                            active INTEGER NOT NULL DEFAULT 1,
+                            created_at INTEGER NOT NULL,
+                            email_verified_at INTEGER,
+                            updated_at INTEGER,
+                            session_version INTEGER NOT NULL DEFAULT 1,
+                            last_login_at INTEGER,
+                            force_password_change INTEGER NOT NULL DEFAULT 0,
+                            archived_at INTEGER,
+                            two_factor_enrolled_at INTEGER
+                        )
+                        """
+                    )
+                    connection.execute(
+                        """
+                        INSERT INTO users_new (
+                            id, first_name, last_name, email, email_normalized,
+                            password_hash, role, active, created_at,
+                            email_verified_at, updated_at, session_version,
+                            last_login_at, force_password_change, archived_at,
+                            two_factor_enrolled_at
+                        )
+                        SELECT id, first_name, last_name, email, email_normalized,
+                               password_hash,
+                               CASE WHEN role = 'admin' THEN 'superadmin' ELSE role END,
+                               active, created_at,
+                               {email_verified_at}, {updated_at}, {session_version},
+                               {last_login_at}, {force_password_change}, {archived_at},
+                               {two_factor_enrolled_at}
+                        FROM users
+                        """.format(**optional_user_values)
+                    )
+                    connection.execute("DROP TABLE users")
+                    connection.execute("ALTER TABLE users_new RENAME TO users")
+                    connection.commit()
+                except Exception:
+                    connection.rollback()
+                    raise
+                finally:
+                    connection.execute("PRAGMA foreign_keys = ON")
+            else:
+                connection.execute(
+                    "UPDATE users SET role = 'superadmin' WHERE role = 'admin'"
+                )
+            invitations_sql_row = connection.execute(
+                "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'invitations'"
+            ).fetchone()
+            if invitations_sql_row and "CHECK (role IN ('employee', 'admin'))" in invitations_sql_row[0]:
+                connection.execute("PRAGMA foreign_keys = OFF")
+                connection.execute("BEGIN IMMEDIATE")
+                try:
+                    connection.execute(
+                        """
+                        CREATE TABLE invitations_new (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            token_hash TEXT NOT NULL UNIQUE,
+                            email TEXT,
+                            email_normalized TEXT,
+                            role TEXT NOT NULL,
+                            expires_at INTEGER NOT NULL,
+                            state TEXT NOT NULL DEFAULT 'active'
+                                CHECK (state IN ('active', 'used', 'revoked')),
+                            created_by INTEGER,
+                            created_at INTEGER NOT NULL,
+                            used_at INTEGER,
+                            used_by INTEGER,
+                            FOREIGN KEY (created_by) REFERENCES users(id),
+                            FOREIGN KEY (used_by) REFERENCES users(id)
+                        )
+                        """
+                    )
+                    connection.execute(
+                        """
+                        INSERT INTO invitations_new (
+                            id, token_hash, email, email_normalized, role,
+                            expires_at, state, created_by, created_at, used_at, used_by
+                        )
+                        SELECT id, token_hash, email, email_normalized,
+                               CASE WHEN role = 'admin' THEN 'superadmin' ELSE role END,
+                               expires_at, state, created_by, created_at, used_at, used_by
+                        FROM invitations
+                        """
+                    )
+                    connection.execute("DROP TABLE invitations")
+                    connection.execute("ALTER TABLE invitations_new RENAME TO invitations")
+                    connection.execute(
+                        "CREATE INDEX IF NOT EXISTS invitations_state_expires ON invitations(state, expires_at)"
+                    )
+                    connection.commit()
+                except Exception:
+                    connection.rollback()
+                    raise
+                finally:
+                    connection.execute("PRAGMA foreign_keys = ON")
             columns = {
                 row[1] for row in connection.execute("PRAGMA table_info(users)")
             }
@@ -241,6 +434,9 @@ class AuthStore:
                 ("updated_at", "INTEGER"),
                 ("session_version", "INTEGER NOT NULL DEFAULT 1"),
                 ("last_login_at", "INTEGER"),
+                ("force_password_change", "INTEGER NOT NULL DEFAULT 0"),
+                ("archived_at", "INTEGER"),
+                ("two_factor_enrolled_at", "INTEGER"),
             )
             for name, definition in additions:
                 if name not in columns:
@@ -256,6 +452,24 @@ class AuthStore:
                 )
             connection.execute(
                 "UPDATE users SET updated_at = COALESCE(updated_at, created_at)"
+            )
+            session_columns = {
+                row[1] for row in connection.execute("PRAGMA table_info(auth_sessions)")
+            }
+            for name, definition in (
+                ("last_seen_at", "INTEGER"),
+                ("ip_address", "TEXT"),
+                ("user_agent", "TEXT"),
+                ("revoked_at", "INTEGER"),
+                ("ended_at", "INTEGER"),
+                ("revoked_by", "INTEGER"),
+            ):
+                if name not in session_columns:
+                    connection.execute(
+                        "ALTER TABLE auth_sessions ADD COLUMN {} {}".format(name, definition)
+                    )
+            connection.execute(
+                "UPDATE auth_sessions SET last_seen_at = COALESCE(last_seen_at, updated_at)"
             )
         try:
             os.chmod(self.path, 0o600)
@@ -274,7 +488,8 @@ class AuthStore:
                 """
                 SELECT id, first_name, last_name, email, role, active,
                        created_at, email_verified_at, updated_at,
-                       session_version, last_login_at
+                       session_version, last_login_at, force_password_change,
+                       archived_at, two_factor_enrolled_at
                 FROM users
                 WHERE id = ? AND active = 1
                 """,
@@ -304,10 +519,24 @@ class AuthStore:
             return None
         now = int(time.time())
         with self.connect() as connection:
-            connection.execute(
-                "UPDATE users SET last_login_at = ?, updated_at = ? WHERE id = ?",
-                (now, now, row["id"]),
-            )
+            if not str(row["password_hash"]).startswith(PASSWORD_HASH_METHOD + "$"):
+                connection.execute(
+                    """
+                    UPDATE users SET password_hash = ?, last_login_at = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        generate_password_hash(str(password or ""), method=PASSWORD_HASH_METHOD),
+                        now,
+                        now,
+                        row["id"],
+                    ),
+                )
+            else:
+                connection.execute(
+                    "UPDATE users SET last_login_at = ?, updated_at = ? WHERE id = ?",
+                    (now, now, row["id"]),
+                )
         return self.get_user(row["id"])
 
     def get_user_by_email(self, email):
@@ -317,6 +546,14 @@ class AuthStore:
                 (normalize_email(email),),
             ).fetchone()
         return self._row_dict(row)
+
+    def verify_password(self, user_id, password):
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT password_hash FROM users WHERE id = ? AND active = 1",
+                (user_id,),
+            ).fetchone()
+        return bool(row and check_password_hash(row["password_hash"], str(password or "")))
 
     def create_initial_admin(
         self,
@@ -346,7 +583,7 @@ class AuthStore:
                         password_hash, role, created_at, email_verified_at,
                         updated_at, session_version
                     )
-                    VALUES (?, ?, ?, ?, ?, 'admin', ?, ?, ?, 1)
+                    VALUES (?, ?, ?, ?, ?, 'superadmin', ?, ?, ?, 1)
                     """,
                     (
                         first_name.strip(),
@@ -422,7 +659,7 @@ class AuthStore:
             if connection.execute(
                 """
                 SELECT 1 FROM invitations
-                WHERE created_by IS NULL AND role = 'admin'
+                WHERE created_by IS NULL AND role = 'superadmin'
                   AND state = 'active' AND expires_at > ?
                 LIMIT 1
                 """,
@@ -438,7 +675,7 @@ class AuthStore:
                 INSERT INTO invitations (
                     token_hash, email, email_normalized, role, expires_at,
                     created_by, created_at
-                ) VALUES (?, NULL, NULL, 'admin', ?, NULL, ?)
+                ) VALUES (?, NULL, NULL, 'superadmin', ?, NULL, ?)
                 """,
                 (token_hash, expires_at, now),
             )
@@ -458,7 +695,7 @@ class AuthStore:
                 SELECT 1
                 FROM invitations
                 WHERE created_by IS NULL
-                  AND role = 'admin'
+                  AND role = 'superadmin'
                   AND state = 'active'
                   AND expires_at > ?
                 LIMIT 1
@@ -562,7 +799,7 @@ class AuthStore:
                 ):
                     raise RegistrationError(
                         "invitation",
-                        "Приглашение недействительно или срок его действия истёк.",
+                        INVITATION_PUBLIC_ERROR,
                     )
 
                 if (
@@ -570,8 +807,8 @@ class AuthStore:
                     and invitation["email_normalized"] != normalized
                 ):
                     raise RegistrationError(
-                        "email",
-                        "Используйте email, указанный в приглашении.",
+                        "invitation",
+                        INVITATION_PUBLIC_ERROR,
                     )
 
                 cursor = connection.execute(
@@ -611,7 +848,7 @@ class AuthStore:
                 if claimed.rowcount != 1:
                     raise RegistrationError(
                         "invitation",
-                        "Приглашение недействительно или срок его действия истёк.",
+                        INVITATION_PUBLIC_ERROR,
                     )
 
                 connection.commit()
@@ -752,11 +989,260 @@ class AuthStore:
                 ),
             )
             connection.execute(
-                "DELETE FROM auth_sessions WHERE user_id = ?",
-                (row["user_id"],),
+                """
+                UPDATE auth_sessions SET revoked_at = ?, revoked_by = ?
+                WHERE user_id = ? AND revoked_at IS NULL AND ended_at IS NULL
+                """,
+                (now, row["user_id"], row["user_id"]),
             )
             connection.commit()
         return True
+
+    @staticmethod
+    def _safe_metadata(metadata):
+        clean = {}
+        for key, value in (metadata or {}).items():
+            key_text = str(key)[:80]
+            if key_text.casefold() in SECURITY_SECRET_FIELDS:
+                continue
+            if isinstance(value, (str, int, float, bool)) or value is None:
+                clean[key_text] = value if not isinstance(value, str) else value[:500]
+        return clean
+
+    def record_security_event(
+        self,
+        action,
+        result,
+        actor_user_id=None,
+        target_type=None,
+        target_id=None,
+        ip_address=None,
+        user_agent=None,
+        metadata=None,
+    ):
+        with self.connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO security_events (
+                    occurred_at, actor_user_id, action, target_type, target_id,
+                    result, ip_address, user_agent, metadata_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    int(time.time()), actor_user_id, str(action)[:100],
+                    str(target_type)[:80] if target_type else None,
+                    str(target_id)[:120] if target_id is not None else None,
+                    str(result)[:40], str(ip_address or "")[:64] or None,
+                    str(user_agent or "")[:500] or None,
+                    json.dumps(self._safe_metadata(metadata), ensure_ascii=False),
+                ),
+            )
+
+    def list_security_events(self, limit=250):
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT e.id, e.occurred_at, e.action, e.target_type, e.target_id,
+                       e.result, e.ip_address, e.user_agent, e.metadata_json,
+                       u.first_name AS actor_first_name,
+                       u.last_name AS actor_last_name, u.email AS actor_email,
+                       target.first_name AS target_first_name,
+                       target.last_name AS target_last_name,
+                       target.email AS target_email
+                FROM security_events e
+                LEFT JOIN users u ON u.id = e.actor_user_id
+                LEFT JOIN users target
+                  ON e.target_type = 'user' AND CAST(target.id AS TEXT) = e.target_id
+                ORDER BY e.id DESC LIMIT ?
+                """,
+                (max(1, min(int(limit), 1000)),),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_users(self):
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT u.id, u.first_name, u.last_name, u.email, u.role,
+                       u.active, u.created_at, u.last_login_at,
+                       u.force_password_change, u.archived_at,
+                       MAX(s.last_seen_at) AS last_seen_at,
+                       SUM(CASE WHEN s.revoked_at IS NULL AND s.ended_at IS NULL
+                                     AND s.expires_at > ? THEN 1 ELSE 0 END)
+                           AS active_session_count
+                FROM users u
+                LEFT JOIN auth_sessions s ON s.user_id = u.id
+                GROUP BY u.id ORDER BY u.active DESC, u.last_name, u.first_name, u.email
+                """,
+                (int(time.time()),),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_user_for_management(self, user_id):
+        with self.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT id, first_name, last_name, email, role, active,
+                       force_password_change, archived_at, last_login_at
+                FROM users WHERE id = ?
+                """,
+                (user_id,),
+            ).fetchone()
+        return self._row_dict(row)
+
+    def active_superadmin_count(self, connection=None):
+        owns_connection = connection is None
+        connection = connection or self.connect()
+        try:
+            return connection.execute(
+                """
+                SELECT COUNT(*) FROM users
+                WHERE active = 1 AND archived_at IS NULL AND role = 'superadmin'
+                """
+            ).fetchone()[0]
+        finally:
+            if owns_connection:
+                connection.close()
+
+    def update_user(self, actor_id, user_id, *, first_name=None, last_name=None,
+                    role=None, active=None, force_password_change=None):
+        now = int(time.time())
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            target = connection.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+            if target is None:
+                connection.rollback()
+                raise ValueError("Сотрудник не найден.")
+            next_role = target["role"] if role is None else role
+            next_active = bool(target["active"]) if active is None else bool(active)
+            if next_role not in ALLOWED_ROLES:
+                connection.rollback()
+                raise ValueError("Недопустимая роль.")
+            if actor_id == user_id and (not next_active or next_role != "superadmin"):
+                connection.rollback()
+                raise ValueError("Нельзя заблокировать или понизить собственную роль.")
+            removes_superadmin = (
+                target["role"] == "superadmin" and bool(target["active"])
+                and (next_role != "superadmin" or not next_active)
+            )
+            if removes_superadmin and self.active_superadmin_count(connection) <= 1:
+                connection.rollback()
+                raise ValueError("Нельзя оставить ERP без активного суперадминистратора.")
+            connection.execute(
+                """
+                UPDATE users SET first_name = ?, last_name = ?, role = ?, active = ?,
+                    force_password_change = ?, updated_at = ?,
+                    session_version = session_version + ? WHERE id = ?
+                """,
+                (
+                    target["first_name"] if first_name is None else str(first_name).strip()[:100],
+                    target["last_name"] if last_name is None else str(last_name).strip()[:100],
+                    next_role, 1 if next_active else 0,
+                    target["force_password_change"] if force_password_change is None else (1 if force_password_change else 0),
+                    now, 1 if (not next_active or next_role != target["role"]) else 0, user_id,
+                ),
+            )
+            if not next_active or next_role != target["role"]:
+                connection.execute(
+                    """
+                    UPDATE auth_sessions SET revoked_at = ?, revoked_by = ?
+                    WHERE user_id = ? AND revoked_at IS NULL AND ended_at IS NULL
+                    """,
+                    (now, actor_id, user_id),
+                )
+            connection.commit()
+        return self.get_user_for_management(user_id)
+
+    def issue_temporary_password(self, actor_id, user_id):
+        temporary_password = secrets.token_urlsafe(18)
+        now = int(time.time())
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            if connection.execute("SELECT 1 FROM users WHERE id = ?", (user_id,)).fetchone() is None:
+                connection.rollback()
+                raise ValueError("Сотрудник не найден.")
+            connection.execute(
+                """
+                UPDATE users SET password_hash = ?, force_password_change = 1,
+                    session_version = session_version + 1, updated_at = ? WHERE id = ?
+                """,
+                (generate_password_hash(temporary_password, method=PASSWORD_HASH_METHOD), now, user_id),
+            )
+            connection.execute(
+                """
+                UPDATE auth_sessions SET revoked_at = ?, revoked_by = ?
+                WHERE user_id = ? AND revoked_at IS NULL AND ended_at IS NULL
+                """,
+                (now, actor_id, user_id),
+            )
+            connection.commit()
+        return temporary_password
+
+    def change_password(self, user_id, password, current_session_hash=None):
+        now = int(time.time())
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(
+                """
+                UPDATE users SET password_hash = ?, force_password_change = 0,
+                    session_version = session_version + 1, updated_at = ? WHERE id = ?
+                """,
+                (generate_password_hash(password, method=PASSWORD_HASH_METHOD), now, user_id),
+            )
+            query = """
+                UPDATE auth_sessions SET revoked_at = ?, revoked_by = ?
+                WHERE user_id = ? AND revoked_at IS NULL AND ended_at IS NULL
+            """
+            params = [now, user_id, user_id]
+            if current_session_hash:
+                query += " AND session_hash != ?"
+                params.append(current_session_hash)
+            connection.execute(query, params)
+            version = connection.execute(
+                "SELECT session_version FROM users WHERE id = ?", (user_id,)
+            ).fetchone()[0]
+            connection.commit()
+        return version
+
+    def list_sessions(self, user_id=None, limit=500):
+        where = "WHERE s.user_id = ?" if user_id is not None else ""
+        params = [user_id] if user_id is not None else []
+        params.append(max(1, min(int(limit), 1000)))
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT s.id, s.user_id, s.created_at, s.last_seen_at, s.expires_at,
+                       s.ip_address, s.user_agent, s.revoked_at, s.ended_at,
+                       u.first_name, u.last_name, u.email
+                FROM auth_sessions s JOIN users u ON u.id = s.user_id
+                {} ORDER BY s.id DESC LIMIT ?
+                """.format(where), params,
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def revoke_session(self, actor_id, session_id):
+        with self.connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE auth_sessions SET revoked_at = ?, revoked_by = ?
+                WHERE id = ? AND revoked_at IS NULL AND ended_at IS NULL
+                """,
+                (int(time.time()), actor_id, session_id),
+            )
+        return cursor.rowcount == 1
+
+    def revoke_user_sessions(self, actor_id, user_id, exclude_hash=None):
+        query = """
+            UPDATE auth_sessions SET revoked_at = ?, revoked_by = ?
+            WHERE user_id = ? AND revoked_at IS NULL AND ended_at IS NULL
+        """
+        params = [int(time.time()), actor_id, user_id]
+        if exclude_hash:
+            query += " AND session_hash != ?"
+            params.append(exclude_hash)
+        with self.connect() as connection:
+            cursor = connection.execute(query, params)
+        return cursor.rowcount
 
     def check_rate_limit(self, bucket, limit, window_seconds):
         now = int(time.time())
@@ -871,8 +1357,8 @@ class SQLiteSessionInterface(SessionInterface):
             with self._connect(app) as connection:
                 row = connection.execute(
                     """
-                    SELECT data, created_at, expires_at FROM auth_sessions
-                    WHERE session_hash = ?
+                    SELECT data, created_at, expires_at, revoked_at, ended_at
+                    FROM auth_sessions WHERE session_hash = ?
                     """,
                     (self._hash(sid),),
                 ).fetchone()
@@ -883,13 +1369,17 @@ class SQLiteSessionInterface(SessionInterface):
                     )
                 )
                 if row is not None and (
+                    row["revoked_at"] is not None
+                    or row["ended_at"] is not None
+                    or
                     row["expires_at"] <= now
                     or row["created_at"] + absolute_lifetime <= now
                 ):
-                    connection.execute(
-                        "DELETE FROM auth_sessions WHERE session_hash = ?",
-                        (self._hash(sid),),
-                    )
+                    if row["revoked_at"] is None and row["ended_at"] is None:
+                        connection.execute(
+                            "UPDATE auth_sessions SET ended_at = ? WHERE session_hash = ?",
+                            (now, self._hash(sid)),
+                        )
                     row = None
         except sqlite3.Error:
             LOGGER.exception("Не удалось открыть серверную сессию ERP")
@@ -910,8 +1400,8 @@ class SQLiteSessionInterface(SessionInterface):
         if not session_object:
             with self._connect(app) as connection:
                 connection.execute(
-                    "DELETE FROM auth_sessions WHERE session_hash = ?",
-                    (session_hash,),
+                    "UPDATE auth_sessions SET ended_at = COALESCE(ended_at, ?) WHERE session_hash = ?",
+                    (int(time.time()), session_hash),
                 )
             response.delete_cookie(cookie_name, domain=domain, path=path)
             return
@@ -928,11 +1418,21 @@ class SQLiteSessionInterface(SessionInterface):
         user_id = session_object.get("user_id")
         with self._connect(app) as connection:
             connection.execute("BEGIN IMMEDIATE")
-            connection.execute("DELETE FROM auth_sessions WHERE expires_at <= ?", (now,))
+            connection.execute(
+                """
+                UPDATE auth_sessions SET ended_at = COALESCE(ended_at, ?)
+                WHERE expires_at <= ? AND revoked_at IS NULL
+                """,
+                (now, now),
+            )
             existing = connection.execute(
-                "SELECT created_at FROM auth_sessions WHERE session_hash = ?",
+                "SELECT created_at, last_seen_at, revoked_at, ended_at FROM auth_sessions WHERE session_hash = ?",
                 (session_hash,),
             ).fetchone()
+            if existing and (existing["revoked_at"] is not None or existing["ended_at"] is not None):
+                connection.commit()
+                response.delete_cookie(cookie_name, domain=domain, path=path)
+                return
             created_at = existing["created_at"] if existing else now
             absolute_expires_at = created_at + absolute_lifetime
             if absolute_expires_at <= now:
@@ -946,13 +1446,24 @@ class SQLiteSessionInterface(SessionInterface):
             expires_at = min(now + idle_lifetime, absolute_expires_at)
             connection.execute(
                 """
-                INSERT OR REPLACE INTO auth_sessions (
+                INSERT INTO auth_sessions (
                     session_hash, user_id, data, expires_at, created_at,
-                    updated_at
+                    updated_at, last_seen_at, ip_address, user_agent
                 )
                 VALUES (
-                    ?, ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?
                 )
+                ON CONFLICT(session_hash) DO UPDATE SET
+                    user_id = excluded.user_id,
+                    data = excluded.data,
+                    expires_at = excluded.expires_at,
+                    updated_at = excluded.updated_at,
+                    last_seen_at = CASE
+                        WHEN auth_sessions.last_seen_at IS NULL
+                          OR auth_sessions.last_seen_at <= excluded.last_seen_at - ?
+                        THEN excluded.last_seen_at ELSE auth_sessions.last_seen_at END,
+                    ip_address = COALESCE(auth_sessions.ip_address, excluded.ip_address),
+                    user_agent = COALESCE(auth_sessions.user_agent, excluded.user_agent)
                 """,
                 (
                     session_hash,
@@ -961,6 +1472,13 @@ class SQLiteSessionInterface(SessionInterface):
                     expires_at,
                     created_at,
                     now,
+                    now,
+                    str(request.remote_addr or "")[:64] or None,
+                    str(request.headers.get("User-Agent") or "")[:500] or None,
+                    int(app.config.get(
+                        "SESSION_LAST_SEEN_THROTTLE_SECONDS",
+                        SESSION_LAST_SEEN_THROTTLE_SECONDS,
+                    )),
                 ),
             )
             connection.commit()
@@ -980,8 +1498,11 @@ class SQLiteSessionInterface(SessionInterface):
             return
         with self._connect() as connection:
             connection.execute(
-                "DELETE FROM auth_sessions WHERE session_hash = ?",
-                (self._hash(sid),),
+                """
+                UPDATE auth_sessions SET ended_at = COALESCE(ended_at, ?)
+                WHERE session_hash = ?
+                """,
+                (int(time.time()), self._hash(sid)),
             )
 
 
@@ -1039,11 +1560,64 @@ def admin_required(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
         user = current_auth_user()
-        if not user or user["role"] != "admin":
+        if not user or user["role"] not in SUPERADMIN_ROLES:
             abort(403)
         return view(*args, **kwargs)
 
     return wrapped
+
+
+def permission_required(permission):
+    def decorator(view):
+        @wraps(view)
+        def wrapped(*args, **kwargs):
+            user = current_auth_user()
+            role = user.get("role") if user else None
+            effective_role = "superadmin" if role in SUPERADMIN_ROLES else role
+            if not user or permission not in ROLE_PERMISSIONS.get(effective_role, frozenset()):
+                abort(403)
+            return view(*args, **kwargs)
+        return wrapped
+    return decorator
+
+
+def _request_audit_context():
+    return {
+        "ip_address": request.remote_addr,
+        "user_agent": request.headers.get("User-Agent"),
+    }
+
+
+def audit_security(action, result, *, actor_user_id=None, target_type=None,
+                   target_id=None, metadata=None):
+    user = current_auth_user()
+    get_auth_store().record_security_event(
+        action,
+        result,
+        actor_user_id=actor_user_id if actor_user_id is not None else (user["id"] if user else None),
+        target_type=target_type,
+        target_id=target_id,
+        metadata=metadata,
+        **_request_audit_context(),
+    )
+
+
+def _require_sensitive_confirmation(target):
+    actor = current_auth_user()
+    password = request.form.get("current_password")
+    confirmation = request.form.get("confirmation")
+    if confirmation != SENSITIVE_CONFIRMATION_VALUE:
+        raise ValueError("Подтвердите опасное действие.")
+    if not actor or not get_auth_store().verify_password(actor["id"], password):
+        audit_security(
+            "sensitive_reauthentication", "failure", target_type="user",
+            target_id=target.get("id") if target else None,
+        )
+        raise ValueError("Текущий пароль неверен.")
+    audit_security(
+        "sensitive_reauthentication", "success", target_type="user",
+        target_id=target.get("id") if target else None,
+    )
 
 
 def _rate_allowed(scope, subject, subject_limit, ip_limit=None, global_limit=None):
@@ -1230,12 +1804,18 @@ def register():
                     password,
                 )
             except RegistrationError as error:
+                audit_security("registration", "failure", target_type="invitation")
                 errors[error.field] = (
                     "Не удалось создать аккаунт с указанными данными."
                     if error.field == "email"
                     else error.message
                 )
             else:
+                audit_security(
+                    "invitation_used", "success", actor_user_id=user["id"],
+                    target_type="user", target_id=user["id"],
+                    metadata={"role": user["role"]},
+                )
                 session.pop("_pending_invitation", None)
                 regenerate_session()
                 session["user_id"] = user["id"]
@@ -1275,6 +1855,7 @@ def accept_invitation():
         session["_register_error"] = (
             "Слишком много попыток. Попробуйте позже."
         )
+        audit_security("invitation_validation", "rate_limited", target_type="invitation")
         return redirect(url_for("auth.register", next=next_url))
 
     token_hash = invitation_digest(request.form.get("invitation_token"))
@@ -1285,8 +1866,9 @@ def accept_invitation():
     else:
         session.pop("_pending_invitation", None)
         session["_register_error"] = (
-            "Приглашение недействительно или срок его действия истёк."
+            INVITATION_PUBLIC_ERROR
         )
+        audit_security("invitation_validation", "failure", target_type="invitation")
     return redirect(url_for("auth.register", next=next_url))
 
 
@@ -1354,6 +1936,7 @@ def forgot_password():
                 )
                 _send_password_reset(user, token)
         sent = True
+        audit_security("password_reset_requested", "accepted", target_type="credential")
     return render_template("forgot_password.html", sent=sent)
 
 
@@ -1370,6 +1953,10 @@ def reset_password(token):
         password, errors = _validate_password(request.form)
         if not errors:
             if get_auth_store().reset_password(token, password):
+                audit_security(
+                    "password_reset", "success", actor_user_id=record["user_id"],
+                    target_type="user", target_id=record["user_id"],
+                )
                 regenerate_session()
                 return redirect(url_for("auth.login", notice="password-changed"))
             valid = False
@@ -1406,6 +1993,7 @@ def login():
                 LOGIN_GLOBAL_RATE_LIMIT,
             ),
         ):
+            audit_security("login", "rate_limited", target_type="credential")
             return render_template(
                 "login.html",
                 error="Слишком много попыток. Попробуйте позже.",
@@ -1420,12 +2008,20 @@ def login():
         )
         if user is None:
             error = LOGIN_PUBLIC_ERROR
+            audit_security(
+                "login", "failure", target_type="credential",
+                target_id=hashlib.sha256(normalize_email(email).encode()).hexdigest(),
+            )
         else:
             regenerate_session()
             session["user_id"] = user["id"]
             session["session_version"] = user["session_version"]
             session.permanent = True
             csrf_token()
+            audit_security("login", "success", actor_user_id=user["id"], target_type="user", target_id=user["id"])
+            audit_security("session_created", "success", actor_user_id=user["id"], target_type="user", target_id=user["id"])
+            if user.get("force_password_change"):
+                return redirect(url_for("auth.change_password_required"))
             return redirect(next_url)
 
     return render_template(
@@ -1439,6 +2035,7 @@ def login():
 
 @auth.post("/logout")
 def logout():
+    audit_security("logout", "success", target_type="session")
     regenerate_session()
     session.clear()
     return redirect(url_for("auth.login"))
@@ -1448,12 +2045,16 @@ def logout():
 @admin_required
 def create_invitation():
     require_csrf()
+    try:
+        _require_sensitive_confirmation({"id": None})
+    except ValueError as error:
+        return _access_redirect("error", str(error))
     email = str(request.form.get("email") or "").strip()
     role = str(request.form.get("role") or "employee")
     try:
-        lifetime_hours = int(request.form.get("lifetime_hours") or 72)
+        lifetime_hours = int(request.form.get("lifetime_hours") or 24)
     except ValueError:
-        lifetime_hours = 72
+        lifetime_hours = 24
     lifetime_hours = max(1, min(lifetime_hours, 720))
 
     if email and (
@@ -1461,7 +2062,7 @@ def create_invitation():
     ):
         return redirect(
             url_for(
-                "settings_page",
+                "auth.access_page",
                 notice="error",
                 message="Введите корректный email для приглашения.",
             )
@@ -1475,14 +2076,21 @@ def create_invitation():
         role,
         lifetime_hours,
     )
+    audit_security(
+        "invitation_created", "success", target_type="invitation",
+        metadata={"role": role, "lifetime_hours": lifetime_hours, "email_bound": bool(email)},
+    )
     link = f"{url_for('auth.register')}#invite={token}"
-    return render_template(
+    response = current_app.make_response(render_template(
         "invitation_created.html",
         invitation_link=link,
         email=email,
         role_label=ALLOWED_ROLES[role],
         lifetime_hours=lifetime_hours,
-    )
+    ))
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    return response
 
 
 @auth.post("/settings/invitations/<int:invitation_id>/revoke")
@@ -1490,18 +2098,221 @@ def create_invitation():
 def revoke_invitation(invitation_id):
     require_csrf()
     revoked = get_auth_store().revoke_invitation(invitation_id)
+    audit_security(
+        "invitation_revoked", "success" if revoked else "failure",
+        target_type="invitation", target_id=invitation_id,
+    )
     notice = "success" if revoked else "error"
     message = (
         "Приглашение отозвано."
         if revoked
         else "Активное приглашение не найдено."
     )
-    return redirect(f"/app/settings?notice={notice}&message={message}")
+    return _access_redirect(notice, message)
+
+
+def _access_redirect(notice, message):
+    return redirect(url_for("auth.access_page", notice=notice, message=message))
+
+
+def _presence(last_seen_at, active=True):
+    if not active:
+        return "blocked", "Заблокирован"
+    age = int(time.time()) - int(last_seen_at or 0)
+    if last_seen_at and age < 120:
+        return "online", "Онлайн"
+    if last_seen_at and age <= 900:
+        return "away", "Отошёл"
+    return "offline", "Офлайн"
+
+
+def _format_local_time(timestamp):
+    if not timestamp:
+        return "—"
+    return datetime.fromtimestamp(int(timestamp)).strftime("%d.%m.%Y %H:%M")
+
+
+@auth.get("/app/access")
+@admin_required
+def access_page():
+    store = get_auth_store()
+    users = store.list_users()
+    for user in users:
+        user["presence_code"], user["presence_label"] = _presence(
+            user.get("last_seen_at"), bool(user.get("active"))
+        )
+        user["last_seen_text"] = _format_local_time(user.get("last_seen_at"))
+        user["last_login_text"] = _format_local_time(user.get("last_login_at"))
+    sessions = store.list_sessions()
+    now = int(time.time())
+    for item in sessions:
+        if item.get("revoked_at"):
+            item["status_label"] = "Отозвана"
+        elif item.get("ended_at") or item.get("expires_at", 0) <= now:
+            item["status_label"] = "Завершена"
+        else:
+            item["status_label"] = _presence(item.get("last_seen_at"))[1]
+        item["created_text"] = _format_local_time(item.get("created_at"))
+        item["last_seen_text"] = _format_local_time(item.get("last_seen_at"))
+        item["ended_text"] = _format_local_time(item.get("revoked_at") or item.get("ended_at"))
+    events = store.list_security_events()
+    for event in events:
+        event["occurred_text"] = _format_local_time(event.get("occurred_at"))
+    return render_template(
+        "access_control.html",
+        users=users,
+        invitations=store.list_invitations(),
+        sessions=sessions,
+        security_events=events,
+        invitation_roles=ALLOWED_ROLES,
+        role_labels=ALLOWED_ROLES,
+        confirmation_value=SENSITIVE_CONFIRMATION_VALUE,
+        notice=(request.args.get("notice") or "").strip(),
+        message=(request.args.get("message") or "").strip(),
+    )
+
+
+@auth.post("/app/access/users/<int:user_id>/name")
+@admin_required
+def update_employee_name(user_id):
+    store = get_auth_store()
+    try:
+        store.update_user(
+            current_auth_user()["id"], user_id,
+            first_name=request.form.get("first_name"),
+            last_name=request.form.get("last_name"),
+        )
+    except ValueError as error:
+        audit_security("employee_name_changed", "failure", target_type="user", target_id=user_id)
+        return _access_redirect("error", str(error))
+    audit_security("employee_name_changed", "success", target_type="user", target_id=user_id)
+    return _access_redirect("success", "Имя сотрудника обновлено.")
+
+
+@auth.post("/app/access/users/<int:user_id>/access")
+@admin_required
+def update_employee_access(user_id):
+    store = get_auth_store()
+    target = store.get_user_for_management(user_id)
+    if not target:
+        abort(404)
+    try:
+        _require_sensitive_confirmation(target)
+        role = request.form.get("role") or target["role"]
+        active = request.form.get("active") == "1"
+        force_change = request.form.get("force_password_change") == "1"
+        store.update_user(
+            current_auth_user()["id"], user_id, role=role, active=active,
+            force_password_change=force_change,
+        )
+    except ValueError as error:
+        audit_security("employee_access_changed", "failure", target_type="user", target_id=user_id)
+        return _access_redirect("error", str(error))
+    audit_security(
+        "employee_access_changed", "success", target_type="user", target_id=user_id,
+        metadata={"role": role, "active": active, "force_password_change": force_change},
+    )
+    if role != target["role"]:
+        audit_security(
+            "role_changed", "success", target_type="user", target_id=user_id,
+            metadata={"from_role": target["role"], "to_role": role},
+        )
+    if active != bool(target["active"]):
+        audit_security(
+            "account_unblocked" if active else "account_blocked", "success",
+            target_type="user", target_id=user_id,
+        )
+        if not active:
+            audit_security("user_sessions_revoked", "success", target_type="user", target_id=user_id)
+    if force_change != bool(target["force_password_change"]):
+        audit_security(
+            "password_change_requirement_updated", "success",
+            target_type="user", target_id=user_id,
+            metadata={"required": force_change},
+        )
+    return _access_redirect("success", "Доступ сотрудника обновлён.")
+
+
+@auth.post("/app/access/users/<int:user_id>/temporary-password")
+@admin_required
+def issue_employee_temporary_password(user_id):
+    store = get_auth_store()
+    target = store.get_user_for_management(user_id)
+    if not target:
+        abort(404)
+    try:
+        _require_sensitive_confirmation(target)
+        temporary_password = store.issue_temporary_password(current_auth_user()["id"], user_id)
+    except ValueError as error:
+        audit_security("temporary_access_issued", "failure", target_type="user", target_id=user_id)
+        return _access_redirect("error", str(error))
+    audit_security("temporary_access_issued", "success", target_type="user", target_id=user_id)
+    response = current_app.make_response(render_template(
+        "temporary_password.html", employee=target,
+        temporary_password=temporary_password,
+    ))
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    return response
+
+
+@auth.post("/app/access/sessions/<int:session_id>/revoke")
+@admin_required
+def revoke_employee_session(session_id):
+    try:
+        _require_sensitive_confirmation({"id": request.form.get("user_id")})
+    except ValueError as error:
+        return _access_redirect("error", str(error))
+    revoked = get_auth_store().revoke_session(current_auth_user()["id"], session_id)
+    audit_security(
+        "session_revoked", "success" if revoked else "failure",
+        target_type="session", target_id=session_id,
+    )
+    return _access_redirect(
+        "success" if revoked else "error",
+        "Сессия отозвана." if revoked else "Активная сессия не найдена.",
+    )
+
+
+@auth.post("/app/access/users/<int:user_id>/sessions/revoke")
+@admin_required
+def revoke_employee_sessions(user_id):
+    target = get_auth_store().get_user_for_management(user_id)
+    if not target:
+        abort(404)
+    try:
+        _require_sensitive_confirmation(target)
+    except ValueError as error:
+        return _access_redirect("error", str(error))
+    count = get_auth_store().revoke_user_sessions(current_auth_user()["id"], user_id)
+    audit_security(
+        "user_sessions_revoked", "success", target_type="user", target_id=user_id,
+        metadata={"session_count": count},
+    )
+    return _access_redirect("success", "Активные сесии сотрудника отозваны.")
+
+
+@auth.route("/change-password", methods=["GET", "POST"])
+def change_password_required():
+    user = current_auth_user()
+    if not user:
+        return redirect(url_for("auth.login"))
+    errors = {}
+    if request.method == "POST":
+        password, errors = _validate_password(request.form)
+        if not errors:
+            sid = getattr(session, "sid", None)
+            current_hash = SQLiteSessionInterface._hash(sid) if sid else None
+            version = get_auth_store().change_password(user["id"], password, current_hash)
+            session["session_version"] = version
+            audit_security("password_changed", "success", target_type="user", target_id=user["id"])
+            return redirect("/")
+    return render_template("change_password.html", errors=errors)
 
 
 def settings_invitation_context():
     user = current_auth_user()
-    can_manage = bool(user and user.get("role") == "admin")
+    can_manage = bool(user and user.get("role") in SUPERADMIN_ROLES)
     return {
         "can_manage_invitations": can_manage,
         "invitations": (
@@ -1551,6 +2362,10 @@ def configure_auth(app, project_root):
         "AUTH_ABSOLUTE_SESSION_LIFETIME",
         AUTH_ABSOLUTE_TIMEOUT_SECONDS,
     )
+    app.config.setdefault(
+        "SESSION_LAST_SEEN_THROTTLE_SECONDS",
+        SESSION_LAST_SEEN_THROTTLE_SECONDS,
+    )
     app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(
         seconds=AUTH_IDLE_TIMEOUT_SECONDS
     )
@@ -1585,6 +2400,19 @@ def configure_auth(app, project_root):
 
         if not auth_is_enabled():
             return None
+        if (
+            g.current_user
+            and g.current_user.get("force_password_change")
+            and request.endpoint not in {
+                "auth.change_password_required", "auth.logout", "static"
+            }
+        ):
+            if request.path.startswith("/api/"):
+                return jsonify({
+                    "code": "PASSWORD_CHANGE_REQUIRED",
+                    "message": "Необходимо сменить временный пароль.",
+                }), 403
+            return redirect(url_for("auth.change_password_required"))
         is_public = request.endpoint in PUBLIC_ENDPOINTS
         if not is_public and not g.current_user:
             if request.path.startswith("/api/"):
