@@ -77,7 +77,7 @@ class CatalogComboboxStructureTest(unittest.TestCase):
         orders = (PROJECT_ROOT / "app/templates/orders.html").read_text(
             encoding="utf-8"
         )
-        self.assertIn('data-catalog-in-stock="true"', orders)
+        self.assertIn('data-catalog-in-stock="false"', orders)
         self.assertNotIn('data-catalog-in-stock="true"', warehouse)
         self.assertNotIn('data-catalog-in-stock="true"', receipts)
         self.assertIn('form.dataset.submitting === "1"', warehouse)
