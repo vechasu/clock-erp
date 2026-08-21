@@ -2080,6 +2080,7 @@
                                         (receipt.note or '')
                                     )|lower }}"
                                     data-date="{{ receipt.receipt_date or receipt.created_at or '' }}"
+                                    data-created-at="{{ receipt.created_at or '' }}"
                                     data-document="{{ receipt.number or '' }}"
                                     data-comment="{{ receipt.note or '' }}"
                                     data-brand="{{ receipt.brand or receipt.supplier or '' }}"
@@ -2088,6 +2089,7 @@
                                     data-category-id="{{ receipt.category_id or (receipt_position.category_id if receipt_position else '') }}"
                                     data-product="{{ receipt_product_name }}"
                                     data-product-id="{{ receipt_product_id }}"
+                                    data-product-article="{{ receipt_product_article }}"
                                     data-product-image="{{ receipt.product_thumbnail_url or '' }}"
                                     data-quantity="{{ receipt.total_quantity or 0 }}"
                                     data-purchase-price="{{ receipt_position.purchase_price if receipt_position and receipt_position.purchase_price is not none else '' }}"
@@ -2419,7 +2421,7 @@
                     data-global-category-options="true"
                 >
                     <h3 class="erp-form-section-title field-wide receipt-document-title">Документ</h3>
-                    <div class="field">
+                    <div class="field receipt-document-field">
                         <label for="receipt_date">
                             Дата *
                         </label>
@@ -2434,12 +2436,27 @@
                         >
                     </div>
 
-                    <div class="field">
+                    <div class="field receipt-document-field">
+                        <label for="receipt_time">Время</label>
+                        <input
+                            class="control"
+                            id="receipt_time"
+                            type="time"
+                            value="{{ today_time }}"
+                            aria-describedby="receiptTimeHelp"
+                            disabled
+                        >
+                        <span class="receipt-field-help" id="receiptTimeHelp">
+                            Фиксируется сервером при проведении
+                        </span>
+                    </div>
+
+                    <div class="field receipt-document-field">
                         <label for="receipt_purchase_price">Цена закупки</label>
                         <input class="control" id="receipt_purchase_price" name="purchase_price" type="number" inputmode="decimal" min="0" step="0.01" placeholder="Не указана">
                     </div>
 
-                    <div class="field">
+                    <div class="field receipt-document-field">
                         <label for="document_number">
                             Документ
                         </label>
@@ -2533,16 +2550,23 @@
                         >
                     </div>
 
-                    <h3 class="erp-form-section-title field-wide receipt-photo-title">Фото</h3>
                     <div
                         id="receiptSelectedPhoto"
-                        class="field field-wide receipt-selected-photo"
+                        class="field field-wide receipt-selected-photo receipt-product-summary"
+                        aria-live="polite"
                     >
                         <img id="receiptSelectedPhotoPicture" alt="Фото выбранного товара" hidden>
                         <span id="receiptSelectedPhotoPlaceholder" class="receipt-selected-photo-placeholder">Нет фото</span>
-                        <div>
-                            <strong>Фото товара</strong>
-                            <div id="receiptSelectedPhotoText" class="receipt-image-help">Выберите товар</div>
+                        <div class="receipt-selected-product-copy">
+                            <strong id="receiptSelectedProductName">Товар не выбран</strong>
+                            <div id="receiptSelectedPhotoText" class="receipt-image-help">Выберите бренд, категорию и товар</div>
+                            <div class="receipt-selected-product-meta" id="receiptSelectedProductMeta" hidden>
+                                <span data-receipt-product-brand></span>
+                                <span data-receipt-product-category></span>
+                                <span data-receipt-product-article></span>
+                                <span data-receipt-product-stock></span>
+                                <span data-receipt-product-id></span>
+                            </div>
                         </div>
                     </div>
 
@@ -2563,6 +2587,8 @@
                             required
                         >
                     </div>
+
+                    <h3 class="erp-form-section-title field-wide receipt-photo-title">Фото</h3>
 
                     <div
                         id="receiptImageField"
@@ -2622,7 +2648,7 @@
                     aria-live="polite"
                 >{% if message and open_receipt_modal %}{{ message }}{% endif %}</div>
 
-                <div class="modal-actions">
+                <div class="modal-actions erp-modal-actions">
                     <!-- RECEIPT CREATE NEXT V2 -->
                     <button
                         class="button button-next-receipt"
@@ -2654,6 +2680,9 @@
     role="dialog"
     aria-modal="true"
     aria-labelledby="receiptEditModalTitle"
+    aria-hidden="true"
+    data-erp-modal-shell
+    data-erp-modal-lock
 >
     <div class="modal-dialog receipt-edit-dialog">
         <div class="modal-header">
@@ -2661,7 +2690,7 @@
                 <h2 id="receiptEditModalTitle">Карточка прихода</h2>
                 <p>Просмотр и редактирование проведённого прихода</p>
             </div>
-            <button class="modal-close" type="button" data-receipt-edit-close>×</button>
+            <button class="modal-close" type="button" aria-label="Закрыть" data-receipt-edit-close>×</button>
         </div>
         <div class="modal-body">
             <form id="receiptEditModalForm" enctype="multipart/form-data">
@@ -2670,21 +2699,23 @@
                 <input type="hidden" name="product_id">
 
                 <div class="receipt-card-layout">
-                    <section class="receipt-card-media" id="receiptEditCurrentImage">
-                        <img alt="Фотография товара" loading="lazy" hidden>
-                        <span data-receipt-edit-photo-placeholder>Нет фото</span>
-                    </section>
-
-                    <div class="receipt-card-grid">
+                    <section class="receipt-edit-section receipt-edit-document-section">
+                        <h3 class="erp-form-section-title">Документ</h3>
+                        <div class="receipt-card-grid">
                         <label class="receipt-card-field">
                             <span>Дата *</span>
                             <input class="control" type="date" name="receipt_date" required>
                         </label>
                         <label class="receipt-card-field">
-                            <span>Документ</span>
-                            <input class="control" type="text" name="document_number" maxlength="120">
+                            <span>Время</span>
+                            <input class="control" id="receiptEditTime" type="time" disabled>
+                            <small class="receipt-field-help">Сохранённое время проведения</small>
                         </label>
-                        <label class="receipt-card-field receipt-card-quantity-field">
+                        <label class="receipt-card-field">
+                            <span>Документ</span>
+                            <input class="control" type="text" name="document_number" maxlength="120" placeholder="Можно оставить пустым">
+                        </label>
+                        <label class="receipt-card-field">
                             <span>Количество *</span>
                             <input class="control" type="number" name="quantity" min="1" step="1" required>
                         </label>
@@ -2692,6 +2723,17 @@
                             <span>Цена закупки</span>
                             <input class="control" type="number" name="purchase_price" min="0" step="0.01" inputmode="decimal" placeholder="Не указана">
                         </label>
+                        </div>
+                    </section>
+
+                    <section class="receipt-edit-section receipt-edit-product-section">
+                        <h3 class="erp-form-section-title">Товар</h3>
+                        <div class="receipt-edit-product-summary">
+                            <div class="receipt-card-media" id="receiptEditCurrentImage">
+                                <img alt="Фотография товара" loading="lazy" hidden>
+                                <span data-receipt-edit-photo-placeholder>Нет фото</span>
+                            </div>
+                            <div class="receipt-card-grid">
                         <div class="receipt-card-field">
                             <span>Бренд</span>
                             <strong data-receipt-edit-brand>—</strong>
@@ -2704,16 +2746,24 @@
                             <span>Товар</span>
                             <strong data-receipt-edit-product>—</strong>
                         </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="receipt-edit-section receipt-edit-comment-section">
+                        <h3 class="erp-form-section-title">Комментарий</h3>
+                        <div class="receipt-card-grid">
                         <label class="receipt-card-field receipt-card-field-wide">
                             <span>Комментарий</span>
                             <textarea class="control" name="comment" maxlength="2000"></textarea>
                         </label>
+                        </div>
+                    </section>
                     </div>
-                </div>
 
                 <div class="receipt-submit-message notice" aria-live="polite"></div>
-                <div class="modal-actions">
-                    <button class="button button-primary" type="submit">Сохранить</button>
+                <div class="modal-actions erp-modal-actions">
+                    <button class="button button-primary" type="submit" data-receipt-submit-label="Сохранить">Сохранить</button>
                 </div>
             </form>
         </div>
@@ -2964,6 +3014,10 @@
         document.getElementById("receiptSelectedPhotoPlaceholder");
     const receiptSelectedPhotoText =
         document.getElementById("receiptSelectedPhotoText");
+    const receiptSelectedProductName =
+        document.getElementById("receiptSelectedProductName");
+    const receiptSelectedProductMeta =
+        document.getElementById("receiptSelectedProductMeta");
 
     const removeReceiptImage =
         document.getElementById("removeReceiptImage");
@@ -2975,6 +3029,7 @@
 
     let receiptSelectedProduct = null;
     let receiptImageObjectUrl = "";
+    let receiptCreateReturnFocus = null;
 
     function clearReceiptImage() {
         if (receiptImageObjectUrl) {
@@ -3017,8 +3072,34 @@
         }
         if (receiptSelectedPhotoText) {
             receiptSelectedPhotoText.textContent = product
-                ? (source ? "Фото выбранного товара" : "У товара нет фотографии")
-                : "Выберите товар";
+                ? (source ? "Фото из каталога" : "У товара нет фотографии")
+                : "Выберите бренд, категорию и товар";
+        }
+        if (receiptSelectedProductName) {
+            receiptSelectedProductName.textContent = product
+                ? String(product.name || product.label || "Товар без названия")
+                : "Товар не выбран";
+        }
+        if (receiptSelectedProductMeta) {
+            const values = {
+                "brand": product?.brand ? "Бренд: " + product.brand : "",
+                "category": product?.category ? "Категория: " + product.category : "",
+                "article": product?.article ? "Артикул: " + product.article : "",
+                "stock": product && product.stock != null
+                    ? "Остаток: " + product.stock
+                    : "",
+                "id": product?.id ? "ID: " + product.id : "",
+            };
+            Object.entries(values).forEach(([key, value]) => {
+                const target = receiptSelectedProductMeta.querySelector(
+                    "[data-receipt-product-" + key + "]"
+                );
+                if (target) {
+                    target.textContent = value;
+                    target.hidden = !value;
+                }
+            });
+            receiptSelectedProductMeta.hidden = !product;
         }
     }
 
@@ -3915,13 +3996,12 @@
             setReceiptNewProductPhotoMode(false);
         }
 
+        receiptCreateReturnFocus = document.activeElement;
         receiptModal.classList.add("is-open");
         receiptModal.setAttribute("aria-hidden", "false");
         document.body.classList.add("modal-open");
         requestAnimationFrame(() => {
-            receiptModal.querySelector(
-                "button:not([disabled]), input:not([disabled])"
-            )?.focus();
+            document.getElementById("receipt_date")?.focus();
         });
     }
 
@@ -3929,9 +4009,8 @@
         receiptModal.classList.remove("is-open");
         receiptModal.setAttribute("aria-hidden", "true");
         document.body.classList.remove("modal-open");
-        document.querySelector(
-            '[onclick="openReceiptModal()"]'
-        )?.focus();
+        receiptCreateReturnFocus?.focus();
+        receiptCreateReturnFocus = null;
     }
 
 
@@ -3989,6 +4068,14 @@
         context.addEventListener(
             "shared-catalog:selected",
             (event) => {
+                if (
+                    event.detail?.kind !== "product"
+                    && context.closest("#receiptModal")
+                ) {
+                    receiptSelectedProduct = null;
+                    renderReceiptSelectedPhoto(null);
+                    setReceiptNewProductPhotoMode(false);
+                }
                 if (event.detail?.kind !== "product") {
                     return;
                 }
@@ -4762,10 +4849,14 @@
     const receiptEditModalForm = document.getElementById(
         "receiptEditModalForm"
     );
+    let receiptEditReturnFocus = null;
     function closeReceiptEditModal() {
         receiptEditModal?.classList.remove("is-open");
+        receiptEditModal?.setAttribute("aria-hidden", "true");
         document.body.classList.remove("modal-open");
         receiptEditModalForm?.reset();
+        receiptEditReturnFocus?.focus();
+        receiptEditReturnFocus = null;
     }
 
     function openReceiptEditModal(row) {
@@ -4779,6 +4870,13 @@
             row.dataset.productId || "";
         receiptEditModalForm.querySelector('[name="receipt_date"]').value =
             String(row.dataset.date || "").slice(0, 10);
+        const createdTime = String(row.dataset.createdAt || "").match(
+            /(?:T|\s)(\d{2}:\d{2})/
+        );
+        const receiptEditTime = document.getElementById("receiptEditTime");
+        if (receiptEditTime) {
+            receiptEditTime.value = createdTime ? createdTime[1] : "";
+        }
         receiptEditModalForm.querySelector('[name="document_number"]').value =
             row.dataset.document || "";
         receiptEditModalForm.querySelector('[name="quantity"]').value =
@@ -4823,7 +4921,9 @@
             }
         }
 
+        receiptEditReturnFocus = document.activeElement;
         receiptEditModal.classList.add("is-open");
+        receiptEditModal.setAttribute("aria-hidden", "false");
         document.body.classList.add("modal-open");
         requestAnimationFrame(() => {
             receiptEditModalForm.querySelector(
@@ -4847,10 +4947,28 @@
 
     function setReceiptSubmitting(form, submitting) {
         form.dataset.submitting = submitting ? "true" : "";
-        form.querySelectorAll('button[type="submit"]')
-            .forEach((button) => {
-                button.disabled = submitting;
+        form.querySelectorAll("button, input, select, textarea")
+            .forEach((control) => {
+                if (submitting) {
+                    control.dataset.receiptDisabledBeforeSubmit =
+                        control.disabled ? "true" : "false";
+                    control.disabled = true;
+                } else {
+                    control.disabled = (
+                        control.dataset.receiptDisabledBeforeSubmit === "true"
+                    );
+                    delete control.dataset.receiptDisabledBeforeSubmit;
+                }
             });
+        form.setAttribute("aria-busy", submitting ? "true" : "false");
+        form.querySelectorAll('button[type="submit"]').forEach((button) => {
+            if (!button.dataset.receiptSubmitLabel) {
+                button.dataset.receiptSubmitLabel = button.textContent.trim();
+            }
+            button.textContent = submitting
+                ? "Сохраняем…"
+                : button.dataset.receiptSubmitLabel;
+        });
     }
 
     function showReceiptSubmitMessage(form, message, state) {
@@ -4883,6 +5001,40 @@
             Boolean(message)
         );
     }
+
+    function setupReceiptInlineValidation(form) {
+        form?.addEventListener("invalid", (event) => {
+            const control = event.target;
+            if (!(control instanceof HTMLElement)) {
+                return;
+            }
+            control.setAttribute("aria-invalid", "true");
+            const field = control.closest(".field, .receipt-card-field");
+            if (!field) {
+                return;
+            }
+            let error = field.querySelector(".receipt-field-error");
+            if (!error) {
+                error = document.createElement("span");
+                error.className = "receipt-field-error";
+                field.appendChild(error);
+            }
+            error.textContent = control.validationMessage;
+        }, true);
+        form?.addEventListener("input", (event) => {
+            const control = event.target;
+            if (!(control instanceof HTMLElement)) {
+                return;
+            }
+            control.removeAttribute("aria-invalid");
+            control.closest(".field, .receipt-card-field")
+                ?.querySelector(".receipt-field-error")
+                ?.remove();
+        });
+    }
+
+    setupReceiptInlineValidation(receiptForm);
+    setupReceiptInlineValidation(receiptEditModalForm);
 
     async function submitSharedReceipt(
         form,
@@ -4921,18 +5073,25 @@
                 ? "create_next"
                 : "close"
         );
+        const createPayload =
+            window.VechasuReceiptSubmit.buildCreatePayload(
+                receiptForm,
+                productId,
+                submitMode
+            );
         setReceiptSubmitting(receiptForm, true);
-        showReceiptSubmitMessage(receiptForm, "", "");
+        showReceiptSubmitMessage(
+            receiptForm,
+            "Приход сохраняется…",
+            "pending"
+        );
 
         try {
             const result = await submitSharedReceipt(
                 receiptForm,
                 "/api/v1/receipts",
                 "POST",
-                window.VechasuReceiptSubmit.buildCreatePayload(
-                    receiptForm,
-                    productId
-                )
+                createPayload
             );
             window.location.href = (
                 window.VechasuReceiptSubmit.successUrl(
@@ -4961,22 +5120,23 @@
             ) {
                 return;
             }
-            setReceiptSubmitting(receiptEditModalForm, true);
-            showReceiptSubmitMessage(
-                receiptEditModalForm,
-                "",
-                ""
-            );
             const receiptId = receiptEditModalForm.querySelector(
                 '[name="receipt_id"]'
             )?.value || "";
+            const editPayload = new FormData(receiptEditModalForm);
+            setReceiptSubmitting(receiptEditModalForm, true);
+            showReceiptSubmitMessage(
+                receiptEditModalForm,
+                "Изменения сохраняются…",
+                "pending"
+            );
             try {
                 const result = await submitSharedReceipt(
                     receiptEditModalForm,
                     "/api/v1/receipts/"
                         + encodeURIComponent(receiptId),
                     "PATCH",
-                    new FormData(receiptEditModalForm)
+                    editPayload
                 );
                 const imageMessage = String(
                     result?.meta?.image_message || ""
@@ -5706,6 +5866,52 @@
         );
 
         try {
+            const createOpenButton = document.querySelector(
+                '[onclick="openReceiptModal()"]'
+            );
+            const createModal = document.getElementById("receiptModal");
+            const createDialog = createModal?.querySelector(".modal-dialog");
+            const createForm = document.getElementById("receiptForm");
+            const createHeader = createModal?.querySelector(".modal-header");
+            const createBody = createModal?.querySelector(".modal-body");
+            const createActions = createForm?.querySelector(".modal-actions");
+            if (
+                !createOpenButton || !createModal || !createDialog
+                || !createForm || !createHeader || !createBody
+                || !createActions
+            ) {
+                throw new Error("missing-create-elements");
+            }
+            createOpenButton.focus();
+            createOpenButton.click();
+            await wait(180);
+            const createDialogRect = createDialog.getBoundingClientRect();
+            const createHeaderRect = createHeader.getBoundingClientRect();
+            const createActionsRect = createActions.getBoundingClientRect();
+            if (
+                !createModal.classList.contains("is-open")
+                || !createModal.contains(document.activeElement)
+                || createDialogRect.left < -1
+                || createDialogRect.right > innerWidth + 1
+                || createDialogRect.top < -1
+                || createDialogRect.bottom > innerHeight + 1
+                || createHeaderRect.top < createDialogRect.top - 1
+                || createActionsRect.bottom > createDialogRect.bottom + 1
+                || createBody.scrollWidth > createBody.clientWidth + 1
+                || document.documentElement.scrollWidth
+                    > document.documentElement.clientWidth
+            ) {
+                throw new Error("create-modal-layout");
+            }
+            closeReceiptModal();
+            await wait(30);
+            if (
+                createModal.classList.contains("is-open")
+                || document.activeElement !== createOpenButton
+            ) {
+                throw new Error("create-modal-close-focus");
+            }
+
             const openButton = document.querySelector(".js-edit-receipt");
             const modal = document.getElementById("receiptEditModal");
             const dialog = modal?.querySelector(".receipt-edit-dialog");
@@ -5774,21 +5980,38 @@
             }
 
             [product, comment].forEach((field) => {
-                if (field.getBoundingClientRect().width < gridRect.width * 0.96) {
+                const ownerGrid = field.closest(".receipt-card-grid");
+                if (
+                    !ownerGrid
+                    || field.getBoundingClientRect().width
+                        < ownerGrid.getBoundingClientRect().width * 0.96
+                ) {
                     throw new Error("wide-field-compressed");
                 }
             });
 
-            const dateRect = fields[0].getBoundingClientRect();
-            const documentRect = fields[1].getBoundingClientRect();
-            const brandRect = fields[3].getBoundingClientRect();
-            const categoryRect = fields[4].getBoundingClientRect();
+            const dateField = form.querySelector('[name="receipt_date"]')
+                ?.closest(".receipt-card-field");
+            const timeField = form.querySelector("#receiptEditTime")
+                ?.closest(".receipt-card-field");
+            const brandField = form.querySelector("[data-receipt-edit-brand]")
+                ?.closest(".receipt-card-field");
+            const categoryField = form.querySelector(
+                "[data-receipt-edit-category]"
+            )?.closest(".receipt-card-field");
+            if (!dateField || !timeField || !brandField || !categoryField) {
+                throw new Error("missing-grid-fields");
+            }
+            const dateRect = dateField.getBoundingClientRect();
+            const timeRect = timeField.getBoundingClientRect();
+            const brandRect = brandField.getBoundingClientRect();
+            const categoryRect = categoryField.getBoundingClientRect();
             if (innerWidth > 700) {
                 if (
-                    Math.abs(dateRect.top - documentRect.top) > 2
+                    Math.abs(dateRect.top - timeRect.top) > 2
                     || Math.abs(brandRect.top - categoryRect.top) > 2
                     || dateRect.width < gridRect.width * 0.4
-                    || documentRect.width < gridRect.width * 0.4
+                    || timeRect.width < gridRect.width * 0.4
                 ) {
                     throw new Error("desktop-grid");
                 }

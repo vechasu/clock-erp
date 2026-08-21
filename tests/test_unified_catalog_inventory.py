@@ -299,6 +299,45 @@ class UnifiedCatalogInventoryTest(unittest.TestCase):
             any(item["receipt_id"] == "receipt-1" for item in movements)
         )
 
+    def test_receipt_document_is_optional_and_retry_is_stock_neutral(self):
+        product = self.create_product(name="Optional Document Product")
+        receipt = {
+            "id": "receipt-without-document",
+            "number": "",
+            "receipt_date": "2026-08-21",
+        }
+        positions = [{
+            "product_id": product["id"],
+            "quantity": 2,
+            "purchase_price": 125,
+        }]
+
+        first = self.receipts.create_receipt(
+            receipt,
+            positions,
+            idempotency_key="receipt-without-document-once",
+        )
+        repeated = self.receipts.create_receipt(
+            {**receipt, "id": "duplicate-click-id"},
+            positions,
+            idempotency_key="receipt-without-document-once",
+        )
+
+        self.assertIsNone(first["number"])
+        self.assertEqual(repeated["id"], first["id"])
+        self.assertEqual(self.stock(product["id"]), 2)
+        with self.database.connect() as connection:
+            receipt_count = connection.execute(
+                "SELECT COUNT(*) FROM erp_receipts"
+            ).fetchone()[0]
+            movement_count = connection.execute(
+                "SELECT COUNT(*) FROM catalog_stock_movements "
+                "WHERE receipt_id = ?",
+                (first["id"],),
+            ).fetchone()[0]
+        self.assertEqual(receipt_count, 1)
+        self.assertEqual(movement_count, 1)
+
     def test_comment_only_receipt_update_preserves_stock_and_movements(self):
         product = self.create_product()
         receipt = {

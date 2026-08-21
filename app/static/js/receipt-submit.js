@@ -81,7 +81,7 @@
         return payload;
     }
 
-    function buildCreatePayload(form, productId) {
+    function buildCreatePayload(form, productId, submitMode) {
         const payload = new global.FormData(form);
         const image = form.querySelector(
             '[name="product_image"]'
@@ -95,10 +95,23 @@
             "positions",
             JSON.stringify([{
                 product_id: productId,
+                brand_id: form.querySelector(
+                    '[name="brand_id"]'
+                )?.value || "",
+                category_id: form.querySelector(
+                    '[name="category_id"]'
+                )?.value || "",
                 quantity: form.querySelector(
                     '[name="quantity"]'
                 )?.value || "",
+                purchase_price: form.querySelector(
+                    '[name="purchase_price"]'
+                )?.value || "",
             }])
+        );
+        payload.set(
+            "submit_mode",
+            submitMode === "create_next" ? "create_next" : "close"
         );
         return payload;
     }
