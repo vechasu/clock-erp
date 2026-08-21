@@ -22,6 +22,13 @@ from app.services.bitrix_erp_product_sync import (  # noqa: E402
     BitrixERPProductSync,
     create_database_backup,
 )
+from app.services.inventory_lock import assert_no_active_inventory  # noqa: E402
+from app.services.protected_catalog_brands import (  # noqa: E402
+    PROTECTED_BRANDS,
+    protected_brand_rows,
+    protected_product_brand,
+    protected_state_digest,
+)
 
 
 RESULT_KEYS = ("created", "updated", "unchanged", "ambiguous", "skipped", "error")
@@ -113,6 +120,179 @@ def _initial_report(mode):
         "stock_changes": 0,
         "moysklad_writes": 0,
     }
+
+
+def _source_brand_ids(product, protected_brand):
+    discovered = {
+        str(prop.get("enum_id") or "").strip()
+        for prop in product.get("properties") or []
+        if str(prop.get("enum_id") or "").strip()
+    }
+    expected = set(PROTECTED_BRANDS[protected_brand]["source_brand_ids"])
+    return sorted(discovered & expected)
+
+
+def _database_verification(database):
+    with database.connect() as connection:
+        quick_check = connection.execute("PRAGMA quick_check").fetchone()[0]
+        foreign_key_errors = len(connection.execute("PRAGMA foreign_key_check").fetchall())
+        duplicate_external_ids = connection.execute(
+            "SELECT COUNT(*) FROM (SELECT bitrix_external_product_id "
+            "FROM catalog_excel_products WHERE active = 1 "
+            "AND trim(COALESCE(bitrix_external_product_id, '')) <> '' "
+            "GROUP BY bitrix_external_product_id HAVING COUNT(*) > 1)"
+        ).fetchone()[0]
+    return {
+        "quick_check": quick_check,
+        "foreign_key_errors": foreign_key_errors,
+        "duplicate_bitrix_links": duplicate_external_ids,
+    }
+
+
+def import_missing_active_products(client, database, apply=False, page_size=200,
+                                   backup_root=None, progress_callback=None):
+    """Create only missing active ERP cards behind a protected-brand firewall."""
+    page_size = max(1, min(int(page_size), 200))
+    report = _initial_report("apply_missing_active" if apply else "dry_run_missing_active")
+    report.update({
+        "active_products_found": 0,
+        "already_in_erp": 0,
+        "excluded_total": 0,
+        "excluded_by_brand": {
+            brand: {"count": 0, "source_brand_ids": [], "product_ids": []}
+            for brand in PROTECTED_BRANDS
+        },
+        "protected_erp_brands": [],
+        "protected_unchanged": False,
+        "without_exact_stock": {"count": 0, "products": []},
+        "not_imported": [],
+        "imported_stock_quantity": 0,
+        "database_verification": {},
+    })
+    eligible = []
+    seen_source_ids = set()
+    page = 1
+    while True:
+        payload = client.get_products_page(
+            page=page, limit=page_size, include_inactive=False
+        )
+        report["pages_processed"] += 1
+        report["source_total"] = int(payload.get("total") or 0)
+        for product in payload["products"]:
+            report["source_rows_scanned"] += 1
+            report["active_products_found"] += 1
+            source_id = _text(product.get("external_product_id"))
+            if source_id and source_id in seen_source_ids:
+                report["source_duplicates"] += 1
+                report["skipped"] += 1
+                continue
+            if source_id:
+                seen_source_ids.add(source_id)
+            protected_brand = protected_product_brand(product)
+            if protected_brand:
+                item = report["excluded_by_brand"][protected_brand]
+                item["count"] += 1
+                item["product_ids"].append(source_id)
+                item["source_brand_ids"] = sorted(set(
+                    item["source_brand_ids"]
+                    + _source_brand_ids(product, protected_brand)
+                ))
+                report["excluded_total"] += 1
+                continue
+            eligible.append(product)
+            _record_quality(report, product)
+        if progress_callback:
+            progress_callback({
+                "page": page,
+                "received": report["source_rows_scanned"],
+                "source_total": report["source_total"],
+            })
+        if not payload.get("has_more") or not payload["products"]:
+            break
+        page += 1
+
+    if database.exists():
+        with database.connect() as connection:
+            report["protected_erp_brands"] = protected_brand_rows(connection)
+            before_digest = protected_state_digest(connection)
+            assert_no_active_inventory(connection)
+    else:
+        before_digest = None
+
+    card_sync = BitrixERPProductSync(database)
+    preview = card_sync.preview_products(
+        eligible, create_only=True, require_exact_stock=True
+    )
+    new_products = []
+    for product, result in zip(eligible, preview):
+        if result["status"] == "skipped" and result.get("error") == "exact_stock_unavailable":
+            report["skipped"] += 1
+            report["without_exact_stock"]["count"] += 1
+            report["without_exact_stock"]["products"].append(_quality_item(product))
+            report["not_imported"].append(result)
+        elif result["status"] == "skipped":
+            report["skipped"] += 1
+            report["not_imported"].append(result)
+        elif result["status"] == "ambiguous":
+            report["ambiguous"] += 1
+            report["conflicts"].append(result)
+            report["not_imported"].append(result)
+        else:
+            _add_card_result(report, result)
+        if result["status"] == "created":
+            new_products.append(product)
+    report["already_in_erp"] = report["matched"]
+
+    if apply:
+        backup_path = create_database_backup(database, backup_root)
+        report["backup_path"] = str(backup_path) if backup_path else None
+        report["created"] = 0
+        if new_products:
+            source_result = BitrixCatalogImporter(database).import_products(
+                new_products, "full_sync"
+            )
+            _add_source_totals(report, source_result)
+            applied = card_sync.apply_products(
+                new_products, create_only=True, require_exact_stock=True
+            )
+            report["inventory_operations"] = 0
+            report["stock_changes"] = 0
+            for result in applied:
+                status = result["status"]
+                if status == "created":
+                    report["created"] += 1
+                    quantity = float(result.get("stock_imported") or 0)
+                    report["imported_stock_quantity"] += quantity
+                    if quantity:
+                        report["inventory_operations"] += 1
+                        report["stock_changes"] += 1
+                elif status in {"ambiguous", "skipped", "error"}:
+                    _add_card_result(report, result)
+        report["writes_performed"] = (
+            report["created"]
+            + report["source_catalog"]["created"]
+            + report["source_catalog"]["updated"]
+        )
+
+    if database.exists():
+        with database.connect() as connection:
+            after_digest = protected_state_digest(connection)
+        report["protected_unchanged"] = before_digest == after_digest
+    else:
+        report["protected_unchanged"] = before_digest is None
+    report["database_verification"] = _database_verification(database)
+    report["duplicate_bitrix_links"] = card_sync.duplicate_bitrix_links()
+    report["duplicate_bitrix_link_count"] = len(report["duplicate_bitrix_links"])
+    verification = report["database_verification"]
+    if not report["protected_unchanged"]:
+        report["status"] = "protected_brand_changed"
+    elif verification["quick_check"] != "ok" or verification["foreign_key_errors"]:
+        report["status"] = "database_verification_failed"
+    elif report["errors"]:
+        report["status"] = "completed_with_errors"
+    else:
+        report["status"] = "success"
+    return report
 
 
 def _import_source_page(importer, products, report):
@@ -237,13 +417,18 @@ def main():
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--dry-run", action="store_true")
     mode.add_argument("--apply", action="store_true")
+    parser.add_argument("--missing-active-only", action="store_true")
     parser.add_argument("--page-size", type=int, default=200)
     parser.add_argument("--backup-root", type=Path)
     args = parser.parse_args()
     load_dotenv(PROJECT_ROOT / ".env")
 
     try:
-        report = sync_bitrix_products(
+        operation = (
+            import_missing_active_products
+            if args.missing_active_only else sync_bitrix_products
+        )
+        report = operation(
             client=build_client(),
             database=CatalogDatabase(),
             apply=bool(args.apply),
