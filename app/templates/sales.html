@@ -1434,11 +1434,7 @@
         rel="stylesheet"
         href="{{ url_for('static', filename='css/erp-focus-mode.css') }}"
     >
-    <script
-        src="{{ url_for('static', filename='js/period-picker.js') }}"
-    ></script>
     <script defer src="{{ url_for('static', filename='js/table-scroll-hint.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/erp-table-layout.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/erp-modal-shell.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/erp-focus-mode.js') }}"></script>
     {% if config.TESTING and request.args.get("sales_focus_mode_e2e") == "1" %}
@@ -3194,6 +3190,8 @@
 
 
 <script src="{{ url_for('static', filename='js/catalog-combobox.js', v='catalog-combobox-20260821') }}"></script>
+<script src="{{ url_for('static', filename='js/period-picker.js') }}"></script>
+<script src="{{ url_for('static', filename='js/erp-table-layout.js') }}"></script>
 <script>
     const activeSalesSource = {{ active_source | tojson }};
     const tictactoyLocationData = (
