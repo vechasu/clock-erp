@@ -5,9 +5,11 @@ from unittest import mock
 from app import web
 from app.clients.bitrix_orders import BitrixReadOnlyError
 from app.services.order_print import (
+    amount_in_words,
     build_order_print_context,
     format_money,
     format_order_datetime,
+    format_phone,
 )
 
 
@@ -135,35 +137,33 @@ class OrderPrintTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("&lt;script&gt;alert", html)
         self.assertNotIn('<script>alert("x")</script>', html)
-        self.assertNotIn(">Email<", html)
-        self.assertNotIn(">Индекс<", html)
+        self.assertIn("Эл. почта:</span> —", html)
+        self.assertNotIn("Индекс:</span>", html)
         self.assertNotIn(">None<", html)
         self.assertNotIn(">null<", html)
 
     def test_totals_sku_and_money_formatting(self):
         context = build_order_print_context(sample_order())
-        self.assertEqual(format_money(12000), "12 000")
+        self.assertEqual(format_money(12000), "12 000,00")
         self.assertEqual(format_money("12000.5"), "12 000,50")
         self.assertEqual(
             format_order_datetime("2026-08-21T10:30:00+03:00"),
             "21.08.2026 10:30",
         )
-        self.assertEqual(context["products_total"], "2 101")
-        self.assertEqual(context["discount"], "100")
-        self.assertEqual(context["delivery_price"], "399")
-        self.assertEqual(context["total"], "2 400")
-        self.assertEqual(context["amount_due"], "2 400")
-        self.assertTrue(context["has_sku"])
-        self.assertEqual(context["delivery_point"], "MSC1")
+        self.assertEqual(format_phone("8 900 000-00-00"), "+7 (900) 000-00-00")
+        self.assertEqual(context["products_total"], "2 101,00")
+        self.assertEqual(context["discount"], "100,00")
+        self.assertEqual(context["delivery_price"], "399,00")
+        self.assertEqual(context["total"], "2 400,00")
+        self.assertEqual(context["total_words"], "две тысячи четыреста рублей 00 копеек")
+        self.assertEqual(context["delivery_service"], "СДЭК")
+        self.assertEqual(context["delivery_method"], "доставка до ПВЗ")
         self.assertEqual(context["address"], "ул. Тверская, д. 1")
 
-    def test_sku_column_is_removed_when_all_articles_are_missing(self):
-        order = sample_order(items=[{
-            "name": "Часы", "quantity": 1, "sale_unit_price": 100, "line_total": 100,
-        }], products_total=100, discount=0, delivery_price=0, order_total=100)
-        html = self.get_print(order).get_data(as_text=True)
-        self.assertNotIn(">Артикул<", html)
-        self.assertNotIn(">Скидка<", html)
+    def test_amount_in_words_handles_russian_gender_and_kopecks(self):
+        self.assertEqual(amount_in_words("11504"), "одиннадцать тысяч пятьсот четыре рубля 00 копеек")
+        self.assertEqual(amount_in_words("21001.02"), "двадцать одна тысяча один рубль 02 копейки")
+        self.assertEqual(amount_in_words(0), "ноль рублей 00 копеек")
 
     def test_many_lines_have_multi_page_print_guards(self):
         items = [
@@ -182,15 +182,16 @@ class OrderPrintTest(unittest.TestCase):
         self.assertIn("display: table-header-group", html)
         self.assertIn("page-break-inside: avoid", html)
         self.assertIn("@page", html)
-        self.assertIn("size: A4", html)
+        self.assertIn("size: A4 landscape", html)
 
-    def test_print_is_explicit_and_fiscal_template_is_not_reused(self):
+    def test_print_has_no_erp_controls_and_fiscal_template_is_not_reused(self):
         html = self.get_print().get_data(as_text=True)
-        self.assertIn('onclick="window.print()"', html)
+        self.assertNotIn("<button", html)
+        self.assertNotIn("<nav", html)
         self.assertNotIn("onload=", html.casefold())
         for forbidden in ("ККТ", "ФН:", "ФП", "ФД:", "КАССИР", "СМЕНА"):
             self.assertNotIn(forbidden, html)
-        for label in ("Собрал:", "Проверил:", "Дата:", "Примечание", "Распечатано из Vechasu ERP"):
+        for label in ("Подпись / печать продавца", "QR-код Telegram", "vk.com/tictactoy_ru", "t.me/tictactoy"):
             self.assertIn(label, html)
 
     def test_orders_card_has_new_tab_print_action(self):

@@ -6,132 +6,280 @@
     <title>Заказ №{{ print_order.number }}</title>
     <style>
         @page {
-            size: A4;
-            margin: 12mm;
+            size: A4 landscape;
+            margin: 10mm 8mm;
         }
         * { box-sizing: border-box; }
-        html { background: #e5e7eb; }
-        body { margin: 0; color: #171717; background: #e5e7eb; font: 12px/1.42 Arial, Helvetica, sans-serif; }
-        .screen-actions { position: sticky; top: 0; z-index: 10; display: flex; justify-content: center; gap: 8px; padding: 10px; background: rgba(255,255,255,.96); border-bottom: 1px solid #d4d4d4; }
-        .screen-actions button { min-height: 34px; padding: 6px 14px; color: #171717; background: #fff; border: 1px solid #a3a3a3; border-radius: 6px; font: inherit; font-weight: 700; cursor: pointer; }
-        .screen-actions .primary { color: #fff; background: #171717; border-color: #171717; }
-        .sheet { width: 210mm; min-height: 297mm; margin: 18px auto; padding: 12mm; background: #fff; box-shadow: 0 10px 30px rgba(0,0,0,.14); }
-        .document-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; padding-bottom: 12px; border-bottom: 2px solid #262626; }
-        .brand { font-size: 20px; font-weight: 800; letter-spacing: .02em; }
-        h1 { margin: 4px 0 0; font-size: 22px; line-height: 1.2; }
-        .order-meta { min-width: 190px; text-align: right; }
-        .order-meta div + div { margin-top: 4px; }
-        .status { font-weight: 700; }
-        .info-grid { display: grid; grid-template-columns: 1fr 1.25fr 1fr; gap: 10px; margin-top: 12px; }
-        .info-card { min-width: 0; padding: 9px 10px; border: 1px solid #a3a3a3; border-radius: 5px; break-inside: avoid; }
-        h2 { margin: 0 0 7px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
-        .fact { display: grid; grid-template-columns: minmax(74px,auto) 1fr; gap: 7px; align-items: baseline; }
-        .fact + .fact { margin-top: 4px; }
-        .fact-label { color: #525252; }
-        .fact-value { min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
-        .items { width: 100%; margin-top: 12px; border-collapse: collapse; table-layout: fixed; }
+        html { background: #ececec; }
+        body {
+            margin: 0;
+            color: #000;
+            background: #ececec;
+            font: 7.2pt/1.36 Arial, Helvetica, sans-serif;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+        .sheet {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            width: 297mm;
+            min-height: 210mm;
+            margin: 12px auto;
+            padding: 10mm 8mm;
+            background: #fff;
+            box-shadow: 0 3px 18px rgba(0, 0, 0, .16);
+        }
+        .brand {
+            display: block;
+            width: 33mm;
+            height: 9.2mm;
+            margin: 0 auto;
+            color: #202020;
+        }
+        .brand path { fill: currentColor; }
+        .details {
+            display: grid;
+            grid-template-columns: 44mm 48mm;
+            grid-template-areas:
+                "order buyer"
+                "address shipping";
+            column-gap: 7mm;
+            row-gap: 5.4mm;
+            width: 99mm;
+            margin-top: 12mm;
+        }
+        .order { grid-area: order; }
+        .buyer { grid-area: buyer; }
+        .address { grid-area: address; }
+        .shipping { grid-area: shipping; }
+        .detail-block {
+            min-width: 0;
+            break-inside: avoid;
+            page-break-inside: avoid;
+        }
+        h2,
+        .items-title {
+            margin: 0 0 3.2mm;
+            font-size: 7.8pt;
+            line-height: 1.15;
+            font-weight: 700;
+            text-decoration: underline;
+        }
+        .line {
+            margin: 0 0 .55mm;
+            overflow-wrap: anywhere;
+            word-break: normal;
+        }
+        .label { font-style: italic; }
+        .items-section {
+            width: 96mm;
+            margin-top: 6mm;
+        }
+        .items-title { margin-left: 1mm; margin-bottom: 2mm; }
+        .items {
+            width: 96mm;
+            border-collapse: collapse;
+            table-layout: fixed;
+            font-size: 6.9pt;
+            line-height: 1.18;
+        }
         .items thead { display: table-header-group; }
-        .items th, .items td { padding: 6px 7px; border: 1px solid #737373; vertical-align: top; }
-        .items th { font-size: 10px; text-align: left; text-transform: uppercase; letter-spacing: .03em; background: #fff; }
-        .items tr { break-inside: avoid; page-break-inside: avoid; }
-        .items .index { width: 8mm; text-align: center; }
-        .items .sku { width: 25mm; overflow-wrap: anywhere; }
-        .items .quantity { width: 19mm; text-align: right; white-space: nowrap; }
-        .items .money { width: 25mm; text-align: right; white-space: nowrap; }
-        .items .name { overflow-wrap: anywhere; word-break: normal; }
-        .totals-wrap { display: flex; justify-content: flex-end; break-inside: avoid; page-break-inside: avoid; }
-        .totals { width: 82mm; margin-top: -1px; border: 1px solid #737373; }
-        .total-row { display: flex; justify-content: space-between; gap: 15px; padding: 5px 8px; }
-        .total-row + .total-row { border-top: 1px solid #d4d4d4; }
-        .total-row strong { white-space: nowrap; }
-        .total-row.grand { padding-top: 7px; padding-bottom: 7px; border-top: 1px solid #737373; font-size: 14px; }
-        .completion { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-top: 18px; break-inside: avoid; page-break-inside: avoid; }
-        .completion-field { padding-top: 12px; border-bottom: 1px solid #525252; }
-        .notes { min-height: 25mm; margin-top: 14px; padding: 8px 0; border-top: 1px solid #a3a3a3; border-bottom: 1px solid #a3a3a3; break-inside: avoid; page-break-inside: avoid; }
-        .notes strong { display: block; margin-bottom: 5px; }
-        .document-footer { margin-top: 10px; color: #737373; font-size: 9px; text-align: right; }
-        .empty-items { padding: 20px; text-align: center; }
-        @media (max-width: 850px) {
-            .sheet { width: calc(100% - 20px); min-height: 0; margin: 10px; padding: 18px; }
-            .info-grid { grid-template-columns: 1fr; }
+        .items th,
+        .items td {
+            padding: .65mm 1mm;
+            border: .18mm solid #111;
+            vertical-align: top;
+        }
+        .items th {
+            font-weight: 700;
+            text-align: left;
+            background: #fff;
+        }
+        .items tr,
+        .summary {
+            break-inside: avoid;
+            page-break-inside: avoid;
+        }
+        .items .number { width: 7mm; text-align: center; }
+        .items .name { width: 47mm; overflow-wrap: anywhere; }
+        .items .quantity { width: 12mm; text-align: center; white-space: nowrap; }
+        .items .money { width: 15mm; text-align: right; white-space: nowrap; }
+        .items .spacer td { height: 2.6mm; padding: 0; }
+        .items .summary-label {
+            padding-right: 2mm;
+            font-style: italic;
+            font-weight: 700;
+            text-align: right;
+        }
+        .items .grand-total .summary-label,
+        .items .grand-total .money { font-weight: 700; }
+        .empty-items { padding: 3mm !important; text-align: center; }
+        .amount-words {
+            width: 96mm;
+            min-height: 5.6mm;
+            margin-top: 2.4mm;
+            padding: 0 1mm 1.2mm;
+            border-bottom: .18mm solid #111;
+            overflow-wrap: anywhere;
+            break-inside: avoid;
+            page-break-inside: avoid;
+        }
+        .amount-words strong { font-size: 6.9pt; }
+        .document-footer {
+            display: flex;
+            flex: 0 0 auto;
+            align-items: flex-end;
+            justify-content: space-between;
+            margin-top: auto;
+            padding-top: 8mm;
+            break-inside: avoid;
+            page-break-inside: avoid;
+        }
+        .socials { width: 50mm; }
+        .social-icons { display: flex; gap: 1.7mm; margin-bottom: 3mm; }
+        .social-icon {
+            position: relative;
+            display: block;
+            width: 7mm;
+            height: 7mm;
+            overflow: hidden;
+        }
+        .social-icon img {
+            position: absolute;
+            top: 0;
+            width: auto;
+            height: 7mm;
+            max-width: none;
+        }
+        .social-icon--vk img { left: -28.38mm; }
+        .social-icon--telegram img { left: -47.30mm; }
+        .social-icon--instagram img { left: -9.46mm; }
+        .social-copy { margin: 0 0 .55mm; }
+        .social-copy a { color: inherit; text-decoration: none; }
+        .signature {
+            display: grid;
+            grid-template-columns: auto 27mm;
+            align-items: start;
+            gap: 6mm;
+            text-align: right;
+        }
+        .signature-label { margin-top: .8mm; white-space: nowrap; }
+        .qr-block { width: 27mm; text-align: center; }
+        .qr-code {
+            display: block;
+            width: 25mm;
+            height: 25mm;
+            margin: 0 auto 1.2mm;
+            filter: grayscale(1);
+            opacity: .72;
+        }
+        .qr-caption { color: #626262; font-size: 7.5pt; font-weight: 700; }
+        @media (max-width: 1120px) {
+            .sheet { margin: 0; box-shadow: none; }
         }
         @media print {
             html, body { background: #fff; }
-            .screen-actions { display: none !important; }
-            .sheet { width: auto; min-height: 0; margin: 0; padding: 0; box-shadow: none; }
-            .info-card, .items th, .items td, .totals { border-color: #525252; }
+            .sheet {
+                width: auto;
+                min-height: var(--print-min-height, 190mm);
+                margin: 0;
+                padding: 0;
+                box-shadow: none;
+            }
         }
     </style>
 </head>
 <body>
-    <div class="screen-actions" aria-label="Действия с печатной формой">
-        <button class="primary" type="button" onclick="window.print()">Печать</button>
-        <button type="button" onclick="window.close(); setTimeout(() => { if (!window.closed) history.back(); }, 100)">Закрыть</button>
-    </div>
-    <main class="sheet">
-        <header class="document-head">
-            <div>
-                <div class="brand">TicTacToy</div>
-                <h1>Заказ №{{ print_order.number }}</h1>
-            </div>
-            <div class="order-meta">
-                {% if print_order.created_at %}<div>{{ print_order.created_at }}</div>{% endif %}
-                <div class="status">{{ print_order.status }}</div>
-            </div>
-        </header>
+    <main class="sheet" style="--print-min-height: {{ print_order.print_min_height_mm }}mm" aria-label="Печатная форма заказа">
+        <svg class="brand" viewBox="0 0 3000 1000" role="img" aria-label="TTT">
+            <path d="M2667 333v667h-334V333h-666v667h-334V333H667v667H333V333H0V0h3000v333h-333z"/>
+        </svg>
 
-        <section class="info-grid">
-            <div class="info-card">
+        <section class="details" aria-label="Данные заказа">
+            <div class="detail-block order">
+                <h2>Заказ</h2>
+                <p class="line"><span class="label">Номер заказа:</span> {{ print_order.number }}</p>
+                <p class="line"><span class="label">Дата заказа:</span> {{ print_order.created_at }}</p>
+            </div>
+            <div class="detail-block buyer">
                 <h2>Покупатель</h2>
-                {% if print_order.customer %}<div class="fact"><span class="fact-label">ФИО</span><span class="fact-value">{{ print_order.customer }}</span></div>{% endif %}
-                {% if print_order.phone %}<div class="fact"><span class="fact-label">Телефон</span><span class="fact-value">{{ print_order.phone }}</span></div>{% endif %}
-                {% if print_order.email %}<div class="fact"><span class="fact-label">Email</span><span class="fact-value">{{ print_order.email }}</span></div>{% endif %}
+                <p class="line"><span class="label">ФИО:</span> {{ print_order.customer }}</p>
+                <p class="line"><span class="label">Эл. почта:</span> {{ print_order.email }}</p>
+                <p class="line"><span class="label">Телефон:</span> {{ print_order.phone }}</p>
             </div>
-            <div class="info-card">
-                <h2>Доставка</h2>
-                {% if print_order.delivery %}<div class="fact"><span class="fact-label">Способ</span><span class="fact-value">{{ print_order.delivery }}</span></div>{% endif %}
-                {% if print_order.geography.country %}<div class="fact"><span class="fact-label">Страна</span><span class="fact-value">{{ print_order.geography.country }}</span></div>{% endif %}
-                {% if print_order.geography.region %}<div class="fact"><span class="fact-label">Регион</span><span class="fact-value">{{ print_order.geography.region }}</span></div>{% endif %}
-                {% if print_order.geography.city %}<div class="fact"><span class="fact-label">Город</span><span class="fact-value">{{ print_order.geography.city }}</span></div>{% endif %}
-                {% if print_order.geography.postal_code %}<div class="fact"><span class="fact-label">Индекс</span><span class="fact-value">{{ print_order.geography.postal_code }}</span></div>{% endif %}
-                {% if print_order.address %}<div class="fact"><span class="fact-label">Адрес</span><span class="fact-value">{{ print_order.address }}</span></div>{% endif %}
-                {% if print_order.delivery_point %}<div class="fact"><span class="fact-label">{{ print_order.delivery_point_label }}</span><span class="fact-value">{{ print_order.delivery_point }}</span></div>{% endif %}
-                {% if print_order.tracking %}<div class="fact"><span class="fact-label">Трек-номер</span><span class="fact-value">{{ print_order.tracking }}</span></div>{% endif %}
-                {% if print_order.comment %}<div class="fact"><span class="fact-label">Комментарий</span><span class="fact-value">{{ print_order.comment }}</span></div>{% endif %}
+            <div class="detail-block address">
+                <h2>Адрес</h2>
+                {% if print_order.geography.postal_code %}<p class="line"><span class="label">Индекс:</span> {{ print_order.geography.postal_code }}</p>{% endif %}
+                {% if print_order.geography.country %}<p class="line"><span class="label">Страна:</span> {{ print_order.geography.country }}</p>{% endif %}
+                {% if print_order.geography.region %}<p class="line"><span class="label">Регион:</span> {{ print_order.geography.region }}</p>{% endif %}
+                {% if print_order.geography.city %}<p class="line"><span class="label">Город:</span> {{ print_order.geography.city }}</p>{% endif %}
+                <p class="line"><span class="label">Адрес:</span> {{ print_order.address or '—' }}</p>
             </div>
-            <div class="info-card">
-                <h2>Оплата</h2>
-                {% if print_order.payment %}<div class="fact"><span class="fact-label">Способ</span><span class="fact-value">{{ print_order.payment }}</span></div>{% endif %}
-                {% if print_order.payment_status %}<div class="fact"><span class="fact-label">Статус</span><span class="fact-value">{{ print_order.payment_status }}</span></div>{% endif %}
-                {% if print_order.paid_amount %}<div class="fact"><span class="fact-label">Оплачено</span><span class="fact-value">{{ print_order.paid_amount }} ₽</span></div>{% endif %}
-                {% if print_order.amount_due %}<div class="fact"><span class="fact-label">К получению</span><span class="fact-value">{{ print_order.amount_due }} ₽</span></div>{% endif %}
+            <div class="detail-block shipping">
+                <h2>Оплата / Доставка</h2>
+                <p class="line"><span class="label">Оплата:</span> {{ print_order.payment }}</p>
+                <p class="line"><span class="label">Служба доставки:</span> {{ print_order.delivery_service }}</p>
+                {% if print_order.delivery_method %}<p class="line"><span class="label">Способ доставки:</span> {{ print_order.delivery_method }}</p>{% endif %}
             </div>
         </section>
 
-        <table class="items">
-            <thead><tr><th class="index">№</th><th>Наименование</th>{% if print_order.has_sku %}<th class="sku">Артикул</th>{% endif %}<th class="quantity">Количество</th><th class="money">Цена</th><th class="money">Сумма</th></tr></thead>
-            <tbody>
-            {% for line in print_order.lines %}
-                <tr><td class="index">{{ line.index }}</td><td class="name">{{ line.name }}</td>{% if print_order.has_sku %}<td class="sku">{{ line.sku }}</td>{% endif %}<td class="quantity">{{ line.quantity }}</td><td class="money">{% if line.unit_price %}{{ line.unit_price }} ₽{% endif %}</td><td class="money">{% if line.line_total %}{{ line.line_total }} ₽{% endif %}</td></tr>
-            {% else %}
-                <tr><td class="empty-items" colspan="{{ 6 if print_order.has_sku else 5 }}">Состав заказа не передан Bitrix</td></tr>
-            {% endfor %}
-            </tbody>
-        </table>
-        <div class="totals-wrap"><div class="totals">
-            {% if print_order.products_total %}<div class="total-row"><span>Товары</span><strong>{{ print_order.products_total }} ₽</strong></div>{% endif %}
-            {% if print_order.discount %}<div class="total-row"><span>Скидка</span><strong>− {{ print_order.discount }} ₽</strong></div>{% endif %}
-            {% if print_order.delivery_price %}<div class="total-row"><span>Доставка</span><strong>{{ print_order.delivery_price }} ₽</strong></div>{% endif %}
-            {% if print_order.total %}<div class="total-row grand"><span>Итого</span><strong>{{ print_order.total }} ₽</strong></div>{% endif %}
-        </div></div>
-
-        <section class="completion" aria-label="Отметки сотрудников">
-            <div class="completion-field">Собрал:</div>
-            <div class="completion-field">Проверил:</div>
-            <div class="completion-field">Дата:</div>
+        <section class="items-section" aria-labelledby="items-title">
+            <h2 class="items-title" id="items-title">Заказанные товары</h2>
+            <table class="items">
+                <thead>
+                    <tr>
+                        <th class="number">№</th>
+                        <th class="name">Наименование</th>
+                        <th class="quantity">Кол-во</th>
+                        <th class="money">Цена</th>
+                        <th class="money">Сумма</th>
+                    </tr>
+                </thead>
+                <tbody class="items-body">
+                    {% for line in print_order.lines %}
+                    <tr>
+                        <td class="number">{{ line.index }}</td>
+                        <td class="name">{{ line.name }}</td>
+                        <td class="quantity">{{ line.quantity }}</td>
+                        <td class="money">{{ line.unit_price or '—' }}</td>
+                        <td class="money">{{ line.line_total or '—' }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td class="empty-items" colspan="5">Состав заказа не передан</td></tr>
+                    {% endfor %}
+                </tbody>
+                <tbody class="summary">
+                    <tr class="spacer"><td colspan="5"></td></tr>
+                    <tr><td class="summary-label" colspan="4">Скидка:</td><td class="money">{{ print_order.discount or '—' }}</td></tr>
+                    <tr><td class="summary-label" colspan="4">Доставка:</td><td class="money">{{ print_order.delivery_price or '—' }}</td></tr>
+                    <tr class="grand-total"><td class="summary-label" colspan="4">Итого:</td><td class="money">{{ print_order.total or '—' }}</td></tr>
+                </tbody>
+            </table>
+            <div class="amount-words"><strong>ИТОГО:</strong> {{ print_order.total_words|capitalize or '—' }}</div>
         </section>
-        <section class="notes"><strong>Примечание</strong></section>
-        <footer class="document-footer">Распечатано из Vechasu ERP</footer>
+
+        <footer class="document-footer">
+            <section class="socials" aria-label="Социальные сети TicTacToy">
+                <div class="social-icons" aria-hidden="true">
+                    {% set social_sprite = 'https://www.tictactoy.ru/local/templates/new_tictac/img/footer/social-icons/set.png' %}
+                    <span class="social-icon social-icon--vk"><img src="{{ social_sprite }}" alt=""></span>
+                    <span class="social-icon social-icon--telegram"><img src="{{ social_sprite }}" alt=""></span>
+                    <span class="social-icon social-icon--instagram"><img src="{{ social_sprite }}" alt=""></span>
+                </div>
+                <p class="social-copy">Подпишитесь на нас в соцсетях!</p>
+                <p class="social-copy"><a href="https://vk.com/tictactoy_ru">vk.com/tictactoy_ru</a></p>
+                <p class="social-copy"><a href="https://t.me/tictactoy">t.me/tictactoy</a></p>
+                <p class="social-copy"><a href="https://www.instagram.com/tictactoy/">instagram.com/tictactoy</a></p>
+            </section>
+            <section class="signature" aria-label="Подпись продавца">
+                <div class="signature-label">Подпись / печать продавца</div>
+                <div class="qr-block">
+                    <img class="qr-code" src="https://api.qrserver.com/v1/create-qr-code/?size=240x240&amp;data=https%3A%2F%2Ft.me%2Ftictactoy" alt="QR-код Telegram TicTacToy">
+                    <div class="qr-caption">@TICTACTOY</div>
+                </div>
+            </section>
+        </footer>
     </main>
 </body>
 </html>
