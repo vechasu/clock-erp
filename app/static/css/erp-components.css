@@ -1522,6 +1522,51 @@ body.modal-open {
     color: #174887;
 }
 
+.warehouse-tab-badge {
+    display: inline-flex;
+    min-width: 24px;
+    height: 22px;
+    align-items: center;
+    justify-content: center;
+    margin-left: 8px;
+    padding: 0 7px;
+    border-radius: 999px;
+    background: #e8eef7;
+    color: #41536b;
+    font-size: 12px;
+    font-weight: 850;
+}
+
+.erp-section-tab.is-active .warehouse-tab-badge {
+    background: #cfe0fb;
+    color: #174887;
+}
+
+.catalog-list-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.catalog-empty-toggle {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 8px;
+    color: var(--erp-muted);
+    font-size: var(--erp-text-sm);
+    font-weight: 750;
+    white-space: nowrap;
+}
+
+.catalog-empty-toggle input { width: 18px; height: 18px; accent-color: #2563eb; }
+
+@media (max-width: 520px) {
+    .catalog-list-controls { align-items: stretch; flex-direction: column; }
+}
+
 .erp-metric-grid {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
