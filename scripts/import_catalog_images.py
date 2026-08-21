@@ -33,11 +33,24 @@ def backup_runtime(database_path, roots, backup_root):
     target = Path(backup_root) / "catalog-images-{}".format(_timestamp())
     target.mkdir(parents=True, exist_ok=False)
     source = sqlite3.connect(str(database_path))
-    destination = sqlite3.connect(str(target / "catalog.db"))
     try:
-        source.backup(destination)
+        backup = getattr(source, "backup", None)
+        if backup is not None:
+            destination = sqlite3.connect(str(target / "catalog.db"))
+            try:
+                backup(destination)
+            finally:
+                destination.close()
+        else:
+            # Python 3.6 builds can lack Connection.backup(). Flush WAL pages,
+            # then hold writers while copying the stable database file.
+            source.execute("PRAGMA wal_checkpoint(FULL)")
+            source.execute("BEGIN IMMEDIATE")
+            try:
+                shutil.copy2(str(database_path), str(target / "catalog.db"))
+            finally:
+                source.rollback()
     finally:
-        destination.close()
         source.close()
     for root in roots:
         root = Path(root)
