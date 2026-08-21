@@ -45,6 +45,7 @@ from app.services.order_status import (
     OrderStatusError,
     OrderStatusService,
 )
+from app.services.order_print import build_order_print_context
 from app.services.brand_values import normalize_brand
 from app.services.catalog_reader import CatalogReader
 from app.catalog.application import CatalogApplication
@@ -150,6 +151,7 @@ from flask import (
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.exceptions import HTTPException
 from app.auth import (
+    auth_is_enabled,
     configure_auth,
     csrf_token,
     current_auth_user,
@@ -786,9 +788,10 @@ def bitrix_orders_client():
     )
 
 
-def get_order_overrides_path():
+def get_order_overrides_path(create=False):
     path = Path(app.instance_path)
-    path.mkdir(parents=True, exist_ok=True)
+    if create:
+        path.mkdir(parents=True, exist_ok=True)
     return path / "order_overrides.json"
 
 
@@ -805,7 +808,7 @@ def load_order_overrides():
 
 
 def save_order_overrides(rows):
-    path = get_order_overrides_path()
+    path = get_order_overrides_path(create=True)
     temporary = path.with_name("{}.{}.tmp".format(path.name, uuid.uuid4().hex))
     with temporary.open("w", encoding="utf-8") as file:
         json.dump(rows, file, ensure_ascii=False, indent=2)
@@ -1022,6 +1025,44 @@ def orders_page():
         sync_error=detail_error or ORDERS_CACHE.get("error", ""),
         last_sync_at=ORDERS_CACHE.get("loaded_at") or None,
     )
+
+
+ORDER_VIEW_ROLES = {"employee", "admin"}
+
+
+def can_view_orders(user=None):
+    if not auth_is_enabled():
+        return True
+    user = current_auth_user() if user is None else user
+    return bool(user and str(user.get("role") or "") in ORDER_VIEW_ROLES)
+
+
+@app.get("/app/orders/<int:order_id>/print")
+def order_print_page(order_id):
+    if not can_view_orders():
+        abort(403)
+    if order_id < 1 or order_id > 2147483647:
+        abort(404)
+    try:
+        order = get_order(order_id)
+    except BitrixReadOnlyError as error:
+        app.logger.warning(
+            "Bitrix print order unavailable order_id=%s reason=%s",
+            order_id,
+            type(error).__name__,
+        )
+        abort(503, description="Печатная форма временно недоступна.")
+    if order is None:
+        abort(404)
+    return render_template(
+        "order_print.html",
+        print_order=build_order_print_context(order),
+    )
+
+
+@app.get("/app/orders/<order_id>/print")
+def invalid_order_print_page(order_id):
+    abort(404)
 
 
 def build_bitrix_order_url(order_id):
