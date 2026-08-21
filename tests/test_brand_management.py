@@ -91,7 +91,7 @@ class BrandManagementTest(unittest.TestCase):
         )["events"][0]
         self.assertEqual(event["metadata"]["brand_name_snapshot"], "Casio")
 
-    def test_aggregate_distinguishes_nonzero_products_from_zero_sum(self):
+    def test_aggregate_counts_only_positive_products_as_available(self):
         first = self.product("A", "A", "Casio", "Часы", 0)
         second = self.product("B", "B", "Casio", "Часы", 0)
         with self.database.transaction() as connection:
@@ -106,8 +106,8 @@ class BrandManagementTest(unittest.TestCase):
         overview = self.catalog.get_brand_overview(first["brand_id"])
 
         self.assertEqual(overview["stock_total"], 0)
-        self.assertEqual(overview["nonzero_count"], 2)
-        self.assertEqual(overview["categories"][0]["nonzero_count"], 2)
+        self.assertEqual(overview["nonzero_count"], 1)
+        self.assertEqual(overview["categories"][0]["nonzero_count"], 1)
 
     def test_list_summary_keeps_metrics_without_category_details(self):
         product = self.product("A", "A", "Casio", "Часы", 3)

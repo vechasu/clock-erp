@@ -37,7 +37,7 @@ class OutOfStockChecksTest(unittest.TestCase):
             stock=stock,
         )
 
-    def test_zero_and_negative_stock_are_listed_but_positive_stock_is_not(self):
+    def test_only_exact_zero_stock_is_listed(self):
         zero = self.product(0, "Z-0")
         negative = self.product(1, "Z-N")
         with self.database.transaction() as connection:
@@ -53,7 +53,7 @@ class OutOfStockChecksTest(unittest.TestCase):
 
         self.assertEqual(
             {item["id"] for item in listing["items"]},
-            {zero["id"], negative["id"]},
+            {zero["id"]},
         )
 
     def test_checks_are_independent_filterable_audited_and_idempotent(self):

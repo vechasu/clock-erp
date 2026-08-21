@@ -686,12 +686,12 @@
         }
 
         .warehouse-product-thumb {
-            width: 42px;
-            height: 42px;
-            flex: 0 0 42px;
+            width: 48px;
+            height: 48px;
+            flex: 0 0 48px;
             object-fit: contain;
             border: 1px solid #e2e8f0;
-            border-radius: 9px;
+            border-radius: 10px;
             background: #ffffff;
         }
 
@@ -710,9 +710,9 @@
 
         .warehouse-product-thumb-button {
             display: inline-flex;
-            width: 42px;
-            height: 42px;
-            flex: 0 0 42px;
+            width: 48px;
+            height: 48px;
+            flex: 0 0 48px;
             align-items: center;
             justify-content: center;
             padding: 0;
@@ -747,6 +747,19 @@
             min-width: 100%;
             --warehouse-row-height: 60px;
         }
+
+        .warehouse-header-more { position: relative; }
+        .warehouse-header-more > summary { list-style: none; cursor: pointer; }
+        .warehouse-header-more > summary::-webkit-details-marker { display: none; }
+        .warehouse-header-menu { position: absolute; z-index: 40; top: calc(100% + 6px); right: 0; width: 230px; padding: 6px; border: 1px solid #dbe3ed; border-radius: 11px; background: #fff; box-shadow: 0 15px 35px rgba(15,23,42,.15); }
+        .warehouse-header-menu a { display: block; padding: 10px; border-radius: 8px; color: #26364a; font-size: 13px; font-weight: 700; text-decoration: none; }
+        .warehouse-header-menu a:hover { background: #f1f5f9; }
+        .warehouse-tab-badge { display: inline-flex; min-width: 24px; height: 22px; align-items: center; justify-content: center; margin-left: 8px; padding: 0 7px; border-radius: 999px; background: #e8eef7; color: #41536b; font-size: 12px; font-weight: 850; }
+        .erp-section-tab.is-active .warehouse-tab-badge { background: #cfe0fb; color: #174887; }
+        .warehouse-compact-summary { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; padding: 9px 14px; border: 1px solid #e5e7eb; border-radius: 12px; background: #fff; color: #64748b; font-size: 13px; }
+        .warehouse-compact-summary strong { color: #172033; font-size: 15px; }
+        .warehouse-compact-summary-divider { color: #cbd5e1; }
+        .warehouse-ellipsis { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
         html:not(.warehouse-table-ready) .warehouse-products-table {
             visibility: hidden;
@@ -4010,24 +4023,21 @@
             <header class="erp-workspace-header">
                 <div class="erp-workspace-heading">
                     <h1>Товары</h1>
-                    <p>Каталог, цены и текущие остатки</p>
+                    <p>Каталог и складские остатки</p>
                 </div>
                 <div class="erp-workspace-actions">
-                    <a
-                        class="erp-workspace-primary"
-                        href="{{ export_filtered_url }}"
-                        style="background:#fff;color:#174887;border:1px solid #b8c8dc;text-decoration:none"
-                    >Экспортировать найденные</a>
-                    <a
-                        class="erp-workspace-primary"
-                        href="{{ export_all_url }}"
-                        style="background:#fff;color:#174887;border:1px solid #b8c8dc;text-decoration:none"
-                    >Экспортировать все товары</a>
                     <a
                         class="erp-workspace-primary"
                         href="{{ url_for('warehouse_inventory_page') }}"
                         style="background:#fff;color:#174887;border:1px solid #b8c8dc;text-decoration:none"
                     >Инвентаризация</a>
+                    <details class="warehouse-header-more">
+                        <summary class="erp-workspace-primary" style="background:#fff;color:#174887;border:1px solid #b8c8dc">Ещё</summary>
+                        <div class="warehouse-header-menu">
+                            <a href="{{ export_filtered_url }}">Экспортировать найденные</a>
+                            <a href="{{ export_all_url }}">Экспортировать все товары</a>
+                        </div>
+                    </details>
                     <button
                         id="openWarehouseAddModal"
                         class="erp-workspace-primary erp-primary-action"
@@ -4040,8 +4050,8 @@
             </header>
 
             <nav class="erp-section-tabs" aria-label="Раздел товаров">
-                <a class="erp-section-tab{% if not out_of_stock %} is-active{% endif %}" href="{{ url_for('warehouse_page') }}"{% if not out_of_stock %} aria-current="page"{% endif %}>Товары</a>
-                <a class="erp-section-tab{% if out_of_stock %} is-active{% endif %}" href="{{ url_for('warehouse_page', view='out_of_stock') }}"{% if out_of_stock %} aria-current="page"{% endif %}>Часы закончились <span>{{ out_of_stock_count }}</span></a>
+                <a class="erp-section-tab{% if not out_of_stock %} is-active{% endif %}" href="{{ url_for('warehouse_page') }}"{% if not out_of_stock %} aria-current="page"{% endif %}>В наличии <span class="warehouse-tab-badge">{{ in_stock_count }}</span></a>
+                <a class="erp-section-tab{% if out_of_stock %} is-active{% endif %}" href="{{ url_for('warehouse_page', view='out_of_stock') }}"{% if out_of_stock %} aria-current="page"{% endif %}>Нет в наличии <span class="warehouse-tab-badge">{{ out_of_stock_count }}</span></a>
                 <a class="erp-section-tab" href="{{ url_for('warehouse_page', view='brands') }}">Бренды</a>
                 <a class="erp-section-tab" href="{{ url_for('warehouse_page', view='categories') }}">Категории</a>
             </nav>
@@ -4087,15 +4097,10 @@
                 </section>
             {% endif %}
 
-            <div class="stats erp-stats erp-workspace-metrics">
-                <div class="stat erp-stat-card erp-workspace-metric">
-                    <div class="stat-title erp-stat-label">Позиций</div>
-                    <div id="visiblePositionsCount" class="stat-value erp-stat-value">{{ visible_positions }}</div>
-                </div>
-                <div class="stat erp-stat-card erp-workspace-metric">
-                    <div class="stat-title erp-stat-label">Единиц на складе</div>
-                    <div id="totalStockCount" class="stat-value erp-stat-value">{{ total_stock_display }}</div>
-                </div>
+            <div class="warehouse-compact-summary" aria-label="Сводка по остаткам">
+                <span><strong id="visiblePositionsCount">{{ visible_positions }}</strong> позиций в наличии</span>
+                <span class="warehouse-compact-summary-divider" aria-hidden="true">•</span>
+                <span><strong id="totalStockCount">{{ total_stock_display }}</strong> единиц на складе</span>
             </div>
 
             <div
@@ -4160,18 +4165,6 @@
                         <span class="erp-filter-chip-remove" aria-hidden="true">×</span>
                     </button>
                 {% endif %}
-                {% if in_stock %}
-                    <button
-                        class="erp-filter-chip"
-                        type="button"
-                        data-warehouse-filter="in_stock"
-                        onclick="clearWarehouseFilter('in_stock')"
-                        aria-label="Снять фильтр Только в наличии"
-                    >
-                        <span class="erp-filter-chip-label">Только в наличии</span>
-                        <span class="erp-filter-chip-remove" aria-hidden="true">×</span>
-                    </button>
-                {% endif %}
                 {% if warehouse_active_filter_count >= 2 %}
                     <button
                         class="erp-active-filters-reset"
@@ -4205,9 +4198,6 @@
                         <input type="hidden" name="cell" value="{{ selected_cell }}">
                     {% endif %}
 
-                    {% if in_stock %}
-                        <input type="hidden" name="in_stock" value="1">
-                    {% endif %}
                     {% if created_date_from %}
                         <input type="hidden" name="date_from" value="{{ created_date_from }}">
                     {% endif %}
@@ -4248,18 +4238,6 @@
                                 </select>
                             </label>
                         {% endif %}
-                        {% if not out_of_stock %}<label class="zero-stock-toggle" for="warehouseInStockToggle">
-                            <span class="zero-stock-toggle-text">Только в наличии</span>
-                            <span class="toggle-switch">
-                                <input
-                                    id="warehouseInStockToggle"
-                                    type="checkbox"
-                                    {% if in_stock %}checked{% endif %}
-                                    onchange="toggleWarehouseInStock(event, this)"
-                                >
-                                <span class="toggle-slider" aria-hidden="true"></span>
-                            </span>
-                        </label>{% endif %}
                         <button
                             id="warehouseFilterTrigger"
                             class="search-tool-button erp-secondary-action erp-filter-trigger{% if warehouse_active_filter_count %} is-active{% endif %}"
@@ -4730,7 +4708,7 @@
 
                                 {% if out_of_stock %}<th data-column-key="platform_checks">Проверка отключения</th>{% endif %}
 
-                                <th data-column-key="actions">Действие</th>
+                                <th data-column-key="actions">Действия</th>
                             </tr>
                         </thead>
 
@@ -4745,20 +4723,20 @@
                                 >
                                     <td data-column-key="photo">
                                         <div class="warehouse-product-photo-cell">
-                                            {% if item.thumbnail_url %}
+                                            {% if item.local_image_url %}
                                                 <button
                                                     class="warehouse-product-thumb-button"
                                                     type="button"
                                                     aria-label="Открыть фото товара {{ item.name }}"
                                                     data-product-id="{{ item.id|e }}"
                                                     data-product-name="{{ item.name|e }}"
-                                                    data-thumbnail-url="{{ item.thumbnail_url|e }}"
+                                                    data-thumbnail-url="{{ item.local_image_url|e }}"
                                                     data-detail-url="/warehouse/product/{{ item.id }}"
                                                     onclick="openWarehousePhotoPreview(event, this)"
                                                 >
                                                     <img
                                                         class="warehouse-product-thumb"
-                                                        src="{{ item.thumbnail_url }}"
+                                                        src="{{ item.local_image_url }}"
                                                         alt=""
                                                         loading="lazy"
                                                         decoding="async"
@@ -4774,7 +4752,7 @@
 
                                     <td data-column-key="name">
                                         <div class="warehouse-product-name-cell">
-                                            <div class="name">{{ item.name }}</div>
+                                            <div class="name warehouse-ellipsis" title="{{ item.name|e }}">{{ item.name }}</div>
                                         </div>
                                     </td>
 
@@ -4782,11 +4760,11 @@
 
                                     <td data-column-key="price">{{ item.price_display or "—" }}</td>
 
-                                    <td data-column-key="article">{{ item.article or "—" }}</td>
+                                    <td data-column-key="article"><span class="warehouse-ellipsis" title="{{ (item.article or '—')|e }}">{{ item.article or "—" }}</span></td>
 
-                                    <td data-column-key="brand">{{ item.brand or "Без бренда" }}</td>
+                                    <td data-column-key="brand"><span class="warehouse-ellipsis" title="{{ (item.brand or 'Без бренда')|e }}">{{ item.brand or "Без бренда" }}</span></td>
 
-                                    <td data-column-key="category">{{ item.category or "Без категории" }}</td>
+                                    <td data-column-key="category"><span class="warehouse-ellipsis" title="{{ (item.category or 'Без категории')|e }}">{{ item.category or "Без категории" }}</span></td>
 
                                     <td data-column-key="stock" class="{% if item.stock <= 0 %}stock-zero{% else %}stock-good{% endif %}">
                                         {{ item.stock_display }}
@@ -5043,17 +5021,6 @@
                 selected_label=selected_brand
             ) }}
 
-            <label class="warehouse-filter-stock-option">
-                <input
-                    id="warehouseFilterInStock"
-                    type="checkbox"
-                    name="in_stock"
-                    value="1"
-                    {% if in_stock %}checked{% endif %}
-                >
-                <span>Только в наличии</span>
-            </label>
-
             <div class="category-cell-form-title" style="margin-top: 14px;">
                 Категория
             </div>
@@ -5131,8 +5098,7 @@
                     q=query or None,
                     sort_by=sort_by if sort_by != 'name' else None,
                     sort_dir=sort_dir if sort_dir != 'asc' else None,
-                    per_page=per_page,
-                    in_stock='1' if in_stock else None
+                    per_page=per_page
                 ) }}"
             >
                 <span>Сбросить фильтры</span>
@@ -6560,7 +6526,6 @@
                 "cell",
                 "date_from",
                 "date_to",
-                "in_stock",
                 "page"
             ].forEach(name => url.searchParams.delete(name));
             navigateWithWarehouseParams(url);
@@ -6573,7 +6538,6 @@
                 category: ["category", "category_id"],
                 cell: ["cell"],
                 date: ["date_from", "date_to"],
-                in_stock: ["in_stock"],
             }[filterName] || [];
 
             parameterNames.forEach((name) => {
@@ -6843,59 +6807,6 @@
         }
     }
 
-        function setWarehouseInStockSwitches(enabled) {
-            const label = enabled
-                ? "Показать товары с нулевым остатком"
-                : "Показать только товары в наличии";
-
-            document.querySelectorAll(
-                "#warehouseInStockToggle, #warehouseMobileInStockToggle"
-            ).forEach(function(toggle) {
-                toggle.checked = enabled;
-                toggle.setAttribute(
-                    "aria-checked",
-                    enabled ? "true" : "false"
-                );
-                toggle.setAttribute("aria-label", label);
-                const control = toggle.closest("label");
-                if (control) {
-                    control.title = label;
-                }
-            });
-        }
-
-        function syncWarehouseInStockSwitches() {
-            setWarehouseInStockSwitches(
-                new URL(window.location.href).searchParams.get("in_stock")
-                    === "1"
-            );
-        }
-
-        function toggleWarehouseInStock(event, toggle) {
-            event.stopPropagation();
-            const enabled = Boolean(toggle.checked);
-            setWarehouseInStockSwitches(enabled);
-
-            const url = new URL(window.location.href);
-            if (enabled) {
-                url.searchParams.set("in_stock", "1");
-            } else {
-                url.searchParams.delete("in_stock");
-            }
-            url.searchParams.delete("page");
-            navigateWithWarehouseParams(url);
-        }
-
-        document.addEventListener(
-            "DOMContentLoaded",
-            syncWarehouseInStockSwitches
-        );
-        window.addEventListener(
-            "pageshow",
-            syncWarehouseInStockSwitches
-        );
-
-
         document.addEventListener("keydown", function(event) {
             const lightbox = document.getElementById(
                 "productGalleryLightbox"
@@ -6919,15 +6830,15 @@
         const warehouseTableLegacyStorageKey = "vechasu.warehouse.table-view.v1";
         const warehouseTableStorageKey = "vechasu.warehouse.table-view.v2";
         const warehouseTableDefaults = {
-            order: ["photo", "name", "model", "price", "article", "brand", "category", "stock", "created", "cell", "platform_checks", "actions"],
+            order: ["photo", "name", "stock", "price", "article", "brand", "category", "created", "model", "cell", "platform_checks", "actions"],
             widths: { photo: 64, name: 256, model: 120, price: 80, article: 96, brand: 95, category: 150, stock: 104, created: 106, cell: 75, platform_checks: 210, actions: 82 },
-            hidden: []
+            hidden: ["model", "cell"]
         };
         const warehouseTableRequiredColumns = ["photo", "name", "actions"];
         const warehouseTableColumnLabels = {
             photo: "Фото", name: "Название", model: "Модель", price: "Цена", article: "Артикул",
             brand: "Бренд", category: "Категория", stock: "Остаток",
-            created: "Добавлен", cell: "Ячейка", platform_checks: "Проверка отключения", actions: "Действие"
+            created: "Добавлено", cell: "Ячейка", platform_checks: "Проверка отключения", actions: "Действия"
         };
         const warehouseTableMinimumWidths = {
             photo: 60, name: 196, model: 90, price: 72, article: 86, brand: 84,
@@ -6959,7 +6870,7 @@
                             return warehouseTableDefaults.order.includes(key)
                                 && !warehouseTableRequiredColumns.includes(key);
                         })
-                        : []
+                        : warehouseTableDefaults.hidden.slice()
                 };
                 if (migrated) saveWarehouseTableView(view);
                 return view;
@@ -6968,7 +6879,7 @@
                     order: warehouseTableDefaults.order.slice(),
                     widths: Object.assign({}, warehouseTableDefaults.widths),
                     rowHeights: {},
-                    hidden: []
+                    hidden: warehouseTableDefaults.hidden.slice()
                 };
             }
         }
@@ -6981,7 +6892,7 @@
             view.order = warehouseTableDefaults.order.slice();
             view.widths = Object.assign({}, warehouseTableDefaults.widths);
             view.rowHeights = {};
-            view.hidden = [];
+            view.hidden = warehouseTableDefaults.hidden.slice();
             applyWarehouseColumnOrder(table, view.order);
             applyWarehouseColumnVisibility(table, view.hidden);
             applyWarehouseTableWidths(table, view.widths);

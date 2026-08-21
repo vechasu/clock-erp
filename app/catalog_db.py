@@ -368,6 +368,11 @@ CREATE TABLE IF NOT EXISTS catalog_excel_products (
     bitrix_primary_image_url TEXT,
     bitrix_thumbnail_url TEXT,
     bitrix_gallery_json TEXT NOT NULL DEFAULT '[]',
+    local_image_path TEXT,
+    local_image_source TEXT CHECK (local_image_source IN ('bitrix', 'tictactoy', 'manual')),
+    local_image_sha256 TEXT,
+    local_image_external_id TEXT,
+    local_image_updated_at TEXT,
     bitrix_price_amount TEXT,
     bitrix_price_currency TEXT,
     bitrix_description TEXT,
@@ -988,6 +993,7 @@ class CatalogDatabase:
             self._ensure_excel_cardinality_columns(connection)
             self._ensure_product_deletion_columns(connection)
             self._ensure_product_workflow_columns(connection)
+            self._ensure_product_image_columns(connection)
             self._ensure_receipt_constraints(connection)
             self._ensure_optional_price_constraints(connection)
             self._ensure_shared_catalog(connection)
@@ -1361,6 +1367,34 @@ class CatalogDatabase:
             connection.execute(
                 "ALTER TABLE catalog_excel_products ADD COLUMN model TEXT"
             )
+
+    @staticmethod
+    def _ensure_product_image_columns(connection):
+        """Add local image metadata without changing catalog business data."""
+        columns = {
+            row[1]
+            for row in connection.execute(
+                "PRAGMA table_info(catalog_excel_products)"
+            )
+        }
+        additions = (
+            ("local_image_path", "TEXT"),
+            ("local_image_source", "TEXT"),
+            ("local_image_sha256", "TEXT"),
+            ("local_image_external_id", "TEXT"),
+            ("local_image_updated_at", "TEXT"),
+        )
+        for name, declaration in additions:
+            if name not in columns:
+                connection.execute(
+                    "ALTER TABLE catalog_excel_products ADD COLUMN {} {}".format(
+                        name, declaration
+                    )
+                )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_catalog_excel_products_local_image "
+            "ON catalog_excel_products(local_image_sha256)"
+        )
 
     @staticmethod
     def _ensure_receipt_constraints(connection):

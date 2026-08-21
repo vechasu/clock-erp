@@ -89,6 +89,7 @@ from app.services.brand_images import (
     BrandImageStore,
     BrandImageValidationError,
 )
+from app.services.product_images import ProductImageStore
 from app.services.inventory_lock import (
     assert_product_references_unlocked,
     locked_products,
@@ -2552,22 +2553,17 @@ def build_excel_warehouse_items(products):
                 format_stock_number(price), "₽" if currency == "RUB" else currency
             )
         stock = float(product.get("stock") or 0)
-        stored_bitrix_images = product.get("gallery") or []
-        first_bitrix_file_id = next((
-            bitrix_image_file_id(image)
-            for image in stored_bitrix_images
-            if bitrix_image_file_id(image)
-        ), "")
-        bitrix_thumbnail = (
-            "/warehouse/product/{}/image/{}".format(
-                product["id"], first_bitrix_file_id
+        local_image_url = (
+            "/product-images/{}".format(
+                Path(product.get("local_image_path") or "").name
             )
-            if product.get("bitrix_external_product_id")
-            and first_bitrix_file_id
-            else (
-                product.get("bitrix_thumbnail_url")
-                or product.get("bitrix_primary_image_url")
+            if product.get("local_image_path") else ""
+        )
+        fallback_thumbnail_url = (
+            "/warehouse/product/{}/thumbnail".format(
+                product.get("moysklad_product_id")
             )
+            if product.get("moysklad_product_id") else ""
         )
         item = {
             "id": product["id"],
@@ -2589,18 +2585,13 @@ def build_excel_warehouse_items(products):
             "quantity": stock,
             "created_at": created_at,
             "created_at_display": created_at_display,
-            "thumbnail_url": (
-                bitrix_thumbnail
-                or (
-                    "/warehouse/product/{}/thumbnail".format(
-                        product.get("moysklad_product_id")
-                    )
-                    if product.get("moysklad_product_id")
-                    else ""
-                )
-                or ""
-            ),
-            "gallery": product.get("gallery") or [],
+            "local_image_url": local_image_url,
+            "thumbnail_url": local_image_url or fallback_thumbnail_url,
+            "gallery": ([{
+                "original_url": local_image_url,
+                "thumbnail_url": local_image_url,
+                "kind": "local",
+            }] if local_image_url else []),
             "price": (
                 float(price) if price not in (None, "") else None
             ),
@@ -2942,6 +2933,11 @@ def inventory_cancel_api(inventory_id):
 @app.route("/app/products")
 def warehouse_page():
     warehouse_view = (request.args.get("view") or "products").strip()
+    tab_counts = ExcelProductCatalog().stock_tab_counts()
+    if not isinstance(tab_counts, dict):
+        # Keeps route-level test doubles and extensions that predate tab counts
+        # compatible while the real catalog service always returns this shape.
+        tab_counts = {"in_stock": 0, "out_of_stock": 0, "units_in_stock": 0}
     if warehouse_view == "categories":
         shared_catalog = SharedCatalog()
         category_id = (request.args.get("category_id") or "").strip()
@@ -2958,25 +2954,27 @@ def warehouse_page():
                 "warehouse_page", view="categories", notice="error",
                 message="Категория не найдена.",
             ))
-        result = shared_catalog.list_category_overviews(
+        show_empty = request.args.get("show_empty") == "1"
+        unpaged_result = shared_catalog.list_category_overviews(
             query=query,
-            limit=per_page,
-            offset=(page - 1) * per_page,
+            limit=200,
+            offset=0,
             sort_by=sort_by,
             sort_dir=sort_dir,
             include_brands=False,
         )
+        available_categories = (
+            unpaged_result["items"] if show_empty else
+            [item for item in unpaged_result["items"] if item["nonzero_count"] > 0]
+        )
+        result = {
+            "items": available_categories[(page - 1) * per_page:page * per_page],
+            "total": len(available_categories),
+        }
         pages = max(1, (result["total"] + per_page - 1) // per_page)
         if page > pages:
             page = pages
-            result = shared_catalog.list_category_overviews(
-                query=query,
-                limit=per_page,
-                offset=(page - 1) * per_page,
-                sort_by=sort_by,
-                sort_dir=sort_dir,
-                include_brands=False,
-            )
+            result["items"] = available_categories[(page - 1) * per_page:page * per_page]
         return render_template(
             "warehouse_categories.html",
             categories=result["items"],
@@ -2987,6 +2985,9 @@ def warehouse_page():
             pagination=build_erp_pagination(
                 "warehouse_page", result["total"], page, per_page
             ),
+            show_empty=show_empty,
+            in_stock_count=tab_counts["in_stock"],
+            out_of_stock_count=tab_counts["out_of_stock"],
         )
     if warehouse_view == "brands":
         shared_catalog = SharedCatalog()
@@ -2997,9 +2998,12 @@ def warehouse_page():
                 "warehouse_page", view="brands", notice="error",
                 message="Бренд не найден.",
             ))
+        show_empty = request.args.get("show_empty") == "1"
         brands = shared_catalog.list_brand_summaries(
             query=(request.args.get("q") or "").strip(), limit=500,
         )
+        if not show_empty:
+            brands = [item for item in brands if item["nonzero_count"] > 0]
         brand = _with_brand_image_url(brand) if brand else None
         brands = [_with_brand_image_url(item) for item in brands]
         return render_template(
@@ -3009,6 +3013,9 @@ def warehouse_page():
             query=(request.args.get("q") or "").strip(),
             can_force_delete=_product_force_delete_allowed(),
             can_manage_brand_images=_product_force_delete_allowed(),
+            show_empty=show_empty,
+            in_stock_count=tab_counts["in_stock"],
+            out_of_stock_count=tab_counts["out_of_stock"],
         )
     query = request.args.get("q", "").strip()
     selected_category = request.args.get("category", "").strip()
@@ -3044,7 +3051,7 @@ def warehouse_page():
     selected_cell = request.args.get("cell", "").strip()
     created_date_from = request.args.get("date_from", "").strip()
     created_date_to = request.args.get("date_to", "").strip()
-    in_stock = request.args.get("in_stock", "").strip() == "1"
+    in_stock = False
     out_of_stock = warehouse_view == "out_of_stock"
     check_state = (request.args.get("check_state") or "all").strip()
     if check_state not in {"all", "unchecked", "partial", "complete"}:
@@ -3095,7 +3102,6 @@ def warehouse_page():
         bool(selected_category_id or selected_category),
         bool(selected_cell),
         bool(created_date_from or created_date_to),
-        in_stock,
         check_state != "all",
     ))
     warehouse_active_filter_label = format_active_filter_label(
@@ -3107,7 +3113,7 @@ def warehouse_page():
         brand=selected_brand if not selected_brand_id else "",
         category=selected_category if not selected_category_id else "",
         cell=selected_cell,
-        hide_zero=in_stock,
+        hide_zero=False,
         sort_by=sort_by,
         sort_dir=sort_dir,
         page=page,
@@ -3118,7 +3124,7 @@ def warehouse_page():
         category_id=selected_category_id or None,
         include_cell_item_names=False,
         include_facets=False,
-        stock_state="out" if out_of_stock else "all",
+        stock_state="out" if out_of_stock else "in",
         check_state=check_state if out_of_stock else "all",
     )
     catalog_items = build_excel_warehouse_items(catalog["items"])
@@ -3199,8 +3205,8 @@ def warehouse_page():
             "total_stock_display": format_stock_number(group["stock"]),
             "items": item_names[:3],
         })
-    visible_positions = catalog["total"]
-    total_stock = float(catalog["stats"]["total_stock"] or 0)
+    visible_positions = tab_counts["in_stock"]
+    total_stock = tab_counts["units_in_stock"]
     total_reserve = 0
     total_available = total_stock
     page = catalog["page"]
@@ -3224,9 +3230,9 @@ def warehouse_page():
             out_of_stock=out_of_stock,
             check_state=check_state,
             out_of_stock_count=(
-                catalog["total"] if out_of_stock
-                else catalog["stats"].get("zero_positions", 0)
+                tab_counts["out_of_stock"]
             ),
+            in_stock_count=tab_counts["in_stock"],
             export_filtered_url=url_for(
                 "warehouse_products_export", scope="filtered",
                 **{key: value for key, value in request.args.items()
@@ -14466,6 +14472,34 @@ def brand_image_file(filename):
     )
 
 
+@app.route("/product-images/<filename>")
+def product_image_file(filename):
+    from flask import send_from_directory
+
+    safe_name = Path(filename).name
+    if (
+        safe_name != filename
+        or not re.match(r"^product-[a-f0-9]{64}\.(jpg|png|webp)$", safe_name)
+    ):
+        abort(404)
+    database = CatalogDatabase(cache_initialization=True)
+    database.initialize()
+    with database.connect() as connection:
+        exists = connection.execute(
+            "SELECT 1 FROM catalog_excel_products "
+            "WHERE local_image_path = ? LIMIT 1",
+            (safe_name,),
+        ).fetchone()
+    if exists is None:
+        abort(404)
+    return send_from_directory(
+        ProductImageStore(database).root,
+        safe_name,
+        conditional=True,
+        max_age=86400,
+    )
+
+
 def _categories_redirect(category_id=None, notice="success", message=""):
     arguments = {"view": "categories", "notice": notice, "message": message}
     if category_id is not None:
@@ -14539,6 +14573,12 @@ def api_category_overviews():
             sort_by=(request.args.get("sort_by") or "name").strip(),
             sort_dir=(request.args.get("sort_dir") or "asc").strip(),
         )
+        if request.args.get("show_empty") == "0":
+            result["items"] = [
+                item for item in result["items"]
+                if item["nonzero_count"] > 0
+            ]
+            result["total"] = len(result["items"])
     except (TypeError, ValueError) as error:
         return api_error("CATEGORY_FILTER_INVALID", str(error), 422)
     return api_success(result["items"], total=result["total"],
@@ -14672,6 +14712,8 @@ def api_brand_overviews():
         _with_brand_image_url(item)
         for item in _catalog_application.brand_overviews(query)
     ]
+    if request.args.get("show_empty") == "0":
+        brands = [item for item in brands if item["nonzero_count"] > 0]
     return api_success({"items": brands, "query": query})
 
 
