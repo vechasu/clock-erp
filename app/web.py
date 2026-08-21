@@ -986,7 +986,11 @@ def orders_page():
         (selected_order or {}).get("id")
         or (selected_order or {}).get("ID")
     )
-    already_conducted = is_order_stock_written_off(order_id)
+    conducted_sale = get_order_conducted_sale(order_id)
+    sale_state = build_order_sale_state(
+        selected_order or {}, order_mappings, conducted_sale,
+        has_legacy_order_stock_writeoff(order_id),
+    )
 
     return render_template(
         "orders.html",
@@ -997,11 +1001,7 @@ def orders_page():
             or (selected_order or {}).get("ID")
         ),
         order_product_mappings=order_mappings,
-        order_sale_readiness=build_order_sale_readiness(
-            selected_order or {}, order_mappings, already_conducted
-        ),
-        sale_already_conducted=already_conducted,
-        conducted_sale=get_order_conducted_sale(order_id),
+        order_sale_state=sale_state,
         order_geography=get_order_geography(selected_order or {}),
         order_tracking=get_order_tracking(selected_order or {}),
         order_sale_pricing=build_order_sale_pricing(
@@ -1282,7 +1282,7 @@ def build_order_sale_readiness(order, mapping_context, already_conducted=False):
     products = (order or {}).get("products") or []
     if already_conducted:
         issues.append("Продажа уже проведена")
-    if status != "A":
+    if status not in {"A", "D"}:
         issues.append("Заказ не подтверждён")
     if not products:
         issues.append("Состав заказа не загружен")
@@ -1320,6 +1320,45 @@ def build_order_sale_readiness(order, mapping_context, already_conducted=False):
            for product_id, quantity in required.items()):
         issues.append("Недостаточно остатка")
     return {"ready": not issues, "issues": list(dict.fromkeys(issues))}
+
+
+def build_order_sale_state(
+    order, mapping_context, conducted_sale=None, legacy_writeoff=False
+):
+    """Return the single backend-owned sale action state for an order card."""
+    status = str((order or {}).get("status") or "").strip().upper()
+    sale_id = str((conducted_sale or {}).get("id") or "").strip() or None
+    sale_completed = sale_id is not None
+    readiness = build_order_sale_readiness(
+        order, mapping_context, sale_completed or legacy_writeoff
+    )
+
+    if sale_completed:
+        block_reason = "Продажа по этому заказу уже проведена."
+    elif legacy_writeoff:
+        block_reason = (
+            "Найдена операция списания без связанной продажи. "
+            "Повторное проведение заблокировано до проверки данных."
+        )
+    elif status == "N":
+        block_reason = "Чтобы провести продажу, сначала подтвердите заказ."
+    elif status not in {"A", "D"}:
+        block_reason = "Текущий статус заказа не позволяет провести продажу."
+    else:
+        block_reason = ""
+
+    return {
+        "can_create_sale": (
+            not sale_completed
+            and not legacy_writeoff
+            and status in {"A", "D"}
+        ),
+        "sale_block_reason": block_reason,
+        "sale_id": sale_id,
+        "sale_completed": sale_completed,
+        "sale_missing": status == "D" and not sale_completed,
+        "readiness": readiness,
+    }
 
 
 @app.route("/order/<int:order_id>")
@@ -1366,18 +1405,18 @@ def order_page(order_id):
         selected_order.get("products") or [], mappings=mappings,
         catalog=catalog, order_counts=order_counts,
     )
-    already_conducted = is_order_stock_written_off(order_id)
+    conducted_sale = get_order_conducted_sale(order_id)
+    sale_state = build_order_sale_state(
+        selected_order, mapping_context, conducted_sale,
+        has_legacy_order_stock_writeoff(order_id),
+    )
     return render_template(
         "orders.html",
         orders=orders,
         selected_order=selected_order,
         selected_order_bitrix_url=bitrix_order_url,
         order_product_mappings=mapping_context,
-        order_sale_readiness=build_order_sale_readiness(
-            selected_order, mapping_context, already_conducted
-        ),
-        sale_already_conducted=already_conducted,
-        conducted_sale=get_order_conducted_sale(order_id),
+        order_sale_state=sale_state,
         order_geography=get_order_geography(selected_order),
         order_tracking=get_order_tracking(selected_order),
         order_sale_pricing=build_order_sale_pricing(
@@ -1507,8 +1546,8 @@ def _conduct_order_sale(order_id):
     required_by_product = {}
     product_by_id = {}
 
-    if order_status != "A":
-        issues.append("Сначала подтвердите заказ")
+    if order_status not in {"A", "D"}:
+        issues.append("Чтобы провести продажу, сначала подтвердите заказ")
     if not products:
         issues.append("Заказ без товаров нельзя провести в продажу")
     if full_order.get("sync_state") in {"partial", "error"}:
@@ -4146,6 +4185,11 @@ def is_order_stock_written_off(order_id):
     if get_order_conducted_sale(order_id) is not None:
         return True
 
+    return has_legacy_order_stock_writeoff(order_id)
+
+
+def has_legacy_order_stock_writeoff(order_id):
+    order_id = str(order_id or "")
     for operation in load_stock_operations():
         if str(operation.get("order_id") or "") == order_id and operation.get("source") == "Заказ Битрикс":
             return True

@@ -244,15 +244,8 @@
                 {% set detail_discount = selected_order.get('discount') %}
                 {% set detail_delivery = selected_order.get('delivery_price') %}
                 {% set detail_delivery_source = selected_order.get('delivery_price_source') %}
-                {% set mapping_state = namespace(all=true, stock=true) %}
-                {% for product in detail_products %}
-                    {% set pid = product.get('product_id') or product.get('PRODUCT_ID') or product.get('id') or product.get('ID') or '' %}
-                    {% set map = order_product_mappings.get(pid|string) if order_product_mappings else none %}
-                    {% if not map or map.state != 'mapped' %}{% set mapping_state.all = false %}{% endif %}
-                    {% if map and map.product and map.product.stock|float < (product.get('quantity') or 1)|float %}{% set mapping_state.stock = false %}{% endif %}
-                {% endfor %}
                 {% set legacy_calc_ok = selected_order.get('calculation_complete') is none %}
-                {% set safe_to_sell = order_sale_readiness.ready if order_sale_readiness is defined else (detail_status_code == 'A' and detail_products and mapping_state.all and mapping_state.stock and selected_order.get('sync_state') not in ['partial','error'] and (legacy_calc_ok or selected_order.get('calculation_consistent')) and not sale_already_conducted) %}
+                {% set sale_state = order_sale_state %}
                 <div class="detail-scroll">
                     <header class="card-head">
                         <div>
@@ -262,10 +255,12 @@
                         </div>
                         <div class="actions">
                             <button class="button button-secondary" type="button" data-collapse-list>Свернуть список</button>
-                            {% if detail_status_code == 'N' %}
-                                <form method="post" action="/order/{{ detail_id }}/status"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="status" value="A"><button class="button button-primary" type="submit">Подтвердить</button></form>
-                            {% elif safe_to_sell %}<button class="button button-primary" type="button" data-open-sale-dialog>Провести продажу</button>
-                            {% elif sale_already_conducted %}<a class="button button-secondary" href="/sales?source=tictactoy&sale_id={{ conducted_sale.id if conducted_sale else '' }}">Продажа проведена</a>{% endif %}
+                            {% if sale_state.sale_completed %}
+                                <span class="button button-secondary" aria-label="Продажа проведена">Продажа проведена</span><a class="button button-primary" href="/sales?source=tictactoy&sale_id={{ sale_state.sale_id }}">Открыть продажу</a>
+                            {% else %}
+                                <button class="button button-primary" type="button"{% if sale_state.can_create_sale %} data-open-sale-dialog{% else %} data-show-sale-block{% endif %}>Провести продажу</button>
+                                {% if detail_status_code == 'N' %}<form method="post" action="/order/{{ detail_id }}/status"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="status" value="A"><button class="button button-secondary" type="submit">Подтвердить заказ</button></form>{% endif %}
+                            {% endif %}
                             {% if selected_order_bitrix_url %}<a class="button button-secondary" href="{{ selected_order_bitrix_url }}" target="_blank" rel="noopener noreferrer">Открыть в Bitrix ↗</a>{% endif %}
                             {% if detail_id and selected_order.get('sync_state') != 'error' %}<a class="button button-secondary" href="{{ url_for('order_print_page', order_id=detail_id) }}" target="_blank" rel="noopener noreferrer"><span aria-hidden="true">⎙</span> Печать заказа</a>{% endif %}
                         </div>
@@ -331,7 +326,9 @@
                             </div>
                             {% if not legacy_calc_ok and not selected_order.get('calculation_complete') %}<div class="warning">Bitrix не передал отдельную стоимость доставки. Итог не записан в доставку; проведение продажи заблокировано до получения полного расчёта.</div>{% elif not legacy_calc_ok and not selected_order.get('calculation_consistent') %}<div class="warning">Расчёт не сходится: товары − скидка + доставка ≠ итог. Проведение заблокировано.</div>{% endif %}
                         </section>
-                        {% if not safe_to_sell and not sale_already_conducted %}<div class="warning">Проведение недоступно: {{ order_sale_readiness.issues|join(' · ') if order_sale_readiness is defined else 'заказ должен быть подтверждён, полностью синхронизирован, рассчитан, сопоставлен и обеспечен остатками' }}.</div>{% endif %}
+                        {% if sale_state.sale_missing %}<div class="warning"><strong>Продажа не найдена.</strong> Проверьте состав заказа, сопоставление товаров и остатки перед проведением.</div>{% endif %}
+                        {% if sale_state.sale_block_reason and not sale_state.sale_completed %}<div class="warning" id="saleBlockReason" tabindex="-1">{{ sale_state.sale_block_reason }}</div>{% endif %}
+                        {% if sale_state.can_create_sale and not sale_state.readiness.ready %}<div class="warning">Перед проведением исправьте данные: {{ sale_state.readiness.issues|join(' · ') }}.</div>{% endif %}
                     </div>
                 </div>
             {% else %}<div class="empty"><strong>Выберите заказ в списке</strong><br>Полная карточка загрузится отдельным безопасным запросом.</div>{% endif %}
@@ -340,7 +337,7 @@
     </main>
 </div>
 
-{% if selected_order and safe_to_sell %}
+{% if selected_order and sale_state.can_create_sale %}
 <div class="order-sale-modal" id="orderSaleModal" role="dialog" aria-modal="true" aria-labelledby="orderSaleTitle" aria-hidden="true" data-auto-open="{{ '1' if request.args.get('open_sale') == '1' else '0' }}">
     <div class="sale-dialog">
         <div class="sale-dialog-head"><div><h2 id="orderSaleTitle">Провести продажу</h2><p class="card-subtitle">Заказ №{{ detail_number }} · Tictactoy</p></div><button class="button button-secondary" type="button" data-close-sale-dialog aria-label="Закрыть">×</button></div>
@@ -381,6 +378,7 @@
     function applyFilters(){const query=(searchInput?.value||'').toLowerCase().trim();rows.forEach(row=>{const rowText=(row.dataset.search||'').toLowerCase();row.hidden=!rowText.includes(query);});}
     searchInput?.addEventListener('input',applyFilters);
     document.querySelectorAll('[data-change-order-mapping]').forEach(button=>button.addEventListener('click',()=>{const row=button.closest('.product-row');const form=row?.querySelector('[data-order-map-form]');if(form){form.hidden=false;window.initializeSharedCatalogCascades?.(form);form.querySelector('button,input')?.focus();}}));
+    document.querySelectorAll('[data-show-sale-block]').forEach(button=>button.addEventListener('click',()=>{const reason=document.getElementById('saleBlockReason');reason?.scrollIntoView({behavior:'smooth',block:'center'});reason?.focus();}));
     const modal=document.getElementById('orderSaleModal'); if(!modal)return;
     const tracking=modal.querySelector('[data-order-sale-tracking]'); const trackingStorageKey='order-sale-tracking:{{ detail_id if selected_order else "" }}';
     if(tracking){try{const saved=window.sessionStorage.getItem(trackingStorageKey);if(saved!==null)tracking.value=saved;tracking.addEventListener('input',()=>window.sessionStorage.setItem(trackingStorageKey,tracking.value));}catch(error){}}

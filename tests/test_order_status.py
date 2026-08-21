@@ -228,6 +228,18 @@ class OrderStatusServiceTests(unittest.TestCase):
         state = self.service.ingest("42", "A")
         self.assertEqual(state["erp_status"], ERP_ASSEMBLED)
 
+    def test_existing_assembled_order_can_be_linked_to_recovered_sale(self):
+        self.service.ingest("42", "D")
+        with self.database.transaction() as connection:
+            self.insert_sale(connection, sale_id="sale-recovered")
+            state = self.service.change(
+                "42", ERP_ASSEMBLED, "Максим",
+                sale_id="sale-recovered", connection=connection,
+            )
+
+        self.assertEqual(state["erp_status"], ERP_ASSEMBLED)
+        self.assertEqual(state["sale_id"], "sale-recovered")
+
 
 class OrderStatusFrontendContractTests(unittest.TestCase):
     def test_orders_template_has_exact_status_actions_and_mobile_layout(self):
@@ -237,7 +249,7 @@ class OrderStatusFrontendContractTests(unittest.TestCase):
         self.assertIn("('N','Не подтверждён')", template)
         self.assertIn("('A','Подтверждён')", template)
         self.assertIn("('D','Собран')", template)
-        self.assertIn(">Подтвердить</button>", template)
+        self.assertIn(">Подтвердить заказ</button>", template)
         self.assertIn(">Провести продажу</button>", template)
         self.assertNotIn("Отметить собранным", template)
         self.assertNotIn("Не дозвонились", template)
