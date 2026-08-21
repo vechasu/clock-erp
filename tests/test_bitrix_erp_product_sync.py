@@ -14,7 +14,8 @@ from scripts.sync_bitrix_products import sync_bitrix_products
 
 
 def product(identity="1", name="Brand Watch", brand="Brand", xml_id=None,
-            sku=None, price="15990.50", category="Watches", image=True):
+            sku=None, price="15990.50", category="Watches", image=True,
+            stock=None):
     prices = [] if price is None else [{
         "type_id": "1",
         "type_code": "BASE",
@@ -71,6 +72,7 @@ def product(identity="1", name="Brand Watch", brand="Brand", xml_id=None,
         "prices": prices,
         "offers": [],
         "sale_price": prices[0] if prices else None,
+        "stock": stock,
     }
 
 

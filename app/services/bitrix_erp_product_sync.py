@@ -2,8 +2,10 @@
 
 import hashlib
 import json
+import math
 import sqlite3
 import subprocess
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -17,6 +19,7 @@ from app.services.inventory_lock import (
 )
 from app.services.product_classification import classify_product
 from app.services.product_reconciliation import article_quality, normalize_text, reliable_article
+from app.services.shared_catalog import assign_product_taxonomy
 
 
 CATALOG_BATCH_ID = "bitrix-catalog-products"
@@ -164,14 +167,17 @@ class BitrixERPProductSync:
         self._label_cache = {}
         self._known_brands = None
 
-    def preview_products(self, products):
+    def preview_products(self, products, create_only=False, require_exact_stock=False):
         products = list(products)
         if not self.database.exists():
-            return [self._new_preview(product) for product in products]
+            return [self._new_preview(product, require_exact_stock) for product in products]
         with self.database.connect() as connection:
-            return [self._preview_one(connection, product) for product in products]
+            return [
+                self._preview_one(connection, product, create_only, require_exact_stock)
+                for product in products
+            ]
 
-    def apply_products(self, products):
+    def apply_products(self, products, create_only=False, require_exact_stock=False):
         self.database.initialize()
         results = []
         with self.database.transaction() as connection:
@@ -179,7 +185,9 @@ class BitrixERPProductSync:
                 savepoint = "bitrix_product_{}".format(index)
                 connection.execute("SAVEPOINT " + savepoint)
                 try:
-                    result = self._apply_one(connection, product)
+                    result = self._apply_one(
+                        connection, product, create_only, require_exact_stock
+                    )
                     connection.execute("RELEASE SAVEPOINT " + savepoint)
                 except Exception as error:
                     connection.execute("ROLLBACK TO SAVEPOINT " + savepoint)
@@ -193,8 +201,17 @@ class BitrixERPProductSync:
                 results.append(result)
         return results
 
-    @staticmethod
-    def _new_preview(product):
+    @classmethod
+    def _new_preview(cls, product, require_exact_stock=False):
+        if require_exact_stock and cls._exact_stock(product) is None:
+            return {
+                "status": "skipped",
+                "match_method": "not_found",
+                "external_product_id": _text(product.get("external_product_id")),
+                "name": _text(product.get("name")),
+                "candidate_ids": [],
+                "error": "exact_stock_unavailable",
+            }
         return {
             "status": "created",
             "match_method": "not_found",
@@ -203,7 +220,8 @@ class BitrixERPProductSync:
             "candidate_ids": [],
         }
 
-    def _preview_one(self, connection, product):
+    def _preview_one(self, connection, product, create_only=False,
+                     require_exact_stock=False):
         validation = self._validate(product)
         if validation:
             return validation
@@ -215,7 +233,17 @@ class BitrixERPProductSync:
             return self._conflict_result(product, match)
         row = match.get("product")
         if row is None:
-            return self._new_preview(product)
+            return self._new_preview(product, require_exact_stock)
+        if create_only:
+            return {
+                "status": "unchanged",
+                "match_method": match["method"],
+                "external_product_id": _text(product.get("external_product_id")),
+                "name": _text(product.get("name")),
+                "erp_product_id": row["id"],
+                "candidate_ids": [row["id"]],
+                "changes": [],
+            }
         changes = self._card_changes(
             connection, row, product,
             enrichment_from_product(product, row["bitrix_catalog_product_id"]),
@@ -230,7 +258,8 @@ class BitrixERPProductSync:
             "changes": sorted(changes),
         }
 
-    def _apply_one(self, connection, product):
+    def _apply_one(self, connection, product, create_only=False,
+                   require_exact_stock=False):
         validation = self._validate(product)
         if validation:
             return validation
@@ -247,6 +276,8 @@ class BitrixERPProductSync:
         match = self._match(connection, product)
         if match["status"] == "ambiguous":
             return self._conflict_result(product, match)
+        if match.get("product") is None and require_exact_stock and self._exact_stock(product) is None:
+            return self._new_preview(product, require_exact_stock=True)
         enrichment = load_bitrix_enrichment(connection, catalog_product["id"])
         existing = match.get("product")
         if existing is None:
@@ -261,6 +292,17 @@ class BitrixERPProductSync:
                 "name": _text(product.get("name")),
                 "erp_product_id": product_id,
                 "candidate_ids": [],
+                "stock_imported": self._exact_stock(product),
+            }
+        if create_only:
+            return {
+                "status": "unchanged",
+                "match_method": match["method"],
+                "external_product_id": _text(product.get("external_product_id")),
+                "name": _text(product.get("name")),
+                "erp_product_id": existing["id"],
+                "candidate_ids": [existing["id"]],
+                "changes": [],
             }
         changes = self._card_changes(connection, existing, product, enrichment)
         if changes:
@@ -302,6 +344,19 @@ class BitrixERPProductSync:
             "candidate_ids": [],
             "error": "missing_product_id" if not product_id else "missing_name",
         }
+
+    @staticmethod
+    def _exact_stock(product):
+        value = product.get("stock")
+        if value in (None, "") or isinstance(value, bool):
+            return None
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+        if not math.isfinite(number) or number < 0:
+            return None
+        return number
 
     @staticmethod
     def _deleted_product(connection, product):
@@ -588,13 +643,16 @@ class BitrixERPProductSync:
             "excel_row", "stock", "cell", "stock_source", "file_sha256",
             "moysklad_sync_status", "created_at", "updated_at",
         ) + tuple(values)
+        exact_stock = self._exact_stock(product)
+        if exact_stock is None:
+            exact_stock = 0.0
         row_values = (
             "bitrix:" + _text(product.get("external_product_id")),
             batch_id,
             batch_id,
             _json(raw),
             excel_row,
-            0.0,
+            exact_stock,
             None,
             "bitrix_catalog",
             CATALOG_BATCH_SHA256,
@@ -609,12 +667,42 @@ class BitrixERPProductSync:
             ),
             row_values,
         )
+        product_id = connection.execute("SELECT last_insert_rowid()").fetchone()[0]
+        assign_product_taxonomy(
+            connection,
+            product_id,
+            brand=values.get("excel_brand"),
+            category=values.get("excel_category"),
+        )
+        if exact_stock:
+            connection.execute(
+                "INSERT INTO catalog_excel_manual_stock_operations ("
+                "id, product_id, stock_before, stock_after, stock_difference, "
+                "reason, created_at) VALUES (?, ?, 0, ?, ?, ?, ?)",
+                (
+                    str(uuid.uuid5(uuid.NAMESPACE_URL, "bitrix-stock:" + _text(
+                        product.get("external_product_id")
+                    ))),
+                    product_id,
+                    exact_stock,
+                    exact_stock,
+                    "Точный остаток при импорте активного товара Bitrix",
+                    now,
+                ),
+            )
         connection.execute(
             "UPDATE catalog_excel_batches SET row_count = row_count + 1, "
-            "zero_rows = zero_rows + 1 WHERE id = ?",
-            (batch_id,),
+            "total_stock = total_stock + ?, "
+            "positive_rows = positive_rows + ?, zero_rows = zero_rows + ? "
+            "WHERE id = ?",
+            (
+                exact_stock,
+                1 if exact_stock > 0 else 0,
+                1 if exact_stock == 0 else 0,
+                batch_id,
+            ),
         )
-        return connection.execute("SELECT last_insert_rowid()").fetchone()[0]
+        return product_id
 
     def _update_card(self, connection, existing, product, enrichment, changes):
         desired = self._desired_card_values(connection, existing, product, enrichment)
