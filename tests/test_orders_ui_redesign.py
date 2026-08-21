@@ -11,9 +11,13 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 class OrdersUiRedesignTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.source = (
+        template = (
             PROJECT_ROOT / "app/templates/orders.html"
         ).read_text(encoding="utf-8")
+        styles = (
+            PROJECT_ROOT / "app/static/css/orders.css"
+        ).read_text(encoding="utf-8")
+        cls.source = template + "\n" + styles
 
     def setUp(self):
         self.original_config = dict(web.app.config)
@@ -100,15 +104,15 @@ class OrdersUiRedesignTest(unittest.TestCase):
             "+7 900 000-00-00",
             'data-amount="12990"',
             'data-date="2026-08-21 10:30"',
-            "Новый",
+            "Не подтверждён",
         ):
             self.assertIn(expected, active_row)
 
     def test_filters_have_two_rows_and_no_find_button(self):
         filters = self.source.split(
-            'class="panel-toolbar filters"', 1
+            'class="panel-toolbar filters erp-toolbar"', 1
         )[1].split("</form>", 1)[0]
-        self.assertIn('class="field field-search"', filters)
+        self.assertIn('class="field field-search erp-search-input"', filters)
         self.assertIn('class="filter-selects"', filters)
         self.assertEqual(filters.count("data-auto-submit-filter"), 2)
         self.assertNotIn(">Найти<", filters)
@@ -116,6 +120,25 @@ class OrdersUiRedesignTest(unittest.TestCase):
         self.assertIn("filter.form?.requestSubmit()", self.source)
         self.assertIn("event.key==='Enter'", self.source)
         self.assertIn("searchInput.form?.requestSubmit()", self.source)
+
+    def test_shared_erp_foundation_kpis_and_order_context_are_rendered(self):
+        html = self.render_selected_order()
+        self.assertIn("css/erp-components.css", html)
+        self.assertIn("css/orders.css", html)
+        self.assertIn('class="orders-kpis erp-workspace-metrics"', html)
+        for label in (
+            "Всего заказов", "Не подтверждены", "Подтверждены", "Собраны"
+        ):
+            self.assertIn(label, html)
+        for label in ("Источник", "Доставка", "Оплата", "Примечания"):
+            self.assertIn(label, html)
+
+    def test_pending_guard_covers_status_tracking_and_sale_actions(self):
+        self.assertIn("function setPending(form,label)", self.source)
+        self.assertIn("form.dataset.submitting==='1'", self.source)
+        self.assertIn(".status-form')?.addEventListener('submit'", self.source)
+        self.assertIn("[data-tracking-form]')?.addEventListener('submit'", self.source)
+        self.assertIn("[data-order-sale-form]')?.addEventListener('submit'", self.source)
 
     def test_desktop_mapping_is_one_row_with_flexible_product(self):
         self.assertIn(
@@ -139,8 +162,8 @@ class OrdersUiRedesignTest(unittest.TestCase):
             html,
         )
         self.assertIn("vechasu:orders:view:v2", html)
-        self.assertIn("minmax(0,63%)", html)
-        self.assertIn("min-width:0", html)
+        self.assertIn("minmax(0,63%)", self.source)
+        self.assertIn("min-width:0", self.source)
         self.assertIn("Проведение недоступно:", html)
         self.assertIn("Заказ не подтверждён · Есть несопоставленные позиции", html)
 

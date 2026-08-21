@@ -936,9 +936,31 @@ def overview_page():
 @app.route("/app/orders")
 def orders_page():
     orders = get_orders(force=request.args.get("retry") == "1")
-    query = str(request.args.get("q") or "").strip().casefold()
-    status_filter = str(request.args.get("status") or "all").strip().upper()
-    period = str(request.args.get("period") or "all").strip()
+    list_state = prepare_orders_list(orders, request.args)
+    orders_page_rows = list_state["rows"]
+    selected_order = orders_page_rows[0] if orders_page_rows else None
+    detail_error = ""
+    if selected_order and selected_order.get("id"):
+        try:
+            selected_order = get_order(selected_order["id"]) or selected_order
+        except BitrixReadOnlyError as error:
+            detail_error = type(error).__name__
+            selected_order = dict(selected_order)
+            selected_order["sync_state"] = "error"
+    return render_orders_page(
+        orders=orders,
+        list_state=list_state,
+        selected_order=selected_order,
+        selected_order_explicit=False,
+        detail_error=detail_error,
+    )
+
+
+def prepare_orders_list(orders, args):
+    """Build the read-only list view without changing order data or APIs."""
+    query = str(args.get("q") or "").strip().casefold()
+    status_filter = str(args.get("status") or "all").strip().upper()
+    period = str(args.get("period") or "all").strip()
     filtered_orders = []
     now = datetime.now()
     for order in orders:
@@ -967,22 +989,35 @@ def orders_page():
         filtered_orders.append(order)
     per_page = 20
     try:
-        page = max(1, int(request.args.get("page") or 1))
+        page = max(1, int(args.get("page") or 1))
     except ValueError:
         page = 1
     total = len(filtered_orders)
     page_count = max(1, math.ceil(total / per_page))
     page = min(page, page_count)
     orders_page_rows = filtered_orders[(page - 1) * per_page:page * per_page]
-    selected_order = orders_page_rows[0] if orders_page_rows else None
-    detail_error = ""
-    if selected_order and selected_order.get("id"):
-        try:
-            selected_order = get_order(selected_order["id"]) or selected_order
-        except BitrixReadOnlyError as error:
-            detail_error = type(error).__name__
-            selected_order = dict(selected_order)
-            selected_order["sync_state"] = "error"
+    counts = {code: 0 for code in ("N", "A", "D")}
+    for order in orders:
+        code = str(order.get("status") or "").strip().upper()
+        if code in counts:
+            counts[code] += 1
+    return {
+        "rows": orders_page_rows,
+        "total": total,
+        "page": page,
+        "page_count": page_count,
+        "kpis": {
+            "total": len(orders),
+            "unconfirmed": counts["N"],
+            "confirmed": counts["A"],
+            "assembled": counts["D"],
+        },
+    }
+
+
+def render_orders_page(
+    orders, list_state, selected_order, selected_order_explicit, detail_error=""
+):
     order_id = (
         (selected_order or {}).get("id")
         or (selected_order or {}).get("ID")
@@ -1004,7 +1039,7 @@ def orders_page():
 
     return render_template(
         "orders.html",
-        orders=orders_page_rows,
+        orders=list_state["rows"],
         selected_order=selected_order,
         selected_order_bitrix_url=build_bitrix_order_url(
             (selected_order or {}).get("id")
@@ -1021,10 +1056,11 @@ def orders_page():
         order_sale_pricing=build_order_sale_pricing(
             (selected_order or {}).get("products") or []
         ),
-        selected_order_explicit=False,
-        orders_total=total,
-        orders_page=page,
-        orders_page_count=page_count,
+        selected_order_explicit=selected_order_explicit,
+        orders_total=list_state["total"],
+        orders_page=list_state["page"],
+        orders_page_count=list_state["page_count"],
+        order_kpis=list_state["kpis"],
         sync_error=detail_error or ORDERS_CACHE.get("error", ""),
         last_sync_at=ORDERS_CACHE.get("loaded_at") or None,
     )
@@ -1455,47 +1491,12 @@ def order_page(order_id):
     if selected_order is None:
         abort(404)
 
-    count_orders = [
-        order for order in orders
-        if str(order.get("id") or order.get("ID") or "") != str(order_id)
-    ] + [selected_order]
-    mappings = load_order_product_mappings(order_id)
-    catalog = SharedCatalog()
-    order_counts = build_catalog_product_order_counts(
-        count_orders, mappings=mappings, catalog=catalog
-    )
-
-    mapping_context = build_order_product_mapping_context(
-        selected_order.get("products") or [], mappings=mappings,
-        catalog=catalog, order_counts=order_counts,
-    )
-    conducted_sale = get_order_conducted_sale(order_id)
-    sale_state = build_order_sale_state(
-        selected_order, mapping_context, conducted_sale,
-        has_legacy_order_stock_writeoff(order_id),
-    )
-    return render_template(
-        "orders.html",
+    return render_orders_page(
         orders=orders,
+        list_state=prepare_orders_list(orders, request.args),
         selected_order=selected_order,
-        selected_order_bitrix_url=bitrix_order_url,
-        order_product_mappings=mapping_context,
-        order_sale_state=sale_state,
-        order_geography=get_order_geography(selected_order),
-        order_country_options=build_sale_combobox_options(
-            TICTACTOY_SALE_COUNTRIES
-        ),
-        order_location_data=get_tictactoy_location_catalog(),
-        order_tracking=get_order_tracking(selected_order),
-        order_sale_pricing=build_order_sale_pricing(
-            selected_order.get("products") or []
-        ),
         selected_order_explicit=True,
-        orders_total=len(orders),
-        orders_page=1,
-        orders_page_count=max(1, math.ceil(len(orders) / 20)),
-        sync_error=detail_error or ORDERS_CACHE.get("error", ""),
-        last_sync_at=time.time() if not detail_error else ORDERS_CACHE.get("loaded_at"),
+        detail_error=detail_error,
     )
 
 
@@ -2087,6 +2088,7 @@ def order_tracking_update(order_id):
         return redirect(url_for(
             "order_page", order_id=order_id, notice="error",
             message="Трекинг не должен быть длиннее 255 символов",
+            tracking_value=tracking,
         ))
     try:
         order = get_order(order_id)
@@ -2096,6 +2098,7 @@ def order_tracking_update(order_id):
         return redirect(url_for(
             "order_page", order_id=order_id, notice="error",
             message="Не удалось проверить заказ перед сохранением трекинга",
+            tracking_value=tracking,
         ))
     rows = load_order_overrides()
     previous = rows.get(str(order_id)) if isinstance(rows.get(str(order_id)), dict) else {}

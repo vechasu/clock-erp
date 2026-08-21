@@ -4,189 +4,11 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Vechasu ERP — Заказы</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/themes.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/erp-components.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-combobox.css') }}">
     <script defer src="{{ url_for('static', filename='js/catalog-combobox.js', v='catalog-combobox-20260821-order-mapping') }}"></script>
-    <style>
-        :root { --blue:var(--theme-primary,#2563eb); --navy:var(--theme-sidebar-bg,#0f2747); --line:var(--theme-border,#dfe5ed); --muted:var(--theme-text-muted,#64748b); --soft:var(--theme-surface-muted,#f6f8fb); --danger:var(--theme-error,#b42318); }
-        * { box-sizing:border-box; }
-        body { margin:0; background:var(--theme-workspace-bg,#f4f6f9); color:var(--theme-text,#172033); font:14px/1.45 var(--theme-font,Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif); }
-        button,input,select { font:inherit; }
-        .app { min-height:100vh; }
-        .main { min-width:0; padding:18px 24px 24px; }
-        .page-head,.view-switch,.card-head,.order-row-head,.actions,.customer-grid,.line-main,.line-price,.sync-state,.pagination,.filter-selects { display:flex; align-items:center; }
-        .page-head { display:grid; grid-template-columns:minmax(240px,1fr) auto minmax(240px,1fr); gap:18px; align-items:center; margin-bottom:14px; }
-        .page-heading { min-width:0; }
-        h1,h2,h3,p { margin:0; }
-        h1 { font-size:27px; line-height:1.15; letter-spacing:-.025em; }
-        .page-copy { color:var(--muted); margin-top:3px; }
-        .sync-state { justify-self:end; gap:8px; padding:0; border:0; background:transparent; font-size:12px; white-space:nowrap; }
-        .sync-dot { width:8px; height:8px; border-radius:50%; background:#16a34a; }
-        .sync-state.partial .sync-dot { background:#d97706; }
-        .sync-state.error .sync-dot { background:#dc2626; }
-        .sync-meta { color:var(--muted); font-weight:400; }
-        .view-switch { padding:3px; gap:2px; border:1px solid var(--line); border-radius:8px; background:#fff; }
-        .view-option { border:0; border-radius:6px; padding:7px 10px; color:#526176; background:transparent; cursor:pointer; }
-        .view-option[aria-checked="true"] { color:var(--theme-primary-text,#fff); background:var(--blue); }
-        :focus-visible { outline:3px solid var(--theme-focus-ring,rgba(37,99,235,.28)); outline-offset:2px; }
-        .notice,.warning { padding:11px 13px; margin-bottom:12px; border-radius:8px; border:1px solid; }
-        .notice-success { color:#166534; border-color:#bbf7d0; background:#f0fdf4; }
-        .notice-error,.warning { color:#9a3412; border-color:#fed7aa; background:#fff7ed; }
-        .workspace { display:grid; grid-template-columns:minmax(330px,37%) minmax(0,63%); gap:12px; height:calc(100vh - 102px); min-height:590px; }
-        .panel { min-width:0; min-height:0; border:1px solid var(--line); border-radius:11px; background:var(--theme-surface,#fff); overflow:hidden; }
-        .orders-list-panel,.order-detail-panel { display:flex; flex-direction:column; }
-        .workspace[data-layout-mode="list"] { grid-template-columns:1fr; }
-        .workspace[data-layout-mode="list"] .order-detail-panel { display:none; }
-        .workspace[data-layout-mode="card"] { grid-template-columns:1fr; }
-        .workspace[data-layout-mode="card"] .orders-list-panel { display:none; }
-        .panel-toolbar { flex:0 0 auto; padding:12px; border-bottom:1px solid var(--line); }
-        .filters { display:grid; gap:8px; }
-        .field { min-width:0; height:38px; padding:0 10px; border:1px solid var(--theme-border-strong,#cfd8e5); border-radius:8px; background:var(--theme-input-bg,#fff); color:var(--theme-text,#25324a); }
-        .field-search { width:100%; }
-        .filter-selects { gap:8px; }
-        .filter-selects select.field { min-width:0; flex:1 1 0; }
-        .filter-reset { flex:0 0 auto; min-height:38px; }
-        .button { display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:36px; padding:7px 11px; border:1px solid transparent; border-radius:7px; font-weight:650; text-decoration:none; cursor:pointer; }
-        .button-primary { color:var(--theme-primary-text,#fff); background:var(--blue); }
-        .button-secondary { color:var(--theme-text,#34445b); border-color:var(--theme-border-strong,#cfd8e5); background:var(--theme-surface,#fff); }
-        .button-danger { color:var(--danger); border-color:#fecaca; background:#fff; }
-        .button:disabled { opacity:.48; cursor:not-allowed; }
-        .orders-list { flex:1 1 auto; min-height:0; overflow:auto; }
-        .order-row { display:block; padding:13px 15px; color:inherit; text-decoration:none; border-bottom:1px solid #edf0f4; border-left:3px solid transparent; }
-        .order-row:hover { background:#f8fafc; }
-        .order-row.active { border-left-color:var(--blue); background:var(--theme-active,#eff6ff); }
-        .order-row-head { justify-content:space-between; gap:10px; }
-        .order-number { font-weight:750; }
-        .order-meta { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:4px 10px; margin-top:7px; color:var(--muted); font-size:12px; }
-        .order-meta .phone { color:#334155; }
-        .badge { display:inline-flex; align-items:center; gap:5px; padding:3px 8px; border-radius:999px; font-size:11px; font-weight:700; white-space:nowrap; }
-        .badge::before { content:""; width:6px; height:6px; border-radius:50%; background:currentColor; }
-        .badge-new { color:#9a3412; background:#ffedd5; }
-        .badge-work { color:#1d4ed8; background:#dbeafe; }
-        .badge-done { color:#15803d; background:#dcfce7; }
-        .badge-cancel { color:#b91c1c; background:#fee2e2; }
-        .badge-default { color:#475569; background:#e8edf3; }
-        .list-footer { flex:0 0 auto; justify-content:space-between; padding:10px 12px; color:var(--muted); border-top:1px solid var(--line); font-size:12px; }
-        .pagination { gap:5px; }
-        .page-link { padding:4px 7px; color:#334155; text-decoration:none; border:1px solid var(--line); border-radius:5px; background:#fff; }
-        .detail-scroll { min-height:0; overflow:auto; }
-        .card-head { position:sticky; top:0; z-index:8; justify-content:space-between; gap:14px; padding:14px 16px; border-bottom:1px solid var(--line); background:var(--theme-surface,#fff); }
-        .card-title { display:flex; align-items:center; gap:9px; flex-wrap:wrap; }
-        .card-title h2 { font-size:20px; }
-        .card-subtitle { margin-top:4px; color:var(--muted); font-size:12px; }
-        .actions { gap:7px; flex-wrap:wrap; justify-content:flex-end; }
-        .status-form { display:flex; gap:6px; align-items:center; }
-        .status-form .field { width:170px; }
-        details.more { position:relative; }
-        details.more summary { list-style:none; }
-        details.more summary::-webkit-details-marker { display:none; }
-        .more-menu { position:absolute; right:0; top:42px; z-index:20; width:210px; padding:7px; border:1px solid var(--line); border-radius:8px; background:#fff; box-shadow:0 14px 35px rgba(15,23,42,.14); }
-        .more-menu form,.more-menu .button { width:100%; }
-        .more-menu .button { justify-content:flex-start; margin:2px 0; }
-        .detail-body { padding:14px 16px 22px; }
-        .section { padding:14px 0; border-bottom:1px solid #edf0f4; }
-        .section:first-child { padding-top:0; }
-        .section:last-child { border-bottom:0; }
-        .section-head { display:flex; justify-content:space-between; gap:10px; align-items:center; margin-bottom:10px; }
-        .section h3 { font-size:15px; }
-        .customer-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); align-items:start; gap:16px; padding:12px; border:1px solid var(--line); border-radius:9px; background:var(--theme-surface-muted,#fafbfc); }
-        .fact { min-width:0; }
-        .fact-label { display:block; margin-bottom:3px; color:var(--muted); font-size:11px; }
-        .fact-value { font-weight:650; overflow-wrap:anywhere; }
-        .fact-value a { color:#1d4ed8; }
-        .tracking-fact { grid-column:1/-1; }
-        .tracking-form { display:flex; gap:6px; width:min(100%,440px); }
-        .tracking-form .field { flex:1; }
-        .product-list { display:grid; gap:9px; }
-        .product-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:14px; padding:12px; border:1px solid var(--line); border-radius:8px; }
-        .line-main { align-items:flex-start; gap:11px; min-width:0; }
-        .product-photo { width:58px; height:58px; flex:0 0 58px; display:grid; place-items:center; border-radius:7px; object-fit:cover; background:var(--theme-surface-muted,#eef1f5); color:var(--muted); font-size:10px; text-align:center; }
-        .product-copy { min-width:0; flex:1; }
-        .product-name { font-weight:700; overflow-wrap:anywhere; }
-        .product-note { margin-top:3px; color:var(--muted); font-size:12px; }
-        .mapping { margin-top:8px; padding-top:8px; border-top:1px dashed #d7dee8; }
-        .product-row .mapping { margin-right:-119px; }
-        .mapping-card { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-        .mapping-card img { width:38px; height:38px; object-fit:cover; border-radius:5px; background:#eef1f5; }
-        .mapping-copy { flex:1; min-width:150px; font-size:12px; }
-        .mapping-copy strong { display:block; }
-        .map-state { display:inline-flex; margin-top:5px; color:#a16207; font-size:12px; font-weight:700; }
-        .map-state.good { color:#15803d; }
-        .map-state.bad { color:#b91c1c; }
-        .order-map-form { display:grid; grid-template-columns:minmax(260px,1fr) max-content; gap:8px; align-items:end; margin-top:9px; }
-        .order-map-field { min-width:0; }
-        .order-map-form .brand-combobox-trigger,.order-map-form .button { width:100%; min-height:38px; height:38px; border-radius:8px; }
-        .order-map-form > .button { width:auto; white-space:nowrap; }
-        .order-map-form [data-order-mapping-error] { grid-column:1 / -1; }
-        .order-map-field label { display:block; margin-bottom:4px; color:var(--muted); font-size:11px; }
-        .map-actions { display:flex; gap:5px; margin-top:7px; }
-        .line-price { align-items:flex-end; flex-direction:column; min-width:105px; font-weight:750; }
-        .line-price small { color:var(--muted); font-weight:400; }
-        .calculation-layout { display:grid; grid-template-columns:minmax(280px,420px) minmax(240px,1fr); gap:20px; align-items:start; }
-        .summary { width:100%; }
-        .summary-row { display:flex; justify-content:space-between; gap:14px; padding:6px 0; }
-        .summary-row.total { margin-top:5px; padding-top:10px; border-top:1px solid var(--line); font-size:16px; font-weight:750; }
-        .empty { padding:32px 20px; color:var(--muted); text-align:center; }
-        .back-list { display:none; }
-        .order-sale-modal { position:fixed; inset:0; z-index:1000; display:none; place-items:center; padding:20px; background:rgba(15,23,42,.56); }
-        .order-sale-modal.is-open { display:grid; }
-        .sale-dialog { width:min(760px,100%); max-height:calc(100vh - 40px); overflow:auto; border-radius:10px; background:#fff; box-shadow:0 25px 70px rgba(0,0,0,.25); }
-        .sale-dialog-head,.sale-dialog-body,.sale-dialog-actions { padding:16px 18px; }
-        .sale-dialog-head { display:flex; justify-content:space-between; border-bottom:1px solid var(--line); }
-        .sale-dialog-actions { display:flex; justify-content:flex-end; gap:8px; border-top:1px solid var(--line); }
-        .order-sale-location-field { min-width:0; }
-        .order-sale-location-field > label { display:block; margin-bottom:5px; }
-        .order-sale-location-field .brand-combobox-trigger { height:38px; min-height:38px; border-radius:7px; padding-left:10px; line-height:36px; font-size:14px; }
-        .sale-lines { margin:12px 0; padding:0; list-style:none; }
-        .sale-lines li { padding:8px 0; border-bottom:1px solid #edf0f4; }
-        @media (max-width:1200px) {
-            .page-head { grid-template-columns:minmax(220px,1fr) auto; }
-            .sync-state { grid-column:1/-1; justify-self:start; }
-        }
-        @media (max-width:1100px) {
-            .workspace { grid-template-columns:minmax(300px,42%) minmax(0,58%); }
-            .product-row .mapping { margin-right:-119px; margin-left:-69px; }
-            .order-map-form { grid-template-columns:1fr 1fr; }
-            .calculation-layout { grid-template-columns:1fr; gap:10px; }
-        }
-        @media (max-width:780px) {
-            .main { padding:12px; }
-            .page-head { display:flex; align-items:stretch; flex-direction:column; gap:10px; }
-            .view-switch { align-self:flex-start; max-width:100%; }
-            .sync-state { white-space:normal; }
-            .workspace { display:block; height:auto; min-height:0; }
-            .workspace[data-layout-mode="split"] .order-detail-panel { display:none; }
-            .workspace[data-layout-mode="split"] .orders-list-panel { display:flex; }
-            body[data-has-selected-order="1"] .workspace[data-layout-mode="split"] .orders-list-panel { display:none; }
-            body[data-has-selected-order="1"] .workspace[data-layout-mode="split"] .order-detail-panel { display:flex; }
-            .panel { min-height:calc(100vh - 180px); }
-            .orders-list { max-height:none; }
-            .back-list { display:inline-flex; }
-            .card-head { position:static; align-items:flex-start; flex-direction:column; }
-            .actions { justify-content:flex-start; }
-            .product-row { grid-template-columns:1fr; }
-            .line-price { align-items:flex-start; padding-left:69px; }
-            .product-row .mapping { margin-right:0; margin-left:0; }
-            .order-map-form { grid-template-columns:1fr; }
-            .tracking-form { flex-direction:column; }
-            .customer-grid { grid-template-columns:1fr 1fr; }
-        }
-        @media (max-width:420px) {
-            h1 { font-size:24px; }
-            .main { padding:10px; }
-            .view-switch { width:100%; }
-            .view-option { min-width:0; flex:1 1 0; padding-inline:7px; }
-            .filter-selects { align-items:stretch; flex-direction:column; }
-            .filter-reset { width:100%; }
-            .customer-grid { grid-template-columns:1fr; }
-            .card-head,.detail-body { padding-inline:12px; }
-            .actions { width:100%; }
-            .actions .button,.actions form { flex:1 1 auto; }
-            .actions form .button { width:100%; }
-            .actions .status-form { flex-basis:100%; }
-            .actions .status-form .field { flex:1; width:auto; }
-            .line-price { padding-left:0; }
-        }
-    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/orders.css', v='orders-final-erp-v1') }}">
 </head>
 <body class="orders-page" data-has-selected-order="{{ 1 if selected_order_explicit|default(false) else 0 }}">
 {% from "_catalog_combobox.html" import render_catalog_combobox %}
@@ -194,26 +16,17 @@
     {% set normalized = code|string|upper %}
     {% set fallback = 'Не подтверждён' if normalized == 'N' else 'Подтверждён' if normalized == 'A' else 'Собран' if normalized == 'D' else 'Неизвестный статус' %}
     <span class="badge {% if normalized == 'N' %}badge-new{% elif normalized == 'A' %}badge-work{% elif normalized == 'D' %}badge-done{% else %}badge-default{% endif %}">
-        {{ fallback if not label or label == 'Неизвестный статус' else label }}
+        {{ fallback }}
     </span>
+{%- endmacro %}
+{% macro product_count_label(count) -%}
+    {{ count }} {% if count % 10 == 1 and count % 100 != 11 %}товар{% elif count % 10 in [2,3,4] and count % 100 not in [12,13,14] %}товара{% else %}товаров{% endif %}
 {%- endmacro %}
 <div class="app">
     {% include "_sidebar.html" %}
-    <style>
-        html[data-theme] .orders-page .orders-secondary-submit {
-            border-color:var(--theme-border-strong,#cfd8e5) !important;
-            background:var(--theme-surface,#fff) !important;
-            color:var(--theme-text,#34445b) !important;
-        }
-        html[data-theme] .orders-page .orders-secondary-submit:hover:not(:disabled) {
-            border-color:var(--theme-border-strong,#cfd8e5) !important;
-            background:var(--theme-hover,#f8fafc) !important;
-            color:var(--theme-text-strong,#172033) !important;
-        }
-    </style>
     <main class="main">
-        <header class="page-head">
-            <div class="page-heading">
+        <header class="page-head erp-workspace-header">
+            <div class="page-heading erp-workspace-heading">
                 <h1>Заказы</h1>
                 <p class="page-copy">Управление заказами интернет-магазина</p>
             </div>
@@ -232,14 +45,21 @@
             </div>
         </header>
 
+        <section class="orders-kpis erp-workspace-metrics" aria-label="Показатели заказов">
+            <div class="erp-workspace-metric"><span class="erp-stat-label">Всего заказов</span><strong class="erp-stat-value">{{ order_kpis.total }}</strong></div>
+            <div class="erp-workspace-metric"><span class="erp-stat-label">Не подтверждены</span><strong class="erp-stat-value">{{ order_kpis.unconfirmed }}</strong></div>
+            <div class="erp-workspace-metric"><span class="erp-stat-label">Подтверждены</span><strong class="erp-stat-value">{{ order_kpis.confirmed }}</strong></div>
+            <div class="erp-workspace-metric"><span class="erp-stat-label">Собраны</span><strong class="erp-stat-value">{{ order_kpis.assembled }}</strong></div>
+        </section>
+
         {% if request.args.get('notice') and request.args.get('message') %}
             <div class="notice notice-{{ request.args.get('notice') }}" role="status">{{ request.args.get('message') }}</div>
         {% endif %}
 
         <div class="workspace" id="ordersWorkspace" data-layout-mode="split">
             <section class="panel orders-list-panel" aria-label="Список заказов">
-                <form class="panel-toolbar filters" method="get" action="{{ url_for('orders_page') }}">
-                    <input class="field field-search" id="orderSearch" name="q" value="{{ request.args.get('q','') }}" placeholder="Номер, клиент или телефон" aria-label="Поиск заказов">
+                <form class="panel-toolbar filters erp-toolbar" method="get" action="{{ url_for('orders_page') }}">
+                    <div class="erp-search-wrap"><input class="field field-search erp-search-input" type="search" id="orderSearch" name="q" value="{{ request.args.get('q','') }}" placeholder="Номер, клиент или телефон" aria-label="Поиск заказов"></div>
                     <div class="filter-selects">
                         <select class="field" name="status" aria-label="Статус заказа" data-auto-submit-filter>
                             {% for value,label in [('all','Все статусы'),('N','Не подтверждён'),('A','Подтверждён'),('D','Собран')] %}
@@ -262,16 +82,23 @@
                         {% set phone = order.get('phone') or '' %}
                         {% set total = order.get('order_total') if order.get('order_total') is not none else order.get('price') %}
                         {% set created = order.get('created_at') or order.get('date') or '' %}
+                        {% set products_count = order.get('products_count') if order.get('products_count') is not none else (order.get('products') or [])|length %}
                         <a href="{{ url_for('order_page', order_id=oid, page=request.args.get('page',1), q=request.args.get('q',''), status=request.args.get('status','all'), period=request.args.get('period','all')) if oid else '#' }}"{% if not oid %} aria-disabled="true"{% endif %} class="order-row{% if selected_order and (selected_order.get('id')|string == oid|string) %} active{% endif %}" data-status="{{ code }}" data-search="{{ number }} {{ customer }} {{ phone }}">
                             <div class="order-row-head"><span class="order-number">Заказ №{{ number }}</span>{{ status_badge(code,label) }}</div>
                             <div class="order-meta">
                                 <span>{{ customer or 'Клиент не указан' }}</span><strong>{% if total is not none %}<span class="money-value" data-amount="{{ total }}"></span> ₽{% else %}—{% endif %}</strong>
                                 <span class="phone">{{ phone or 'Телефон не указан' }}</span><span class="date-value" data-date="{{ created }}"></span>
                             </div>
+                            <div class="order-context" aria-label="Состав и обработка заказа">
+                                <span>{{ product_count_label(products_count) }}</span>
+                                <span>{{ order.get('paid_name') or ('Оплачен' if order.get('paid')|string|upper == 'Y' else 'Не оплачен') }}</span>
+                                <span title="{{ order.get('delivery') or 'Доставка не указана' }}">{{ order.get('delivery') or 'Доставка не указана' }}</span>
+                                <span title="{{ order.get('source') or 'Bitrix' }}">{{ order.get('source') or 'Bitrix' }}</span>
+                            </div>
                         </a>
                     {% else %}<div class="empty"><strong>Заказы не найдены</strong><br>Измените фильтры или повторите загрузку.</div>{% endfor %}
                 </div>
-                <footer class="list-footer pagination">
+                <footer class="list-footer pagination erp-pagination">
                     <span>Найдено: {{ orders_total|default(orders|length) }}</span>
                     <span class="pagination">
                         {% if orders_page > 1 %}<a class="page-link" href="{{ url_for('orders_page', page=orders_page - 1, q=request.args.get('q',''), status=request.args.get('status','all'), period=request.args.get('period','all')) }}">←</a>{% endif %}
@@ -320,6 +147,7 @@
                             {% endif %}
                             {% if selected_order_bitrix_url %}<a class="button button-secondary" href="{{ selected_order_bitrix_url }}" target="_blank" rel="noopener noreferrer">Открыть в Bitrix ↗</a>{% endif %}
                             {% if detail_id and selected_order.get('sync_state') != 'error' %}<a class="button button-secondary" href="{{ url_for('order_print_page', order_id=detail_id) }}" target="_blank" rel="noopener noreferrer"><span aria-hidden="true">⎙</span> Печать заказа</a>{% endif %}
+                            {% if request.args.get('notice') and request.args.get('message') %}<div class="action-feedback notice-{{ request.args.get('notice') }}" role="{{ 'alert' if request.args.get('notice') == 'error' else 'status' }}">{{ request.args.get('message') }}</div>{% endif %}
                         </div>
                     </header>
                     <div class="detail-body">
@@ -330,9 +158,15 @@
                             <div class="customer-grid">
                                 <div class="fact"><span class="fact-label">Клиент</span><span class="fact-value">{{ selected_order.get('customer') or 'Не указан' }}</span></div>
                                 <div class="fact"><span class="fact-label">Телефон</span><span class="fact-value">{% if selected_order.get('phone') %}<a href="tel:{{ selected_order.get('phone')|replace(' ','') }}">{{ selected_order.get('phone') }}</a>{% else %}Не указан{% endif %}</span></div>
-                                <div class="fact"><span class="fact-label">Регион</span><span class="fact-value">{{ order_geography.region or selected_order.get('city') or 'Не указан' }}</span></div>
+                                <div class="fact"><span class="fact-label">Email</span><span class="fact-value">{{ selected_order.get('email') or 'Не указан' }}</span></div>
+                                <div class="fact"><span class="fact-label">Источник</span><span class="fact-value">{{ selected_order.get('source') or 'Bitrix' }}</span></div>
+                                <div class="fact"><span class="fact-label">Страна</span><span class="fact-value">{{ order_geography.country or 'Не указана' }}</span></div>
+                                <div class="fact"><span class="fact-label">Регион</span><span class="fact-value">{{ order_geography.region or 'Не указан' }}</span></div>
+                                <div class="fact"><span class="fact-label">Город</span><span class="fact-value">{{ order_geography.city or selected_order.get('city') or 'Не указан' }}</span></div>
                                 <div class="fact"><span class="fact-label">Адрес</span><span class="fact-value">{{ selected_order.get('address') or selected_order.get('delivery_address') or 'Не указан' }}</span></div>
-                                <div class="fact tracking-fact"><label class="fact-label" for="orderTracking">Трекинг</label><form class="tracking-form" method="post" action="/order/{{ detail_id }}/tracking" data-tracking-form><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input class="field" id="orderTracking" name="tracking" maxlength="255" value="{{ order_tracking or '' }}" placeholder="Номер отправления"><button class="button button-secondary orders-secondary-submit" type="submit">Сохранить</button></form></div>
+                                <div class="fact"><span class="fact-label">Доставка</span><span class="fact-value">{{ selected_order.get('delivery') or 'Не указана' }}</span></div>
+                                <div class="fact"><span class="fact-label">Оплата</span><span class="fact-value">{{ selected_order.get('payment') or 'Не указана' }} · {{ selected_order.get('paid_name') or ('Оплачен' if selected_order.get('paid')|string|upper == 'Y' else 'Не оплачен') }}</span></div>
+                                <div class="fact tracking-fact"><label class="fact-label" for="orderTracking">Трекинг</label><form class="tracking-form" method="post" action="/order/{{ detail_id }}/tracking" data-tracking-form><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input class="field" id="orderTracking" name="tracking" maxlength="255" value="{{ request.args.get('tracking_value', order_tracking or '') }}" placeholder="Номер отправления"><button class="button button-secondary orders-secondary-submit" type="submit">Сохранить</button></form></div>
                             </div>
                         </section>
 
@@ -373,6 +207,10 @@
                                 </article>
                             {% endfor %}</div>{% else %}<div class="empty">Состав заказа не загружен. Проведение продажи недоступно.</div>{% endif %}
                         </section>
+                        <section class="section order-notes">
+                            <div class="section-head"><h3>Примечания</h3></div>
+                            <div class="order-note-value">{{ selected_order.get('comment') or 'Примечаний к заказу нет.' }}</div>
+                        </section>
 
                         <section class="section">
                             <div class="section-head"><h3>Расчёт заказа</h3></div>
@@ -404,7 +242,7 @@
     <div class="sale-dialog">
         <div class="sale-dialog-head"><div><h2 id="orderSaleTitle">Провести продажу</h2><p class="card-subtitle">Заказ №{{ detail_number }} · Tictactoy</p></div><button class="button button-secondary" type="button" data-close-sale-dialog aria-label="Закрыть">×</button></div>
         <form method="post" action="/order/{{ detail_id }}/stock-writeoff" data-order-sale-form><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <div class="sale-dialog-body"><p>Проверьте позиции и географию перед сохранением в разделе «Продажи».</p><div class="customer-grid" style="margin-top:12px"><div class="order-sale-location-field"><label for="orderSaleCountryTrigger">Страна</label>{{ render_catalog_combobox('orderSaleCountry','country',order_country_options,selected_value=order_geography.country or '',item_label='страну',prefix_search=true,empty_label='Страна не найдена',component_class='filter-combobox',clear_selection_on_search_clear=true) }}</div><div class="order-sale-location-field"><label for="orderSaleRegionTrigger">Регион</label>{{ render_catalog_combobox('orderSaleRegion','region',[],selected_value=order_geography.region or '',item_label='регион',disabled=not order_geography.country,prefix_search=true,empty_label='Регион не найден',component_class='filter-combobox',clear_selection_on_search_clear=true) }}</div><div class="order-sale-location-field"><label for="orderSaleCityTrigger">Город / населённый пункт</label>{{ render_catalog_combobox('orderSaleCity','city',[],selected_value=order_geography.city or '',item_label='город',disabled=not order_geography.region,prefix_search=true,empty_label='Город не найден',component_class='filter-combobox',clear_selection_on_search_clear=true) }}</div></div><ul class="sale-lines">{% for product in detail_products %}<li>{{ product.get('name') or product.get('NAME') }} · {{ product.get('quantity') or 1 }} шт.<input type="hidden" name="original_price_{{ loop.index0 }}" value="{{ product.get('base_price') or product.get('price') or '' }}"><input type="hidden" name="discount_type_{{ loop.index0 }}" value="none"><input type="hidden" name="discount_value_{{ loop.index0 }}" value="0"><input type="hidden" name="discount_reason_{{ loop.index0 }}" value=""></li>{% endfor %}</ul><label>Трекинг<input class="field" style="width:100%;margin-top:5px" name="tracking" maxlength="255" value="{{ order_tracking or '' }}" placeholder="Введите номер отправления" data-order-sale-tracking></label><div class="warning" style="margin-top:12px">Продажа создаётся атомарно с источником Tictactoy. Повторный запрос не создаст дубль и не спишет остаток повторно.</div></div>
+            <div class="sale-dialog-body">{% if request.args.get('notice') == 'error' and request.args.get('message') %}<div class="notice notice-error" role="alert">{{ request.args.get('message') }}</div>{% endif %}<p>Проверьте позиции и географию перед сохранением в разделе «Продажи».</p><div class="customer-grid" style="margin-top:12px"><div class="order-sale-location-field"><label for="orderSaleCountryTrigger">Страна</label>{{ render_catalog_combobox('orderSaleCountry','country',order_country_options,selected_value=order_geography.country or '',item_label='страну',prefix_search=true,empty_label='Страна не найдена',component_class='filter-combobox',clear_selection_on_search_clear=true) }}</div><div class="order-sale-location-field"><label for="orderSaleRegionTrigger">Регион</label>{{ render_catalog_combobox('orderSaleRegion','region',[],selected_value=order_geography.region or '',item_label='регион',disabled=not order_geography.country,prefix_search=true,empty_label='Регион не найден',component_class='filter-combobox',clear_selection_on_search_clear=true) }}</div><div class="order-sale-location-field"><label for="orderSaleCityTrigger">Город / населённый пункт</label>{{ render_catalog_combobox('orderSaleCity','city',[],selected_value=order_geography.city or '',item_label='город',disabled=not order_geography.region,prefix_search=true,empty_label='Город не найден',component_class='filter-combobox',clear_selection_on_search_clear=true) }}</div></div><ul class="sale-lines">{% for product in detail_products %}<li>{{ product.get('name') or product.get('NAME') }} · {{ product.get('quantity') or 1 }} шт.<input type="hidden" name="original_price_{{ loop.index0 }}" value="{{ product.get('base_price') or product.get('price') or '' }}"><input type="hidden" name="discount_type_{{ loop.index0 }}" value="none"><input type="hidden" name="discount_value_{{ loop.index0 }}" value="0"><input type="hidden" name="discount_reason_{{ loop.index0 }}" value=""></li>{% endfor %}</ul><label>Трекинг<input class="field" style="width:100%;margin-top:5px" name="tracking" maxlength="255" value="{{ order_tracking or '' }}" placeholder="Введите номер отправления" data-order-sale-tracking></label><div class="warning" style="margin-top:12px">Продажа создаётся атомарно с источником Tictactoy. Повторный запрос не создаст дубль и не спишет остаток повторно.</div></div>
             <div class="sale-dialog-actions"><button class="button button-secondary" type="button" data-close-sale-dialog>Отмена</button><button class="button button-primary" type="submit" data-sale-submit>Провести продажу</button></div>
         </form>
     </div>
@@ -441,7 +279,14 @@
     searchInput?.addEventListener('input',applyFilters);
     searchInput?.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();searchInput.form?.requestSubmit();}});
     document.querySelectorAll('[data-auto-submit-filter]').forEach(filter=>filter.addEventListener('change',()=>filter.form?.requestSubmit()));
-    document.querySelector('[data-tracking-form]')?.addEventListener('submit',event=>{const button=event.currentTarget.querySelector('button[type="submit"]');if(button){button.disabled=true;button.textContent='Сохраняем…';}});
+    function setPending(form,label){
+        if(form.dataset.submitting==='1')return false;
+        const button=form.querySelector('button[type="submit"]');form.dataset.submitting='1';
+        if(button){button.disabled=true;button.classList.add('is-pending');button.setAttribute('aria-busy','true');button.textContent=label;}
+        return true;
+    }
+    document.querySelector('[data-tracking-form]')?.addEventListener('submit',event=>{if(!setPending(event.currentTarget,'Сохраняем…'))event.preventDefault();});
+    document.querySelector('.status-form')?.addEventListener('submit',event=>{if(!setPending(event.currentTarget,'Сохраняем…'))event.preventDefault();});
     const mappingEndpoint=row=>`/api/orders/${encodeURIComponent(row.dataset.orderId)}/items/${encodeURIComponent(row.dataset.orderItemId)}/mapping`;
     function mappingError(form,message,error){const node=form?.querySelector('[data-order-mapping-error]');if(node){node.textContent=message;node.hidden=false;}window.VechasuNotify?.error(message);console.error('Order item mapping failed',error||message);}
     function updateOrderMappingState(state){
@@ -489,7 +334,7 @@
     modal.querySelectorAll('[data-close-sale-dialog]').forEach(button=>button.addEventListener('click',close));
     modal.addEventListener('click',event=>{if(event.target===modal)close();});
     document.addEventListener('keydown',event=>{if(event.key==='Escape'&&modal.classList.contains('is-open'))close();});
-    modal.querySelector('[data-order-sale-form]')?.addEventListener('submit',()=>{const button=modal.querySelector('[data-sale-submit]');button.disabled=true;button.textContent='Проводим продажу…';});
+    modal.querySelector('[data-order-sale-form]')?.addEventListener('submit',event=>{if(!setPending(event.currentTarget,'Проводим продажу…'))event.preventDefault();});
     if(modal.dataset.autoOpen==='1')open();
 })();
 </script>
