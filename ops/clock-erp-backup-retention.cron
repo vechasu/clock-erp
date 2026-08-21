@@ -1,0 +1,4 @@
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+17 3 * * * root /usr/local/sbin/clock-erp-backup-retention --backup-root /opt/clock-erp-backups --apply >> /var/log/clock-erp-backup-retention.log 2>&1
