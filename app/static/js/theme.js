@@ -78,6 +78,7 @@
                     "aria-checked",
                     selected ? "true" : "false"
                 );
+                option.tabIndex = selected ? 0 : -1;
                 option.classList.toggle("is-selected", selected);
 
                 const state = option.querySelector(
@@ -121,7 +122,32 @@
         document.querySelectorAll("[data-theme-option]").forEach(
             function (option) {
                 option.addEventListener("click", function () {
+                    if (option.disabled) {
+                        return;
+                    }
                     applyTheme(option.dataset.themeOption);
+                });
+                option.addEventListener("keydown", function (event) {
+                    if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) {
+                        return;
+                    }
+                    var options = Array.from(
+                        document.querySelectorAll("[data-theme-option]:not(:disabled)")
+                    );
+                    var currentIndex = options.indexOf(option);
+                    var nextIndex = event.key === "Home"
+                        ? 0
+                        : event.key === "End"
+                            ? options.length - 1
+                            : currentIndex + (
+                                event.key === "ArrowLeft" || event.key === "ArrowUp" ? -1 : 1
+                            );
+                    event.preventDefault();
+                    var nextOption = options[
+                        (nextIndex + options.length) % options.length
+                    ];
+                    applyTheme(nextOption.dataset.themeOption);
+                    nextOption.focus();
                 });
             }
         );
