@@ -22,21 +22,22 @@ class OrdersReworkTest(unittest.TestCase):
         web.app.config.update(self.original_config)
 
     def test_status_transition_matrix_accepts_only_supported_moves(self):
-        self.assertTrue(web.validate_order_status_transition("O", "A"))
+        self.assertTrue(web.validate_order_status_transition("N", "A"))
         self.assertTrue(web.validate_order_status_transition("A", "D"))
         self.assertFalse(web.validate_order_status_transition("D", "A"))
         self.assertFalse(web.validate_order_status_transition("C", "N"))
 
     def test_route_rejects_unsupported_transition_before_bitrix_write(self):
-        with (
-            mock.patch.object(web, "get_orders", return_value=[{"id": "7", "status": "D"}]),
-            mock.patch.object(web, "update_order_status") as update,
-        ):
+        service = mock.Mock()
+        service.change.side_effect = web.OrderStatusError(
+            "Недопустимый переход статуса"
+        )
+        with mock.patch.object(web, "order_status_service", return_value=service):
             response = self.client.post(
                 "/order/7/status", data={"csrf_token": "test-token", "status": "A"}
             )
         self.assertIn("Недопустимый переход", parse_qs(urlsplit(response.location).query)["message"][0])
-        update.assert_not_called()
+        service.sync_one.assert_not_called()
 
     def test_tracking_is_validated_saved_and_audited(self):
         saved = {}
@@ -91,8 +92,8 @@ class OrdersReworkTest(unittest.TestCase):
         self.assertIn("Свернуть список", html)
         self.assertIn('data-has-selected-order="1"', html)
         self.assertNotIn("window.confirm", html)
-        self.assertIn("statusConfirmTrigger=event.submitter", html)
-        self.assertIn("event.key==='Escape'&&statusConfirm", html)
+        self.assertNotIn("orderStatusConfirm", html)
+        self.assertNotIn("Отметить собранным", html)
 
     def test_mobile_list_page_does_not_force_first_order_card(self):
         order = {"id": "7", "number": "7", "status": "N", "products": []}

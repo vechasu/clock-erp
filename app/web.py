@@ -39,6 +39,12 @@ from app.clients.bitrix_orders import (
 from app.services.bitrix_catalog_importer import BitrixCatalogImporter
 from app.services.audit_journal import AuditJournal
 from app.services.inventory_journal import InventoryJournal
+from app.services.order_status import (
+    ERP_ASSEMBLED,
+    ERP_CONFIRMED,
+    OrderStatusError,
+    OrderStatusService,
+)
 from app.services.brand_values import normalize_brand
 from app.services.catalog_reader import CatalogReader
 from app.catalog.application import CatalogApplication
@@ -417,25 +423,21 @@ def record_warehouse_created_at(product_id):
     return timestamp
 
 STATUS_NAMES = {
-    "N": "Новый",
-    "O": "Новый",
-    "0": "Новый",
+    "N": "Не подтверждён",
     "A": "Подтверждён",
-    "T": "Не дозвонились",
     "D": "Собран",
-    "C": "Отказ",
-    "c": "Отказ",
 }
 
 ORDER_STATUS_TRANSITIONS = {
-    "N": {"A", "T", "C"},
-    "O": {"A", "T", "C"},
-    "0": {"A", "T", "C"},
-    "T": {"A", "C"},
-    "A": {"D", "C"},
+    "N": {"A"},
+    "A": {"D"},
     "D": set(),
-    "C": set(),
 }
+
+
+@lru_cache(maxsize=1)
+def order_status_service():
+    return OrderStatusService(CatalogDatabase(cache_initialization=True))
 
 
 def to_float(value):
@@ -765,7 +767,7 @@ def normalize_order(order):
         })
         products.append(product)
     result["products"] = products
-    return result
+    return order_status_service().overlay(result)
 
 
 def bitrix_orders_client():
@@ -820,6 +822,7 @@ def get_orders(force=False):
         return ORDERS_CACHE["items"]
 
     try:
+        order_status_service().retry_pending(update_order_status, limit=10)
         # The legacy list endpoint exposes a fixed recent window and ignores
         # pagination parameters. Keep its established request contract, cap the
         # local window, and load exactly one detail card only after selection.
@@ -859,7 +862,7 @@ def get_orders(force=False):
 
 
 def update_order_status(order_id, new_status):
-    allowed_statuses = ["N", "A", "T", "D", "C", "c"]
+    allowed_statuses = ["N", "A", "D"]
 
     if new_status not in allowed_statuses:
         return {
@@ -1382,6 +1385,7 @@ def _conduct_order_sale(order_id):
         ))
 
     inventory = SalesInventory()
+    sale_status_service = OrderStatusService(inventory.database)
     existing_sale = inventory.find_active_sale("tictactoy", order_id)
     if existing_sale or is_order_stock_written_off(order_id):
         record_order_sale_attempt(
@@ -1443,6 +1447,18 @@ def _conduct_order_sale(order_id):
         or full_order.get("status_id")
         or ""
     )
+    # Tests and recovery paths may supply a normalized order directly. Ensure
+    # its current Bitrix status is represented in the same database/transaction
+    # that will contain the sale.
+    sale_status_service.ingest(
+        order_id, full_order.get("bitrix_status") or order_status
+    )
+    if order_status == "A" and (
+        sale_status_service.get(order_id) or {}
+    ).get("erp_status") == "unconfirmed":
+        # A normalized direct input (for example a safe recovery/test path)
+        # already proves confirmation and must not be forced through the UI.
+        sale_status_service.ingest(order_id, "A")
     products = full_order.get("products") or []
     mapping_context = build_order_product_mapping_context(products)
     issues = []
@@ -1582,6 +1598,7 @@ def _conduct_order_sale(order_id):
         or ""
     )
     payload = {
+        "id": uuid.uuid4().hex,
         "source": "tictactoy",
         "sale_type": "automatic",
         "order_number": str(order_number),
@@ -1617,6 +1634,16 @@ def _conduct_order_sale(order_id):
             user_name=actor,
             idempotency_key="bitrix-order:{}".format(order_id),
             enforce_external_unique=True,
+            failure_hook=lambda connection: sale_status_service.change(
+                order_id,
+                ERP_ASSEMBLED,
+                actor or "ERP",
+                sale_id=payload["id"],
+                connection=connection,
+            ),
+        )
+        status_synced = sale_status_service.sync_one(
+            order_id, update_order_status
         )
         WAREHOUSE_CACHE["items"] = []
         WAREHOUSE_CACHE["loaded_at"] = 0
@@ -1624,7 +1651,14 @@ def _conduct_order_sale(order_id):
         return redirect("/sales?" + urlencode({
             "source": "tictactoy",
             "notice": "success",
-            "message": f"Заказ №{order_number} проведён в продажу",
+            "message": (
+                f"Заказ №{order_number} проведён в продажу"
+                + (
+                    ""
+                    if status_synced
+                    else "; статус ожидает синхронизации с Bitrix"
+                )
+            ),
             "sale_id": str(sale.get("id") or ""),
             "order_number": str(order_number),
         }))
@@ -1914,73 +1948,51 @@ def validate_order_status_transition(current_status, new_status):
 
 @app.route("/order/<int:order_id>/status", methods=["POST"])
 def order_status_update(order_id):
-    new_status = str(request.form.get("status", "")).strip()
-    if new_status.upper() == "C" and is_order_stock_written_off(order_id):
-        return redirect(url_for(
-            "order_page",
-            order_id=order_id,
-            notice="error",
-            message=(
-                "По заказу уже проведена продажа. Сначала откройте продажу "
-                "и отмените её с восстановлением остатка."
-            ),
-        ))
-    current_order = next((
-        item for item in get_orders()
-        if str(item.get("id") or item.get("ID") or "") == str(order_id)
-    ), None)
-    if current_order is None:
-        try:
-            current_order = get_order(order_id)
-        except BitrixReadOnlyError:
-            current_order = None
-    current_status = str((current_order or {}).get("status") or "").strip()
-    if not current_status:
+    new_status = str(request.form.get("status", "")).strip().upper()
+    if new_status != "A":
         return redirect(url_for(
             "order_page", order_id=order_id, notice="error",
-            message="Не удалось проверить текущий статус заказа",
+            message="Вручную можно только подтвердить заказ",
         ))
-    if not validate_order_status_transition(current_status, new_status):
+    service = order_status_service()
+    if service.get(order_id) is None:
+        current_order = next((
+            item for item in get_orders()
+            if str(item.get("id") or item.get("ID") or "") == str(order_id)
+        ), None)
+        if current_order is None:
+            try:
+                current_order = get_order(order_id)
+            except BitrixReadOnlyError:
+                current_order = None
+        if current_order is None:
+            return redirect(url_for(
+                "order_page", order_id=order_id, notice="error",
+                message="Заказ не найден или Bitrix временно недоступен",
+            ))
+        service.ingest(
+            order_id,
+            current_order.get("bitrix_status") or current_order.get("status"),
+        )
+    try:
+        service.change(
+            order_id, ERP_CONFIRMED, current_sales_user_name() or "ERP"
+        )
+    except OrderStatusError as error:
         return redirect(url_for(
-            "order_page", order_id=order_id, notice="error",
-            message="Недопустимый переход статуса",
+            "order_page", order_id=order_id, notice="error", message=str(error),
         ))
 
-    result = update_order_status(order_id, new_status)
-    get_orders(force=True)
-
-    if result.get("status") == "ok":
-        try:
-            AuditJournal(CatalogDatabase()).record(
-                "sale", "bitrix-order:{}".format(order_id), "status_changed",
-                "Заказ #{}".format(order_id), "Изменён статус",
-                before={"status": current_status},
-                after={"status": new_status.upper()},
-                metadata={
-                    "old_status": current_status or None,
-                    "new_status": new_status.upper(),
-                },
-                **current_audit_actor()
-            )
-        except Exception:
-            app.logger.exception("Order status audit failed: %s", order_id)
-        redirect_params = {
-            "order_id": order_id,
-            "notice": "success",
-            "message": "Статус заказа обновлен",
-        }
-        if new_status == "A" and not is_order_stock_written_off(order_id):
-            redirect_params["open_sale"] = "1"
-        return redirect(url_for(
-            "order_page",
-            **redirect_params
-        ))
-
+    synced = service.sync_one(order_id, update_order_status)
+    ORDERS_CACHE["items"] = []
+    ORDERS_CACHE["loaded_at"] = 0
     return redirect(url_for(
-        "order_page",
-        order_id=order_id,
-        notice="error",
-        message=result.get("message", "Ошибка смены статуса")
+        "order_page", order_id=order_id, notice="success",
+        message=(
+            "Заказ подтверждён"
+            if synced else "Заказ подтверждён; синхронизация с Bitrix ожидается"
+        ),
+        open_sale="1",
     ))
 
 

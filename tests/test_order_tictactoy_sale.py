@@ -300,9 +300,11 @@ class OrderTictactoySaleTest(unittest.TestCase):
         )
 
     def test_successful_bitrix_confirmation_opens_dialog_but_does_not_sell(self):
+        status_service = mock.Mock()
+        status_service.sync_one.return_value = True
         with (
             mock.patch.object(web, "update_order_status", return_value={"status": "ok"}),
-            mock.patch.object(web, "get_orders", return_value=[self.order]),
+            mock.patch.object(web, "order_status_service", return_value=status_service),
             mock.patch.object(web, "SalesInventory", return_value=self.inventory),
             mock.patch.object(web, "load_stock_operations", return_value=[]),
         ):
@@ -310,17 +312,20 @@ class OrderTictactoySaleTest(unittest.TestCase):
         self.assertEqual(parse_qs(urlsplit(response.location).query)["open_sale"], ["1"])
         self.assertEqual(self.inventory.list_sales(), [])
 
-    def test_bitrix_confirmation_error_does_not_open_dialog(self):
+    def test_bitrix_confirmation_error_keeps_local_status_and_marks_pending(self):
+        status_service = mock.Mock()
+        status_service.sync_one.return_value = False
         with (
             mock.patch.object(web, "update_order_status", return_value={
                 "status": "error", "message": "Bitrix недоступен",
             }),
-            mock.patch.object(web, "get_orders", return_value=[self.order]),
+            mock.patch.object(web, "order_status_service", return_value=status_service),
         ):
             response = self.client.post("/order/18593/status", data={"status": "A"})
         query = parse_qs(urlsplit(response.location).query)
-        self.assertNotIn("open_sale", query)
-        self.assertEqual(query["message"], ["Bitrix недоступен"])
+        self.assertEqual(query["open_sale"], ["1"])
+        self.assertIn("ожидается", query["message"][0])
+        status_service.change.assert_called_once()
 
     def test_success_is_one_local_sale_with_two_lines_and_exact_redirect(self):
         response = self.conduct()
@@ -566,7 +571,7 @@ class OrderTictactoySaleTest(unittest.TestCase):
         self.assertEqual(saved["bx-watch"]["bitrix_order_line_id"], "line-1")
         self.assertEqual(saved["legacy-bx"]["moysklad_product_id"], "legacy-ms")
 
-    def test_refusal_status_is_blocked_until_completed_sale_is_cancelled(self):
+    def test_removed_refusal_status_cannot_be_set_manually(self):
         self.conduct()
         with (
             mock.patch.object(web, "SalesInventory", return_value=self.inventory),
@@ -575,7 +580,7 @@ class OrderTictactoySaleTest(unittest.TestCase):
         ):
             response = self.client.post("/order/18593/status", data={"status": "C"})
         update.assert_not_called()
-        self.assertIn("Сначала откройте продажу", parse_qs(urlsplit(response.location).query)["message"][0])
+        self.assertIn("Вручную можно только подтвердить", parse_qs(urlsplit(response.location).query)["message"][0])
 
 
 if __name__ == "__main__":

@@ -659,6 +659,50 @@ CREATE TABLE IF NOT EXISTS erp_sales (
 CREATE INDEX IF NOT EXISTS idx_erp_sales_status_created
     ON erp_sales(status, created_at);
 
+CREATE TABLE IF NOT EXISTS erp_order_statuses (
+    external_order_id TEXT PRIMARY KEY,
+    erp_status TEXT NOT NULL DEFAULT 'unconfirmed' CHECK (
+        erp_status IN ('unconfirmed', 'confirmed', 'assembled')
+    ),
+    bitrix_status TEXT,
+    sync_status TEXT NOT NULL DEFAULT 'synced' CHECK (
+        sync_status IN ('synced', 'pending', 'error', 'unknown')
+    ),
+    sale_id TEXT REFERENCES erp_sales(id) ON DELETE RESTRICT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_erp_order_status_sale
+    ON erp_order_statuses(sale_id);
+
+CREATE TABLE IF NOT EXISTS erp_order_status_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    external_order_id TEXT NOT NULL,
+    old_status TEXT,
+    new_status TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    source TEXT NOT NULL CHECK (source IN ('erp', 'bitrix', 'migration')),
+    bitrix_status TEXT,
+    sync_result TEXT NOT NULL,
+    message TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_erp_order_status_events_order
+    ON erp_order_status_events(external_order_id, created_at);
+
+CREATE TABLE IF NOT EXISTS erp_order_status_sync_queue (
+    external_order_id TEXT PRIMARY KEY,
+    erp_status TEXT NOT NULL,
+    bitrix_status TEXT NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at TEXT NOT NULL,
+    last_error TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS erp_sale_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     sale_id TEXT NOT NULL REFERENCES erp_sales(id) ON DELETE RESTRICT,
