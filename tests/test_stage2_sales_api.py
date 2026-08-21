@@ -607,6 +607,20 @@ class Stage2SalesApiTest(unittest.TestCase):
             ["Москва"],
         )
 
+    def test_tictactoy_location_fields_accept_manual_international_values(self):
+        self.assertEqual(
+            web.build_tictactoy_sale_location_fields({
+                "country": "Армения",
+                "region": "Лорийская область",
+                "city": "Одзун",
+            }),
+            {
+                "country": "Армения",
+                "region": "Лорийская область",
+                "city": "Одзун",
+            },
+        )
+
     def test_legacy_and_automatic_sales_keep_source_specific_delete(self):
         self.manual_path.write_text(
             json.dumps([{

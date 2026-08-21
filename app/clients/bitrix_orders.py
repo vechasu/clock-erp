@@ -347,6 +347,10 @@ def normalize_order(order):
         or properties.get("ADDRESS")
     )
     city = first_value(order, "city", "CITY") or properties.get("CITY")
+    country = (
+        first_value(order, "country", "country_name", "COUNTRY", "COUNTRY_NAME")
+        or properties.get("COUNTRY") or properties.get("COUNTRY_NAME")
+    )
     region = (
         first_value(order, "region", "region_name", "REGION", "REGION_NAME")
         or properties.get("REGION") or properties.get("REGION_NAME")
@@ -403,6 +407,7 @@ def normalize_order(order):
             order, "comment", "USER_DESCRIPTION", "COMMENTS", "REASON_CANCELED"
         ),
         "address": address,
+        "country": country,
         "city": city,
         "region": region,
         "tracking": (
