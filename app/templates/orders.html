@@ -267,6 +267,7 @@
                             {% elif safe_to_sell %}<button class="button button-primary" type="button" data-open-sale-dialog>Провести продажу</button>
                             {% elif sale_already_conducted %}<a class="button button-secondary" href="/sales?source=tictactoy&sale_id={{ conducted_sale.id if conducted_sale else '' }}">Продажа проведена</a>{% endif %}
                             {% if selected_order_bitrix_url %}<a class="button button-secondary" href="{{ selected_order_bitrix_url }}" target="_blank" rel="noopener noreferrer">Открыть в Bitrix ↗</a>{% endif %}
+                            {% if detail_id and selected_order.get('sync_state') != 'error' %}<a class="button button-secondary" href="{{ url_for('order_print_page', order_id=detail_id) }}" target="_blank" rel="noopener noreferrer"><span aria-hidden="true">⎙</span> Печать заказа</a>{% endif %}
                         </div>
                     </header>
                     <div class="detail-body">

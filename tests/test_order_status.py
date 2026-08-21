@@ -63,6 +63,52 @@ class OrderStatusServiceTests(unittest.TestCase):
         )[0]["sql"]
         self.assertNotIn(" WHERE ", index.upper())
 
+    def test_status_queue_avoids_upsert_unsupported_by_production_sqlite(self):
+        statements = []
+
+        class ProductionSQLiteConnection:
+            def __init__(self, connection):
+                self.connection = connection
+
+            def execute(self, sql, parameters=()):
+                statements.append(sql)
+                if "ON CONFLICT" in sql.upper():
+                    raise AssertionError("SQLite 3.7.17 cannot execute UPSERT")
+                return self.connection.execute(sql, parameters)
+
+        self.service.ingest("42", "A")
+        with self.database.transaction() as connection:
+            self.insert_sale(connection)
+            legacy_connection = ProductionSQLiteConnection(connection)
+            self.service.change(
+                "42", ERP_ASSEMBLED, "Максим", sale_id="sale-1",
+                connection=legacy_connection,
+            )
+        queue = self.rows(
+            "SELECT external_order_id, erp_status, attempts "
+            "FROM erp_order_status_sync_queue"
+        )
+        self.assertEqual(queue, [{
+            "external_order_id": "42",
+            "erp_status": ERP_ASSEMBLED,
+            "attempts": 0,
+        }])
+        self.assertFalse(any("ON CONFLICT" in sql.upper() for sql in statements))
+
+    def test_overlay_uses_bitrix_status_when_database_writer_is_busy(self):
+        writer = self.database.connect()
+        writer.execute("BEGIN IMMEDIATE")
+        try:
+            order = self.service.overlay({"id": "21110", "status": "A"})
+        finally:
+            writer.rollback()
+            writer.close()
+
+        self.assertEqual(order["status"], "A")
+        self.assertEqual(order["erp_status"], ERP_CONFIRMED)
+        self.assertEqual(order["status_sync_state"], "pending")
+        self.assertIsNone(self.service.get("21110"))
+
     def test_confirm_is_idempotent_and_manual_assembled_is_forbidden(self):
         self.service.ingest("42", "N")
         first = self.service.change("42", ERP_CONFIRMED, "Максим")
