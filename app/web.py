@@ -15,6 +15,7 @@ import math
 import os
 import fcntl
 import re
+import sqlite3
 import uuid
 import click
 import requests
@@ -42,6 +43,7 @@ from app.services.inventory_journal import InventoryJournal
 from app.services.order_status import (
     ERP_ASSEMBLED,
     ERP_CONFIRMED,
+    ERP_UNCONFIRMED,
     OrderStatusError,
     OrderStatusService,
 )
@@ -432,9 +434,9 @@ STATUS_NAMES = {
 }
 
 ORDER_STATUS_TRANSITIONS = {
-    "N": {"A"},
-    "A": {"D"},
-    "D": set(),
+    "N": {"A", "D"},
+    "A": {"N", "D"},
+    "D": {"N", "A"},
 }
 
 
@@ -1892,15 +1894,6 @@ def order_product_map(order_id):
             "order_page", order_id=order_id, notice="error",
             message="Товар ERP не найден или архивирован",
         ))
-    try:
-        selected_stock = float(selected_item.get("stock") or 0)
-    except (TypeError, ValueError):
-        selected_stock = 0
-    if selected_stock <= 0:
-        return redirect(url_for(
-            "order_page", order_id=order_id, notice="error",
-            message="Нельзя сопоставить товар без фактического остатка",
-        ))
     if str(selected_item.get("brand_id") or "") != brand_id:
         return redirect(url_for(
             "order_page", order_id=order_id, notice="error",
@@ -2064,10 +2057,15 @@ def validate_order_status_transition(current_status, new_status):
 @app.route("/order/<int:order_id>/status", methods=["POST"])
 def order_status_update(order_id):
     new_status = str(request.form.get("status", "")).strip().upper()
-    if new_status != "A":
+    targets = {
+        "N": ERP_UNCONFIRMED,
+        "A": ERP_CONFIRMED,
+        "D": ERP_ASSEMBLED,
+    }
+    if new_status not in targets:
         return redirect(url_for(
             "order_page", order_id=order_id, notice="error",
-            message="Вручную можно только подтвердить заказ",
+            message="Выберите допустимый статус заказа",
         ))
     service = order_status_service()
     if service.get(order_id) is None:
@@ -2089,25 +2087,50 @@ def order_status_update(order_id):
             order_id,
             current_order.get("bitrix_status") or current_order.get("status"),
         )
-    try:
-        service.change(
-            order_id, ERP_CONFIRMED, current_sales_user_name() or "ERP"
-        )
-    except OrderStatusError as error:
+    target = targets[new_status]
+    current = service.get(order_id) or {}
+    if (
+        current.get("erp_status") == target
+        and current.get("bitrix_status") == new_status
+        and current.get("sync_status") == "synced"
+    ):
         return redirect(url_for(
-            "order_page", order_id=order_id, notice="error", message=str(error),
+            "order_page", order_id=order_id, notice="success",
+            message="Статус заказа уже актуален",
         ))
 
-    synced = service.sync_one(order_id, update_order_status)
+    result = update_order_status(order_id, new_status)
+    if not isinstance(result, dict) or result.get("status") != "ok":
+        error_message = (
+            result.get("message") if isinstance(result, dict) else None
+        )
+        return redirect(url_for(
+            "order_page", order_id=order_id, notice="error",
+            message=str(error_message or (
+                "Bitrix не принял изменение статуса"
+            )),
+        ))
+    try:
+        service.record_synced_change(
+            order_id, target, current_sales_user_name() or "ERP"
+        )
+    except (OrderStatusError, sqlite3.Error):
+        app.logger.exception(
+            "Bitrix order status accepted but local save failed: %s", order_id
+        )
+        return redirect(url_for(
+            "order_page", order_id=order_id, notice="error",
+            message=(
+                "Bitrix принял статус, но ERP не смогла сохранить "
+                "его. Обновите заказ из Bitrix."
+            ),
+        ))
+
     ORDERS_CACHE["items"] = []
     ORDERS_CACHE["loaded_at"] = 0
     return redirect(url_for(
         "order_page", order_id=order_id, notice="success",
-        message=(
-            "Заказ подтверждён"
-            if synced else "Заказ подтверждён; синхронизация с Bitrix ожидается"
-        ),
-        open_sale="1",
+        message="Статус заказа обновлён в ERP и Bitrix",
     ))
 
 

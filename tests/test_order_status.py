@@ -34,10 +34,16 @@ class OrderStatusServiceTests(unittest.TestCase):
             (sale_id, now, now, now),
         )
 
-    def test_new_order_and_legacy_initial_codes_are_unconfirmed(self):
-        for order_id, code in (("1", "N"), ("2", "O"), ("3", "0")):
+    def test_all_supported_bitrix_codes_map_to_erp_statuses(self):
+        cases = (
+            ("1", "N", ERP_UNCONFIRMED),
+            ("2", "O", ERP_UNCONFIRMED),
+            ("3", "A", ERP_CONFIRMED),
+            ("4", "D", ERP_ASSEMBLED),
+        )
+        for order_id, code, expected in cases:
             state = self.service.ingest(order_id, code)
-            self.assertEqual(state["erp_status"], ERP_UNCONFIRMED)
+            self.assertEqual(state["erp_status"], expected)
             self.assertEqual(state["sync_status"], "synced")
 
     def test_schema_upgrade_preserves_existing_orders_sales_and_identifiers(self):
@@ -109,18 +115,27 @@ class OrderStatusServiceTests(unittest.TestCase):
         self.assertEqual(order["status_sync_state"], "pending")
         self.assertIsNone(self.service.get("21110"))
 
-    def test_confirm_is_idempotent_and_manual_assembled_is_forbidden(self):
+    def test_all_manual_status_targets_are_allowed_and_idempotent(self):
         self.service.ingest("42", "N")
-        first = self.service.change("42", ERP_CONFIRMED, "Максим")
-        second = self.service.change("42", ERP_CONFIRMED, "Максим")
-        self.assertEqual(first["erp_status"], ERP_CONFIRMED)
-        self.assertEqual(second["erp_status"], ERP_CONFIRMED)
-        with self.assertRaises(OrderStatusError):
-            self.service.change("42", ERP_ASSEMBLED, "Максим")
+        for target, code in (
+            (ERP_CONFIRMED, "A"),
+            (ERP_ASSEMBLED, "D"),
+            (ERP_CONFIRMED, "A"),
+            (ERP_UNCONFIRMED, "N"),
+        ):
+            state = self.service.change("42", target, "Максим")
+            self.assertEqual(state["erp_status"], target)
+            queue = self.rows(
+                "SELECT bitrix_status FROM erp_order_status_sync_queue "
+                "WHERE external_order_id='42'"
+            )
+            self.assertEqual(queue[0]["bitrix_status"], code)
+            self.service.sync_one("42", lambda *_: {"status": "ok"})
+        before = len(self.rows("SELECT * FROM erp_order_status_events"))
+        self.service.change("42", ERP_UNCONFIRMED, "Максим")
         self.assertEqual(len(self.rows(
-            "SELECT * FROM erp_order_status_events "
-            "WHERE external_order_id='42' AND new_status='confirmed'"
-        )), 1)
+            "SELECT * FROM erp_order_status_events"
+        )), before)
 
     def test_assembled_status_commits_with_sale_in_same_transaction(self):
         self.service.ingest("42", "A")
@@ -216,17 +231,40 @@ class OrderStatusServiceTests(unittest.TestCase):
         self.assertEqual(state["erp_status"], ERP_CONFIRMED)
         self.assertEqual(state["sync_status"], "pending")
 
-    def test_assembled_is_final_for_stale_incoming_status(self):
-        self.service.ingest("42", "A")
+    def test_incoming_sync_allows_assembled_to_move_back_without_touching_sale(self):
+        self.service.ingest("42", "D")
         with self.database.transaction() as connection:
             self.insert_sale(connection)
-            self.service.change(
-                "42", ERP_ASSEMBLED, "Максим", sale_id="sale-1",
-                connection=connection,
+            connection.execute(
+                "UPDATE erp_order_statuses SET sale_id='sale-1' "
+                "WHERE external_order_id='42'"
             )
-        self.service.sync_one("42", lambda *_: {"status": "ok"})
         state = self.service.ingest("42", "A")
-        self.assertEqual(state["erp_status"], ERP_ASSEMBLED)
+        self.assertEqual(state["erp_status"], ERP_CONFIRMED)
+        self.assertEqual(state["sale_id"], "sale-1")
+        self.assertEqual(self.rows("SELECT status FROM erp_sales"), [{
+            "status": "completed",
+        }])
+
+    def test_remote_first_manual_change_records_audit_without_echo_queue(self):
+        self.service.ingest("42", "D")
+        state = self.service.record_synced_change(
+            "42", ERP_UNCONFIRMED, "Максим"
+        )
+        self.assertEqual(state["erp_status"], ERP_UNCONFIRMED)
+        self.assertEqual(state["bitrix_status"], "N")
+        self.assertEqual(self.rows(
+            "SELECT * FROM erp_order_status_sync_queue"
+        ), [])
+        event = self.rows(
+            "SELECT old_status, new_status, actor, source, created_at "
+            "FROM erp_order_status_events ORDER BY id DESC LIMIT 1"
+        )[0]
+        self.assertEqual(event["old_status"], ERP_ASSEMBLED)
+        self.assertEqual(event["new_status"], ERP_UNCONFIRMED)
+        self.assertEqual(event["actor"], "Максим")
+        self.assertEqual(event["source"], "erp")
+        self.assertTrue(event["created_at"])
 
     def test_existing_assembled_order_can_be_linked_to_recovered_sale(self):
         self.service.ingest("42", "D")
@@ -249,7 +287,8 @@ class OrderStatusFrontendContractTests(unittest.TestCase):
         self.assertIn("('N','Не подтверждён')", template)
         self.assertIn("('A','Подтверждён')", template)
         self.assertIn("('D','Собран')", template)
-        self.assertIn(">Подтвердить заказ</button>", template)
+        self.assertIn('name="status"', template)
+        self.assertIn(">Сохранить статус</button>", template)
         self.assertIn(">Провести продажу</button>", template)
         self.assertNotIn("Отметить собранным", template)
         self.assertNotIn("Не дозвонились", template)

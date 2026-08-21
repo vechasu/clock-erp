@@ -187,18 +187,30 @@ class OrderTictactoySaleTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["data"][0]["orders_count"], 1)
 
-    def test_direct_mapping_rejects_product_without_stock(self):
+    def test_order_21113_assembled_mapping_accepts_product_without_stock(self):
         unavailable = ExcelProductCatalog(self.database).create_product(
-            name="FA36-012-1L", article="FA36-012-1L",
-            brand="Bradley", category="Часы", stock=0,
+            name="RIVAL GALAXY", article="RIVAL-GALAXY",
+            brand="Zinvo", category="Наручные часы", stock=0,
         )
+        order = {
+            **self.order,
+            "id": "21113",
+            "number": "21113",
+            "status": "D",
+        }
+        saved = {}
         with (
-            mock.patch.object(web, "get_order", return_value=self.order),
+            mock.patch.object(web, "get_order", return_value=order),
             mock.patch.object(web, "SharedCatalog", return_value=self.shared),
-            mock.patch.object(web, "save_product_mappings") as save_mappings,
+            mock.patch.object(web, "load_product_mappings", return_value={}),
+            mock.patch.object(
+                web, "save_product_mappings",
+                side_effect=lambda rows: saved.update(rows),
+            ),
+            mock.patch.object(web, "AuditJournal"),
         ):
             response = self.client.post(
-                "/order/18593/product-map",
+                "/order/21113/product-map",
                 data={
                     "csrf_token": "test-token",
                     "bitrix_product_id": "bx-watch",
@@ -210,9 +222,8 @@ class OrderTictactoySaleTest(unittest.TestCase):
 
         query = parse_qs(urlsplit(response.headers["Location"]).query)
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(query["notice"], ["error"])
-        self.assertIn("фактического остатка", query["message"][0])
-        save_mappings.assert_not_called()
+        self.assertEqual(query["notice"], ["success"])
+        self.assertEqual(saved["bx-watch"]["product_id"], str(unavailable["id"]))
 
     def test_dialog_and_shared_cascade_are_rendered(self):
         html = self.render_order("?open_sale=1").get_data(as_text=True)
@@ -221,7 +232,7 @@ class OrderTictactoySaleTest(unittest.TestCase):
         self.assertIn('data-shared-catalog-kind="brand"', html)
         self.assertIn('data-shared-catalog-kind="category"', html)
         self.assertIn('data-shared-catalog-kind="product"', html)
-        self.assertIn('data-catalog-in-stock="true"', html)
+        self.assertIn('data-catalog-in-stock="false"', html)
         self.assertIn("Bradley Steel", html)
         self.assertIn("Нет в наличии", Path("app/static/js/catalog-combobox.js").read_text())
         self.assertIn('name="csrf_token"', html)
@@ -233,7 +244,8 @@ class OrderTictactoySaleTest(unittest.TestCase):
         self.assertIn(
             "Чтобы провести продажу, сначала подтвердите заказ.", html
         )
-        self.assertIn(">Подтвердить заказ</button>", html)
+        self.assertIn('name="status"', html)
+        self.assertIn(">Сохранить статус</button>", html)
         self.assertNotIn('id="orderSaleModal"', html)
 
     def test_confirmed_order_keeps_active_sale_action(self):
@@ -397,9 +409,9 @@ class OrderTictactoySaleTest(unittest.TestCase):
             {"country": "", "region": "", "city": ""},
         )
 
-    def test_successful_bitrix_confirmation_opens_dialog_but_does_not_sell(self):
-        status_service = mock.Mock()
-        status_service.sync_one.return_value = True
+    def test_successful_manual_status_change_saves_only_after_bitrix(self):
+        status_service = OrderStatusService(self.database)
+        status_service.ingest("18593", "N")
         with (
             mock.patch.object(web, "update_order_status", return_value={"status": "ok"}),
             mock.patch.object(web, "order_status_service", return_value=status_service),
@@ -407,23 +419,99 @@ class OrderTictactoySaleTest(unittest.TestCase):
             mock.patch.object(web, "load_stock_operations", return_value=[]),
         ):
             response = self.client.post("/order/18593/status", data={"status": "A"})
-        self.assertEqual(parse_qs(urlsplit(response.location).query)["open_sale"], ["1"])
+        self.assertEqual(
+            parse_qs(urlsplit(response.location).query)["notice"], ["success"]
+        )
+        self.assertEqual(status_service.get("18593")["erp_status"], "confirmed")
         self.assertEqual(self.inventory.list_sales(), [])
 
-    def test_bitrix_confirmation_error_keeps_local_status_and_marks_pending(self):
-        status_service = mock.Mock()
-        status_service.sync_one.return_value = False
+    def test_bitrix_status_error_preserves_local_status_without_pending_state(self):
+        status_service = OrderStatusService(self.database)
+        status_service.ingest("18593", "D")
         with (
             mock.patch.object(web, "update_order_status", return_value={
                 "status": "error", "message": "Bitrix недоступен",
             }),
             mock.patch.object(web, "order_status_service", return_value=status_service),
         ):
-            response = self.client.post("/order/18593/status", data={"status": "A"})
+            response = self.client.post("/order/18593/status", data={"status": "N"})
         query = parse_qs(urlsplit(response.location).query)
-        self.assertEqual(query["open_sale"], ["1"])
-        self.assertIn("ожидается", query["message"][0])
-        status_service.change.assert_called_once()
+        self.assertEqual(query["notice"], ["error"])
+        self.assertIn("Bitrix недоступен", query["message"][0])
+        state = status_service.get("18593")
+        self.assertEqual(state["erp_status"], "assembled")
+        self.assertEqual(state["sync_status"], "synced")
+
+    def test_manual_reverse_transitions_send_exact_bitrix_codes(self):
+        cases = (
+            ("19001", "D", "A", "confirmed"),
+            ("19002", "D", "N", "unconfirmed"),
+            ("19003", "A", "N", "unconfirmed"),
+            ("19004", "N", "D", "assembled"),
+        )
+        status_service = OrderStatusService(self.database)
+        for order_id, initial, target, expected in cases:
+            with self.subTest(initial=initial, target=target):
+                status_service.ingest(order_id, initial)
+                with (
+                    mock.patch.object(
+                        web, "update_order_status", return_value={"status": "ok"}
+                    ) as update,
+                    mock.patch.object(
+                        web, "order_status_service", return_value=status_service
+                    ),
+                ):
+                    response = self.client.post(
+                        "/order/{}/status".format(order_id),
+                        data={"status": target},
+                    )
+                self.assertEqual(response.status_code, 302)
+                update.assert_called_once_with(int(order_id), target)
+                self.assertEqual(
+                    status_service.get(order_id)["erp_status"], expected
+                )
+
+    def test_repeating_synced_status_is_idempotent(self):
+        status_service = OrderStatusService(self.database)
+        status_service.ingest("18593", "A")
+        with (
+            mock.patch.object(web, "update_order_status") as update,
+            mock.patch.object(
+                web, "order_status_service", return_value=status_service
+            ),
+        ):
+            response = self.client.post(
+                "/order/18593/status", data={"status": "A"}
+            )
+        self.assertEqual(response.status_code, 302)
+        update.assert_not_called()
+        with self.database.connect() as connection:
+            self.assertEqual(connection.execute(
+                "SELECT COUNT(*) FROM erp_order_status_sync_queue"
+            ).fetchone()[0], 0)
+
+    def test_status_change_preserves_completed_sale_and_stock(self):
+        self.conduct()
+        sale = self.inventory.list_sales()[0]
+        stock_before = ExcelProductCatalog(self.database).get_product(
+            self.watch["id"]
+        )["stock"]
+        status_service = OrderStatusService(self.database)
+        with (
+            mock.patch.object(web, "update_order_status", return_value={"status": "ok"}),
+            mock.patch.object(web, "order_status_service", return_value=status_service),
+        ):
+            response = self.client.post(
+                "/order/18593/status", data={"status": "N"}
+            )
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(
+            ExcelProductCatalog(self.database).get_product(self.watch["id"])["stock"],
+            stock_before,
+        )
+        sales = self.inventory.list_sales()
+        self.assertEqual({row["id"] for row in sales}, {sale["id"]})
+        self.assertEqual({row["order_status"] for row in sales}, {"completed"})
 
     def test_success_is_one_local_sale_with_two_lines_and_exact_redirect(self):
         response = self.conduct()
@@ -610,7 +698,7 @@ class OrderTictactoySaleTest(unittest.TestCase):
                 data={"csrf_token": "test-token", "status": "A"},
             )
         self.assertEqual(
-            parse_qs(urlsplit(confirmation.location).query)["open_sale"], ["1"]
+            parse_qs(urlsplit(confirmation.location).query)["notice"], ["success"]
         )
 
         confirmed = {**self.order, "status": "A"}
@@ -731,7 +819,7 @@ class OrderTictactoySaleTest(unittest.TestCase):
         self.assertEqual(saved["bx-watch"]["bitrix_order_line_id"], "line-1")
         self.assertEqual(saved["legacy-bx"]["moysklad_product_id"], "legacy-ms")
 
-    def test_removed_refusal_status_cannot_be_set_manually(self):
+    def test_unknown_status_cannot_be_set_manually(self):
         self.conduct()
         with (
             mock.patch.object(web, "SalesInventory", return_value=self.inventory),
@@ -740,7 +828,7 @@ class OrderTictactoySaleTest(unittest.TestCase):
         ):
             response = self.client.post("/order/18593/status", data={"status": "C"})
         update.assert_not_called()
-        self.assertIn("Вручную можно только подтвердить", parse_qs(urlsplit(response.location).query)["message"][0])
+        self.assertIn("допустимый статус", parse_qs(urlsplit(response.location).query)["message"][0])
 
 
 if __name__ == "__main__":
