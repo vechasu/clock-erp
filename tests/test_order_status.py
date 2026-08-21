@@ -56,6 +56,13 @@ class OrderStatusServiceTests(unittest.TestCase):
         state = OrderStatusService(self.database).ingest("42", "A")
         self.assertEqual(state["erp_status"], ERP_CONFIRMED)
 
+    def test_sale_index_uses_production_compatible_sqlite_syntax(self):
+        index = self.rows(
+            "SELECT sql FROM sqlite_master "
+            "WHERE type='index' AND name='idx_erp_order_status_sale'"
+        )[0]["sql"]
+        self.assertNotIn(" WHERE ", index.upper())
+
     def test_confirm_is_idempotent_and_manual_assembled_is_forbidden(self):
         self.service.ingest("42", "N")
         first = self.service.change("42", ERP_CONFIRMED, "Максим")
