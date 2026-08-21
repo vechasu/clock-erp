@@ -151,7 +151,7 @@ class UnifiedPageArchitectureTest(unittest.TestCase):
             )
 
     def test_existing_tabs_use_shared_visual_contract(self):
-        for template in ("sales.html", "journal.html"):
+        for template in ("sales.html", "journal.html", "repair.html"):
             with self.subTest(template=template):
                 source = self.source("app/templates/" + template)
                 self.assertIn("erp-section-tabs", source)
@@ -162,9 +162,6 @@ class UnifiedPageArchitectureTest(unittest.TestCase):
         )
         self.assertIn("erp-section-tabs", products_workspace)
         self.assertIn("erp-section-tab", products_workspace)
-
-        repair = self.source("app/templates/repair.html")
-        self.assertNotIn("erp-section-tabs", repair)
 
         css = self.source("app/static/css/erp-components.css")
         contract = css.split(
