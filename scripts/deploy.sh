@@ -55,35 +55,13 @@ readonly HEALTHCHECK_URLS=(
 
 PREVIOUS_COMMIT=""
 DEPLOY_UPDATED=0
-BACKUP_STAGE=""
 BITRIX_ENDPOINT_BACKUP=""
 BITRIX_ENDPOINT_UPDATED=0
-
-cleanup_backup_stage() {
-    if [[ -z "$BACKUP_STAGE" ]]; then
-        return
-    fi
-
-    case "$BACKUP_STAGE" in
-        "$BACKUP_DIR"/.backup-stage.*)
-            rm -rf -- "$BACKUP_STAGE"
-            ;;
-        *)
-            printf 'Unexpected backup staging path: %s\n' \
-                "$BACKUP_STAGE" >&2
-            return 1
-            ;;
-    esac
-
-    BACKUP_STAGE=""
-}
 
 rollback() {
     local exit_code=$?
     trap - ERR
     set +e
-
-    cleanup_backup_stage
 
     printf 'DEPLOY_ERROR: deployment failed with exit code %s\n' "$exit_code" >&2
 
@@ -184,47 +162,18 @@ check_backup_disk_usage() {
 }
 
 check_backup_disk_usage
-BACKUP_PATH="$BACKUP_DIR/clock-erp-$(date +%Y%m%d-%H%M%S).tar.gz"
-backup_items=()
-[[ -f .env ]] && backup_items+=(".env")
-[[ -d instance ]] && backup_items+=("instance")
-
-if [[ "${#backup_items[@]}" -gt 0 ]]; then
-    BACKUP_STAGE="$(
-        mktemp -d "$BACKUP_DIR/.backup-stage.XXXXXX"
-    )"
-
-    [[ -f .env ]] && cp -p .env "$BACKUP_STAGE/.env"
-
-    if [[ -d instance ]]; then
-        cp -a instance "$BACKUP_STAGE/instance"
-
-        for sqlite_path in instance/*.db; do
-            [[ -f "$sqlite_path" ]] || continue
-
-            sqlite_name="$(basename "$sqlite_path")"
-            staged_sqlite="$BACKUP_STAGE/instance/$sqlite_name"
-            rm -f -- \
-                "$staged_sqlite" \
-                "$staged_sqlite-journal" \
-                "$staged_sqlite-wal" \
-                "$staged_sqlite-shm"
-            sqlite3 "$sqlite_path" <<SQLITE_BACKUP
-.timeout 10000
-.backup '$staged_sqlite'
-SQLITE_BACKUP
-            sqlite3 "$staged_sqlite" \
-                "PRAGMA quick_check;" |
-                grep -qx "ok"
-        done
-    fi
-
-    tar -czf "$BACKUP_PATH" -C "$BACKUP_STAGE" .
-    chmod 600 "$BACKUP_PATH"
-    cleanup_backup_stage
-    printf 'BACKUP_PATH=%s\n' "$BACKUP_PATH"
+if [[ -x "$RETENTION_TOOL" ]]; then
+    "$RETENTION_TOOL" \
+        --backup-root "$BACKUP_DIR" \
+        --project-root "$PROJECT_DIR" \
+        --create-daily \
+        --apply
 else
-    printf '%s\n' 'BACKUP_SKIPPED: no runtime data found'
+    python3 scripts/retain_erp_backups.py \
+        --backup-root "$BACKUP_DIR" \
+        --project-root "$PROJECT_DIR" \
+        --create-daily \
+        --apply
 fi
 
 git fetch "$REMOTE_NAME"
@@ -289,11 +238,11 @@ if [[ -f "$BITRIX_ENDPOINT_SOURCE" && -f "$BITRIX_ENDPOINT_TARGET" ]]; then
 fi
 
 if [[ -f instance/repair_cases.json ]]; then
-    mkdir -p "$BACKUP_DIR/repair-data"
-    chmod 700 "$BACKUP_DIR/repair-data"
+    mkdir -p "$BACKUP_DIR/temporary/repair-data"
+    chmod 700 "$BACKUP_DIR/temporary" "$BACKUP_DIR/temporary/repair-data"
     "$PYTHON_BIN" scripts/migrate_repair_cases.py \
         --path instance/repair_cases.json \
-        --backup-dir "$BACKUP_DIR/repair-data" \
+        --backup-dir "$BACKUP_DIR/temporary/repair-data" \
         --apply
 fi
 
@@ -343,7 +292,7 @@ if [[ "$DATABASE_MIGRATION_REQUIRED" == "1" && -f instance/catalog.db ]]; then
     fi
     "$PYTHON_BIN" scripts/migrate_unified_catalog.py \
         --database instance/catalog.db \
-        --backup-dir "$BACKUP_DIR/catalog-migrations" \
+        --backup-dir "$BACKUP_DIR/temporary/catalog-migrations" \
         --apply
 
     CATEGORY_MIGRATION_TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
