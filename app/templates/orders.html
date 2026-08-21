@@ -7,51 +7,53 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-combobox.css') }}">
     <script defer src="{{ url_for('static', filename='js/catalog-combobox.js') }}"></script>
     <style>
-        :root { --blue:#2563eb; --navy:#0f2747; --line:#dfe5ed; --muted:#64748b; --soft:#f6f8fb; --danger:#b42318; }
+        :root { --blue:var(--theme-primary,#2563eb); --navy:var(--theme-sidebar-bg,#0f2747); --line:var(--theme-border,#dfe5ed); --muted:var(--theme-text-muted,#64748b); --soft:var(--theme-surface-muted,#f6f8fb); --danger:var(--theme-error,#b42318); }
         * { box-sizing:border-box; }
-        body { margin:0; background:#f4f6f9; color:#172033; font:14px/1.45 Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+        body { margin:0; background:var(--theme-workspace-bg,#f4f6f9); color:var(--theme-text,#172033); font:14px/1.45 var(--theme-font,Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif); }
         button,input,select { font:inherit; }
         .app { min-height:100vh; }
         .main { min-width:0; padding:18px 24px 24px; }
-        .page-head,.page-title-row,.view-switch,.card-head,.order-row-head,.actions,.customer-grid,.line-main,.line-price,.sync-state,.pagination,.filters { display:flex; align-items:center; }
-        .page-head { justify-content:space-between; gap:18px; margin-bottom:14px; }
-        .page-title-row { gap:14px; min-width:0; }
+        .page-head,.view-switch,.card-head,.order-row-head,.actions,.customer-grid,.line-main,.line-price,.sync-state,.pagination,.filter-selects { display:flex; align-items:center; }
+        .page-head { display:grid; grid-template-columns:minmax(240px,1fr) auto minmax(240px,1fr); gap:18px; align-items:center; margin-bottom:14px; }
+        .page-heading { min-width:0; }
         h1,h2,h3,p { margin:0; }
-        h1 { font-size:25px; letter-spacing:-.02em; }
+        h1 { font-size:27px; line-height:1.15; letter-spacing:-.025em; }
         .page-copy { color:var(--muted); margin-top:3px; }
-        .sync-state { gap:8px; padding:8px 11px; border:1px solid var(--line); border-radius:8px; background:#fff; font-size:12px; white-space:nowrap; }
+        .sync-state { justify-self:end; gap:8px; padding:0; border:0; background:transparent; font-size:12px; white-space:nowrap; }
         .sync-dot { width:8px; height:8px; border-radius:50%; background:#16a34a; }
         .sync-state.partial .sync-dot { background:#d97706; }
         .sync-state.error .sync-dot { background:#dc2626; }
         .sync-meta { color:var(--muted); font-weight:400; }
         .view-switch { padding:3px; gap:2px; border:1px solid var(--line); border-radius:8px; background:#fff; }
         .view-option { border:0; border-radius:6px; padding:7px 10px; color:#526176; background:transparent; cursor:pointer; }
-        .view-option[aria-checked="true"] { color:#fff; background:var(--blue); }
-        :focus-visible { outline:3px solid rgba(37,99,235,.28); outline-offset:2px; }
+        .view-option[aria-checked="true"] { color:var(--theme-primary-text,#fff); background:var(--blue); }
+        :focus-visible { outline:3px solid var(--theme-focus-ring,rgba(37,99,235,.28)); outline-offset:2px; }
         .notice,.warning { padding:11px 13px; margin-bottom:12px; border-radius:8px; border:1px solid; }
         .notice-success { color:#166534; border-color:#bbf7d0; background:#f0fdf4; }
         .notice-error,.warning { color:#9a3412; border-color:#fed7aa; background:#fff7ed; }
-        .workspace { display:grid; grid-template-columns:minmax(330px,38%) minmax(0,62%); gap:12px; height:calc(100vh - 112px); min-height:590px; }
-        .panel { min-width:0; min-height:0; border:1px solid var(--line); border-radius:10px; background:#fff; overflow:hidden; box-shadow:0 2px 10px rgba(15,39,71,.035); }
+        .workspace { display:grid; grid-template-columns:minmax(330px,37%) minmax(0,63%); gap:12px; height:calc(100vh - 102px); min-height:590px; }
+        .panel { min-width:0; min-height:0; border:1px solid var(--line); border-radius:11px; background:var(--theme-surface,#fff); overflow:hidden; }
         .orders-list-panel,.order-detail-panel { display:flex; flex-direction:column; }
         .workspace[data-layout-mode="list"] { grid-template-columns:1fr; }
         .workspace[data-layout-mode="list"] .order-detail-panel { display:none; }
         .workspace[data-layout-mode="card"] { grid-template-columns:1fr; }
         .workspace[data-layout-mode="card"] .orders-list-panel { display:none; }
         .panel-toolbar { flex:0 0 auto; padding:12px; border-bottom:1px solid var(--line); }
-        .filters { gap:8px; flex-wrap:wrap; }
-        .field { min-width:0; height:38px; padding:0 10px; border:1px solid #cfd8e5; border-radius:7px; background:#fff; color:#25324a; }
-        .field-search { flex:1 1 210px; }
-        select.field { flex:0 1 150px; }
+        .filters { display:grid; gap:8px; }
+        .field { min-width:0; height:38px; padding:0 10px; border:1px solid var(--theme-border-strong,#cfd8e5); border-radius:8px; background:var(--theme-input-bg,#fff); color:var(--theme-text,#25324a); }
+        .field-search { width:100%; }
+        .filter-selects { gap:8px; }
+        .filter-selects select.field { min-width:0; flex:1 1 0; }
+        .filter-reset { flex:0 0 auto; min-height:38px; }
         .button { display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:36px; padding:7px 11px; border:1px solid transparent; border-radius:7px; font-weight:650; text-decoration:none; cursor:pointer; }
-        .button-primary { color:#fff; background:var(--blue); }
-        .button-secondary { color:#34445b; border-color:#cfd8e5; background:#fff; }
+        .button-primary { color:var(--theme-primary-text,#fff); background:var(--blue); }
+        .button-secondary { color:var(--theme-text,#34445b); border-color:var(--theme-border-strong,#cfd8e5); background:var(--theme-surface,#fff); }
         .button-danger { color:var(--danger); border-color:#fecaca; background:#fff; }
         .button:disabled { opacity:.48; cursor:not-allowed; }
         .orders-list { flex:1 1 auto; min-height:0; overflow:auto; }
         .order-row { display:block; padding:13px 15px; color:inherit; text-decoration:none; border-bottom:1px solid #edf0f4; border-left:3px solid transparent; }
         .order-row:hover { background:#f8fafc; }
-        .order-row.active { border-left-color:var(--blue); background:#eff6ff; }
+        .order-row.active { border-left-color:var(--blue); background:var(--theme-active,#eff6ff); }
         .order-row-head { justify-content:space-between; gap:10px; }
         .order-number { font-weight:750; }
         .order-meta { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:4px 10px; margin-top:7px; color:var(--muted); font-size:12px; }
@@ -67,7 +69,7 @@
         .pagination { gap:5px; }
         .page-link { padding:4px 7px; color:#334155; text-decoration:none; border:1px solid var(--line); border-radius:5px; background:#fff; }
         .detail-scroll { min-height:0; overflow:auto; }
-        .card-head { position:sticky; top:0; z-index:8; justify-content:space-between; gap:14px; padding:14px 16px; border-bottom:1px solid var(--line); background:rgba(255,255,255,.96); backdrop-filter:blur(8px); }
+        .card-head { position:sticky; top:0; z-index:8; justify-content:space-between; gap:14px; padding:14px 16px; border-bottom:1px solid var(--line); background:var(--theme-surface,#fff); }
         .card-title { display:flex; align-items:center; gap:9px; flex-wrap:wrap; }
         .card-title h2 { font-size:20px; }
         .card-subtitle { margin-top:4px; color:var(--muted); font-size:12px; }
@@ -84,21 +86,23 @@
         .section:last-child { border-bottom:0; }
         .section-head { display:flex; justify-content:space-between; gap:10px; align-items:center; margin-bottom:10px; }
         .section h3 { font-size:15px; }
-        .customer-grid { align-items:flex-start; gap:18px; flex-wrap:wrap; padding:12px; border:1px solid var(--line); border-radius:8px; background:#fafbfc; }
-        .fact { min-width:135px; flex:1 1 150px; }
+        .customer-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); align-items:start; gap:16px; padding:12px; border:1px solid var(--line); border-radius:9px; background:var(--theme-surface-muted,#fafbfc); }
+        .fact { min-width:0; }
         .fact-label { display:block; margin-bottom:3px; color:var(--muted); font-size:11px; }
         .fact-value { font-weight:650; overflow-wrap:anywhere; }
         .fact-value a { color:#1d4ed8; }
-        .tracking-form { display:flex; gap:6px; width:min(100%,410px); }
+        .tracking-fact { grid-column:1/-1; }
+        .tracking-form { display:flex; gap:6px; width:min(100%,440px); }
         .tracking-form .field { flex:1; }
         .product-list { display:grid; gap:9px; }
         .product-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:14px; padding:12px; border:1px solid var(--line); border-radius:8px; }
         .line-main { align-items:flex-start; gap:11px; min-width:0; }
-        .product-photo { width:58px; height:58px; flex:0 0 58px; border-radius:7px; object-fit:cover; background:#eef1f5; }
+        .product-photo { width:58px; height:58px; flex:0 0 58px; display:grid; place-items:center; border-radius:7px; object-fit:cover; background:var(--theme-surface-muted,#eef1f5); color:var(--muted); font-size:10px; text-align:center; }
         .product-copy { min-width:0; flex:1; }
         .product-name { font-weight:700; overflow-wrap:anywhere; }
         .product-note { margin-top:3px; color:var(--muted); font-size:12px; }
         .mapping { margin-top:8px; padding-top:8px; border-top:1px dashed #d7dee8; }
+        .product-row .mapping { margin-right:-119px; }
         .mapping-card { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
         .mapping-card img { width:38px; height:38px; object-fit:cover; border-radius:5px; background:#eef1f5; }
         .mapping-copy { flex:1; min-width:150px; font-size:12px; }
@@ -106,12 +110,16 @@
         .map-state { display:inline-flex; margin-top:5px; color:#a16207; font-size:12px; font-weight:700; }
         .map-state.good { color:#15803d; }
         .map-state.bad { color:#b91c1c; }
-        .order-map-form { display:grid; grid-template-columns:repeat(3,minmax(130px,1fr)) auto; gap:8px; align-items:end; margin-top:9px; }
+        .order-map-form { display:grid; grid-template-columns:minmax(118px,21%) minmax(138px,24%) minmax(180px,1fr) max-content; gap:8px; align-items:end; margin-top:9px; }
+        .order-map-field { min-width:0; }
+        .order-map-form .brand-combobox-trigger,.order-map-form .button { width:100%; min-height:38px; height:38px; border-radius:8px; }
+        .order-map-form > .button { width:auto; white-space:nowrap; }
         .order-map-field label { display:block; margin-bottom:4px; color:var(--muted); font-size:11px; }
         .map-actions { display:flex; gap:5px; margin-top:7px; }
         .line-price { align-items:flex-end; flex-direction:column; min-width:105px; font-weight:750; }
         .line-price small { color:var(--muted); font-weight:400; }
-        .summary { width:min(100%,420px); margin-left:auto; }
+        .calculation-layout { display:grid; grid-template-columns:minmax(280px,420px) minmax(240px,1fr); gap:20px; align-items:start; }
+        .summary { width:100%; }
         .summary-row { display:flex; justify-content:space-between; gap:14px; padding:6px 0; }
         .summary-row.total { margin-top:5px; padding-top:10px; border-top:1px solid var(--line); font-size:16px; font-weight:750; }
         .empty { padding:32px 20px; color:var(--muted); text-align:center; }
@@ -127,14 +135,20 @@
         .order-sale-location-field .brand-combobox-trigger { height:38px; min-height:38px; border-radius:7px; padding-left:10px; line-height:36px; font-size:14px; }
         .sale-lines { margin:12px 0; padding:0; list-style:none; }
         .sale-lines li { padding:8px 0; border-bottom:1px solid #edf0f4; }
+        @media (max-width:1200px) {
+            .page-head { grid-template-columns:minmax(220px,1fr) auto; }
+            .sync-state { grid-column:1/-1; justify-self:start; }
+        }
         @media (max-width:1100px) {
             .workspace { grid-template-columns:minmax(300px,42%) minmax(0,58%); }
+            .product-row .mapping { margin-right:-119px; margin-left:-69px; }
             .order-map-form { grid-template-columns:1fr 1fr; }
+            .calculation-layout { grid-template-columns:1fr; gap:10px; }
         }
         @media (max-width:780px) {
             .main { padding:12px; }
-            .page-head { align-items:flex-start; flex-direction:column; }
-            .page-title-row { width:100%; justify-content:space-between; }
+            .page-head { display:flex; align-items:stretch; flex-direction:column; gap:10px; }
+            .view-switch { align-self:flex-start; max-width:100%; }
             .sync-state { white-space:normal; }
             .workspace { display:block; height:auto; min-height:0; }
             .workspace[data-layout-mode="split"] .order-detail-panel { display:none; }
@@ -144,17 +158,32 @@
             .panel { min-height:calc(100vh - 180px); }
             .orders-list { max-height:none; }
             .back-list { display:inline-flex; }
-            .view-option[data-layout-mode="split"] { display:none; }
             .card-head { position:static; align-items:flex-start; flex-direction:column; }
             .actions { justify-content:flex-start; }
             .product-row { grid-template-columns:1fr; }
             .line-price { align-items:flex-start; padding-left:69px; }
+            .product-row .mapping { margin-right:0; margin-left:0; }
             .order-map-form { grid-template-columns:1fr; }
             .tracking-form { flex-direction:column; }
+            .customer-grid { grid-template-columns:1fr 1fr; }
+        }
+        @media (max-width:420px) {
+            h1 { font-size:24px; }
+            .main { padding:10px; }
+            .view-switch { width:100%; }
+            .view-option { min-width:0; flex:1 1 0; padding-inline:7px; }
+            .filter-selects { align-items:stretch; flex-direction:column; }
+            .filter-reset { width:100%; }
+            .customer-grid { grid-template-columns:1fr; }
+            .card-head,.detail-body { padding-inline:12px; }
+            .actions { width:100%; }
+            .actions .button,.actions form { flex:1 1 auto; }
+            .actions form .button { width:100%; }
+            .line-price { padding-left:0; }
         }
     </style>
 </head>
-<body data-has-selected-order="{{ 1 if selected_order_explicit|default(false) else 0 }}">
+<body class="orders-page" data-has-selected-order="{{ 1 if selected_order_explicit|default(false) else 0 }}">
 {% from "_catalog_combobox.html" import render_catalog_combobox %}
 {% macro status_badge(code, label) -%}
     {% set normalized = code|string|upper %}
@@ -165,17 +194,28 @@
 {%- endmacro %}
 <div class="app">
     {% include "_sidebar.html" %}
+    <style>
+        html[data-theme] .orders-page .orders-secondary-submit {
+            border-color:var(--theme-border-strong,#cfd8e5) !important;
+            background:var(--theme-surface,#fff) !important;
+            color:var(--theme-text,#34445b) !important;
+        }
+        html[data-theme] .orders-page .orders-secondary-submit:hover:not(:disabled) {
+            border-color:var(--theme-border-strong,#cfd8e5) !important;
+            background:var(--theme-hover,#f8fafc) !important;
+            color:var(--theme-text-strong,#172033) !important;
+        }
+    </style>
     <main class="main">
         <header class="page-head">
-            <div>
-                <div class="page-title-row">
-                    <div><h1>Заказы</h1><p class="page-copy">Заказы интернет-магазина, сопоставление и проведение продаж</p></div>
-                    <div class="view-switch" id="ordersLayoutSwitch" role="radiogroup" aria-label="Режим отображения заказов">
-                        <button class="view-option" type="button" data-layout-mode="list" role="radio">Список</button>
-                        <button class="view-option" type="button" data-layout-mode="split" role="radio">Разделение</button>
-                        <button class="view-option" type="button" data-layout-mode="card" role="radio">Карточка</button>
-                    </div>
-                </div>
+            <div class="page-heading">
+                <h1>Заказы</h1>
+                <p class="page-copy">Управление заказами интернет-магазина</p>
+            </div>
+            <div class="view-switch" id="ordersLayoutSwitch" role="radiogroup" aria-label="Режим отображения заказов">
+                <button class="view-option" type="button" data-layout-mode="list" role="radio">Список</button>
+                <button class="view-option" type="button" data-layout-mode="split" role="radio">Разделение</button>
+                <button class="view-option" type="button" data-layout-mode="card" role="radio">Карточка</button>
             </div>
             {% set selected_sync = selected_order.get('sync_state') if selected_order else '' %}
             {% set sync_class = 'error' if sync_error or selected_sync == 'error' else 'partial' if selected_sync == 'partial' else '' %}
@@ -193,18 +233,19 @@
 
         <div class="workspace" id="ordersWorkspace" data-layout-mode="split">
             <section class="panel orders-list-panel" aria-label="Список заказов">
-                <form class="panel-toolbar filters" method="get" action="{{ request.path }}">
+                <form class="panel-toolbar filters" method="get" action="{{ url_for('orders_page') }}">
                     <input class="field field-search" id="orderSearch" name="q" value="{{ request.args.get('q','') }}" placeholder="Номер, клиент или телефон" aria-label="Поиск заказов">
-                    <select class="field" name="status" aria-label="Статус заказа">
-                        {% for value,label in [('all','Все статусы'),('N','Не подтверждён'),('A','Подтверждён'),('D','Собран')] %}
-                            <option value="{{ value }}" data-filter="{{ value }}"{% if request.args.get('status','all')|upper == value|upper %} selected{% endif %}>{{ label }}</option>
-                        {% endfor %}
-                    </select>
-                    <select class="field" name="period" aria-label="Период">
-                        {% for value,label in [('all','За всё время'),('today','Сегодня'),('7d','7 дней'),('30d','30 дней')] %}<option value="{{ value }}"{% if request.args.get('period','all') == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
-                    </select>
-                    <button class="button button-primary" type="submit">Найти</button>
-                    {% if request.args.get('q') or request.args.get('status','all') != 'all' or request.args.get('period','all') != 'all' %}<a class="button button-secondary" href="{{ request.path }}">Сбросить</a>{% endif %}
+                    <div class="filter-selects">
+                        <select class="field" name="status" aria-label="Статус заказа" data-auto-submit-filter>
+                            {% for value,label in [('all','Все статусы'),('N','Не подтверждён'),('A','Подтверждён'),('D','Собран')] %}
+                                <option value="{{ value }}" data-filter="{{ value }}"{% if request.args.get('status','all')|upper == value|upper %} selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                        <select class="field" name="period" aria-label="Период" data-auto-submit-filter>
+                            {% for value,label in [('all','За всё время'),('today','Сегодня'),('7d','7 дней'),('30d','30 дней')] %}<option value="{{ value }}"{% if request.args.get('period','all') == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+                        </select>
+                        {% if request.args.get('q') or request.args.get('status','all') != 'all' or request.args.get('period','all') != 'all' %}<a class="button button-secondary filter-reset" href="{{ url_for('orders_page') }}">Сбросить</a>{% endif %}
+                    </div>
                 </form>
                 <div class="orders-list" id="ordersList">
                     {% for order in orders %}
@@ -216,7 +257,7 @@
                         {% set phone = order.get('phone') or '' %}
                         {% set total = order.get('order_total') if order.get('order_total') is not none else order.get('price') %}
                         {% set created = order.get('created_at') or order.get('date') or '' %}
-                        <a href="{{ url_for('order_page', order_id=oid) if oid else '#' }}"{% if not oid %} aria-disabled="true"{% endif %} class="order-row{% if selected_order and (selected_order.get('id')|string == oid|string) %} active{% endif %}" data-status="{{ code }}" data-search="{{ number }} {{ customer }} {{ phone }}">
+                        <a href="{{ url_for('order_page', order_id=oid, page=request.args.get('page',1), q=request.args.get('q',''), status=request.args.get('status','all'), period=request.args.get('period','all')) if oid else '#' }}"{% if not oid %} aria-disabled="true"{% endif %} class="order-row{% if selected_order and (selected_order.get('id')|string == oid|string) %} active{% endif %}" data-status="{{ code }}" data-search="{{ number }} {{ customer }} {{ phone }}">
                             <div class="order-row-head"><span class="order-number">Заказ №{{ number }}</span>{{ status_badge(code,label) }}</div>
                             <div class="order-meta">
                                 <span>{{ customer or 'Клиент не указан' }}</span><strong>{% if total is not none %}<span class="money-value" data-amount="{{ total }}"></span> ₽{% else %}—{% endif %}</strong>
@@ -228,9 +269,9 @@
                 <footer class="list-footer pagination">
                     <span>Найдено: {{ orders_total|default(orders|length) }}</span>
                     <span class="pagination">
-                        {% if orders_page > 1 %}<a class="page-link" href="{{ request.path }}?page={{ orders_page - 1 }}&q={{ request.args.get('q','')|urlencode }}&status={{ request.args.get('status','all') }}&period={{ request.args.get('period','all') }}">←</a>{% endif %}
+                        {% if orders_page > 1 %}<a class="page-link" href="{{ url_for('orders_page', page=orders_page - 1, q=request.args.get('q',''), status=request.args.get('status','all'), period=request.args.get('period','all')) }}">←</a>{% endif %}
                         <span>{{ orders_page }} / {{ orders_page_count }}</span>
-                        {% if orders_page < orders_page_count %}<a class="page-link" href="{{ request.path }}?page={{ orders_page + 1 }}&q={{ request.args.get('q','')|urlencode }}&status={{ request.args.get('status','all') }}&period={{ request.args.get('period','all') }}">→</a>{% endif %}
+                        {% if orders_page < orders_page_count %}<a class="page-link" href="{{ url_for('orders_page', page=orders_page + 1, q=request.args.get('q',''), status=request.args.get('status','all'), period=request.args.get('period','all')) }}">→</a>{% endif %}
                     </span>
                 </footer>
             </section>
@@ -257,7 +298,7 @@
                             <div class="card-subtitle"><span class="date-value" data-date="{{ selected_order.get('created_at') or selected_order.get('date') }}"></span>{% if detail_total is not none %} · <strong><span class="money-value" data-amount="{{ detail_total }}"></span> ₽</strong>{% endif %}</div>
                         </div>
                         <div class="actions">
-                            <button class="button button-secondary" type="button" data-collapse-list>Свернуть список</button>
+                            <button class="button button-secondary" type="button" data-collapse-list aria-label="Свернуть список" title="Свернуть список">Свернуть список</button>
                             {% if sale_state.sale_completed %}
                                 <span class="button button-secondary" aria-label="Продажа проведена">Продажа проведена</span><a class="button button-primary" href="/sales?source=tictactoy&sale_id={{ sale_state.sale_id }}">Открыть продажу</a>
                             {% else %}
@@ -276,9 +317,9 @@
                             <div class="customer-grid">
                                 <div class="fact"><span class="fact-label">Клиент</span><span class="fact-value">{{ selected_order.get('customer') or 'Не указан' }}</span></div>
                                 <div class="fact"><span class="fact-label">Телефон</span><span class="fact-value">{% if selected_order.get('phone') %}<a href="tel:{{ selected_order.get('phone')|replace(' ','') }}">{{ selected_order.get('phone') }}</a>{% else %}Не указан{% endif %}</span></div>
-                                <div class="fact"><span class="fact-label">Регион</span><span class="fact-value">{{ order_region or selected_order.get('city') or 'Не указан' }}</span></div>
-                                <div class="fact"><span class="fact-label">Адрес</span><span class="fact-value">{{ selected_order.get('address') or 'Не указан' }}</span></div>
-                                <div class="fact" style="flex-basis:100%"><span class="fact-label">Трекинг</span><form class="tracking-form" method="post" action="/order/{{ detail_id }}/tracking"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input class="field" name="tracking" maxlength="255" value="{{ order_tracking or '' }}" placeholder="Номер отправления"><button class="button button-secondary" type="submit">Сохранить</button></form></div>
+                                <div class="fact"><span class="fact-label">Регион</span><span class="fact-value">{{ order_geography.region or selected_order.get('city') or 'Не указан' }}</span></div>
+                                <div class="fact"><span class="fact-label">Адрес</span><span class="fact-value">{{ selected_order.get('address') or selected_order.get('delivery_address') or 'Не указан' }}</span></div>
+                                <div class="fact tracking-fact"><label class="fact-label" for="orderTracking">Трекинг</label><form class="tracking-form" method="post" action="/order/{{ detail_id }}/tracking" data-tracking-form><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input class="field" id="orderTracking" name="tracking" maxlength="255" value="{{ order_tracking or '' }}" placeholder="Номер отправления"><button class="button button-secondary orders-secondary-submit" type="submit">Сохранить</button></form></div>
                             </div>
                         </section>
 
@@ -295,21 +336,21 @@
                                 <article class="product-row">
                                     <div class="line-main">
                                         {% set photo = product.get('image_url') or (mapped.image_url if mapped else '') %}
-                                        {% if photo %}<img class="product-photo" src="{{ photo }}" alt="">{% else %}<div class="product-photo" aria-label="Нет изображения"></div>{% endif %}
+                                        {% if photo %}<img class="product-photo" src="{{ photo }}" alt="Фото товара">{% else %}<div class="product-photo" role="img" aria-label="Нет фото">Нет фото</div>{% endif %}
                                         <div class="product-copy">
                                             <div class="product-name">{{ product.get('name') or product.get('NAME') or 'Товар без названия' }}</div>
                                             <div class="product-note">{{ product.get('brand') or (mapped.brand if mapped else 'Бренд не указан') }} · {{ product.get('category') or (mapped.category if mapped else 'Категория не указана') }} · {{ qty }} шт.</div>
                                             <div class="mapping">
                                             {% if mapped and mapping.state == 'mapped' %}
                                                 <div class="mapping-card">{% if mapped.image_url %}<img src="{{ mapped.image_url }}" alt="">{% endif %}<div class="mapping-copy"><strong>ERP: {{ mapped.name }}</strong>{{ mapped.brand or 'Без бренда' }} · {{ mapped.category or 'Без категории' }} · остаток {{ mapped.stock_display }}</div><span class="map-state {% if mapped.stock|float >= qty|float %}good{% else %}bad{% endif %}">{% if mapped.stock|float >= qty|float %}Сопоставлено{% else %}Недостаточно остатка{% endif %}</span></div>
-                                                <div class="map-actions"><button class="button button-secondary" type="button" data-change-order-mapping>Заменить</button><form method="post" action="/order/{{ detail_id }}/product-unmap"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="bitrix_product_id" value="{{ pid }}"><button class="button button-secondary" type="submit">Очистить</button></form></div>
+                                                <div class="map-actions"><button class="button button-secondary" type="button" data-change-order-mapping>Заменить</button><form method="post" action="/order/{{ detail_id }}/product-unmap"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="bitrix_product_id" value="{{ pid }}"><button class="button button-secondary orders-secondary-submit" type="submit">Очистить</button></form></div>
                                             {% else %}<span class="map-state bad">{{ mapping.state_label if mapping else 'Не сопоставлено' }}</span>{% endif %}
-                                            <form class="order-map-form" method="post" action="/order/{{ detail_id }}/product-map" data-shared-catalog-scope data-catalog-in-stock="true" data-catalog-order-counts="true" data-order-map-form{% if mapped and mapping.state == 'mapped' %} hidden{% endif %}>
+                                            <form class="order-map-form" method="post" action="/order/{{ detail_id }}/product-map" data-shared-catalog-scope data-catalog-in-stock="true" data-catalog-order-counts="true" data-catalog-product-disabled-placeholder="Сначала выберите категорию" data-order-map-form{% if mapped and mapping.state == 'mapped' %} hidden{% endif %}>
                                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="bitrix_product_id" value="{{ pid }}">
                                                 <div class="order-map-field"><label>Бренд</label>{{ render_catalog_combobox('orderMapBrand' ~ loop.index,'selected_brand',[],selected_value=mapped.brand if mapped else '',selected_id=mapped.brand_id if mapped else '',selected_label=mapped.brand if mapped else '',item_label='бренд',shared_catalog_kind='brand',id_input_name='brand_id',component_class='filter-combobox') }}</div>
                                                 <div class="order-map-field"><label>Категория</label>{{ render_catalog_combobox('orderMapCategory' ~ loop.index,'selected_category',[],selected_value=mapped.category if mapped else '',selected_id=mapped.category_id if mapped else '',selected_label=mapped.category if mapped else '',item_label='категорию',disabled=not mapped,shared_catalog_kind='category',id_input_name='category_id',component_class='filter-combobox') }}</div>
                                                 <div class="order-map-field"><label>Товар</label>{{ render_catalog_combobox('orderMapProduct' ~ loop.index,'product_id',[],selected_value=mapped.id if mapped else '',selected_label=mapped.name if mapped else '',selected_item=mapped if mapped else none,item_label='товар',disabled=not mapped,shared_catalog_kind='product',component_class='filter-combobox sales-product-combobox') }}</div>
-                                                <button class="button button-primary" type="submit">Сопоставить</button>
+                                                <button class="button button-secondary orders-secondary-submit" type="submit">Сопоставить</button>
                                             </form>
                                             </div>
                                         </div>
@@ -321,17 +362,21 @@
 
                         <section class="section">
                             <div class="section-head"><h3>Расчёт заказа</h3></div>
-                            <div class="summary">
-                                <div class="summary-row"><span>Товары</span><strong>{% if detail_products_total is not none %}<span class="money-value" data-amount="{{ detail_products_total }}"></span> ₽{% else %}—{% endif %}</strong></div>
-                                {% if detail_discount %}<div class="summary-row"><span>Скидка</span><strong>− <span class="money-value" data-amount="{{ detail_discount }}"></span> ₽</strong></div>{% endif %}
-                                <div class="summary-row"><span>Доставка{% if detail_delivery_source == 'derived_reconciled_remainder' %} <small>(по согласованному остатку)</small>{% endif %}</span><strong>{% if detail_delivery is not none %}<span class="money-value" data-amount="{{ detail_delivery }}"></span> ₽{% else %}Не передана Bitrix{% endif %}</strong></div>
-                                <div class="summary-row total"><span>Итого</span><strong>{% if detail_total is not none %}<span class="money-value" data-amount="{{ detail_total }}"></span> ₽{% else %}—{% endif %}</strong></div>
+                            <div class="calculation-layout">
+                                <div class="summary">
+                                    <div class="summary-row"><span>Товары</span><strong>{% if detail_products_total is not none %}<span class="money-value" data-amount="{{ detail_products_total }}"></span> ₽{% else %}—{% endif %}</strong></div>
+                                    {% if detail_discount %}<div class="summary-row"><span>Скидка</span><strong>− <span class="money-value" data-amount="{{ detail_discount }}"></span> ₽</strong></div>{% endif %}
+                                    <div class="summary-row"><span>Доставка{% if detail_delivery_source == 'derived_reconciled_remainder' %} <small>(по согласованному остатку)</small>{% endif %}</span><strong>{% if detail_delivery is not none %}<span class="money-value" data-amount="{{ detail_delivery }}"></span> ₽{% else %}Не передана Bitrix{% endif %}</strong></div>
+                                    <div class="summary-row total"><span>Итого</span><strong>{% if detail_total is not none %}<span class="money-value" data-amount="{{ detail_total }}"></span> ₽{% else %}—{% endif %}</strong></div>
+                                </div>
+                                <div>
+                                    {% if sale_state.sale_missing %}<div class="warning"><strong>Продажа не найдена.</strong> Проверьте состав заказа, сопоставление товаров и остатки перед проведением.</div>{% endif %}
+                                    {% if sale_state.sale_block_reason and not sale_state.sale_completed %}<div class="warning" id="saleBlockReason" tabindex="-1">{{ sale_state.sale_block_reason }}</div>{% endif %}
+                                    {% if not sale_state.sale_completed and not sale_state.readiness.ready %}<div class="warning readiness-warning">Проведение недоступно: {{ sale_state.readiness.issues|join(' · ') }}.</div>{% endif %}
+                                </div>
                             </div>
                             {% if not legacy_calc_ok and not selected_order.get('calculation_complete') %}<div class="warning">Bitrix не передал отдельную стоимость доставки. Итог не записан в доставку; проведение продажи заблокировано до получения полного расчёта.</div>{% elif not legacy_calc_ok and not selected_order.get('calculation_consistent') %}<div class="warning">Расчёт не сходится: товары − скидка + доставка ≠ итог. Проведение заблокировано.</div>{% endif %}
                         </section>
-                        {% if sale_state.sale_missing %}<div class="warning"><strong>Продажа не найдена.</strong> Проверьте состав заказа, сопоставление товаров и остатки перед проведением.</div>{% endif %}
-                        {% if sale_state.sale_block_reason and not sale_state.sale_completed %}<div class="warning" id="saleBlockReason" tabindex="-1">{{ sale_state.sale_block_reason }}</div>{% endif %}
-                        {% if sale_state.can_create_sale and not sale_state.readiness.ready %}<div class="warning">Перед проведением исправьте данные: {{ sale_state.readiness.issues|join(' · ') }}.</div>{% endif %}
                     </div>
                 </div>
             {% else %}<div class="empty"><strong>Выберите заказ в списке</strong><br>Полная карточка загрузится отдельным безопасным запросом.</div>{% endif %}
@@ -380,6 +425,9 @@
     const searchInput=document.getElementById('orderSearch'); const rows=Array.from(document.querySelectorAll('.order-row'));
     function applyFilters(){const query=(searchInput?.value||'').toLowerCase().trim();rows.forEach(row=>{const rowText=(row.dataset.search||'').toLowerCase();row.hidden=!rowText.includes(query);});}
     searchInput?.addEventListener('input',applyFilters);
+    searchInput?.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();searchInput.form?.requestSubmit();}});
+    document.querySelectorAll('[data-auto-submit-filter]').forEach(filter=>filter.addEventListener('change',()=>filter.form?.requestSubmit()));
+    document.querySelector('[data-tracking-form]')?.addEventListener('submit',event=>{const button=event.currentTarget.querySelector('button[type="submit"]');if(button){button.disabled=true;button.textContent='Сохраняем…';}});
     document.querySelectorAll('[data-change-order-mapping]').forEach(button=>button.addEventListener('click',()=>{const row=button.closest('.product-row');const form=row?.querySelector('[data-order-map-form]');if(form){form.hidden=false;window.initializeSharedCatalogCascades?.(form);form.querySelector('button,input')?.focus();}}));
     document.querySelectorAll('[data-show-sale-block]').forEach(button=>button.addEventListener('click',()=>{const reason=document.getElementById('saleBlockReason');reason?.scrollIntoView({behavior:'smooth',block:'center'});reason?.focus();}));
     const modal=document.getElementById('orderSaleModal'); if(!modal)return;
