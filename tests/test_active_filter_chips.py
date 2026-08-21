@@ -82,14 +82,15 @@ class ActiveFilterChipsTest(unittest.TestCase):
         self.assertIn("url.searchParams.delete(parameter)", self.receipts)
         self.assertIn("cascadeReceiptFilters({", self.receipts)
 
-    def test_search_and_stock_toggle_remain_available(self):
+    def test_search_remains_and_stock_toggle_is_replaced_by_tabs(self):
         self.assertIn('id="warehouseSearchInput"', self.warehouse)
-        self.assertIn('id="warehouseInStockToggle"', self.warehouse)
+        self.assertNotIn('id="warehouseInStockToggle"', self.warehouse)
+        self.assertNotIn('name="in_stock"', self.warehouse)
+        self.assertIn("view='out_of_stock'", self.warehouse)
         reset = self.warehouse.split(
             "function resetWarehouseTableFilters()", 1
         )[1].split("function clearWarehouseFilter", 1)[0]
         self.assertNotIn('"q"', reset)
-        self.assertIn('in_stock: ["in_stock"]', self.warehouse)
 
     def test_shared_chip_design_wraps_and_is_keyboard_native(self):
         self.assertIn(".erp-active-filters", self.css)
@@ -134,13 +135,13 @@ class ActiveFilterChipsTest(unittest.TestCase):
         self.assertIn('"receiptDateTo").value = ""', receipt_clear)
         self.assertIn("receiptPeriodPicker?.updateLabel()", receipt_clear)
 
-    def test_reset_all_includes_period_and_stock_but_not_search_or_sort(self):
+    def test_reset_all_includes_period_but_not_search_sort_or_stock_tab(self):
         warehouse_reset = self.warehouse.split(
             "function resetWarehouseTableFilters()", 1
         )[1].split("function clearWarehouseFilter", 1)[0]
-        for parameter in ("date_from", "date_to", "in_stock"):
+        for parameter in ("date_from", "date_to"):
             self.assertIn('"{}"'.format(parameter), warehouse_reset)
-        for parameter in ('"q"', '"sort_by"', '"sort_dir"'):
+        for parameter in ('"q"', '"sort_by"', '"sort_dir"', '"in_stock"'):
             self.assertNotIn(parameter, warehouse_reset)
         self.assertIn(
             'navigateSales({brand_id: "", category_id: "", product_id: "", status: ""',
@@ -148,13 +149,10 @@ class ActiveFilterChipsTest(unittest.TestCase):
         )
         self.assertIn("resetReceiptActiveFilters", self.receipts)
 
-    def test_stock_chip_matches_visible_toggle_and_is_not_in_sales(self):
-        self.assertIn(
-            '<span class="erp-filter-chip-label">Только в наличии</span>',
-            self.warehouse,
-        )
-        self.assertIn('id="warehouseInStockToggle"', self.warehouse)
-        self.assertIn('in_stock: ["in_stock"]', self.warehouse)
+    def test_stock_toggle_and_chip_are_removed(self):
+        self.assertNotIn('Только в наличии', self.warehouse)
+        self.assertNotIn('id="warehouseInStockToggle"', self.warehouse)
+        self.assertNotIn('in_stock: ["in_stock"]', self.warehouse)
         self.assertNotIn('data-sales-filter="in_stock"', self.sales)
 
 

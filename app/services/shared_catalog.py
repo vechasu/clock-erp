@@ -362,7 +362,7 @@ class SharedCatalog:
                 "SELECT b.id, b.name, b.active, b.bitrix_brand_id, b.image_path, "
                 "b.image_source, b.image_sha256, b.image_external_id, "
                 "b.image_updated_at, COUNT(p.id) AS product_count, "
-                "COALESCE(SUM(CASE WHEN p.stock != 0 THEN 1 ELSE 0 END), 0) "
+                "COALESCE(SUM(CASE WHEN p.stock > 0 THEN 1 ELSE 0 END), 0) "
                 "AS nonzero_count, COALESCE(SUM(p.stock), 0) AS stock_total "
                 "FROM erp_brands b LEFT JOIN catalog_excel_products p "
                 "ON p.brand_id = b.id AND p.active = 1 " + where +
@@ -377,7 +377,7 @@ class SharedCatalog:
                 category_rows = connection.execute(
                     "SELECT bc.brand_id, c.id, c.name, c.normalized_name, "
                     "COUNT(p.id) AS product_count, "
-                    "COALESCE(SUM(CASE WHEN p.stock != 0 THEN 1 ELSE 0 END), 0) "
+                    "COALESCE(SUM(CASE WHEN p.stock > 0 THEN 1 ELSE 0 END), 0) "
                     "AS nonzero_count, COALESCE(SUM(p.stock), 0) AS stock_total, "
                     "(SELECT COUNT(DISTINCT all_bc.brand_id) "
                     "FROM erp_brand_categories all_bc "
@@ -403,7 +403,7 @@ class SharedCatalog:
                 ).fetchall()
                 uncategorized_rows = connection.execute(
                     "SELECT p.brand_id, COUNT(p.id) AS product_count, "
-                    "COALESCE(SUM(CASE WHEN p.stock != 0 THEN 1 ELSE 0 END), 0) "
+                    "COALESCE(SUM(CASE WHEN p.stock > 0 THEN 1 ELSE 0 END), 0) "
                     "AS nonzero_count, COALESCE(SUM(p.stock), 0) AS stock_total "
                     "FROM catalog_excel_products p "
                     "WHERE p.active = 1 AND p.category_id IS NULL "
@@ -493,7 +493,7 @@ class SharedCatalog:
                 "b.image_external_id AS image_external_id, "
                 "b.image_updated_at AS image_updated_at, "
                 "COUNT(p.id) AS product_count, "
-                "COALESCE(SUM(CASE WHEN p.stock != 0 THEN 1 ELSE 0 END), 0) "
+                "COALESCE(SUM(CASE WHEN p.stock > 0 THEN 1 ELSE 0 END), 0) "
                 "AS nonzero_count, COALESCE(SUM(p.stock), 0) AS stock_total "
                 "FROM erp_brands b LEFT JOIN catalog_excel_products p "
                 "ON p.brand_id = b.id AND p.active = 1 " + where +
@@ -668,7 +668,7 @@ class SharedCatalog:
             "name": "c.name COLLATE NOCASE",
             "brands": "COALESCE(MAX(category_relations.brand_count), 0)",
             "products": "COUNT(p.id)",
-            "in_stock": "SUM(CASE WHEN p.stock != 0 THEN 1 ELSE 0 END)",
+            "in_stock": "SUM(CASE WHEN p.stock > 0 THEN 1 ELSE 0 END)",
             "stock": "SUM(COALESCE(p.stock, 0))",
         }
         if sort_by in sort_expressions:
@@ -698,7 +698,7 @@ class SharedCatalog:
                     "1 AS active, 1 AS duplicate_count, "
                     "COUNT(p.id) AS product_count, "
                     "COUNT(DISTINCT COALESCE(p.brand_id, 0)) AS brand_count, "
-                    "COALESCE(SUM(CASE WHEN p.stock != 0 THEN 1 ELSE 0 END), 0) "
+                    "COALESCE(SUM(CASE WHEN p.stock > 0 THEN 1 ELSE 0 END), 0) "
                     "AS nonzero_count, COALESCE(SUM(p.stock), 0) AS stock_total "
                     "FROM catalog_excel_products p "
                     "WHERE p.active = 1 AND p.category_id IS NULL"
@@ -732,7 +732,7 @@ class SharedCatalog:
                         int(row["category_id"]): row
                         for row in connection.execute(
                             "SELECT category_id, COUNT(*) AS product_count, "
-                            "COALESCE(SUM(CASE WHEN stock != 0 THEN 1 ELSE 0 END), 0) "
+                            "COALESCE(SUM(CASE WHEN stock > 0 THEN 1 ELSE 0 END), 0) "
                             "AS nonzero_count, COALESCE(SUM(stock), 0) AS stock_total "
                             "FROM catalog_excel_products WHERE active = 1 "
                             "AND category_id IN ({}) GROUP BY category_id".format(
@@ -774,7 +774,7 @@ class SharedCatalog:
                     "COUNT(p.id) AS product_count, "
                     "COALESCE(MAX(category_relations.brand_count), 0) "
                     "AS brand_count, "
-                    "COALESCE(SUM(CASE WHEN p.stock != 0 THEN 1 ELSE 0 END), 0) "
+                    "COALESCE(SUM(CASE WHEN p.stock > 0 THEN 1 ELSE 0 END), 0) "
                     "AS nonzero_count, COALESCE(SUM(p.stock), 0) AS stock_total "
                     "FROM erp_categories c LEFT JOIN catalog_excel_products p "
                     "ON p.category_id = c.id AND p.active = 1 "
@@ -804,7 +804,7 @@ class SharedCatalog:
                     "SELECT pairs.category_id, pairs.brand_id AS id, "
                     "COALESCE(b.name, 'Без бренда') AS name, "
                     "COUNT(p.id) AS product_count, "
-                    "COALESCE(SUM(CASE WHEN p.stock != 0 THEN 1 ELSE 0 END), 0) "
+                    "COALESCE(SUM(CASE WHEN p.stock > 0 THEN 1 ELSE 0 END), 0) "
                     "AS nonzero_count, COALESCE(SUM(p.stock), 0) AS stock_total, "
                     "EXISTS (SELECT 1 FROM erp_brand_categories relation "
                     "WHERE relation.category_id = pairs.category_id "
@@ -828,7 +828,7 @@ class SharedCatalog:
                 brand_rows.extend(connection.execute(
                     "SELECT 0 AS category_id, COALESCE(b.id, 0) AS id, "
                     "COALESCE(b.name, 'Без бренда') AS name, COUNT(p.id) "
-                    "AS product_count, COALESCE(SUM(CASE WHEN p.stock != 0 "
+                    "AS product_count, COALESCE(SUM(CASE WHEN p.stock > 0 "
                     "THEN 1 ELSE 0 END), 0) AS nonzero_count, "
                     "COALESCE(SUM(p.stock), 0) AS stock_total, "
                     "0 AS explicit_relation "
