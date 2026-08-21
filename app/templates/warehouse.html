@@ -8724,8 +8724,8 @@
 
             function responseHtml(query) {
                 return initialResults.replace(
-                    '<div id="warehouseResults">',
-                    '<div id="warehouseResults"><span id="warehouseSearchMarker" data-result-query="'
+                    '<div id="warehouseResults" class="warehouse-table-scroll-shell">',
+                    '<div id="warehouseResults" class="warehouse-table-scroll-shell"><span id="warehouseSearchMarker" data-result-query="'
                         + query + '"></span>'
                 ) + '<span id="visiblePositionsCount">1</span>'
                     + '<span id="totalStockCount">1</span>';

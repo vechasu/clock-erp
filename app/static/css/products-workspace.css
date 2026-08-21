@@ -146,6 +146,11 @@
     overflow-x: hidden;
 }
 
+.warehouse-page .main {
+    min-width: 0;
+    overflow-x: clip;
+}
+
 /* The full-width drawer is translated off screen, but its box would still widen the page. */
 .warehouse-page .drawer:not(.open) {
     display: none;
@@ -174,7 +179,7 @@
     width: 100%;
     min-width: 0;
     max-width: 100%;
-    contain: inline-size;
+    contain: layout paint inline-size;
     overflow-x: auto !important;
     overflow-y: hidden;
     overscroll-behavior-x: contain;

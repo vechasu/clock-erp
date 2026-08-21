@@ -63,6 +63,8 @@ class ProductsRedesignStructureTest(unittest.TestCase):
         self.assertIn("initializeWarehouseTableScrollbars", products)
         self.assertIn("target.scrollLeft = source.scrollLeft", products)
         self.assertIn("overflow-x: auto !important", css)
+        self.assertIn("contain: layout paint inline-size", css)
+        self.assertIn("overflow-x: clip", css)
         self.assertIn("display: table !important", css)
 
     def test_tab_state_is_namespaced_by_compatible_view(self):
