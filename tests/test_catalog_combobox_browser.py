@@ -151,6 +151,17 @@ class CatalogComboboxStructureTest(unittest.TestCase):
                 for script_tag in external_scripts:
                     self.assertRegex(script_tag, r"\b(?:async|defer)\b")
 
+        sidebar = (PROJECT_ROOT / "app/templates/_sidebar.html").read_text(
+            encoding="utf-8"
+        )
+        sidebar_scripts = re.findall(
+            r"<script\b[^>]*\bsrc=[^>]*>",
+            sidebar,
+            re.DOTALL,
+        )
+        for script_tag in sidebar_scripts:
+            self.assertRegex(script_tag, r"\basync\b")
+
 
 class CatalogComboboxBrowserTest(unittest.TestCase):
     @staticmethod
