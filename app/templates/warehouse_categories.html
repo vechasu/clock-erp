@@ -80,21 +80,15 @@
         @media(max-width:900px) { .category-head,.category-row { grid-template-columns: minmax(190px,1.4fr) repeat(3,minmax(82px,.6fr)) 48px; } .stock-column { display:none; } .brand-row { grid-template-columns:minmax(180px,1.3fr) repeat(2,minmax(90px,.7fr)) 20px; } .brand-stock { display:none; } }
         @media(max-width:700px) { .main { padding:16px; } .erp-workspace-header,.detail-title { align-items:stretch; flex-direction:column; } .erp-workspace-actions,.detail-actions { width:100%; } .erp-workspace-actions .category-btn,.detail-actions>.category-btn { flex:1; } .category-head { display:none; } .category-row { grid-template-columns:minmax(0,1fr) auto; gap:8px; } .category-row>.metric { display:none; } .category-name { white-space:normal; } .mobile-meta { display:block; margin-top:5px; color:var(--erp-muted); font-size:12px; font-weight:500; } .brand-row { grid-template-columns:minmax(0,1fr) auto; } .brand-row .metric { display:none; } .mobile-label { display:block; margin-top:4px; color:var(--erp-muted); font-size:12px; font-weight:500; } .modal-actions { flex-direction:column-reverse; } .modal-actions .category-btn { width:100%; } .pagination { align-items:flex-start; flex-direction:column; } }
     </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/products-workspace.css') }}">
+    <script defer src="{{ url_for('static', filename='js/products-tabs.js') }}"></script>
 </head>
 <body class="categories-page">
 <div class="app">
     {% include "_sidebar.html" %}
     <main class="main">
-        <header class="erp-workspace-header">
-            <div class="erp-workspace-heading"><h1>Товары</h1><p>Каталог и складские остатки</p></div>
-            <div class="erp-workspace-actions"><a class="category-btn" href="{{ url_for('warehouse_inventory_page') }}">Инвентаризация</a><details class="action-menu"><summary aria-label="Ещё">…</summary><div class="menu-popover"><a href="{{ url_for('warehouse_products_export',scope='filtered') }}">Экспортировать найденные</a><a href="{{ url_for('warehouse_products_export',scope='all') }}">Экспортировать все товары</a></div></details><a class="category-btn primary" href="{{ url_for('warehouse_page',open_add=1) }}">+ Добавить товар</a></div>
-        </header>
-        <nav class="erp-section-tabs" aria-label="Раздел товаров">
-            <a class="erp-section-tab" href="{{ url_for('warehouse_page') }}">В наличии <span class="warehouse-tab-badge">{{ in_stock_count }}</span></a>
-            <a class="erp-section-tab" href="{{ url_for('warehouse_page',view='out_of_stock') }}">Нет в наличии <span class="warehouse-tab-badge">{{ out_of_stock_count }}</span></a>
-            <a class="erp-section-tab" href="{{ url_for('warehouse_page',view='brands') }}">Бренды</a>
-            <a class="erp-section-tab is-active" href="{{ url_for('warehouse_page',view='categories') }}" aria-current="page">Категории</a>
-        </nav>
+        {% from "_products_workspace.html" import products_workspace_header %}
+        {{ products_workspace_header('categories', product_metrics) }}
         {% if request.args.get('notice') and request.args.get('message') %}<div class="notice notice-{{ request.args.get('notice') }}" role="status">{{ request.args.get('message') }}</div>{% endif %}
 
         {% if category %}

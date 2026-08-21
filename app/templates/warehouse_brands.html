@@ -84,13 +84,12 @@
         @media(max-width:950px) { .brand-row { grid-template-columns:minmax(190px,1.5fr) repeat(2,minmax(100px,.7fr)) 22px; } .brand-row .optional { display:none; } .category-row { grid-template-columns:minmax(180px,1.4fr) repeat(2,minmax(95px,.7fr)) auto; } .category-row .optional { display:none; } }
         @media(max-width:650px) { .main { padding:16px; } .erp-workspace-header,.detail-title { align-items:stretch; flex-direction:column; } .erp-workspace-actions,.detail-actions { width:100%; } .erp-workspace-actions .brand-btn,.detail-actions>.brand-btn { flex:1; } .brand-row { grid-template-columns:minmax(0,1fr) auto; gap:8px; min-height:76px; } .brand-row .metric { display:none; } .brand-identity { display:grid; grid-template-columns:34px minmax(0,1fr); align-items:center; gap:5px 10px; } .brand-name { white-space:normal; } .brand-mobile-meta { display:block!important; grid-column:2; color:#64748b; font-size:12px; } .brand-hero-image { flex-basis:68px; width:68px; height:68px; } .category-row { grid-template-columns:minmax(0,1fr) auto; } .category-row .metric { display:none; } .summary { gap:10px 16px; } .menu-popover { width:min(250px,calc(100vw - 40px)); } .modal-actions { align-items:stretch; flex-direction:column-reverse; } .modal-actions .brand-btn { width:100%; } }
     </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/products-workspace.css') }}">
+    <script defer src="{{ url_for('static', filename='js/products-tabs.js') }}"></script>
 </head>
 <body class="brands-page"><div class="app">{% include "_sidebar.html" %}<main class="main">
-    <header class="erp-workspace-header">
-        <div class="erp-workspace-heading"><h1>Товары</h1><p>Каталог и складские остатки</p></div>
-        <div class="erp-workspace-actions"><a class="brand-btn" href="{{ url_for('warehouse_inventory_page') }}">Инвентаризация</a><details class="action-menu"><summary aria-label="Ещё">…</summary><div class="menu-popover"><a href="{{ url_for('warehouse_products_export',scope='filtered') }}">Экспортировать найденные</a><a href="{{ url_for('warehouse_products_export',scope='all') }}">Экспортировать все товары</a></div></details><a class="brand-btn primary" href="{{ url_for('warehouse_page',open_add=1) }}">+ Добавить товар</a></div>
-    </header>
-    <nav class="erp-section-tabs" aria-label="Раздел товаров"><a class="erp-section-tab" href="{{ url_for('warehouse_page') }}">В наличии <span class="warehouse-tab-badge">{{ in_stock_count }}</span></a><a class="erp-section-tab" href="{{ url_for('warehouse_page',view='out_of_stock') }}">Нет в наличии <span class="warehouse-tab-badge">{{ out_of_stock_count }}</span></a><a class="erp-section-tab is-active" href="{{ url_for('warehouse_page', view='brands') }}" aria-current="page">Бренды</a><a class="erp-section-tab" href="{{ url_for('warehouse_page', view='categories') }}">Категории</a></nav>
+    {% from "_products_workspace.html" import products_workspace_header %}
+    {{ products_workspace_header('brands', product_metrics) }}
     {% if request.args.get('notice') and request.args.get('message') %}<div class="notice notice-{{ request.args.get('notice') }}" role="status">{{ request.args.get('message') }}</div>{% endif %}
 
     {% if brand %}
