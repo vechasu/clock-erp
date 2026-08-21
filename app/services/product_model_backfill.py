@@ -157,6 +157,18 @@ def _brand_candidate(row):
         result = re.match(r"\s*(Bradley(?:\s+Compass)?)\b", name, re.IGNORECASE)
         candidate = clean_model(result.group(1)).title() if result else ""
         rule = "eone_named_family"
+    elif brand_key == "zinvo":
+        # Some Bitrix names repeat the brand before the actual family
+        # ("ZINVO APEX GOLD").  The family is APEX, not ZINVO.
+        result = re.match(
+            r"\s*(?:ZINVO\s+)?([^\W\d_][\wÀ-žĜ-ž&'-]*)\b",
+            name,
+            re.IGNORECASE | re.UNICODE,
+        )
+        candidate = clean_model(result.group(1)).title() if result else ""
+        if candidate.casefold() in {"zinvo"} | COLOR_WORDS:
+            candidate = ""
+        rule = "zinvo_named_family"
     elif brand_key in TEXT_FAMILY_BRANDS and "strap" not in category and "рем" not in category:
         first = re.match(r"\s*([^\W\d_][\wÀ-žĜ-ž&'-]*)", name, re.UNICODE)
         candidate = clean_model(first.group(1)).title() if first else ""
