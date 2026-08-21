@@ -336,6 +336,16 @@ def normalize_product(raw, base_url=""):
         brand_validation_error = brand_validation_error or property_error
     if not brand and brand_validation_error is None:
         brand_validation_error = "brand_missing"
+    catalog_quantity = _number(_first(
+        raw,
+        "stock",
+        "quantity",
+        "CATALOG_QUANTITY",
+        # The tictactoy exporter names CCatalogProduct.QUANTITY this way.
+        # It is the exact field used by the site's CATALOG_QUANTITY filter.
+        "available_quantity",
+        "AVAILABLE_QUANTITY",
+    ))
     product = {
         "external_source": "bitrix",
         "external_product_id": _text(_first(raw, "id", "ID", "product_id", "PRODUCT_ID")),
@@ -363,7 +373,8 @@ def normalize_product(raw, base_url=""):
         "images": _normalize_images(raw, base_url),
         "prices": prices,
         "offers": [],
-        "stock": _number(_first(raw, "stock", "quantity", "CATALOG_QUANTITY")),
+        "stock": catalog_quantity,
+        "stock_source_field": "CCatalogProduct.QUANTITY",
         "available_quantity": _number(_first(raw, "available_quantity", "AVAILABLE_QUANTITY")),
         "reserve": _number(_first(raw, "reserve", "reserved_quantity", "RESERVE")),
         "warehouse_stocks": _first(raw, "warehouse_stocks", "STORES") or [],

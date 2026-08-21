@@ -95,6 +95,20 @@ class OrderStatusServiceTests(unittest.TestCase):
         }])
         self.assertFalse(any("ON CONFLICT" in sql.upper() for sql in statements))
 
+    def test_overlay_uses_bitrix_status_when_database_writer_is_busy(self):
+        writer = self.database.connect()
+        writer.execute("BEGIN IMMEDIATE")
+        try:
+            order = self.service.overlay({"id": "21110", "status": "A"})
+        finally:
+            writer.rollback()
+            writer.close()
+
+        self.assertEqual(order["status"], "A")
+        self.assertEqual(order["erp_status"], ERP_CONFIRMED)
+        self.assertEqual(order["status_sync_state"], "pending")
+        self.assertIsNone(self.service.get("21110"))
+
     def test_confirm_is_idempotent_and_manual_assembled_is_forbidden(self):
         self.service.ingest("42", "N")
         first = self.service.change("42", ERP_CONFIRMED, "Максим")

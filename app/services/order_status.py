@@ -1,4 +1,5 @@
 import os
+import sqlite3
 from datetime import datetime, timedelta, timezone
 
 from app.catalog_db import CatalogDatabase
@@ -122,6 +123,28 @@ class OrderStatusService:
         order_id = str(order_id)
         remote = str(bitrix_status or "").strip().upper()
         mapped = self.mapping.from_bitrix(remote)
+        current = self.get(order_id)
+        if current is not None:
+            if not mapped and current.get("bitrix_status") == remote:
+                return current
+            if (
+                mapped is not None
+                and current.get("erp_status") == ERP_ASSEMBLED
+                and mapped != ERP_ASSEMBLED
+            ):
+                return current
+            if (
+                mapped == current.get("erp_status")
+                and current.get("bitrix_status") == remote
+            ):
+                with self.database.connect() as connection:
+                    pending = connection.execute(
+                        "SELECT 1 FROM erp_order_status_sync_queue "
+                        "WHERE external_order_id=?",
+                        (order_id,),
+                    ).fetchone()
+                if pending is None:
+                    return current
         now = _now()
         with self.database.transaction() as connection:
             current = self.get(order_id, connection)
@@ -254,7 +277,20 @@ class OrderStatusService:
         order_id = str(order.get("id") or order.get("external_id") or "")
         if not order_id:
             return order
-        state = self.ingest(order_id, order.get("status"))
+        try:
+            state = self.ingest(order_id, order.get("status"))
+        except sqlite3.OperationalError as error:
+            if "locked" not in str(error).casefold():
+                raise
+            bitrix_status = str(order.get("status") or "").strip().upper()
+            mapped = self.mapping.from_bitrix(bitrix_status)
+            if mapped is None:
+                return dict(order)
+            state = {
+                "bitrix_status": bitrix_status,
+                "erp_status": mapped,
+                "sync_status": "pending",
+            }
         result = dict(order)
         result["bitrix_status"] = state.get("bitrix_status")
         result["erp_status"] = state["erp_status"]
