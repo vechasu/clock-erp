@@ -89,7 +89,6 @@ class CatalogComboboxStructureTest(unittest.TestCase):
             "warehouse.html",
             "sales.html",
             "receipts.html",
-            "orders.html",
         ):
             with self.subTest(template=template):
                 source = (PROJECT_ROOT / "app/templates" / template).read_text(
@@ -101,8 +100,20 @@ class CatalogComboboxStructureTest(unittest.TestCase):
                     re.DOTALL,
                 )
                 self.assertIsNotNone(script_tag)
-                self.assertRegex(script_tag.group(0), r"\bdefer\b")
+                self.assertGreater(script_tag.start(), source.index("<body"))
                 self.assertIn("catalog-combobox-20260821", script_tag.group(0))
+
+        orders = (PROJECT_ROOT / "app/templates/orders.html").read_text(
+            encoding="utf-8"
+        )
+        orders_script = re.search(
+            r"<script\b[^>]*catalog-combobox\.js[^>]*>",
+            orders,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(orders_script)
+        self.assertRegex(orders_script.group(0), r"\bdefer\b")
+        self.assertIn("catalog-combobox-20260821", orders_script.group(0))
 
 
 class CatalogComboboxBrowserTest(unittest.TestCase):

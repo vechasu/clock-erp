@@ -1597,10 +1597,6 @@
         href="{{ url_for('static', filename='css/catalog-combobox.css') }}"
     >
     <script
-        defer
-        src="{{ url_for('static', filename='js/catalog-combobox.js', v='catalog-combobox-20260821') }}"
-    ></script>
-    <script
         src="{{ url_for('static', filename='js/receipt-submit.js') }}"
     ></script>
     <script
@@ -2871,6 +2867,7 @@
 
 
 
+<script src="{{ url_for('static', filename='js/catalog-combobox.js', v='catalog-combobox-20260821') }}"></script>
 <script>
     // RECEIPT MODAL EMERGENCY FALLBACK V1
     window.openReceiptModal = function () {

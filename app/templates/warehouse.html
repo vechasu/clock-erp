@@ -4003,7 +4003,6 @@
     </style>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/erp-components.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-combobox.css') }}">
-    <script defer src="{{ url_for('static', filename='js/catalog-combobox.js', v='catalog-combobox-20260821') }}"></script>
     <script src="{{ url_for('static', filename='js/toolbar-popover-coordinator.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/table-scroll-hint.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/erp-modal-shell.js') }}"></script>
@@ -5297,6 +5296,7 @@
         </div>
     </aside>
 
+    <script src="{{ url_for('static', filename='js/catalog-combobox.js', v='catalog-combobox-20260821') }}"></script>
     <script>
         const stockOperations = {{ stock_operations|default([])|tojson }};
 
