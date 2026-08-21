@@ -1947,6 +1947,181 @@ body.modal-open {
     }
 }
 
+/* Receipts list workspace: shared ERP component contract. */
+.receipts-list-page {
+    max-width: 100%;
+    overflow-x: hidden;
+    background: var(--erp-canvas);
+    color: var(--erp-text);
+}
+
+.receipts-list-page .main,
+.receipts-list-page .receipt-data-card,
+.receipts-list-page .erp-table-scroll {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.receipts-list-page .receipt-page-actions .receipt-import-link {
+    min-height: 42px;
+    height: 42px;
+    padding: 0 14px;
+    border-radius: var(--erp-radius-sm);
+}
+
+.receipts-list-page .receipt-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.receipts-list-page .receipt-kpis .stat-value {
+    color: var(--erp-text);
+}
+
+.receipts-list-page .receipt-data-toolbar {
+    min-width: 0;
+}
+
+.receipts-list-page .receipt-data-card {
+    overflow: hidden;
+    border-color: var(--erp-border);
+    border-radius: var(--erp-radius);
+    background: var(--erp-surface);
+    box-shadow: var(--erp-shadow);
+}
+
+.receipts-list-page .erp-table-scroll {
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    scrollbar-color: var(--erp-border-strong) var(--erp-surface-muted);
+    scrollbar-width: thin;
+    -webkit-overflow-scrolling: touch;
+}
+
+.receipts-list-page .receipts-table.erp-data-table {
+    min-width: 1180px;
+}
+
+.receipts-list-page .receipts-table.erp-data-table tbody tr:focus-within td,
+.receipts-list-page .receipts-table.erp-data-table tbody tr[aria-selected="true"] td {
+    background: var(--erp-primary-soft);
+}
+
+.receipts-list-page .receipts-table :is(.col-qty, [data-column-key="purchase-price"]) {
+    text-align: right !important;
+    font-variant-numeric: tabular-nums;
+}
+
+.receipts-list-page .receipts-table .col-actions {
+    position: sticky;
+    z-index: 2;
+    right: 0;
+    background: var(--erp-surface);
+    box-shadow: -1px 0 0 var(--erp-border);
+}
+
+.receipts-list-page .receipts-table thead .col-actions {
+    z-index: 4;
+    background: var(--erp-surface-muted) !important;
+}
+
+.receipts-list-page .receipts-table tbody tr:hover .col-actions,
+.receipts-list-page .receipts-table tbody tr:focus-within .col-actions {
+    background: var(--erp-surface-muted);
+}
+
+.receipts-list-page .receipt-product-name-only,
+.receipts-list-page .receipt-product-article,
+.receipts-list-page .receipt-view-value {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+}
+
+.receipts-list-page .receipt-product-article,
+.receipts-list-page .receipt-line-total {
+    margin-top: var(--erp-space-1);
+    color: var(--erp-muted);
+    font-size: var(--erp-text-xs);
+    font-weight: 600;
+}
+
+.receipts-list-page .receipt-money-value {
+    white-space: nowrap;
+}
+
+.receipts-list-page .status-badge--cancelled {
+    border: 1px solid var(--erp-border);
+    background: var(--erp-surface-muted);
+    color: var(--erp-muted);
+}
+
+.receipts-list-page .receipt-empty-state {
+    min-height: 220px;
+    display: flex;
+    align-items: center;
+    flex-direction: column;
+    justify-content: center;
+    gap: var(--erp-space-2);
+    padding: var(--erp-space-6);
+    text-align: center;
+}
+
+.receipts-list-page .receipt-empty-state strong {
+    color: var(--erp-text);
+    font-size: var(--erp-text-md);
+}
+
+.receipts-list-page .receipt-empty-state span {
+    color: var(--erp-muted);
+    font-size: var(--erp-text-sm);
+}
+
+@media (max-width: 767px) {
+    .receipts-list-page .receipt-page-actions {
+        width: 100%;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .receipts-list-page .receipt-page-actions > * {
+        width: 100%;
+        min-width: 0;
+    }
+
+    .receipts-list-page .receipt-data-card,
+    .receipts-list-page .receipt-data-card .erp-table-scroll {
+        overflow: visible;
+        border: 0;
+        background: transparent;
+        box-shadow: none;
+    }
+
+    .receipts-list-page .receipts-table.erp-data-table {
+        min-width: 0;
+    }
+
+    .receipts-list-page .receipts-table .col-actions,
+    .receipts-list-page .receipts-table thead .col-actions {
+        position: static;
+        box-shadow: none;
+    }
+
+    .receipts-list-page .receipt-empty-state {
+        min-height: 180px;
+        border: 1px solid var(--erp-border);
+        border-radius: var(--erp-radius);
+        background: var(--erp-surface);
+    }
+}
+
+@media (max-width: 370px) {
+    .receipts-list-page .receipt-page-actions {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
 /* Settings workspace: shared ERP component contract. */
 .settings-page {
     margin: 0;
