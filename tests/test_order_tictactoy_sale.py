@@ -48,8 +48,8 @@ class OrderTictactoySaleTest(unittest.TestCase):
             ],
         }
         self.mappings = {
-            "bx-watch": {"product_id": str(self.watch["id"])},
-            "bx-strap": {"product_id": str(self.strap["id"])},
+            "line:line-1": {"product_id": str(self.watch["id"])},
+            "line:line-2": {"product_id": str(self.strap["id"])},
         }
 
     def tearDown(self):
@@ -62,7 +62,7 @@ class OrderTictactoySaleTest(unittest.TestCase):
         return (
             mock.patch.object(web, "get_orders", return_value=[selected]),
             mock.patch.object(web, "get_order", return_value=selected),
-            mock.patch.object(web, "load_product_mappings", return_value=self.mappings if mappings is None else mappings),
+            mock.patch.object(web, "load_order_product_mappings", return_value=self.mappings if mappings is None else mappings),
             mock.patch.object(web, "SharedCatalog", return_value=self.shared),
             mock.patch.object(web, "SalesInventory", return_value=self.inventory),
             mock.patch.object(web, "load_stock_operations", return_value=[]),
@@ -103,8 +103,8 @@ class OrderTictactoySaleTest(unittest.TestCase):
                 "id": "18594",
                 "number": "18594",
                 "products": [
-                    {"product_id": "bx-watch", "name": "Часы"},
-                    {"product_id": "bx-watch", "name": "Часы повторно"},
+                    {"id": "line-1", "product_id": "bx-watch", "name": "Часы"},
+                    {"id": "line-1", "product_id": "bx-watch", "name": "Часы повторно"},
                 ],
             },
             {
@@ -131,7 +131,7 @@ class OrderTictactoySaleTest(unittest.TestCase):
         self.assertEqual(counts.get(str(product_without_orders["id"]), 0), 0)
 
     def test_order_counts_follow_mapping_created_after_order_and_remapping(self):
-        external_id = "bx-watch"
+        external_id = "line:line-1"
         mappings = {}
         before = web.build_catalog_product_order_counts(
             [self.order], mappings=mappings, catalog=self.shared
@@ -164,8 +164,8 @@ class OrderTictactoySaleTest(unittest.TestCase):
             self.order["products"], mappings=self.mappings,
             catalog=self.shared, order_counts=counts,
         )
-        self.assertEqual(context["bx-watch"]["product"]["orders_count"], 1)
-        self.assertEqual(context["bx-strap"]["product"]["orders_count"], 1)
+        self.assertEqual(context["line:line-1"]["product"]["orders_count"], 1)
+        self.assertEqual(context["line:line-2"]["product"]["orders_count"], 1)
 
     def test_catalog_options_can_include_order_counts_in_one_response(self):
         product = self.shared.get_product(self.watch["id"])
@@ -176,7 +176,9 @@ class OrderTictactoySaleTest(unittest.TestCase):
                 return_value=([product], 1),
             ),
             mock.patch.object(web, "get_orders", return_value=[self.order]),
-            mock.patch.object(web, "load_product_mappings", return_value=self.mappings),
+            mock.patch.object(
+                web, "load_all_order_product_mappings", return_value=self.mappings
+            ),
         ):
             response = self.client.get(
                 "/api/v1/catalog/options?type=product"
@@ -202,27 +204,21 @@ class OrderTictactoySaleTest(unittest.TestCase):
             mock.patch.object(web, "get_order", return_value=order),
             mock.patch.object(web, "CatalogDatabase", return_value=self.database),
             mock.patch.object(web, "SharedCatalog", return_value=self.shared),
-            mock.patch.object(web, "load_product_mappings", return_value={}),
             mock.patch.object(web, "AuditJournal"),
         ):
             response = self.client.post(
-                "/order/21113/product-map",
-                data={
-                    "csrf_token": "test-token",
-                    "bitrix_product_id": "bx-watch",
-                    "product_id": unavailable["id"],
-                    "brand_id": unavailable["brand_id"],
-                    "category_id": unavailable["category_id"],
-                },
+                "/api/orders/21113/items/line-1/mapping",
+                json={"product_id": unavailable["id"]},
             )
             saved = web.load_order_product_mappings(
                 "21113", database=self.database
             )
 
-        query = parse_qs(urlsplit(response.headers["Location"]).query)
-        self.assertEqual(response.status_code, 302)
-        self.assertEqual(query["notice"], ["success"])
-        self.assertEqual(saved["bx-watch"]["product_id"], str(unavailable["id"]))
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()["ok"])
+        self.assertEqual(
+            saved["line:line-1"]["product_id"], str(unavailable["id"])
+        )
 
     def test_manual_mapping_persists_on_reopen_and_is_idempotent(self):
         rival = ExcelProductCatalog(self.database).create_product(
@@ -249,24 +245,20 @@ class OrderTictactoySaleTest(unittest.TestCase):
             mock.patch.object(web, "SharedCatalog", return_value=self.shared),
             mock.patch.object(web, "SalesInventory", return_value=self.inventory),
             mock.patch.object(web, "load_stock_operations", return_value=[]),
-            mock.patch.object(web, "load_product_mappings", return_value={}),
             mock.patch.object(web, "AuditJournal"),
         )
-        payload = {
-            "csrf_token": "test-token",
-            "bitrix_product_id": "234193",
-            "bitrix_order_line_id": "basket-21113-1",
-            "product_id": rival["id"],
-            "brand_id": rival["brand_id"],
-            "category_id": rival["category_id"],
-        }
+        payload = {"product_id": rival["id"]}
 
         with patches[0], patches[1], patches[2], patches[3], patches[4], \
-                patches[5], patches[6], patches[7]:
+                patches[5], patches[6]:
             before = self.client.get("/order/21113")
-            first = self.client.post("/order/21113/product-map", data=payload)
+            first = self.client.post(
+                "/api/orders/21113/items/basket-21113-1/mapping", json=payload
+            )
             reopened = self.client.get("/order/21113")
-            repeated = self.client.post("/order/21113/product-map", data=payload)
+            repeated = self.client.post(
+                "/api/orders/21113/items/basket-21113-1/mapping", json=payload
+            )
             reopened_again = self.client.get("/order/21113")
             mappings = web.load_order_product_mappings(
                 "21113", database=self.database
@@ -276,19 +268,21 @@ class OrderTictactoySaleTest(unittest.TestCase):
             )
 
         self.assertIn("Не сопоставлен", before.get_data(as_text=True))
-        self.assertEqual(first.status_code, 302)
-        self.assertEqual(repeated.status_code, 302)
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(repeated.status_code, 200)
         for response in (reopened, reopened_again):
             html = response.get_data(as_text=True)
             self.assertIn("ERP: RIVAL GALAXY", html)
-            self.assertIn("Сопоставлено", html)
+            self.assertIn("Сопоставлен", html)
             self.assertNotIn("Есть несопоставленные позиции", html)
-        self.assertEqual(mappings["234193"]["product_id"], str(rival["id"]))
+        self.assertEqual(
+            mappings["line:basket-21113-1"]["product_id"], str(rival["id"])
+        )
         self.assertTrue(web.build_order_sale_readiness(order, context)["ready"])
         with self.database.connect() as connection:
             count = connection.execute(
                 "SELECT COUNT(*) FROM erp_order_product_mappings "
-                "WHERE order_id = ? AND order_line_id = ?",
+                "WHERE order_id = ? AND order_item_id = ?",
                 ("21113", "basket-21113-1"),
             ).fetchone()[0]
         self.assertEqual(count, 1)
@@ -297,9 +291,8 @@ class OrderTictactoySaleTest(unittest.TestCase):
         html = self.render_order("?open_sale=1").get_data(as_text=True)
         self.assertIn('id="orderSaleModal"', html)
         self.assertIn('data-auto-open="1"', html)
-        self.assertIn('data-shared-catalog-kind="brand"', html)
-        self.assertIn('data-shared-catalog-kind="category"', html)
         self.assertIn('data-shared-catalog-kind="product"', html)
+        self.assertIn('data-catalog-product-global="true"', html)
         self.assertIn('data-catalog-in-stock="false"', html)
         self.assertIn("Bradley Steel", html)
         self.assertIn("Нет в наличии", Path("app/static/js/catalog-combobox.js").read_text())
@@ -353,7 +346,7 @@ class OrderTictactoySaleTest(unittest.TestCase):
                     side_effect=lambda _order_id: statuses.overlay(order),
                 ),
                 mock.patch.object(
-                    web, "load_product_mappings", return_value=self.mappings
+                    web, "load_order_product_mappings", return_value=self.mappings
                 ),
                 mock.patch.object(web, "SharedCatalog", return_value=self.shared),
                 mock.patch.object(
@@ -786,8 +779,8 @@ class OrderTictactoySaleTest(unittest.TestCase):
         order = dict(self.order)
         order["status"] = "N"
         order["products"] = [
-            {"product_id": "missing", "name": "Нет связи", "quantity": 1},
-            {"product_id": "bx-watch", "name": "Bradley Steel", "quantity": 6},
+            {"id": "missing-line", "product_id": "missing", "name": "Нет связи", "quantity": 1},
+            {"id": "line-1", "product_id": "bx-watch", "name": "Bradley Steel", "quantity": 6},
         ]
         response = self.conduct(order=order)
         message = parse_qs(urlsplit(response.location).query)["message"][0]
@@ -800,10 +793,13 @@ class OrderTictactoySaleTest(unittest.TestCase):
     def test_duplicate_product_lines_use_aggregate_stock(self):
         order = dict(self.order)
         order["products"] = [
-            {"product_id": "bx-watch", "name": "A", "quantity": 3},
-            {"product_id": "bx-watch", "name": "B", "quantity": 3},
+            {"id": "duplicate-1", "product_id": "bx-watch", "name": "A", "quantity": 3},
+            {"id": "duplicate-2", "product_id": "bx-watch", "name": "B", "quantity": 3},
         ]
-        response = self.conduct(order=order)
+        response = self.conduct(order=order, mappings={
+            "line:duplicate-1": {"product_id": str(self.watch["id"])},
+            "line:duplicate-2": {"product_id": str(self.watch["id"])},
+        })
         self.assertIn("требуется 6, доступно 5", parse_qs(urlsplit(response.location).query)["message"][0])
         self.assertEqual(ExcelProductCatalog(self.database).get_product(self.watch["id"])["stock"], 5)
 
@@ -824,7 +820,10 @@ class OrderTictactoySaleTest(unittest.TestCase):
         context = web.build_order_product_mapping_context(
             self.order["products"], mappings=self.mappings, catalog=self.shared,
         )
-        self.assertEqual(context["bx-watch"]["product"]["name"], "Переименованные часы")
+        self.assertEqual(
+            context["line:line-1"]["product"]["name"],
+            "Переименованные часы",
+        )
         with self.database.transaction() as connection:
             connection.execute(
                 "UPDATE catalog_excel_products SET stock = 0 WHERE id = ?",
@@ -834,60 +833,183 @@ class OrderTictactoySaleTest(unittest.TestCase):
         context = web.build_order_product_mapping_context(
             self.order["products"], mappings=self.mappings, catalog=self.shared,
         )
-        self.assertEqual(context["bx-watch"]["state"], "archived")
+        self.assertEqual(context["line:line-1"]["state"], "archived")
         response = self.conduct()
         self.assertIn("архивирован", parse_qs(urlsplit(response.location).query)["message"][0])
 
-    def test_mapping_endpoint_rejects_mismatched_cascade(self):
+    def test_mapping_endpoint_does_not_depend_on_brand_or_category(self):
         product = self.shared.get_product(self.watch["id"])
-        patches = self.patches()
-        with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5]:
-            response = self.client.post("/order/18593/product-map", data={
-                "bitrix_product_id": "bx-watch", "product_id": product["id"],
-                "brand_id": "wrong", "category_id": product["category_id"],
-            })
-        self.assertIn(
-            "не относится",
-            parse_qs(urlsplit(response.location).query)["message"][0],
-        )
-
-    def test_mapping_endpoint_rejects_arbitrary_text_and_wrong_category(self):
-        product = self.shared.get_product(self.watch["id"])
-        patches = self.patches()
-        with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5]:
-            arbitrary = self.client.post("/order/18593/product-map", data={
-                "bitrix_product_id": "bx-watch", "product_id": "Bradley Steel",
-                "brand_id": product["brand_id"], "category_id": product["category_id"],
-            })
-            wrong_category = self.client.post("/order/18593/product-map", data={
-                "bitrix_product_id": "bx-watch", "product_id": product["id"],
-                "brand_id": product["brand_id"], "category_id": "wrong",
-            })
-        self.assertIn("не найден", parse_qs(urlsplit(arbitrary.location).query)["message"][0])
-        self.assertIn("категории", parse_qs(urlsplit(wrong_category.location).query)["message"][0])
-
-    def test_mapping_saves_distinct_bitrix_and_erp_ids_and_preserves_legacy(self):
-        product = self.shared.get_product(self.watch["id"])
-        existing = {"legacy-bx": {"moysklad_product_id": "legacy-ms"}}
         with (
             mock.patch.object(web, "get_order", return_value=self.order),
             mock.patch.object(web, "CatalogDatabase", return_value=self.database),
             mock.patch.object(web, "SharedCatalog", return_value=self.shared),
-            mock.patch.object(web, "load_product_mappings", return_value=existing),
             mock.patch.object(web, "AuditJournal"),
         ):
-            response = self.client.post("/order/18593/product-map", data={
-                "bitrix_product_id": "bx-watch", "product_id": product["id"],
-                "brand_id": product["brand_id"], "category_id": product["category_id"],
-            })
+            response = self.client.post(
+                "/api/orders/18593/items/line-1/mapping",
+                json={
+                    "product_id": product["id"],
+                    "brand_id": "wrong",
+                    "category_id": "wrong",
+                },
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["data"]["mapping"]["product"]["id"], str(product["id"]))
+
+    def test_mapping_endpoint_rejects_unknown_product_and_item(self):
+        with (
+            mock.patch.object(web, "get_order", return_value=self.order),
+            mock.patch.object(web, "CatalogDatabase", return_value=self.database),
+            mock.patch.object(web, "SharedCatalog", return_value=self.shared),
+        ):
+            unknown_product = self.client.post(
+                "/api/orders/18593/items/line-1/mapping",
+                json={"product_id": 999999},
+            )
+            unknown_item = self.client.post(
+                "/api/orders/18593/items/missing/mapping",
+                json={"product_id": self.watch["id"]},
+            )
+        self.assertEqual(unknown_product.status_code, 404)
+        self.assertEqual(unknown_product.get_json()["error"]["code"], "PRODUCT_NOT_FOUND")
+        self.assertEqual(unknown_item.status_code, 404)
+        self.assertEqual(unknown_item.get_json()["error"]["code"], "ORDER_ITEM_NOT_FOUND")
+
+    def test_mapping_saves_only_order_item_and_erp_product_ids(self):
+        product = self.shared.get_product(self.watch["id"])
+        with (
+            mock.patch.object(web, "get_order", return_value=self.order),
+            mock.patch.object(web, "CatalogDatabase", return_value=self.database),
+            mock.patch.object(web, "SharedCatalog", return_value=self.shared),
+            mock.patch.object(web, "AuditJournal"),
+        ):
+            response = self.client.post(
+                "/api/orders/18593/items/line-1/mapping",
+                json={"product_id": product["id"]},
+            )
             saved = web.load_order_product_mappings(
                 "18593", database=self.database
             )
-        self.assertEqual(response.status_code, 302)
-        self.assertEqual(saved["bx-watch"]["product_id"], str(self.watch["id"]))
-        self.assertEqual(saved["bx-watch"]["bitrix_product_id"], "bx-watch")
-        self.assertEqual(saved["bx-watch"]["bitrix_order_line_id"], "line-1")
-        self.assertEqual(saved["legacy-bx"]["moysklad_product_id"], "legacy-ms")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(saved["line:line-1"]["product_id"], str(self.watch["id"]))
+        self.assertEqual(saved["line:line-1"]["order_item_id"], "line-1")
+        self.assertNotIn("brand_id", saved["line:line-1"])
+
+    def test_mapping_can_change_between_duplicate_named_erp_products(self):
+        duplicate = ExcelProductCatalog(self.database).create_product(
+            name="Bradley Steel", article="BRADLEY-STEEL-DUPLICATE",
+            brand="Another brand", category="Other category", stock=7,
+        )
+        with (
+            mock.patch.object(web, "get_order", return_value=self.order),
+            mock.patch.object(web, "CatalogDatabase", return_value=self.database),
+            mock.patch.object(web, "SharedCatalog", return_value=self.shared),
+            mock.patch.object(web, "AuditJournal"),
+        ):
+            first = self.client.post(
+                "/api/orders/18593/items/line-1/mapping",
+                json={"product_id": self.watch["id"]},
+            )
+            changed = self.client.post(
+                "/api/orders/18593/items/line-1/mapping",
+                json={"product_id": duplicate["id"]},
+            )
+        reopened_database = CatalogDatabase(self.database.path)
+        saved = web.load_order_product_mappings(
+            "18593", database=reopened_database
+        )
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(changed.status_code, 200)
+        self.assertEqual(
+            changed.get_json()["data"]["mapping"]["product"]["id"],
+            str(duplicate["id"]),
+        )
+        self.assertEqual(saved["line:line-1"]["product_id"], str(duplicate["id"]))
+        with reopened_database.connect() as connection:
+            count = connection.execute(
+                "SELECT COUNT(*) FROM erp_order_product_mappings "
+                "WHERE order_id = '18593' AND order_item_id = 'line-1'"
+            ).fetchone()[0]
+        self.assertEqual(count, 1)
+
+    def test_duplicate_named_order_items_map_independently_and_drive_readiness(self):
+        duplicate = ExcelProductCatalog(self.database).create_product(
+            name="Bradley Steel", article="BRADLEY-STEEL-SECOND",
+            brand="Bradley", category="Часы", stock=4,
+        )
+        order = {
+            **self.order,
+            "products": [
+                {"basket_id": "basket-a", "name": "Nato 84", "quantity": 1},
+                {"basket_id": "basket-b", "name": "Nato 84", "quantity": 1},
+            ],
+        }
+        with (
+            mock.patch.object(web, "get_order", return_value=order),
+            mock.patch.object(web, "CatalogDatabase", return_value=self.database),
+            mock.patch.object(web, "SharedCatalog", return_value=self.shared),
+            mock.patch.object(web, "AuditJournal"),
+        ):
+            first = self.client.post(
+                "/api/orders/18593/items/basket-a/mapping",
+                json={"product_id": self.watch["id"]},
+            )
+            second = self.client.post(
+                "/api/orders/18593/items/basket-b/mapping",
+                json={"product_id": duplicate["id"]},
+            )
+        self.assertFalse(first.get_json()["data"]["order"]["all_items_mapped"])
+        self.assertFalse(first.get_json()["data"]["order"]["sale_ready"])
+        self.assertTrue(second.get_json()["data"]["order"]["all_items_mapped"])
+        self.assertTrue(second.get_json()["data"]["order"]["sale_ready"])
+        saved = web.load_order_product_mappings("18593", database=self.database)
+        self.assertEqual(saved["line:basket-a"]["product_id"], str(self.watch["id"]))
+        self.assertEqual(saved["line:basket-b"]["product_id"], str(duplicate["id"]))
+
+    def test_mapping_delete_unmaps_item_and_disables_sale_readiness(self):
+        web.save_order_product_mapping(
+            "18593", "line-1", self.watch["id"], self.database
+        )
+        web.save_order_product_mapping(
+            "18593", "line-2", self.strap["id"], self.database
+        )
+        with (
+            mock.patch.object(web, "get_order", return_value=self.order),
+            mock.patch.object(web, "CatalogDatabase", return_value=self.database),
+            mock.patch.object(web, "SharedCatalog", return_value=self.shared),
+        ):
+            response = self.client.delete(
+                "/api/orders/18593/items/line-1/mapping"
+            )
+        data = response.get_json()["data"]
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(data["mapping"])
+        self.assertFalse(data["order"]["all_items_mapped"])
+        self.assertFalse(data["order"]["sale_ready"])
+        self.assertNotIn(
+            "line:line-1",
+            web.load_order_product_mappings("18593", database=self.database),
+        )
+
+    def test_mapping_endpoint_rejects_unknown_order(self):
+        with mock.patch.object(web, "get_order", return_value=None):
+            response = self.client.post(
+                "/api/orders/99999/items/line-1/mapping",
+                json={"product_id": self.watch["id"]},
+            )
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.get_json()["error"]["code"], "ORDER_NOT_FOUND")
+
+    def test_mapping_schema_contains_only_explicit_relation_and_timestamps(self):
+        with self.database.connect() as connection:
+            columns = [
+                row["name"] for row in connection.execute(
+                    "PRAGMA table_info(erp_order_product_mappings)"
+                ).fetchall()
+            ]
+        self.assertEqual(columns, [
+            "order_id", "order_item_id", "product_id", "created_at", "updated_at"
+        ])
 
     def test_unknown_status_cannot_be_set_manually(self):
         self.conduct()

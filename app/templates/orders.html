@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Vechasu ERP — Заказы</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-combobox.css') }}">
-    <script defer src="{{ url_for('static', filename='js/catalog-combobox.js', v='catalog-combobox-20260821') }}"></script>
+    <script defer src="{{ url_for('static', filename='js/catalog-combobox.js', v='catalog-combobox-20260821-order-mapping') }}"></script>
     <style>
         :root { --blue:var(--theme-primary,#2563eb); --navy:var(--theme-sidebar-bg,#0f2747); --line:var(--theme-border,#dfe5ed); --muted:var(--theme-text-muted,#64748b); --soft:var(--theme-surface-muted,#f6f8fb); --danger:var(--theme-error,#b42318); }
         * { box-sizing:border-box; }
@@ -112,10 +112,11 @@
         .map-state { display:inline-flex; margin-top:5px; color:#a16207; font-size:12px; font-weight:700; }
         .map-state.good { color:#15803d; }
         .map-state.bad { color:#b91c1c; }
-        .order-map-form { display:grid; grid-template-columns:minmax(118px,21%) minmax(138px,24%) minmax(180px,1fr) max-content; gap:8px; align-items:end; margin-top:9px; }
+        .order-map-form { display:grid; grid-template-columns:minmax(260px,1fr) max-content; gap:8px; align-items:end; margin-top:9px; }
         .order-map-field { min-width:0; }
         .order-map-form .brand-combobox-trigger,.order-map-form .button { width:100%; min-height:38px; height:38px; border-radius:8px; }
         .order-map-form > .button { width:auto; white-space:nowrap; }
+        .order-map-form [data-order-mapping-error] { grid-column:1 / -1; }
         .order-map-field label { display:block; margin-bottom:4px; color:var(--muted); font-size:11px; }
         .map-actions { display:flex; gap:5px; margin-top:7px; }
         .line-price { align-items:flex-end; flex-direction:column; min-width:105px; font-weight:750; }
@@ -315,7 +316,7 @@
                             {% if sale_state.sale_completed %}
                                 <span class="button button-secondary" aria-label="Продажа проведена">Продажа проведена</span><a class="button button-primary" href="/sales?source=tictactoy&sale_id={{ sale_state.sale_id }}">Открыть продажу</a>
                             {% else %}
-                                <button class="button button-primary" type="button"{% if sale_state.can_create_sale %} data-open-sale-dialog{% else %} data-show-sale-block{% endif %}>Провести продажу</button>
+                                <button class="button button-primary" type="button" data-order-sale-action{% if sale_state.can_create_sale %} data-open-sale-dialog{% else %} data-show-sale-block{% endif %}>Провести продажу</button>
                             {% endif %}
                             {% if selected_order_bitrix_url %}<a class="button button-secondary" href="{{ selected_order_bitrix_url }}" target="_blank" rel="noopener noreferrer">Открыть в Bitrix ↗</a>{% endif %}
                             {% if detail_id and selected_order.get('sync_state') != 'error' %}<a class="button button-secondary" href="{{ url_for('order_print_page', order_id=detail_id) }}" target="_blank" rel="noopener noreferrer"><span aria-hidden="true">⎙</span> Печать заказа</a>{% endif %}
@@ -340,30 +341,30 @@
                             {% if detail_products %}<div class="product-list">
                             {% for product in detail_products %}
                                 {% set pid = product.get('product_id') or product.get('PRODUCT_ID') or product.get('id') or product.get('ID') or '' %}
-                                {% set order_line_id = product.get('basket_id') or product.get('BASKET_ID') or product.get('row_id') or product.get('ROW_ID') or product.get('id') or product.get('ID') or pid %}
-                                {% set mapping = (order_product_mappings.get('line:' ~ (order_line_id|string)) or order_product_mappings.get(pid|string)) if order_product_mappings else none %}
+                                {% set order_line_id = product.get('order_item_id') or product.get('ORDER_ITEM_ID') or product.get('basket_id') or product.get('BASKET_ID') or product.get('row_id') or product.get('ROW_ID') or product.get('id') or product.get('ID') or '' %}
+                                {% set mapping = order_product_mappings.get('line:' ~ (order_line_id|string)) if order_product_mappings else none %}
                                 {% set mapped = mapping.product if mapping and mapping.product else none %}
                                 {% set qty = product.get('quantity') or product.get('QUANTITY') or 1 %}
                                 {% set unit = product.get('price') if product.get('price') is not none else product.get('PRICE') %}
                                 {% set line = product.get('line_total') if product.get('line_total') is not none else (unit|float * qty|float if unit is not none else none) %}
-                                <article class="product-row">
+                                <article class="product-row" data-order-item-row data-order-id="{{ detail_id }}" data-order-item-id="{{ order_line_id }}">
                                     <div class="line-main">
                                         {% set photo = product.get('image_url') or (mapped.image_url if mapped else '') %}
                                         {% if photo %}<img class="product-photo" src="{{ photo }}" alt="Фото товара">{% else %}<div class="product-photo" role="img" aria-label="Нет фото">Нет фото</div>{% endif %}
                                         <div class="product-copy">
                                             <div class="product-name">{{ product.get('name') or product.get('NAME') or 'Товар без названия' }}</div>
                                             <div class="product-note">{{ product.get('brand') or (mapped.brand if mapped else 'Бренд не указан') }} · {{ product.get('category') or (mapped.category if mapped else 'Категория не указана') }} · {{ qty }} шт.</div>
-                                            <div class="mapping">
-                                            {% if mapped and mapping.state == 'mapped' %}
-                                                <div class="mapping-card">{% if mapped.image_url %}<img src="{{ mapped.image_url }}" alt="">{% endif %}<div class="mapping-copy"><strong>ERP: {{ mapped.name }}</strong>{{ mapped.brand or 'Без бренда' }} · {{ mapped.category or 'Без категории' }} · остаток {{ mapped.stock_display }}</div><span class="map-state {% if mapped.stock|float >= qty|float %}good{% else %}bad{% endif %}">{% if mapped.stock|float >= qty|float %}Сопоставлено{% else %}Недостаточно остатка{% endif %}</span></div>
-                                                <div class="map-actions"><button class="button button-secondary" type="button" data-change-order-mapping>Заменить</button><form method="post" action="/order/{{ detail_id }}/product-unmap"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="bitrix_product_id" value="{{ pid }}"><input type="hidden" name="bitrix_order_line_id" value="{{ order_line_id }}"><button class="button button-secondary orders-secondary-submit" type="submit">Очистить</button></form></div>
-                                            {% else %}<span class="map-state bad">{{ mapping.state_label if mapping else 'Не сопоставлено' }}</span>{% endif %}
-                                            <form class="order-map-form" method="post" action="/order/{{ detail_id }}/product-map" data-shared-catalog-scope data-catalog-in-stock="false" data-catalog-order-counts="true" data-catalog-product-disabled-placeholder="Сначала выберите категорию" data-order-map-form{% if mapped and mapping.state == 'mapped' %} hidden{% endif %}>
-                                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="bitrix_product_id" value="{{ pid }}"><input type="hidden" name="bitrix_order_line_id" value="{{ order_line_id }}">
-                                                <div class="order-map-field"><label>Бренд</label>{{ render_catalog_combobox('orderMapBrand' ~ loop.index,'selected_brand',[],selected_value=mapped.brand if mapped else '',selected_id=mapped.brand_id if mapped else '',selected_label=mapped.brand if mapped else '',item_label='бренд',shared_catalog_kind='brand',id_input_name='brand_id',component_class='filter-combobox') }}</div>
-                                                <div class="order-map-field"><label>Категория</label>{{ render_catalog_combobox('orderMapCategory' ~ loop.index,'selected_category',[],selected_value=mapped.category if mapped else '',selected_id=mapped.category_id if mapped else '',selected_label=mapped.category if mapped else '',item_label='категорию',disabled=not mapped,shared_catalog_kind='category',id_input_name='category_id',component_class='filter-combobox') }}</div>
-                                                <div class="order-map-field"><label>Товар</label>{{ render_catalog_combobox('orderMapProduct' ~ loop.index,'product_id',[],selected_value=mapped.id if mapped else '',selected_label=mapped.name if mapped else '',selected_item=mapped if mapped else none,item_label='товар',disabled=not mapped,shared_catalog_kind='product',component_class='filter-combobox sales-product-combobox') }}</div>
-                                                <button class="button button-secondary orders-secondary-submit" type="submit">Сопоставить</button>
+                                            <div class="mapping" data-order-mapping>
+                                                <span class="map-state bad" data-order-mapping-state{% if mapped and mapping.state == 'mapped' %} hidden{% endif %}>{{ mapping.state_label if mapping else 'Не сопоставлен' }}</span>
+                                                <div data-order-mapping-summary{% if not mapped or mapping.state != 'mapped' %} hidden{% endif %}>
+                                                    <div class="mapping-card"><div class="mapping-copy"><strong data-mapping-product-name>ERP: {{ mapped.name if mapped else '' }}{% if mapped %} · ID {{ mapped.id }}{% endif %}</strong><span data-mapping-product-meta>{% if mapped %}{{ mapped.brand or 'Без бренда' }} · {{ mapped.category or 'Без категории' }} · остаток {{ mapped.stock_display }}{% endif %}</span></div><span class="map-state good" data-mapping-status>Сопоставлен</span></div>
+                                                </div>
+                                                <div class="map-actions" data-order-mapping-actions{% if not mapped or mapping.state != 'mapped' %} hidden{% endif %}><button class="button button-secondary" type="button" data-change-order-mapping>Изменить сопоставление</button><button class="button button-secondary orders-secondary-submit" type="button" data-remove-order-mapping>Снять сопоставление</button></div>
+                                                <form class="order-map-form" data-shared-catalog-scope data-catalog-product-global="true" data-catalog-in-stock="false" data-catalog-order-counts="true" data-order-map-form{% if mapped and mapping.state == 'mapped' %} hidden{% endif %}>
+                                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                                    <div class="order-map-field"><label>Найти товар ERP</label>{{ render_catalog_combobox('orderMapProduct' ~ loop.index,'product_id',[],selected_value=mapped.id if mapped else '',selected_label=mapped.name if mapped else '',selected_item=mapped if mapped else none,item_label='товар',shared_catalog_kind='product',component_class='filter-combobox sales-product-combobox') }}</div>
+                                                    <button class="button button-secondary orders-secondary-submit" type="submit">Сопоставить</button>
+                                                    <div class="map-state bad" data-order-mapping-error hidden></div>
                                             </form>
                                             </div>
                                         </div>
@@ -382,10 +383,10 @@
                                     <div class="summary-row"><span>Доставка{% if detail_delivery_source == 'derived_reconciled_remainder' %} <small>(по согласованному остатку)</small>{% endif %}</span><strong>{% if detail_delivery is not none %}<span class="money-value" data-amount="{{ detail_delivery }}"></span> ₽{% else %}Не передана Bitrix{% endif %}</strong></div>
                                     <div class="summary-row total"><span>Итого</span><strong>{% if detail_total is not none %}<span class="money-value" data-amount="{{ detail_total }}"></span> ₽{% else %}—{% endif %}</strong></div>
                                 </div>
-                                <div>
+                                <div data-order-readiness-host>
                                     {% if sale_state.sale_missing %}<div class="warning"><strong>Продажа не найдена.</strong> Проверьте состав заказа, сопоставление товаров и остатки перед проведением.</div>{% endif %}
                                     {% if sale_state.sale_block_reason and not sale_state.sale_completed %}<div class="warning" id="saleBlockReason" tabindex="-1">{{ sale_state.sale_block_reason }}</div>{% endif %}
-                                    {% if not sale_state.sale_completed and not sale_state.readiness.ready %}<div class="warning readiness-warning">Проведение недоступно: {{ sale_state.readiness.issues|join(' · ') }}.</div>{% endif %}
+                                    {% if not sale_state.sale_completed and not sale_state.readiness.ready %}<div class="warning readiness-warning" data-order-readiness-warning>Проведение недоступно: {{ sale_state.readiness.issues|join(' · ') }}.</div>{% endif %}
                                 </div>
                             </div>
                             {% if not legacy_calc_ok and not selected_order.get('calculation_complete') %}<div class="warning">Bitrix не передал отдельную стоимость доставки. Итог не записан в доставку; проведение продажи заблокировано до получения полного расчёта.</div>{% elif not legacy_calc_ok and not selected_order.get('calculation_consistent') %}<div class="warning">Расчёт не сходится: товары − скидка + доставка ≠ итог. Проведение заблокировано.</div>{% endif %}
@@ -441,17 +442,30 @@
     searchInput?.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();searchInput.form?.requestSubmit();}});
     document.querySelectorAll('[data-auto-submit-filter]').forEach(filter=>filter.addEventListener('change',()=>filter.form?.requestSubmit()));
     document.querySelector('[data-tracking-form]')?.addEventListener('submit',event=>{const button=event.currentTarget.querySelector('button[type="submit"]');if(button){button.disabled=true;button.textContent='Сохраняем…';}});
-    document.querySelectorAll('[data-change-order-mapping]').forEach(button=>button.addEventListener('click',()=>{const row=button.closest('.product-row');const form=row?.querySelector('[data-order-map-form]');if(form){form.hidden=false;window.initializeSharedCatalogCascades?.(form);form.querySelector('button,input')?.focus();}}));
-    document.querySelectorAll('[data-order-map-form]').forEach(form=>form.addEventListener('submit',event=>{
-        event.preventDefault();
-        if(form.dataset.submitting==='1')return;
-        const productId=form.querySelector('input[name="product_id"]')?.value?.trim();
-        if(!productId){window.VechasuNotify?.warning('Выберите товар ERP из каталога');return;}
-        form.dataset.submitting='1';
-        const button=form.querySelector('button[type="submit"]');if(button){button.disabled=true;button.textContent='Сопоставляем…';}
-        HTMLFormElement.prototype.submit.call(form);
-    }));
-    document.querySelectorAll('[data-show-sale-block]').forEach(button=>button.addEventListener('click',()=>{const reason=document.getElementById('saleBlockReason');reason?.scrollIntoView({behavior:'smooth',block:'center'});reason?.focus();}));
+    const mappingEndpoint=row=>`/api/orders/${encodeURIComponent(row.dataset.orderId)}/items/${encodeURIComponent(row.dataset.orderItemId)}/mapping`;
+    function mappingError(form,message,error){const node=form?.querySelector('[data-order-mapping-error]');if(node){node.textContent=message;node.hidden=false;}window.VechasuNotify?.error(message);console.error('Order item mapping failed',error||message);}
+    function updateOrderMappingState(state){
+        const host=document.querySelector('[data-order-readiness-host]');let warning=host?.querySelector('[data-order-readiness-warning]');
+        if(state.sale_ready){warning?.remove();}else if(host){if(!warning){warning=document.createElement('div');warning.className='warning readiness-warning';warning.dataset.orderReadinessWarning='';host.appendChild(warning);}warning.textContent=`Проведение недоступно: ${(state.issues||[]).join(' · ')}.`;}
+        const saleAction=document.querySelector('[data-order-sale-action]');if(saleAction){if(state.sale_ready){delete saleAction.dataset.showSaleBlock;saleAction.dataset.openSaleDialog='';}else{delete saleAction.dataset.openSaleDialog;saleAction.dataset.showSaleBlock='';}}
+    }
+    function showSavedMapping(row,data){
+        const product=data.mapping.product;const summary=row.querySelector('[data-order-mapping-summary]');const state=row.querySelector('[data-order-mapping-state]');const actions=row.querySelector('[data-order-mapping-actions]');const form=row.querySelector('[data-order-map-form]');
+        summary.querySelector('[data-mapping-product-name]').textContent=`ERP: ${product.name} · ID ${product.id}`;
+        summary.querySelector('[data-mapping-product-meta]').textContent=`${product.brand||'Без бренда'} · ${product.category||'Без категории'} · остаток ${product.stock_display??product.stock??0}`;
+        summary.hidden=false;state.hidden=true;actions.hidden=false;form.hidden=true;form.querySelector('[data-order-mapping-error]').hidden=true;updateOrderMappingState(data.order);
+    }
+    async function mappingRequest(row,method,productId){
+        const form=row.querySelector('[data-order-map-form]');const csrf=form.querySelector('input[name="csrf_token"]').value;const options={method,credentials:'same-origin',headers:{Accept:'application/json','X-CSRF-Token':csrf}};
+        if(method==='POST'){options.headers['Content-Type']='application/json';options.body=JSON.stringify({product_id:Number(productId)});}
+        const response=await fetch(mappingEndpoint(row),options);let payload=null;try{payload=await response.json();}catch(error){throw new Error(`Сервер вернул некорректный ответ (${response.status})`);}if(!response.ok||payload?.ok!==true){throw new Error(payload?.error?.message||`Ошибка сохранения (${response.status})`);}return payload.data;
+    }
+    document.querySelectorAll('[data-order-item-row]').forEach(row=>{
+        const form=row.querySelector('[data-order-map-form]');
+        row.querySelector('[data-change-order-mapping]')?.addEventListener('click',()=>{form.hidden=false;form.querySelector('[data-order-mapping-error]').hidden=true;window.initializeSharedCatalogCascades?.(form);form.querySelector('.brand-combobox-search')?.focus();});
+        row.querySelector('[data-remove-order-mapping]')?.addEventListener('click',async event=>{const button=event.currentTarget;button.disabled=true;try{const data=await mappingRequest(row,'DELETE');row.querySelector('[data-order-mapping-summary]').hidden=true;row.querySelector('[data-order-mapping-actions]').hidden=true;const state=row.querySelector('[data-order-mapping-state]');state.textContent='Не сопоставлен';state.hidden=false;form.hidden=false;window.clearSharedCatalogCombobox?.(form.querySelector('[data-shared-catalog-kind="product"]'));updateOrderMappingState(data.order);}catch(error){mappingError(form,error.message,error);}finally{button.disabled=false;}});
+        form.addEventListener('submit',async event=>{event.preventDefault();if(form.dataset.submitting==='1')return;const productId=form.querySelector('input[name="product_id"]')?.value?.trim();if(!productId){mappingError(form,'Выберите товар ERP из каталога');return;}const button=form.querySelector('button[type="submit"]');form.dataset.submitting='1';button.disabled=true;button.textContent='Сопоставляем…';try{const data=await mappingRequest(row,'POST',productId);if(String(data?.mapping?.product?.id)!==String(productId)){throw new Error('Сервер подтвердил другой товар ERP');}showSavedMapping(row,data);window.VechasuNotify?.success('Сопоставление сохранено');}catch(error){mappingError(form,error.message,error);}finally{delete form.dataset.submitting;button.disabled=false;button.textContent='Сопоставить';}});
+    });
     const modal=document.getElementById('orderSaleModal'); if(!modal)return;
     const tracking=modal.querySelector('[data-order-sale-tracking]'); const trackingStorageKey='order-sale-tracking:{{ detail_id if selected_order else "" }}';
     if(tracking){try{const saved=window.sessionStorage.getItem(trackingStorageKey);if(saved!==null)tracking.value=saved;tracking.addEventListener('input',()=>window.sessionStorage.setItem(trackingStorageKey,tracking.value));}catch(error){}}
@@ -471,7 +485,7 @@
     document.addEventListener('DOMContentLoaded',initializeOrderSaleLocations,{once:true});
     const open=()=>{modal.classList.add('is-open');modal.setAttribute('aria-hidden','false');modal.querySelector('[data-close-sale-dialog]')?.focus();};
     const close=()=>{modal.classList.remove('is-open');modal.setAttribute('aria-hidden','true');};
-    document.querySelectorAll('[data-open-sale-dialog]').forEach(button=>button.addEventListener('click',open));
+    document.querySelector('[data-order-sale-action]')?.addEventListener('click',event=>{if(event.currentTarget.hasAttribute('data-open-sale-dialog')){open();return;}const reason=document.getElementById('saleBlockReason')||document.querySelector('[data-order-readiness-warning]');reason?.scrollIntoView({behavior:'smooth',block:'center'});reason?.focus();});
     modal.querySelectorAll('[data-close-sale-dialog]').forEach(button=>button.addEventListener('click',close));
     modal.addEventListener('click',event=>{if(event.target===modal)close();});
     document.addEventListener('keydown',event=>{if(event.key==='Escape'&&modal.classList.contains('is-open'))close();});

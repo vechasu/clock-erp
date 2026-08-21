@@ -32,7 +32,7 @@ class BitrixOrderLinksTest(unittest.TestCase):
             mock.patch.object(web, "get_orders", return_value=[order]),
             mock.patch.object(web, "get_order", return_value=order),
             mock.patch.object(web, "get_warehouse_items", return_value=[]),
-            mock.patch.object(web, "load_product_mappings", return_value={}),
+            mock.patch.object(web, "load_order_product_mappings", return_value={}),
         ):
             response = self.client.get("/order/18593")
 

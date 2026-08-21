@@ -44,6 +44,7 @@ class OrdersUiRedesignTest(unittest.TestCase):
             "address": "Тамбов, Советская улица, 1",
             "region": "468 · Тамбовская область",
             "products": [{
+                "basket_id": "line-1",
                 "product_id": "bx-1",
                 "name": "Часы с длинным названием",
                 "quantity": 1,
@@ -51,7 +52,7 @@ class OrdersUiRedesignTest(unittest.TestCase):
             }],
         })
         mapping = {
-            "bx-1": {
+            "line:line-1": {
                 "state": "unmapped",
                 "state_label": "Не сопоставлен",
                 "product": None,
@@ -60,7 +61,7 @@ class OrdersUiRedesignTest(unittest.TestCase):
         with (
             mock.patch.object(web, "get_orders", return_value=[summary]),
             mock.patch.object(web, "get_order", return_value=detail),
-            mock.patch.object(web, "load_product_mappings", return_value={}),
+            mock.patch.object(web, "load_order_product_mappings", return_value={}),
             mock.patch.object(
                 web,
                 "build_catalog_product_order_counts",
@@ -118,14 +119,12 @@ class OrdersUiRedesignTest(unittest.TestCase):
 
     def test_desktop_mapping_is_one_row_with_flexible_product(self):
         self.assertIn(
-            "grid-template-columns:minmax(118px,21%) minmax(138px,24%) "
-            "minmax(180px,1fr) max-content",
+            "grid-template-columns:minmax(260px,1fr) max-content",
             self.source,
         )
-        self.assertIn(
-            'data-catalog-product-disabled-placeholder="Сначала выберите категорию"',
-            self.source,
-        )
+        self.assertIn('data-catalog-product-global="true"', self.source)
+        self.assertNotIn('data-shared-catalog-kind="brand"', self.source)
+        self.assertNotIn('data-shared-catalog-kind="category"', self.source)
         self.assertIn("@media (max-width:1100px)", self.source)
         self.assertIn(".order-map-form { grid-template-columns:1fr 1fr; }", self.source)
         self.assertIn("@media (max-width:780px)", self.source)

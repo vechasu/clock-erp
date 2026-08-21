@@ -7,6 +7,7 @@ from unittest import mock
 
 from app.catalog_db import CatalogDatabase
 from app.services.catalog_reader import CatalogReader
+from app.services.excel_product_catalog import ExcelProductCatalog
 
 
 EXPECTED_TABLES = {
@@ -49,6 +50,59 @@ class CatalogDatabaseTest(unittest.TestCase):
 
     def test_creates_all_catalog_tables(self):
         self.assertEqual(set(self.database.table_names()), EXPECTED_TABLES)
+
+    def test_legacy_order_mapping_schema_migrates_without_losing_relation(self):
+        with self.database.transaction() as connection:
+            connection.execute(
+                "INSERT INTO catalog_excel_batches "
+                "(id, file_sha256, source_filename, row_count, total_stock, "
+                "positive_rows, zero_rows, status, created_at, applied_at) "
+                "VALUES ('mapping-batch', 'mapping-sha', 'mapping.xlsx', "
+                "0, 0, 0, 0, 'active', '2026-08-21', '2026-08-21')"
+            )
+        product = ExcelProductCatalog(self.database).create_product(
+            name="Nato 84", article="NATO-84", brand="Diloy",
+            category="Ремни", stock=1,
+        )
+        with self.database.connect() as connection:
+            connection.execute("PRAGMA foreign_keys = OFF")
+            connection.executescript("""
+                DROP TABLE erp_order_product_mappings;
+                CREATE TABLE erp_order_product_mappings (
+                    order_id TEXT NOT NULL,
+                    order_line_id TEXT NOT NULL,
+                    product_id INTEGER NOT NULL,
+                    product_name TEXT,
+                    brand_id TEXT,
+                    category_id TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (order_id, order_line_id)
+                );
+            """)
+            connection.execute(
+                "INSERT INTO erp_order_product_mappings VALUES "
+                "(?, ?, ?, 'Nato 84', 'legacy-brand', 'legacy-category', ?, ?)",
+                ("21112", "199696", product["id"], "2026-08-21", "2026-08-21"),
+            )
+            connection.commit()
+
+        CatalogDatabase(self.database_path).initialize()
+
+        with self.database.connect() as connection:
+            columns = [
+                row["name"] for row in connection.execute(
+                    "PRAGMA table_info(erp_order_product_mappings)"
+                ).fetchall()
+            ]
+            row = connection.execute(
+                "SELECT order_id, order_item_id, product_id "
+                "FROM erp_order_product_mappings"
+            ).fetchone()
+        self.assertEqual(columns, [
+            "order_id", "order_item_id", "product_id", "created_at", "updated_at"
+        ])
+        self.assertEqual(tuple(row), ("21112", "199696", product["id"]))
 
     def test_cached_initialization_runs_schema_checks_only_once(self):
         database = CatalogDatabase(
