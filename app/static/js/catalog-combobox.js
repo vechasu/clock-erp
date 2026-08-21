@@ -1300,7 +1300,21 @@
             const items = Array.isArray(payload?.data)
                 ? payload.data
                 : [];
-            let availableItems = items;
+            const requiresAvailableStock = Boolean(
+                scope?.dataset.catalogInStock === "true"
+            );
+            let availableItems = requiresAvailableStock
+                ? items.filter((item) => {
+                    if (kind === "product") {
+                        return item?.active !== false
+                            && Number(item?.stock) > 0;
+                    }
+                    if (kind === "category") {
+                        return Number(item?.count) > 0;
+                    }
+                    return true;
+                })
+                : items;
             const selectedId = selectedSharedCatalogId(combobox);
             const selectedItem = (() => {
                 try {
@@ -1316,7 +1330,13 @@
             if (
                 selectedId
                 && selectedItem
-                && !items.some(
+                && (!requiresAvailableStock
+                    || kind !== "product"
+                    || (
+                        selectedItem.active !== false
+                        && Number(selectedItem.stock) > 0
+                    ))
+                && !availableItems.some(
                     (item) => sharedCatalogIdValue(item.id) === selectedId
                 )
             ) {
@@ -1346,7 +1366,9 @@
             window.replaceCatalogComboboxOptions(
                 combobox,
                 options,
-                "Ничего не найдено"
+                requiresAvailableStock
+                    ? "Нет товаров в наличии"
+                    : "Ничего не найдено"
             );
             window.filterBrandList(query, combobox);
             return availableItems;
