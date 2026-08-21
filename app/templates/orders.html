@@ -74,6 +74,8 @@
         .card-title h2 { font-size:20px; }
         .card-subtitle { margin-top:4px; color:var(--muted); font-size:12px; }
         .actions { gap:7px; flex-wrap:wrap; justify-content:flex-end; }
+        .status-form { display:flex; gap:6px; align-items:center; }
+        .status-form .field { width:170px; }
         details.more { position:relative; }
         details.more summary { list-style:none; }
         details.more summary::-webkit-details-marker { display:none; }
@@ -179,6 +181,8 @@
             .actions { width:100%; }
             .actions .button,.actions form { flex:1 1 auto; }
             .actions form .button { width:100%; }
+            .actions .status-form { flex-basis:100%; }
+            .actions .status-form .field { flex:1; width:auto; }
             .line-price { padding-left:0; }
         }
     </style>
@@ -299,11 +303,19 @@
                         </div>
                         <div class="actions">
                             <button class="button button-secondary" type="button" data-collapse-list aria-label="Свернуть список" title="Свернуть список">Свернуть список</button>
+                            <form class="status-form" method="post" action="/order/{{ detail_id }}/status">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <select class="field" name="status" aria-label="Статус заказа">
+                                    <option value="N"{% if detail_status_code == 'N' %} selected{% endif %}>Не подтверждён</option>
+                                    <option value="A"{% if detail_status_code == 'A' %} selected{% endif %}>Подтверждён</option>
+                                    <option value="D"{% if detail_status_code == 'D' %} selected{% endif %}>Собран</option>
+                                </select>
+                                <button class="button button-secondary" type="submit">Сохранить статус</button>
+                            </form>
                             {% if sale_state.sale_completed %}
                                 <span class="button button-secondary" aria-label="Продажа проведена">Продажа проведена</span><a class="button button-primary" href="/sales?source=tictactoy&sale_id={{ sale_state.sale_id }}">Открыть продажу</a>
                             {% else %}
                                 <button class="button button-primary" type="button"{% if sale_state.can_create_sale %} data-open-sale-dialog{% else %} data-show-sale-block{% endif %}>Провести продажу</button>
-                                {% if detail_status_code == 'N' %}<form method="post" action="/order/{{ detail_id }}/status"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="status" value="A"><button class="button button-secondary" type="submit">Подтвердить заказ</button></form>{% endif %}
                             {% endif %}
                             {% if selected_order_bitrix_url %}<a class="button button-secondary" href="{{ selected_order_bitrix_url }}" target="_blank" rel="noopener noreferrer">Открыть в Bitrix ↗</a>{% endif %}
                             {% if detail_id and selected_order.get('sync_state') != 'error' %}<a class="button button-secondary" href="{{ url_for('order_print_page', order_id=detail_id) }}" target="_blank" rel="noopener noreferrer"><span aria-hidden="true">⎙</span> Печать заказа</a>{% endif %}
@@ -345,7 +357,7 @@
                                                 <div class="mapping-card">{% if mapped.image_url %}<img src="{{ mapped.image_url }}" alt="">{% endif %}<div class="mapping-copy"><strong>ERP: {{ mapped.name }}</strong>{{ mapped.brand or 'Без бренда' }} · {{ mapped.category or 'Без категории' }} · остаток {{ mapped.stock_display }}</div><span class="map-state {% if mapped.stock|float >= qty|float %}good{% else %}bad{% endif %}">{% if mapped.stock|float >= qty|float %}Сопоставлено{% else %}Недостаточно остатка{% endif %}</span></div>
                                                 <div class="map-actions"><button class="button button-secondary" type="button" data-change-order-mapping>Заменить</button><form method="post" action="/order/{{ detail_id }}/product-unmap"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="bitrix_product_id" value="{{ pid }}"><button class="button button-secondary orders-secondary-submit" type="submit">Очистить</button></form></div>
                                             {% else %}<span class="map-state bad">{{ mapping.state_label if mapping else 'Не сопоставлено' }}</span>{% endif %}
-                                            <form class="order-map-form" method="post" action="/order/{{ detail_id }}/product-map" data-shared-catalog-scope data-catalog-in-stock="true" data-catalog-order-counts="true" data-catalog-product-disabled-placeholder="Сначала выберите категорию" data-order-map-form{% if mapped and mapping.state == 'mapped' %} hidden{% endif %}>
+                                            <form class="order-map-form" method="post" action="/order/{{ detail_id }}/product-map" data-shared-catalog-scope data-catalog-in-stock="false" data-catalog-order-counts="true" data-catalog-product-disabled-placeholder="Сначала выберите категорию" data-order-map-form{% if mapped and mapping.state == 'mapped' %} hidden{% endif %}>
                                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="bitrix_product_id" value="{{ pid }}">
                                                 <div class="order-map-field"><label>Бренд</label>{{ render_catalog_combobox('orderMapBrand' ~ loop.index,'selected_brand',[],selected_value=mapped.brand if mapped else '',selected_id=mapped.brand_id if mapped else '',selected_label=mapped.brand if mapped else '',item_label='бренд',shared_catalog_kind='brand',id_input_name='brand_id',component_class='filter-combobox') }}</div>
                                                 <div class="order-map-field"><label>Категория</label>{{ render_catalog_combobox('orderMapCategory' ~ loop.index,'selected_category',[],selected_value=mapped.category if mapped else '',selected_id=mapped.category_id if mapped else '',selected_label=mapped.category if mapped else '',item_label='категорию',disabled=not mapped,shared_catalog_kind='category',id_input_name='category_id',component_class='filter-combobox') }}</div>

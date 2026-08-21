@@ -128,12 +128,6 @@ class OrderStatusService:
             if not mapped and current.get("bitrix_status") == remote:
                 return current
             if (
-                mapped is not None
-                and current.get("erp_status") == ERP_ASSEMBLED
-                and mapped != ERP_ASSEMBLED
-            ):
-                return current
-            if (
                 mapped == current.get("erp_status")
                 and current.get("bitrix_status") == remote
             ):
@@ -208,9 +202,6 @@ class OrderStatusService:
                 return self.get(order_id, connection)
 
             old = current["erp_status"]
-            # "Собран" is final and cannot be downgraded by a stale remote read.
-            if old == ERP_ASSEMBLED and mapped != ERP_ASSEMBLED:
-                return current
             if old != mapped or current.get("bitrix_status") != remote:
                 connection.execute(
                     "UPDATE erp_order_statuses SET erp_status=?, bitrix_status=?, "
@@ -262,15 +253,6 @@ class OrderStatusService:
                 if owns:
                     context.__exit__(None, None, None)
                 return current
-            allowed = (
-                old == ERP_UNCONFIRMED and target == ERP_CONFIRMED
-            ) or (
-                old == ERP_CONFIRMED and target == ERP_ASSEMBLED and sale_id
-            )
-            if not allowed:
-                raise OrderStatusError("Недопустимый переход статуса")
-            if target == ERP_ASSEMBLED and not sale_id:
-                raise OrderStatusError("Статус «Собран» требует проведённую продажу")
             bitrix_code = self.mapping.outbound[target]
             now = _now()
             connection.execute(
@@ -291,6 +273,41 @@ class OrderStatusService:
             if owns:
                 context.__exit__(type(error), error, error.__traceback__)
             raise
+
+    def record_synced_change(self, order_id, target, actor):
+        """Persist an ERP change only after Bitrix accepted it."""
+        if target not in ERP_STATUS_NAMES:
+            raise OrderStatusError("Недопустимый статус заказа")
+        order_id = str(order_id)
+        bitrix_code = self.mapping.outbound[target]
+        now = _now()
+        with self.database.transaction() as connection:
+            current = self.get(order_id, connection)
+            if current is None:
+                connection.execute(
+                    "INSERT INTO erp_order_statuses (external_order_id, erp_status, "
+                    "bitrix_status, sync_status, created_at, updated_at) "
+                    "VALUES (?, ?, ?, 'synced', ?, ?)",
+                    (order_id, target, bitrix_code, now, now),
+                )
+                old = None
+            else:
+                old = current["erp_status"]
+                connection.execute(
+                    "UPDATE erp_order_statuses SET erp_status=?, bitrix_status=?, "
+                    "sync_status='synced', updated_at=? WHERE external_order_id=?",
+                    (target, bitrix_code, now, order_id),
+                )
+            connection.execute(
+                "DELETE FROM erp_order_status_sync_queue WHERE external_order_id=?",
+                (order_id,),
+            )
+            if old != target:
+                self._event(
+                    connection, order_id, old, target, actor, "erp", "synced",
+                    bitrix_code,
+                )
+            return self.get(order_id, connection)
 
     def overlay(self, order):
         order_id = str(order.get("id") or order.get("external_id") or "")
