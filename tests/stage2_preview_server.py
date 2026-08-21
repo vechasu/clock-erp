@@ -3,6 +3,8 @@
 import os
 import sys
 import tempfile
+import base64
+import hashlib
 from pathlib import Path
 
 
@@ -70,15 +72,35 @@ fixture_image_two = (
     "data:image/gif;base64,"
     "R0lGODlhAQABAIAAAAD/AP///ywAAAAAAQABAAACAUwAOw=="
 )
+fixture_local_image = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk"
+    "YAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+)
+fixture_local_digest = hashlib.sha256(fixture_local_image).hexdigest()
+fixture_local_name = "product-{}.png".format(fixture_local_digest)
+fixture_product_root = PREVIEW_ROOT / "product_images"
+fixture_product_root.mkdir(parents=True, exist_ok=True)
+(fixture_product_root / fixture_local_name).write_bytes(fixture_local_image)
+
+real_product_image_store = web.ProductImageStore
+web.ProductImageStore = lambda database=None: real_product_image_store(
+    database, fixture_product_root
+)
 with CatalogDatabase(PREVIEW_ROOT / "catalog.db").transaction() as connection:
-    product_ids = [int(item["id"]) for item in projected_products[:3]]
+    product_ids = [
+        int(item["id"]) for item in projected_products
+        if float(item.get("stock") or 0) > 0
+    ][:3]
     first_id = product_ids[0]
     connection.execute(
         "UPDATE catalog_excel_products SET bitrix_external_product_id = ?, "
         "bitrix_primary_image_url = ?, bitrix_thumbnail_url = ?, "
+        "local_image_path = ?, local_image_source = 'bitrix', "
+        "local_image_sha256 = ?, "
         "bitrix_gallery_json = ?, created_at = ? WHERE id = ?",
         (
             "204699", fixture_image_one, fixture_image_one,
+            fixture_local_name, fixture_local_digest,
             '[{"original_url":"' + fixture_image_one + '"},'
             '{"original_url":"' + fixture_image_two + '"}]',
             "2099-01-01T00:00:00+00:00",
@@ -113,7 +135,10 @@ warehouse_items = [
     }
     for item in projected_products
 ]
-warehouse_items[0]["thumbnail_url"] = fixture_image_one
+warehouse_items[0]["local_image_url"] = "/product-images/{}".format(
+    fixture_local_name
+)
+warehouse_items[0]["thumbnail_url"] = warehouse_items[0]["local_image_url"]
 
 receipt_positions = [
     {

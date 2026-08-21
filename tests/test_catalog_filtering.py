@@ -182,7 +182,7 @@ class CatalogFilteringTest(unittest.TestCase):
         self.assertEqual(category_only["total"], 121)
         self.assertEqual(intersection["total"], 120)
 
-    def test_stock_filter_is_explicit_and_reset_removes_it(self):
+    def test_stock_tabs_replace_duplicate_in_stock_toggle(self):
         all_items = self.excel.list_products(
             brand_id=self.brand["id"],
             category_id=self.category_id,
@@ -201,9 +201,45 @@ class CatalogFilteringTest(unittest.TestCase):
 
         self.assertEqual(all_items["total"], 120)
         self.assertEqual(in_stock["total"], 4)
-        self.assertIn('id="warehouseInStockToggle"', template)
-        self.assertIn('"in_stock",\n                "page"', template)
-        self.assertIn('in_stock: ["in_stock"]', template)
+        self.assertNotIn('id="warehouseInStockToggle"', template)
+        self.assertIn("В наличии", template)
+        self.assertIn("Нет в наличии", template)
+
+    def test_stock_tab_counts_are_global_and_use_positive_stock_only(self):
+        counts = self.excel.stock_tab_counts()
+
+        self.assertEqual(counts["in_stock"], 4)
+        self.assertEqual(counts["out_of_stock"], 118)
+        self.assertEqual(counts["units_in_stock"], 4)
+
+    def test_brand_and_category_pages_hide_empty_entries_by_default(self):
+        empty_category = self.shared.create_category(
+            self.other_brand["id"], "Пустая категория"
+        )
+
+        brand_default = self.client.get("/warehouse?view=brands").get_data(
+            as_text=True
+        ).split('id="brandList"', 1)[1].split("</div>\n", 1)[0]
+        brand_all = self.client.get(
+            "/warehouse?view=brands&show_empty=1"
+        ).get_data(as_text=True).split('id="brandList"', 1)[1].split(
+            "</div>\n", 1
+        )[0]
+        category_default = self.client.get(
+            "/warehouse?view=categories"
+        ).get_data(as_text=True)
+        category_all = self.client.get(
+            "/warehouse?view=categories&show_empty=1"
+        ).get_data(as_text=True)
+
+        self.assertIn("666 Barcelona", brand_default)
+        self.assertNotIn("Другой бренд", brand_default)
+        self.assertIn("Другой бренд", brand_all)
+        self.assertNotIn("Пустая категория", category_default)
+        self.assertIn("Пустая категория", category_all)
+        self.assertIn(
+            "category_id={}".format(empty_category["id"]), category_all
+        )
 
     def test_stock_filter_preserves_fractional_and_legacy_value_semantics(self):
         with self.database.transaction() as connection:
@@ -335,7 +371,7 @@ class CatalogFilteringTest(unittest.TestCase):
         self.assertIn("Бренд: 666 Barcelona", html)
         self.assertIn("Категория: Наручные часы", html)
         self.assertIn("Сбросить всё", html)
-        self.assertEqual(html.count('data-product-id="'), 100)
+        self.assertEqual(html.count('data-product-id="'), 4)
 
     def test_warehouse_period_chip_variants_and_stock_chip(self):
         variants = (
@@ -356,20 +392,8 @@ class CatalogFilteringTest(unittest.TestCase):
                 self.assertEqual(html.count('class="erp-filter-chip"'), 1)
                 self.assertIn(label, html)
 
-        response = self.client.get(
-            "/warehouse?brand_id={}&category_id={}&in_stock=1&per_page=100".format(
-                self.brand["id"],
-                self.category_id,
-            )
-        )
-        html = response.get_data(as_text=True)
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(html.count('class="erp-filter-chip"'), 3)
-        self.assertIn("Только в наличии", html)
-        self.assertIn('id="warehouseInStockToggle"', html)
-        self.assertIn("checked", html)
-        self.assertEqual(html.count('data-product-id="'), 4)
+        template = (ROOT / "app/templates/warehouse.html").read_text(encoding="utf-8")
+        self.assertNotIn("Только в наличии", template)
 
     def test_sales_uses_positive_stock_while_receipts_keep_full_catalog(self):
         query = "brand_id={}&category_id={}&limit=200".format(
@@ -593,6 +617,7 @@ class CatalogFilteringTest(unittest.TestCase):
                 article=article,
                 brand_id=self.brand["id"],
                 category_id=self.category_id,
+                stock=1,
             )
 
         api = self.client.get(

@@ -34,20 +34,17 @@ class ErpTableUxPolishTest(unittest.TestCase):
         )
         self.assertNotIn('class="warehouse-table-toolbar"', source)
 
-    def test_stock_filter_is_in_drawer_not_stock_header(self):
+    def test_stock_filter_is_replaced_by_persistent_tabs(self):
         source = self.source("app/templates/warehouse.html")
         stock_header = source.split(
             '<th data-column-key="stock">', 1
         )[1].split("</th>", 1)[0]
-        drawer = source.split('id="filterDrawer"', 1)[1].split(
-            "</aside>", 1
-        )[0]
-
         self.assertNotIn("warehouseInStockToggle", stock_header)
         self.assertNotIn("stock-mini-toggle", stock_header)
-        self.assertIn('id="warehouseFilterInStock"', drawer)
-        self.assertIn('name="in_stock"', drawer)
-        self.assertIn("Только в наличии", drawer)
+        self.assertNotIn('id="warehouseFilterInStock"', source)
+        self.assertNotIn('name="in_stock"', source)
+        self.assertNotIn("Только в наличии", source)
+        self.assertIn("view='out_of_stock'", source)
 
     def test_resize_scroll_and_action_column_contracts_remain(self):
         contracts = {
