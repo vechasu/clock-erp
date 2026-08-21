@@ -482,6 +482,10 @@ class AuthHardeningTest(unittest.TestCase):
         self.assertNotIn("password_hash", html)
         self.assertNotIn("correct horse battery", html)
         self.assertNotIn("pbkdf2:", html)
+        self.assertIn('role="tablist"', html)
+        self.assertIn('id="dangerDialog"', html)
+        self.assertIn("@media(max-width:760px)", html)
+        self.assertIn('class="table-wrap"', html)
 
     def test_email_verification_token_is_one_time_and_expires(self):
         user_id = self.insert_user("pending@example.com", verified=False)
