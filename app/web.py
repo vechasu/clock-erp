@@ -3095,6 +3095,7 @@ def warehouse_page():
     query = request.args.get("q", "").strip()
     selected_category = request.args.get("category", "").strip()
     selected_brand = request.args.get("brand", "").strip()
+    selected_model = request.args.get("model", "").strip()
     selected_brand_id = request.args.get("brand_id", "").strip()
     selected_category_id = request.args.get("category_id", "").strip()
     shared_catalog = SharedCatalog()
@@ -3175,6 +3176,7 @@ def warehouse_page():
     warehouse_active_filter_count = sum((
         bool(selected_brand_id or selected_brand),
         bool(selected_category_id or selected_category),
+        bool(selected_model),
         bool(selected_cell),
         bool(created_date_from or created_date_to),
         check_state != "all",
@@ -3187,6 +3189,7 @@ def warehouse_page():
         query=query,
         brand=selected_brand if not selected_brand_id else "",
         category=selected_category if not selected_category_id else "",
+        model=selected_model,
         cell=selected_cell,
         hide_zero=False,
         sort_by=sort_by,
@@ -3295,6 +3298,7 @@ def warehouse_page():
             query=query,
             selected_category=selected_category,
             selected_brand=selected_brand,
+            selected_model=selected_model,
             selected_category_id=selected_category_id,
             selected_brand_id=selected_brand_id,
             selected_cell=selected_cell,
@@ -3419,6 +3423,7 @@ def warehouse_products_export():
             "query": (request.args.get("q") or "").strip(),
             "brand": "" if brand_id.isdigit() else (request.args.get("brand") or "").strip(),
             "category": "" if category_id.isdigit() else (request.args.get("category") or "").strip(),
+            "model": (request.args.get("model") or "").strip(),
             "cell": (request.args.get("cell") or "").strip(),
             "hide_zero": request.args.get("in_stock") == "1",
             "sort_by": sort_by,

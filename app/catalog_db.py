@@ -269,6 +269,20 @@ CREATE TABLE IF NOT EXISTS erp_categories (
 CREATE INDEX IF NOT EXISTS idx_erp_categories_brand
     ON erp_categories(brand_id, active, normalized_name);
 
+CREATE TABLE IF NOT EXISTS erp_models (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    brand_id INTEGER NOT NULL REFERENCES erp_brands(id) ON DELETE RESTRICT,
+    name TEXT NOT NULL,
+    normalized_name TEXT NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (brand_id, normalized_name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_erp_models_brand
+    ON erp_models(brand_id, active, normalized_name);
+
 CREATE TABLE IF NOT EXISTS erp_brand_categories (
     brand_id INTEGER NOT NULL REFERENCES erp_brands(id) ON DELETE RESTRICT,
     category_id INTEGER NOT NULL REFERENCES erp_categories(id) ON DELETE RESTRICT,
@@ -339,6 +353,7 @@ CREATE TABLE IF NOT EXISTS catalog_excel_products (
     excel_row INTEGER NOT NULL,
     excel_name_raw TEXT NOT NULL,
     model TEXT,
+    model_id INTEGER REFERENCES erp_models(id) ON DELETE RESTRICT,
     normalized_name TEXT NOT NULL,
     excel_article TEXT,
     article_quality TEXT NOT NULL,
@@ -1367,6 +1382,15 @@ class CatalogDatabase:
             connection.execute(
                 "ALTER TABLE catalog_excel_products ADD COLUMN model TEXT"
             )
+        if "model_id" not in columns:
+            connection.execute(
+                "ALTER TABLE catalog_excel_products ADD COLUMN model_id INTEGER "
+                "REFERENCES erp_models(id) ON DELETE RESTRICT"
+            )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_catalog_excel_products_model "
+            "ON catalog_excel_products(model_id, active)"
+        )
 
     @staticmethod
     def _ensure_product_image_columns(connection):

@@ -838,6 +838,38 @@ class SharedCatalog:
                     "ORDER BY name COLLATE NOCASE, id"
                 ).fetchall())
 
+            model_rows = []
+            if category_ids:
+                placeholders = ", ".join("?" for _ in category_ids)
+                model_rows.extend(connection.execute(
+                    "SELECT p.category_id, p.brand_id, "
+                    "COALESCE(b.name, 'Без бренда') AS brand_name, "
+                    "MIN(trim(p.model)) AS name, COUNT(*) AS product_count "
+                    "FROM catalog_excel_products p LEFT JOIN erp_brands b "
+                    "ON b.id = p.brand_id WHERE p.active = 1 "
+                    "AND p.category_id IN ({}) "
+                    "AND trim(COALESCE(p.model, '')) <> '' "
+                    "GROUP BY p.category_id, COALESCE(p.brand_id, 0), "
+                    "lower(replace(trim(p.model), ' ', '')) "
+                    "ORDER BY brand_name COLLATE NOCASE, name COLLATE NOCASE".format(
+                        placeholders
+                    ),
+                    category_ids,
+                ).fetchall())
+            if any(int(row["id"]) == 0 for row in rows):
+                model_rows.extend(connection.execute(
+                    "SELECT 0 AS category_id, p.brand_id, "
+                    "COALESCE(b.name, 'Без бренда') AS brand_name, "
+                    "MIN(trim(p.model)) AS name, COUNT(*) AS product_count "
+                    "FROM catalog_excel_products p LEFT JOIN erp_brands b "
+                    "ON b.id = p.brand_id WHERE p.active = 1 "
+                    "AND p.category_id IS NULL "
+                    "AND trim(COALESCE(p.model, '')) <> '' "
+                    "GROUP BY COALESCE(p.brand_id, 0), "
+                    "lower(replace(trim(p.model), ' ', '')) "
+                    "ORDER BY brand_name COLLATE NOCASE, name COLLATE NOCASE"
+                ).fetchall())
+
         brands = {}
         for row in brand_rows:
             brands.setdefault(int(row["category_id"]), []).append({
@@ -853,6 +885,14 @@ class SharedCatalog:
                     and int(row["product_count"]) > 0
                     and int(row["category_id"]) != 0
                 ),
+            })
+        models = {}
+        for row in model_rows:
+            models.setdefault(int(row["category_id"]), []).append({
+                "name": row["name"],
+                "brand_id": row["brand_id"],
+                "brand_name": row["brand_name"],
+                "product_count": int(row["product_count"]),
             })
         items = []
         for row in rows:
@@ -871,8 +911,10 @@ class SharedCatalog:
                 "brand_count": int(row["brand_count"]),
                 "nonzero_count": int(row["nonzero_count"]),
                 "brands": brands.get(int(row["id"]), []),
+                "models": models.get(int(row["id"]), []),
             })
             item["detail_brand_count"] = len(item["brands"])
+            item["model_count"] = len(item["models"])
             item["product_only_brand_count"] = sum(
                 1 for brand in item["brands"] if brand["product_only"]
             )
