@@ -674,7 +674,7 @@ CREATE TABLE IF NOT EXISTS erp_order_statuses (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_erp_order_status_sale
-    ON erp_order_statuses(sale_id) WHERE sale_id IS NOT NULL;
+    ON erp_order_statuses(sale_id);
 
 CREATE TABLE IF NOT EXISTS erp_order_status_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
