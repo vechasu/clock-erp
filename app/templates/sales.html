@@ -5906,10 +5906,13 @@
         const cities = (
             tictactoyLocationData[country]?.[region] || []
         );
+        const visibleCities = selectedCity && !cities.includes(selectedCity)
+            ? [...cities, selectedCity]
+            : cities;
 
         replaceLocationOptions(
             tictactoyCityCombobox,
-            cities,
+            visibleCities,
             selectedCity,
             "Выберите город",
             "Сначала выберите область/регион",
@@ -5930,10 +5933,13 @@
                 tictactoyLocationData[country] || {}
             )
         );
+        const visibleRegions = selectedRegion && !regions.includes(selectedRegion)
+            ? [...regions, selectedRegion]
+            : regions;
 
         replaceLocationOptions(
             tictactoyRegionCombobox,
-            regions,
+            visibleRegions,
             selectedRegion,
             "Выберите область/регион",
             "Сначала выберите страну",

@@ -246,6 +246,7 @@ class BitrixOrderNormalizationTest(unittest.TestCase):
             "user": {"first_name": "Анна", "last_name": "Петрова"},
             "PROPERTIES": {
                 "PHONE": "+7 900 000-00-00",
+                "COUNTRY": "Россия",
                 "CITY": "Москва",
                 "ADDRESS": "ул. Тестовая, 1",
             },
@@ -257,6 +258,7 @@ class BitrixOrderNormalizationTest(unittest.TestCase):
         })
         self.assertEqual(order["customer"], "Анна Петрова")
         self.assertEqual(order["phone"], "+7 900 000-00-00")
+        self.assertEqual(order["country"], "Россия")
         self.assertEqual(order["city"], "Москва")
         self.assertEqual(order["address"], "ул. Тестовая, 1")
         self.assertEqual(order["items"][0]["bitrix_product_id"], "sku-1")

@@ -14,6 +14,7 @@ import json
 import math
 import os
 import fcntl
+import re
 import uuid
 import click
 import requests
@@ -498,6 +499,15 @@ ORDER_REGION_KEYS = (
     "address_region", "REGION", "REGION_NAME", "STATE", "PROVINCE",
     "DELIVERY_REGION", "ADDRESS_REGION",
 )
+ORDER_COUNTRY_KEYS = (
+    "country", "country_name", "delivery_country", "address_country",
+    "COUNTRY", "COUNTRY_NAME", "DELIVERY_COUNTRY", "ADDRESS_COUNTRY",
+)
+ORDER_CITY_KEYS = (
+    "city", "city_name", "locality", "settlement", "delivery_city",
+    "address_city", "CITY", "CITY_NAME", "LOCALITY", "SETTLEMENT",
+    "DELIVERY_CITY", "ADDRESS_CITY",
+)
 ORDER_TRACKING_KEYS = (
     "tracking", "tracking_number", "track_number", "shipment_tracking",
     "delivery_tracking", "waybill", "TRACKING", "TRACKING_NUMBER",
@@ -524,6 +534,159 @@ def get_order_region(order):
         if value:
             return value
     return ""
+
+
+def get_order_address_text(order):
+    """Return the complete delivery address without stringifying objects."""
+    address_keys = (
+        "delivery_address", "full_address", "address_line", "address",
+        "DELIVERY_ADDRESS", "FULL_ADDRESS", "ADDRESS_LINE", "ADDRESS",
+    )
+    value = first_order_text(order, address_keys)
+    if value:
+        return value
+    for code in address_keys:
+        value = order_text_value(get_property(order, code))
+        if value:
+            return value
+    for container_key in (
+        "delivery", "shipment", "location", "address",
+        "DELIVERY", "SHIPMENT", "LOCATION", "ADDRESS",
+    ):
+        value = first_order_text(order.get(container_key), address_keys)
+        if value:
+            return value
+    return ""
+
+
+def _structured_order_geography(order, keys):
+    value = first_order_text(order, keys)
+    if value:
+        return value
+    for code in keys:
+        value = order_text_value(get_property(order, code))
+        if value:
+            return value
+    for container_key in (
+        "delivery", "shipment", "address", "location",
+        "DELIVERY", "SHIPMENT", "ADDRESS", "LOCATION",
+    ):
+        value = first_order_text(order.get(container_key), keys)
+        if value:
+            return value
+    return ""
+
+
+ORDER_COUNTRY_ALIASES = {
+    "рф": "Россия",
+    "российская федерация": "Россия",
+    "russia": "Россия",
+    "russian federation": "Россия",
+    "belarus": "Беларусь",
+    "republic of belarus": "Беларусь",
+    "kazakhstan": "Казахстан",
+    "usa": "США",
+    "united states": "США",
+    "united states of america": "США",
+    "uk": "Великобритания",
+    "united kingdom": "Великобритания",
+    "germany": "Германия",
+    "deutschland": "Германия",
+    "france": "Франция",
+    "italy": "Италия",
+    "spain": "Испания",
+    "canada": "Канада",
+    "japan": "Япония",
+    "china": "Китай",
+}
+ORDER_REGION_PATTERN = re.compile(
+    r"(?:(?:state|province|region)\s+[^,;]+|(?:^|\s)(?:г\.?\s*)?[^,;]+"
+    r"(?:область|обл\.?|край|республика|респ\.?|"
+    r"автономн(?:ая|ый)\s+(?:область|округ)|ао|state|province|region))$",
+    re.IGNORECASE,
+)
+ORDER_CITY_PATTERN = re.compile(
+    r"^(?:г(?:ород)?\.?|пос(?:ёлок|елок)?\.?|пгт\.?|с(?:ело)?\.?|"
+    r"дер(?:евня)?\.?|д\.?|станица|хутор|аул|city|town|village)\s+(.+)$",
+    re.IGNORECASE,
+)
+
+
+def _address_parts(address):
+    return [
+        re.sub(r"\s+", " ", part).strip(" .")
+        for part in re.split(r"[,;\n]+", str(address or ""))
+        if part.strip(" .")
+    ]
+
+
+def _parse_order_address_geography(address):
+    """Extract only explicit or catalog-backed geography from free-form text."""
+    parts = _address_parts(address)
+    result = {"country": "", "region": "", "city": ""}
+    if not parts:
+        return result
+
+    countries = {
+        str(country).casefold(): str(country)
+        for country in WORLD_COUNTRIES_RU
+    }
+    countries.update(ORDER_COUNTRY_ALIASES)
+    for part in parts:
+        normalized = re.sub(r"^(?:страна|country)\s*[:\-]?\s*", "", part, flags=re.IGNORECASE)
+        country = countries.get(normalized.casefold())
+        if country:
+            result["country"] = country
+            break
+
+    catalog = get_tictactoy_location_catalog()
+    region_lookup = {}
+    for country_name, regions in catalog.items():
+        for region_name in regions:
+            region_lookup.setdefault(region_name.casefold(), (country_name, region_name))
+
+    for part in parts:
+        match = region_lookup.get(part.casefold())
+        if match:
+            if not result["country"]:
+                result["country"] = match[0]
+            result["region"] = match[1]
+            break
+        if ORDER_REGION_PATTERN.search(part):
+            result["region"] = part
+            break
+
+    for part in parts:
+        locality = ORDER_CITY_PATTERN.match(part)
+        if locality:
+            result["city"] = locality.group(1).strip()
+            break
+
+    if not result["city"] and result["region"]:
+        known_cities = (
+            catalog.get(result["country"], {}).get(result["region"], [])
+        )
+        city_lookup = {city.casefold(): city for city in known_cities}
+        for part in parts:
+            city = city_lookup.get(part.casefold())
+            if city:
+                result["city"] = city
+                break
+    return result
+
+
+def get_order_geography(order):
+    """Prefer structured fields, then fill missing values from the address."""
+    result = {
+        "country": _structured_order_geography(order, ORDER_COUNTRY_KEYS),
+        "region": get_order_region(order),
+        "city": _structured_order_geography(order, ORDER_CITY_KEYS),
+    }
+    parsed = _parse_order_address_geography(get_order_address_text(order))
+    for field in result:
+        if not result[field]:
+            result[field] = parsed[field]
+    return result
 
 
 def get_order_tracking(order):
@@ -833,7 +996,7 @@ def orders_page():
         ),
         sale_already_conducted=already_conducted,
         conducted_sale=get_order_conducted_sale(order_id),
-        order_region=get_order_region(selected_order or {}),
+        order_geography=get_order_geography(selected_order or {}),
         order_tracking=get_order_tracking(selected_order or {}),
         order_sale_pricing=build_order_sale_pricing(
             (selected_order or {}).get("products") or []
@@ -1171,7 +1334,7 @@ def order_page(order_id):
         ),
         sale_already_conducted=already_conducted,
         conducted_sale=get_order_conducted_sale(order_id),
-        order_region=get_order_region(selected_order),
+        order_geography=get_order_geography(selected_order),
         order_tracking=get_order_tracking(selected_order),
         order_sale_pricing=build_order_sale_pricing(
             selected_order.get("products") or []
@@ -1238,6 +1401,27 @@ def _conduct_order_sale(order_id):
         else get_order_tracking(full_order)
         or ""
     ).strip()
+    inferred_geography = get_order_geography(full_order)
+    geography = {
+        field: str(
+            request.form.get(field)
+            if field in request.form
+            else inferred_geography.get(field)
+            or ""
+        ).strip()
+        for field in ("country", "region", "city")
+    }
+    oversized_geography = next((
+        field for field, value in geography.items() if len(value) > 255
+    ), None)
+    if oversized_geography:
+        return redirect(url_for(
+            "order_page",
+            order_id=order_id,
+            notice="error",
+            message="Страна, регион и населённый пункт должны быть не длиннее 255 символов",
+            open_sale="1",
+        ))
     if len(tracking) > 255:
         record_order_sale_attempt(
             inventory,
@@ -1410,9 +1594,11 @@ def _conduct_order_sale(order_id):
             full_order.get("customer") or full_order.get("client") or ""
         ),
         "phone": str(full_order.get("phone") or ""),
-        "region": get_order_region(full_order),
+        "country": geography["country"],
+        "region": geography["region"],
+        "city": geography["city"],
         "track_number": tracking,
-        "delivery_address": str(full_order.get("address") or ""),
+        "delivery_address": get_order_address_text(full_order),
         "delivery_cost": full_order.get("delivery_price") or 0,
         "order_total": full_order.get("order_total"),
         "comment": str(
@@ -7539,59 +7725,10 @@ def build_tictactoy_sale_location_fields(form, existing=None):
         ).strip()
         for field in ("country", "region", "city")
     }
-    existing_values = {
-        field: str(existing.get(field) or "").strip()
-        for field in ("country", "region", "city")
-    }
-
-    if (
-        not any(values.values())
-        and any(existing_values.values())
-    ):
-        return existing_values
-
-    country = values["country"]
-    region = values["region"]
-    city = values["city"]
-    locations = get_tictactoy_location_catalog()
-
-    if not country:
-        if "country" not in form and (region or city):
-            return values
-
-        if region or city:
-            raise ValueError(
-                "Сначала выберите страну продажи"
-            )
-
-        return values
-
-    if country not in TICTACTOY_SALE_COUNTRIES:
-        raise ValueError("Выберите страну из списка")
-
-    regions = locations.get(country) or {}
-
-    if not region:
-        if city:
-            raise ValueError(
-                "Сначала выберите область или регион"
-            )
-
-        return values
-
-    if region not in regions:
+    if any(len(value) > 255 for value in values.values()):
         raise ValueError(
-            "Выберите область или регион указанной страны"
+            "Страна, регион и населённый пункт должны быть не длиннее 255 символов"
         )
-
-    if not city:
-        return values
-
-    if city not in regions.get(region, []):
-        raise ValueError(
-            "Выберите город указанной области или региона"
-        )
-
     return values
 
 

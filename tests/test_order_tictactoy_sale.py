@@ -226,16 +226,24 @@ class OrderTictactoySaleTest(unittest.TestCase):
         self.assertIn('name="csrf_token"', html)
         self.assertIn('type="button" data-close-sale-dialog', html)
 
-    def test_dialog_shows_region_and_prefills_existing_tracking(self):
+    def test_dialog_shows_geography_and_prefills_existing_tracking(self):
         order = {
             **self.order,
             "properties": [
+                {"CODE": "COUNTRY", "VALUE": "Россия"},
                 {"CODE": "REGION", "VALUE": "Московская область"},
+                {"CODE": "CITY", "VALUE": "Химки"},
                 {"code": "TRACKING_NUMBER", "value": "  001-AB  "},
             ],
         }
         html = self.render_order_for(order)
-        self.assertIn("<span>Регион</span><strong>Московская область</strong>", html)
+        self.assertIn('name="country"', html)
+        self.assertIn('value="Россия"', html)
+        self.assertIn('name="region"', html)
+        self.assertIn('value="Московская область"', html)
+        self.assertIn('name="city"', html)
+        self.assertIn('value="Химки"', html)
+        self.assertEqual(html.count("data-order-sale-geography"), 4)
         self.assertIn('name="tracking"', html)
         self.assertIn('value="001-AB"', html)
         self.assertIn('placeholder="Введите номер отправления"', html)
@@ -248,22 +256,47 @@ class OrderTictactoySaleTest(unittest.TestCase):
         with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5]:
             return self.client.get("/order/18593" + query).get_data(as_text=True)
 
-    def test_dialog_uses_dash_when_region_is_missing(self):
+    def test_dialog_keeps_unknown_geography_empty(self):
         html = self.render_order_for(self.order)
-        self.assertIn("<span>Регион</span><strong>—</strong>", html)
+        self.assertIn('name="country" maxlength="255" value=""', html)
+        self.assertIn('name="region" maxlength="255" value=""', html)
+        self.assertIn('name="city" maxlength="255" value=""', html)
 
-    def test_region_uses_structured_address_but_does_not_guess_from_text(self):
+    def test_geography_prefers_structured_fields_and_parses_missing_address_parts(self):
         self.assertEqual(
-            web.get_order_region({
-                "address": {"region_name": "Ленинградская область"},
+            web.get_order_geography({
+                "country": "Казахстан",
+                "region": "Алматинская область",
+                "city": "Конаев",
+                "address": "Россия, Московская область, г. Химки",
             }),
-            "Ленинградская область",
+            {
+                "country": "Казахстан",
+                "region": "Алматинская область",
+                "city": "Конаев",
+            },
         )
         self.assertEqual(
-            web.get_order_region({
-                "address": "Москва, Ленинградская область, улица Тестовая",
+            web.get_order_geography({
+                "address": "Россия, Московская область, г. Химки, ул. Ленина, 1",
             }),
-            "",
+            {
+                "country": "Россия",
+                "region": "Московская область",
+                "city": "Химки",
+            },
+        )
+
+    def test_international_address_is_parsed_only_when_components_are_explicit(self):
+        self.assertEqual(
+            web.get_order_geography({
+                "address": "Germany, state Berlin, city Berlin, Friedrichstrasse 1",
+            }),
+            {"country": "Германия", "region": "state Berlin", "city": "Berlin"},
+        )
+        self.assertEqual(
+            web.get_order_geography({"address": "Неизвестная улица, дом 1"}),
+            {"country": "", "region": "", "city": ""},
         )
 
     def test_successful_bitrix_confirmation_opens_dialog_but_does_not_sell(self):
@@ -363,17 +396,50 @@ class OrderTictactoySaleTest(unittest.TestCase):
             {"ZX-009"},
         )
 
-    def test_empty_tracking_is_allowed_and_region_cannot_be_spoofed(self):
+    def test_empty_tracking_and_manual_geography_corrections_are_saved(self):
         order = {**self.order, "region": "Москва"}
         response = self.conduct(
             order=order,
             tracking="   ",
-            region="Подменённый регион",
+            country="Армения",
+            region="Лорийская область",
+            city="село Одзун",
         )
         self.assertEqual(urlsplit(response.location).path, "/sales")
         rows = self.inventory.list_sales()
         self.assertEqual({row["track_number"] for row in rows}, {""})
-        self.assertEqual({row["region"] for row in rows}, {"Москва"})
+        self.assertEqual({row["country"] for row in rows}, {"Армения"})
+        self.assertEqual({row["region"] for row in rows}, {"Лорийская область"})
+        self.assertEqual({row["city"] for row in rows}, {"село Одзун"})
+
+    def test_address_geography_is_snapshotted_and_returned_by_sale_api(self):
+        order = {
+            **self.order,
+            "address": "Россия, Ленинградская область, пос. Мурино, Центральная, 1",
+        }
+        self.conduct(order=order)
+        sale = self.inventory.list_sales()[0]
+        self.assertEqual(sale["country"], "Россия")
+        self.assertEqual(sale["region"], "Ленинградская область")
+        self.assertEqual(sale["city"], "Мурино")
+        serialized = web.serialize_api_sale({
+            **sale,
+            "sale_type": "automatic",
+            "sale_type_label": "Автоматическая",
+            "is_manual": False,
+            "inventory_managed": True,
+            "quantity_value": sale["quantity"],
+            "quantity_display": "2",
+            "net_quantity_value": sale["quantity"],
+            "total_amount": 0,
+            "gross_total_amount": 0,
+            "returned_amount": 0,
+            "is_cancelled": False,
+        })
+        self.assertEqual(
+            (serialized["country"], serialized["region"], serialized["city"]),
+            ("Россия", "Ленинградская область", "Мурино"),
+        )
 
     def test_tracking_over_limit_is_rejected_without_stock_change(self):
         response = self.conduct(tracking="X" * 256)
