@@ -43,7 +43,7 @@ font family и font weights. `erp-components.css` добавляет:
 | Поля | `.erp-control`, search input, modal fields, combobox trigger | Некоторые формы используют локальные `.control`/`.field` |
 | Таблицы | `.erp-data-table`, sticky/colored head, row hover, actions, numeric alignment | Состав колонок, resizing и mobile-представление page-specific |
 | Поиск и фильтры | `.erp-search-input`, filter trigger/count, panels, active-filter chips | Набор фильтров и момент применения различаются |
-| Вкладки | Товары, продажи и журнал используют общий визуальный контракт `.erp-section-tabs` / `.erp-section-tab`; существующие ссылки, порядок и active-механизмы остаются локальными | У ремонтов вкладок нет; продажи сохраняют собственную scroll-обёртку |
+| Вкладки | Товары, продажи, журнал и ремонт используют общий визуальный контракт `.erp-section-tabs` / `.erp-section-tab`; существующие ссылки, порядок и active-механизмы остаются локальными | Продажи сохраняют собственную scroll-обёртку |
 | Модальные окна | `[data-erp-modal-shell]`, dialog/header/body/actions, overlay, focus trap | Часть ремонтов использует drawer; закрытие Escape намеренно блокируется modal shell |
 | Уведомления | Глобальный `VechasuNotify` и toast palette | В шаблонах также сохраняются inline notices и field errors |
 
@@ -79,6 +79,19 @@ Desktop shell использует фиксированную sidebar ширин
 
 Снимки в `docs/screenshots/` являются материалами аудитов, а не нормативным
 visual baseline, пока владелец не подтвердит обратное.
+
+## Раздел «Ремонт»
+
+`repair.html` не содержит локального CSS: шапка, вкладки, toolbar, controls,
+chips, таблица, состояния, мобильные карточки, drawer, confirm и fallback-toast
+оформляются в repair-контракте `erp-components.css` через общие ERP tokens.
+Таблица прокручивается только внутри `.erp-table-scroll`; на ширине до 900 px
+она заменяется карточками, а до 600 px фильтры открываются как нижняя панель и
+drawer занимает весь экран. Контракт включает `focus-visible`, disabled и
+loading-состояния, возврат фокуса из drawer и роли для status/error сообщений.
+
+Маршруты, query-параметры, имена полей и JavaScript-вызовы repair API не входят
+в визуальный контракт и при изменении оформления должны сохраняться.
 
 ## Раздел «Заказы»
 

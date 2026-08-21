@@ -6,147 +6,6 @@
     <title>ТТТ ERP — Ремонт</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/themes.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/erp-components.css') }}">
-    <style>
-        * { box-sizing: border-box; }
-        body { margin: 0; background: #f4f7fb; color: #172033; font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-        button, input, select, textarea { font: inherit; }
-        .repair-main { min-width: 0; width: 100%; padding: 20px 32px 48px; }
-        .repair-shell { width: min(100%, 1480px); margin: 0 auto; }
-        .repair-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
-        .repair-header h1 { margin: 0; font-size: 28px; letter-spacing: -.03em; }
-        .repair-header p { margin: 4px 0 0; color: #687386; font-size: 14px; }
-        .repair-button { display: inline-flex; min-height: 40px; align-items: center; justify-content: center; gap: 7px; padding: 9px 14px; border: 1px solid #cfd7e2; border-radius: 10px; background: #fff; color: #334155; font-weight: 750; cursor: pointer; text-decoration: none; }
-        .repair-button:hover { background: #f8fafc; border-color: #aeb9c7; }
-        .repair-button.primary { border-color: #2563eb; background: #2563eb; color: #fff; }
-        .repair-button.primary:hover { background: #1d4ed8; }
-        .repair-button.danger { color: #b91c1c; }
-        .repair-tabs { display: flex; gap: 6px; margin-top: 18px; overflow-x: auto; }
-        .repair-tab { display: inline-flex; flex: 0 0 auto; align-items: center; padding: 9px 13px; border: 1px solid #d7dee8; border-radius: 10px; background: #fff; color: #526074; font-size: 13px; font-weight: 800; text-decoration: none; }
-        .repair-tab.is-active { border-color: #2563eb; background: #eaf2ff; color: #2456a6; }
-        .repair-archive-banner { margin-bottom: 14px; padding: 11px 13px; border: 1px solid #c9d9ef; border-radius: 10px; background: #f0f6ff; color: #315b8f; font-size: 13px; font-weight: 750; }
-        .repair-toolbar { position: relative; display: flex; align-items: center; gap: 8px; margin-top: 18px; padding: 12px; border: 1px solid #dfe5ed; border-radius: 12px; background: #fff; box-shadow: 0 2px 10px rgba(15, 23, 42, .025); }
-        .repair-search { position: relative; flex: 1 1 480px; min-width: 220px; }
-        .repair-search svg { position: absolute; top: 50%; left: 12px; width: 17px; height: 17px; transform: translateY(-50%); fill: none; stroke: #7b8798; stroke-width: 1.8; pointer-events: none; }
-        .repair-control { width: 100%; min-height: 40px; padding: 8px 11px; border: 1px solid #cfd5dc; border-radius: 10px; background: #fff; color: #253044; outline: none; }
-        .repair-control:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37, 99, 235, .08); }
-        .repair-search .repair-control { padding-left: 38px; }
-        .repair-toolbar-action { flex: 0 0 auto; }
-        .repair-filter-count { display: inline-grid; min-width: 18px; height: 18px; place-items: center; padding: 0 5px; border-radius: 9px; background: #e8f0ff; color: #2563eb; font-size: 11px; }
-        .repair-filter-panel, .repair-columns-panel, .repair-more-panel { position: absolute; top: calc(100% + 7px); right: 12px; z-index: 25; width: min(620px, calc(100vw - 28px)); padding: 16px; border: 1px solid #d9e1eb; border-radius: 12px; background: #fff; box-shadow: 0 18px 48px rgba(15, 23, 42, .16); }
-        .repair-columns-panel { width: min(300px, calc(100vw - 28px)); }
-        .repair-more-panel { width: min(230px, calc(100vw - 28px)); }
-        [hidden] { display: none !important; }
-        .repair-filter-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
-        .repair-field { display: grid; gap: 6px; min-width: 0; }
-        .repair-field > span, .repair-label { color: #526074; font-size: 12px; font-weight: 750; }
-        .repair-filter-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
-        .repair-check { display: flex; align-items: center; gap: 8px; min-height: 36px; color: #38465a; font-size: 13px; }
-        .repair-active-filters { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
-        .repair-chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; border: 0; border-radius: 999px; background: #eaf2ff; color: #2456a6; font-size: 12px; font-weight: 700; cursor: pointer; }
-        .repair-table-card { margin-top: 12px; overflow: hidden; border: 1px solid #dfe5ed; border-radius: 12px; background: #fff; box-shadow: 0 2px 10px rgba(15, 23, 42, .025); }
-        .repair-table-wrap { overflow-x: auto; }
-        .repair-table { width: 100%; min-width: 1180px; border-collapse: collapse; table-layout: fixed; }
-        .repair-table th, .repair-table td { padding: 12px 10px; border-bottom: 1px solid #e7ebf0; vertical-align: top; text-align: left; }
-        .repair-table th { background: #f8fafc; color: #64748b; font-size: 11px; font-weight: 800; letter-spacing: .025em; text-transform: uppercase; }
-        .repair-table td { color: #293548; font-size: 13px; line-height: 1.38; }
-        .repair-table tbody tr { cursor: pointer; transition: background .14s; }
-        .repair-table tbody tr:hover { background: #f8fbff; }
-        .repair-table tbody tr.is-overdue { background: #fff8f8; }
-        .repair-table tbody tr.is-overdue:hover { background: #fff3f3; }
-        .repair-table tbody tr:last-child td { border-bottom: 0; }
-        .repair-status { display: inline-flex; max-width: 100%; align-items: center; padding: 5px 8px; border-radius: 999px; background: #eef2f7; color: #526074; font-size: 11px; font-weight: 800; line-height: 1.2; }
-        .repair-status[data-status="new"], .repair-status[data-status="waiting_diagnostics"] { background: #eaf2ff; color: #2456a6; }
-        .repair-status[data-status="diagnostics"], .repair-status[data-status="in_repair"] { background: #eee9ff; color: #6842b8; }
-        .repair-status[data-status="waiting_decision"], .repair-status[data-status="waiting_payment"] { background: #fff3d6; color: #9a5b00; }
-        .repair-status[data-status="completed"] { background: #e7f7ed; color: #247142; }
-        .repair-status[data-status="cancelled"] { background: #f1f3f6; color: #667085; }
-        .repair-primary { display: block; color: #253044; font-weight: 800; overflow-wrap: anywhere; }
-        .repair-secondary { display: block; margin-top: 3px; color: #748095; font-size: 12px; overflow-wrap: anywhere; }
-        .repair-order-link { color: #2563eb; text-decoration: none; }
-        .repair-problem { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-        .repair-control-date { font-weight: 750; }
-        .repair-control-date.overdue { color: #c62828; }
-        .repair-control-date.today { color: #c46a00; }
-        .repair-open { display: inline-grid; width: 34px; height: 34px; place-items: center; border: 0; border-radius: 8px; background: #eaf2ff; color: #2563eb; cursor: pointer; }
-        .repair-open svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; }
-        .repair-action-cell { display: flex; align-items: center; gap: 5px; }
-        .repair-dots { width: 34px; height: 34px; border: 0; border-radius: 8px; background: transparent; color: #64748b; font-size: 20px; cursor: pointer; }
-        .repair-row-menu { position: fixed; z-index: 130; min-width: 180px; padding: 6px; border: 1px solid #d9e1eb; border-radius: 10px; background: #fff; box-shadow: 0 14px 36px rgba(15, 23, 42, .2); }
-        .repair-row-menu button { display: block; width: 100%; padding: 9px 11px; border: 0; border-radius: 7px; background: transparent; color: #334155; font-weight: 750; text-align: left; cursor: pointer; }
-        .repair-row-menu button:hover { background: #f1f5f9; }
-        .repair-mobile-list { display: none; margin-top: 12px; gap: 10px; }
-        .repair-mobile-card { padding: 14px; border: 1px solid #dfe5ed; border-radius: 12px; background: #fff; cursor: pointer; }
-        .repair-mobile-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
-        .repair-mobile-card h2 { margin: 10px 0 3px; font-size: 16px; }
-        .repair-mobile-card p { margin: 7px 0 0; color: #59677b; font-size: 13px; }
-        .repair-empty { padding: 44px 18px; color: #748095; text-align: center; }
-        body.repair-drawer-open { overflow: hidden; }
-        .repair-backdrop { position: fixed; inset: 0; z-index: 90; display: none; background: rgba(15, 23, 42, .28); backdrop-filter: blur(1px); }
-        .repair-backdrop.open { display: block; }
-        .repair-drawer { position: fixed; inset: 0 0 0 auto; z-index: 91; display: flex; width: min(760px, 100%); height: 100dvh; flex-direction: column; background: #fff; box-shadow: -16px 0 42px rgba(15, 23, 42, .19); transform: translateX(104%); transition: transform .2s ease; }
-        .repair-drawer.open { transform: translateX(0); }
-        .repair-drawer-head { display: flex; flex: 0 0 auto; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 20px 22px 16px; border-bottom: 1px solid #e3e8ef; }
-        .repair-drawer-head h2 { margin: 0; font-size: 21px; }
-        .repair-drawer-subtitle { margin-top: 4px; color: #687386; font-size: 13px; }
-        .repair-close { width: 38px; height: 38px; border: 1px solid #d6dee8; border-radius: 10px; background: #fff; color: #48566a; font-size: 22px; cursor: pointer; }
-        .repair-drawer-body { min-height: 0; flex: 1 1 auto; padding: 20px 22px 34px; overflow-y: auto; overscroll-behavior: contain; }
-        .repair-drawer-footer { display: flex; flex: 0 0 auto; justify-content: flex-end; gap: 8px; padding: 14px 22px; border-top: 1px solid #e3e8ef; background: #fff; }
-        .repair-form-section, .repair-detail-section { margin-bottom: 20px; padding: 16px; border: 1px solid #e2e7ee; border-radius: 12px; background: #fff; }
-        .repair-form-section h3, .repair-detail-section h3 { margin: 0 0 13px; color: #28364a; font-size: 14px; }
-        .repair-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-        .repair-field.full { grid-column: 1 / -1; }
-        .repair-field textarea { min-height: 88px; resize: vertical; }
-        .repair-radio-row { display: flex; gap: 16px; min-height: 40px; align-items: center; }
-        .repair-radio-row label { display: inline-flex; align-items: center; gap: 7px; }
-        .repair-order-results { max-height: 220px; margin-top: 7px; overflow-y: auto; border: 1px solid #dde4ed; border-radius: 10px; }
-        .repair-order-result { display: block; width: 100%; padding: 10px 12px; border: 0; border-bottom: 1px solid #edf0f4; background: #fff; color: #334155; text-align: left; cursor: pointer; }
-        .repair-order-result:hover { background: #f7faff; }
-        .repair-order-result:last-child { border-bottom: 0; }
-        .repair-order-selected { margin-top: 8px; padding: 10px 12px; border-radius: 9px; background: #edf5ff; color: #2456a6; font-size: 13px; }
-        .repair-product-search-status { display: block; min-height: 18px; margin-top: 6px; color: #748095; font-size: 12px; }
-        .repair-product-search-status.is-error { color: #b42318; }
-        [data-product-search] + select { margin-top: 7px; }
-        .repair-detail-summary { display: grid; grid-template-columns: 1fr auto; gap: 14px; align-items: start; }
-        .repair-detail-product { margin-top: 10px; font-size: 18px; font-weight: 850; }
-        .repair-detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 18px; }
-        .repair-detail-item dt { color: #748095; font-size: 11px; font-weight: 750; text-transform: uppercase; }
-        .repair-detail-item dd { margin: 4px 0 0; color: #293548; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
-        .repair-history { margin: 0; padding: 0; list-style: none; }
-        .repair-history li { padding: 12px 0; border-bottom: 1px solid #e8edf3; }
-        .repair-history li:last-child { border-bottom: 0; }
-        .repair-history time { display: block; margin-top: 4px; color: #8994a5; font-size: 12px; }
-        .repair-action-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-        .repair-action-form .full { grid-column: 1 / -1; }
-        .repair-error { margin-bottom: 14px; padding: 10px 12px; border-radius: 9px; background: #fff0f0; color: #b42318; font-size: 13px; }
-        .repair-loading { padding: 34px 10px; color: #748095; text-align: center; }
-        .repair-toast { position: fixed; right: 24px; bottom: 24px; z-index: 120; max-width: min(390px, calc(100vw - 30px)); padding: 12px 15px; border-radius: 10px; background: #172033; color: #fff; box-shadow: 0 12px 35px rgba(15, 23, 42, .28); }
-        .repair-confirm { width: min(460px, calc(100vw - 28px)); padding: 0; border: 0; border-radius: 14px; color: #253044; box-shadow: 0 24px 70px rgba(15, 23, 42, .28); }
-        .repair-confirm::backdrop { background: rgba(15, 23, 42, .38); }
-        .repair-confirm-content { padding: 22px; }
-        .repair-confirm h2 { margin: 0; font-size: 20px; }
-        .repair-confirm p { margin: 10px 0 0; color: #64748b; line-height: 1.5; }
-        .repair-confirm-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 22px; border-top: 1px solid #e3e8ef; }
-        @media (max-width: 900px) {
-            .repair-main { padding: 16px 14px 92px; }
-            .repair-toolbar { flex-wrap: wrap; }
-            .repair-search { flex-basis: 100%; }
-            .repair-filter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-            .repair-table-card { display: none; }
-            .repair-mobile-list { display: grid; }
-        }
-        @media (max-width: 600px) {
-            .repair-main { padding-inline: 10px; }
-            .repair-header { align-items: stretch; flex-direction: column; }
-            .repair-header .repair-button { align-self: flex-start; }
-            .repair-toolbar-action { flex: 1 1 auto; }
-            .repair-filter-grid, .repair-form-grid, .repair-detail-grid, .repair-action-form { grid-template-columns: 1fr; }
-            .repair-field.full, .repair-action-form .full { grid-column: auto; }
-            .repair-drawer { width: 100%; }
-            .repair-drawer-head { padding: 17px 15px 14px; }
-            .repair-drawer-body { padding: 16px 15px 28px; }
-            .repair-drawer-footer { padding: 12px 15px; }
-        }
-    </style>
 </head>
 <body class="repair-page">
 {% from "_pagination.html" import render_erp_pagination %}
@@ -162,16 +21,16 @@
                 </div>
             </header>
 
-            <nav class="repair-tabs" aria-label="Состояние архива">
-                <a class="repair-tab{% if repair_view == 'active' %} is-active{% endif %}" href="{{ url_for('repair_page', view='active') }}">Активные · {{ active_count }}</a>
-                <a class="repair-tab{% if repair_view == 'archive' %} is-active{% endif %}" href="{{ url_for('repair_page', view='archive') }}">Архив · {{ archive_count }}</a>
+            <nav class="repair-tabs erp-section-tabs" aria-label="Состояние архива">
+                <a class="repair-tab erp-section-tab{% if repair_view == 'active' %} is-active{% endif %}"{% if repair_view == 'active' %} aria-current="page"{% endif %} href="{{ url_for('repair_page', view='active') }}">Активные · {{ active_count }}</a>
+                <a class="repair-tab erp-section-tab{% if repair_view == 'archive' %} is-active{% endif %}"{% if repair_view == 'archive' %} aria-current="page"{% endif %} href="{{ url_for('repair_page', view='archive') }}">Архив · {{ archive_count }}</a>
             </nav>
 
-            <form id="repairFilters" class="repair-toolbar" method="get">
+            <form id="repairFilters" class="repair-toolbar erp-toolbar" method="get">
                 <input type="hidden" name="view" value="{{ repair_view }}">
                 <div class="repair-search">
                     <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"></circle><path d="m12.5 12.5 4 4"></path></svg>
-                    <input id="repairSearch" class="repair-control" type="search" name="q" value="{{ filters.q }}" placeholder="Поиск по заказу, клиенту, телефону или товару" autocomplete="off">
+                    <input id="repairSearch" class="repair-control erp-control" type="search" name="q" value="{{ filters.q }}" placeholder="Поиск по заказу, клиенту, телефону или товару" autocomplete="off" aria-label="Поиск ремонтов">
                 </div>
                 {% set active_filter_count = [filters.status, filters.type, filters.location, filters.order_link, filters.channel, filters.waiting_for, filters.control, filters.attention] | select | list | length %}
                 <button id="repairFilterToggle" class="repair-button repair-toolbar-action" type="button">Фильтры{% if active_filter_count %}<span class="repair-filter-count">{{ active_filter_count }}</span>{% endif %}</button>
@@ -199,8 +58,8 @@
             {% if active_filter_count %}<div class="repair-active-filters"><span class="repair-chip">Применено фильтров: {{ active_filter_count }}</span><a class="repair-chip" href="{{ url_for('repair_page', view=repair_view) }}">Сбросить все ×</a></div>{% endif %}
 
             <section class="repair-table-card" aria-label="Ремонтные обращения">
-                {% if data_error %}<div class="repair-empty"><strong>Не удалось загрузить ремонты</strong><br>{{ data_error }}</div>{% elif not cases %}<div class="repair-empty"><strong>{% if repair_view == 'archive' and not active_filter_count %}В архиве пока нет ремонтов{% else %}Ремонты не найдены{% endif %}</strong><br>{% if repair_view == 'archive' and not active_filter_count %}Любой ремонт можно перенести сюда, сохраняя статус, данные и историю.{% else %}Измените фильтры или добавьте первое обращение.{% endif %}</div>{% else %}
-                <div class="repair-table-wrap"><table class="repair-table erp-data-table"><thead><tr>
+                {% if data_error %}<div class="repair-empty repair-error-state erp-error-state" role="alert"><strong>Не удалось загрузить ремонты</strong><br>{{ data_error }}</div>{% elif not cases %}<div class="repair-empty erp-empty-state" role="status"><strong>{% if repair_view == 'archive' and not active_filter_count %}В архиве пока нет ремонтов{% else %}Ремонты не найдены{% endif %}</strong><br>{% if repair_view == 'archive' and not active_filter_count %}Любой ремонт можно перенести сюда, сохраняя статус, данные и историю.{% else %}Измените фильтры или добавьте первое обращение.{% endif %}</div>{% else %}
+                <div class="repair-table-wrap erp-table-scroll" tabindex="0" aria-label="Таблица ремонтов, доступна горизонтальная прокрутка"><table class="repair-table erp-data-table"><thead><tr>
                     <th data-column="status" style="width:130px">Статус</th><th data-column="customer" style="width:180px">Заказ / клиент</th><th data-column="product" style="width:155px">Товар</th><th data-column="channel" style="width:115px">Связь</th><th data-column="problem" style="width:210px">Обращение</th><th data-column="location" style="width:130px">Где товар</th><th data-column="control" style="width:170px">{% if repair_view == 'archive' %}Архивирование{% else %}Контроль{% endif %}</th><th data-column="event" style="width:175px">Последнее событие</th><th style="width:82px">Действие</th>
                 </tr></thead><tbody>
                     {% for case in cases %}<tr class="{% if case.control_state == 'overdue' %}is-overdue{% endif %}" data-repair-id="{{ case.id }}" tabindex="0">
@@ -219,25 +78,25 @@
             </section>
 
             <section class="repair-mobile-list" aria-label="Ремонтные обращения">
-                {% for case in cases %}<article class="repair-mobile-card" data-repair-id="{{ case.id }}" tabindex="0"><div class="repair-mobile-head"><span class="repair-status" data-status="{{ case.status }}">{{ case.status_label }}</span><span class="repair-control-date {{ case.control_state }}">{% if repair_view == 'archive' %}{{ case.archived_at_display or '—' }}{% else %}{{ case.control_date_display or '—' }}{% endif %}</span></div><h2>{{ case.brand }} {{ case.model or case.product_name }}</h2><p><strong>{{ case.order_label }}</strong> · {{ case.client_name }} · {{ case.contact or case.client_phone }}</p><p>{{ case.problem }}</p><p>{% if repair_view == 'archive' %}Архивировал: {{ case.archived_by or 'не указан' }}{% else %}{{ case.location_label }} · {{ case.next_action }}{% endif %}</p><button class="repair-button" type="button" data-open-repair="{{ case.id }}">Открыть</button></article>{% else %}<div class="repair-empty">{% if repair_view == 'archive' %}В архиве пока нет ремонтов{% else %}Ремонты не найдены{% endif %}.</div>{% endfor %}
+                {% for case in cases %}<article class="repair-mobile-card" data-repair-id="{{ case.id }}" tabindex="0"><div class="repair-mobile-head"><span class="repair-status" data-status="{{ case.status }}">{{ case.status_label }}</span><span class="repair-control-date {{ case.control_state }}">{% if repair_view == 'archive' %}{{ case.archived_at_display or '—' }}{% else %}{{ case.control_date_display or '—' }}{% endif %}</span></div><h2>{{ case.brand }} {{ case.model or case.product_name }}</h2><p><strong>{{ case.order_label }}</strong> · {{ case.client_name }} · {{ case.contact or case.client_phone }}</p><p>{{ case.problem }}</p><p>{% if repair_view == 'archive' %}Архивировал: {{ case.archived_by or 'не указан' }}{% else %}{{ case.location_label }} · {{ case.next_action }}{% endif %}</p><button class="repair-button" type="button" data-open-repair="{{ case.id }}">Открыть</button></article>{% else %}<div class="repair-empty erp-empty-state" role="status">{% if repair_view == 'archive' %}В архиве пока нет ремонтов{% else %}Ремонты не найдены{% endif %}.</div>{% endfor %}
             </section>
         </div>
     </main>
 </div>
 
 <div id="repairBackdrop" class="repair-backdrop"></div>
-<aside id="repairDrawer" class="repair-drawer" aria-hidden="true" aria-labelledby="repairDrawerTitle">
+<aside id="repairDrawer" class="repair-drawer" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="repairDrawerTitle" tabindex="-1">
     <div class="repair-drawer-head"><div><h2 id="repairDrawerTitle">Карточка ремонта</h2><div id="repairDrawerSubtitle" class="repair-drawer-subtitle"></div></div><button id="repairDrawerClose" class="repair-close" type="button" aria-label="Закрыть">×</button></div>
     <div id="repairDrawerBody" class="repair-drawer-body"></div>
     <div id="repairDrawerFooter" class="repair-drawer-footer"></div>
 </aside>
 
-<dialog id="repairConfirm" class="repair-confirm"><div class="repair-confirm-content"><h2 id="repairConfirmTitle"></h2><p id="repairConfirmText"></p></div><div class="repair-confirm-actions"><button class="repair-button" type="button" data-confirm-cancel>Отмена</button><button class="repair-button primary" type="button" data-confirm-submit></button></div></dialog>
+<dialog id="repairConfirm" class="repair-confirm" aria-labelledby="repairConfirmTitle" aria-describedby="repairConfirmText"><div class="repair-confirm-content"><h2 id="repairConfirmTitle"></h2><p id="repairConfirmText"></p></div><div class="repair-confirm-actions"><button class="repair-button" type="button" data-confirm-cancel>Отмена</button><button class="repair-button primary" type="button" data-confirm-submit></button></div></dialog>
 <div id="repairRowMenu" class="repair-row-menu" role="menu" hidden><button type="button" role="menuitem" data-row-archive></button></div>
 
 <template id="repairCreateTemplate">
     <form id="repairEditor" novalidate>
-        <div id="repairEditorError" class="repair-error" hidden></div>
+        <div id="repairEditorError" class="repair-error erp-error-state" role="alert" hidden></div>
         <section class="repair-form-section"><h3>Клиент и заказ</h3><div class="repair-form-grid">
             <div class="repair-field full"><span>Наш заказ?</span><div class="repair-radio-row"><label><input type="radio" name="has_order" value="yes"> Да</label><label><input type="radio" name="has_order" value="no" checked> Нет</label></div></div>
             <div class="repair-field full" data-order-fields hidden><span>Заказ</span><input class="repair-control" type="search" data-order-search placeholder="Номер, имя или телефон" autocomplete="off"><div class="repair-order-results" data-order-results hidden></div><div class="repair-order-selected" data-order-selected hidden></div><small class="repair-error" data-order-error hidden></small><input type="hidden" name="order_id"><input type="hidden" name="order_number"></div>
@@ -283,15 +142,32 @@
     const rowMenu = document.getElementById('repairRowMenu');
     let activeRepair = null;
     let editingId = '';
+    let drawerReturnFocus = null;
 
     function escapeHtml(value) {
         return String(value ?? '').replace(/[&<>'"]/g, (character) => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[character]));
     }
-    function openDrawer() { drawer.classList.add('open'); backdrop.classList.add('open'); drawer.setAttribute('aria-hidden','false'); document.body.classList.add('repair-drawer-open'); }
-    function closeDrawer() { drawer.classList.remove('open'); backdrop.classList.remove('open'); drawer.setAttribute('aria-hidden','true'); document.body.classList.remove('repair-drawer-open'); activeRepair = null; editingId = ''; }
+    function openDrawer() {
+        if (!drawer.classList.contains('open')) drawerReturnFocus = document.activeElement;
+        drawer.classList.add('open'); backdrop.classList.add('open'); drawer.setAttribute('aria-hidden','false'); document.body.classList.add('repair-drawer-open');
+        requestAnimationFrame(() => drawer.querySelector('button, input, select, textarea, [tabindex="0"]')?.focus());
+    }
+    function closeDrawer() {
+        drawer.classList.remove('open'); backdrop.classList.remove('open'); drawer.setAttribute('aria-hidden','true'); document.body.classList.remove('repair-drawer-open'); activeRepair = null; editingId = '';
+        if (drawerReturnFocus instanceof HTMLElement && drawerReturnFocus.isConnected) drawerReturnFocus.focus();
+        drawerReturnFocus = null;
+    }
     document.getElementById('repairDrawerClose').addEventListener('click', closeDrawer);
     backdrop.addEventListener('click', closeDrawer);
-    document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && drawer.classList.contains('open')) closeDrawer(); });
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && drawer.classList.contains('open') && !confirmDialog.open) closeDrawer();
+        if (event.key !== 'Tab' || !drawer.classList.contains('open') || confirmDialog.open) return;
+        const controls = [...drawer.querySelectorAll('a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex="0"]')].filter(node => !node.hidden && node.offsetParent !== null);
+        if (!controls.length) return;
+        const first = controls[0], last = controls[controls.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    });
 
     function api(path, options = {}) {
         const headers = new Headers(options.headers || {});
@@ -303,7 +179,13 @@
             return payload.data;
         });
     }
-    function toast(message) { const node = document.createElement('div'); node.className='repair-toast'; node.textContent=message; document.body.append(node); setTimeout(() => node.remove(), 2800); }
+    function toast(message, isError = false) {
+        const notify = window.VechasuNotify;
+        if (notify) { notify[isError ? 'error' : 'success'](message); return; }
+        const node = document.createElement('div'); node.className='repair-toast'; node.textContent=message;
+        node.setAttribute('role', isError ? 'alert' : 'status'); node.setAttribute('aria-live', isError ? 'assertive' : 'polite');
+        document.body.append(node); setTimeout(() => node.remove(), 2800);
+    }
     function field(label, value) { return `<div class="repair-detail-item"><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value || '—')}</dd></div>`; }
 
     function confirmRepairAction({title, text, submitLabel, action}) {
@@ -316,11 +198,13 @@
         const close = () => { if (confirmDialog.open) confirmDialog.close(); };
         cancel.onclick = close;
         submit.onclick = async () => {
+            const originalLabel = submit.textContent;
             submit.disabled = true;
+            submit.textContent = 'Выполняем…';
             cancel.disabled = true;
             try { await action(); close(); }
-            catch (error) { toast(error.message); submit.disabled = false; }
-            finally { cancel.disabled = false; }
+            catch (error) { toast(error.message, true); submit.disabled = false; }
+            finally { cancel.disabled = false; submit.textContent = originalLabel; }
         };
         confirmDialog.showModal();
     }
@@ -376,13 +260,13 @@
     }
 
     async function submitAction(event) {
-        event.preventDefault(); const form = event.currentTarget; const button = form.querySelector('button[type=submit]'); button.disabled = true;
+        event.preventDefault(); const form = event.currentTarget; const button = form.querySelector('button[type=submit]'); const originalLabel = button.textContent; button.disabled = true; button.textContent = 'Выполняем…';
         const values = Object.fromEntries(new FormData(form)); const action = values.action; delete values.action; values.idempotency_key = crypto.randomUUID();
         try { const repair = await api(`/api/v1/repairs/${encodeURIComponent(activeRepair.id)}/actions/${encodeURIComponent(action)}`, {method:'POST', body:JSON.stringify(values), headers:{'Idempotency-Key': values.idempotency_key}}); renderDetail(repair); toast('Действие выполнено'); }
-        catch (error) { toast(error.message); button.disabled = false; }
+        catch (error) { toast(error.message, true); button.disabled = false; button.textContent = originalLabel; }
     }
 
-    async function loadRepair(id) { title.textContent='Карточка ремонта'; subtitle.textContent='Загрузка…'; body.innerHTML='<div class="repair-loading">Загружаем карточку…</div>'; footer.innerHTML=''; openDrawer(); try { renderDetail(await api(`/api/v1/repairs/${encodeURIComponent(id)}`)); } catch(error) { body.innerHTML=`<div class="repair-error">${escapeHtml(error.message)}</div>`; } }
+    async function loadRepair(id) { title.textContent='Карточка ремонта'; subtitle.textContent='Загрузка…'; body.innerHTML='<div class="repair-loading erp-loading-state" role="status" aria-live="polite">Загружаем карточку…</div>'; footer.innerHTML=''; openDrawer(); try { renderDetail(await api(`/api/v1/repairs/${encodeURIComponent(id)}`)); } catch(error) { body.innerHTML=`<div class="repair-error erp-error-state" role="alert">${escapeHtml(error.message)}</div>`; } }
 
     function populateRepairCatalog(select, items, selectedValue) {
         select.innerHTML = '<option value="">Ввести вручную</option>' + items.map(item => `<option value="${escapeHtml(item.id)}" data-name="${escapeHtml(item.name)}" data-brand="${escapeHtml(item.brand)}" data-model="${escapeHtml(item.model)}">${escapeHtml([item.brand,item.name,item.article].filter(Boolean).join(' · '))}</option>`).join('');
@@ -451,8 +335,8 @@
     function selectOrder(order, form) { form.elements.order_id.value=order.id; form.elements.order_number.value=order.number; form.elements.client_name.value=order.client_name||''; form.elements.client_phone.value=order.phone||''; form.elements.client_email.value=order.email||''; const selected=body.querySelector('[data-order-selected]'); selected.hidden=false; selected.textContent=`Заказ №${order.number} · ${order.client_name}`; const positions=form.elements.order_item_id; positions.innerHTML='<option value="">Выберите конкретный товар</option>'+order.products.map(item=>`<option value="${escapeHtml(item.id)}">${escapeHtml([item.brand,item.name,`${item.quantity} шт.`].filter(Boolean).join(' · '))}</option>`).join(''); if(order.products.length===1)positions.value=order.products[0].id; body.querySelector('[data-order-error]').hidden=true; body.querySelector('[data-order-item-error]').hidden=true; body.querySelector('[data-order-results]').hidden=true; }
     async function submitEditor(event) {
         event.preventDefault(); const form=event.currentTarget; const errorNode=form.querySelector('#repairEditorError'); const payload=Object.fromEntries(new FormData(form)); payload.order_source=payload.has_order==='yes'?'our':'none'; delete payload.has_order; payload.product_name=payload.model; const orderError=form.querySelector('[data-order-error]'); const orderItemError=form.querySelector('[data-order-item-error]'); orderError.hidden=true; orderItemError.hidden=true; if(payload.order_source==='our'&&!payload.order_id){orderError.textContent=`Заказ ${body.querySelector('[data-order-search]').value.trim()} не найден`;orderError.hidden=false;return;} if(payload.order_source==='our'&&!payload.order_item_id){orderItemError.textContent='Выберите конкретную позицию заказа';orderItemError.hidden=false;return;} payload.idempotency_key=crypto.randomUUID(); if(payload.order_source==='none'){payload.order_id='';payload.order_number='';payload.order_item_id='';}
-        const submit=footer.querySelector('[type=submit]'); submit.disabled=true; errorNode.hidden=true;
-        try { const repair=await api(editingId?`/api/v1/repairs/${encodeURIComponent(editingId)}`:'/api/v1/repairs',{method:editingId?'PATCH':'POST',body:JSON.stringify(payload),headers:{'Idempotency-Key':payload.idempotency_key}}); toast(editingId?'Ремонт обновлён':'Ремонт создан'); renderDetail(repair); setTimeout(()=>window.location.reload(),450); } catch(error){errorNode.textContent=error.message;errorNode.hidden=false;submit.disabled=false;body.scrollTo({top:0,behavior:'smooth'});}
+        const submit=footer.querySelector('[type=submit]'); const submitLabel=submit.textContent; submit.disabled=true; submit.textContent='Сохраняем…'; errorNode.hidden=true;
+        try { const repair=await api(editingId?`/api/v1/repairs/${encodeURIComponent(editingId)}`:'/api/v1/repairs',{method:editingId?'PATCH':'POST',body:JSON.stringify(payload),headers:{'Idempotency-Key':payload.idempotency_key}}); toast(editingId?'Ремонт обновлён':'Ремонт создан'); renderDetail(repair); setTimeout(()=>window.location.reload(),450); } catch(error){errorNode.textContent=error.message;errorNode.hidden=false;submit.disabled=false;submit.textContent=submitLabel;toast(error.message,true);body.scrollTo({top:0,behavior:'smooth'});}
     }
 
     document.getElementById('repairAdd').addEventListener('click',()=>openEditor());
