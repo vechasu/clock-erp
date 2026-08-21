@@ -983,7 +983,11 @@ def orders_page():
             detail_error = type(error).__name__
             selected_order = dict(selected_order)
             selected_order["sync_state"] = "error"
-    mappings = load_product_mappings()
+    order_id = (
+        (selected_order or {}).get("id")
+        or (selected_order or {}).get("ID")
+    )
+    mappings = load_order_product_mappings(order_id)
     order_counts = build_catalog_product_order_counts(
         orders, mappings=mappings
     )
@@ -991,10 +995,6 @@ def orders_page():
         (selected_order or {}).get("products") or [],
         mappings=mappings,
         order_counts=order_counts,
-    )
-    order_id = (
-        (selected_order or {}).get("id")
-        or (selected_order or {}).get("ID")
     )
     conducted_sale = get_order_conducted_sale(order_id)
     sale_state = build_order_sale_state(
@@ -1123,6 +1123,14 @@ def bitrix_order_product_identity(product):
     }
 
 
+def order_product_mapping_key(product):
+    identity = bitrix_order_product_identity(product)
+    line_id = identity["bitrix_order_line_id"]
+    if line_id:
+        return "line:{}".format(line_id)
+    return "product:{}".format(identity["bitrix_product_id"])
+
+
 def build_catalog_product_order_counts(orders, mappings=None, catalog=None):
     """Count unique, non-cancelled Bitrix orders per mapped ERP product."""
     mappings = load_product_mappings() if mappings is None else mappings
@@ -1189,8 +1197,9 @@ def build_order_product_mapping_context(
     catalog = catalog or SharedCatalog()
     identities = [bitrix_order_product_identity(item) for item in products]
     saved_rows = [
-        mappings.get(identity["bitrix_product_id"])
-        for identity in identities
+        mappings.get(order_product_mapping_key(product))
+        or mappings.get(identity["bitrix_product_id"])
+        for product, identity in zip(products, identities)
     ]
     product_ids = [
         row.get("product_id")
@@ -1279,13 +1288,118 @@ def build_order_product_mapping_context(
                     ),
                     "legacy": True,
                 })
-        result[key or "line:{}".format(len(result))] = context
+        mapping_key = order_product_mapping_key(product)
+        result[mapping_key] = context
+        if key:
+            result.setdefault(key, context)
     return result
+
+
+def load_order_product_mappings(order_id, database=None):
+    """Load durable line mappings, with legacy JSON as a read-only fallback."""
+    mappings = load_product_mappings()
+    order_id = str(order_id or "").strip()
+    if not order_id:
+        return mappings
+
+    database = database or CatalogDatabase()
+    database.initialize()
+    with database.connect() as connection:
+        rows = connection.execute(
+            "SELECT order_line_id, bitrix_product_id, bitrix_sku_id, "
+            "product_id, brand_id, category_id, moysklad_product_id, "
+            "updated_at FROM erp_order_product_mappings WHERE order_id = ?",
+            (order_id,),
+        ).fetchall()
+    for row in rows:
+        saved = {
+            "bitrix_product_id": str(row["bitrix_product_id"]),
+            "bitrix_sku_id": str(row["bitrix_sku_id"] or ""),
+            "bitrix_order_line_id": str(row["order_line_id"]),
+            "product_id": str(row["product_id"]),
+            "brand_id": row["brand_id"],
+            "category_id": row["category_id"],
+            "moysklad_product_id": str(row["moysklad_product_id"] or ""),
+            "mapped_at": str(row["updated_at"]),
+        }
+        mappings["line:{}".format(row["order_line_id"])] = saved
+        mappings[str(row["bitrix_product_id"])] = saved
+    return mappings
+
+
+def save_order_product_mapping(order_id, identity, selected_item, database=None):
+    """Atomically upsert one explicit order-line to ERP-product relation."""
+    database = database or CatalogDatabase()
+    database.initialize()
+    order_id = str(order_id or "").strip()
+    line_id = str(identity.get("bitrix_order_line_id") or "").strip()
+    bitrix_product_id = str(identity.get("bitrix_product_id") or "").strip()
+    if not line_id:
+        line_id = bitrix_product_id
+    if not order_id or not line_id or not bitrix_product_id:
+        raise ValueError("У позиции заказа нет стабильного идентификатора")
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    values = (
+        str(identity.get("bitrix_sku_id") or ""),
+        int(selected_item["id"]),
+        selected_item.get("brand_id"),
+        selected_item.get("category_id"),
+        selected_item.get("moysklad_product_id") or "",
+        now,
+        order_id,
+        line_id,
+    )
+    with database.transaction() as connection:
+        cursor = connection.execute(
+            "UPDATE erp_order_product_mappings SET bitrix_sku_id = ?, "
+            "product_id = ?, brand_id = ?, category_id = ?, "
+            "moysklad_product_id = ?, updated_at = ? "
+            "WHERE order_id = ? AND order_line_id = ?",
+            values,
+        )
+        if cursor.rowcount == 0:
+            connection.execute(
+                "INSERT INTO erp_order_product_mappings (order_id, "
+                "order_line_id, bitrix_product_id, bitrix_sku_id, product_id, "
+                "brand_id, category_id, moysklad_product_id, created_at, "
+                "updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    order_id,
+                    line_id,
+                    bitrix_product_id,
+                    str(identity.get("bitrix_sku_id") or ""),
+                    int(selected_item["id"]),
+                    selected_item.get("brand_id"),
+                    selected_item.get("category_id"),
+                    selected_item.get("moysklad_product_id") or "",
+                    now,
+                    now,
+                ),
+            )
+
+
+def delete_order_product_mapping(order_id, identity, database=None):
+    database = database or CatalogDatabase()
+    database.initialize()
+    line_id = str(identity.get("bitrix_order_line_id") or "").strip()
+    if not line_id:
+        line_id = str(identity.get("bitrix_product_id") or "").strip()
+    with database.transaction() as connection:
+        cursor = connection.execute(
+            "DELETE FROM erp_order_product_mappings "
+            "WHERE order_id = ? AND order_line_id = ?",
+            (str(order_id), line_id),
+        )
+    return cursor.rowcount > 0
 
 
 def get_order_product_mapping(mapping_context, product):
     identity = bitrix_order_product_identity(product)
-    return mapping_context.get(identity["bitrix_product_id"]) or {}
+    return (
+        mapping_context.get(order_product_mapping_key(product))
+        or mapping_context.get(identity["bitrix_product_id"])
+        or {}
+    )
 
 
 def build_order_sale_readiness(order, mapping_context, already_conducted=False):
@@ -1311,8 +1425,7 @@ def build_order_sale_readiness(order, mapping_context, already_conducted=False):
     ):
         issues.append("Расчёт заказа не сходится")
     for product in products:
-        identity = bitrix_order_product_identity(product)
-        mapping = mapping_context.get(identity["bitrix_product_id"]) or {}
+        mapping = get_order_product_mapping(mapping_context, product)
         selected = mapping.get("product")
         if mapping.get("state") != "mapped" or not selected:
             issues.append("Есть несопоставленные позиции")
@@ -1409,7 +1522,7 @@ def order_page(order_id):
         order for order in orders
         if str(order.get("id") or order.get("ID") or "") != str(order_id)
     ] + [selected_order]
-    mappings = load_product_mappings()
+    mappings = load_order_product_mappings(order_id)
     catalog = SharedCatalog()
     order_counts = build_catalog_product_order_counts(
         count_orders, mappings=mappings, catalog=catalog
@@ -1577,7 +1690,9 @@ def _conduct_order_sale(order_id):
         # already proves confirmation and must not be forced through the UI.
         sale_status_service.ingest(order_id, "A")
     products = full_order.get("products") or []
-    mapping_context = build_order_product_mapping_context(products)
+    mapping_context = build_order_product_mapping_context(
+        products, mappings=load_order_product_mappings(order_id)
+    )
     issues = []
     prepared_items = []
     required_by_product = {}
@@ -1620,7 +1735,7 @@ def _conduct_order_sale(order_id):
             )
             continue
 
-        mapping = mapping_context.get(identity["bitrix_product_id"]) or {}
+        mapping = get_order_product_mapping(mapping_context, product)
         if mapping.get("state") != "mapped" or not mapping.get("product"):
             issues.append("{} — {}".format(
                 bitrix_product_name,
@@ -1842,6 +1957,9 @@ def record_order_sale_attempt(
 @app.route("/order/<int:order_id>/product-map", methods=["POST"])
 def order_product_map(order_id):
     bitrix_product_id = (request.form.get("bitrix_product_id") or "").strip()
+    bitrix_order_line_id = (
+        request.form.get("bitrix_order_line_id") or ""
+    ).strip()
     product_id = (request.form.get("product_id") or "").strip()
     brand_id = (request.form.get("brand_id") or "").strip()
     category_id = (request.form.get("category_id") or "").strip()
@@ -1871,8 +1989,16 @@ def order_product_map(order_id):
         ))
     order_product = next((
         item for item in (full_order or {}).get("products") or []
-        if bitrix_order_product_identity(item)["bitrix_product_id"]
-        == bitrix_product_id
+        if (
+            bitrix_order_product_identity(item)["bitrix_product_id"]
+            == bitrix_product_id
+            and (
+                not bitrix_order_line_id
+                or bitrix_order_product_identity(item)[
+                    "bitrix_order_line_id"
+                ] == bitrix_order_line_id
+            )
+        )
     ), None)
     if order_product is None:
         return redirect(url_for(
@@ -1905,18 +2031,13 @@ def order_product_map(order_id):
             message="Выбранный товар не относится к указанной категории",
         ))
 
-    mappings = load_product_mappings()
-    previous = mappings.get(bitrix_product_id)
+    mappings = load_order_product_mappings(order_id)
     identity = bitrix_order_product_identity(order_product)
-    mappings[bitrix_product_id] = {
-        **identity,
-        "product_id": str(selected_item["id"]),
-        "brand_id": selected_item.get("brand_id"),
-        "category_id": selected_item.get("category_id"),
-        "moysklad_product_id": selected_item.get("moysklad_product_id") or "",
-        "mapped_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
-    }
-    save_product_mappings(mappings)
+    previous = (
+        mappings.get(order_product_mapping_key(order_product))
+        or mappings.get(bitrix_product_id)
+    )
+    save_order_product_mapping(order_id, identity, selected_item)
     try:
         AuditJournal(CatalogDatabase()).record(
             "product",
@@ -1953,6 +2074,9 @@ def order_product_unmap(order_id):
     bitrix_product_id = str(
         request.form.get("bitrix_product_id") or ""
     ).strip()
+    bitrix_order_line_id = str(
+        request.form.get("bitrix_order_line_id") or ""
+    ).strip()
     if not bitrix_product_id:
         return redirect(url_for(
             "order_page", order_id=order_id, notice="error",
@@ -1966,8 +2090,16 @@ def order_product_unmap(order_id):
             message="Не удалось проверить позицию: Bitrix временно недоступен",
         ))
     exists = any(
-        bitrix_order_product_identity(item)["bitrix_product_id"]
-        == bitrix_product_id
+        (
+            bitrix_order_product_identity(item)["bitrix_product_id"]
+            == bitrix_product_id
+            and (
+                not bitrix_order_line_id
+                or bitrix_order_product_identity(item)[
+                    "bitrix_order_line_id"
+                ] == bitrix_order_line_id
+            )
+        )
         for item in (full_order or {}).get("products") or []
     )
     if not exists:
@@ -1975,10 +2107,32 @@ def order_product_unmap(order_id):
             "order_page", order_id=order_id, notice="error",
             message="Позиция Bitrix не найдена в этом заказе",
         ))
-    mappings = load_product_mappings()
-    previous = mappings.pop(bitrix_product_id, None)
-    if previous is not None:
-        save_product_mappings(mappings)
+    mappings = load_order_product_mappings(order_id)
+    order_product = next(
+        item for item in (full_order or {}).get("products") or []
+        if (
+            bitrix_order_product_identity(item)["bitrix_product_id"]
+            == bitrix_product_id
+            and (
+                not bitrix_order_line_id
+                or bitrix_order_product_identity(item)[
+                    "bitrix_order_line_id"
+                ] == bitrix_order_line_id
+            )
+        )
+    )
+    previous = (
+        mappings.get(order_product_mapping_key(order_product))
+        or mappings.get(bitrix_product_id)
+    )
+    identity = bitrix_order_product_identity(order_product)
+    deleted = delete_order_product_mapping(order_id, identity)
+    if previous is not None and not deleted:
+        legacy_mappings = load_product_mappings()
+        legacy_deleted = legacy_mappings.pop(bitrix_product_id, None) is not None
+        if legacy_deleted:
+            save_product_mappings(legacy_mappings)
+    if deleted or previous is not None:
         try:
             AuditJournal(CatalogDatabase()).record(
                 "sale", "bitrix-order:{}".format(order_id), "updated",

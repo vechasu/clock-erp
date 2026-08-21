@@ -340,7 +340,8 @@
                             {% if detail_products %}<div class="product-list">
                             {% for product in detail_products %}
                                 {% set pid = product.get('product_id') or product.get('PRODUCT_ID') or product.get('id') or product.get('ID') or '' %}
-                                {% set mapping = order_product_mappings.get(pid|string) if order_product_mappings else none %}
+                                {% set order_line_id = product.get('basket_id') or product.get('BASKET_ID') or product.get('row_id') or product.get('ROW_ID') or product.get('id') or product.get('ID') or pid %}
+                                {% set mapping = (order_product_mappings.get('line:' ~ (order_line_id|string)) or order_product_mappings.get(pid|string)) if order_product_mappings else none %}
                                 {% set mapped = mapping.product if mapping and mapping.product else none %}
                                 {% set qty = product.get('quantity') or product.get('QUANTITY') or 1 %}
                                 {% set unit = product.get('price') if product.get('price') is not none else product.get('PRICE') %}
@@ -355,10 +356,10 @@
                                             <div class="mapping">
                                             {% if mapped and mapping.state == 'mapped' %}
                                                 <div class="mapping-card">{% if mapped.image_url %}<img src="{{ mapped.image_url }}" alt="">{% endif %}<div class="mapping-copy"><strong>ERP: {{ mapped.name }}</strong>{{ mapped.brand or 'Без бренда' }} · {{ mapped.category or 'Без категории' }} · остаток {{ mapped.stock_display }}</div><span class="map-state {% if mapped.stock|float >= qty|float %}good{% else %}bad{% endif %}">{% if mapped.stock|float >= qty|float %}Сопоставлено{% else %}Недостаточно остатка{% endif %}</span></div>
-                                                <div class="map-actions"><button class="button button-secondary" type="button" data-change-order-mapping>Заменить</button><form method="post" action="/order/{{ detail_id }}/product-unmap"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="bitrix_product_id" value="{{ pid }}"><button class="button button-secondary orders-secondary-submit" type="submit">Очистить</button></form></div>
+                                                <div class="map-actions"><button class="button button-secondary" type="button" data-change-order-mapping>Заменить</button><form method="post" action="/order/{{ detail_id }}/product-unmap"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="bitrix_product_id" value="{{ pid }}"><input type="hidden" name="bitrix_order_line_id" value="{{ order_line_id }}"><button class="button button-secondary orders-secondary-submit" type="submit">Очистить</button></form></div>
                                             {% else %}<span class="map-state bad">{{ mapping.state_label if mapping else 'Не сопоставлено' }}</span>{% endif %}
                                             <form class="order-map-form" method="post" action="/order/{{ detail_id }}/product-map" data-shared-catalog-scope data-catalog-in-stock="false" data-catalog-order-counts="true" data-catalog-product-disabled-placeholder="Сначала выберите категорию" data-order-map-form{% if mapped and mapping.state == 'mapped' %} hidden{% endif %}>
-                                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="bitrix_product_id" value="{{ pid }}">
+                                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="bitrix_product_id" value="{{ pid }}"><input type="hidden" name="bitrix_order_line_id" value="{{ order_line_id }}">
                                                 <div class="order-map-field"><label>Бренд</label>{{ render_catalog_combobox('orderMapBrand' ~ loop.index,'selected_brand',[],selected_value=mapped.brand if mapped else '',selected_id=mapped.brand_id if mapped else '',selected_label=mapped.brand if mapped else '',item_label='бренд',shared_catalog_kind='brand',id_input_name='brand_id',component_class='filter-combobox') }}</div>
                                                 <div class="order-map-field"><label>Категория</label>{{ render_catalog_combobox('orderMapCategory' ~ loop.index,'selected_category',[],selected_value=mapped.category if mapped else '',selected_id=mapped.category_id if mapped else '',selected_label=mapped.category if mapped else '',item_label='категорию',disabled=not mapped,shared_catalog_kind='category',id_input_name='category_id',component_class='filter-combobox') }}</div>
                                                 <div class="order-map-field"><label>Товар</label>{{ render_catalog_combobox('orderMapProduct' ~ loop.index,'product_id',[],selected_value=mapped.id if mapped else '',selected_label=mapped.name if mapped else '',selected_item=mapped if mapped else none,item_label='товар',disabled=not mapped,shared_catalog_kind='product',component_class='filter-combobox sales-product-combobox') }}</div>
@@ -441,6 +442,15 @@
     document.querySelectorAll('[data-auto-submit-filter]').forEach(filter=>filter.addEventListener('change',()=>filter.form?.requestSubmit()));
     document.querySelector('[data-tracking-form]')?.addEventListener('submit',event=>{const button=event.currentTarget.querySelector('button[type="submit"]');if(button){button.disabled=true;button.textContent='Сохраняем…';}});
     document.querySelectorAll('[data-change-order-mapping]').forEach(button=>button.addEventListener('click',()=>{const row=button.closest('.product-row');const form=row?.querySelector('[data-order-map-form]');if(form){form.hidden=false;window.initializeSharedCatalogCascades?.(form);form.querySelector('button,input')?.focus();}}));
+    document.querySelectorAll('[data-order-map-form]').forEach(form=>form.addEventListener('submit',event=>{
+        event.preventDefault();
+        if(form.dataset.submitting==='1')return;
+        const productId=form.querySelector('input[name="product_id"]')?.value?.trim();
+        if(!productId){window.VechasuNotify?.warning('Выберите товар ERP из каталога');return;}
+        form.dataset.submitting='1';
+        const button=form.querySelector('button[type="submit"]');if(button){button.disabled=true;button.textContent='Сопоставляем…';}
+        HTMLFormElement.prototype.submit.call(form);
+    }));
     document.querySelectorAll('[data-show-sale-block]').forEach(button=>button.addEventListener('click',()=>{const reason=document.getElementById('saleBlockReason');reason?.scrollIntoView({behavior:'smooth',block:'center'});reason?.focus();}));
     const modal=document.getElementById('orderSaleModal'); if(!modal)return;
     const tracking=modal.querySelector('[data-order-sale-tracking]'); const trackingStorageKey='order-sale-tracking:{{ detail_id if selected_order else "" }}';
