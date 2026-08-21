@@ -1435,9 +1435,6 @@
         href="{{ url_for('static', filename='css/erp-focus-mode.css') }}"
     >
     <script
-        src="{{ url_for('static', filename='js/catalog-combobox.js') }}"
-    ></script>
-    <script
         src="{{ url_for('static', filename='js/period-picker.js') }}"
     ></script>
     <script defer src="{{ url_for('static', filename='js/table-scroll-hint.js') }}"></script>
@@ -3196,6 +3193,7 @@
 </div>
 
 
+<script src="{{ url_for('static', filename='js/catalog-combobox.js', v='catalog-combobox-20260821') }}"></script>
 <script>
     const activeSalesSource = {{ active_source | tojson }};
     const tictactoyLocationData = (
