@@ -122,6 +122,15 @@ class ProductModelBackfillTest(unittest.TestCase):
         self.assertEqual(self.service.apply()["writes_performed"], 0)
         self.assertFalse(self.catalog.get_product(product["id"])["model"])
 
+    def test_zinvo_brand_prefix_is_not_used_as_the_model(self):
+        self.product("ZINVO APEX GOLD", "zinvo-apex-gold", brand="Zinvo")
+        self.product("ZINVO APEX GHOST", "zinvo-apex-ghost", brand="Zinvo")
+
+        items = self.service.dry_run()["items"]
+
+        self.assertEqual({item["proposed_model"] for item in items}, {"Apex"})
+        self.assertTrue(all(item["confidence"] == "high" for item in items))
+
     def test_active_inventory_blocks_before_backup_or_write(self):
         product = self.product("BC03B Black", "BC03B")
         with self.database.transaction() as connection:
