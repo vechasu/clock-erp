@@ -7,7 +7,7 @@
         content="width=device-width, initial-scale=1, viewport-fit=cover"
     >
     <meta name="color-scheme" content="light">
-    <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='js/theme.js') }}"></script>
     {% block auth_meta %}{% endblock %}
     <title>{% block title %}Vechasu ERP{% endblock %}</title>
     <style>

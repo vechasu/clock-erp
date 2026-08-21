@@ -1,5 +1,5 @@
 {% from "_navigation_icons.html" import navigation_icon %}
-<script src="{{ url_for('static', filename='js/theme.js') }}"></script>
+<script defer src="{{ url_for('static', filename='js/theme.js') }}"></script>
 <link
     rel="stylesheet"
     href="{{ url_for('static', filename='css/sidebar.css') }}"
@@ -12,8 +12,8 @@
     rel="stylesheet"
     href="{{ url_for('static', filename='css/notifications.css') }}"
 >
-<script src="{{ url_for('static', filename='js/notifications.js') }}"></script>
-<script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
+<script defer src="{{ url_for('static', filename='js/notifications.js') }}"></script>
+<script defer src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
 
 <aside
     class="sidebar"
