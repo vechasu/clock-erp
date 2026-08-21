@@ -186,6 +186,33 @@ class OrderTictactoySaleTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["data"][0]["orders_count"], 1)
 
+    def test_direct_mapping_rejects_product_without_stock(self):
+        unavailable = ExcelProductCatalog(self.database).create_product(
+            name="FA36-012-1L", article="FA36-012-1L",
+            brand="Bradley", category="Часы", stock=0,
+        )
+        with (
+            mock.patch.object(web, "get_order", return_value=self.order),
+            mock.patch.object(web, "SharedCatalog", return_value=self.shared),
+            mock.patch.object(web, "save_product_mappings") as save_mappings,
+        ):
+            response = self.client.post(
+                "/order/18593/product-map",
+                data={
+                    "csrf_token": "test-token",
+                    "bitrix_product_id": "bx-watch",
+                    "product_id": unavailable["id"],
+                    "brand_id": unavailable["brand_id"],
+                    "category_id": unavailable["category_id"],
+                },
+            )
+
+        query = parse_qs(urlsplit(response.headers["Location"]).query)
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(query["notice"], ["error"])
+        self.assertIn("фактического остатка", query["message"][0])
+        save_mappings.assert_not_called()
+
     def test_dialog_and_shared_cascade_are_rendered(self):
         html = self.render_order("?open_sale=1").get_data(as_text=True)
         self.assertIn('id="orderSaleModal"', html)
@@ -193,6 +220,7 @@ class OrderTictactoySaleTest(unittest.TestCase):
         self.assertIn('data-shared-catalog-kind="brand"', html)
         self.assertIn('data-shared-catalog-kind="category"', html)
         self.assertIn('data-shared-catalog-kind="product"', html)
+        self.assertIn('data-catalog-in-stock="true"', html)
         self.assertIn("Bradley Steel", html)
         self.assertIn("Нет в наличии", Path("app/static/js/catalog-combobox.js").read_text())
         self.assertIn('name="csrf_token"', html)

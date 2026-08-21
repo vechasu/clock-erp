@@ -422,6 +422,86 @@ class CatalogFilteringTest(unittest.TestCase):
         self.assertEqual(len(options["data"]), 4)
         self.assertTrue(all(item["stock"] > 0 for item in options["data"]))
 
+    def test_available_order_mapping_options_exclude_unavailable_catalog_rows(self):
+        zero_category = self.shared.create_category(
+            self.brand["id"], "Очки"
+        )
+        archived_category = self.shared.create_category(
+            self.brand["id"], "Сумка"
+        )
+        available_category = self.shared.create_category(
+            self.brand["id"], "Украшения"
+        )
+        other_category = self.shared.create_category(
+            self.brand["id"], "Ремешки"
+        )
+        zero = self.excel.create_product(
+            name="FA36-012-1L", article="FA36-012-1L",
+            brand_id=self.brand["id"], category_id=zero_category["id"],
+            stock=0,
+        )
+        archived = self.excel.create_product(
+            name="FA36-012-3L", article="FA36-012-3L",
+            brand_id=self.brand["id"],
+            category_id=archived_category["id"], stock=7,
+        )
+        available = self.excel.create_product(
+            name="FA41-012-5S available", article="FA41-012-5S-A",
+            brand_id=self.brand["id"],
+            category_id=available_category["id"], stock=1,
+        )
+        wrong_category = self.excel.create_product(
+            name="Другой раздел", article="OTHER-CATEGORY",
+            brand_id=self.brand["id"], category_id=other_category["id"],
+            stock=3,
+        )
+        wrong_brand = self.excel.create_product(
+            name="Другой бренд", article="OTHER-BRAND",
+            brand_id=self.other_brand["id"],
+            category_id=available_category["id"], stock=4,
+        )
+        with self.database.transaction() as connection:
+            connection.execute(
+                "UPDATE catalog_excel_products SET active = 0 WHERE id = ?",
+                (archived["id"],),
+            )
+
+        categories = self.client.get(
+            "/api/v1/catalog/options?type=category&limit=200"
+            "&category_scope=brand&brand_id={}"
+            "&available_for_sale=1".format(self.brand["id"])
+        ).get_json()["data"]
+        category_names = {item["name"]: item for item in categories}
+
+        self.assertNotIn("Очки", category_names)
+        self.assertNotIn("Сумка", category_names)
+        self.assertIn("Украшения", category_names)
+        self.assertEqual(category_names["Украшения"]["count"], 1)
+
+        product_url = (
+            "/api/v1/catalog/options?type=product&limit=200"
+            "&brand_id={}&category_id={}&available_for_sale=1"
+        ).format(self.brand["id"], available_category["id"])
+        products = self.client.get(product_url).get_json()["data"]
+        product_ids = [str(item["id"]) for item in products]
+        self.assertEqual(product_ids, [str(available["id"])])
+        self.assertNotIn(str(zero["id"]), product_ids)
+        self.assertNotIn(str(wrong_category["id"]), product_ids)
+        self.assertNotIn(str(wrong_brand["id"]), product_ids)
+        self.assertTrue(all(item["stock"] > 0 for item in products))
+
+        unavailable_search = self.client.get(
+            product_url + "&q=FA36-012-1L"
+        ).get_json()["data"]
+        available_search = self.client.get(
+            product_url + "&q=FA41-012-5S"
+        ).get_json()["data"]
+        self.assertEqual(unavailable_search, [])
+        self.assertEqual(
+            [str(item["id"]) for item in available_search],
+            [str(available["id"])],
+        )
+
     def test_sale_channels_share_catalog_excel_stock(self):
         expected_product_ids = None
 

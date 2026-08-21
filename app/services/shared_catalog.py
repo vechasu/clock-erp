@@ -304,7 +304,8 @@ class SharedCatalog:
         )
         where_sql = " WHERE " + " AND ".join(where) if where else ""
         product_availability_sql = (
-            " AND p.stock > 0 AND " + unlocked_product_sql("p")
+            " AND p.stock > 0 AND p.deleted_at IS NULL AND "
+            + unlocked_product_sql("p")
             if available_for_sale else ""
         )
         available_having_sql = (
@@ -1223,7 +1224,8 @@ class SharedCatalog:
             int(brand_id) if brand_id not in (None, "") else None
         )
         product_availability_sql = (
-            " AND p.stock > 0 AND " + unlocked_product_sql("p")
+            " AND p.stock > 0 AND p.deleted_at IS NULL AND "
+            + unlocked_product_sql("p")
             if available_for_sale else ""
         )
         brand_category_mapping_sql = (
@@ -1240,6 +1242,9 @@ class SharedCatalog:
                 "SELECT c.id, c.brand_id, c.name, c.normalized_name, "
                 "c.active, b.name AS brand_name, "
                 "COUNT(p.id) AS product_count, "
+                "COALESCE(SUM(CASE WHEN p.brand_id = ? "
+                "OR (? = 0 AND p.brand_id IS NULL) "
+                "THEN 1 ELSE 0 END), 0) AS selected_product_count, "
                 "COALESCE(SUM(p.stock), 0) AS global_stock_total, "
                 "COALESCE(SUM(CASE WHEN p.brand_id = ? "
                 "OR (? = 0 AND p.brand_id IS NULL) "
@@ -1260,6 +1265,9 @@ class SharedCatalog:
                 "'Без категории' AS name, 'без категории' AS normalized_name, "
                 "1 AS active, 'Без бренда' AS brand_name, "
                 "COUNT(p.id) AS product_count, "
+                "COALESCE(SUM(CASE WHEN p.brand_id = ? "
+                "OR (? = 0 AND p.brand_id IS NULL) "
+                "THEN 1 ELSE 0 END), 0) AS selected_product_count, "
                 "COALESCE(SUM(p.stock), 0) AS global_stock_total, "
                 "COALESCE(SUM(CASE WHEN p.brand_id = ? "
                 "OR (? = 0 AND p.brand_id IS NULL) "
@@ -1281,8 +1289,12 @@ class SharedCatalog:
                     selected_brand_id,
                     selected_brand_id,
                     selected_brand_id,
+                    selected_brand_id,
+                    selected_brand_id,
                 ] + ([] if available_for_sale else [selected_brand_id])
                 + parameters + [
+                    selected_brand_id,
+                    selected_brand_id,
                     selected_brand_id,
                     selected_brand_id,
                     selected_brand_id,
@@ -1301,6 +1313,7 @@ class SharedCatalog:
                     "canonical": row,
                     "category_ids": [],
                     "product_count": 0,
+                    "selected_product_count": 0,
                     "global_stock_total": 0.0,
                     "selected_stock_total": 0.0,
                     "used_by_brand": False,
@@ -1310,6 +1323,9 @@ class SharedCatalog:
             if int(row["id"]) < int(current["canonical"]["id"]):
                 current["canonical"] = row
             current["product_count"] += int(row["product_count"])
+            current["selected_product_count"] += int(
+                row["selected_product_count"]
+            )
             current["global_stock_total"] += float(
                 row["global_stock_total"] or 0
             )
@@ -1336,7 +1352,11 @@ class SharedCatalog:
         result = []
         for item in ordered[:max(1, min(int(limit), 100))]:
             prepared = dict(item["canonical"])
-            prepared["product_count"] = item["product_count"]
+            prepared["product_count"] = (
+                item["selected_product_count"]
+                if available_for_sale and selected_brand_id is not None
+                else item["product_count"]
+            )
             prepared["stock_total"] = (
                 item["selected_stock_total"]
                 if selected_brand_id is not None
@@ -1398,6 +1418,7 @@ class SharedCatalog:
         parameters = []
         if not include_archived:
             where.append("p.active = 1")
+            where.append("p.deleted_at IS NULL")
         if not include_inventory_locked:
             where.append(unlocked_product_sql("p"))
         if brand_id not in (None, ""):
@@ -1499,7 +1520,7 @@ class SharedCatalog:
                 "), p.category_id) AS category_id, "
                 "COALESCE(b.name, '') AS brand, "
                 "COALESCE(c.name, '') AS category, "
-                "COALESCE(p.cell, '') AS cell, p.stock, p.active, "
+                "COALESCE(p.cell, '') AS cell, p.stock, p.active, p.deleted_at, "
                 "COALESCE(p.bitrix_thumbnail_url, "
                 "p.bitrix_primary_image_url, '') AS bitrix_image_url "
                 "FROM catalog_excel_products p "
@@ -1571,7 +1592,7 @@ class SharedCatalog:
                 "), p.category_id) AS category_id, "
                 "COALESCE(b.name, '') AS brand, "
                 "COALESCE(c.name, '') AS category, "
-                "COALESCE(p.cell, '') AS cell, p.stock, p.active, "
+                "COALESCE(p.cell, '') AS cell, p.stock, p.active, p.deleted_at, "
                 "COALESCE(p.bitrix_thumbnail_url, "
                 "p.bitrix_primary_image_url, '') AS bitrix_image_url "
                 "FROM catalog_excel_products p "
@@ -2181,4 +2202,7 @@ class SharedCatalog:
                 )
             ),
             "active": bool(row["active"]),
+            "deleted_at": (
+                row["deleted_at"] if "deleted_at" in row.keys() else None
+            ),
         }

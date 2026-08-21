@@ -1548,10 +1548,23 @@ def order_product_map(order_id):
     selected_item = SharedCatalog().get_product(
         product_id, include_archived=True
     )
-    if selected_item is None or not selected_item.get("active"):
+    if (
+        selected_item is None
+        or not selected_item.get("active")
+        or selected_item.get("deleted_at")
+    ):
         return redirect(url_for(
             "order_page", order_id=order_id, notice="error",
             message="Товар ERP не найден или архивирован",
+        ))
+    try:
+        selected_stock = float(selected_item.get("stock") or 0)
+    except (TypeError, ValueError):
+        selected_stock = 0
+    if selected_stock <= 0:
+        return redirect(url_for(
+            "order_page", order_id=order_id, notice="error",
+            message="Нельзя сопоставить товар без фактического остатка",
         ))
     if str(selected_item.get("brand_id") or "") != brand_id:
         return redirect(url_for(
