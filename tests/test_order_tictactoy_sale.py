@@ -227,6 +227,35 @@ class OrderTictactoySaleTest(unittest.TestCase):
         self.assertIn('name="csrf_token"', html)
         self.assertIn('type="button" data-close-sale-dialog', html)
 
+    def test_unconfirmed_order_keeps_sale_action_and_explains_confirmation(self):
+        html = self.render_order_for({**self.order, "status": "N"})
+        self.assertIn(">Провести продажу</button>", html)
+        self.assertIn(
+            "Чтобы провести продажу, сначала подтвердите заказ.", html
+        )
+        self.assertIn(">Подтвердить заказ</button>", html)
+        self.assertNotIn('id="orderSaleModal"', html)
+
+    def test_confirmed_order_keeps_active_sale_action(self):
+        html = self.render_order_for({**self.order, "status": "A"})
+        self.assertIn("data-open-sale-dialog>Провести продажу</button>", html)
+        self.assertIn('id="orderSaleModal"', html)
+
+    def test_assembled_order_with_sale_links_to_that_sale(self):
+        self.conduct()
+        sale_id = self.inventory.list_sales()[0]["id"]
+        html = self.render_order_for({**self.order, "status": "D"})
+        self.assertIn("Продажа проведена", html)
+        self.assertIn("Открыть продажу", html)
+        self.assertIn("sale_id={}".format(sale_id), html)
+        self.assertNotIn(">Провести продажу</button>", html)
+
+    def test_assembled_order_without_sale_exposes_recovery_action(self):
+        html = self.render_order_for({**self.order, "status": "D"})
+        self.assertIn("Продажа не найдена", html)
+        self.assertIn("data-open-sale-dialog>Провести продажу</button>", html)
+        self.assertIn('id="orderSaleModal"', html)
+
     def test_order_21110_sale_dialog_opens_while_another_writer_holds_database(self):
         order = {**self.order, "id": "21110", "number": "21110"}
         statuses = OrderStatusService(self.database)
@@ -548,6 +577,55 @@ class OrderTictactoySaleTest(unittest.TestCase):
         self.assertEqual(len({row["id"] for row in self.inventory.list_sales()}), 1)
         self.assertEqual(ExcelProductCatalog(self.database).get_product(self.watch["id"])["stock"], 3)
 
+    def test_assembled_order_without_sale_can_be_recovered_atomically(self):
+        order = {**self.order, "status": "D"}
+        response = self.conduct(order=order)
+        self.assertEqual(urlsplit(response.location).path, "/sales")
+        rows = self.inventory.list_sales()
+        self.assertEqual(len({row["id"] for row in rows}), 1)
+        state = OrderStatusService(self.database).get("18593")
+        self.assertEqual(state["erp_status"], "assembled")
+        self.assertEqual(state["sale_id"], rows[0]["id"])
+        self.assertEqual(
+            ExcelProductCatalog(self.database).get_product(self.watch["id"])["stock"],
+            3,
+        )
+
+    def test_full_unconfirmed_to_sale_scenario(self):
+        unconfirmed = {**self.order, "status": "N"}
+        first_html = self.render_order_for(unconfirmed)
+        self.assertIn(">Провести продажу</button>", first_html)
+        self.assertIn("сначала подтвердите заказ", first_html)
+
+        statuses = OrderStatusService(self.database)
+        with (
+            mock.patch.object(web, "order_status_service", return_value=statuses),
+            mock.patch.object(web, "get_orders", return_value=[unconfirmed]),
+            mock.patch.object(
+                web, "update_order_status", return_value={"status": "ok"}
+            ),
+        ):
+            confirmation = self.client.post(
+                "/order/18593/status",
+                data={"csrf_token": "test-token", "status": "A"},
+            )
+        self.assertEqual(
+            parse_qs(urlsplit(confirmation.location).query)["open_sale"], ["1"]
+        )
+
+        confirmed = {**self.order, "status": "A"}
+        sale_response = self.conduct(order=confirmed)
+        self.assertEqual(urlsplit(sale_response.location).path, "/sales")
+        sale = self.inventory.list_sales()[0]
+        assembled = {**self.order, "status": "D"}
+        final_html = self.render_order_for(assembled)
+        self.assertIn("Продажа проведена", final_html)
+        self.assertIn("sale_id={}".format(sale["id"]), final_html)
+        self.assertEqual(
+            ExcelProductCatalog(self.database).get_product(self.watch["id"])["stock"],
+            3,
+        )
+
     def test_all_validation_errors_are_returned_before_stock_change(self):
         order = dict(self.order)
         order["status"] = "N"
@@ -557,7 +635,7 @@ class OrderTictactoySaleTest(unittest.TestCase):
         ]
         response = self.conduct(order=order)
         message = parse_qs(urlsplit(response.location).query)["message"][0]
-        self.assertIn("Сначала подтвердите заказ", message)
+        self.assertIn("сначала подтвердите заказ", message)
         self.assertIn("Нет связи", message)
         self.assertIn("требуется 6, доступно 5", message)
         self.assertEqual(ExcelProductCatalog(self.database).get_product(self.watch["id"])["stock"], 5)
