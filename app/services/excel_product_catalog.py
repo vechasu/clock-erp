@@ -831,7 +831,7 @@ class ExcelProductCatalog:
         if hide_zero:
             where.append("p.stock > 0 AND CAST(p.stock AS REAL) > 0")
         if stock_state == "out":
-            where.append("p.stock <= 0")
+            where.append("p.stock = 0")
         elif stock_state == "in":
             where.append("p.stock > 0")
         if check_state in {"unchecked", "partial", "complete"}:
@@ -902,7 +902,7 @@ class ExcelProductCatalog:
             stats = dict(connection.execute(
                 "SELECT COUNT(*) AS positions, COALESCE(SUM(p.stock), 0) AS total_stock, "
                 "SUM(CASE WHEN p.stock > 0 THEN 1 ELSE 0 END) AS positive_positions, "
-                "SUM(CASE WHEN p.stock <= 0 THEN 1 ELSE 0 END) AS zero_positions, "
+                "SUM(CASE WHEN p.stock = 0 THEN 1 ELSE 0 END) AS zero_positions, "
                 "SUM(CASE WHEN p.bitrix_catalog_product_id IS NOT NULL THEN 1 ELSE 0 END) "
                 "AS matched_positions FROM catalog_excel_products p "
                 "JOIN catalog_excel_batches b ON b.id = p.current_batch_id "
@@ -1017,6 +1017,24 @@ class ExcelProductCatalog:
             "stats": stats, "sort_by": sort_by, "sort_dir": sort_dir,
             "status_counts": status_counts,
             "active_batch": dict(active_batch) if active_batch else None,
+        }
+
+    def stock_tab_counts(self):
+        """Return unfiltered active-product counts for persistent catalog tabs."""
+        self.database.initialize()
+        with self.database.connect() as connection:
+            row = connection.execute(
+                "SELECT COALESCE(SUM(CASE WHEN stock > 0 THEN 1 ELSE 0 END), 0) "
+                "AS in_stock, COALESCE(SUM(CASE WHEN stock = 0 THEN 1 ELSE 0 END), 0) "
+                "AS out_of_stock, COALESCE(SUM(CASE WHEN stock > 0 THEN stock ELSE 0 END), 0) "
+                "AS units_in_stock FROM catalog_excel_products p "
+                "LEFT JOIN catalog_excel_batches b ON b.id = p.current_batch_id "
+                "WHERE p.active = 1 AND " + VISIBLE_PRODUCT_SQL
+            ).fetchone()
+        return {
+            "in_stock": int(row["in_stock"] or 0),
+            "out_of_stock": int(row["out_of_stock"] or 0),
+            "units_in_stock": float(row["units_in_stock"] or 0),
         }
 
     def get_product(self, product_id):

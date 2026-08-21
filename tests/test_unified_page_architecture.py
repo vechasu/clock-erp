@@ -13,7 +13,7 @@ class UnifiedPageArchitectureTest(unittest.TestCase):
         contracts = {
             "warehouse.html": (
                 "Товары",
-                "Каталог, цены и текущие остатки",
+                "Каталог и складские остатки",
                 "+ Добавить товар",
             ),
             "sales.html": (
@@ -41,15 +41,16 @@ class UnifiedPageArchitectureTest(unittest.TestCase):
                     self.assertIn(text, header)
 
     def test_three_pages_use_the_shared_metrics_contract(self):
-        for template in ("warehouse.html", "sales.html", "receipts.html"):
+        for template in ("sales.html", "receipts.html"):
             with self.subTest(template=template):
                 source = self.source("app/templates/" + template)
                 self.assertIn("erp-workspace-metrics", source)
                 self.assertIn("erp-workspace-metric", source)
 
         warehouse = self.source("app/templates/warehouse.html")
-        self.assertIn("Позиций", warehouse)
-        self.assertIn("Единиц на складе", warehouse)
+        self.assertIn("warehouse-compact-summary", warehouse)
+        self.assertIn("В наличии", warehouse)
+        self.assertIn("единиц", warehouse)
         sales = self.source("app/templates/sales.html")
         sales_metrics = sales.split("erp-workspace-metrics", 1)[1].split(
             "</div>\n\n        <section", 1
@@ -114,13 +115,13 @@ class UnifiedPageArchitectureTest(unittest.TestCase):
     def test_active_pages_share_page_header_copy(self):
         contracts = {
             "warehouse.html": (
-                "Товары", "Каталог, цены и текущие остатки",
+                "Товары", "Каталог и складские остатки",
             ),
             "warehouse_brands.html": (
-                "Товары", "Каталог, цены и текущие остатки",
+                "Товары", "Каталог и складские остатки",
             ),
             "warehouse_categories.html": (
-                "Товары", "Каталог, цены и текущие остатки",
+                "Товары", "Каталог и складские остатки",
             ),
             "sales.html": (
                 "Продажи", "Учёт продаж по всем каналам",
