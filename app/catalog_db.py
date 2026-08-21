@@ -723,6 +723,24 @@ CREATE TABLE IF NOT EXISTS erp_order_status_sync_queue (
     updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS erp_order_product_mappings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id TEXT NOT NULL,
+    order_line_id TEXT NOT NULL,
+    bitrix_product_id TEXT NOT NULL,
+    bitrix_sku_id TEXT,
+    product_id INTEGER NOT NULL REFERENCES catalog_excel_products(id) ON DELETE RESTRICT,
+    brand_id INTEGER REFERENCES erp_brands(id) ON DELETE RESTRICT,
+    category_id INTEGER REFERENCES erp_categories(id) ON DELETE RESTRICT,
+    moysklad_product_id TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (order_id, order_line_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_erp_order_product_mappings_product
+    ON erp_order_product_mappings(product_id, order_id);
+
 CREATE TABLE IF NOT EXISTS erp_sale_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     sale_id TEXT NOT NULL REFERENCES erp_sales(id) ON DELETE RESTRICT,
