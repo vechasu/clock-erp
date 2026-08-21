@@ -681,12 +681,19 @@ def _parse_order_address_geography(address):
 
 
 def get_order_geography(order):
-    """Prefer structured fields, then fill missing values from the address."""
+    """Resolve Bitrix location IDs, then fill gaps from explicit address parts."""
     result = {
         "country": _structured_order_geography(order, ORDER_COUNTRY_KEYS),
         "region": get_order_region(order),
         "city": _structured_order_geography(order, ORDER_CITY_KEYS),
     }
+    location_id = first_order_text(order, ("location_id", "LOCATION_ID"))
+    if not location_id:
+        location_id = order_text_value(get_property(order, "LOCATION"))
+    resolved = get_tictactoy_location_index().get(location_id, {})
+    for field in result:
+        if not result[field]:
+            result[field] = str(resolved.get(field) or "").strip()
     parsed = _parse_order_address_geography(get_order_address_text(order))
     for field in result:
         if not result[field]:
@@ -1004,6 +1011,10 @@ def orders_page():
         sale_already_conducted=already_conducted,
         conducted_sale=get_order_conducted_sale(order_id),
         order_geography=get_order_geography(selected_order or {}),
+        order_country_options=build_sale_combobox_options(
+            TICTACTOY_SALE_COUNTRIES
+        ),
+        order_location_data=get_tictactoy_location_catalog(),
         order_tracking=get_order_tracking(selected_order or {}),
         order_sale_pricing=build_order_sale_pricing(
             (selected_order or {}).get("products") or []
@@ -1380,6 +1391,10 @@ def order_page(order_id):
         sale_already_conducted=already_conducted,
         conducted_sale=get_order_conducted_sale(order_id),
         order_geography=get_order_geography(selected_order),
+        order_country_options=build_sale_combobox_options(
+            TICTACTOY_SALE_COUNTRIES
+        ),
+        order_location_data=get_tictactoy_location_catalog(),
         order_tracking=get_order_tracking(selected_order),
         order_sale_pricing=build_order_sale_pricing(
             selected_order.get("products") or []
@@ -1457,6 +1472,25 @@ def _conduct_order_sale(order_id):
         ).strip()
         for field in ("country", "region", "city")
     }
+    geography_was_edited = any(
+        field in request.form
+        and str(request.form.get(field) or "").strip()
+            != str(inferred_geography.get(field) or "").strip()
+        for field in ("country", "region", "city")
+    )
+    try:
+        geography = build_tictactoy_sale_location_fields(
+            geography,
+            strict=geography_was_edited,
+        )
+    except ValueError as error:
+        return redirect(url_for(
+            "order_page",
+            order_id=order_id,
+            notice="error",
+            message=str(error),
+            open_sale="1",
+        ))
     oversized_geography = next((
         field for field, value in geography.items() if len(value) > 255
     ), None)
@@ -7055,6 +7089,35 @@ def get_tictactoy_location_catalog():
     return normalized
 
 
+def get_tictactoy_location_index():
+    try:
+        payload = json.loads(
+            TICTACTOY_LOCATIONS_PATH.read_text(encoding="utf-8")
+        )
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+    raw_index = payload.get("locations_by_id")
+    if not isinstance(raw_index, dict):
+        return {}
+
+    result = {}
+    for location_id, location in raw_index.items():
+        if not isinstance(location, str):
+            continue
+        normalized_id = str(location_id or "").strip()
+        if not normalized_id:
+            continue
+        parts = location.split("\t")
+        if len(parts) != 3:
+            continue
+        result[normalized_id] = dict(zip(
+            ("country", "region", "city"),
+            (part.strip() for part in parts),
+        ))
+    return result
+
+
 def parse_manual_sale_quantity(value):
     from decimal import Decimal, InvalidOperation
 
@@ -7771,7 +7834,7 @@ def build_sale_optional_fields(form, existing=None):
     }
 
 
-def build_tictactoy_sale_location_fields(form, existing=None):
+def build_tictactoy_sale_location_fields(form, existing=None, strict=False):
     existing = existing if isinstance(existing, dict) else {}
     values = {
         field: str(
@@ -7788,6 +7851,48 @@ def build_tictactoy_sale_location_fields(form, existing=None):
         raise ValueError(
             "Страна, регион и населённый пункт должны быть не длиннее 255 символов"
         )
+
+    location_index = get_tictactoy_location_index()
+    for field in ("region", "city"):
+        internal_id = values[field]
+        if internal_id.isdigit() and internal_id in location_index:
+            resolved = location_index[internal_id]
+            for resolved_field in ("country", "region", "city"):
+                if not values[resolved_field] or values[resolved_field] == internal_id:
+                    values[resolved_field] = resolved[resolved_field]
+            break
+
+    catalog = get_tictactoy_location_catalog()
+    country_lookup = {name.casefold(): name for name in catalog}
+    country = country_lookup.get(values["country"].casefold())
+    if country:
+        values["country"] = country
+        region_lookup = {
+            name.casefold(): name for name in catalog[country]
+        }
+        region = region_lookup.get(values["region"].casefold())
+        if region:
+            values["region"] = region
+            city_lookup = {
+                name.casefold(): name for name in catalog[country][region]
+            }
+            city = city_lookup.get(values["city"].casefold())
+            if city:
+                values["city"] = city
+
+    if strict:
+        country = values["country"]
+        region = values["region"]
+        city = values["city"]
+        if country and country not in catalog:
+            raise ValueError("Выберите страну из списка")
+        if region and (not country or region not in catalog.get(country, {})):
+            raise ValueError("Выберите регион из списка выбранной страны")
+        if city and (
+            not region
+            or city not in catalog.get(country, {}).get(region, [])
+        ):
+            raise ValueError("Выберите город из списка выбранного региона")
     return values
 
 
