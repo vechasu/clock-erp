@@ -4133,6 +4133,18 @@
                         <span class="erp-filter-chip-remove" aria-hidden="true">×</span>
                     </button>
                 {% endif %}
+                {% if selected_model %}
+                    <button
+                        class="erp-filter-chip"
+                        type="button"
+                        data-warehouse-filter="model"
+                        onclick="clearWarehouseFilter('model')"
+                        aria-label="Снять фильтр Модель: {{ selected_model }}"
+                    >
+                        <span class="erp-filter-chip-label">Модель: {{ selected_model }}</span>
+                        <span class="erp-filter-chip-remove" aria-hidden="true">×</span>
+                    </button>
+                {% endif %}
                 {% if selected_cell %}
                     <button
                         class="erp-filter-chip"
@@ -4196,6 +4208,9 @@
 
                     {% if selected_cell %}
                         <input type="hidden" name="cell" value="{{ selected_cell }}">
+                    {% endif %}
+                    {% if selected_model %}
+                        <input type="hidden" name="model" value="{{ selected_model }}">
                     {% endif %}
 
                     {% if created_date_from %}
@@ -4999,6 +5014,18 @@
             {% if selected_cell %}
                 <input type="hidden" name="cell" value="{{ selected_cell }}">
             {% endif %}
+
+            <div class="category-cell-form-title" style="margin-top: 14px;">
+                Модель
+            </div>
+            <input
+                class="brand-combobox-trigger"
+                type="text"
+                name="model"
+                value="{{ selected_model }}"
+                placeholder="Все модели"
+                autocomplete="off"
+            >
 
             <input type="hidden" name="sort_by" value="{{ sort_by }}">
             <input type="hidden" name="sort_dir" value="{{ sort_dir }}">
@@ -6523,6 +6550,7 @@
                 "brand_id",
                 "category",
                 "category_id",
+                "model",
                 "cell",
                 "date_from",
                 "date_to",
@@ -6536,6 +6564,7 @@
             const parameterNames = {
                 brand: ["brand", "brand_id"],
                 category: ["category", "category_id"],
+                model: ["model"],
                 cell: ["cell"],
                 date: ["date_from", "date_to"],
             }[filterName] || [];
