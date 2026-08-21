@@ -13,6 +13,17 @@ from app.catalog_db import CatalogDatabase  # noqa: E402
 from app.services.product_model_backfill import ProductModelBackfill  # noqa: E402
 
 
+def write_payload(payload, stream=None):
+    """Write UTF-8 JSON even when the server process locale is ASCII."""
+    stream = stream or sys.stdout
+    binary_stream = getattr(stream, "buffer", None)
+    if binary_stream is not None:
+        binary_stream.write((payload + "\n").encode("utf-8"))
+        binary_stream.flush()
+        return
+    stream.write(payload + "\n")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--database", help="SQLite catalog path; defaults to CATALOG_DATABASE_PATH")
@@ -33,7 +44,7 @@ def main():
     payload = json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True)
     if args.output:
         Path(args.output).write_text(payload + "\n", encoding="utf-8")
-    print(payload)
+    write_payload(payload)
 
 
 if __name__ == "__main__":
