@@ -199,7 +199,9 @@ class InventoryJournalTest(unittest.TestCase):
         markup = web.app.test_client().get("/app/journal?entity_type=inventory").get_data(as_text=True)
         self.assertIn('data-journal-tab="inventory"', markup)
         self.assertIn("inventory-position-values", markup)
-        self.assertIn("@media (max-width: 420px)", markup)
+        css = (Path(__file__).resolve().parents[1] / "app/static/css/erp-components.css").read_text()
+        journal_contract = css.split("Journal workspace: shared ERP component contract.", 1)[1]
+        self.assertIn("@media (max-width: 600px)", journal_contract)
 
     def test_18_detail_api_is_read_only(self):
         session = self.start()
