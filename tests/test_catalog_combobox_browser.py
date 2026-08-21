@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -82,6 +83,26 @@ class CatalogComboboxStructureTest(unittest.TestCase):
         self.assertNotIn('data-catalog-in-stock="true"', receipts)
         self.assertIn('form.dataset.submitting === "1"', warehouse)
         self.assertIn("result.doubleSubmit", warehouse)
+
+    def test_shared_catalog_script_never_blocks_application_layout(self):
+        for template in (
+            "warehouse.html",
+            "sales.html",
+            "receipts.html",
+            "orders.html",
+        ):
+            with self.subTest(template=template):
+                source = (PROJECT_ROOT / "app/templates" / template).read_text(
+                    encoding="utf-8"
+                )
+                script_tag = re.search(
+                    r"<script\b[^>]*catalog-combobox\.js[^>]*>",
+                    source,
+                    re.DOTALL,
+                )
+                self.assertIsNotNone(script_tag)
+                self.assertRegex(script_tag.group(0), r"\bdefer\b")
+                self.assertIn("catalog-combobox-20260821", script_tag.group(0))
 
 
 class CatalogComboboxBrowserTest(unittest.TestCase):
