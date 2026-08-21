@@ -78,7 +78,10 @@
             "sparse-card-width"
         );
         assert(
-            Math.abs(actionHeader.getBoundingClientRect().width - 118) <= 1,
+            Math.abs(
+                actionHeader.getBoundingClientRect().width
+                - (window.innerWidth <= 900 ? 104 : 224)
+            ) <= 1,
             "sparse-action-width"
         );
         visibleHeaders.forEach(function (header) {
