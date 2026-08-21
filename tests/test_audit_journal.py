@@ -478,10 +478,8 @@ class AuditJournalUiTest(unittest.TestCase):
         self.assertIn('detailValue("Стало", change.after, true)', source)
         self.assertIn("changedFieldsLabel(fieldChanges.length)", source)
         self.assertNotIn('document.createElement("input")', source)
-        self.assertIn(
-            "html[data-theme] .journal-object-link { color: #fff !important; }",
-            source,
-        )
+        self.assertIn('link.className = "journal-object-link"', source)
+        self.assertNotIn("<style", source)
         self.assertNotIn("Экспорт журнала", source)
         with web.app.test_request_context("/app/journal"):
             labels = [item["label"] for item in web.get_navigation_items()]

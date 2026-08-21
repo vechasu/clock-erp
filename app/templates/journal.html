@@ -6,142 +6,6 @@
     <title>ТТТ ERP — Журнал</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/themes.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/erp-components.css') }}">
-    <style>
-        * { box-sizing: border-box; }
-        body { margin: 0; background: #f4f7fb; color: #172033; font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-        .journal-main { width: 100%; min-width: 0; padding: 20px 32px 48px; }
-        .journal-shell { width: min(100%, 1120px); margin: 0 auto; }
-        .journal-header h1 { margin: 0; font-size: 28px; letter-spacing: -.03em; }
-        .journal-header p { margin: 4px 0 0; color: #687386; font-size: 14px; }
-        .journal-tabs { display: flex; gap: 18px; margin-top: 14px; overflow-x: auto; border-bottom: 1px solid #dfe5ed; scrollbar-width: none; }
-        .journal-tab { flex: 0 0 auto; margin-bottom: -1px; padding: 7px 2px 8px; border-bottom: 2px solid transparent; color: #64748b; font-size: 13px; font-weight: 750; text-decoration: none; white-space: nowrap; }
-        .journal-tab:hover { color: #2563eb; }
-        .journal-tab.active { border-bottom-color: #2563eb; color: #2563eb; }
-        .journal-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; }
-        .journal-toolbar-left { display: flex; min-width: 0; align-items: center; gap: 8px; }
-        .journal-period { display: flex; min-height: 40px; align-items: center; overflow: hidden; border: 1px solid #cfd5dc; border-radius: 10px; background: #fff; }
-        .journal-period-label { flex: 0 0 auto; padding: 0 9px 0 12px; color: #64748b; font-size: 12px; font-weight: 750; }
-        .journal-period-fields { display: flex; min-width: 0; align-items: center; border-left: 1px solid #e2e7ed; }
-        .journal-period input { width: 128px; min-width: 0; height: 38px; padding: 0 7px; border: 0; background: transparent; color: #253044; font: inherit; font-size: 13px; outline: none; }
-        .journal-period-divider { flex: 0 0 auto; color: #94a3b8; }
-        .journal-period:focus-within { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37, 99, 235, .08); }
-        html[data-theme] .journal-period input:focus-visible { border-color: transparent !important; outline: none !important; box-shadow: none !important; }
-        .journal-control { width: 100%; min-height: 40px; padding: 8px 11px; border: 1px solid #cfd5dc; border-radius: 10px; background: #fff; color: #253044; font: inherit; font-size: 14px; outline: none; }
-        .journal-control:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37, 99, 235, .08); }
-        .journal-filter-toggle { display: inline-flex; min-height: 40px; align-items: center; gap: 7px; padding: 8px 12px; border: 1px solid #cfd5dc; border-radius: 10px; background: #fff; color: #334155; font: inherit; font-size: 13px; font-weight: 750; cursor: pointer; white-space: nowrap; }
-        .journal-filter-toggle:hover { border-color: #aeb8c4; background: #f8fafc; }
-        .journal-filter-toggle:focus-visible { border-color: #2563eb; outline: none; box-shadow: 0 0 0 3px rgba(37, 99, 235, .08); }
-        html[data-theme] .journal-filter-toggle:focus-visible,
-        html[data-theme] #journalSearch:focus-visible { border-color: #2563eb !important; outline: none !important; outline-offset: 0 !important; box-shadow: 0 0 0 3px rgba(37, 99, 235, .08) !important; }
-        .journal-filter-count { display: inline-grid; min-width: 18px; height: 18px; place-items: center; padding: 0 5px; border-radius: 9px; background: #e8f0ff; color: #2563eb; font-size: 11px; }
-        .journal-search { position: relative; width: clamp(260px, 31vw, 360px); flex: 0 1 360px; }
-        .journal-search-icon { position: absolute; top: 50%; left: 12px; width: 16px; height: 16px; pointer-events: none; transform: translateY(-50%); fill: none; stroke: #7b8798; stroke-linecap: round; stroke-width: 1.8; }
-        .journal-search .journal-control { padding-left: 36px; }
-        .journal-search-submit { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; clip-path: inset(50%); }
-        .journal-filters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) auto; gap: 8px; margin-top: 8px; padding: 10px; border: 1px solid #dfe5ed; border-radius: 11px; background: #fff; }
-        .journal-filters[hidden] { display: none; }
-        .journal-apply { min-height: 40px; padding: 8px 15px; border: 0; border-radius: 9px; background: #172033; color: #fff; font-weight: 750; cursor: pointer; }
-        .journal-timeline { width: min(100%, 1000px); margin-top: 12px; }
-        .journal-day { margin: 14px 0 8px; color: #536174; font-size: 14px; font-weight: 800; }
-        .journal-event { position: relative; display: grid; grid-template-columns: 76px 14px minmax(0, 1fr); width: 100%; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
-        .journal-event-time { padding-top: 16px; color: #6b7688; font-size: 13px; font-variant-numeric: tabular-nums; }
-        .journal-event-rail { position: relative; }
-        .journal-event-rail::before { content: ""; position: absolute; top: 0; bottom: 0; left: 6px; width: 2px; background: #cfd8e5; }
-        .journal-event-dot { position: absolute; top: 20px; left: 0; z-index: 1; width: 14px; height: 14px; border: 3px solid #fff; border-radius: 50%; background: #3b82f6; box-shadow: 0 0 0 1px #aebed1; }
-        .journal-event[data-tone="success"] .journal-event-dot { background: #16a34a; }
-        .journal-event[data-tone="danger"] .journal-event-dot { background: #dc2626; }
-        .journal-event[data-tone="warning"] .journal-event-dot { background: #f59e0b; }
-        .journal-event[data-tone="neutral"] .journal-event-dot { background: #8491a3; }
-        .journal-event-card { display: grid; min-width: 0; grid-template-columns: 28px minmax(0, 1fr) 16px; align-items: center; gap: 10px; margin: 0 0 7px 10px; padding: 12px 14px; border: 1px solid #dfe5ed; border-radius: 11px; background: #fff; box-shadow: 0 2px 9px rgba(15, 23, 42, .025); transition: border-color .14s, background .14s, transform .14s; }
-        .journal-event:hover .journal-event-card { border-color: #a9bed9; background: #fbfdff; transform: translateY(-1px); }
-        .journal-event:focus-visible { outline: none; }
-        html[data-theme] .journal-event:focus-visible { outline: none !important; box-shadow: none !important; }
-        .journal-event:focus-visible .journal-event-card { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37, 99, 235, .08); }
-        .journal-event-icon { display: grid; width: 28px; height: 28px; place-items: center; border-radius: 8px; background: #f1f5f9; color: #64748b; }
-        .journal-event-icon-svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
-        .journal-event-copy { min-width: 0; }
-        .journal-event-title { display: block; color: #1e293b; font-size: 15px; font-weight: 800; line-height: 1.3; overflow-wrap: anywhere; }
-        .journal-event-summary { display: block; margin-top: 3px; color: #344155; font-size: 14px; line-height: 1.4; overflow-wrap: anywhere; }
-        .journal-event-meta { display: flex; flex-wrap: wrap; gap: 4px 7px; margin-top: 5px; color: #748095; font-size: 12.5px; }
-        .journal-event-chevron { color: #94a3b8; font-size: 22px; font-weight: 400; line-height: 1; transition: color .14s, transform .14s; }
-        .journal-event:hover .journal-event-chevron { color: #2563eb; transform: translateX(2px); }
-        .journal-empty { max-width: 520px; margin: 18px auto 0; padding: 22px 18px; border: 1px solid #e3e8ef; border-radius: 12px; background: rgba(255, 255, 255, .62); color: #748095; text-align: center; }
-        .journal-empty strong { display: block; margin-bottom: 4px; color: #334155; font-size: 15px; }
-        .journal-empty-reset { display: inline-block; margin-top: 9px; color: #2563eb; font-size: 13px; font-weight: 700; text-decoration: none; }
-        .journal-more { display: block; min-width: 170px; margin: 18px 0 0 min(415px, calc(50% - 85px)); padding: 11px 18px; border: 1px solid #b9c7d8; border-radius: 10px; background: #fff; color: #263348; font-weight: 750; cursor: pointer; }
-        .journal-more[hidden] { display: none; }
-        body.journal-drawer-open { overflow: hidden; }
-        .journal-drawer-backdrop { position: fixed; inset: 0; z-index: 90; display: none; background: rgba(15, 23, 42, .25); backdrop-filter: blur(1px); }
-        .journal-drawer-backdrop.open { display: block; }
-        .journal-drawer { position: fixed; top: 0; right: 0; z-index: 91; display: flex; width: min(420px, 100%); height: 100dvh; flex-direction: column; overflow: hidden; background: #fff; box-shadow: -14px 0 36px rgba(15, 23, 42, .16); transform: translateX(104%); transition: transform .2s ease; }
-        .journal-drawer.open { transform: translateX(0); }
-        .journal-drawer-head { display: flex; flex: 0 0 auto; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 20px 20px 16px; border-bottom: 1px solid #e7ebf0; background: #fff; }
-        .journal-drawer h2 { margin: 0; font-size: 20px; line-height: 1.3; overflow-wrap: anywhere; }
-        #journalDrawerAction { margin-top: 3px; color: #64748b; font-size: 13px; }
-        .journal-close { width: 38px; height: 38px; border: 1px solid #d8e0ea; border-radius: 10px; background: #fff; font-size: 23px; cursor: pointer; }
-        .journal-drawer-content { min-height: 0; padding: 0 20px 24px; overflow-y: auto; overscroll-behavior: contain; }
-        .journal-detail-meta { margin: 16px 0; padding: 10px 12px; border-radius: 10px; background: #f5f7fa; color: #64748b; font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; }
-        .journal-detail-heading { margin: 18px 0 4px; color: #334155; font-size: 13px; font-weight: 800; }
-        .journal-detail-change { padding: 12px 0; border-bottom: 1px solid #e8edf3; }
-        .journal-detail-change strong { display: block; margin-bottom: 7px; color: #334155; font-size: 13px; }
-        .journal-detail-values { display: flex; min-width: 0; align-items: center; gap: 8px; }
-        .journal-detail-value-wrap { display: flex; min-width: 0; flex: 0 1 auto; align-items: baseline; gap: 5px; }
-        .journal-detail-value-caption { flex: 0 0 auto; color: #94a3b8; font-size: 11px; font-weight: 700; text-transform: uppercase; }
-        .journal-detail-value { min-width: 0; padding: 4px 7px; border-radius: 6px; background: #f1f5f9; color: #475569; font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
-        .journal-detail-value-after { background: #eaf2ff; color: #1d4ed8; font-weight: 700; }
-        .journal-detail-arrow { flex: 0 0 auto; color: #94a3b8; }
-        .journal-detail-action { margin-top: 10px; padding: 10px 12px; border-left: 3px solid #93b4e8; border-radius: 0 8px 8px 0; background: #f7faff; color: #334155; line-height: 1.45; overflow-wrap: anywhere; }
-        .journal-detail-comment { margin-top: 10px; padding: 10px 12px; border-radius: 8px; background: #f8fafc; color: #475569; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
-        .journal-object-link { display: inline-flex; align-items: center; gap: 6px; margin-top: 18px; padding: 9px 13px; border-radius: 8px; background: #2563eb; color: #fff; font-size: 13px; font-weight: 750; text-decoration: none; }
-        .journal-object-link::after { content: "↗"; font-size: 14px; }
-        html[data-theme] .journal-object-link { color: #fff !important; }
-        .journal-deleted-note { margin-top: 18px; color: #7a8495; font-weight: 700; }
-        .inventory-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 14px 0 18px; }
-        .inventory-summary-item { padding: 10px; border: 1px solid #e3e9f1; border-radius: 9px; background: #f8fafc; }
-        .inventory-summary-item span { display: block; color: #718096; font-size: 11px; line-height: 1.25; }
-        .inventory-summary-item strong { display: block; margin-top: 3px; color: #253044; font-size: 15px; overflow-wrap: anywhere; }
-        .inventory-position { display: grid; grid-template-columns: 42px minmax(0, 1fr); gap: 10px; padding: 13px 0; border-bottom: 1px solid #e8edf3; }
-        .inventory-position-photo { width: 42px; height: 42px; border-radius: 8px; background: #eef2f7; object-fit: cover; }
-        .inventory-position-photo-empty { display: grid; place-items: center; color: #94a3b8; font-size: 16px; font-weight: 800; }
-        .inventory-position-name { color: #253044; font-size: 13px; font-weight: 800; line-height: 1.35; }
-        .inventory-position-article { margin-top: 2px; color: #7a8798; font-size: 11px; }
-        .inventory-position-values { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; margin-top: 8px; }
-        .inventory-position-values span { padding: 5px 6px; border-radius: 6px; background: #f3f6fa; color: #687386; font-size: 10px; line-height: 1.35; }
-        .inventory-position-values strong { display: block; color: #2d3748; font-size: 12px; }
-        .inventory-position-result { margin-top: 7px; color: #334155; font-size: 11px; line-height: 1.45; overflow-wrap: anywhere; }
-        @media (max-width: 900px) {
-            .journal-main { padding: 16px 14px 92px; }
-            .journal-header h1 { font-size: 26px; }
-            .journal-toolbar { align-items: stretch; flex-direction: column; }
-            .journal-toolbar-left { width: 100%; }
-            .journal-search { width: min(100%, 420px); flex-basis: auto; }
-            .journal-filters { grid-template-columns: 1fr 1fr; }
-            .journal-apply { grid-column: 1 / -1; }
-        }
-        @media (max-width: 420px) {
-            .journal-main { padding-inline: 10px; }
-            .journal-tabs { gap: 15px; }
-            .journal-toolbar-left { align-items: stretch; flex-direction: column; }
-            .journal-period { width: 100%; }
-            .journal-period-label { padding-left: 10px; }
-            .journal-period-fields { flex: 1 1 auto; }
-            .journal-period input { width: 50%; padding-inline: 4px; font-size: 12px; }
-            .journal-filter-toggle { justify-content: center; }
-            .journal-search { max-width: none; }
-            .journal-filters { grid-template-columns: 1fr; }
-            .journal-apply { grid-column: auto; }
-            .journal-empty { margin-top: 12px; padding: 18px 12px; }
-            .journal-event { grid-template-columns: 54px 12px minmax(0, 1fr); }
-            .journal-event-card { margin-left: 6px; padding: 14px; }
-            .journal-event-time { font-size: 12px; }
-            .journal-drawer-head { padding: 17px 15px 14px; }
-            .journal-drawer-content { padding: 0 15px 22px; }
-            .journal-detail-values { align-items: flex-start; flex-wrap: wrap; }
-            .journal-detail-value-wrap { max-width: 100%; }
-            .inventory-summary { grid-template-columns: 1fr 1fr; }
-            .inventory-position-values { grid-template-columns: 1fr 1fr; }
-        }
-    </style>
 </head>
 <body class="journal-page">
 {% from "_navigation_icons.html" import navigation_icon %}
@@ -162,10 +26,10 @@
                 {% endfor %}
             </nav>
 
-            <form id="journalFilterForm" method="get">
+            <form id="journalFilterForm" class="journal-filter-form" method="get">
                 <input type="hidden" name="entity_type" value="{{ filters.entity_type }}">
                 {% set active_filter_count = [filters.action, filters.actor, filters.status, filters.source]|select|list|length %}
-                <div class="journal-toolbar">
+                <div class="journal-toolbar erp-toolbar">
                     <div class="journal-toolbar-left">
                         <div class="journal-period" role="group" aria-label="Период">
                             <span class="journal-period-label">Период</span>
@@ -175,14 +39,14 @@
                                 <input type="date" name="date_to" value="{{ filters.date_to }}" aria-label="Период по">
                             </div>
                         </div>
-                        <button id="journalFilterToggle" class="journal-filter-toggle" type="button" aria-expanded="false" aria-controls="journalFilters">
+                        <button id="journalFilterToggle" class="journal-filter-toggle journal-button" type="button" aria-expanded="false" aria-controls="journalFilters">
                             <span>Фильтры</span>
                             {% if active_filter_count %}<span class="journal-filter-count" aria-label="Активных фильтров: {{ active_filter_count }}">{{ active_filter_count }}</span>{% endif %}
                         </button>
                     </div>
                     <div class="journal-search">
                         <svg class="journal-search-icon" viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"></circle><path d="m12.5 12.5 4 4"></path></svg>
-                        <input id="journalSearch" class="journal-control" type="search" name="q" value="{{ filters.query }}" placeholder="Поиск по журналу" aria-label="Поиск по журналу">
+                        <input id="journalSearch" class="journal-control erp-control" type="search" name="q" value="{{ filters.query }}" placeholder="Поиск по журналу" aria-label="Поиск по журналу">
                         <button class="journal-search-submit" type="submit">Выполнить поиск</button>
                     </div>
                 </div>
@@ -225,9 +89,19 @@
                             {% endfor %}
                         </select>
                     {% endif %}
-                    <button class="journal-apply" type="submit">Применить</button>
+                    <button class="journal-apply journal-button primary" type="submit">Применить</button>
                 </div>
             </form>
+
+            {% if filters.action or filters.actor or filters.status or filters.source %}
+                <div class="journal-active-filters" aria-label="Активные фильтры">
+                    {% if filters.action %}<a class="journal-chip" href="#" data-journal-clear="action">Событие: {{ action_labels.get(filters.action, filters.action) }} <span aria-hidden="true">×</span></a>{% endif %}
+                    {% if filters.actor %}<a class="journal-chip" href="#" data-journal-clear="actor">Пользователь: {{ filters.actor }} <span aria-hidden="true">×</span></a>{% endif %}
+                    {% if filters.status %}<a class="journal-chip" href="#" data-journal-clear="status">Статус: {{ filters.status }} <span aria-hidden="true">×</span></a>{% endif %}
+                    {% if filters.source %}<a class="journal-chip" href="#" data-journal-clear="source">Источник: {{ filters.source }} <span aria-hidden="true">×</span></a>{% endif %}
+                    {% if active_filter_count > 1 %}<a class="journal-chip journal-chip-reset" href="#" data-journal-clear="action,actor,status,source">Сбросить все</a>{% endif %}
+                </div>
+            {% endif %}
 
             <section id="journalTimeline" class="journal-timeline" aria-live="polite">
                 {% set days = namespace(current="") %}
@@ -255,7 +129,7 @@
                         </span>
                     </button>
                 {% else %}
-                    <div class="journal-empty">
+                    <div class="journal-empty erp-empty-state" role="status">
                         {% set has_query_state = filters.entity_type or filters.action or filters.actor or filters.status or filters.source or filters.query or filters.date_from or filters.date_to %}
                         {% if has_query_state %}
                             <strong>По выбранным фильтрам событий нет</strong>
@@ -268,13 +142,14 @@
                     </div>
                 {% endfor %}
             </section>
-            <button id="journalMore" class="journal-more" type="button" data-cursor="{{ next_cursor }}"{% if not next_cursor %} hidden{% endif %}>Показать ещё</button>
+            <div id="journalAsyncStatus" class="journal-async-status" aria-live="polite"></div>
+            <button id="journalMore" class="journal-more journal-button" type="button" data-cursor="{{ next_cursor }}"{% if not next_cursor %} hidden{% endif %}>Показать ещё</button>
         </div>
     </main>
 </div>
 
 <div id="journalDrawerBackdrop" class="journal-drawer-backdrop"></div>
-<aside id="journalDrawer" class="journal-drawer" aria-hidden="true" aria-labelledby="journalDrawerTitle">
+<aside id="journalDrawer" class="journal-drawer" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="journalDrawerTitle" tabindex="-1">
     <div class="journal-drawer-head">
         <div><h2 id="journalDrawerTitle">Событие</h2><div id="journalDrawerAction"></div></div>
         <button id="journalDrawerClose" class="journal-close" type="button" aria-label="Закрыть">×</button>
@@ -295,10 +170,33 @@
     const content = document.getElementById("journalDrawerContent");
     const title = document.getElementById("journalDrawerTitle");
     const action = document.getElementById("journalDrawerAction");
+    const asyncStatus = document.getElementById("journalAsyncStatus");
+    let drawerReturnFocus = null;
+
+    function notify(message, isError = false) {
+        const manager = window.VechasuNotify;
+        if (manager) manager[isError ? "error" : "success"](message);
+        asyncStatus.textContent = message;
+        asyncStatus.classList.toggle("is-error", isError);
+    }
 
     toggle.addEventListener("click", () => {
         filters.hidden = !filters.hidden;
         toggle.setAttribute("aria-expanded", String(!filters.hidden));
+    });
+    document.addEventListener("click", (event) => {
+        if (filters.hidden || event.target.closest("#journalFilters, #journalFilterToggle")) return;
+        filters.hidden = true;
+        toggle.setAttribute("aria-expanded", "false");
+    });
+    document.querySelectorAll("[data-journal-clear]").forEach((chip) => {
+        chip.addEventListener("click", (event) => {
+            event.preventDefault();
+            const url = new URL(window.location.href);
+            chip.dataset.journalClear.split(",").forEach((key) => url.searchParams.delete(key));
+            url.searchParams.delete("cursor");
+            window.location.assign(url.pathname + url.search);
+        });
     });
     document.querySelectorAll("[data-journal-tab]").forEach((tab) => {
         tab.addEventListener("click", (event) => {
@@ -398,12 +296,17 @@
     more.addEventListener("click", async () => {
         if (!more.dataset.cursor) return;
         more.disabled = true;
+        const originalLabel = more.textContent;
+        more.textContent = "Загружаем…";
+        asyncStatus.textContent = "Загружаем следующие события…";
+        asyncStatus.classList.remove("is-error");
         const url = new URL("/api/journal", window.location.origin);
         new URLSearchParams(window.location.search).forEach((value, key) => url.searchParams.set(key, value));
         url.searchParams.set("cursor", more.dataset.cursor);
         try {
             const response = await fetch(url, {headers: {"Accept": "application/json"}});
             const payload = await response.json();
+            if (!response.ok) throw new Error(payload.message || payload.error || "Не удалось загрузить события");
             const result = payload.data || payload;
             let lastDay = timeline.querySelector("[data-day-key]:last-of-type")?.dataset.dayKey || "";
             result.events.forEach((event) => {
@@ -419,8 +322,12 @@
             });
             more.dataset.cursor = result.next_cursor || "";
             more.hidden = !result.next_cursor;
+            asyncStatus.textContent = "События загружены";
+        } catch (error) {
+            notify(error.message || "Не удалось загрузить события", true);
         } finally {
             more.disabled = false;
+            more.textContent = originalLabel;
         }
     });
 
@@ -429,6 +336,8 @@
         backdrop.classList.remove("open");
         drawer.setAttribute("aria-hidden", "true");
         document.body.classList.remove("journal-drawer-open");
+        if (drawerReturnFocus instanceof HTMLElement && drawerReturnFocus.isConnected) drawerReturnFocus.focus();
+        drawerReturnFocus = null;
     }
 
     function detailHeading(text) {
@@ -523,9 +432,29 @@
     }
 
     async function openDrawer(eventId) {
-        const response = await fetch("/api/journal/" + encodeURIComponent(eventId));
-        const payload = await response.json();
-        const event = payload.data || payload;
+        drawerReturnFocus = document.activeElement;
+        title.textContent = "Событие";
+        action.textContent = "Загрузка…";
+        content.innerHTML = '<div class="journal-loading erp-loading-state" role="status">Загружаем детали события…</div>';
+        drawer.classList.add("open"); backdrop.classList.add("open");
+        drawer.setAttribute("aria-hidden", "false");
+        drawer.setAttribute("aria-busy", "true");
+        document.body.classList.add("journal-drawer-open");
+        requestAnimationFrame(() => document.getElementById("journalDrawerClose").focus());
+        let event;
+        try {
+            const response = await fetch("/api/journal/" + encodeURIComponent(eventId));
+            const payload = await response.json();
+            if (!response.ok) throw new Error(payload.message || payload.error || "Не удалось загрузить событие");
+            event = payload.data || payload;
+        } catch (error) {
+            action.textContent = "Ошибка загрузки";
+            content.innerHTML = '<div class="journal-error erp-error-state" role="alert"></div>';
+            content.firstElementChild.textContent = error.message || "Не удалось загрузить событие";
+            drawer.removeAttribute("aria-busy");
+            notify(error.message || "Не удалось загрузить событие", true);
+            return;
+        }
         title.textContent = event.object_label_snapshot;
         action.textContent = event.action_label;
         content.replaceChildren();
@@ -587,9 +516,7 @@
             deleted.textContent = "Объект удалён";
             content.append(deleted);
         }
-        drawer.classList.add("open"); backdrop.classList.add("open");
-        drawer.setAttribute("aria-hidden", "false");
-        document.body.classList.add("journal-drawer-open");
+        drawer.removeAttribute("aria-busy");
     }
     timeline.addEventListener("click", (event) => {
         const card = event.target.closest("[data-event-id]");
@@ -597,7 +524,19 @@
     });
     document.getElementById("journalDrawerClose").addEventListener("click", closeDrawer);
     backdrop.addEventListener("click", closeDrawer);
-    document.addEventListener("keydown", (event) => { if (event.key === "Escape") closeDrawer(); });
+    document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+            if (drawer.classList.contains("open")) closeDrawer();
+            else if (!filters.hidden) { filters.hidden = true; toggle.setAttribute("aria-expanded", "false"); }
+            return;
+        }
+        if (event.key !== "Tab" || !drawer.classList.contains("open")) return;
+        const controls = [...drawer.querySelectorAll('a[href], button:not(:disabled), [tabindex="0"]')].filter((node) => node.offsetParent !== null);
+        if (!controls.length) return;
+        const first = controls[0], last = controls[controls.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    });
 })();
 </script>
 </body>
