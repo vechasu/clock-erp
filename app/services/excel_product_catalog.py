@@ -1085,6 +1085,100 @@ class ExcelProductCatalog:
             "units_total": float(row["units_total"] or 0),
         }
 
+    def product_analytics(self, limit=8):
+        """Return bounded read-only aggregates for the products dashboard."""
+        self.database.initialize()
+        limit = max(1, min(int(limit), 20))
+        visible_where = "p.active = 1 AND " + VISIBLE_PRODUCT_SQL
+
+        def prepare_ranking(rows):
+            prepared = [dict(row) for row in rows]
+            maximum = max(
+                [int(item.get("positions") or 0) for item in prepared] or [0]
+            )
+            for item in prepared:
+                item["positions"] = int(item.get("positions") or 0)
+                item["in_stock"] = int(item.get("in_stock") or 0)
+                item["units"] = float(item.get("units") or 0)
+                item["percent"] = (
+                    round(item["positions"] * 100.0 / maximum, 1)
+                    if maximum else 0
+                )
+            return prepared
+
+        ranking_sql = (
+            "SELECT {label} AS name, COUNT(*) AS positions, "
+            "COALESCE(SUM(CASE WHEN p.stock > 0 THEN 1 ELSE 0 END), 0) "
+            "AS in_stock, COALESCE(SUM(p.stock), 0) AS units "
+            "FROM catalog_excel_products p "
+            "LEFT JOIN catalog_excel_batches b ON b.id = p.current_batch_id "
+            "WHERE " + visible_where + " GROUP BY {label} "
+            "ORDER BY positions DESC, name COLLATE NOCASE LIMIT ?"
+        )
+        with self.database.connect() as connection:
+            top_brands = prepare_ranking(connection.execute(
+                ranking_sql.format(
+                    label=(
+                        "COALESCE(NULLIF(trim(p.excel_brand), ''), 'Без бренда')"
+                    )
+                ),
+                (limit,),
+            ).fetchall())
+            top_categories = prepare_ranking(connection.execute(
+                ranking_sql.format(
+                    label=(
+                        "COALESCE(NULLIF(trim(p.excel_category), ''), "
+                        "'Без категории')"
+                    )
+                ),
+                (limit,),
+            ).fetchall())
+            stock_row = connection.execute(
+                "SELECT "
+                "COALESCE(SUM(CASE WHEN p.stock = 0 THEN 1 ELSE 0 END), 0) "
+                "AS empty, "
+                "COALESCE(SUM(CASE WHEN p.stock = 1 THEN 1 ELSE 0 END), 0) "
+                "AS single, "
+                "COALESCE(SUM(CASE WHEN p.stock BETWEEN 2 AND 5 THEN 1 ELSE 0 END), 0) "
+                "AS regular, "
+                "COALESCE(SUM(CASE WHEN p.stock BETWEEN 6 AND 25 THEN 1 ELSE 0 END), 0) "
+                "AS high, "
+                "COALESCE(SUM(CASE WHEN p.stock > 25 THEN 1 ELSE 0 END), 0) "
+                "AS bulk FROM catalog_excel_products p "
+                "LEFT JOIN catalog_excel_batches b ON b.id = p.current_batch_id "
+                "WHERE " + visible_where
+            ).fetchone()
+            top_cells = prepare_ranking(connection.execute(
+                ranking_sql.format(
+                    label=(
+                        "COALESCE(NULLIF(trim(p.cell), ''), 'Без ячейки')"
+                    )
+                ),
+                (limit,),
+            ).fetchall())
+
+        stock_bands = [
+            {"label": "Нет в наличии", "positions": int(stock_row["empty"] or 0)},
+            {"label": "Одна единица", "positions": int(stock_row["single"] or 0)},
+            {"label": "2–5 единиц", "positions": int(stock_row["regular"] or 0)},
+            {"label": "6–25 единиц", "positions": int(stock_row["high"] or 0)},
+            {"label": "Более 25 единиц", "positions": int(stock_row["bulk"] or 0)},
+        ]
+        stock_maximum = max(
+            [item["positions"] for item in stock_bands] or [0]
+        )
+        for item in stock_bands:
+            item["percent"] = (
+                round(item["positions"] * 100.0 / stock_maximum, 1)
+                if stock_maximum else 0
+            )
+        return {
+            "top_brands": top_brands,
+            "top_categories": top_categories,
+            "stock_bands": stock_bands,
+            "top_cells": top_cells,
+        }
+
     def get_product(self, product_id):
         self.database.initialize()
         with self.database.connect() as connection:
