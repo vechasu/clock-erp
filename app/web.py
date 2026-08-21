@@ -11170,10 +11170,21 @@ def sales_page():
     pagination = build_erp_pagination(
         "sales_page", total_filtered_sales, page, per_page
     )
+    sales_product_images = {}
     for sale in sales:
         sale["search_text"] = build_sales_search_text(sale, active_source)
         product_id = str(sale.get("product_id") or "").strip()
         current_product = current_sale_products.get(product_id)
+        product_image_url = str(
+            (current_product or {}).get("local_image_url")
+            or (current_product or {}).get("image_url")
+            or (current_product or {}).get("thumbnail_url")
+            or ""
+        )
+        sales_product_images[product_id] = (
+            "" if "missing-product-photo" in product_image_url
+            else product_image_url
+        )
         sale["product_currently_available"] = bool(
             current_product
             and current_product.get("active")
@@ -11289,6 +11300,7 @@ def sales_page():
             option_source_sales,
             category_groups=category_groups,
         ),
+        sales_product_images=sales_product_images,
         notice=(request.args.get("notice") or "").strip(),
         message=(request.args.get("message") or "").strip(),
         pagination_e2e=(
