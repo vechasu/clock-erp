@@ -1423,7 +1423,7 @@
         href="{{ url_for(
             'static',
             filename='css/erp-components.css',
-            v='sales-list-v1'
+            v='sales-form-v1'
         ) }}"
     >
     <link
@@ -2169,6 +2169,7 @@
                                                 class="sales-edit-action sales-row-edit"
                                                 type="button"
                                                 aria-label="Редактировать данные продажи"
+                                                data-product-image-url="{{ sales_product_images.get(sale.product_id|string, '') }}"
                                                 {% if sales_view != 'archive' and not sale.is_cancelled %}
                                                     data-sale="{{ sale|tojson|forceescape }}"
                                                     onclick="openSaleEditor(this)"
@@ -2375,6 +2376,7 @@
                                 class="sales-edit-action sales-row-edit sales-mobile-edit"
                                 type="button"
                                 aria-label="Редактировать данные продажи"
+                                data-product-image-url="{{ sales_product_images.get(sale.product_id|string, '') }}"
                                 {% if sales_view != 'archive' and not sale.is_cancelled %}
                                     data-sale="{{ sale|tojson|forceescape }}"
                                     onclick="openSaleEditor(this)"
@@ -2483,7 +2485,7 @@
 
 <div
     id="manualSaleModal"
-    class="modal"
+    class="modal sales-form-modal erp-modal"
     role="dialog"
     aria-modal="true"
     aria-labelledby="manualSaleModalTitle"
@@ -2491,8 +2493,8 @@
     data-erp-modal-shell
     data-erp-modal-lock
 >
-    <div class="modal-dialog">
-        <div class="modal-header">
+    <div class="modal-dialog sales-form-dialog erp-modal-dialog">
+        <div class="modal-header erp-modal-header">
             <div>
                 <div class="sale-modal-title-row">
                     <h2 id="manualSaleModalTitle">
@@ -2516,28 +2518,39 @@
             >×</button>
         </div>
 
-        <div class="modal-body">
+        <div class="modal-body sales-form-body erp-modal-body">
             <div
                 id="saleSourceChoice"
-                class="source-choice-panel"
+                class="source-choice-panel sales-source-segmented"
+                role="radiogroup"
+                aria-label="Канал продажи"
             >
                 <button
                     class="source-choice source-choice--tictactoy"
                     type="button"
                     data-sale-source="tictactoy"
                     aria-pressed="false"
+                    aria-checked="false"
+                    role="radio"
+                    tabindex="0"
                 >Tictactoy</button>
                 <button
                     class="source-choice source-choice--wildberries"
                     type="button"
                     data-sale-source="wildberries"
                     aria-pressed="false"
+                    aria-checked="false"
+                    role="radio"
+                    tabindex="-1"
                 >Wildberries</button>
                 <button
                     class="source-choice source-choice--amazon"
                     type="button"
                     data-sale-source="amazon"
                     aria-pressed="false"
+                    aria-checked="false"
+                    role="radio"
+                    tabindex="-1"
                 >Amazon</button>
             </div>
 
@@ -2656,6 +2669,12 @@
                             input_id="product_id",
                             shared_catalog_kind="product"
                         ) }}
+                        <span
+                            id="saleProductError"
+                            class="erp-field-error"
+                            role="alert"
+                            hidden
+                        ></span>
                     </div>
 
                     <div class="field field-wide sale-product-summary">
@@ -2695,12 +2714,18 @@
                             step="1"
                             inputmode="numeric"
                             value="1"
-                            aria-describedby="saleAvailableQuantity"
+                            aria-describedby="saleAvailableQuantity saleQuantityError"
                             required
                         >
                         <span id="saleAvailableQuantity" class="product-meta-preview">
                             Сначала выберите товар
                         </span>
+                        <span
+                            id="saleQuantityError"
+                            class="erp-field-error"
+                            role="alert"
+                            hidden
+                        ></span>
                     </div>
 
                     <div class="field sale-core-field">
@@ -3000,7 +3025,7 @@
                         </div>
                     </div>
 
-                    <div class="form-actions">
+                    <div class="form-actions sales-form-actions erp-modal-actions">
                         <button
                             class="button button-primary"
                             type="submit"
@@ -5576,6 +5601,8 @@
         '.form-actions button[type="submit"]'
     );
     const saleFormError = document.getElementById("saleFormError");
+    const saleProductError = document.getElementById("saleProductError");
+    const saleQuantityError = document.getElementById("saleQuantityError");
     let manualSaleReturnFocus = null;
     let editingSale = null;
     let saleEditSavePending = false;
@@ -5590,6 +5617,31 @@
     function setSaleFormError(message = "") {
         saleFormError.textContent = message;
         saleFormError.hidden = !message;
+    }
+
+    function setSaleFieldError(element, message = "") {
+        element.textContent = message;
+        element.hidden = !message;
+    }
+
+    function setSaleFormPending(pending, label = "") {
+        manualSaleForm.classList.toggle("is-pending", pending);
+        manualSaleForm.toggleAttribute("aria-busy", pending);
+        saleFormFields.toggleAttribute("inert", pending);
+        sourceChoicePanel
+            .querySelectorAll("[data-sale-source]")
+            .forEach((button) => {
+                button.disabled = pending;
+            });
+        saleSubmitButton.disabled = pending;
+        if (pending) {
+            saleSubmitButton.dataset.idleLabel = label
+                || saleSubmitButton.textContent.trim();
+            saleSubmitButton.textContent = "Сохраняем…";
+        } else if (saleSubmitButton.dataset.idleLabel) {
+            saleSubmitButton.textContent = saleSubmitButton.dataset.idleLabel;
+            delete saleSubmitButton.dataset.idleLabel;
+        }
     }
 
     function rememberSalesPosition() {
@@ -5655,6 +5707,8 @@
                 const active = button.dataset.saleSource === sourceKey;
                 button.classList.toggle("is-active", active);
                 button.setAttribute("aria-pressed", String(active));
+                button.setAttribute("aria-checked", String(active));
+                button.tabIndex = active ? 0 : -1;
             });
         try {
             localStorage.setItem(
@@ -5692,6 +5746,10 @@
             .forEach((button) => {
                 button.classList.remove("is-active");
                 button.setAttribute("aria-pressed", "false");
+                button.setAttribute("aria-checked", "false");
+                button.tabIndex = button.dataset.saleSource === "tictactoy"
+                    ? 0
+                    : -1;
             });
         document
             .querySelectorAll("[data-source-fields]")
@@ -5713,6 +5771,9 @@
         manualSaleForm.dataset.editing = "0";
         editingSale = null;
         setSaleFormError();
+        setSaleFieldError(saleProductError);
+        setSaleFieldError(saleQuantityError);
+        setSaleFormPending(false);
         saleEditId.disabled = true;
         saleEditId.removeAttribute("name");
         saleEditId.value = "";
@@ -5773,6 +5834,24 @@
                 showSaleForm(button.dataset.saleSource);
             });
         });
+    sourceChoicePanel.addEventListener("keydown", (event) => {
+        if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) {
+            return;
+        }
+        event.preventDefault();
+        const buttons = Array.from(
+            sourceChoicePanel.querySelectorAll("[data-sale-source]")
+        );
+        const current = Math.max(0, buttons.indexOf(document.activeElement));
+        const next = event.key === "Home"
+            ? 0
+            : event.key === "End"
+                ? buttons.length - 1
+                : (current + (event.key === "ArrowRight" ? 1 : -1)
+                    + buttons.length) % buttons.length;
+        buttons[next].click();
+        buttons[next].focus();
+    });
 
     const productNameInput = document.getElementById(
         "product_name"
@@ -5863,6 +5942,10 @@
                     + available + " шт."
                 : "Количество должно быть целым числом не меньше 1.";
         saleQuantityInput.setCustomValidity(valid ? "" : message);
+        setSaleFieldError(
+            saleQuantityError,
+            !valid && sharedSelectedSaleProduct ? message : "",
+        );
         saleSubmitButton.disabled = !valid;
         if (!valid && sharedSelectedSaleProduct) {
             setSaleFormError(message);
@@ -5919,16 +6002,14 @@
                 image.remove();
                 if (!saleProductPhotoImages.querySelector("img")) {
                     saleProductPhotoPlaceholder.hidden = false;
-                    saleProductPhotoText.textContent =
-                        "У товара нет фотографии";
+                    saleProductPhotoText.textContent = product?.name
+                        || "У товара нет фотографии";
                 }
             };
             saleProductPhotoImages.appendChild(image);
         });
         saleProductPhotoPlaceholder.hidden = sources.length > 0;
-        saleProductPhotoText.textContent = product
-            ? (sources.length ? "Фото выбранного товара" : "У товара нет фотографии")
-            : "Выберите товар";
+        saleProductPhotoText.textContent = product?.name || "Выберите товар";
     }
 
     function resetProductFilters() {
@@ -6142,6 +6223,7 @@
 
                 const item = event.detail.item;
                 sharedSelectedSaleProduct = item;
+                setSaleFieldError(saleProductError);
                 const available = Math.max(
                     1,
                     Math.floor(Number(item.stock || 0)),
@@ -6153,10 +6235,12 @@
                 productNameInput.value = item.name || "";
                 renderSaleProductPhoto(item);
                 productMeta.textContent = [
-                    "Баркод: " + (item.barcode || "—"),
+                    "Бренд: " + (item.brand || "—"),
+                    "Категория: " + (item.category || "—"),
                     "Артикул: " + (item.article || "—"),
-                    "Остаток: " + (item.stock_display ?? item.stock ?? 0),
-                ].join(" · ");
+                    "Доступно: " + (item.stock_display ?? item.stock ?? 0),
+                    item.barcode ? "Баркод: " + item.barcode : "",
+                ].filter(Boolean).join(" · ");
                 validateSaleQuantity();
             },
     );
@@ -6187,6 +6271,7 @@
         } catch (_error) {
             return;
         }
+        sale.image_url = button.dataset.productImageUrl || "";
 
         manualSaleReturnFocus = button;
         resetModalView();
@@ -6213,6 +6298,10 @@
         });
         productIdInput.value = sale.product_id || "";
         productNameInput.value = sale.product_name || "";
+        renderSaleProductPhoto({
+            ...sale,
+            name: sale.product_name || "Товар",
+        });
 
         const editableStatus = ["shipped", "returned"].includes(
             sale.order_status
@@ -6302,6 +6391,10 @@
             );
             productMeta.textContent =
                 "Выберите товар из каталога.";
+            setSaleFieldError(
+                saleProductError,
+                "Выберите доступный товар с остатком больше нуля.",
+            );
             return;
         }
 
@@ -6314,8 +6407,7 @@
         rememberSalesPosition();
 
         if (!isEditing) {
-            saleSubmitButton.disabled = true;
-            manualSaleForm.setAttribute("aria-busy", "true");
+            setSaleFormPending(true, saleSubmitButton.textContent.trim());
             return;
         }
 
@@ -6325,8 +6417,7 @@
         }
         saleEditSavePending = true;
         setSaleFormError();
-        saleSubmitButton.disabled = true;
-        manualSaleForm.setAttribute("aria-busy", "true");
+        setSaleFormPending(true, saleSubmitButton.textContent.trim());
 
         try {
             const response = await fetch(manualSaleForm.action, {
@@ -6351,8 +6442,7 @@
                 error.message || "Не удалось сохранить изменения"
             );
             saleEditSavePending = false;
-            saleSubmitButton.disabled = false;
-            manualSaleForm.removeAttribute("aria-busy");
+            setSaleFormPending(false);
         }
     });
 

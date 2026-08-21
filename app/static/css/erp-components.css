@@ -1234,6 +1234,345 @@ body.modal-open {
     }
 }
 
+/* Sales mutation form: shared ERP modal and form contract. */
+#manualSaleModal.sales-form-modal {
+    z-index: var(--erp-z-modal);
+    padding: var(--erp-space-4);
+    overflow: hidden;
+    background: var(--erp-overlay);
+}
+
+#manualSaleModal .sales-form-dialog {
+    width: min(1040px, 100%);
+    max-width: 100%;
+    max-height: calc(100dvh - 32px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid var(--erp-border);
+    border-radius: var(--erp-radius-lg);
+    background: var(--erp-surface);
+    color: var(--erp-text);
+    box-shadow: 0 24px 70px color-mix(in srgb, var(--erp-text) 28%, transparent);
+}
+
+#manualSaleModal .erp-modal-header {
+    position: relative;
+    z-index: 5;
+    min-width: 0;
+    flex: 0 0 auto;
+    padding: var(--erp-space-4) var(--erp-space-5);
+    border-color: var(--erp-border);
+    background: var(--erp-surface);
+}
+
+#manualSaleModal .erp-modal-header > div {
+    min-width: 0;
+}
+
+#manualSaleModal .erp-modal-header h2 {
+    color: var(--erp-text);
+    font: var(--erp-type-modal-title-weight) var(--erp-type-modal-title-size) / 1.2 var(--erp-font-family);
+}
+
+#manualSaleModal .erp-modal-header p {
+    max-width: 760px;
+    color: var(--erp-muted);
+    font: var(--erp-type-page-subtitle-weight) var(--erp-type-page-subtitle-size) / 1.45 var(--erp-font-family);
+    overflow-wrap: anywhere;
+}
+
+#manualSaleModal .erp-modal-header .modal-close {
+    border-color: var(--erp-border);
+    background: var(--erp-surface-muted);
+    color: var(--erp-muted);
+    transition: background var(--erp-transition-fast), color var(--erp-transition-fast);
+}
+
+#manualSaleModal .erp-modal-header .modal-close:hover:not(:disabled) {
+    background: var(--theme-active, #eff6ff);
+    color: var(--erp-primary);
+}
+
+#manualSaleModal .erp-modal-header .modal-close:focus-visible {
+    outline: 0;
+    box-shadow: var(--erp-focus-ring);
+}
+
+#manualSaleModal .sales-form-body {
+    min-width: 0;
+    min-height: 0;
+    flex: 1 1 auto;
+    padding: var(--erp-space-4) var(--erp-space-5) var(--erp-space-5);
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+#manualSaleModal .sales-source-segmented {
+    position: sticky;
+    z-index: 6;
+    top: calc(-1 * var(--erp-space-4));
+    gap: var(--erp-space-1);
+    margin: calc(-1 * var(--erp-space-4)) 0 var(--erp-space-4);
+    padding: var(--erp-space-2) 0;
+    border: 0;
+    border-bottom: 1px solid var(--erp-border);
+    border-radius: 0;
+    background: color-mix(in srgb, var(--erp-surface) 96%, transparent);
+    backdrop-filter: blur(8px);
+}
+
+#manualSaleModal .sales-source-segmented .source-choice {
+    min-height: var(--erp-control-height);
+    border-color: var(--erp-border);
+    border-radius: var(--erp-control-radius);
+    background: var(--erp-surface);
+    color: var(--erp-muted);
+    font: var(--erp-type-control-weight) var(--erp-type-control-size) / 1.2 var(--erp-font-family);
+    transform: none;
+    box-shadow: none;
+}
+
+#manualSaleModal .sales-source-segmented .source-choice:hover:not(:disabled) {
+    border-color: var(--theme-border-hover, #cbd5e1);
+    background: var(--erp-surface-muted);
+    color: var(--erp-text);
+}
+
+#manualSaleModal .sales-source-segmented .source-choice:focus-visible {
+    outline: 0;
+    box-shadow: var(--erp-focus-ring);
+}
+
+#manualSaleModal .sales-source-segmented .source-choice:disabled {
+    cursor: progress;
+    opacity: 0.62;
+}
+
+#manualSaleModal .manual-form-grid {
+    min-width: 0;
+    gap: var(--erp-space-3) var(--erp-space-4);
+}
+
+#manualSaleModal .sale-section-title {
+    margin: 0;
+    padding: var(--erp-space-3) 0 var(--erp-space-2);
+    border-bottom: 1px solid var(--erp-border);
+    color: var(--erp-text);
+    font: var(--erp-type-section-title-weight) var(--erp-type-section-title-size) / 1.3 var(--erp-font-family);
+}
+
+#manualSaleModal .manual-form-grid > .sale-section-title:first-of-type {
+    padding-top: 0;
+}
+
+#manualSaleModal .manual-form-grid > .sale-section-title:not(:first-of-type) {
+    margin-top: var(--erp-space-2);
+    border-top: 0;
+}
+
+#manualSaleModal .field {
+    min-width: 0;
+    gap: var(--erp-space-2);
+}
+
+#manualSaleModal .field label,
+#manualSaleModal .erp-form-subsection-title {
+    color: var(--erp-muted);
+    font: var(--erp-type-field-label-weight) var(--erp-type-field-label-size) / 1.3 var(--erp-font-family);
+}
+
+#manualSaleModal :is(.control, .brand-combobox-trigger) {
+    width: 100%;
+    min-width: 0;
+    min-height: var(--erp-control-height);
+    height: var(--erp-control-height);
+    border-color: var(--erp-border-strong);
+    border-radius: var(--erp-control-radius);
+    background: var(--erp-surface);
+    color: var(--erp-text);
+    font: var(--erp-type-field-value-weight) var(--erp-type-field-value-size) / 1.2 var(--erp-font-family);
+}
+
+#manualSaleModal :is(.control, .brand-combobox-trigger):hover:not(:disabled) {
+    border-color: var(--theme-border-hover, #cbd5e1);
+}
+
+#manualSaleModal :is(.control, .brand-combobox-trigger):focus,
+#manualSaleModal .brand-combobox:focus-within .brand-combobox-trigger {
+    border-color: var(--erp-primary);
+    outline: 0;
+    box-shadow: var(--erp-focus-ring);
+}
+
+#manualSaleModal :is(.control, .brand-combobox-trigger):disabled,
+#manualSaleModal .brand-combobox.is-disabled .brand-combobox-trigger {
+    cursor: not-allowed;
+    background: var(--erp-surface-muted);
+    color: var(--erp-muted);
+    opacity: 0.7;
+}
+
+#manualSaleModal textarea.control {
+    min-height: 76px;
+    height: auto;
+    resize: vertical;
+}
+
+#manualSaleModal .sale-product-photo {
+    min-width: 0;
+    min-height: 76px;
+    margin: 0;
+    padding: var(--erp-space-3);
+    border-color: var(--erp-border);
+    border-radius: var(--erp-radius);
+    background: var(--erp-surface-muted);
+    color: var(--erp-muted);
+}
+
+#manualSaleModal .sale-product-photo :is(img, .sale-product-photo-placeholder) {
+    width: 56px;
+    height: 56px;
+    flex: 0 0 56px;
+    border: 1px solid var(--erp-border);
+    border-radius: var(--erp-radius-sm);
+    background: var(--erp-surface);
+}
+
+#manualSaleModal .sale-product-summary-copy {
+    min-width: 0;
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: var(--erp-space-1);
+}
+
+#manualSaleModal .sale-product-summary-copy > strong {
+    min-width: 0;
+    color: var(--erp-text);
+    font: var(--erp-type-row-primary-weight) var(--erp-type-field-value-size) / 1.35 var(--erp-font-family);
+    overflow-wrap: anywhere;
+}
+
+#manualSaleModal .product-meta-preview {
+    min-width: 0;
+    margin: 0;
+    color: var(--erp-muted);
+    font: var(--erp-type-secondary-weight) var(--erp-type-secondary-size) / 1.4 var(--erp-font-family);
+    overflow-wrap: anywhere;
+    white-space: normal;
+}
+
+#manualSaleModal .erp-field-error {
+    display: block;
+    color: var(--erp-danger);
+    font: 600 var(--erp-type-secondary-size) / 1.35 var(--erp-font-family);
+}
+
+#manualSaleModal .erp-field-error[hidden] {
+    display: none;
+}
+
+#manualSaleModal .sale-form-error {
+    border-color: color-mix(in srgb, var(--erp-danger) 28%, var(--erp-border));
+    background: var(--theme-error-soft, #fff1f2);
+    color: var(--erp-danger);
+}
+
+#manualSaleModal .sales-form-actions {
+    z-index: 7;
+    bottom: calc(-1 * var(--erp-space-5));
+    margin: var(--erp-space-2) calc(-1 * var(--erp-space-5)) calc(-1 * var(--erp-space-5));
+    padding: var(--erp-space-3) var(--erp-space-5);
+    border-color: var(--erp-border);
+    background: color-mix(in srgb, var(--erp-surface) 97%, transparent);
+}
+
+#manualSaleModal .sales-form-actions .button-primary {
+    min-height: var(--erp-control-height);
+    max-width: 100%;
+    padding: 0 var(--erp-space-5);
+    border-radius: var(--erp-control-radius);
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#manualSaleModal .sale-form.is-pending {
+    cursor: progress;
+}
+
+#manualSaleModal .sale-form.is-pending .manual-form-grid {
+    opacity: 0.72;
+}
+
+@media (max-width: 767px) {
+    #manualSaleModal.sales-form-modal {
+        padding: 0;
+    }
+
+    #manualSaleModal .sales-form-dialog {
+        width: 100%;
+        height: 100dvh;
+        max-height: 100dvh;
+        border: 0;
+        border-radius: 0;
+    }
+
+    #manualSaleModal .erp-modal-header {
+        min-height: 68px;
+        padding: max(var(--erp-space-3), env(safe-area-inset-top)) var(--erp-space-4) var(--erp-space-3);
+    }
+
+    #manualSaleModal .erp-modal-header h2 {
+        font-size: 21px;
+    }
+
+    #manualSaleModal .sales-form-body {
+        padding: var(--erp-space-3) var(--erp-space-4) calc(76px + env(safe-area-inset-bottom));
+    }
+
+    #manualSaleModal .sales-source-segmented {
+        top: calc(-1 * var(--erp-space-3));
+        margin-top: calc(-1 * var(--erp-space-3));
+    }
+
+    #manualSaleModal .manual-form-grid {
+        grid-template-columns: minmax(0, 1fr);
+        gap: var(--erp-space-3);
+    }
+
+    #manualSaleModal .manual-form-grid > *,
+    #manualSaleModal .source-specific-fields > .field {
+        min-width: 0;
+        grid-column: 1;
+    }
+
+    #manualSaleModal .sales-form-actions {
+        bottom: calc(-76px - env(safe-area-inset-bottom));
+        grid-column: 1;
+        margin: var(--erp-space-2) calc(-1 * var(--erp-space-4)) calc(-76px - env(safe-area-inset-bottom));
+        padding: var(--erp-space-3) var(--erp-space-4) calc(var(--erp-space-3) + env(safe-area-inset-bottom));
+    }
+
+    #manualSaleModal .sales-form-actions .button-primary {
+        width: 100%;
+        min-height: 46px;
+    }
+}
+
+@media (max-width: 370px) {
+    #manualSaleModal .sales-source-segmented {
+        gap: 3px;
+    }
+
+    #manualSaleModal .sales-source-segmented .source-choice {
+        padding-right: var(--erp-space-1);
+        padding-left: var(--erp-space-1);
+        font-size: 11px;
+    }
+}
+
 @media (max-width: 370px) {
     .sales-page .erp-workspace-actions {
         grid-template-columns: 1fr;
@@ -8490,5 +8829,50 @@ select.erp-control {
         .sales-mobile-sort
     ) {
         order: 4;
+    }
+}
+
+/* Final sales form convergence after legacy compact-modal layout. */
+#manualSaleModal .sales-form-dialog {
+    max-width: 100%;
+    overflow: hidden;
+    border-color: var(--erp-border);
+    background: var(--erp-surface);
+}
+
+#manualSaleModal .sales-form-body {
+    min-width: 0;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+}
+
+#manualSaleModal .sale-product-summary-copy,
+#manualSaleModal .sale-product-summary-copy > strong,
+#manualSaleModal .product-meta-preview {
+    min-width: 0;
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+#manualSaleModal .sales-form-actions {
+    border-color: var(--erp-border);
+    background: color-mix(in srgb, var(--erp-surface) 96%, transparent);
+}
+
+@media (max-width: 767px) {
+    #manualSaleModal.sales-form-modal {
+        padding: 0;
+    }
+
+    #manualSaleModal .sales-form-dialog {
+        width: 100%;
+        height: 100dvh;
+        max-height: 100dvh;
+        border-radius: 0;
+    }
+
+    #manualSaleModal .sales-form-actions {
+        padding-bottom: calc(var(--erp-space-3) + env(safe-area-inset-bottom));
     }
 }
