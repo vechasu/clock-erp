@@ -1114,7 +1114,8 @@ def bitrix_order_product_identity(product):
     )).strip()
     line_id = str(first_order_product_value(
         product,
-        "basket_id", "BASKET_ID", "row_id", "ROW_ID", "id", "ID",
+        "order_item_id", "ORDER_ITEM_ID", "basket_id", "BASKET_ID",
+        "row_id", "ROW_ID", "id", "ID",
     )).strip()
     return {
         "bitrix_product_id": product_id,
@@ -1126,34 +1127,27 @@ def bitrix_order_product_identity(product):
 def order_product_mapping_key(product):
     identity = bitrix_order_product_identity(product)
     line_id = identity["bitrix_order_line_id"]
-    if line_id:
-        return "line:{}".format(line_id)
-    return "product:{}".format(identity["bitrix_product_id"])
+    return "line:{}".format(line_id) if line_id else ""
 
 
 def build_catalog_product_order_counts(orders, mappings=None, catalog=None):
     """Count unique, non-cancelled Bitrix orders per mapped ERP product."""
-    mappings = load_product_mappings() if mappings is None else mappings
+    mappings = (
+        load_all_order_product_mappings()
+        if mappings is None else mappings
+    )
     direct = {}
-    legacy = {}
-    for external_product_id, row in mappings.items():
+    direct_by_order = {}
+    for order_item_key, row in mappings.items():
         if not isinstance(row, dict):
             continue
         product_id = str(row.get("product_id") or "").strip()
         if product_id:
-            direct[str(external_product_id)] = product_id
-            continue
-        moysklad_id = str(row.get("moysklad_product_id") or "").strip()
-        if moysklad_id:
-            legacy[str(external_product_id)] = moysklad_id
-
-    if legacy:
-        catalog = catalog or SharedCatalog()
-        candidates = catalog.products_by_moysklad_ids(legacy.values())
-        for external_product_id, moysklad_id in legacy.items():
-            matched = candidates.get(moysklad_id, [])
-            if len(matched) == 1:
-                direct[external_product_id] = str(matched[0]["id"])
+            mapping_order_id = str(row.get("order_id") or "").strip()
+            if mapping_order_id:
+                direct_by_order[(mapping_order_id, str(order_item_key))] = product_id
+            else:
+                direct[str(order_item_key)] = product_id
 
     order_ids_by_product = {}
     for order in orders or []:
@@ -1176,10 +1170,11 @@ def build_catalog_product_order_counts(orders, mappings=None, catalog=None):
         if not order_id:
             continue
         for item in order.get("products") or []:
-            external_product_id = bitrix_order_product_identity(item)[
-                "bitrix_product_id"
-            ]
-            product_id = direct.get(external_product_id)
+            item_key = order_product_mapping_key(item)
+            product_id = (
+                direct_by_order.get((order_id, item_key))
+                or direct.get(item_key)
+            )
             if product_id:
                 order_ids_by_product.setdefault(product_id, set()).add(
                     order_id
@@ -1193,30 +1188,21 @@ def build_catalog_product_order_counts(orders, mappings=None, catalog=None):
 
 def build_order_product_mapping_context(
         products, mappings=None, catalog=None, order_counts=None):
-    mappings = load_product_mappings() if mappings is None else mappings
+    mappings = {} if mappings is None else mappings
     catalog = catalog or SharedCatalog()
     identities = [bitrix_order_product_identity(item) for item in products]
     saved_rows = [
         mappings.get(order_product_mapping_key(product))
-        or mappings.get(identity["bitrix_product_id"])
-        for product, identity in zip(products, identities)
+        for product in products
     ]
     product_ids = [
         row.get("product_id")
         for row in saved_rows
         if isinstance(row, dict) and row.get("product_id") not in (None, "")
     ]
-    legacy_ids = [
-        row.get("moysklad_product_id")
-        for row in saved_rows
-        if isinstance(row, dict)
-        and not row.get("product_id")
-        and row.get("moysklad_product_id")
-    ]
     products_by_id = catalog.products_by_ids(
         product_ids, include_archived=True
     )
-    products_by_moysklad = catalog.products_by_moysklad_ids(legacy_ids)
     result = {}
 
     for product, identity, saved in zip(products, identities, saved_rows):
@@ -1226,10 +1212,9 @@ def build_order_product_mapping_context(
             "state": "unmapped",
             "state_label": "Не сопоставлен",
             "product": None,
-            "legacy": False,
             "saved": saved if isinstance(saved, dict) else {},
         }
-        if not key:
+        if not identity["bitrix_order_line_id"]:
             context.update({
                 "state": "missing_external_id",
                 "state_label": "У позиции нет стабильного ID Bitrix",
@@ -1258,46 +1243,14 @@ def build_order_product_mapping_context(
                     "state_label": "Сопоставлен",
                     "product": selected,
                 })
-        elif isinstance(saved, dict) and saved.get("moysklad_product_id"):
-            candidates = products_by_moysklad.get(
-                str(saved.get("moysklad_product_id")), []
-            )
-            if len(candidates) == 1:
-                selected = dict(candidates[0])
-                if order_counts is not None:
-                    selected["orders_count"] = order_counts.get(
-                        str(selected["id"]), 0
-                    )
-                context.update({
-                    "state": "mapped" if selected.get("active") else "archived",
-                    "state_label": (
-                        "Сопоставлен через legacy-связь"
-                        if selected.get("active")
-                        else "Legacy-связь ведёт на архивный товар"
-                    ),
-                    "product": selected,
-                    "legacy": True,
-                })
-            else:
-                context.update({
-                    "state": "stale",
-                    "state_label": (
-                        "Legacy-связь неоднозначна"
-                        if len(candidates) > 1
-                        else "Legacy-связь не найдена в каталоге ERP"
-                    ),
-                    "legacy": True,
-                })
         mapping_key = order_product_mapping_key(product)
-        result[mapping_key] = context
-        if key:
-            result.setdefault(key, context)
+        result[mapping_key or "missing:{}".format(len(result))] = context
     return result
 
 
 def load_order_product_mappings(order_id, database=None):
-    """Load durable line mappings, with legacy JSON as a read-only fallback."""
-    mappings = load_product_mappings()
+    """Load only explicit order-item to ERP-product mappings from SQLite."""
+    mappings = {}
     order_id = str(order_id or "").strip()
     if not order_id:
         return mappings
@@ -1306,100 +1259,84 @@ def load_order_product_mappings(order_id, database=None):
     database.initialize()
     with database.connect() as connection:
         rows = connection.execute(
-            "SELECT order_line_id, bitrix_product_id, bitrix_sku_id, "
-            "product_id, brand_id, category_id, moysklad_product_id, "
+            "SELECT order_item_id, product_id, created_at, "
             "updated_at FROM erp_order_product_mappings WHERE order_id = ?",
             (order_id,),
         ).fetchall()
     for row in rows:
         saved = {
-            "bitrix_product_id": str(row["bitrix_product_id"]),
-            "bitrix_sku_id": str(row["bitrix_sku_id"] or ""),
-            "bitrix_order_line_id": str(row["order_line_id"]),
+            "order_id": order_id,
+            "order_item_id": str(row["order_item_id"]),
             "product_id": str(row["product_id"]),
-            "brand_id": row["brand_id"],
-            "category_id": row["category_id"],
-            "moysklad_product_id": str(row["moysklad_product_id"] or ""),
-            "mapped_at": str(row["updated_at"]),
+            "created_at": str(row["created_at"]),
+            "updated_at": str(row["updated_at"]),
         }
-        mappings["line:{}".format(row["order_line_id"])] = saved
-        mappings[str(row["bitrix_product_id"])] = saved
+        mappings["line:{}".format(row["order_item_id"])] = saved
     return mappings
 
 
-def save_order_product_mapping(order_id, identity, selected_item, database=None):
+def load_all_order_product_mappings(database=None):
+    """Load every explicit order-item mapping for cross-order counters."""
+    database = database or CatalogDatabase()
+    database.initialize()
+    with database.connect() as connection:
+        rows = connection.execute(
+            "SELECT order_id, order_item_id, product_id, created_at, updated_at "
+            "FROM erp_order_product_mappings"
+        ).fetchall()
+    return {
+        "{}:line:{}".format(row["order_id"], row["order_item_id"]): {
+            "order_id": str(row["order_id"]),
+            "order_item_id": str(row["order_item_id"]),
+            "product_id": str(row["product_id"]),
+            "created_at": str(row["created_at"]),
+            "updated_at": str(row["updated_at"]),
+        }
+        for row in rows
+    }
+
+
+def save_order_product_mapping(order_id, order_item_id, product_id, database=None):
     """Atomically upsert one explicit order-line to ERP-product relation."""
     database = database or CatalogDatabase()
     database.initialize()
     order_id = str(order_id or "").strip()
-    line_id = str(identity.get("bitrix_order_line_id") or "").strip()
-    bitrix_product_id = str(identity.get("bitrix_product_id") or "").strip()
-    if not line_id:
-        line_id = bitrix_product_id
-    if not order_id or not line_id or not bitrix_product_id:
+    order_item_id = str(order_item_id or "").strip()
+    if not order_id or not order_item_id:
         raise ValueError("У позиции заказа нет стабильного идентификатора")
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    values = (
-        str(identity.get("bitrix_sku_id") or ""),
-        int(selected_item["id"]),
-        selected_item.get("brand_id"),
-        selected_item.get("category_id"),
-        selected_item.get("moysklad_product_id") or "",
-        now,
-        order_id,
-        line_id,
-    )
     with database.transaction() as connection:
         cursor = connection.execute(
-            "UPDATE erp_order_product_mappings SET bitrix_sku_id = ?, "
-            "product_id = ?, brand_id = ?, category_id = ?, "
-            "moysklad_product_id = ?, updated_at = ? "
-            "WHERE order_id = ? AND order_line_id = ?",
-            values,
+            "UPDATE erp_order_product_mappings SET product_id = ?, updated_at = ? "
+            "WHERE order_id = ? AND order_item_id = ?",
+            (int(product_id), now, order_id, order_item_id),
         )
         if cursor.rowcount == 0:
             connection.execute(
-                "INSERT INTO erp_order_product_mappings (order_id, "
-                "order_line_id, bitrix_product_id, bitrix_sku_id, product_id, "
-                "brand_id, category_id, moysklad_product_id, created_at, "
-                "updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    order_id,
-                    line_id,
-                    bitrix_product_id,
-                    str(identity.get("bitrix_sku_id") or ""),
-                    int(selected_item["id"]),
-                    selected_item.get("brand_id"),
-                    selected_item.get("category_id"),
-                    selected_item.get("moysklad_product_id") or "",
-                    now,
-                    now,
-                ),
+                "INSERT INTO erp_order_product_mappings "
+                "(order_id, order_item_id, product_id, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (order_id, order_item_id, int(product_id), now, now),
             )
+    return load_order_product_mappings(order_id, database).get(
+        "line:{}".format(order_item_id)
+    )
 
 
-def delete_order_product_mapping(order_id, identity, database=None):
+def delete_order_product_mapping(order_id, order_item_id, database=None):
     database = database or CatalogDatabase()
     database.initialize()
-    line_id = str(identity.get("bitrix_order_line_id") or "").strip()
-    if not line_id:
-        line_id = str(identity.get("bitrix_product_id") or "").strip()
     with database.transaction() as connection:
         cursor = connection.execute(
             "DELETE FROM erp_order_product_mappings "
-            "WHERE order_id = ? AND order_line_id = ?",
-            (str(order_id), line_id),
+            "WHERE order_id = ? AND order_item_id = ?",
+            (str(order_id), str(order_item_id)),
         )
     return cursor.rowcount > 0
 
 
 def get_order_product_mapping(mapping_context, product):
-    identity = bitrix_order_product_identity(product)
-    return (
-        mapping_context.get(order_product_mapping_key(product))
-        or mapping_context.get(identity["bitrix_product_id"])
-        or {}
-    )
+    return mapping_context.get(order_product_mapping_key(product)) or {}
 
 
 def build_order_sale_readiness(order, mapping_context, already_conducted=False):
@@ -1954,204 +1891,193 @@ def record_order_sale_attempt(
         app.logger.exception("Order sale attempt audit failed: %s", order_id)
 
 
-@app.route("/order/<int:order_id>/product-map", methods=["POST"])
-def order_product_map(order_id):
-    bitrix_product_id = (request.form.get("bitrix_product_id") or "").strip()
-    bitrix_order_line_id = (
-        request.form.get("bitrix_order_line_id") or ""
-    ).strip()
-    product_id = (request.form.get("product_id") or "").strip()
-    brand_id = (request.form.get("brand_id") or "").strip()
-    category_id = (request.form.get("category_id") or "").strip()
+def order_item_mapping_error(order_id, order_item_id, code, message, status):
+    app.logger.warning(
+        "Order item mapping refused order_id=%s item_id=%s code=%s",
+        order_id, order_item_id, code,
+    )
+    return jsonify({
+        "ok": False,
+        "error": {"code": code, "message": message},
+    }), status
 
-    if not bitrix_product_id:
-        return redirect(url_for(
-            "order_page",
-            order_id=order_id,
-            notice="error",
-            message="Не найден ID товара Битрикс"
-        ))
 
-    if not product_id:
-        return redirect(url_for(
-            "order_page",
-            order_id=order_id,
-            notice="error",
-            message="Выберите товар ERP из каталога"
-        ))
+def order_item_mapping_state(order, database, catalog):
+    mappings = load_order_product_mappings(order.get("id"), database)
+    context = build_order_product_mapping_context(
+        order.get("products") or [], mappings=mappings, catalog=catalog
+    )
+    readiness = build_order_sale_readiness(order, context)
+    products = order.get("products") or []
+    all_items_mapped = bool(products) and all(
+        get_order_product_mapping(context, item).get("state") == "mapped"
+        for item in products
+    )
+    return {
+        "all_items_mapped": all_items_mapped,
+        "sale_ready": bool(readiness["ready"]),
+        "issues": readiness["issues"],
+    }
 
+
+def order_item_mapping_response(order, order_item_id, product, saved, database, catalog):
+    return {
+        "mapping": {
+            **saved,
+            "product": {
+                key: product.get(key)
+                for key in (
+                    "id", "name", "article", "brand", "category",
+                    "brand_id", "category_id", "stock", "stock_display",
+                    "image_url", "active",
+                )
+            },
+        },
+        "order": order_item_mapping_state(order, database, catalog),
+    }
+
+
+@app.route(
+    "/api/orders/<int:order_id>/items/<order_item_id>/mapping",
+    methods=["POST", "DELETE"],
+)
+def order_item_mapping_api(order_id, order_item_id):
+    require_csrf_when_authenticated()
+    order_item_id = str(order_item_id or "").strip()
     try:
-        full_order = get_order(order_id)
+        order = get_order(order_id)
     except BitrixReadOnlyError:
-        return redirect(url_for(
-            "order_page", order_id=order_id, notice="error",
-            message="Не удалось проверить позицию: Bitrix временно недоступен",
-        ))
-    order_product = next((
-        item for item in (full_order or {}).get("products") or []
-        if (
-            bitrix_order_product_identity(item)["bitrix_product_id"]
-            == bitrix_product_id
-            and (
-                not bitrix_order_line_id
-                or bitrix_order_product_identity(item)[
-                    "bitrix_order_line_id"
-                ] == bitrix_order_line_id
-            )
+        return order_item_mapping_error(
+            order_id, order_item_id, "ORDER_UNAVAILABLE",
+            "Не удалось проверить заказ: Bitrix временно недоступен", 503,
         )
+    if not order:
+        return order_item_mapping_error(
+            order_id, order_item_id, "ORDER_NOT_FOUND", "Заказ не найден", 404,
+        )
+    order = dict(order)
+    order["id"] = str(order.get("id") or order_id)
+    order_item = next((
+        item for item in order.get("products") or []
+        if bitrix_order_product_identity(item)["bitrix_order_line_id"]
+        == order_item_id
     ), None)
-    if order_product is None:
-        return redirect(url_for(
-            "order_page",
-            order_id=order_id,
-            notice="error",
-            message="Позиция Bitrix не найдена в этом заказе"
-        ))
+    if order_item is None:
+        return order_item_mapping_error(
+            order_id, order_item_id, "ORDER_ITEM_NOT_FOUND",
+            "Строка заказа не найдена", 404,
+        )
 
-    selected_item = SharedCatalog().get_product(
-        product_id, include_archived=True
-    )
-    if (
-        selected_item is None
-        or not selected_item.get("active")
-        or selected_item.get("deleted_at")
-    ):
-        return redirect(url_for(
-            "order_page", order_id=order_id, notice="error",
-            message="Товар ERP не найден или архивирован",
-        ))
-    if str(selected_item.get("brand_id") or "") != brand_id:
-        return redirect(url_for(
-            "order_page", order_id=order_id, notice="error",
-            message="Выбранный товар не относится к указанному бренду",
-        ))
-    if str(selected_item.get("category_id") or 0) != str(category_id or 0):
-        return redirect(url_for(
-            "order_page", order_id=order_id, notice="error",
-            message="Выбранный товар не относится к указанной категории",
-        ))
-
-    mappings = load_order_product_mappings(order_id)
-    identity = bitrix_order_product_identity(order_product)
-    previous = (
-        mappings.get(order_product_mapping_key(order_product))
-        or mappings.get(bitrix_product_id)
-    )
-    save_order_product_mapping(order_id, identity, selected_item)
+    database = CatalogDatabase()
+    catalog = SharedCatalog(database)
     try:
-        AuditJournal(CatalogDatabase()).record(
-            "product",
-            selected_item["id"],
+        previous = load_order_product_mappings(order_id, database).get(
+            "line:{}".format(order_item_id)
+        )
+    except sqlite3.Error:
+        app.logger.exception(
+            "Order item mapping storage read failed order_id=%s item_id=%s",
+            order_id, order_item_id,
+        )
+        return order_item_mapping_error(
+            order_id, order_item_id, "MAPPING_STORAGE_ERROR",
+            "Не удалось прочитать сопоставление. Повторите попытку.", 503,
+        )
+    if request.method == "DELETE":
+        try:
+            delete_order_product_mapping(order_id, order_item_id, database)
+            state = order_item_mapping_state(order, database, catalog)
+        except sqlite3.Error:
+            app.logger.exception(
+                "Order item mapping delete failed order_id=%s item_id=%s",
+                order_id, order_item_id,
+            )
+            return order_item_mapping_error(
+                order_id, order_item_id, "MAPPING_STORAGE_ERROR",
+                "Не удалось снять сопоставление. Повторите попытку.", 503,
+            )
+        app.logger.info(
+            "Order item mapping deleted order_id=%s item_id=%s old_product_id=%s",
+            order_id, order_item_id,
+            previous.get("product_id") if previous else None,
+        )
+        return jsonify({
+            "ok": True,
+            "data": {
+                "mapping": None,
+                "order": state,
+            },
+        })
+
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict) or payload.get("product_id") in (None, ""):
+        return order_item_mapping_error(
+            order_id, order_item_id, "PRODUCT_ID_REQUIRED",
+            "Выберите товар ERP", 400,
+        )
+    product_id = str(payload.get("product_id")).strip()
+    try:
+        product = catalog.get_product(product_id, include_archived=True)
+    except (TypeError, ValueError):
+        product = None
+    except sqlite3.Error:
+        app.logger.exception(
+            "Order item mapping product lookup failed order_id=%s item_id=%s",
+            order_id, order_item_id,
+        )
+        return order_item_mapping_error(
+            order_id, order_item_id, "MAPPING_STORAGE_ERROR",
+            "Не удалось проверить товар ERP. Повторите попытку.", 503,
+        )
+    if product is None or not product.get("active") or product.get("deleted_at"):
+        return order_item_mapping_error(
+            order_id, order_item_id, "PRODUCT_NOT_FOUND",
+            "Товар ERP не найден или архивирован", 404,
+        )
+    try:
+        saved = save_order_product_mapping(
+            order_id, order_item_id, product["id"], database
+        )
+        response_data = order_item_mapping_response(
+            order, order_item_id, product, saved, database, catalog
+        )
+    except sqlite3.Error:
+        app.logger.exception(
+            "Order item mapping save failed order_id=%s item_id=%s product_id=%s",
+            order_id, order_item_id, product["id"],
+        )
+        return order_item_mapping_error(
+            order_id, order_item_id, "MAPPING_STORAGE_ERROR",
+            "Не удалось сохранить сопоставление. Повторите попытку.", 503,
+        )
+    app.logger.info(
+        "Order item mapping saved order_id=%s item_id=%s product_id=%s previous_product_id=%s",
+        order_id, order_item_id, product["id"],
+        previous.get("product_id") if previous else None,
+    )
+    try:
+        AuditJournal(database).record(
+            "product", product["id"],
             "updated" if previous else "created",
-            selected_item.get("name") or "Товар",
-            "Сопоставление позиции заказа Bitrix",
+            product.get("name") or "Товар",
+            "Сопоставление строки заказа Bitrix",
             metadata={
-                "bitrix_product_id": bitrix_product_id,
-                "old_product_id": (
-                    previous.get("product_id")
-                    if isinstance(previous, dict) else None
-                ),
-                "new_product_id": str(selected_item["id"]),
                 "order_id": str(order_id),
+                "order_item_id": order_item_id,
+                "old_product_id": previous.get("product_id") if previous else None,
+                "new_product_id": str(product["id"]),
             },
             **current_audit_actor()
         )
     except Exception:
         app.logger.exception(
-            "Order product mapping audit failed for %s", bitrix_product_id
+            "Order item mapping audit failed order_id=%s item_id=%s",
+            order_id, order_item_id,
         )
-
-    return redirect(url_for(
-        "order_page",
-        order_id=order_id,
-        notice="success",
-        message="Товар сопоставлен с единым каталогом ERP"
-    ))
-
-
-@app.route("/order/<int:order_id>/product-unmap", methods=["POST"])
-def order_product_unmap(order_id):
-    bitrix_product_id = str(
-        request.form.get("bitrix_product_id") or ""
-    ).strip()
-    bitrix_order_line_id = str(
-        request.form.get("bitrix_order_line_id") or ""
-    ).strip()
-    if not bitrix_product_id:
-        return redirect(url_for(
-            "order_page", order_id=order_id, notice="error",
-            message="Не найден ID позиции Bitrix",
-        ))
-    try:
-        full_order = get_order(order_id)
-    except BitrixReadOnlyError:
-        return redirect(url_for(
-            "order_page", order_id=order_id, notice="error",
-            message="Не удалось проверить позицию: Bitrix временно недоступен",
-        ))
-    exists = any(
-        (
-            bitrix_order_product_identity(item)["bitrix_product_id"]
-            == bitrix_product_id
-            and (
-                not bitrix_order_line_id
-                or bitrix_order_product_identity(item)[
-                    "bitrix_order_line_id"
-                ] == bitrix_order_line_id
-            )
-        )
-        for item in (full_order or {}).get("products") or []
-    )
-    if not exists:
-        return redirect(url_for(
-            "order_page", order_id=order_id, notice="error",
-            message="Позиция Bitrix не найдена в этом заказе",
-        ))
-    mappings = load_order_product_mappings(order_id)
-    order_product = next(
-        item for item in (full_order or {}).get("products") or []
-        if (
-            bitrix_order_product_identity(item)["bitrix_product_id"]
-            == bitrix_product_id
-            and (
-                not bitrix_order_line_id
-                or bitrix_order_product_identity(item)[
-                    "bitrix_order_line_id"
-                ] == bitrix_order_line_id
-            )
-        )
-    )
-    previous = (
-        mappings.get(order_product_mapping_key(order_product))
-        or mappings.get(bitrix_product_id)
-    )
-    identity = bitrix_order_product_identity(order_product)
-    deleted = delete_order_product_mapping(order_id, identity)
-    if previous is not None and not deleted:
-        legacy_mappings = load_product_mappings()
-        legacy_deleted = legacy_mappings.pop(bitrix_product_id, None) is not None
-        if legacy_deleted:
-            save_product_mappings(legacy_mappings)
-    if deleted or previous is not None:
-        try:
-            AuditJournal(CatalogDatabase()).record(
-                "sale", "bitrix-order:{}".format(order_id), "updated",
-                "Заказ #{}".format(order_id), "Удалено сопоставление позиции",
-                metadata={
-                    "bitrix_product_id": bitrix_product_id,
-                    "old_product_id": previous.get("product_id")
-                    if isinstance(previous, dict) else None,
-                },
-                **current_audit_actor()
-            )
-        except Exception:
-            app.logger.exception(
-                "Order product unmapping audit failed for %s", bitrix_product_id
-            )
-    return redirect(url_for(
-        "order_page", order_id=order_id, notice="success",
-        message="Сопоставление очищено",
-    ))
+    return jsonify({
+        "ok": True,
+        "data": response_data,
+    })
 
 
 @app.route("/order/<int:order_id>/tracking", methods=["POST"])
@@ -2287,38 +2213,6 @@ def order_status_update(order_id):
         message="Статус заказа обновлён в ERP и Bitrix",
     ))
 
-
-
-def get_product_mappings_path():
-    path = Path(app.instance_path)
-    path.mkdir(parents=True, exist_ok=True)
-    return path / "product_mappings.json"
-
-
-def load_product_mappings():
-    path = get_product_mappings_path()
-
-    if not path.exists():
-        return {}
-
-    try:
-        with path.open("r", encoding="utf-8") as file:
-            data = json.load(file)
-
-        return data if isinstance(data, dict) else {}
-
-    except Exception:
-        return {}
-
-
-def save_product_mappings(mappings):
-    path = get_product_mappings_path()
-    temporary_path = path.with_name(
-        "{}.{}.tmp".format(path.name, uuid.uuid4().hex)
-    )
-    with temporary_path.open("w", encoding="utf-8") as file:
-        json.dump(mappings, file, ensure_ascii=False, indent=2)
-    temporary_path.replace(path)
 
 
 def format_stock_number(value):

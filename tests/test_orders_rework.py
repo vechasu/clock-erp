@@ -62,11 +62,12 @@ class OrdersReworkTest(unittest.TestCase):
         order = {
             "status": "A",
             "products": [
-                {"product_id": "bx-1", "quantity": 2},
-                {"product_id": "bx-1", "quantity": 2},
+                {"id": "line-1", "product_id": "bx-1", "quantity": 2},
+                {"id": "line-2", "product_id": "bx-1", "quantity": 2},
             ],
         }
-        mapping = {"bx-1": {"state": "mapped", "product": {"id": "1", "stock": 3}}}
+        mapped = {"state": "mapped", "product": {"id": "1", "stock": 3}}
+        mapping = {"line:line-1": mapped, "line:line-2": mapped}
         result = web.build_order_sale_readiness(order, mapping)
         self.assertFalse(result["ready"])
         self.assertIn("Недостаточно остатка", result["issues"])
@@ -80,7 +81,7 @@ class OrdersReworkTest(unittest.TestCase):
         with (
             mock.patch.object(web, "get_orders", return_value=[order]),
             mock.patch.object(web, "get_order", return_value=order),
-            mock.patch.object(web, "load_product_mappings", return_value={}),
+            mock.patch.object(web, "load_order_product_mappings", return_value={}),
             mock.patch.object(web, "is_order_stock_written_off", return_value=False),
             mock.patch.object(web, "get_order_conducted_sale", return_value=None),
         ):
@@ -102,7 +103,7 @@ class OrdersReworkTest(unittest.TestCase):
         with (
             mock.patch.object(web, "get_orders", return_value=[order]),
             mock.patch.object(web, "get_order", return_value=order),
-            mock.patch.object(web, "load_product_mappings", return_value={}),
+            mock.patch.object(web, "load_order_product_mappings", return_value={}),
             mock.patch.object(web, "is_order_stock_written_off", return_value=False),
             mock.patch.object(web, "get_order_conducted_sale", return_value=None),
         ):
@@ -129,7 +130,7 @@ class OrdersReworkTest(unittest.TestCase):
             inventory = SalesInventory(database)
             with (
                 mock.patch.object(web, "get_order", return_value=order),
-                mock.patch.object(web, "load_product_mappings", return_value={"bx": {"product_id": str(product["id"])}}),
+                mock.patch.object(web, "load_order_product_mappings", return_value={"line:line": {"product_id": str(product["id"])}}),
                 mock.patch.object(web, "SharedCatalog", return_value=SharedCatalog(database)),
                 mock.patch.object(web, "SalesInventory", return_value=inventory),
             ):

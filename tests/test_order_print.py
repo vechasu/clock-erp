@@ -199,7 +199,7 @@ class OrderPrintTest(unittest.TestCase):
         with (
             mock.patch.object(web, "get_orders", return_value=[order]),
             mock.patch.object(web, "get_order", return_value=order),
-            mock.patch.object(web, "load_product_mappings", return_value={}),
+            mock.patch.object(web, "load_order_product_mappings", return_value={}),
             mock.patch.object(web, "is_order_stock_written_off", return_value=False),
             mock.patch.object(web, "get_order_conducted_sale", return_value=None),
         ):

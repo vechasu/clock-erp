@@ -724,18 +724,12 @@ CREATE TABLE IF NOT EXISTS erp_order_status_sync_queue (
 );
 
 CREATE TABLE IF NOT EXISTS erp_order_product_mappings (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
     order_id TEXT NOT NULL,
-    order_line_id TEXT NOT NULL,
-    bitrix_product_id TEXT NOT NULL,
-    bitrix_sku_id TEXT,
+    order_item_id TEXT NOT NULL,
     product_id INTEGER NOT NULL REFERENCES catalog_excel_products(id) ON DELETE RESTRICT,
-    brand_id INTEGER REFERENCES erp_brands(id) ON DELETE RESTRICT,
-    category_id INTEGER REFERENCES erp_categories(id) ON DELETE RESTRICT,
-    moysklad_product_id TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    UNIQUE (order_id, order_line_id)
+    PRIMARY KEY (order_id, order_item_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_erp_order_product_mappings_product
@@ -1034,6 +1028,56 @@ class CatalogDatabase:
             self._ensure_brand_category_relations(connection)
             self._ensure_inventory_constraints(connection)
             self._ensure_stock_movement_constraints(connection)
+            self._ensure_order_item_mapping_schema(connection)
+
+    @staticmethod
+    def _ensure_order_item_mapping_schema(connection):
+        """Reduce legacy order mappings to the single durable relation."""
+        columns = {
+            row["name"]
+            for row in connection.execute(
+                "PRAGMA table_info(erp_order_product_mappings)"
+            ).fetchall()
+        }
+        expected = {
+            "order_id", "order_item_id", "product_id",
+            "created_at", "updated_at",
+        }
+        if columns == expected:
+            return
+        source_item_column = (
+            "order_item_id" if "order_item_id" in columns else "order_line_id"
+        )
+        connection.execute("PRAGMA foreign_keys = OFF")
+        try:
+            connection.executescript("""
+                DROP TABLE IF EXISTS erp_order_product_mappings_migrating;
+                CREATE TABLE erp_order_product_mappings_migrating (
+                    order_id TEXT NOT NULL,
+                    order_item_id TEXT NOT NULL,
+                    product_id INTEGER NOT NULL REFERENCES catalog_excel_products(id) ON DELETE RESTRICT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (order_id, order_item_id)
+                );
+            """)
+            connection.execute(
+                "INSERT OR REPLACE INTO erp_order_product_mappings_migrating "
+                "(order_id, order_item_id, product_id, created_at, updated_at) "
+                "SELECT order_id, {}, product_id, created_at, updated_at "
+                "FROM erp_order_product_mappings".format(source_item_column)
+            )
+            connection.executescript("""
+                DROP TABLE erp_order_product_mappings;
+                ALTER TABLE erp_order_product_mappings_migrating
+                    RENAME TO erp_order_product_mappings;
+                CREATE INDEX idx_erp_order_product_mappings_product
+                    ON erp_order_product_mappings(product_id, order_id);
+            """)
+        finally:
+            connection.execute("PRAGMA foreign_keys = ON")
+        if connection.execute("PRAGMA foreign_key_check").fetchall():
+            raise RuntimeError("Order-item mapping migration created foreign key violations")
 
     @staticmethod
     def _ensure_brand_image_columns(connection):

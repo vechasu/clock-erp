@@ -1219,11 +1219,16 @@
         const categoryWithoutBrand = Boolean(
             scope?.dataset.catalogCategoryWithoutBrand === "true"
         );
+        const globalProductOptions = Boolean(
+            kind === "product"
+            && scope?.dataset.catalogProductGlobal === "true"
+        );
 
         if (
             (kind === "category" && brandId === "" && !categoryWithoutBrand)
             || (
                 kind === "product"
+                && !globalProductOptions
                 && (brandId === "" || categoryId === "")
             )
         ) {
@@ -1261,7 +1266,9 @@
             parameters.set("available_for_sale", "1");
         }
         if (kind === "product") {
-            parameters.set("category_id", categoryId);
+            if (categoryId !== "") {
+                parameters.set("category_id", categoryId);
+            }
             if (scope?.dataset.catalogInStock === "true") {
                 parameters.set("in_stock", "1");
             }
@@ -1598,8 +1605,11 @@
         setCascadeFieldDisabled(
             scope,
             "product",
-            !selectedSharedCatalogId(brand)
-            || !selectedSharedCatalogId(category)
+            scope.dataset.catalogProductGlobal !== "true"
+            && (
+                !selectedSharedCatalogId(brand)
+                || !selectedSharedCatalogId(category)
+            )
         );
     }
 
