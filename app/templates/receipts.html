@@ -5873,10 +5873,12 @@
             const createDialog = createModal?.querySelector(".modal-dialog");
             const createForm = document.getElementById("receiptForm");
             const createHeader = createModal?.querySelector(".modal-header");
+            const createBody = createModal?.querySelector(".modal-body");
             const createActions = createForm?.querySelector(".modal-actions");
             if (
                 !createOpenButton || !createModal || !createDialog
-                || !createForm || !createHeader || !createActions
+                || !createForm || !createHeader || !createBody
+                || !createActions
             ) {
                 throw new Error("missing-create-elements");
             }
@@ -5895,7 +5897,7 @@
                 || createDialogRect.bottom > innerHeight + 1
                 || createHeaderRect.top < createDialogRect.top - 1
                 || createActionsRect.bottom > createDialogRect.bottom + 1
-                || createForm.scrollWidth > createForm.clientWidth + 1
+                || createBody.scrollWidth > createBody.clientWidth + 1
                 || document.documentElement.scrollWidth
                     > document.documentElement.clientWidth
             ) {
@@ -5978,21 +5980,38 @@
             }
 
             [product, comment].forEach((field) => {
-                if (field.getBoundingClientRect().width < gridRect.width * 0.96) {
+                const ownerGrid = field.closest(".receipt-card-grid");
+                if (
+                    !ownerGrid
+                    || field.getBoundingClientRect().width
+                        < ownerGrid.getBoundingClientRect().width * 0.96
+                ) {
                     throw new Error("wide-field-compressed");
                 }
             });
 
-            const dateRect = fields[0].getBoundingClientRect();
-            const documentRect = fields[1].getBoundingClientRect();
-            const brandRect = fields[3].getBoundingClientRect();
-            const categoryRect = fields[4].getBoundingClientRect();
+            const dateField = form.querySelector('[name="receipt_date"]')
+                ?.closest(".receipt-card-field");
+            const timeField = form.querySelector("#receiptEditTime")
+                ?.closest(".receipt-card-field");
+            const brandField = form.querySelector("[data-receipt-edit-brand]")
+                ?.closest(".receipt-card-field");
+            const categoryField = form.querySelector(
+                "[data-receipt-edit-category]"
+            )?.closest(".receipt-card-field");
+            if (!dateField || !timeField || !brandField || !categoryField) {
+                throw new Error("missing-grid-fields");
+            }
+            const dateRect = dateField.getBoundingClientRect();
+            const timeRect = timeField.getBoundingClientRect();
+            const brandRect = brandField.getBoundingClientRect();
+            const categoryRect = categoryField.getBoundingClientRect();
             if (innerWidth > 700) {
                 if (
-                    Math.abs(dateRect.top - documentRect.top) > 2
+                    Math.abs(dateRect.top - timeRect.top) > 2
                     || Math.abs(brandRect.top - categoryRect.top) > 2
                     || dateRect.width < gridRect.width * 0.4
-                    || documentRect.width < gridRect.width * 0.4
+                    || timeRect.width < gridRect.width * 0.4
                 ) {
                     throw new Error("desktop-grid");
                 }
