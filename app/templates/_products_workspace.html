@@ -1,0 +1,39 @@
+{% macro products_workspace_header(active_view, product_metrics, add_button=false, export_filtered_url='') %}
+<header class="erp-workspace-header products-workspace-header">
+    <div class="erp-workspace-heading">
+        <h1>Товары</h1>
+        <p>Каталог и складские остатки</p>
+    </div>
+    <div class="erp-workspace-actions products-workspace-actions">
+        <a class="products-workspace-button" href="{{ url_for('warehouse_inventory_page') }}">Инвентаризация</a>
+        <details class="products-workspace-more">
+            <summary class="products-workspace-button">Ещё</summary>
+            <div class="products-workspace-menu">
+                <a href="{{ export_filtered_url or url_for('warehouse_products_export', scope='filtered') }}">Экспортировать найденные</a>
+                <a href="{{ url_for('warehouse_products_export', scope='all') }}">Экспортировать все товары</a>
+            </div>
+        </details>
+        {% if add_button %}
+            <button id="openWarehouseAddModal" class="products-workspace-button is-primary" type="button" onclick="toggleWarehouseAddCard()">+ Добавить товар</button>
+        {% else %}
+            <a class="products-workspace-button is-primary" href="{{ url_for('warehouse_page', open_add=1) }}">+ Добавить товар</a>
+        {% endif %}
+    </div>
+</header>
+<nav class="erp-section-tabs products-workspace-tabs" aria-label="Раздел товаров">
+    {% for view, label, count in (
+        ('products', 'В наличии', product_metrics.in_stock),
+        ('out_of_stock', 'Нет в наличии', product_metrics.out_of_stock),
+        ('brands', 'Бренды', none),
+        ('categories', 'Категории', none)
+    ) %}
+        <a class="erp-section-tab{% if active_view == view %} is-active{% endif %}" href="{{ url_for('warehouse_page', view=view) if view != 'products' else url_for('warehouse_page') }}" data-products-tab="{{ view }}"{% if active_view == view %} aria-current="page"{% endif %}>{{ label }}{% if count is not none %}<span class="warehouse-tab-badge">{{ count }}</span>{% endif %}</a>
+    {% endfor %}
+</nav>
+<section class="products-workspace-metrics erp-workspace-metrics" aria-label="Аналитика товаров" style="--erp-workspace-metric-count:4">
+    <article class="erp-stat-card erp-workspace-metric"><span class="erp-stat-label">Позиций</span><strong id="visiblePositionsCount" class="erp-stat-value" data-product-metric="positions">{{ product_metrics.positions }}</strong></article>
+    <article class="erp-stat-card erp-workspace-metric"><span class="erp-stat-label">В наличии</span><strong class="erp-stat-value" data-product-metric="in-stock">{{ product_metrics.in_stock }}</strong></article>
+    <article class="erp-stat-card erp-workspace-metric"><span class="erp-stat-label">Единиц</span><strong id="totalStockCount" class="erp-stat-value" data-product-metric="units">{{ product_metrics.units }}</strong></article>
+    <article class="erp-stat-card erp-workspace-metric"><span class="erp-stat-label">Нет в наличии</span><strong class="erp-stat-value" data-product-metric="out-of-stock">{{ product_metrics.out_of_stock }}</strong></article>
+</section>
+{% endmacro %}

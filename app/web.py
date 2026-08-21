@@ -3051,7 +3051,22 @@ def warehouse_page():
     if not isinstance(tab_counts, dict):
         # Keeps route-level test doubles and extensions that predate tab counts
         # compatible while the real catalog service always returns this shape.
-        tab_counts = {"in_stock": 0, "out_of_stock": 0, "units_in_stock": 0}
+        tab_counts = {
+            "positions": 0, "in_stock": 0, "out_of_stock": 0,
+            "units_in_stock": 0, "units_total": 0,
+        }
+    product_metrics = {
+        "positions": int(tab_counts.get(
+            "positions",
+            int(tab_counts.get("in_stock", 0))
+            + int(tab_counts.get("out_of_stock", 0)),
+        )),
+        "in_stock": int(tab_counts.get("in_stock", 0)),
+        "out_of_stock": int(tab_counts.get("out_of_stock", 0)),
+        "units": format_stock_number(tab_counts.get(
+            "units_total", tab_counts.get("units_in_stock", 0)
+        )),
+    }
     if warehouse_view == "categories":
         shared_catalog = SharedCatalog()
         category_id = (request.args.get("category_id") or "").strip()
@@ -3102,6 +3117,7 @@ def warehouse_page():
             show_empty=show_empty,
             in_stock_count=tab_counts["in_stock"],
             out_of_stock_count=tab_counts["out_of_stock"],
+            product_metrics=product_metrics,
         )
     if warehouse_view == "brands":
         shared_catalog = SharedCatalog()
@@ -3130,6 +3146,7 @@ def warehouse_page():
             show_empty=show_empty,
             in_stock_count=tab_counts["in_stock"],
             out_of_stock_count=tab_counts["out_of_stock"],
+            product_metrics=product_metrics,
         )
     query = request.args.get("q", "").strip()
     selected_category = request.args.get("category", "").strip()
@@ -3351,6 +3368,7 @@ def warehouse_page():
                 tab_counts["out_of_stock"]
             ),
             in_stock_count=tab_counts["in_stock"],
+            product_metrics=product_metrics,
             export_filtered_url=url_for(
                 "warehouse_products_export", scope="filtered",
                 **{key: value for key, value in request.args.items()

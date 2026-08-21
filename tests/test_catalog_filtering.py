@@ -198,12 +198,15 @@ class CatalogFilteringTest(unittest.TestCase):
         template = (ROOT / "app/templates/warehouse.html").read_text(
             encoding="utf-8"
         )
+        workspace = (ROOT / "app/templates/_products_workspace.html").read_text(
+            encoding="utf-8"
+        )
 
         self.assertEqual(all_items["total"], 120)
         self.assertEqual(in_stock["total"], 4)
         self.assertNotIn('id="warehouseInStockToggle"', template)
-        self.assertIn("В наличии", template)
-        self.assertIn("Нет в наличии", template)
+        self.assertIn("В наличии", workspace)
+        self.assertIn("Нет в наличии", workspace)
 
     def test_stock_tab_counts_are_global_and_use_positive_stock_only(self):
         counts = self.excel.stock_tab_counts()
@@ -211,6 +214,8 @@ class CatalogFilteringTest(unittest.TestCase):
         self.assertEqual(counts["in_stock"], 4)
         self.assertEqual(counts["out_of_stock"], 118)
         self.assertEqual(counts["units_in_stock"], 4)
+        self.assertEqual(counts["positions"], 122)
+        self.assertEqual(counts["units_total"], 4)
 
     def test_brand_and_category_pages_hide_empty_entries_by_default(self):
         empty_category = self.shared.create_category(

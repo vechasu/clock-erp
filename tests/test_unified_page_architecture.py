@@ -11,11 +11,6 @@ class UnifiedPageArchitectureTest(unittest.TestCase):
 
     def test_three_pages_use_the_shared_workspace_header(self):
         contracts = {
-            "warehouse.html": (
-                "Товары",
-                "Каталог и складские остатки",
-                "+ Добавить товар",
-            ),
             "sales.html": (
                 "Продажи",
                 "Учёт продаж по всем каналам",
@@ -40,6 +35,14 @@ class UnifiedPageArchitectureTest(unittest.TestCase):
                 for text in expected:
                     self.assertIn(text, header)
 
+        warehouse = self.source("app/templates/warehouse.html")
+        products_workspace = self.source(
+            "app/templates/_products_workspace.html"
+        )
+        self.assertIn("products_workspace_header", warehouse)
+        for text in ("Товары", "Каталог и складские остатки", "+ Добавить товар"):
+            self.assertIn(text, products_workspace)
+
     def test_three_pages_use_the_shared_metrics_contract(self):
         for template in ("sales.html", "receipts.html"):
             with self.subTest(template=template):
@@ -47,10 +50,10 @@ class UnifiedPageArchitectureTest(unittest.TestCase):
                 self.assertIn("erp-workspace-metrics", source)
                 self.assertIn("erp-workspace-metric", source)
 
-        warehouse = self.source("app/templates/warehouse.html")
-        self.assertIn("warehouse-compact-summary", warehouse)
-        self.assertIn("В наличии", warehouse)
-        self.assertIn("единиц", warehouse)
+        warehouse = self.source("app/templates/_products_workspace.html")
+        self.assertIn("products-workspace-metrics", warehouse)
+        for label in ("Позиций", "В наличии", "Единиц", "Нет в наличии"):
+            self.assertIn(label, warehouse)
         sales = self.source("app/templates/sales.html")
         sales_metrics = sales.split("erp-workspace-metrics", 1)[1].split(
             "</div>\n\n        <section", 1
@@ -73,10 +76,8 @@ class UnifiedPageArchitectureTest(unittest.TestCase):
             "</form>", 1
         )[0]
         self.assertNotIn("Добавить товар", search_form)
-        header = warehouse.split("erp-workspace-header", 1)[1].split(
-            "</header>", 1
-        )[0]
-        self.assertIn("toggleWarehouseAddCard()", header)
+        macro = self.source("app/templates/_products_workspace.html")
+        self.assertIn("toggleWarehouseAddCard()", macro)
 
     def test_receipt_advanced_filters_are_inside_compact_details_panel(self):
         receipts = self.source("app/templates/receipts.html")
@@ -114,15 +115,6 @@ class UnifiedPageArchitectureTest(unittest.TestCase):
 
     def test_active_pages_share_page_header_copy(self):
         contracts = {
-            "warehouse.html": (
-                "Товары", "Каталог и складские остатки",
-            ),
-            "warehouse_brands.html": (
-                "Товары", "Каталог и складские остатки",
-            ),
-            "warehouse_categories.html": (
-                "Товары", "Каталог и складские остатки",
-            ),
             "sales.html": (
                 "Продажи", "Учёт продаж по всем каналам",
             ),
@@ -145,18 +137,31 @@ class UnifiedPageArchitectureTest(unittest.TestCase):
                 for text in expected:
                     self.assertIn(text, header)
 
-    def test_existing_tabs_use_shared_visual_contract(self):
+        products_workspace = self.source(
+            "app/templates/_products_workspace.html"
+        )
+        self.assertIn("Товары", products_workspace)
+        self.assertIn("Каталог и складские остатки", products_workspace)
         for template in (
-            "warehouse.html",
-            "warehouse_brands.html",
-            "warehouse_categories.html",
-            "sales.html",
-            "journal.html",
+            "warehouse.html", "warehouse_brands.html", "warehouse_categories.html"
         ):
+            self.assertIn(
+                "products_workspace_header",
+                self.source("app/templates/" + template),
+            )
+
+    def test_existing_tabs_use_shared_visual_contract(self):
+        for template in ("sales.html", "journal.html"):
             with self.subTest(template=template):
                 source = self.source("app/templates/" + template)
                 self.assertIn("erp-section-tabs", source)
                 self.assertIn("erp-section-tab", source)
+
+        products_workspace = self.source(
+            "app/templates/_products_workspace.html"
+        )
+        self.assertIn("erp-section-tabs", products_workspace)
+        self.assertIn("erp-section-tab", products_workspace)
 
         repair = self.source("app/templates/repair.html")
         self.assertNotIn("erp-section-tabs", repair)

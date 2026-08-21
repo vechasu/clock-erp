@@ -1,0 +1,337 @@
+.products-workspace-header,
+.products-workspace-tabs,
+.products-workspace-metrics,
+.catalog-list-controls,
+.products-workspace-list {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.products-workspace-actions {
+    align-items: center;
+}
+
+.products-workspace-button {
+    display: inline-flex;
+    min-height: var(--erp-control-height, 40px);
+    align-items: center;
+    justify-content: center;
+    padding: 0 14px;
+    border: 1px solid var(--erp-border-strong, #cbd5e1);
+    border-radius: var(--erp-control-radius, 10px);
+    background: var(--erp-surface, #fff);
+    color: var(--erp-primary, #174887);
+    font: inherit;
+    font-size: var(--erp-type-control-size, 14px);
+    font-weight: var(--erp-type-control-weight, 700);
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.products-workspace-button:hover,
+.products-workspace-button:focus-visible {
+    border-color: #aebed1;
+    background: var(--erp-surface-muted, #f8fafc);
+}
+
+.products-workspace-button.is-primary {
+    border-color: var(--erp-primary, #174887);
+    background: var(--erp-primary, #174887);
+    color: var(--erp-primary-text, #fff);
+}
+
+.products-workspace-more {
+    position: relative;
+}
+
+.products-workspace-more > summary {
+    list-style: none;
+}
+
+.products-workspace-more > summary::-webkit-details-marker {
+    display: none;
+}
+
+.products-workspace-menu {
+    position: absolute;
+    z-index: var(--erp-z-dropdown, 1200);
+    top: calc(100% + 7px);
+    right: 0;
+    width: 230px;
+    padding: 6px;
+    border: 1px solid var(--erp-border, #dbe3ed);
+    border-radius: 11px;
+    background: var(--erp-surface, #fff);
+    box-shadow: 0 15px 35px rgba(15, 23, 42, .15);
+}
+
+.products-workspace-menu a {
+    display: block;
+    padding: 10px;
+    border-radius: 8px;
+    color: var(--erp-text, #26364a);
+    font-size: 13px;
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.products-workspace-menu a:hover {
+    background: var(--erp-surface-muted, #f1f5f9);
+}
+
+.products-workspace-metrics {
+    min-height: 86px;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    margin-bottom: var(--erp-space-3, 12px);
+}
+
+.products-workspace-metrics .erp-workspace-metric {
+    min-width: 0;
+    min-height: 78px;
+}
+
+.products-workspace-metrics .erp-stat-label,
+.products-workspace-metrics .erp-stat-value {
+    display: block;
+}
+
+.catalog-list-controls {
+    display: flex;
+    min-height: 64px;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+    padding: 10px;
+    border: 1px solid var(--erp-border, #e2e8f0);
+    border-radius: 14px;
+    background: var(--erp-surface, #fff);
+    box-shadow: 0 4px 16px rgba(15, 23, 42, .035);
+}
+
+.catalog-list-controls :is(.brand-search, .category-search) {
+    width: min(520px, 100%);
+    min-width: 180px;
+    flex: 1 1 360px;
+    margin: 0 !important;
+}
+
+.catalog-list-controls :is(input[type="search"], .brand-btn, .category-btn, .products-workspace-button) {
+    min-height: var(--erp-control-height, 40px);
+}
+
+.catalog-empty-toggle {
+    min-height: var(--erp-control-height, 40px);
+    align-items: center;
+}
+
+.brand-list,
+.category-table,
+.brand-panel,
+.detail-panel {
+    border-radius: 14px !important;
+    border-color: var(--erp-border, #e2e8f0) !important;
+    background: var(--erp-surface, #fff) !important;
+    box-shadow: 0 4px 16px rgba(15, 23, 42, .035) !important;
+}
+
+.categories-page .category-head > :not(:first-child) {
+    text-align: right;
+}
+
+.warehouse-table-scroll-shell {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: hidden;
+}
+
+/* The full-width drawer is translated off screen, but its box would still widen the page. */
+.warehouse-page .drawer:not(.open) {
+    display: none;
+}
+
+.warehouse-table-scroll-top {
+    width: 100%;
+    height: 14px;
+    margin: 0 0 5px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    scrollbar-gutter: stable;
+    -webkit-overflow-scrolling: touch;
+}
+
+.warehouse-table-scroll-top[hidden] {
+    display: none;
+}
+
+.warehouse-table-scroll-top-inner {
+    height: 1px;
+}
+
+.warehouse-page .table-card.erp-table-card:has(.warehouse-products-table) {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    contain: inline-size;
+    overflow-x: auto !important;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    scrollbar-gutter: stable;
+    -webkit-overflow-scrolling: touch;
+}
+
+.warehouse-page .warehouse-products-table {
+    table-layout: fixed !important;
+    min-width: max-content !important;
+}
+
+.warehouse-page .warehouse-products-table :is(
+    th[data-column-key="actions"],
+    td[data-column-key="actions"]
+) {
+    position: static !important;
+    right: auto !important;
+    box-shadow: none !important;
+}
+
+@media (max-width: 900px) {
+    .products-workspace-metrics,
+    .warehouse-page .products-workspace-metrics {
+        min-height: 172px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 767px) {
+    .products-workspace-header {
+        align-items: stretch !important;
+    }
+
+    .products-workspace-actions {
+        display: grid !important;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        width: 100%;
+    }
+
+    .products-workspace-actions > :last-child {
+        grid-column: 1 / -1;
+    }
+
+    .products-workspace-actions .products-workspace-button,
+    .products-workspace-actions .products-workspace-more {
+        width: 100%;
+    }
+
+    .products-workspace-more > summary {
+        width: 100%;
+    }
+
+    .products-workspace-metrics,
+    .warehouse-page .products-workspace-metrics {
+        min-height: 154px;
+    }
+
+    .products-workspace-metrics .erp-workspace-metric,
+    .warehouse-page .products-workspace-metrics .erp-workspace-metric {
+        min-height: 70px;
+    }
+
+    .catalog-list-controls {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .catalog-list-controls :is(.brand-search, .category-search) {
+        width: 100%;
+        min-width: 0;
+        flex-basis: auto;
+    }
+
+    .catalog-list-controls > :is(form, button) {
+        width: 100%;
+    }
+
+    .catalog-list-controls :is(.brand-btn, .category-btn) {
+        width: 100%;
+    }
+
+    .warehouse-products-table colgroup {
+        display: table-column-group !important;
+    }
+
+    .warehouse-products-table thead {
+        display: table-header-group !important;
+    }
+
+    .warehouse-page .table-card.erp-table-card:has(.warehouse-products-table) {
+        overflow-x: auto !important;
+        border: 1px solid var(--erp-border) !important;
+        border-radius: 14px !important;
+        background: #fff !important;
+        box-shadow: 0 4px 16px rgba(15, 23, 42, .035) !important;
+    }
+
+    .warehouse-page .warehouse-products-table,
+    .warehouse-page .warehouse-products-table tbody {
+        display: table-row-group;
+        width: auto !important;
+        min-width: max-content !important;
+    }
+
+    .warehouse-page .warehouse-products-table {
+        display: table !important;
+    }
+
+    .warehouse-page .warehouse-products-table thead {
+        display: table-header-group !important;
+    }
+
+    .warehouse-page .warehouse-products-table tbody tr {
+        display: table-row !important;
+        min-width: 0;
+        padding: 0;
+        overflow: visible;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+    }
+
+    .warehouse-page .warehouse-products-table tbody td[data-column-key] {
+        display: table-cell !important;
+        width: auto !important;
+        min-width: 0 !important;
+        height: var(--warehouse-row-height, 60px) !important;
+        padding: 8px 10px !important;
+        overflow: hidden;
+        border-bottom: 1px solid var(--erp-border, #e2e8f0);
+        background: #fff !important;
+        white-space: nowrap;
+    }
+
+    .warehouse-page .warehouse-products-table tbody td[hidden],
+    .warehouse-page .warehouse-products-table thead th[hidden],
+    .warehouse-page .warehouse-products-table col[hidden] {
+        display: none !important;
+    }
+
+    .warehouse-page .warehouse-products-table .warehouse-mobile-details {
+        display: none !important;
+    }
+
+    .warehouse-page .warehouse-products-table td[data-column-key="actions"] {
+        position: static !important;
+        box-shadow: none !important;
+    }
+}
+
+@media (max-width: 420px) {
+    .products-workspace-metrics .erp-stat-label {
+        font-size: 11px;
+    }
+
+    .products-workspace-metrics .erp-stat-value {
+        font-size: 20px;
+    }
+}
