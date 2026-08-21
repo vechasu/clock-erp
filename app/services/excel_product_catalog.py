@@ -7,6 +7,7 @@ Bitrix or MoySklad clients and therefore cannot change either external system.
 import json
 import math
 import re
+import unicodedata
 import uuid
 from datetime import datetime, timezone
 
@@ -33,6 +34,7 @@ from app.services.shared_catalog import (
     assign_product_taxonomy,
     catalog_contains_pattern,
     catalog_prefix_pattern,
+    catalog_search_key,
     ensure_brand,
     ensure_category,
     register_catalog_search,
@@ -70,6 +72,30 @@ PRODUCT_MUTABLE_COLUMNS = (
 )
 
 UNSET = object()
+
+
+def canonical_model_text(value):
+    value = unicodedata.normalize("NFKC", str(value or ""))
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def ensure_model_record(connection, brand_id, model):
+    model = canonical_model_text(model)
+    if not model or brand_id in (None, ""):
+        return None
+    normalized = re.sub(r"\s+", "", model).casefold()
+    existing = connection.execute(
+        "SELECT id FROM erp_models WHERE brand_id = ? AND normalized_name = ?",
+        (int(brand_id), normalized),
+    ).fetchone()
+    if existing is not None:
+        return existing["id"]
+    now = utc_now()
+    return connection.execute(
+        "INSERT INTO erp_models (brand_id, name, normalized_name, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (int(brand_id), model, normalized, now, now),
+    ).lastrowid
 
 
 def optional_price_text(value):
@@ -757,7 +783,7 @@ class ExcelProductCatalog:
     def __init__(self, database=None):
         self.database = database or CatalogDatabase(cache_initialization=True)
 
-    def list_products(self, query="", brand="", category="", cell="",
+    def list_products(self, query="", brand="", category="", cell="", model="",
                       match_status="all", hide_zero=False, sort_by="name",
                       sort_dir="asc", page=1, per_page=50,
                       created_from="", created_to="", brand_id=None,
@@ -805,6 +831,13 @@ class ExcelProductCatalog:
                 "1, length(?) + 1) = ? || '/')"
             )
             parameters.extend([category, category, category])
+        if model:
+            where.append(
+                "(p.model_id IN (SELECT id FROM erp_models WHERE normalized_name = ?) "
+                "OR catalog_search_key(replace(COALESCE(p.model, ''), ' ', '')) = ?)"
+            )
+            model_key = re.sub(r"\s+", "", canonical_model_text(model)).casefold()
+            parameters.extend([model_key, catalog_search_key(model_key)])
         if category_id not in (None, ""):
             selected_category_id = int(category_id)
             if selected_category_id == 0:
@@ -883,7 +916,7 @@ class ExcelProductCatalog:
             "ON cp.id = p.bitrix_catalog_product_id"
         )
         with self.database.connect() as connection:
-            if query:
+            if query or model:
                 register_catalog_search(connection)
             active_batch = connection.execute(
                 "SELECT * FROM catalog_excel_batches WHERE status = 'active' "
@@ -934,6 +967,7 @@ class ExcelProductCatalog:
             ).fetchall()
             brands = []
             categories = []
+            models = []
             brand_groups = []
             category_groups = []
             brand_all_count = 0
@@ -969,6 +1003,16 @@ class ExcelProductCatalog:
                     + visible_cards_sql + " "
                     "AND trim(COALESCE(p.excel_category, '')) <> '' "
                     "ORDER BY value"
+                ).fetchall()]
+                models = [row[0] for row in connection.execute(
+                    "SELECT MIN(trim(p.model)) AS value "
+                    "FROM catalog_excel_products p "
+                    "JOIN catalog_excel_batches b ON b.id = p.current_batch_id "
+                    "WHERE p.active = 1 AND " + visible_cards_sql + " "
+                    "AND trim(COALESCE(p.model, '')) <> '' "
+                    "GROUP BY CASE WHEN p.model_id IS NOT NULL THEN 'id:' || p.model_id "
+                    "ELSE 'text:' || lower(replace(trim(p.model), ' ', '')) END "
+                    "ORDER BY value COLLATE NOCASE"
                 ).fetchall()]
                 category_groups = [dict(row) for row in connection.execute(
                     "SELECT COALESCE(p.excel_category, '') AS name, "
@@ -1010,7 +1054,7 @@ class ExcelProductCatalog:
         return {
             "items": items, "total": total, "page": page, "per_page": per_page,
             "pages": pages,
-            "brands": brands, "categories": categories,
+            "brands": brands, "categories": categories, "models": models,
             "brand_groups": brand_groups, "category_groups": category_groups,
             "brand_all_count": brand_all_count,
             "cell_groups": cell_groups,
@@ -1139,7 +1183,7 @@ class ExcelProductCatalog:
         if not name:
             raise ValueError("Название товара обязательно.")
         article = text(article)
-        model = text(model)
+        model = canonical_model_text(model)
         if is_numeric_brand(brand):
             raise ValueError("Бренд не может состоять только из цифр.")
         brand = normalize_brand(brand)
@@ -1169,6 +1213,9 @@ class ExcelProductCatalog:
             )
             brand = brand_row["name"] if brand_row else ""
             category = category_row["name"] if category_row else ""
+            model_id = ensure_model_record(
+                connection, brand_row["id"] if brand_row else None, model
+            )
             duplicate = connection.execute(
                 "SELECT id, excel_name_raw FROM catalog_excel_products "
                 "WHERE active = 1 AND normalized_name = ? "
@@ -1216,7 +1263,7 @@ class ExcelProductCatalog:
             )
             columns = (
                 "source_key", "created_batch_id", "current_batch_id", "active",
-                "raw_excel_json", "excel_row", "excel_name_raw", "model", "normalized_name",
+                "raw_excel_json", "excel_row", "excel_name_raw", "model", "model_id", "normalized_name",
                 "excel_article", "article_quality", "excel_brand", "excel_category",
                 "brand_id", "category_id",
                 "stock", "cell", "stock_source", "file_sha256", "match_status",
@@ -1231,7 +1278,7 @@ class ExcelProductCatalog:
                 _json({"source": "manual", "name": name, "model": model, "article": article,
                        "brand": brand, "category": category, "cell": cell,
                        "stock": stock, "price": enrichment["bitrix_price_amount"]}),
-                excel_row, name, model or None, normalize_text(name), article or None,
+                excel_row, name, model or None, model_id, normalize_text(name), article or None,
                 article_quality(article), brand, category or None,
                 brand_row["id"] if brand_row else None,
                 category_row["id"] if category_row else None,
@@ -1294,7 +1341,7 @@ class ExcelProductCatalog:
                     raise ValueError("Название товара обязательно.")
                 values["normalized_name"] = normalize_text(values["excel_name_raw"])
             if model is not None:
-                values["model"] = text(model) or None
+                values["model"] = canonical_model_text(model) or None
             if article is not None:
                 normalized_article = text(article) or None
                 if normalized_article != (text(product["excel_article"]) or None):
@@ -1407,6 +1454,14 @@ class ExcelProductCatalog:
             values["raw_excel_json"] = _json(raw_excel)
             values["updated_at"] = utc_now()
             _restore_columns(connection, product_id, values, PRODUCT_MUTABLE_COLUMNS)
+            if model is not None or brand_changed:
+                values["model_id"] = ensure_model_record(
+                    connection, values.get("brand_id"), values.get("model")
+                )
+                connection.execute(
+                    "UPDATE catalog_excel_products SET model_id = ? WHERE id = ?",
+                    (values["model_id"], int(product_id)),
+                )
             assign_product_taxonomy(
                 connection,
                 product_id,
