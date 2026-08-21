@@ -1423,7 +1423,7 @@
         href="{{ url_for(
             'static',
             filename='css/erp-components.css',
-            v='sales-kpi-v1'
+            v='sales-list-v1'
         ) }}"
     >
     <link
@@ -1445,7 +1445,7 @@
     {% endif %}
 </head>
 
-<body class="sales-page">
+<body class="sales-page sales-list-page">
 {% from "_catalog_combobox.html" import render_catalog_combobox %}
 {% from "_filter_count.html" import render_filter_count %}
 {% from "_datetime_cell.html" import render_erp_datetime %}
@@ -1526,7 +1526,7 @@
             </div>
         </nav>
 
-        <div class="stats erp-stats erp-workspace-metrics">
+        <div class="stats sales-kpis erp-stats erp-workspace-metrics">
             <div class="stat-card erp-stat-card erp-workspace-metric">
                 <span class="stat-label erp-stat-label">
                     Продажи
@@ -2039,14 +2039,14 @@
 
             <div
                 id="salesActiveFilters"
-                class="erp-active-filters"
+                class="sales-active-filters erp-active-filters"
                 aria-label="Активные фильтры продаж"
                 hidden
             ></div>
 
-            <section class="table-card erp-table-card">
+            <section class="table-card erp-table-card erp-table-shell">
                 <div
-                    class="table-wrap erp-scroll-hint"
+                    class="table-wrap erp-table-scroll erp-scroll-hint"
                     data-erp-scroll-hint
                     tabindex="0"
                     aria-label="Таблица продаж с горизонтальной прокруткой"
@@ -2100,6 +2100,7 @@
 
                         <tbody>
                             {% for sale in sales %}
+                                {%- set product_image_url = sales_product_images.get(sale.product_id|string, '') -%}
                                 <tr
                                     class="sale-row{% if sale.is_manual %} manual-row{% else %} automatic-row{% endif %}{% if sale.is_cancelled %} is-cancelled{% elif sale.return_status == 'returned' %} is-returned{% elif sale.return_status == 'partially_returned' %} is-partially-returned{% endif %}"
                                     data-sale-id="{{ sale.id }}"
@@ -2127,10 +2128,13 @@
                                             {% elif column.key == "created_at" %}
                                                 {{ render_erp_datetime(value) }}
                                             {% elif column.key == "product_name" %}
-                                                <span
-                                                    class="{% if sale.is_manual %}manual-view-value{% else %}automatic-view-value{% endif %} product-name erp-product-primary"
-                                                >
-                                                    {{ value or "—" }}
+                                                <span class="sales-product-cell">
+                                                    <span class="sales-product-thumb{% if not product_image_url %} is-placeholder{% endif %}" aria-hidden="true">{% if product_image_url %}<img src="{{ product_image_url }}" alt="" loading="lazy" decoding="async" onerror="this.parentElement.classList.add('is-placeholder'); this.remove()">{% endif %}</span>
+                                                    <span
+                                                        class="{% if sale.is_manual %}manual-view-value{% else %}automatic-view-value{% endif %} product-name erp-product-primary"
+                                                    >
+                                                        {{ value or "—" }}
+                                                    </span>
                                                 </span>
                                             {% elif column.key == "order_status_label" %}
                                                 <span
@@ -2250,7 +2254,7 @@
                                         class="empty"
                                         colspan="{{ sales_columns|length + 1 }}"
                                     >
-                                        <div class="sales-empty-state">
+                                        <div class="sales-empty-state erp-empty-state">
                                             <strong>Продаж пока нет</strong>
                                             <span>
                                                 Добавьте первую продажу,
@@ -2278,17 +2282,21 @@
                 aria-label="Список продаж"
             >
                 {% for sale in sales %}
+                    {%- set product_image_url = sales_product_images.get(sale.product_id|string, '') -%}
                     <article
                         class="mobile-erp-card sales-mobile-card{% if sale.is_cancelled %} is-cancelled{% elif sale.return_status == 'returned' %} is-returned{% elif sale.return_status == 'partially_returned' %} is-partially-returned{% endif %}"
                         data-sale-id="{{ sale.id }}"
                     >
                         <div class="mobile-erp-card-header">
-                            <div>
-                                <div class="sales-mobile-date">
-                                    {{ render_erp_datetime(sale.created_at) }}
-                                </div>
-                                <div class="mobile-erp-card-title">
-                                    {{ sale.product_name or "Товар не указан" }}
+                            <div class="sales-mobile-product-heading">
+                                <span class="sales-product-thumb{% if not product_image_url %} is-placeholder{% endif %}" aria-hidden="true">{% if product_image_url %}<img src="{{ product_image_url }}" alt="" loading="lazy" decoding="async" onerror="this.parentElement.classList.add('is-placeholder'); this.remove()">{% endif %}</span>
+                                <div class="sales-mobile-product-copy">
+                                    <div class="sales-mobile-date">
+                                        {{ render_erp_datetime(sale.created_at) }}
+                                    </div>
+                                    <div class="mobile-erp-card-title">
+                                        {{ sale.product_name or "Товар не указан" }}
+                                    </div>
                                 </div>
                             </div>
                             <span
@@ -2453,7 +2461,7 @@
                     class="empty sales-mobile-filter-empty"
                     hidden
                 >
-                    <div class="sales-empty-state">
+                    <div class="sales-empty-state erp-empty-state">
                         <strong>Ничего не найдено</strong>
                         <span>
                             Измените условия поиска или сбросьте фильтры.
@@ -4190,7 +4198,7 @@
             const reset = document.createElement("button");
             reset.className = "erp-active-filters-reset";
             reset.type = "button";
-            reset.textContent = "Сбросить";
+            reset.textContent = "Сбросить всё";
             reset.addEventListener("click", () => navigateSales({brand_id: "", category_id: "", product_id: "", status: "", tab: "", source: activeSalesSource === "all" ? "all" : activeSalesSource}));
             container.appendChild(reset);
         }

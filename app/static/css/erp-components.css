@@ -1240,6 +1240,374 @@ body.modal-open {
     }
 }
 
+/* Sales list workspace: shared ERP component contract. */
+.sales-list-page {
+    background: var(--erp-canvas);
+    color: var(--erp-text);
+    font-family: var(--erp-font-family);
+}
+
+.sales-list-page .sales-data-card,
+.sales-list-page .erp-table-shell,
+.sales-list-page .erp-table-scroll,
+.sales-list-page .sales-mobile-list {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.sales-list-page .sales-kpis {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: var(--erp-space-2);
+    margin-bottom: var(--erp-space-3);
+}
+
+.sales-list-page .sales-kpis .erp-workspace-metric {
+    min-height: 64px;
+    padding: var(--erp-space-3) var(--erp-space-4);
+    border-color: var(--erp-border);
+    border-radius: var(--erp-radius);
+    background: var(--erp-surface);
+    box-shadow: var(--erp-shadow);
+}
+
+.sales-list-page .sales-kpis .erp-stat-label {
+    color: var(--erp-muted);
+    font: var(--erp-type-metric-label-weight) var(--erp-type-metric-label-size) / 1.25 var(--erp-font-family);
+}
+
+.sales-list-page .sales-kpis .erp-stat-value {
+    color: var(--erp-text);
+    font: var(--erp-type-metric-value-weight) var(--erp-type-metric-value-size) / 1 var(--erp-font-family);
+    font-variant-numeric: tabular-nums;
+}
+
+.sales-list-page .sales-data-toolbar {
+    min-width: 0;
+    margin: 0 0 var(--erp-space-2);
+    padding: var(--erp-space-2);
+    border: 1px solid var(--erp-border);
+    border-radius: var(--erp-radius);
+    background: var(--erp-surface);
+    box-shadow: none;
+}
+
+.sales-list-page .sales-search-wrap {
+    min-width: 220px;
+}
+
+.sales-list-page .sales-search-wrap .erp-search-input,
+.sales-list-page .sales-filter-field select,
+.sales-list-page .sales-product-combobox-trigger,
+.sales-list-page .sales-product-combobox-search,
+.sales-list-page .sales-mobile-sort select {
+    min-height: var(--erp-control-height);
+    border-color: var(--erp-border-strong);
+    border-radius: var(--erp-control-radius);
+    background: var(--erp-surface);
+    color: var(--erp-text);
+    font: 500 var(--erp-type-control-size) / 1.2 var(--erp-font-family);
+}
+
+.sales-list-page .sales-search-wrap .erp-search-input:hover:not(:disabled),
+.sales-list-page .sales-filter-field select:hover:not(:disabled),
+.sales-list-page .sales-product-combobox-trigger:hover:not(:disabled),
+.sales-list-page .sales-product-combobox-search:hover:not(:disabled),
+.sales-list-page .sales-mobile-sort select:hover:not(:disabled) {
+    border-color: var(--theme-border-hover, #cbd5e1);
+}
+
+.sales-list-page .sales-search-wrap .erp-search-input:focus,
+.sales-list-page .sales-filter-field select:focus,
+.sales-list-page .sales-product-combobox-trigger:focus-visible,
+.sales-list-page .sales-product-combobox-search:focus,
+.sales-list-page .sales-mobile-sort select:focus {
+    border-color: var(--erp-primary);
+    outline: 0;
+    box-shadow: var(--erp-focus-ring);
+}
+
+.sales-list-page :is(
+    .sales-search-wrap .erp-search-input,
+    .sales-filter-field select,
+    .sales-product-combobox-trigger,
+    .sales-product-combobox-search,
+    .sales-mobile-sort select
+):disabled {
+    cursor: not-allowed;
+    background: var(--erp-surface-muted);
+    color: var(--erp-muted);
+    opacity: 0.65;
+}
+
+.sales-list-page .sales-toolbar-action {
+    min-height: var(--erp-control-height);
+    border-radius: var(--erp-control-radius);
+    font: var(--erp-type-control-weight) var(--erp-type-control-size) / 1.2 var(--erp-font-family);
+}
+
+.sales-list-page .sales-toolbar-action:is(:hover, [aria-expanded="true"]):not(:disabled),
+.sales-list-page .sales-toolbar-action.is-active {
+    border-color: var(--erp-primary);
+    background: var(--theme-active, #eff6ff);
+    color: var(--erp-primary-hover);
+}
+
+.sales-list-page .sales-toolbar-action:focus-visible,
+.sales-list-page .sales-panel-close:focus-visible,
+.sales-list-page .sales-column-settings-close:focus-visible {
+    outline: 0;
+    box-shadow: var(--erp-focus-ring);
+}
+
+.sales-list-page .sales-active-filters {
+    margin-bottom: var(--erp-space-2);
+}
+
+.sales-list-page .erp-filter-chip {
+    background: var(--theme-info-soft, #dbeafe);
+    color: var(--erp-primary-hover);
+}
+
+.sales-list-page .erp-filter-chip:hover {
+    background: var(--theme-active, #bfdbfe);
+}
+
+.sales-list-page :is(.sales-filter-panel, .sales-column-settings-panel) {
+    border-color: var(--erp-border);
+    border-radius: var(--erp-radius);
+    background: var(--erp-surface);
+    color: var(--erp-text);
+    box-shadow: 0 16px 40px color-mix(in srgb, var(--erp-text) 16%, transparent);
+}
+
+.sales-list-page :is(
+    .sales-filter-panel-title,
+    .sales-column-settings-title
+) {
+    color: var(--erp-text);
+    font: var(--erp-type-section-title-weight) var(--erp-type-section-title-size) / 1.3 var(--erp-font-family);
+}
+
+.sales-list-page :is(
+    .sales-filter-panel-help,
+    .sales-column-settings-help,
+    .sales-column-settings-message
+) {
+    color: var(--erp-muted);
+}
+
+.sales-list-page .erp-table-shell {
+    overflow: hidden;
+    border-color: var(--erp-border);
+    border-radius: var(--erp-radius);
+    background: var(--erp-surface);
+    box-shadow: var(--erp-shadow);
+}
+
+.sales-list-page .erp-table-scroll {
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+}
+
+.sales-list-page .sales-table th,
+.sales-list-page .sales-table td {
+    border-color: var(--erp-border);
+    color: var(--erp-text);
+    font: var(--erp-type-table-cell-weight) var(--erp-type-table-cell-size) / 1.35 var(--erp-font-family);
+}
+
+.sales-list-page .sales-table th {
+    background: var(--theme-table-head-bg, var(--erp-surface-muted));
+    color: var(--theme-table-head-text, var(--erp-muted));
+    font: var(--erp-type-table-head-weight) var(--erp-type-table-head-size) / 1.25 var(--erp-font-family);
+}
+
+.sales-list-page .sales-table tbody tr:hover td,
+.sales-list-page .sales-table tbody tr:focus-within td {
+    background: var(--theme-table-row-hover, var(--erp-surface-muted));
+}
+
+.sales-list-page .sales-table tbody tr.is-selected td,
+.sales-list-page .sales-table tbody tr[aria-selected="true"] td {
+    background: var(--theme-active, #eff6ff);
+}
+
+.sales-list-page .sales-table :is(
+    .col-quantity_display,
+    .col-unit_price_display,
+    .col-delivery_cost_display
+) {
+    font-variant-numeric: tabular-nums;
+}
+
+.sales-list-page .sales-table :is(
+    .col-unit_price_display,
+    .col-delivery_cost_display
+) {
+    text-align: right;
+}
+
+.sales-list-page .sales-table.erp-data-table .col-actions,
+.sales-list-page .sales-table.erp-data-table tbody tr:hover td.col-actions,
+.sales-list-page .sales-table.erp-data-table tbody tr:focus-within td.col-actions {
+    background: var(--erp-surface);
+}
+
+.sales-list-page .sales-product-cell,
+.sales-list-page .sales-mobile-product-heading {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: var(--erp-space-2);
+}
+
+.sales-list-page .sales-product-thumb {
+    position: relative;
+    width: 32px;
+    height: 32px;
+    display: grid;
+    flex: 0 0 32px;
+    place-items: center;
+    overflow: hidden;
+    border: 1px solid var(--erp-border);
+    border-radius: var(--erp-radius-sm);
+    background: var(--erp-surface-muted);
+}
+
+.sales-list-page .sales-product-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: var(--erp-surface);
+}
+
+.sales-list-page .sales-product-thumb.is-placeholder::before {
+    width: 12px;
+    height: 12px;
+    border: 1px solid var(--erp-border-strong);
+    border-radius: 3px;
+    content: "";
+}
+
+.sales-list-page .sales-mobile-product-heading {
+    align-items: flex-start;
+}
+
+.sales-list-page .sales-mobile-product-copy {
+    min-width: 0;
+}
+
+.sales-list-page .sales-mobile-card {
+    min-width: 0;
+    border-color: var(--erp-border);
+    border-radius: var(--erp-radius);
+    background: var(--erp-surface);
+    color: var(--erp-text);
+    box-shadow: var(--erp-shadow);
+}
+
+.sales-list-page .sales-mobile-card :is(
+    .mobile-erp-card-title,
+    .mobile-erp-card-meta,
+    .sales-mobile-article,
+    .sales-mobile-identifiers,
+    .mobile-erp-detail-row > span
+) {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+}
+
+.sales-list-page .erp-empty-state {
+    color: var(--erp-muted);
+}
+
+.sales-list-page .erp-empty-state strong {
+    color: var(--erp-text);
+}
+
+@media (max-width: 1100px) {
+    .sales-list-page .sales-kpis {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .sales-list-page .sales-data-toolbar {
+        flex-wrap: wrap;
+    }
+
+    .sales-list-page .sales-search-wrap {
+        flex-basis: calc(100% - 260px);
+    }
+}
+
+@media (max-width: 767px) {
+    .sales-list-page .sales-page-actions {
+        width: 100%;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .sales-list-page .sales-page-actions > * {
+        width: 100%;
+        min-width: 0;
+    }
+
+    .sales-list-page .sales-search-wrap {
+        width: 100%;
+        min-width: 0;
+        flex-basis: 100%;
+    }
+
+    .sales-list-page .sales-data-toolbar > * {
+        max-width: 100%;
+    }
+}
+
+@media (max-width: 560px) {
+    .sales-list-page .sales-data-toolbar {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: var(--erp-space-2);
+    }
+
+    .sales-list-page .sales-data-toolbar > .sales-search-wrap {
+        grid-column: 1 / -1;
+    }
+
+    .sales-list-page .sales-data-toolbar .sales-date-filter,
+    .sales-list-page .sales-data-toolbar .warehouse-date-filter,
+    .sales-list-page .sales-data-toolbar .sales-period-control,
+    .sales-list-page .sales-data-toolbar .sales-toolbar-action {
+        width: 100%;
+        min-width: 0;
+    }
+
+    .sales-list-page .sales-kpis .erp-workspace-metric {
+        min-height: 58px;
+        align-items: flex-start;
+        padding: var(--erp-space-3);
+    }
+
+    .sales-list-page .sales-product-thumb {
+        width: 40px;
+        height: 40px;
+        flex-basis: 40px;
+    }
+}
+
+@media (max-width: 370px) {
+    .sales-list-page .sales-page-actions {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .sales-list-page .sales-kpis .erp-stat-value {
+        font-size: 20px;
+    }
+}
+
 /* Settings workspace: shared ERP component contract. */
 .settings-page {
     margin: 0;
@@ -8096,5 +8464,31 @@ select.erp-control {
     ) .erp-section-tab {
         padding-right: 12px;
         padding-left: 12px;
+    }
+}
+
+/* Sales toolbar order stays task-first on compact screens. */
+@media (max-width: 560px) {
+    .sales-list-page .sales-data-toolbar > .sales-search-wrap {
+        order: 0;
+    }
+
+    .sales-list-page .sales-data-toolbar > .sales-date-filter {
+        order: 1;
+    }
+
+    .sales-list-page .sales-data-toolbar > [data-sales-today] {
+        order: 2;
+    }
+
+    .sales-list-page .sales-data-toolbar > .sales-filter-settings {
+        order: 3;
+    }
+
+    .sales-list-page .sales-data-toolbar > :is(
+        .sales-focus-toggle,
+        .sales-mobile-sort
+    ) {
+        order: 4;
     }
 }
