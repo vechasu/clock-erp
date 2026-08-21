@@ -4,6 +4,7 @@ import sqlite3
 import tempfile
 import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest import mock
 
@@ -211,7 +212,7 @@ class AuthHardeningTest(unittest.TestCase):
     def test_bootstrap_is_atomic_and_only_for_empty_database(self):
         token = self.store.create_bootstrap_invitation(24)
         invitation = self.store.get_invitation(auth.invitation_digest(token))
-        self.assertEqual(invitation["role"], "admin")
+        self.assertEqual(invitation["role"], "superadmin")
         with self.assertRaises(auth.RegistrationError):
             self.store.create_bootstrap_invitation(24)
         self.register_invited(token, "owner@example.com")
@@ -220,7 +221,7 @@ class AuthHardeningTest(unittest.TestCase):
         with self.assertRaises(auth.RegistrationError):
             self.store.create_initial_admin("Owner", "Admin", "other@example.com", PASSWORD)
 
-    def test_idle_and_absolute_session_timeouts_remove_server_session(self):
+    def test_idle_and_absolute_session_timeouts_end_server_session(self):
         self.insert_user()
         self.login()
         row = self.session_row()
@@ -228,7 +229,8 @@ class AuthHardeningTest(unittest.TestCase):
             connection.execute("UPDATE auth_sessions SET expires_at = ? WHERE id = ?", (int(time.time()) - 1, row["id"]))
         self.assertEqual(self.client.get("/app/settings").status_code, 302)
         with self.store.connect() as connection:
-            self.assertIsNone(connection.execute("SELECT 1 FROM auth_sessions WHERE id = ?", (row["id"],)).fetchone())
+            ended = connection.execute("SELECT ended_at FROM auth_sessions WHERE id = ?", (row["id"],)).fetchone()
+            self.assertIsNotNone(ended["ended_at"])
 
         client = web.app.test_client()
         self.login(client=client)
@@ -240,7 +242,8 @@ class AuthHardeningTest(unittest.TestCase):
             )
         self.assertEqual(client.get("/app/settings").status_code, 302)
         with self.store.connect() as connection:
-            self.assertIsNone(connection.execute("SELECT 1 FROM auth_sessions WHERE id = ?", (row["id"],)).fetchone())
+            ended = connection.execute("SELECT ended_at FROM auth_sessions WHERE id = ?", (row["id"],)).fetchone()
+            self.assertIsNotNone(ended["ended_at"])
 
     def test_logout_and_session_version_revoke_sessions(self):
         user_id = self.insert_user()
@@ -249,7 +252,8 @@ class AuthHardeningTest(unittest.TestCase):
         response = self.client.post("/logout", data={"csrf_token": self.csrf()})
         self.assertEqual(response.status_code, 302)
         with self.store.connect() as connection:
-            self.assertIsNone(connection.execute("SELECT 1 FROM auth_sessions WHERE id = ?", (row_id,)).fetchone())
+            ended = connection.execute("SELECT ended_at FROM auth_sessions WHERE id = ?", (row_id,)).fetchone()
+            self.assertIsNotNone(ended["ended_at"])
 
         self.login()
         with self.store.connect() as connection:
@@ -325,11 +329,11 @@ class AuthHardeningTest(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 403)
 
-    def test_admin_can_see_create_and_revoke_invitations(self):
-        self.insert_user(role="admin")
+    def test_superadmin_can_see_create_and_revoke_invitations(self):
+        self.insert_user(role="superadmin")
         self.login()
-        page = self.client.get("/app/settings")
-        self.assertIn("Приглашения сотрудников", page.get_data(as_text=True))
+        page = self.client.get("/app/access")
+        self.assertIn("Сотрудники и доступ", page.get_data(as_text=True))
         created = self.client.post(
             "/settings/invitations",
             data={
@@ -337,6 +341,8 @@ class AuthHardeningTest(unittest.TestCase):
                 "email": "new@example.com",
                 "role": "employee",
                 "lifetime_hours": "24",
+                "current_password": PASSWORD,
+                "confirmation": auth.SENSITIVE_CONFIRMATION_VALUE,
             },
         )
         self.assertEqual(created.status_code, 200)
@@ -347,6 +353,135 @@ class AuthHardeningTest(unittest.TestCase):
         )
         self.assertEqual(revoked.status_code, 302)
         self.assertEqual(self.store.list_invitations()[0]["status"], "revoked")
+
+    def test_closed_registration_page_only_exposes_safe_message(self):
+        html = self.client.get("/register").get_data(as_text=True)
+        self.assertIn(auth.REGISTRATION_CLOSED_MESSAGE, html)
+        self.assertNotIn('name="password"', html)
+        self.assertNotIn('name="email"', html)
+
+    def test_invalid_invitation_states_share_one_public_message(self):
+        tokens = ["unknown-token"]
+        for state in ("used", "revoked"):
+            token = self.store.create_invitation(None, None, "employee", 24)
+            with self.store.connect() as connection:
+                connection.execute(
+                    "UPDATE invitations SET state = ? WHERE token_hash = ?",
+                    (state, auth.invitation_digest(token)),
+                )
+            tokens.append(token)
+        expired = self.store.create_invitation(None, None, "employee", 24)
+        with self.store.connect() as connection:
+            connection.execute(
+                "UPDATE invitations SET expires_at = ? WHERE token_hash = ?",
+                (int(time.time()) - 1, auth.invitation_digest(expired)),
+            )
+        tokens.append(expired)
+        for token in tokens:
+            client = web.app.test_client()
+            response = client.post(
+                "/register/invitation",
+                data={"csrf_token": self.csrf(client), "invitation_token": token},
+                follow_redirects=True,
+            )
+            self.assertIn(auth.INVITATION_PUBLIC_ERROR, response.get_data(as_text=True))
+
+    def test_invitation_claim_is_atomic_under_concurrency(self):
+        token = self.store.create_invitation(None, None, "employee", 24)
+        digest = auth.invitation_digest(token)
+
+        def register(index):
+            try:
+                user = self.store.register_user(
+                    digest, "", "", "parallel{}@example.com".format(index), PASSWORD
+                )
+                return user["id"]
+            except auth.RegistrationError:
+                return None
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(register, (1, 2)))
+        self.assertEqual(sum(result is not None for result in results), 1)
+        self.assertEqual(self.store.get_invitation(digest)["status"], "used")
+
+    def test_employee_cannot_see_or_open_access_panel(self):
+        self.insert_user(role="employee")
+        self.login()
+        settings_html = self.client.get("/app/settings").get_data(as_text=True)
+        self.assertNotIn('href="/app/access"', settings_html)
+        self.assertEqual(self.client.get("/app/access").status_code, 403)
+
+    def test_blocking_user_revokes_all_sessions_immediately(self):
+        admin_id = self.insert_user("admin@example.com", role="superadmin")
+        employee_id = self.insert_user("staff@example.com")
+        employee_client = web.app.test_client()
+        self.login("staff@example.com", client=employee_client)
+        self.store.update_user(admin_id, employee_id, active=False)
+        self.assertEqual(employee_client.get("/app/settings").status_code, 302)
+        with self.store.connect() as connection:
+            active = connection.execute(
+                "SELECT COUNT(*) FROM auth_sessions WHERE user_id = ? AND revoked_at IS NULL AND ended_at IS NULL",
+                (employee_id,),
+            ).fetchone()[0]
+        self.assertEqual(active, 0)
+
+    def test_single_session_revoke_and_password_change_revoke_real_access(self):
+        user_id = self.insert_user()
+        first = web.app.test_client()
+        second = web.app.test_client()
+        self.login(client=first)
+        self.login(client=second)
+        first_row = self.session_row(first)
+        self.assertTrue(self.store.revoke_session(user_id, first_row["id"]))
+        self.assertEqual(first.get("/app/settings").status_code, 302)
+        second_sid = second.get_cookie("session").value
+        version = self.store.change_password(
+            user_id, "new secure employee password",
+            hashlib.sha256(second_sid.encode()).hexdigest(),
+        )
+        with second.session_transaction() as session_data:
+            session_data["session_version"] = version
+        self.assertEqual(second.get("/app/settings").status_code, 200)
+
+    def test_self_protection_and_last_superadmin_guard_are_transactional(self):
+        owner_id = self.insert_user(role="superadmin")
+        with self.assertRaisesRegex(ValueError, "собственную"):
+            self.store.update_user(owner_id, owner_id, active=False)
+        other_id = self.insert_user("other-admin@example.com", role="superadmin")
+        self.store.update_user(owner_id, other_id, role="employee")
+        with self.assertRaisesRegex(ValueError, "без активного"):
+            self.store.update_user(other_id, owner_id, role="employee")
+
+    def test_security_log_records_actor_without_secrets(self):
+        admin_id = self.insert_user(role="superadmin")
+        target_id = self.insert_user("staff@example.com")
+        self.store.record_security_event(
+            "employee_access_changed", "success", actor_user_id=admin_id,
+            target_type="user", target_id=target_id,
+            metadata={"role": "employee", "password": "must-not-appear"},
+        )
+        event = self.store.list_security_events(1)[0]
+        self.assertEqual(event["actor_email"], "owner@example.com")
+        self.assertNotIn("must-not-appear", event["metadata_json"])
+        self.assertNotIn("password", event["metadata_json"])
+
+    def test_temporary_password_is_one_time_display_and_forces_change(self):
+        admin_id = self.insert_user("admin@example.com", role="superadmin")
+        employee_id = self.insert_user("staff@example.com")
+        temporary = self.store.issue_temporary_password(admin_id, employee_id)
+        self.assertNotIn(temporary, self.database_path.read_bytes().decode("utf-8", errors="ignore"))
+        employee_client = web.app.test_client()
+        response = self.login("staff@example.com", temporary, employee_client)
+        self.assertEqual(response.headers["Location"], "/change-password")
+        self.assertEqual(employee_client.get("/app/settings").headers["Location"], "/change-password")
+
+    def test_access_page_and_event_queries_never_return_password_hashes(self):
+        self.insert_user(role="superadmin")
+        self.login()
+        html = self.client.get("/app/access").get_data(as_text=True)
+        self.assertNotIn("password_hash", html)
+        self.assertNotIn("correct horse battery", html)
+        self.assertNotIn("pbkdf2:", html)
 
     def test_email_verification_token_is_one_time_and_expires(self):
         user_id = self.insert_user("pending@example.com", verified=False)
@@ -463,6 +598,67 @@ class AuthHardeningTest(unittest.TestCase):
             count = connection.execute("SELECT COUNT(*) FROM users WHERE email_normalized = 'legacy@example.com'").fetchone()[0]
         self.assertTrue({"email_verified_at", "updated_at", "session_version", "last_login_at"}.issubset(columns))
         self.assertEqual(count, 1)
+
+    def test_hardened_legacy_schema_preserves_hash_and_auth_state(self):
+        legacy_path = Path(self.temp_directory.name) / "hardened-legacy.db"
+        now = int(time.time())
+        password_hash = generate_password_hash(PASSWORD, method=auth.PASSWORD_HASH_METHOD)
+        invitation_hash = auth.invitation_digest("legacy-invitation")
+        with sqlite3.connect(str(legacy_path)) as connection:
+            connection.executescript(
+                """
+                CREATE TABLE users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    first_name TEXT NOT NULL, last_name TEXT NOT NULL,
+                    email TEXT NOT NULL, email_normalized TEXT NOT NULL UNIQUE,
+                    password_hash TEXT NOT NULL,
+                    role TEXT NOT NULL CHECK (role IN ('employee', 'admin')),
+                    active INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL,
+                    email_verified_at INTEGER, updated_at INTEGER,
+                    session_version INTEGER NOT NULL DEFAULT 1,
+                    last_login_at INTEGER
+                );
+                CREATE TABLE invitations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    token_hash TEXT NOT NULL UNIQUE, email TEXT, email_normalized TEXT,
+                    role TEXT NOT NULL CHECK (role IN ('employee', 'admin')),
+                    expires_at INTEGER NOT NULL,
+                    state TEXT NOT NULL DEFAULT 'active', created_by INTEGER,
+                    created_at INTEGER NOT NULL, used_at INTEGER, used_by INTEGER
+                );
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO users (
+                    first_name,last_name,email,email_normalized,password_hash,role,
+                    active,created_at,email_verified_at,updated_at,session_version,last_login_at
+                ) VALUES ('Owner','TicTacToy','owner@example.com','owner@example.com',
+                          ?,'admin',1,?,?,?,?,?)
+                """,
+                (password_hash, now, now, now, 7, now - 60),
+            )
+            connection.execute(
+                """
+                INSERT INTO invitations (
+                    token_hash, role, expires_at, state, created_by, created_at
+                ) VALUES (?, 'admin', ?, 'active', 1, ?)
+                """,
+                (invitation_hash, now + 3600, now),
+            )
+        migrated = auth.AuthStore(legacy_path)
+        user = migrated.get_user(1)
+        invitation = migrated.get_invitation(invitation_hash)
+        with migrated.connect() as connection:
+            stored_hash = connection.execute(
+                "SELECT password_hash FROM users WHERE id = 1"
+            ).fetchone()[0]
+        self.assertEqual(user["role"], "superadmin")
+        self.assertEqual(user["session_version"], 7)
+        self.assertEqual(user["last_login_at"], now - 60)
+        self.assertEqual(stored_hash, password_hash)
+        self.assertEqual(invitation["role"], "superadmin")
+        migrated.create_invitation(1, None, "superadmin", 24)
 
     def test_route_registry_has_no_public_business_endpoint(self):
         public = {

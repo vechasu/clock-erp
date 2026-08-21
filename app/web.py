@@ -150,6 +150,7 @@ from flask import (
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.exceptions import HTTPException
 from app.auth import (
+    SUPERADMIN_ROLES,
     configure_auth,
     csrf_token,
     current_auth_user,
@@ -14404,7 +14405,7 @@ _catalog_application = CatalogApplication(
 
 def _product_force_delete_allowed():
     user = current_auth_user() or {}
-    return str(user.get("role") or "").strip() == "admin"
+    return str(user.get("role") or "").strip() in SUPERADMIN_ROLES
 
 
 def _product_force_delete_requested(payload):
@@ -15158,13 +15159,27 @@ NAVIGATION_DEFINITIONS = [
         "active_prefixes": ["/app/repairs", "/repair"],
     },
     {
+        "key": "access",
+        "label": "Сотрудники и доступ",
+        "description": "Управление аккаунтами и сессиями.",
+        "icon": "settings",
+        "href": "/app/access",
+        "mobile_href": "/app/access",
+        "position": 7,
+        "group": "system",
+        "mobile_primary": False,
+        "active_exact": [],
+        "active_prefixes": ["/app/access"],
+        "roles": ["superadmin", "admin"],
+    },
+    {
         "key": "settings",
         "label": "Настройки",
         "description": "Настройки ERP.",
         "icon": "settings",
         "href": "/app/settings",
         "mobile_href": "/app/settings",
-        "position": 7,
+        "position": 8,
         "group": "system",
         "mobile_primary": False,
         "active_exact": [],
@@ -15187,9 +15202,12 @@ def get_active_navigation_key(current_path):
 def get_navigation_items(include_disabled=False):
     del include_disabled
     active_key = get_active_navigation_key(request.path)
+    user = current_auth_user()
+    role = user.get("role") if user else None
     return [
         {**definition, "enabled": True, "active": definition["key"] == active_key}
         for definition in NAVIGATION_DEFINITIONS
+        if not definition.get("roles") or role in definition["roles"]
     ]
 
 
@@ -19216,7 +19234,7 @@ def api_repair_status(case_id):
     try:
         payload = api_json_payload()
         user = current_auth_user()
-        if user and user.get("role") != "admin":
+        if user and user.get("role") not in SUPERADMIN_ROLES:
             return api_error(
                 "REPAIR_PERMISSION_DENIED",
                 "Ручное исправление статуса доступно только администратору.",

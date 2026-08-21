@@ -153,7 +153,7 @@
                             {{ invitation.email or "Без привязки к email" }}
                         </div>
                         <div class="invitation-meta">
-                            {{ "Администратор" if invitation.role == "admin" else "Сотрудник" }}
+                            {{ "Суперадминистратор" if invitation.role in ("superadmin", "admin") else "Сотрудник" }}
                             · до {{ invitation.expires_at_text }}
                         </div>
                     </div>
