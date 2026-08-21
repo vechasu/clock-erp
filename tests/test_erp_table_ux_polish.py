@@ -44,7 +44,8 @@ class ErpTableUxPolishTest(unittest.TestCase):
         self.assertNotIn('id="warehouseFilterInStock"', source)
         self.assertNotIn('name="in_stock"', source)
         self.assertNotIn("Только в наличии", source)
-        self.assertIn("view='out_of_stock'", source)
+        workspace = self.source("app/templates/_products_workspace.html")
+        self.assertIn("'out_of_stock'", workspace)
 
     def test_resize_scroll_and_action_column_contracts_remain(self):
         contracts = {

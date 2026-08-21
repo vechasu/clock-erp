@@ -4007,6 +4007,8 @@
     <script src="{{ url_for('static', filename='js/toolbar-popover-coordinator.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/table-scroll-hint.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/erp-modal-shell.js') }}"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/products-workspace.css') }}">
+    <script defer src="{{ url_for('static', filename='js/products-tabs.js') }}"></script>
     {% if config.TESTING and request.args.get("datetime_e2e") == "1" %}
         <script defer src="{{ url_for('static', filename='js/datetime-cell-e2e.js') }}"></script>
     {% endif %}
@@ -4016,45 +4018,17 @@
     {% from "_filter_count.html" import render_filter_count %}
     {% from "_navigation_icons.html" import navigation_icon %}
     {% from "_datetime_cell.html" import render_erp_datetime %}
+    {% from "_products_workspace.html" import products_workspace_header %}
     <div class="app">
         {% include "_sidebar.html" %}
 
         <main class="main">
-            <header class="erp-workspace-header">
-                <div class="erp-workspace-heading">
-                    <h1>Товары</h1>
-                    <p>Каталог и складские остатки</p>
-                </div>
-                <div class="erp-workspace-actions">
-                    <a
-                        class="erp-workspace-primary"
-                        href="{{ url_for('warehouse_inventory_page') }}"
-                        style="background:#fff;color:#174887;border:1px solid #b8c8dc;text-decoration:none"
-                    >Инвентаризация</a>
-                    <details class="warehouse-header-more">
-                        <summary class="erp-workspace-primary" style="background:#fff;color:#174887;border:1px solid #b8c8dc">Ещё</summary>
-                        <div class="warehouse-header-menu">
-                            <a href="{{ export_filtered_url }}">Экспортировать найденные</a>
-                            <a href="{{ export_all_url }}">Экспортировать все товары</a>
-                        </div>
-                    </details>
-                    <button
-                        id="openWarehouseAddModal"
-                        class="erp-workspace-primary erp-primary-action"
-                        type="button"
-                        onclick="toggleWarehouseAddCard()"
-                    >
-                        + Добавить товар
-                    </button>
-                </div>
-            </header>
-
-            <nav class="erp-section-tabs" aria-label="Раздел товаров">
-                <a class="erp-section-tab{% if not out_of_stock %} is-active{% endif %}" href="{{ url_for('warehouse_page') }}"{% if not out_of_stock %} aria-current="page"{% endif %}>В наличии <span class="warehouse-tab-badge">{{ in_stock_count }}</span></a>
-                <a class="erp-section-tab{% if out_of_stock %} is-active{% endif %}" href="{{ url_for('warehouse_page', view='out_of_stock') }}"{% if out_of_stock %} aria-current="page"{% endif %}>Нет в наличии <span class="warehouse-tab-badge">{{ out_of_stock_count }}</span></a>
-                <a class="erp-section-tab" href="{{ url_for('warehouse_page', view='brands') }}">Бренды</a>
-                <a class="erp-section-tab" href="{{ url_for('warehouse_page', view='categories') }}">Категории</a>
-            </nav>
+            {{ products_workspace_header(
+                'out_of_stock' if out_of_stock else 'products',
+                product_metrics,
+                add_button=true,
+                export_filtered_url=export_filtered_url
+            ) }}
 
             {% if request.args.get("notice") and request.args.get("message") %}
                 <div
@@ -4096,12 +4070,6 @@
                     </div>
                 </section>
             {% endif %}
-
-            <div class="warehouse-compact-summary" aria-label="Сводка по остаткам">
-                <span><strong id="visiblePositionsCount">{{ visible_positions }}</strong> позиций в наличии</span>
-                <span class="warehouse-compact-summary-divider" aria-hidden="true">•</span>
-                <span><strong id="totalStockCount">{{ total_stock_display }}</strong> единиц на складе</span>
-            </div>
 
             <div
                 id="warehouseActiveFilters"
@@ -4576,8 +4544,10 @@
                 role="status"
                 aria-live="polite"
             ></div>
-            <div id="warehouseResults">
+            <div id="warehouseResults" class="warehouse-table-scroll-shell">
+            <div id="warehouseTableScrollTop" class="warehouse-table-scroll-top" aria-label="Горизонтальная прокрутка таблицы" tabindex="0" hidden><div class="warehouse-table-scroll-top-inner"></div></div>
             <div
+                id="warehouseTableScrollBody"
                 class="table-card erp-table-card erp-scroll-hint"
                 data-erp-scroll-hint
                 tabindex="0"
@@ -4796,8 +4766,9 @@
                                     {% if out_of_stock %}
                                     <td data-column-key="platform_checks">
                                         <div class="out-of-stock-checks" data-cycle-id="{{ item.out_of_stock_cycle.cycle_id }}">
+                                            {% set cycle_checks = item.out_of_stock_cycle.get("checks", {}) %}
                                             {% for platform, label in (("ziiiro", "Ziiiro"), ("wildberries", "WB"), ("tictactoy", "TTT")) %}
-                                                {% set check = item.out_of_stock_cycle.checks.get(platform, {}) %}
+                                                {% set check = cycle_checks.get(platform, {}) %}
                                                 <label class="out-of-stock-check{% if not check.checked %} is-pending{% endif %}">
                                                     <input type="checkbox" data-product-id="{{ item.id }}" data-platform="{{ platform }}"{% if check.checked %} checked{% endif %} onchange="updateOutOfStockCheck(this)">
                                                     <span>Отключён на {{ label }}</span>
@@ -6973,19 +6944,64 @@
                 if (!column || !column.hidden) totalWidth += width;
             });
             table.style.width = totalWidth + "px";
+            syncWarehouseTableScrollbars(table);
         }
 
         function applyWarehouseColumnVisibility(table, hidden) {
-            const desktop = window.matchMedia("(min-width: 768px)").matches;
             const safeHidden = hidden.filter(function(key) {
                 return warehouseTableDefaults.order.includes(key)
                     && !warehouseTableRequiredColumns.includes(key);
             });
             table.querySelectorAll("[data-column-key]").forEach(function(element) {
-                element.hidden = desktop
-                    && safeHidden.includes(element.dataset.columnKey);
+                element.hidden = safeHidden.includes(element.dataset.columnKey);
             });
             return safeHidden;
+        }
+
+        function syncWarehouseTableScrollbars(table) {
+            window.requestAnimationFrame(function() {
+                const body = document.getElementById("warehouseTableScrollBody");
+                const top = document.getElementById("warehouseTableScrollTop");
+                const inner = top?.querySelector(".warehouse-table-scroll-top-inner");
+                if (!body || !top || !inner || !table) return;
+                const width = Math.max(table.scrollWidth, table.getBoundingClientRect().width);
+                inner.style.width = width + "px";
+                top.hidden = width <= body.clientWidth + 1;
+                top.classList.toggle("has-horizontal-overflow", !top.hidden);
+            });
+        }
+
+        function initializeWarehouseTableScrollbars(table, viewSignal) {
+            const body = document.getElementById("warehouseTableScrollBody");
+            const top = document.getElementById("warehouseTableScrollTop");
+            if (!body || !top) return;
+            let syncing = false;
+            function mirror(source, target) {
+                if (syncing) return;
+                syncing = true;
+                target.scrollLeft = source.scrollLeft;
+                window.requestAnimationFrame(function() { syncing = false; });
+            }
+            top.addEventListener("scroll", function() {
+                mirror(top, body);
+            }, { signal: viewSignal });
+            body.addEventListener("scroll", function() {
+                mirror(body, top);
+            }, { signal: viewSignal });
+            window.addEventListener("resize", function() {
+                syncWarehouseTableScrollbars(table);
+            }, { signal: viewSignal });
+            if (window.ResizeObserver) {
+                const observer = new ResizeObserver(function() {
+                    syncWarehouseTableScrollbars(table);
+                });
+                observer.observe(body);
+                observer.observe(table);
+                viewSignal.addEventListener("abort", function() {
+                    observer.disconnect();
+                }, { once: true });
+            }
+            syncWarehouseTableScrollbars(table);
         }
 
         function syncWarehouseColumnSettings(panel, view) {
@@ -7098,6 +7114,7 @@
                 "warehouse-table-ready"
             );
             initializeWarehouseColumnSettings(table, view, viewSignal);
+            initializeWarehouseTableScrollbars(table, viewSignal);
 
             window.matchMedia("(min-width: 768px)").addEventListener(
                 "change",
@@ -8707,8 +8724,8 @@
 
             function responseHtml(query) {
                 return initialResults.replace(
-                    '<div id="warehouseResults">',
-                    '<div id="warehouseResults"><span id="warehouseSearchMarker" data-result-query="'
+                    '<div id="warehouseResults" class="warehouse-table-scroll-shell">',
+                    '<div id="warehouseResults" class="warehouse-table-scroll-shell"><span id="warehouseSearchMarker" data-result-query="'
                         + query + '"></span>'
                 ) + '<span id="visiblePositionsCount">1</span>'
                     + '<span id="totalStockCount">1</span>';

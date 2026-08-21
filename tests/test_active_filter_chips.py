@@ -11,6 +11,9 @@ class ActiveFilterChipsTest(unittest.TestCase):
 
     def setUp(self):
         self.warehouse = self.source("app/templates/warehouse.html")
+        self.products_workspace = self.source(
+            "app/templates/_products_workspace.html"
+        )
         self.sales = self.source("app/templates/sales.html")
         self.receipts = self.source("app/templates/receipts.html")
         self.css = self.source("app/static/css/erp-components.css")
@@ -86,7 +89,7 @@ class ActiveFilterChipsTest(unittest.TestCase):
         self.assertIn('id="warehouseSearchInput"', self.warehouse)
         self.assertNotIn('id="warehouseInStockToggle"', self.warehouse)
         self.assertNotIn('name="in_stock"', self.warehouse)
-        self.assertIn("view='out_of_stock'", self.warehouse)
+        self.assertIn("'out_of_stock'", self.products_workspace)
         reset = self.warehouse.split(
             "function resetWarehouseTableFilters()", 1
         )[1].split("function clearWarehouseFilter", 1)[0]

@@ -10,23 +10,26 @@ class ProductsRedesignStructureTest(unittest.TestCase):
         return (ROOT / "app" / "templates" / name).read_text(encoding="utf-8")
 
     def test_four_tabs_are_persistent_on_all_catalog_screens(self):
+        workspace = self.source("_products_workspace.html")
         for name in (
             "warehouse.html", "warehouse_brands.html", "warehouse_categories.html"
         ):
             source = self.source(name)
-            for label in ("В наличии", "Нет в наличии", "Бренды", "Категории"):
-                self.assertIn(label, source)
-            self.assertIn("warehouse-tab-badge", source)
+            self.assertIn("products_workspace_header", source)
             self.assertNotIn("Часы закончились", source)
+        for label in ("В наличии", "Нет в наличии", "Бренды", "Категории"):
+            self.assertIn(label, workspace)
+        self.assertIn("warehouse-tab-badge", workspace)
 
     def test_products_header_and_actions_match_compact_design(self):
         source = self.source("warehouse.html")
-        self.assertIn("Каталог и складские остатки", source)
-        self.assertIn("warehouse-compact-summary", source)
-        self.assertIn("Экспортировать найденные", source)
-        self.assertIn("Экспортировать все товары", source)
-        self.assertIn(">Инвентаризация</a>", source)
-        self.assertIn("+ Добавить товар", source)
+        workspace = self.source("_products_workspace.html")
+        self.assertIn("Каталог и складские остатки", workspace)
+        self.assertIn("products-workspace-metrics", workspace)
+        self.assertIn("Экспортировать найденные", workspace)
+        self.assertIn("Экспортировать все товары", workspace)
+        self.assertIn(">Инвентаризация</a>", workspace)
+        self.assertIn("+ Добавить товар", workspace)
         self.assertNotIn("Только в наличии", source)
 
     def test_brand_and_category_lists_offer_empty_toggle_and_correct_metrics(self):
@@ -49,6 +52,39 @@ class ProductsRedesignStructureTest(unittest.TestCase):
         self.assertIn("width:40px", brands)
         self.assertIn("height:40px", brands)
         self.assertIn("overflow-x: auto", products)
+
+    def test_table_has_synchronized_top_scrollbar_and_mobile_overflow(self):
+        products = self.source("warehouse.html")
+        css = (ROOT / "app/static/css/products-workspace.css").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('id="warehouseTableScrollTop"', products)
+        self.assertIn('id="warehouseTableScrollBody"', products)
+        self.assertIn("initializeWarehouseTableScrollbars", products)
+        self.assertIn("target.scrollLeft = source.scrollLeft", products)
+        self.assertIn("overflow-x: auto !important", css)
+        self.assertIn("contain: layout paint inline-size", css)
+        self.assertIn("overflow-x: clip", css)
+        self.assertIn("display: table !important", css)
+
+    def test_tab_state_is_namespaced_by_compatible_view(self):
+        script = (ROOT / "app/static/js/products-tabs.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("allowedParameters", script)
+        self.assertIn('brands: ["q", "show_empty", "brand_id"]', script)
+        self.assertIn("storagePrefix + view", script)
+        self.assertIn('url.searchParams.delete("view")', script)
+        self.assertIn("event.preventDefault()", script)
+        self.assertIn("await fetch(targetUrl", script)
+        self.assertIn("document.write(html)", script)
+        self.assertIn('window.addEventListener("popstate"', script)
+
+    def test_out_of_stock_checks_tolerate_an_empty_cycle(self):
+        products = self.source("warehouse.html")
+        self.assertIn(
+            'item.out_of_stock_cycle.get("checks", {})', products
+        )
 
 
 if __name__ == "__main__":

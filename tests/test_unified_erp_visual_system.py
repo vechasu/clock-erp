@@ -67,7 +67,8 @@ class UnifiedErpVisualSystemTest(unittest.TestCase):
         self.assertEqual(modal.count('id="warehouseAddForm"'), 1)
         self.assertIn("closeWarehouseAddModal()", modal)
         self.assertNotIn(" is-hidden", modal)
-        self.assertIn('id="openWarehouseAddModal"', source)
+        header = self.source("app/templates/_products_workspace.html")
+        self.assertIn('id="openWarehouseAddModal"', header)
         self.assertIn("document.body.classList.add(\"modal-open\")", source)
 
     def test_shared_modal_shell_keeps_page_visible_and_locked(self):
