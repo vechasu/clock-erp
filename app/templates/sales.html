@@ -2228,7 +2228,7 @@
                                                 {% endif %}
                                                 {% if sales_view != 'archive' and sale.is_cancelled %}
                                                     <button
-                                                        class="sales-menu-danger"
+                                                        class="sales-row-delete sales-menu-danger"
                                                         type="button"
                                                         role="menuitem"
                                                         data-sale="{{ sale|tojson|forceescape }}"
@@ -2430,7 +2430,7 @@
                                 {% endif %}
                                 {% if sales_view != 'archive' and sale.is_cancelled %}
                                     <button
-                                        class="sales-menu-danger"
+                                        class="sales-row-delete sales-menu-danger"
                                         type="button"
                                         role="menuitem"
                                         data-sale="{{ sale|tojson|forceescape }}"
@@ -8417,7 +8417,15 @@
             document.querySelectorAll(selector)
         ).find((element) => element.getClientRects().length > 0);
         try {
-            const menuTrigger = visible("[data-sales-actions-trigger]");
+            const menuTrigger = Array.from(
+                document.querySelectorAll("[data-sales-actions-trigger]")
+            ).find((element) => {
+                const panel = document.getElementById(
+                    element.getAttribute("aria-controls")
+                );
+                return element.getClientRects().length > 0
+                    && panel?.querySelector(".sales-row-cancel");
+            });
             if (!menuTrigger) throw new Error("actions-menu");
             menuTrigger.click();
             await new Promise((resolve) => setTimeout(resolve, 80));
@@ -8455,15 +8463,17 @@
             const cancelledMenuTrigger = Array.from(
                 document.querySelectorAll("[data-sales-actions-trigger]")
             ).find((element) => {
-                const row = element.closest(".sale-row");
-                return row?.classList.contains("is-cancelled")
-                    && element.getClientRects().length > 0;
+                const panel = document.getElementById(
+                    element.getAttribute("aria-controls")
+                );
+                return element.getClientRects().length > 0
+                    && panel?.querySelector(".sales-row-delete");
             });
             if (!cancelledMenuTrigger) throw new Error("delete-menu");
             cancelledMenuTrigger.click();
             await new Promise((resolve) => setTimeout(resolve, 80));
             const deleteButton = visible(
-                ".sales-actions-menu-panel .sales-menu-danger"
+                ".sales-actions-menu-panel .sales-row-delete"
             );
             if (!deleteButton) throw new Error("delete-menu");
             deleteButton.click();
