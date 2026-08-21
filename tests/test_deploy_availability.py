@@ -41,15 +41,16 @@ class DeployAvailabilityTest(unittest.TestCase):
             script,
         )
 
-    def test_backup_retention_and_disk_guard_run_before_backups(self):
+    def test_daily_backup_and_disk_guard_run_before_code_update(self):
         script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
         retention = script.index('--backup-root "$BACKUP_DIR"')
         disk_guard = script.index("check_backup_disk_usage")
-        full_backup = script.index('BACKUP_PATH="$BACKUP_DIR/clock-erp-')
+        daily_backup = script.index("--create-daily")
         self.assertLess(retention, disk_guard)
-        self.assertLess(disk_guard, full_backup)
+        self.assertLess(disk_guard, daily_backup)
         self.assertIn('readonly MAX_BACKUP_DISK_USAGE=85', script)
         self.assertGreaterEqual(script.count("check_backup_disk_usage"), 4)
+        self.assertNotIn('BACKUP_PATH="$BACKUP_DIR/clock-erp-', script)
 
 
 if __name__ == "__main__":
