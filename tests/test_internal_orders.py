@@ -46,7 +46,10 @@ class InternalOrdersTest(unittest.TestCase):
             with self.subTest(path=path):
                 response = self.get_orders_page(path)
                 self.assertEqual(response.status_code, 200)
-                self.assertIn("Заказы интернет-магазина", response.get_data(as_text=True))
+                self.assertIn(
+                    "Управление заказами интернет-магазина",
+                    response.get_data(as_text=True),
+                )
 
     def test_list_search_and_status_filters_are_restored(self):
         html = self.get_orders_page().get_data(as_text=True)
