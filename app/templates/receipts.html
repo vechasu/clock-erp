@@ -1596,15 +1596,6 @@
         rel="stylesheet"
         href="{{ url_for('static', filename='css/catalog-combobox.css') }}"
     >
-    <script
-        src="{{ url_for('static', filename='js/receipt-submit.js') }}"
-    ></script>
-    <script
-        src="{{ url_for('static', filename='js/period-picker.js', v='receipts-period-3') }}"
-    ></script>
-    <script
-        src="{{ url_for('static', filename='js/toolbar-popover-coordinator.js') }}"
-    ></script>
     <script defer src="{{ url_for('static', filename='js/table-scroll-hint.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/erp-modal-shell.js') }}"></script>
     {% if config.TESTING and request.args.get("datetime_e2e") == "1" %}
@@ -2868,6 +2859,9 @@
 
 
 <script src="{{ url_for('static', filename='js/catalog-combobox.js', v='catalog-combobox-20260821') }}"></script>
+<script src="{{ url_for('static', filename='js/receipt-submit.js') }}"></script>
+<script src="{{ url_for('static', filename='js/period-picker.js', v='receipts-period-3') }}"></script>
+<script src="{{ url_for('static', filename='js/toolbar-popover-coordinator.js') }}"></script>
 <script>
     // RECEIPT MODAL EMERGENCY FALLBACK V1
     window.openReceiptModal = function () {

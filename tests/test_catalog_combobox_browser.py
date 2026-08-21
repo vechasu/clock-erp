@@ -115,6 +115,27 @@ class CatalogComboboxStructureTest(unittest.TestCase):
         self.assertRegex(orders_script.group(0), r"\bdefer\b")
         self.assertIn("catalog-combobox-20260821", orders_script.group(0))
 
+    def test_external_head_scripts_cannot_block_layout_parser(self):
+        for template in (
+            "warehouse.html",
+            "sales.html",
+            "receipts.html",
+            "orders.html",
+        ):
+            with self.subTest(template=template):
+                source = (PROJECT_ROOT / "app/templates" / template).read_text(
+                    encoding="utf-8"
+                )
+                head = source[: source.index("</head>")]
+                external_scripts = re.findall(
+                    r"<script\b[^>]*\bsrc=[^>]*>",
+                    head,
+                    re.DOTALL,
+                )
+                self.assertTrue(external_scripts)
+                for script_tag in external_scripts:
+                    self.assertRegex(script_tag, r"\b(?:async|defer)\b")
+
 
 class CatalogComboboxBrowserTest(unittest.TestCase):
     @staticmethod
