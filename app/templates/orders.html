@@ -60,8 +60,8 @@
         .order-meta .phone { color:#334155; }
         .badge { display:inline-flex; align-items:center; gap:5px; padding:3px 8px; border-radius:999px; font-size:11px; font-weight:700; white-space:nowrap; }
         .badge::before { content:""; width:6px; height:6px; border-radius:50%; background:currentColor; }
-        .badge-new { color:#1d4ed8; background:#dbeafe; }
-        .badge-work { color:#a16207; background:#fef3c7; }
+        .badge-new { color:#9a3412; background:#ffedd5; }
+        .badge-work { color:#1d4ed8; background:#dbeafe; }
         .badge-done { color:#15803d; background:#dcfce7; }
         .badge-cancel { color:#b91c1c; background:#fee2e2; }
         .badge-default { color:#475569; background:#e8edf3; }
@@ -184,8 +184,8 @@
 {% from "_catalog_combobox.html" import render_catalog_combobox %}
 {% macro status_badge(code, label) -%}
     {% set normalized = code|string|upper %}
-    {% set fallback = 'Новый' if normalized in ['N','O','0'] else 'Подтверждён' if normalized == 'A' else 'Не дозвонились' if normalized == 'T' else 'Собран' if normalized == 'D' else 'Отказ' if normalized == 'C' else 'Неизвестный статус' %}
-    <span class="badge {% if normalized in ['N','O','0'] %}badge-new{% elif normalized in ['A','T'] %}badge-work{% elif normalized == 'D' %}badge-done{% elif normalized == 'C' %}badge-cancel{% else %}badge-default{% endif %}">
+    {% set fallback = 'Не подтверждён' if normalized == 'N' else 'Подтверждён' if normalized == 'A' else 'Собран' if normalized == 'D' else 'Неизвестный статус' %}
+    <span class="badge {% if normalized == 'N' %}badge-new{% elif normalized == 'A' %}badge-work{% elif normalized == 'D' %}badge-done{% else %}badge-default{% endif %}">
         {{ fallback if not label or label == 'Неизвестный статус' else label }}
     </span>
 {%- endmacro %}
@@ -234,7 +234,7 @@
                     <input class="field field-search" id="orderSearch" name="q" value="{{ request.args.get('q','') }}" placeholder="Номер, клиент или телефон" aria-label="Поиск заказов">
                     <div class="filter-selects">
                         <select class="field" name="status" aria-label="Статус заказа" data-auto-submit-filter>
-                            {% for value,label in [('all','Все статусы'),('N','Новые'),('O','Новые (O)'),('A','Подтверждённые'),('T','Не дозвонились'),('D','Собранные'),('C','Отказы')] %}
+                            {% for value,label in [('all','Все статусы'),('N','Не подтверждён'),('A','Подтверждён'),('D','Собран')] %}
                                 <option value="{{ value }}" data-filter="{{ value }}"{% if request.args.get('status','all')|upper == value|upper %} selected{% endif %}>{{ label }}</option>
                             {% endfor %}
                         </select>
@@ -303,19 +303,15 @@
                         </div>
                         <div class="actions">
                             <button class="button button-secondary" type="button" data-collapse-list aria-label="Свернуть список" title="Свернуть список">Свернуть список</button>
-                            {% if detail_status_code in ['N','O','0','T'] %}
-                                <form method="post" action="/order/{{ detail_id }}/status"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="status" value="A"><button class="button button-primary" type="submit"{% if selected_order.get('sync_state') in ['partial','error'] %} disabled{% endif %}>Подтвердить заказ</button></form>
+                            {% if detail_status_code == 'N' %}
+                                <form method="post" action="/order/{{ detail_id }}/status"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="status" value="A"><button class="button button-primary" type="submit">Подтвердить</button></form>
                             {% elif safe_to_sell %}<button class="button button-primary" type="button" data-open-sale-dialog>Провести продажу</button>
                             {% elif sale_already_conducted %}<a class="button button-secondary" href="/sales?source=tictactoy&sale_id={{ conducted_sale.id if conducted_sale else '' }}">Продажа проведена</a>{% endif %}
                             {% if selected_order_bitrix_url %}<a class="button button-secondary" href="{{ selected_order_bitrix_url }}" target="_blank" rel="noopener noreferrer">Открыть в Bitrix ↗</a>{% endif %}
-                            <details class="more"><summary class="button button-secondary" aria-label="Дополнительные действия">…</summary><div class="more-menu">
-                                {% if detail_status_code in ['N','O','0'] %}<form method="post" action="/order/{{ detail_id }}/status"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="status" value="T"><button class="button button-secondary orders-secondary-submit">Не дозвонились</button></form>{% endif %}
-                                {% if detail_status_code == 'A' %}<form method="post" action="/order/{{ detail_id }}/status"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="status" value="D"><button class="button button-secondary orders-secondary-submit">Отметить собранным</button></form>{% endif %}
-                                {% if detail_status_code in ['N','O','0','T','A'] %}<form method="post" action="/order/{{ detail_id }}/status" data-dangerous-status><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="status" value="C"><button class="button button-danger">Отказ</button></form>{% endif %}
-                            </div></details>
                         </div>
                     </header>
                     <div class="detail-body">
+                        {% if selected_order.get('status_sync_state') == 'pending' %}<div class="warning">Статус сохранён в ERP и ожидает синхронизации с Bitrix. Повторные попытки выполняются автоматически.</div>{% elif selected_order.get('status_sync_state') == 'unknown' %}<div class="warning">Bitrix передал неизвестный статус. Текущий статус ERP сохранён, событие записано в журнал.</div>{% endif %}
                         {% if selected_order.get('sync_state') == 'partial' %}<div class="warning">Карточка загружена частично. Недоступны: {{ selected_order.get('sync_missing')|join(', ') }}. Небезопасные действия заблокированы.</div>{% elif selected_order.get('sync_state') == 'error' %}<div class="warning">Не удалось загрузить полную карточку. <a href="{{ request.path }}?retry=1">Повторить загрузку</a>.</div>{% endif %}
                         <section class="section">
                             <div class="section-head"><h3>Клиент и доставка</h3></div>
@@ -398,13 +394,6 @@
 </div>
 {% endif %}
 
-<div class="order-sale-modal" id="orderStatusConfirm" role="dialog" aria-modal="true" aria-labelledby="orderStatusConfirmTitle" aria-hidden="true">
-    <div class="sale-dialog" style="max-width:430px">
-        <div class="sale-dialog-head"><div><h2 id="orderStatusConfirmTitle">Подтвердить отказ?</h2><p class="card-subtitle">Статус заказа будет изменён в Bitrix.</p></div></div>
-        <div class="sale-dialog-actions"><button class="button button-secondary" type="button" data-cancel-dangerous-status>Отмена</button><button class="button button-danger" type="button" data-confirm-dangerous-status>Подтвердить отказ</button></div>
-    </div>
-</div>
-
 <script>
 (() => {
     const workspace=document.getElementById('ordersWorkspace');
@@ -437,14 +426,6 @@
     document.querySelectorAll('[data-auto-submit-filter]').forEach(filter=>filter.addEventListener('change',()=>filter.form?.requestSubmit()));
     document.querySelector('[data-tracking-form]')?.addEventListener('submit',event=>{const button=event.currentTarget.querySelector('button[type="submit"]');if(button){button.disabled=true;button.textContent='Сохраняем…';}});
     document.querySelectorAll('[data-change-order-mapping]').forEach(button=>button.addEventListener('click',()=>{const row=button.closest('.product-row');const form=row?.querySelector('[data-order-map-form]');if(form){form.hidden=false;window.initializeSharedCatalogCascades?.(form);form.querySelector('button,input')?.focus();}}));
-    const statusConfirm=document.getElementById('orderStatusConfirm'); let pendingStatusForm=null; let statusConfirmTrigger=null;
-    const closeStatusConfirm=()=>{statusConfirm?.classList.remove('is-open');statusConfirm?.setAttribute('aria-hidden','true');const trigger=statusConfirmTrigger;pendingStatusForm=null;statusConfirmTrigger=null;trigger?.focus();};
-    document.querySelectorAll('[data-dangerous-status]').forEach(form=>form.addEventListener('submit',event=>{event.preventDefault();pendingStatusForm=form;statusConfirmTrigger=event.submitter;statusConfirm?.classList.add('is-open');statusConfirm?.setAttribute('aria-hidden','false');statusConfirm?.querySelector('[data-cancel-dangerous-status]')?.focus();}));
-    statusConfirm?.querySelector('[data-cancel-dangerous-status]')?.addEventListener('click',closeStatusConfirm);
-    statusConfirm?.querySelector('[data-confirm-dangerous-status]')?.addEventListener('click',()=>{const form=pendingStatusForm;closeStatusConfirm();form?.submit();});
-    statusConfirm?.addEventListener('click',event=>{if(event.target===statusConfirm)closeStatusConfirm();});
-    document.addEventListener('keydown',event=>{if(event.key==='Escape'&&statusConfirm?.classList.contains('is-open'))closeStatusConfirm();});
-
     const modal=document.getElementById('orderSaleModal'); if(!modal)return;
     const tracking=modal.querySelector('[data-order-sale-tracking]'); const trackingStorageKey='order-sale-tracking:{{ detail_id if selected_order else "" }}';
     if(tracking){try{const saved=window.sessionStorage.getItem(trackingStorageKey);if(saved!==null)tracking.value=saved;tracking.addEventListener('input',()=>window.sessionStorage.setItem(trackingStorageKey,tracking.value));}catch(error){}}

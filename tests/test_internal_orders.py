@@ -57,8 +57,12 @@ class InternalOrdersTest(unittest.TestCase):
         self.assertIn("Заказ №18593", html)
         self.assertIn("Иван Иванов", html)
         self.assertIn('id="orderSearch"', html)
-        for status in ("all", "N", "A", "T", "D", "C"):
+        for status in ("all", "N", "A", "D"):
             self.assertIn('data-filter="{}"'.format(status), html)
+        for removed_status in ("T", "C"):
+            self.assertNotIn(
+                'data-filter="{}"'.format(removed_status), html
+            )
         self.assertIn("function applyFilters()", html)
         self.assertIn("rowText.includes(query)", html)
 
