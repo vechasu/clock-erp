@@ -136,6 +136,21 @@ class CatalogComboboxStructureTest(unittest.TestCase):
                 for script_tag in external_scripts:
                     self.assertRegex(script_tag, r"\b(?:async|defer)\b")
 
+    def test_shared_shell_scripts_cannot_block_layout_parser(self):
+        for template in ("_sidebar.html", "auth_base.html"):
+            with self.subTest(template=template):
+                source = (PROJECT_ROOT / "app/templates" / template).read_text(
+                    encoding="utf-8"
+                )
+                external_scripts = re.findall(
+                    r"<script\b[^>]*\bsrc=[^>]*>",
+                    source,
+                    re.DOTALL,
+                )
+                self.assertTrue(external_scripts)
+                for script_tag in external_scripts:
+                    self.assertRegex(script_tag, r"\b(?:async|defer)\b")
+
 
 class CatalogComboboxBrowserTest(unittest.TestCase):
     @staticmethod
