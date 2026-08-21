@@ -90,14 +90,18 @@ class OrderStatusService:
 
     def _queue(self, connection, order_id, erp_status, bitrix_status):
         now = _now()
+        updated = connection.execute(
+            "UPDATE erp_order_status_sync_queue SET erp_status=?, "
+            "bitrix_status=?, attempts=0, next_attempt_at=?, "
+            "last_error=NULL, updated_at=? WHERE external_order_id=?",
+            (erp_status, bitrix_status, now, now, str(order_id)),
+        )
+        if updated.rowcount:
+            return
         connection.execute(
             "INSERT INTO erp_order_status_sync_queue ("
             "external_order_id, erp_status, bitrix_status, attempts, "
-            "next_attempt_at, created_at, updated_at) VALUES (?, ?, ?, 0, ?, ?, ?) "
-            "ON CONFLICT(external_order_id) DO UPDATE SET "
-            "erp_status=excluded.erp_status, bitrix_status=excluded.bitrix_status, "
-            "attempts=0, next_attempt_at=excluded.next_attempt_at, "
-            "last_error=NULL, updated_at=excluded.updated_at",
+            "next_attempt_at, created_at, updated_at) VALUES (?, ?, ?, 0, ?, ?, ?)",
             (str(order_id), erp_status, bitrix_status, now, now, now),
         )
 
