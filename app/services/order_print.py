@@ -4,6 +4,24 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 
 ADDRESS_MARKER = re.compile(r"#S\s*([^#\s,;]+)", re.IGNORECASE)
+DELIVERY_SEPARATOR = re.compile(r"\s*(?::|—|–|\|)\s*", re.UNICODE)
+
+ONES = (
+    "", "один", "два", "три", "четыре", "пять", "шесть", "семь",
+    "восемь", "девять", "десять", "одиннадцать", "двенадцать",
+    "тринадцать", "четырнадцать", "пятнадцать", "шестнадцать",
+    "семнадцать", "восемнадцать", "девятнадцать",
+)
+FEMALE_ONES = ("", "одна", "две")
+TENS = ("", "", "двадцать", "тридцать", "сорок", "пятьдесят", "шестьдесят", "семьдесят", "восемьдесят", "девяносто")
+HUNDREDS = ("", "сто", "двести", "триста", "четыреста", "пятьсот", "шестьсот", "семьсот", "восемьсот", "девятьсот")
+ORDERS = (
+    ("", "", "", False),
+    ("тысяча", "тысячи", "тысяч", True),
+    ("миллион", "миллиона", "миллионов", False),
+    ("миллиард", "миллиарда", "миллиардов", False),
+    ("триллион", "триллиона", "триллионов", False),
+)
 
 
 def _first(mapping, *keys):
@@ -36,11 +54,8 @@ def format_money(value):
     if amount is None:
         return ""
     amount = amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-    if amount == amount.to_integral():
-        rendered = format(amount, ",.0f")
-    else:
-        rendered = format(amount, ",.2f").replace(".", ",")
-    return rendered.replace(",", " ") if amount == amount.to_integral() else rendered.replace(",", " ", 1)
+    rendered = format(amount, ",.2f").replace(",", " ").replace(".", ",")
+    return rendered
 
 
 def format_quantity(value):
@@ -70,30 +85,80 @@ def format_order_datetime(value):
     return raw
 
 
-def _properties(order):
-    result = {}
-    values = _first(order, "properties", "PROPERTIES") or []
-    if isinstance(values, dict):
-        values = [{"code": key, "value": value} for key, value in values.items()]
-    for item in values:
-        if not isinstance(item, dict):
+def format_phone(value):
+    raw = _text(value)
+    digits = re.sub(r"\D", "", raw)
+    if len(digits) == 11 and digits[0] in "78":
+        return "+7 ({}) {}-{}-{}".format(
+            digits[1:4], digits[4:7], digits[7:9], digits[9:11]
+        )
+    return raw
+
+
+def _plural(value, forms):
+    last_two = value % 100
+    if 11 <= last_two <= 14:
+        return forms[2]
+    last = value % 10
+    if last == 1:
+        return forms[0]
+    if 2 <= last <= 4:
+        return forms[1]
+    return forms[2]
+
+
+def _triplet_words(value, female=False):
+    words = []
+    hundreds, remainder = divmod(value, 100)
+    tens, units = divmod(remainder, 10)
+    if hundreds:
+        words.append(HUNDREDS[hundreds])
+    if remainder < 20:
+        if remainder:
+            if female and remainder in (1, 2):
+                words.append(FEMALE_ONES[remainder])
+            else:
+                words.append(ONES[remainder])
+    else:
+        words.append(TENS[tens])
+        if units:
+            if female and units in (1, 2):
+                words.append(FEMALE_ONES[units])
+            else:
+                words.append(ONES[units])
+    return words
+
+
+def amount_in_words(value):
+    amount = _decimal(value)
+    if amount is None or amount < 0:
+        return ""
+    amount = amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    rubles = int(amount)
+    kopecks = int((amount - Decimal(rubles)) * 100)
+    if rubles >= 10 ** 15:
+        return ""
+    words = []
+    if rubles == 0:
+        words.append("ноль")
+    order = 0
+    remaining = rubles
+    groups = []
+    while remaining:
+        remaining, group = divmod(remaining, 1000)
+        groups.append((order, group))
+        order += 1
+    for order, group in reversed(groups):
+        if not group:
             continue
-        code = _text(_first(item, "code", "CODE")).upper()
-        value = _first(item, "value", "VALUE")
-        if code and value not in (None, "", [], {}):
-            result[code] = value
-    return result
-
-
-def _property_or_order(order, properties, property_codes, order_keys=()):
-    value = _first(order, *order_keys)
-    if value not in (None, "", [], {}):
-        return value
-    for code in property_codes:
-        value = properties.get(code)
-        if value not in (None, "", [], {}):
-            return value
-    return None
+        forms = ORDERS[order]
+        words.extend(_triplet_words(group, female=forms[3]))
+        if order:
+            words.append(_plural(group, forms[:3]))
+    words.append(_plural(rubles, ("рубль", "рубля", "рублей")))
+    words.append(f"{kopecks:02d}")
+    words.append(_plural(kopecks, ("копейка", "копейки", "копеек")))
+    return " ".join(words)
 
 
 def _clean_address(address, geography):
@@ -120,35 +185,26 @@ def _clean_address(address, geography):
     return ", ".join(parts) or raw
 
 
-def _delivery_point(order, properties, address):
-    explicit = _property_or_order(
-        order,
-        properties,
-        ("PVZ", "PICKUP_POINT", "DELIVERY_POINT", "IPOLSDEK_PVZ"),
-        ("pickup_point", "delivery_point", "pvz"),
-    )
-    if explicit:
-        return _text(explicit)
-    marker = ADDRESS_MARKER.search(_text(address))
-    return marker.group(1).strip() if marker else ""
+def _delivery_parts(value):
+    delivery = _text(value)
+    if not delivery:
+        return "", ""
+    parts = DELIVERY_SEPARATOR.split(delivery, maxsplit=1)
+    if len(parts) == 2 and all(parts):
+        return parts[0], parts[1]
+    return delivery, ""
 
 
 def _line_context(item, index):
-    raw = item.get("raw") if isinstance(item, dict) else None
-    source = dict(raw) if isinstance(raw, dict) else {}
-    if isinstance(item, dict):
-        source.update(item)
+    source = item if isinstance(item, dict) else {}
     quantity = _decimal(_first(source, "quantity", "QUANTITY"), Decimal("1"))
-    unit_price = _decimal(_first(
-        source, "sale_unit_price", "price", "PRICE"
-    ))
+    unit_price = _decimal(_first(source, "sale_unit_price", "price", "PRICE"))
     line_total = _decimal(_first(source, "line_total", "sum", "SUM", "total", "TOTAL"))
     if line_total is None and unit_price is not None:
         line_total = unit_price * quantity
     return {
         "index": index,
         "name": _text(_first(source, "name", "NAME")) or "Товар без названия",
-        "sku": _text(_first(source, "sku", "SKU", "article", "ARTICLE", "code", "CODE")),
         "quantity": format_quantity(quantity),
         "unit_price": format_money(unit_price),
         "line_total": format_money(line_total),
@@ -157,94 +213,47 @@ def _line_context(item, index):
 
 
 def build_order_print_context(order):
-    properties = _properties(order)
+    """Build the print view strictly from the normalized read-only order."""
     geography = {
-        "country": _text(_property_or_order(
-            order, properties, ("COUNTRY", "COUNTRY_NAME"), ("country", "country_name")
-        )),
-        "region": _text(_property_or_order(
-            order, properties, ("REGION", "REGION_NAME", "LOCATION"), ("region", "region_name")
-        )),
-        "city": _text(_property_or_order(
-            order, properties, ("CITY", "LOCATION_CITY"), ("city", "city_name")
-        )),
-        "postal_code": _text(_property_or_order(
-            order, properties, ("ZIP", "POSTAL_CODE"), ("postal_code", "zip")
-        )),
+        "postal_code": _text(_first(order, "postal_code", "zip")),
+        "country": _text(_first(order, "country", "country_name")),
+        "region": _text(_first(order, "region", "region_name")),
+        "city": _text(_first(order, "city", "city_name")),
     }
-    address_source = _property_or_order(
-        order, properties, ("ADDRESS",), ("address", "delivery_address")
-    )
-    delivery_point = _delivery_point(order, properties, address_source)
-    delivery_name = _text(_property_or_order(
-        order, properties, ("DELIVERY_NAME",), ("delivery", "delivery_name")
-    ))
-    point_label = ""
-    if delivery_point:
-        point_label = "Постамат" if "постамат" in delivery_name.casefold() else "ПВЗ"
-
-    raw_items = _first(order, "items", "products", "PRODUCTS", "basket", "BASKET") or []
+    raw_items = _first(order, "items", "products") or []
     lines = [
         _line_context(item, index)
         for index, item in enumerate(raw_items, start=1)
         if isinstance(item, dict)
     ]
-    computed_products_total = sum(
-        (line["line_total_value"] for line in lines), Decimal("0")
-    ) if lines and all(line["line_total_value"] is not None for line in lines) else None
+    computed_products_total = (
+        sum((line["line_total_value"] for line in lines), Decimal("0"))
+        if lines and all(line["line_total_value"] is not None for line in lines)
+        else None
+    )
     products_total = _decimal(_first(order, "products_total"), computed_products_total)
-    discount = _decimal(_first(order, "discount", "DISCOUNT", "DISCOUNT_PRICE"), Decimal("0"))
-    delivery_price = _decimal(_first(
-        order, "delivery_price", "DELIVERY_PRICE", "price_delivery", "PRICE_DELIVERY"
-    ))
-    total = _decimal(_first(order, "order_total", "total", "price", "PRICE", "sum", "SUM"))
-    paid_code = _text(_first(order, "paid", "PAYED")).upper()
-    paid_amount = _decimal(_property_or_order(
-        order, properties, ("SUM_PAID", "PAID_AMOUNT"), ("sum_paid", "paid_amount")
-    ))
-    if paid_code == "Y" and paid_amount is None:
-        paid_amount = total
-    amount_due = _decimal(_property_or_order(
-        order, properties, ("TO_PAY", "COD_AMOUNT", "PAYMENT_ON_DELIVERY"),
-        ("amount_due", "to_pay", "cod_amount"),
-    ))
-    payment_name = _text(_first(order, "payment", "pay_system", "PAY_SYSTEM_NAME"))
-    if amount_due is None and paid_code != "Y" and any(
-        marker in payment_name.casefold()
-        for marker in (
-            "при получении", "налож", "курьер", "пункт выдачи", "пункте выдачи"
-        )
-    ):
-        amount_due = total
+    discount = _decimal(_first(order, "discount"), Decimal("0"))
+    delivery_price = _decimal(_first(order, "delivery_price"), Decimal("0"))
+    total = _decimal(_first(order, "order_total", "total", "price"))
+    delivery_service, delivery_method = _delivery_parts(_first(order, "delivery"))
+    page_span = 1 if len(lines) <= 22 else 1 + ((len(lines) - 23) // 38 + 1)
 
-    has_sku = any(line["sku"] for line in lines)
-    status = _text(_first(order, "status_name", "STATUS_NAME"))
-    if not status:
-        status = _text(_first(order, "status", "STATUS_ID")) or "Неизвестный статус"
     return {
-        "number": _text(_first(order, "number", "ACCOUNT_NUMBER", "id", "ID", "external_id")),
-        "created_at": format_order_datetime(_first(order, "created_at", "date", "DATE_INSERT")),
-        "status": status,
-        "customer": _text(_first(order, "customer", "client", "name", "USER_NAME")) or _text(properties.get("FIO")),
-        "phone": _text(_property_or_order(order, properties, ("PHONE",), ("phone",))),
-        "email": _text(_property_or_order(order, properties, ("EMAIL",), ("email",))),
-        "delivery": delivery_name,
+        "number": _text(_first(order, "number", "external_id", "id")) or "—",
+        "created_at": format_order_datetime(_first(order, "created_at", "date")) or "—",
+        "customer": _text(_first(order, "customer")) or "—",
+        "phone": format_phone(_first(order, "phone")) or "—",
+        "email": _text(_first(order, "email")) or "—",
         "geography": geography,
-        "address": _clean_address(address_source, geography),
-        "delivery_point": delivery_point,
-        "delivery_point_label": point_label,
-        "tracking": _text(_property_or_order(
-            order, properties, ("TRACKING_NUMBER",), ("tracking", "track_number", "tracking_number")
-        )),
-        "comment": _text(_first(order, "comment", "USER_DESCRIPTION", "COMMENTS")),
-        "payment": payment_name,
-        "payment_status": "Оплачен" if paid_code == "Y" else "Не оплачен" if paid_code == "N" else "",
-        "paid_amount": format_money(paid_amount),
-        "amount_due": format_money(amount_due),
+        "address": _clean_address(_first(order, "address"), geography),
+        "payment": _text(_first(order, "payment")) or "—",
+        "delivery_service": delivery_service or "—",
+        "delivery_method": delivery_method,
         "lines": lines,
-        "has_sku": has_sku,
         "products_total": format_money(products_total),
-        "discount": format_money(discount) if discount and discount > 0 else "",
+        "discount": format_money(discount),
         "delivery_price": format_money(delivery_price),
         "total": format_money(total),
+        "total_words": amount_in_words(total),
+        "print_min_height_mm": page_span * 190 - (page_span - 1) * 10,
     }
