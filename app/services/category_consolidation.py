@@ -13,6 +13,7 @@ class CategoryConsolidationError(RuntimeError):
 OPERATIONAL_TABLES = {
     "catalog_excel_products",
     "erp_brand_categories",
+    "erp_order_product_mappings",
 }
 
 IMMUTABLE_HISTORY_TABLES = {
@@ -355,6 +356,11 @@ class CategoryConsolidation:
                     "WHERE category_id IN ({})".format(placeholders),
                     [canonical_id] + redundant_ids,
                 )
+                self.connection.execute(
+                    "UPDATE erp_order_product_mappings SET category_id = ? "
+                    "WHERE category_id IN ({})".format(placeholders),
+                    [canonical_id] + redundant_ids,
+                )
                 relation_cursor = self.connection.execute(
                     "DELETE FROM erp_brand_categories "
                     "WHERE category_id IN ({})".format(placeholders),
@@ -378,7 +384,14 @@ class CategoryConsolidation:
                 remaining_relations = self._reference_counts(
                     redundant_ids, {"erp_brand_categories"}
                 )["erp_brand_categories"]
-                if remaining_products or remaining_relations:
+                remaining_order_mappings = self._reference_counts(
+                    redundant_ids, {"erp_order_product_mappings"}
+                )["erp_order_product_mappings"]
+                if (
+                    remaining_products
+                    or remaining_relations
+                    or remaining_order_mappings
+                ):
                     raise CategoryConsolidationError(
                         "Operational references remain on redundant IDs."
                     )

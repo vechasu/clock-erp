@@ -198,15 +198,11 @@ class OrderTictactoySaleTest(unittest.TestCase):
             "number": "21113",
             "status": "D",
         }
-        saved = {}
         with (
             mock.patch.object(web, "get_order", return_value=order),
+            mock.patch.object(web, "CatalogDatabase", return_value=self.database),
             mock.patch.object(web, "SharedCatalog", return_value=self.shared),
             mock.patch.object(web, "load_product_mappings", return_value={}),
-            mock.patch.object(
-                web, "save_product_mappings",
-                side_effect=lambda rows: saved.update(rows),
-            ),
             mock.patch.object(web, "AuditJournal"),
         ):
             response = self.client.post(
@@ -219,11 +215,83 @@ class OrderTictactoySaleTest(unittest.TestCase):
                     "category_id": unavailable["category_id"],
                 },
             )
+            saved = web.load_order_product_mappings(
+                "21113", database=self.database
+            )
 
         query = parse_qs(urlsplit(response.headers["Location"]).query)
         self.assertEqual(response.status_code, 302)
         self.assertEqual(query["notice"], ["success"])
         self.assertEqual(saved["bx-watch"]["product_id"], str(unavailable["id"]))
+
+    def test_manual_mapping_persists_on_reopen_and_is_idempotent(self):
+        rival = ExcelProductCatalog(self.database).create_product(
+            name="RIVAL GALAXY", article="RIVAL-GALAXY",
+            brand="Zinvo", category="Наручные часы", stock=2,
+        )
+        order = {
+            **self.order,
+            "id": "21113",
+            "number": "21113",
+            "status": "D",
+            "products": [{
+                "id": "basket-21113-1",
+                "product_id": "234193",
+                "name": "RIVAL GALAXY",
+                "quantity": 1,
+                "price": 24900,
+            }],
+        }
+        patches = (
+            mock.patch.object(web, "get_orders", return_value=[order]),
+            mock.patch.object(web, "get_order", return_value=order),
+            mock.patch.object(web, "CatalogDatabase", return_value=self.database),
+            mock.patch.object(web, "SharedCatalog", return_value=self.shared),
+            mock.patch.object(web, "SalesInventory", return_value=self.inventory),
+            mock.patch.object(web, "load_stock_operations", return_value=[]),
+            mock.patch.object(web, "load_product_mappings", return_value={}),
+            mock.patch.object(web, "AuditJournal"),
+        )
+        payload = {
+            "csrf_token": "test-token",
+            "bitrix_product_id": "234193",
+            "bitrix_order_line_id": "basket-21113-1",
+            "product_id": rival["id"],
+            "brand_id": rival["brand_id"],
+            "category_id": rival["category_id"],
+        }
+
+        with patches[0], patches[1], patches[2], patches[3], patches[4], \
+                patches[5], patches[6], patches[7]:
+            before = self.client.get("/order/21113")
+            first = self.client.post("/order/21113/product-map", data=payload)
+            reopened = self.client.get("/order/21113")
+            repeated = self.client.post("/order/21113/product-map", data=payload)
+            reopened_again = self.client.get("/order/21113")
+            mappings = web.load_order_product_mappings(
+                "21113", database=self.database
+            )
+            context = web.build_order_product_mapping_context(
+                order["products"], mappings=mappings, catalog=self.shared
+            )
+
+        self.assertIn("Не сопоставлен", before.get_data(as_text=True))
+        self.assertEqual(first.status_code, 302)
+        self.assertEqual(repeated.status_code, 302)
+        for response in (reopened, reopened_again):
+            html = response.get_data(as_text=True)
+            self.assertIn("ERP: RIVAL GALAXY", html)
+            self.assertIn("Сопоставлено", html)
+            self.assertNotIn("Есть несопоставленные позиции", html)
+        self.assertEqual(mappings["234193"]["product_id"], str(rival["id"]))
+        self.assertTrue(web.build_order_sale_readiness(order, context)["ready"])
+        with self.database.connect() as connection:
+            count = connection.execute(
+                "SELECT COUNT(*) FROM erp_order_product_mappings "
+                "WHERE order_id = ? AND order_line_id = ?",
+                ("21113", "basket-21113-1"),
+            ).fetchone()[0]
+        self.assertEqual(count, 1)
 
     def test_dialog_and_shared_cascade_are_rendered(self):
         html = self.render_order("?open_sale=1").get_data(as_text=True)
@@ -801,18 +869,20 @@ class OrderTictactoySaleTest(unittest.TestCase):
     def test_mapping_saves_distinct_bitrix_and_erp_ids_and_preserves_legacy(self):
         product = self.shared.get_product(self.watch["id"])
         existing = {"legacy-bx": {"moysklad_product_id": "legacy-ms"}}
-        saved = {}
         with (
             mock.patch.object(web, "get_order", return_value=self.order),
+            mock.patch.object(web, "CatalogDatabase", return_value=self.database),
             mock.patch.object(web, "SharedCatalog", return_value=self.shared),
             mock.patch.object(web, "load_product_mappings", return_value=existing),
-            mock.patch.object(web, "save_product_mappings", side_effect=lambda rows: saved.update(rows)),
             mock.patch.object(web, "AuditJournal"),
         ):
             response = self.client.post("/order/18593/product-map", data={
                 "bitrix_product_id": "bx-watch", "product_id": product["id"],
                 "brand_id": product["brand_id"], "category_id": product["category_id"],
             })
+            saved = web.load_order_product_mappings(
+                "18593", database=self.database
+            )
         self.assertEqual(response.status_code, 302)
         self.assertEqual(saved["bx-watch"]["product_id"], str(self.watch["id"]))
         self.assertEqual(saved["bx-watch"]["bitrix_product_id"], "bx-watch")
