@@ -11,6 +11,12 @@ class ReceiptsUiRegressionsTest(unittest.TestCase):
         cls.catalog_script = Path(
             "app/static/js/catalog-combobox.js"
         ).read_text(encoding="utf-8")
+        cls.submit_script = Path(
+            "app/static/js/receipt-submit.js"
+        ).read_text(encoding="utf-8")
+        cls.components = Path(
+            "app/static/css/erp-components.css"
+        ).read_text(encoding="utf-8")
 
     def test_receipt_form_restores_photo_preview_and_optional_document(self):
         self.assertIn('id="receipt_product_image"', self.template)
@@ -87,6 +93,83 @@ class ReceiptsUiRegressionsTest(unittest.TestCase):
             self.template,
         )
         self.assertIn('"category_scope"', self.catalog_script)
+
+    def test_create_and_edit_forms_use_shared_modal_sections(self):
+        create_modal = self.template.split('id="receiptModal"', 1)[1].split(
+            'id="receiptEditModal"', 1
+        )[0]
+        edit_modal = self.template.split('id="receiptEditModal"', 1)[1].split(
+            "<!-- RECEIPTS EXCEL IMPORT MODAL V1 -->", 1
+        )[0]
+        for modal in (create_modal, edit_modal):
+            self.assertIn("data-erp-modal-shell", modal)
+            self.assertIn("data-erp-modal-lock", modal)
+            self.assertIn("erp-modal-actions", modal)
+        for section in ("Документ", "Товар", "Фото", "Комментарий"):
+            self.assertIn(f">{section}</h3>", create_modal)
+        for section in ("Документ", "Товар", "Комментарий"):
+            self.assertIn(f">{section}</h3>", edit_modal)
+
+    def test_time_is_read_only_and_preserves_server_timestamp_contract(self):
+        create_time = self.template.split('id="receipt_time"', 1)[1].split(
+            ">", 1
+        )[0]
+        edit_time = self.template.split('id="receiptEditTime"', 1)[1].split(
+            ">", 1
+        )[0]
+        self.assertIn('type="time"', create_time)
+        self.assertIn('value="{{ today_time }}"', create_time)
+        self.assertIn("disabled", create_time)
+        self.assertNotIn('name="', create_time)
+        self.assertIn('type="time"', edit_time)
+        self.assertIn("disabled", edit_time)
+        self.assertIn("createdTime[1]", self.template)
+
+    def test_product_confirmation_and_photo_validation_are_visible(self):
+        for marker in (
+            'id="receiptSelectedProductName"',
+            'id="receiptSelectedProductMeta"',
+            "data-receipt-product-brand",
+            "data-receipt-product-category",
+            "data-receipt-product-article",
+            "data-receipt-product-stock",
+            "data-receipt-product-id",
+        ):
+            self.assertIn(marker, self.template)
+        self.assertIn('new Set([\n            "image/jpeg",\n            "image/png",', self.template)
+        self.assertIn("3 * 1024 * 1024", self.template)
+        self.assertIn("setCustomValidity(error)", self.template)
+
+    def test_pending_double_submit_and_submit_modes_keep_payload_contract(self):
+        self.assertIn(
+            'receiptForm.dataset.submitting === "true"',
+            self.template,
+        )
+        self.assertIn(
+            "receiptEditModalForm.dataset.submitting",
+            self.template,
+        )
+        self.assertIn(
+            'form.querySelectorAll("button, input, select, textarea")',
+            self.template,
+        )
+        self.assertIn('form.setAttribute("aria-busy"', self.template)
+        self.assertIn("Приход сохраняется…", self.template)
+        self.assertIn('headers = {\n            "X-CSRF-Token": csrfToken,\n            "Idempotency-Key": idempotencyKey,', self.submit_script)
+        self.assertIn('payload.set(\n            "submit_mode"', self.submit_script)
+        self.assertIn('submitMode === "create_next" ? "create_next" : "close"', self.submit_script)
+
+    def test_receipt_modals_have_desktop_and_mobile_overflow_contracts(self):
+        self.assertIn("#receiptEditModal .receipt-edit-dialog", self.components)
+        self.assertIn("#receiptEditModal .receipt-edit-product-summary", self.components)
+        mobile = self.components.split(
+            "#receiptModal #receiptImageField[hidden]", 1
+        )[1].split("/* ERP Design System V1", 1)[0]
+        self.assertIn("#receiptModal .receipt-simple-grid > .field", mobile)
+        self.assertIn("#receiptEditModal .receipt-card-grid", mobile)
+        self.assertIn("grid-template-columns: minmax(0, 1fr)", mobile)
+        self.assertIn("receipt_card_layout_e2e", self.template)
+        self.assertIn("create-modal-layout", self.template)
 
 
 if __name__ == "__main__":

@@ -11952,6 +11952,8 @@ def receipt_is_in_period(receipt, date_from="", date_to=""):
 @app.route("/app/receipts")
 def receipts_page():
     from datetime import datetime
+
+    now = datetime.now()
     all_receipts = [dict(item) for item in api_receipt_records()]
 
     date_from = (
@@ -12074,7 +12076,8 @@ def receipts_page():
         receipts=receipts,
         receipt_date_from=date_from,
         receipt_date_to=date_to,
-        today=datetime.now().strftime("%Y-%m-%d"),
+        today=now.strftime("%Y-%m-%d"),
+        today_time=now.strftime("%H:%M"),
         total_receipts=filtered_total,
         total_quantity=format_stock_number(total_quantity),
         receipt_filter_catalog=receipt_filter_catalog,
