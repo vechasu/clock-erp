@@ -5127,6 +5127,7 @@
                     id="detailPhotoInput"
                     type="file"
                     accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+                    aria-label="Заменить фото товара"
                     hidden
                 >
                 <button id="detailPhotoAdd" type="button">Добавить фото</button>
@@ -5161,25 +5162,25 @@
             <div class="product-detail-card">
                 <div class="product-detail-label">Название</div>
                 <div id="detailName" class="product-detail-value">—</div>
-                <input id="editName" class="product-detail-input" type="text" name="name" required>
+                <input id="editName" class="product-detail-input" type="text" name="name" aria-label="Название товара" required>
             </div>
 
             <div class="product-detail-card">
                 <div class="product-detail-label">Артикул</div>
                 <div id="detailArticle" class="product-detail-value">—</div>
-                <input id="editArticle" class="product-detail-input" type="text" name="article">
+                <input id="editArticle" class="product-detail-input" type="text" name="article" aria-label="Артикул товара">
             </div>
 
             <div class="product-detail-card">
                 <div class="product-detail-label">Модель часов</div>
                 <div id="detailModel" class="product-detail-value">—</div>
-                <input id="editModel" class="product-detail-input" type="text" name="model">
+                <input id="editModel" class="product-detail-input" type="text" name="model" aria-label="Модель товара">
             </div>
 
             <div class="product-detail-card">
                 <div class="product-detail-label">Цена</div>
                 <div id="detailPrice" class="product-detail-value">—</div>
-                <input id="editPrice" class="product-detail-input" type="number" min="0" step="0.01" inputmode="decimal" name="price" placeholder="Не указана">
+                <input id="editPrice" class="product-detail-input" type="number" min="0" step="0.01" inputmode="decimal" name="price" aria-label="Цена товара" placeholder="Не указана">
             </div>
 
             <div class="product-detail-card category-cell-form">
@@ -5220,13 +5221,13 @@
             <div class="product-detail-card">
                 <div class="product-detail-label">Остаток</div>
                 <div id="detailStock" class="product-detail-value">—</div>
-                <input id="editStock" class="product-detail-input" type="number" min="0" step="1" name="stock" required>
+                <input id="editStock" class="product-detail-input" type="number" min="0" step="1" name="stock" aria-label="Остаток товара" required>
             </div>
 
             <div class="product-detail-card">
                 <div class="product-detail-label">Ячейка</div>
                 <div id="detailCell" class="product-detail-value">—</div>
-                <input id="editCell" class="product-detail-input" type="text" name="cell">
+                <input id="editCell" class="product-detail-input" type="text" name="cell" aria-label="Складская ячейка товара">
             </div>
             </div>
 

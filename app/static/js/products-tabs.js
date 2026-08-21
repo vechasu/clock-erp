@@ -3,6 +3,7 @@
 
     const storagePrefix = "vechasu.products.tab-state.v1.";
     const allowedParameters = {
+        analytics: [],
         products: [
             "q", "brand", "brand_id", "category", "category_id", "model",
             "cell", "date_from", "date_to", "sort_by", "sort_dir", "page",

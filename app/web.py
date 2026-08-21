@@ -3121,7 +3121,8 @@ def inventory_cancel_api(inventory_id):
 @app.route("/app/products")
 def warehouse_page():
     warehouse_view = (request.args.get("view") or "products").strip()
-    tab_counts = ExcelProductCatalog().stock_tab_counts()
+    product_catalog = ExcelProductCatalog()
+    tab_counts = product_catalog.stock_tab_counts()
     if not isinstance(tab_counts, dict):
         # Keeps route-level test doubles and extensions that predate tab counts
         # compatible while the real catalog service always returns this shape.
@@ -3141,6 +3142,13 @@ def warehouse_page():
             "units_total", tab_counts.get("units_in_stock", 0)
         )),
     }
+    if warehouse_view == "analytics":
+        return render_template(
+            "warehouse_analytics.html",
+            analytics=product_catalog.product_analytics(),
+            product_metrics=product_metrics,
+            format_stock_number=format_stock_number,
+        )
     if warehouse_view == "categories":
         shared_catalog = SharedCatalog()
         category_id = (request.args.get("category_id") or "").strip()
@@ -3315,7 +3323,7 @@ def warehouse_page():
         warehouse_active_filter_count
     )
 
-    catalog = ExcelProductCatalog().list_products(
+    catalog = product_catalog.list_products(
         query=query,
         brand=selected_brand if not selected_brand_id else "",
         category=selected_category if not selected_category_id else "",

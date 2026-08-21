@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ТТТ ERP — Аналитика товаров</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/erp-components.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/products-workspace.css') }}">
+    <script defer src="{{ url_for('static', filename='js/products-tabs.js') }}"></script>
+</head>
+<body class="products-analytics-page">
+<div class="app">
+    {% include "_sidebar.html" %}
+    <main class="main">
+        {% from "_products_workspace.html" import products_workspace_header %}
+        {{ products_workspace_header('analytics', product_metrics) }}
+
+        <div class="products-analytics-grid">
+            <section class="products-analytics-card" aria-labelledby="productsBrandsRanking">
+                <h2 id="productsBrandsRanking">Бренды по числу позиций</h2>
+                <p>Активный ассортимент и текущий фактический остаток.</p>
+                {% if analytics.top_brands %}
+                    <ol class="products-ranking">
+                    {% for item in analytics.top_brands %}
+                        <li>
+                            <div class="products-ranking-heading"><strong title="{{ item.name }}">{{ item.name }}</strong><span>{{ item.positions }} поз.</span></div>
+                            <progress max="100" value="{{ item.percent }}" aria-label="{{ item.name }}: {{ item.positions }} позиций"></progress>
+                            <div class="products-ranking-values"><span>В наличии: {{ item.in_stock }}</span><span>Единиц: {{ format_stock_number(item.units) }}</span></div>
+                        </li>
+                    {% endfor %}
+                    </ol>
+                {% else %}
+                    <div class="erp-empty-state" role="status"><strong>Данных по брендам пока нет</strong><br>Рейтинг появится после добавления активных товаров.</div>
+                {% endif %}
+            </section>
+
+            <section class="products-analytics-card" aria-labelledby="productsCategoriesRanking">
+                <h2 id="productsCategoriesRanking">Категории по числу позиций</h2>
+                <p>Распределение активного ассортимента по категориям.</p>
+                {% if analytics.top_categories %}
+                    <ol class="products-ranking">
+                    {% for item in analytics.top_categories %}
+                        <li>
+                            <div class="products-ranking-heading"><strong title="{{ item.name }}">{{ item.name }}</strong><span>{{ item.positions }} поз.</span></div>
+                            <progress max="100" value="{{ item.percent }}" aria-label="{{ item.name }}: {{ item.positions }} позиций"></progress>
+                            <div class="products-ranking-values"><span>В наличии: {{ item.in_stock }}</span><span>Единиц: {{ format_stock_number(item.units) }}</span></div>
+                        </li>
+                    {% endfor %}
+                    </ol>
+                {% else %}
+                    <div class="erp-empty-state" role="status"><strong>Данных по категориям пока нет</strong><br>Распределение появится после классификации товаров.</div>
+                {% endif %}
+            </section>
+
+            <section class="products-analytics-card is-wide" aria-labelledby="productsStockDistribution">
+                <h2 id="productsStockDistribution">Распределение остатков</h2>
+                <p>Число активных товарных позиций в каждом диапазоне. Значения остатков отображаются без нормализации.</p>
+                <div class="products-stock-distribution">
+                {% for item in analytics.stock_bands %}
+                    <article class="products-stock-band"><strong>{{ item.positions }}</strong><span>{{ item.label }}</span></article>
+                {% endfor %}
+                </div>
+            </section>
+
+            <section class="products-analytics-card is-wide" aria-labelledby="productsCellsRanking">
+                <h2 id="productsCellsRanking">Загрузка складских ячеек</h2>
+                <p>Ячейки с наибольшим числом активных товарных позиций.</p>
+                {% if analytics.top_cells %}
+                    <div class="products-analytics-table-wrap" tabindex="0" aria-label="Таблица загрузки складских ячеек с горизонтальной прокруткой">
+                        <table class="products-analytics-table">
+                            <thead><tr><th scope="col">Ячейка</th><th scope="col">Позиций</th><th scope="col">В наличии</th><th scope="col">Единиц</th></tr></thead>
+                            <tbody>
+                            {% for item in analytics.top_cells %}
+                                <tr><td title="{{ item.name }}">{{ item.name }}</td><td>{{ item.positions }}</td><td>{{ item.in_stock }}</td><td>{{ format_stock_number(item.units) }}</td></tr>
+                            {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="erp-empty-state" role="status"><strong>Данных по ячейкам пока нет</strong><br>Таблица появится после размещения товаров.</div>
+                {% endif %}
+            </section>
+        </div>
+    </main>
+</div>
+</body>
+</html>
