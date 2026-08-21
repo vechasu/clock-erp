@@ -1,0 +1,202 @@
+:root {
+    --erp-state-border: var(--theme-border, #dfe5ed);
+    --erp-state-muted: var(--theme-text-muted, #64748b);
+    --erp-state-surface: var(--theme-surface-muted, #f8fafc);
+    --erp-state-primary: var(--theme-primary, #2563eb);
+    --erp-state-danger: var(--theme-error, #b42318);
+    --erp-state-success: var(--theme-success, #166534);
+}
+
+.erp-system-state,
+.erp-empty-state,
+.erp-no-results-state,
+.erp-error-state {
+    width: 100%;
+    min-width: 0;
+    min-height: 132px;
+    display: grid;
+    place-items: center;
+    align-content: center;
+    gap: 7px;
+    padding: 28px 20px;
+    border: 1px dashed var(--erp-state-border);
+    border-radius: 12px;
+    background: var(--erp-state-surface);
+    color: var(--erp-state-muted);
+    text-align: center;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+}
+
+.erp-system-state strong,
+.erp-empty-state strong,
+.erp-no-results-state strong,
+.erp-error-state strong {
+    color: var(--theme-text, #172033);
+    font-size: 14px;
+}
+
+.erp-system-state[hidden],
+.erp-empty-state[hidden],
+.erp-no-results-state[hidden],
+.erp-error-state[hidden] {
+    display: none;
+}
+
+.erp-no-results-state::before,
+.erp-empty-state::before,
+.erp-error-state::before {
+    width: 30px;
+    height: 30px;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--erp-state-border);
+    border-radius: 50%;
+    background: var(--theme-surface, #fff);
+    color: var(--erp-state-muted);
+    font-size: 15px;
+    font-weight: 850;
+    line-height: 1;
+}
+
+.erp-empty-state::before { content: "—"; }
+.erp-no-results-state::before { content: "⌕"; }
+.erp-error-state::before { content: "!"; color: var(--erp-state-danger); }
+
+.erp-error-state {
+    border-style: solid;
+    border-color: color-mix(in srgb, var(--erp-state-danger) 28%, transparent);
+    background: color-mix(in srgb, var(--erp-state-danger) 5%, var(--theme-surface, #fff));
+}
+
+.erp-state-action {
+    min-height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 5px;
+    padding: 0 12px;
+    border: 1px solid var(--erp-state-border);
+    border-radius: 9px;
+    background: var(--theme-surface, #fff);
+    color: var(--erp-state-primary);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 750;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.erp-loading-state {
+    min-height: 36px;
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    color: var(--erp-state-muted);
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.erp-loading-state[hidden] { display: none; }
+
+.erp-loading-state::before,
+[data-erp-pending].is-erp-pending [data-erp-pending-indicator]::before {
+    width: 15px;
+    height: 15px;
+    flex: 0 0 auto;
+    border: 2px solid color-mix(in srgb, var(--erp-state-primary) 22%, transparent);
+    border-top-color: var(--erp-state-primary);
+    border-radius: 50%;
+    content: "";
+    animation: erp-state-spin 0.75s linear infinite;
+}
+
+.erp-form-error,
+.erp-field-error {
+    color: var(--erp-state-danger);
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.45;
+}
+
+.erp-success-state {
+    margin: 0 0 14px;
+    padding: 11px 13px;
+    border: 1px solid color-mix(in srgb, var(--erp-state-success) 28%, transparent);
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--erp-state-success) 6%, var(--theme-surface, #fff));
+    color: var(--erp-state-success);
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.45;
+}
+
+.erp-success-state[hidden] { display: none; }
+
+.erp-form-error {
+    margin: 0 0 14px;
+    padding: 11px 13px;
+    border: 1px solid color-mix(in srgb, var(--erp-state-danger) 28%, transparent);
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--erp-state-danger) 5%, var(--theme-surface, #fff));
+}
+
+.erp-form-error:empty,
+.erp-field-error:empty { display: none; }
+
+[aria-invalid="true"] {
+    border-color: var(--erp-state-danger) !important;
+}
+
+[data-erp-pending].is-erp-pending {
+    cursor: wait;
+}
+
+[data-erp-pending].is-erp-pending [data-erp-pending-indicator] {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+}
+
+button:disabled,
+input:disabled,
+select:disabled,
+textarea:disabled,
+[aria-disabled="true"] {
+    cursor: not-allowed;
+    filter: saturate(0.55);
+    opacity: 0.62;
+}
+
+[aria-busy="true"] { cursor: wait; }
+
+.erp-visually-hidden {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
+}
+
+@keyframes erp-state-spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 600px) {
+    .erp-system-state,
+    .erp-empty-state,
+    .erp-no-results-state,
+    .erp-error-state {
+        min-height: 116px;
+        padding: 22px 14px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .erp-loading-state::before,
+    [data-erp-pending].is-erp-pending [data-erp-pending-indicator]::before {
+        animation-duration: 1.5s;
+    }
+}

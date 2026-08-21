@@ -53,7 +53,7 @@
         </section>
 
         {% if request.args.get('notice') and request.args.get('message') %}
-            <div class="notice notice-{{ request.args.get('notice') }}" role="status">{{ request.args.get('message') }}</div>
+            <div class="notice notice-{{ request.args.get('notice') }}" role="{{ 'alert' if request.args.get('notice') in ['error', 'danger'] else 'status' }}" data-erp-notification-source>{{ request.args.get('message') }}</div>
         {% endif %}
 
         <div class="workspace" id="ordersWorkspace" data-layout-mode="split">
@@ -96,7 +96,15 @@
                                 <span title="{{ order.get('source') or 'Bitrix' }}">{{ order.get('source') or 'Bitrix' }}</span>
                             </div>
                         </a>
-                    {% else %}<div class="empty"><strong>Заказы не найдены</strong><br>Измените фильтры или повторите загрузку.</div>{% endfor %}
+                    {% else %}
+                        {% if sync_error %}
+                            <div class="empty erp-error-state" role="alert"><strong>Не удалось загрузить заказы</strong><span>Список временно недоступен; ранее загруженные данные не изменены.</span><a class="erp-state-action" href="{{ request.path }}?retry=1">Повторить загрузку</a></div>
+                        {% elif request.args.get('q') or request.args.get('status','all') != 'all' or request.args.get('period','all') != 'all' %}
+                            <div class="empty erp-no-results-state" role="status"><strong>По текущим условиям заказы не найдены</strong><span>Заказы не удалены — измените поиск или фильтры.</span><a class="erp-state-action" href="{{ url_for('orders_page') }}">Сбросить фильтры</a></div>
+                        {% else %}
+                            <div class="empty erp-empty-state" role="status"><strong>Заказов пока нет</strong><span>Новые заказы появятся после загрузки из Bitrix.</span></div>
+                        {% endif %}
+                    {% endfor %}
                 </div>
                 <footer class="list-footer pagination erp-pagination">
                     <span>Найдено: {{ orders_total|default(orders|length) }}</span>
@@ -131,7 +139,7 @@
                         </div>
                         <div class="actions">
                             <button class="button button-secondary" type="button" data-collapse-list aria-label="Свернуть список" title="Свернуть список">Свернуть список</button>
-                            <form class="status-form" method="post" action="/order/{{ detail_id }}/status">
+                            <form class="status-form" method="post" action="/order/{{ detail_id }}/status" data-erp-pending data-pending-label="Сохраняем статус…">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                 <select class="field" name="status" aria-label="Статус заказа">
                                     <option value="N"{% if detail_status_code == 'N' %} selected{% endif %}>Не подтверждён</option>
@@ -166,7 +174,7 @@
                                 <div class="fact"><span class="fact-label">Адрес</span><span class="fact-value">{{ selected_order.get('address') or selected_order.get('delivery_address') or 'Не указан' }}</span></div>
                                 <div class="fact"><span class="fact-label">Доставка</span><span class="fact-value">{{ selected_order.get('delivery') or 'Не указана' }}</span></div>
                                 <div class="fact"><span class="fact-label">Оплата</span><span class="fact-value">{{ selected_order.get('payment') or 'Не указана' }} · {{ selected_order.get('paid_name') or ('Оплачен' if selected_order.get('paid')|string|upper == 'Y' else 'Не оплачен') }}</span></div>
-                                <div class="fact tracking-fact"><label class="fact-label" for="orderTracking">Трекинг</label><form class="tracking-form" method="post" action="/order/{{ detail_id }}/tracking" data-tracking-form><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input class="field" id="orderTracking" name="tracking" maxlength="255" value="{{ request.args.get('tracking_value', order_tracking or '') }}" placeholder="Номер отправления"><button class="button button-secondary orders-secondary-submit" type="submit">Сохранить</button></form></div>
+                                <div class="fact tracking-fact"><label class="fact-label" for="orderTracking">Трекинг</label><form class="tracking-form" method="post" action="/order/{{ detail_id }}/tracking" data-tracking-form data-erp-pending data-pending-label="Сохраняем трекинг…"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input class="field" id="orderTracking" name="tracking" maxlength="255" value="{{ request.args.get('tracking_value', order_tracking or '') }}" placeholder="Номер отправления"><button class="button button-secondary orders-secondary-submit" type="submit">Сохранить</button></form></div>
                             </div>
                         </section>
 
@@ -194,7 +202,7 @@
                                                     <div class="mapping-card"><div class="mapping-copy"><strong data-mapping-product-name>ERP: {{ mapped.name if mapped else '' }}{% if mapped %} · ID {{ mapped.id }}{% endif %}</strong><span data-mapping-product-meta>{% if mapped %}{{ mapped.brand or 'Без бренда' }} · {{ mapped.category or 'Без категории' }} · остаток {{ mapped.stock_display }}{% endif %}</span></div><span class="map-state good" data-mapping-status>Сопоставлен</span></div>
                                                 </div>
                                                 <div class="map-actions" data-order-mapping-actions{% if not mapped or mapping.state != 'mapped' %} hidden{% endif %}><button class="button button-secondary" type="button" data-change-order-mapping>Изменить сопоставление</button><button class="button button-secondary orders-secondary-submit" type="button" data-remove-order-mapping>Снять сопоставление</button></div>
-                                                <form class="order-map-form" data-shared-catalog-scope data-catalog-product-global="true" data-catalog-in-stock="false" data-catalog-order-counts="true" data-order-map-form{% if mapped and mapping.state == 'mapped' %} hidden{% endif %}>
+                                                <form class="order-map-form" data-shared-catalog-scope data-catalog-product-global="true" data-catalog-in-stock="false" data-catalog-order-counts="true" data-order-map-form data-erp-pending data-pending-label="Сопоставляем…"{% if mapped and mapping.state == 'mapped' %} hidden{% endif %}>
                                                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                                     <div class="order-map-field"><label>Найти товар ERP</label>{{ render_catalog_combobox('orderMapProduct' ~ loop.index,'product_id',[],selected_value=mapped.id if mapped else '',selected_label=mapped.name if mapped else '',selected_item=mapped if mapped else none,item_label='товар',shared_catalog_kind='product',component_class='filter-combobox sales-product-combobox') }}</div>
                                                     <button class="button button-secondary orders-secondary-submit" type="submit">Сопоставить</button>
@@ -241,7 +249,7 @@
 <div class="order-sale-modal" id="orderSaleModal" role="dialog" aria-modal="true" aria-labelledby="orderSaleTitle" aria-hidden="true" data-auto-open="{{ '1' if request.args.get('open_sale') == '1' else '0' }}">
     <div class="sale-dialog">
         <div class="sale-dialog-head"><div><h2 id="orderSaleTitle">Провести продажу</h2><p class="card-subtitle">Заказ №{{ detail_number }} · Tictactoy</p></div><button class="button button-secondary" type="button" data-close-sale-dialog aria-label="Закрыть">×</button></div>
-        <form method="post" action="/order/{{ detail_id }}/stock-writeoff" data-order-sale-form><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <form method="post" action="/order/{{ detail_id }}/stock-writeoff" data-order-sale-form data-erp-pending data-pending-label="Проводим продажу…"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="sale-dialog-body">{% if request.args.get('notice') == 'error' and request.args.get('message') %}<div class="notice notice-error" role="alert">{{ request.args.get('message') }}</div>{% endif %}<p>Проверьте позиции и географию перед сохранением в разделе «Продажи».</p><div class="customer-grid" style="margin-top:12px"><div class="order-sale-location-field"><label for="orderSaleCountryTrigger">Страна</label>{{ render_catalog_combobox('orderSaleCountry','country',order_country_options,selected_value=order_geography.country or '',item_label='страну',prefix_search=true,empty_label='Страна не найдена',component_class='filter-combobox',clear_selection_on_search_clear=true) }}</div><div class="order-sale-location-field"><label for="orderSaleRegionTrigger">Регион</label>{{ render_catalog_combobox('orderSaleRegion','region',[],selected_value=order_geography.region or '',item_label='регион',disabled=not order_geography.country,prefix_search=true,empty_label='Регион не найден',component_class='filter-combobox',clear_selection_on_search_clear=true) }}</div><div class="order-sale-location-field"><label for="orderSaleCityTrigger">Город / населённый пункт</label>{{ render_catalog_combobox('orderSaleCity','city',[],selected_value=order_geography.city or '',item_label='город',disabled=not order_geography.region,prefix_search=true,empty_label='Город не найден',component_class='filter-combobox',clear_selection_on_search_clear=true) }}</div></div><ul class="sale-lines">{% for product in detail_products %}<li>{{ product.get('name') or product.get('NAME') }} · {{ product.get('quantity') or 1 }} шт.<input type="hidden" name="original_price_{{ loop.index0 }}" value="{{ product.get('base_price') or product.get('price') or '' }}"><input type="hidden" name="discount_type_{{ loop.index0 }}" value="none"><input type="hidden" name="discount_value_{{ loop.index0 }}" value="0"><input type="hidden" name="discount_reason_{{ loop.index0 }}" value=""></li>{% endfor %}</ul><label>Трекинг<input class="field" style="width:100%;margin-top:5px" name="tracking" maxlength="255" value="{{ order_tracking or '' }}" placeholder="Введите номер отправления" data-order-sale-tracking></label><div class="warning" style="margin-top:12px">Продажа создаётся атомарно с источником Tictactoy. Повторный запрос не создаст дубль и не спишет остаток повторно.</div></div>
             <div class="sale-dialog-actions"><button class="button button-secondary" type="button" data-close-sale-dialog>Отмена</button><button class="button button-primary" type="submit" data-sale-submit>Провести продажу</button></div>
         </form>

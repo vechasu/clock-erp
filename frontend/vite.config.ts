@@ -3,6 +3,9 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   base: '/app/',
   server: {
+    fs: {
+      allow: ['..'],
+    },
     proxy: {
       '/api': 'http://127.0.0.1:5050',
     },

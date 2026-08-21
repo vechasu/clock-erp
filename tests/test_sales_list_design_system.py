@@ -22,7 +22,7 @@ class SalesListDesignSystemContractTest(unittest.TestCase):
             "erp-table-card erp-table-shell",
             "erp-table-scroll erp-scroll-hint",
             "sales-table erp-data-table",
-            "sales-empty-state erp-empty-state",
+            "sales-empty-state {{ 'erp-no-results-state' if has_sales_query_state else 'erp-empty-state' }}",
             "mobile-erp-card sales-mobile-card",
         ):
             with self.subTest(contract=contract):

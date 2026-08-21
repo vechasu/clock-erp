@@ -4325,6 +4325,8 @@
                     enctype="multipart/form-data"
                     data-shared-catalog-scope
                     data-global-category-options="true"
+                    data-erp-pending
+                    data-pending-label="Сохраняем товар…"
                     onsubmit="return submitWarehouseAddForm(event, this)"
                 >
                     <input
@@ -4821,6 +4823,8 @@
                                                     method="post"
                                                     action="/warehouse/archive"
                                                     onsubmit="return archiveWarehouseProduct(event, this)"
+                                                    data-erp-pending
+                                                    data-pending-label="Удаляем товар…"
                                                     data-product-name="{{ item.name|e }}"
                                                     data-product-article="{{ (item.article or '')|e }}"
                                                     data-product-brand="{{ (item.brand or '')|e }}"
@@ -4863,7 +4867,19 @@
                         </tbody>
                     </table>
                 {% if not items %}
-                    <div class="empty">Товары не найдены</div>
+                    {% if query or warehouse_active_filter_count %}
+                        <div class="empty erp-no-results-state" role="status">
+                            <strong>По текущим условиям товары не найдены</strong>
+                            <span>Товары не удалены — измените поиск или фильтры.</span>
+                            <a class="erp-state-action" href="{{ url_for('warehouse_page', view='out_of_stock' if out_of_stock else 'in_stock') }}">Сбросить фильтры</a>
+                        </div>
+                    {% else %}
+                        <div class="empty erp-empty-state" role="status">
+                            <strong>{{ 'Нет товаров без остатка' if out_of_stock else 'Товаров пока нет' }}</strong>
+                            <span>{{ 'Все активные товары сейчас в наличии.' if out_of_stock else 'Добавьте первый товар, чтобы он появился в каталоге.' }}</span>
+                            {% if not out_of_stock %}<button class="erp-state-action" type="button" onclick="openWarehouseAddModal()">Добавить товар</button>{% endif %}
+                        </div>
+                    {% endif %}
                 {% endif %}
             </div>
             {{ render_erp_pagination(pagination, "Страницы товаров") }}
@@ -5149,6 +5165,8 @@
             method="post"
             action="/warehouse/edit"
             data-shared-catalog-scope
+            data-erp-pending
+            data-pending-label="Сохраняем товар…"
         >
             <input
                 type="hidden"
@@ -6569,7 +6587,7 @@
             url.searchParams.delete("page");
 
             if (loadingState) {
-                loadingState.className = "warehouse-loading-state is-visible";
+                loadingState.className = "warehouse-loading-state is-visible erp-loading-state";
                 loadingState.textContent = "Обновляем товары…";
             }
 
@@ -6630,7 +6648,7 @@
                     console.error(error);
                     if (loadingState) {
                         loadingState.className = (
-                            "warehouse-loading-state is-visible is-error"
+                            "warehouse-loading-state is-visible is-error erp-error-state"
                         );
                         loadingState.innerHTML = (
                             "Не удалось обновить товары."

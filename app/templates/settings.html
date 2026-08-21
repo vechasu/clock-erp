@@ -37,7 +37,7 @@
             </div>
         {% endif %}
 
-        <form id="settingsForm" class="settings-card settings-form" method="post" aria-describedby="settingsFormStatus">
+        <form id="settingsForm" class="settings-card settings-form" method="post" aria-describedby="settingsFormStatus" data-erp-pending data-pending-label="Сохраняем настройки…">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <section class="settings-section">
                 <h2>Оформление</h2>
@@ -235,7 +235,7 @@
 
             <div class="actions settings-actions">
                 <span id="settingsFormStatus" class="settings-form-status" aria-live="polite"></span>
-                <button class="button erp-primary-action" type="submit">
+                <button class="button erp-primary-action" type="submit" data-pending-label="Сохраняем настройки…">
                     Сохранить настройки
                 </button>
             </div>

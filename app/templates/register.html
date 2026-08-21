@@ -17,8 +17,8 @@
     {% endif %}
 
     {% if invitation %}
-    <div class="invitation-confirmed" role="status">Приглашение подтверждено</div>
-    <form class="auth-form" id="registerForm" method="post" novalidate>
+    <div class="invitation-confirmed erp-success-state" role="status">Приглашение подтверждено</div>
+    <form class="auth-form" id="registerForm" method="post" data-erp-pending data-pending-label="Создаём аккаунт…">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="next" value="{{ request.args.get('next', '/') }}">
         <div class="auth-grid">
@@ -63,7 +63,8 @@
         </div>
 
         <div class="auth-actions">
-            <button class="auth-submit" id="registerSubmit" type="submit" {% if rate_limited %}disabled{% endif %}>Создать аккаунт</button>
+            <button class="auth-submit" id="registerSubmit" type="submit" data-pending-label="Создаём аккаунт…" {% if rate_limited %}disabled aria-describedby="registerDisabledReason"{% endif %}>Создать аккаунт</button>
+            {% if rate_limited %}<p class="auth-hint" id="registerDisabledReason">Повторите регистрацию позже: временный лимит запросов исчерпан.</p>{% endif %}
         </div>
     </form>
     {% else %}
@@ -92,15 +93,6 @@
         });
     });
     const form = document.getElementById("registerForm");
-    const submit = document.getElementById("registerSubmit");
-    if (form) {
-        form.addEventListener("submit", () => {
-            if (form.dataset.submitting === "1") return;
-            form.dataset.submitting = "1";
-            submit.disabled = true;
-            submit.textContent = "Отправляем…";
-        });
-    }
     const invitationForm = document.getElementById("invitationCheckForm");
     const invitationToken = window.location.hash.startsWith("#invite=")
         ? decodeURIComponent(window.location.hash.slice(8))

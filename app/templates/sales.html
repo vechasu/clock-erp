@@ -2233,7 +2233,7 @@
                                                         onclick="openSaleDeleteModal(this)"
                                                     >Удалить запись</button>
                                                 {% endif %}
-                                                <form method="post" action="{{ url_for('sale_archive') }}" class="sales-archive-form">
+                                                <form method="post" action="{{ url_for('sale_archive') }}" class="sales-archive-form" data-erp-pending data-pending-label="Обновляем архив…">
                                                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                                     <input type="hidden" name="sale_id" value="{{ sale.id }}">
                                                     <input type="hidden" name="sale_type" value="{{ sale.sale_type or ('manual' if sale.is_manual else 'automatic') }}">
@@ -2250,24 +2250,22 @@
                                     </td>
                                 </tr>
                             {% else %}
+                                {% set has_sales_query_state = request.args.get('q') or request.args.get('search') or request.args.get('date_from') or request.args.get('date_to') or request.args.get('today') or request.args.get('status') or request.args.get('sale_type') or request.args.get('brand') or request.args.get('category') or request.args.get('product') or request.args.get('brand_id') or request.args.get('category_id') or request.args.get('product_id') %}
                                 <tr class="sales-initial-empty-row">
                                     <td
                                         class="empty"
                                         colspan="{{ sales_columns|length + 1 }}"
                                     >
-                                        <div class="sales-empty-state erp-empty-state">
-                                            <strong>Продаж пока нет</strong>
-                                            <span>
-                                                Добавьте первую продажу,
-                                                чтобы она появилась здесь.
-                                            </span>
-                                            <button
-                                                class="erp-primary-action"
-                                                type="button"
-                                                data-open-empty-sale
-                                            >
-                                                Добавить продажу
-                                            </button>
+                                        <div class="sales-empty-state {{ 'erp-no-results-state' if has_sales_query_state else 'erp-empty-state' }}" role="status">
+                                            {% if has_sales_query_state %}
+                                                <strong>Ничего не найдено</strong>
+                                                <span>Измените условия поиска или сбросьте фильтры.</span>
+                                                <button class="erp-reset-action" type="button" data-reset-sales-filters>Сбросить фильтры</button>
+                                            {% else %}
+                                                <strong>Продаж пока нет</strong>
+                                                <span>Добавьте первую продажу, чтобы она появилась здесь.</span>
+                                                <button class="erp-primary-action" type="button" data-open-empty-sale>Добавить продажу</button>
+                                            {% endif %}
                                         </div>
                                     </td>
                                 </tr>
@@ -2440,7 +2438,7 @@
                                         onclick="openSaleDeleteModal(this)"
                                     >Удалить запись</button>
                                 {% endif %}
-                                <form method="post" action="{{ url_for('sale_archive') }}" class="sales-archive-form">
+                                <form method="post" action="{{ url_for('sale_archive') }}" class="sales-archive-form" data-erp-pending data-pending-label="Обновляем архив…">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                     <input type="hidden" name="sale_id" value="{{ sale.id }}">
                                     <input type="hidden" name="sale_type" value="{{ sale.sale_type or ('manual' if sale.is_manual else 'automatic') }}">
@@ -2454,8 +2452,19 @@
                         </div>
                     </article>
                 {% else %}
+                    {% set has_sales_query_state = request.args.get('q') or request.args.get('search') or request.args.get('date_from') or request.args.get('date_to') or request.args.get('today') or request.args.get('status') or request.args.get('sale_type') or request.args.get('brand') or request.args.get('category') or request.args.get('product') or request.args.get('brand_id') or request.args.get('category_id') or request.args.get('product_id') %}
                     <div class="empty sales-mobile-initial-empty">
-                        В этой вкладке пока нет продаж.
+                        <div class="sales-empty-state {{ 'erp-no-results-state' if has_sales_query_state else 'erp-empty-state' }}" role="status">
+                            {% if has_sales_query_state %}
+                                <strong>Ничего не найдено</strong>
+                                <span>Измените условия поиска или сбросьте фильтры.</span>
+                                <button class="erp-reset-action" type="button" data-reset-sales-filters>Сбросить фильтры</button>
+                            {% else %}
+                                <strong>Продаж пока нет</strong>
+                                <span>Добавьте первую продажу, чтобы она появилась здесь.</span>
+                                <button class="erp-primary-action" type="button" data-open-empty-sale>Добавить продажу</button>
+                            {% endif %}
+                        </div>
                     </div>
                 {% endfor %}
                 <div
@@ -2463,7 +2472,7 @@
                     class="empty sales-mobile-filter-empty"
                     hidden
                 >
-                    <div class="sales-empty-state erp-empty-state">
+                    <div class="sales-empty-state erp-no-results-state" role="status">
                         <strong>Ничего не найдено</strong>
                         <span>
                             Измените условия поиска или сбросьте фильтры.
@@ -2561,6 +2570,8 @@
                 action="{{ url_for('manual_sale_add') }}"
                 data-shared-catalog-scope
                 data-catalog-in-stock="true"
+                data-erp-pending
+                data-pending-label="Проводим продажу…"
             >
                 <input
                     type="hidden"
@@ -3048,7 +3059,7 @@
             </div>
             <button class="modal-close" type="button" aria-label="Закрыть" onclick="closeCancellationModal()">×</button>
         </div>
-        <form id="saleCancellationForm" method="post" action="{{ url_for('sale_cancel') }}">
+        <form id="saleCancellationForm" method="post" action="{{ url_for('sale_cancel') }}" data-erp-pending data-pending-label="Отменяем продажу…">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input id="cancelSaleId" type="hidden" name="sale_id">
             <input id="cancelSaleType" type="hidden" name="sale_type">
@@ -3097,7 +3108,7 @@
             </div>
             <button class="modal-close" type="button" aria-label="Закрыть" onclick="closeSaleDeleteModal()">×</button>
         </div>
-        <form id="saleDeleteForm" method="post" action="{{ url_for('sale_delete') }}">
+        <form id="saleDeleteForm" method="post" action="{{ url_for('sale_delete') }}" data-erp-pending data-pending-label="Удаляем запись…">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input id="deleteSaleId" type="hidden" name="sale_id">
             <input id="deleteSaleType" type="hidden" name="sale_type">
@@ -3146,6 +3157,8 @@
             id="saleReturnForm"
             method="post"
             action="{{ url_for('sale_return') }}"
+            data-erp-pending
+            data-pending-label="Проводим возврат…"
         >
             <input
                 type="hidden"
@@ -3958,7 +3971,8 @@
         ).length || 1;
 
         const emptyState = document.createElement("div");
-        emptyState.className = "sales-empty-state";
+        emptyState.className = "sales-empty-state erp-no-results-state";
+        emptyState.setAttribute("role", "status");
         const emptyTitle = document.createElement("strong");
         emptyTitle.textContent = "Ничего не найдено";
         const emptyText = document.createElement("span");

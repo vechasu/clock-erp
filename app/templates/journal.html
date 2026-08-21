@@ -129,8 +129,8 @@
                         </span>
                     </button>
                 {% else %}
-                    <div class="journal-empty erp-empty-state" role="status">
-                        {% set has_query_state = filters.entity_type or filters.action or filters.actor or filters.status or filters.source or filters.query or filters.date_from or filters.date_to %}
+                    {% set has_query_state = filters.entity_type or filters.action or filters.actor or filters.status or filters.source or filters.query or filters.date_from or filters.date_to %}
+                    <div class="journal-empty {{ 'erp-no-results-state' if has_query_state else 'erp-empty-state' }}" role="status">
                         {% if has_query_state %}
                             <strong>По выбранным фильтрам событий нет</strong>
                             Попробуйте изменить условия поиска.
