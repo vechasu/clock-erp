@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/erp-components.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-combobox.css') }}">
     <script defer src="{{ url_for('static', filename='js/catalog-combobox.js', v='catalog-combobox-20260821-order-mapping') }}"></script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/orders.css', v='orders-final-erp-v1') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/orders.css', v='orders-final-erp-v2') }}">
 </head>
 <body class="orders-page" data-has-selected-order="{{ 1 if selected_order_explicit|default(false) else 0 }}">
 {% from "_catalog_combobox.html" import render_catalog_combobox %}
@@ -46,7 +46,6 @@
         </header>
 
         <section class="orders-kpis erp-workspace-metrics" aria-label="Показатели заказов">
-            <div class="erp-workspace-metric"><span class="erp-stat-label">Всего заказов</span><strong class="erp-stat-value">{{ order_kpis.total }}</strong></div>
             <div class="erp-workspace-metric"><span class="erp-stat-label">Не подтверждены</span><strong class="erp-stat-value">{{ order_kpis.unconfirmed }}</strong></div>
             <div class="erp-workspace-metric"><span class="erp-stat-label">Подтверждены</span><strong class="erp-stat-value">{{ order_kpis.confirmed }}</strong></div>
             <div class="erp-workspace-metric"><span class="erp-stat-label">Собраны</span><strong class="erp-stat-value">{{ order_kpis.assembled }}</strong></div>
@@ -70,6 +69,7 @@
                             {% for value,label in [('all','За всё время'),('today','Сегодня'),('7d','7 дней'),('30d','30 дней')] %}<option value="{{ value }}"{% if request.args.get('period','all') == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
                         </select>
                         {% if request.args.get('q') or request.args.get('status','all') != 'all' or request.args.get('period','all') != 'all' %}<a class="button button-secondary filter-reset" href="{{ url_for('orders_page') }}">Сбросить</a>{% endif %}
+                        <button class="button button-secondary list-collapse-control" type="button" data-collapse-list>Свернуть список</button>
                     </div>
                 </form>
                 <div class="orders-list" id="ordersList">
@@ -89,12 +89,7 @@
                                 <span>{{ customer or 'Клиент не указан' }}</span><strong>{% if total is not none %}<span class="money-value" data-amount="{{ total }}"></span> ₽{% else %}—{% endif %}</strong>
                                 <span class="phone">{{ phone or 'Телефон не указан' }}</span><span class="date-value" data-date="{{ created }}"></span>
                             </div>
-                            <div class="order-context" aria-label="Состав и обработка заказа">
-                                <span>{{ product_count_label(products_count) }}</span>
-                                <span>{{ order.get('paid_name') or ('Оплачен' if order.get('paid')|string|upper == 'Y' else 'Не оплачен') }}</span>
-                                <span title="{{ order.get('delivery') or 'Доставка не указана' }}">{{ order.get('delivery') or 'Доставка не указана' }}</span>
-                                <span title="{{ order.get('source') or 'Bitrix' }}">{{ order.get('source') or 'Bitrix' }}</span>
-                            </div>
+                            {% if order.get('comment') %}<div class="order-list-comment" title="{{ order.get('comment') }}">Комментарий: {{ order.get('comment') }}</div>{% endif %}
                         </a>
                     {% else %}
                         {% if sync_error %}
@@ -134,19 +129,18 @@
                     <header class="card-head">
                         <div>
                             <button class="button button-secondary back-list" type="button" data-show-list>← Назад к заказам</button>
-                            <div class="card-title"><h2>Заказ №{{ detail_number }}</h2>{{ status_badge(detail_status_code,detail_status_name) }}</div>
+                            <div class="card-title"><h2>Заказ №{{ detail_number }}</h2><span data-detail-status-badge>{{ status_badge(detail_status_code,detail_status_name) }}</span></div>
                             <div class="card-subtitle"><span class="date-value" data-date="{{ selected_order.get('created_at') or selected_order.get('date') }}"></span>{% if detail_total is not none %} · <strong><span class="money-value" data-amount="{{ detail_total }}"></span> ₽</strong>{% endif %}</div>
                         </div>
                         <div class="actions">
-                            <button class="button button-secondary" type="button" data-collapse-list aria-label="Свернуть список" title="Свернуть список">Свернуть список</button>
-                            <form class="status-form" method="post" action="/order/{{ detail_id }}/status" data-erp-pending data-pending-label="Сохраняем статус…">
+                            <form class="status-form" method="post" action="/order/{{ detail_id }}/status" data-status-autosave>
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                <select class="field" name="status" aria-label="Статус заказа">
+                                <select class="field" name="status" aria-label="Статус заказа" data-saved-status="{{ detail_status_code }}">
                                     <option value="N"{% if detail_status_code == 'N' %} selected{% endif %}>Не подтверждён</option>
                                     <option value="A"{% if detail_status_code == 'A' %} selected{% endif %}>Подтверждён</option>
                                     <option value="D"{% if detail_status_code == 'D' %} selected{% endif %}>Собран</option>
                                 </select>
-                                <button class="button button-secondary" type="submit">Сохранить статус</button>
+                                <span class="status-save-state" data-status-save-state aria-live="polite"></span>
                             </form>
                             {% if sale_state.sale_completed %}
                                 <span class="button button-secondary" aria-label="Продажа проведена">Продажа проведена</span><a class="button button-primary" href="/sales?source=tictactoy&sale_id={{ sale_state.sale_id }}">Открыть продажу</a>
@@ -166,14 +160,12 @@
                             <div class="customer-grid">
                                 <div class="fact"><span class="fact-label">Клиент</span><span class="fact-value">{{ selected_order.get('customer') or 'Не указан' }}</span></div>
                                 <div class="fact"><span class="fact-label">Телефон</span><span class="fact-value">{% if selected_order.get('phone') %}<a href="tel:{{ selected_order.get('phone')|replace(' ','') }}">{{ selected_order.get('phone') }}</a>{% else %}Не указан{% endif %}</span></div>
-                                <div class="fact"><span class="fact-label">Email</span><span class="fact-value">{{ selected_order.get('email') or 'Не указан' }}</span></div>
-                                <div class="fact"><span class="fact-label">Источник</span><span class="fact-value">{{ selected_order.get('source') or 'Bitrix' }}</span></div>
-                                <div class="fact"><span class="fact-label">Страна</span><span class="fact-value">{{ order_geography.country or 'Не указана' }}</span></div>
-                                <div class="fact"><span class="fact-label">Регион</span><span class="fact-value">{{ order_geography.region or 'Не указан' }}</span></div>
-                                <div class="fact"><span class="fact-label">Город</span><span class="fact-value">{{ order_geography.city or selected_order.get('city') or 'Не указан' }}</span></div>
+                                <div class="fact"><span class="fact-label">Email</span><span class="fact-value">{% if selected_order.get('email') %}<a href="mailto:{{ selected_order.get('email') }}">{{ selected_order.get('email') }}</a>{% else %}Не указан{% endif %}</span></div>
+                                <div class="fact geography-fact"><span class="fact-label">География доставки</span><span class="fact-value">{{ [order_geography.country, order_geography.region, order_geography.city or selected_order.get('city')]|select|join(' · ') or 'Не указана' }}</span></div>
                                 <div class="fact"><span class="fact-label">Адрес</span><span class="fact-value">{{ selected_order.get('address') or selected_order.get('delivery_address') or 'Не указан' }}</span></div>
-                                <div class="fact"><span class="fact-label">Доставка</span><span class="fact-value">{{ selected_order.get('delivery') or 'Не указана' }}</span></div>
-                                <div class="fact"><span class="fact-label">Оплата</span><span class="fact-value">{{ selected_order.get('payment') or 'Не указана' }} · {{ selected_order.get('paid_name') or ('Оплачен' if selected_order.get('paid')|string|upper == 'Y' else 'Не оплачен') }}</span></div>
+                                <div class="fact"><span class="fact-label">Способ доставки</span><span class="fact-value">{{ selected_order.get('delivery') or 'Не передан Bitrix' }}</span></div>
+                                <div class="fact"><span class="fact-label">Способ оплаты</span><span class="fact-value">{{ selected_order.get('payment') or 'Не передан Bitrix' }}</span></div>
+                                <div class="fact"><span class="fact-label">Статус оплаты</span><span class="fact-value">{{ selected_order.get('paid_name') or ('Оплачен' if selected_order.get('paid')|string|upper == 'Y' else 'Не оплачен') }}</span></div>
                                 <div class="fact tracking-fact"><label class="fact-label" for="orderTracking">Трекинг</label><form class="tracking-form" method="post" action="/order/{{ detail_id }}/tracking" data-tracking-form data-erp-pending data-pending-label="Сохраняем трекинг…"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input class="field" id="orderTracking" name="tracking" maxlength="255" value="{{ request.args.get('tracking_value', order_tracking or '') }}" placeholder="Номер отправления"><button class="button button-secondary orders-secondary-submit" type="submit">Сохранить</button></form></div>
                             </div>
                         </section>
@@ -191,21 +183,19 @@
                                 {% set line = product.get('line_total') if product.get('line_total') is not none else (unit|float * qty|float if unit is not none else none) %}
                                 <article class="product-row" data-order-item-row data-order-id="{{ detail_id }}" data-order-item-id="{{ order_line_id }}">
                                     <div class="line-main">
-                                        {% set photo = product.get('image_url') or (mapped.image_url if mapped else '') %}
+                                        {% set photo = (mapped.image_url if mapped else '') or product.get('image_url') %}
                                         {% if photo %}<img class="product-photo" src="{{ photo }}" alt="Фото товара">{% else %}<div class="product-photo" role="img" aria-label="Нет фото">Нет фото</div>{% endif %}
                                         <div class="product-copy">
                                             <div class="product-name">{{ product.get('name') or product.get('NAME') or 'Товар без названия' }}</div>
                                             <div class="product-note">{{ product.get('brand') or (mapped.brand if mapped else 'Бренд не указан') }} · {{ product.get('category') or (mapped.category if mapped else 'Категория не указана') }} · {{ qty }} шт.</div>
-                                            <div class="mapping" data-order-mapping>
-                                                <span class="map-state bad" data-order-mapping-state{% if mapped and mapping.state == 'mapped' %} hidden{% endif %}>{{ mapping.state_label if mapping else 'Не сопоставлен' }}</span>
-                                                <div data-order-mapping-summary{% if not mapped or mapping.state != 'mapped' %} hidden{% endif %}>
-                                                    <div class="mapping-card"><div class="mapping-copy"><strong data-mapping-product-name>ERP: {{ mapped.name if mapped else '' }}{% if mapped %} · ID {{ mapped.id }}{% endif %}</strong><span data-mapping-product-meta>{% if mapped %}{{ mapped.brand or 'Без бренда' }} · {{ mapped.category or 'Без категории' }} · остаток {{ mapped.stock_display }}{% endif %}</span></div><span class="map-state good" data-mapping-status>Сопоставлен</span></div>
-                                                </div>
-                                                <div class="map-actions" data-order-mapping-actions{% if not mapped or mapping.state != 'mapped' %} hidden{% endif %}><button class="button button-secondary" type="button" data-change-order-mapping>Изменить сопоставление</button><button class="button button-secondary orders-secondary-submit" type="button" data-remove-order-mapping>Снять сопоставление</button></div>
+                                            <div class="mapping" data-order-mapping{% if mapped and mapping.state == 'mapped' and mapping.mapping_method != 'manual' %} hidden{% endif %}>
+                                                <span class="map-state bad" data-order-mapping-state{% if mapped and mapping.state == 'mapped' %} hidden{% endif %}>{{ mapping.state_label if mapping and mapping.state not in ['unmapped', 'missing_external_id'] else 'Не удалось определить товар ERP' }}</span>
+                                                <div data-order-mapping-summary hidden><div class="mapping-card"><div class="mapping-copy"><strong data-mapping-product-name></strong><span data-mapping-product-meta></span></div></div></div>
+                                                <div class="map-actions" data-order-mapping-actions{% if not mapped or mapping.state != 'mapped' or mapping.mapping_method != 'manual' %} hidden{% endif %}><button class="button button-secondary" type="button" data-change-order-mapping>Изменить товар ERP</button><button class="button button-secondary orders-secondary-submit" type="button" data-remove-order-mapping>Снять выбор</button></div>
                                                 <form class="order-map-form" data-shared-catalog-scope data-catalog-product-global="true" data-catalog-in-stock="false" data-catalog-order-counts="true" data-order-map-form data-erp-pending data-pending-label="Сопоставляем…"{% if mapped and mapping.state == 'mapped' %} hidden{% endif %}>
                                                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                                     <div class="order-map-field"><label>Найти товар ERP</label>{{ render_catalog_combobox('orderMapProduct' ~ loop.index,'product_id',[],selected_value=mapped.id if mapped else '',selected_label=mapped.name if mapped else '',selected_item=mapped if mapped else none,item_label='товар',shared_catalog_kind='product',component_class='filter-combobox sales-product-combobox') }}</div>
-                                                    <button class="button button-secondary orders-secondary-submit" type="submit">Сопоставить</button>
+                                                    <button class="button button-secondary orders-secondary-submit" type="submit">Выбрать товар</button>
                                                     <div class="map-state bad" data-order-mapping-error hidden></div>
                                             </form>
                                             </div>
@@ -216,8 +206,22 @@
                             {% endfor %}</div>{% else %}<div class="empty">Состав заказа не загружен. Проведение продажи недоступно.</div>{% endif %}
                         </section>
                         <section class="section order-notes">
-                            <div class="section-head"><h3>Примечания</h3></div>
-                            <div class="order-note-value">{{ selected_order.get('comment') or 'Примечаний к заказу нет.' }}</div>
+                            <div class="section-head"><h3>Комментарий покупателя</h3></div>
+                            <div class="order-note-value">{{ selected_order.get('comment') or 'Комментарий не оставлен.' }}</div>
+                        </section>
+                        <section class="section order-comments">
+                            <div class="section-head"><h3>Внутренние комментарии</h3></div>
+                            <div class="employee-comment-feed">
+                                {% for comment in order_comments %}
+                                    <article class="employee-comment"><div>{{ comment.text }}</div><small>{{ comment.author_name }} · <span class="date-value" data-date="{{ comment.created_at }}"></span></small></article>
+                                {% else %}<div class="employee-comment-empty">Комментариев сотрудников пока нет.</div>{% endfor %}
+                            </div>
+                            <form class="employee-comment-form" method="post" action="/order/{{ detail_id }}/comments" data-erp-pending data-pending-label="Добавляем…">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <label class="sr-only" for="employeeOrderComment">Внутренний комментарий</label>
+                                <textarea class="field" id="employeeOrderComment" name="text" maxlength="2000" rows="2" required placeholder="Добавить внутренний комментарий"></textarea>
+                                <button class="button button-secondary" type="submit">Добавить</button>
+                            </form>
                         </section>
 
                         <section class="section">
@@ -294,7 +298,29 @@
         return true;
     }
     document.querySelector('[data-tracking-form]')?.addEventListener('submit',event=>{if(!setPending(event.currentTarget,'Сохраняем…'))event.preventDefault();});
-    document.querySelector('.status-form')?.addEventListener('submit',event=>{if(!setPending(event.currentTarget,'Сохраняем…'))event.preventDefault();});
+    const statusForm=document.querySelector('[data-status-autosave]');
+    if(statusForm){
+        const select=statusForm.querySelector('select[name="status"]');const state=statusForm.querySelector('[data-status-save-state]');const csrf=statusForm.querySelector('input[name="csrf_token"]').value;
+        let saved=select.dataset.savedStatus;let requested=saved;let saving=false;
+        const labels={N:'Не подтверждён',A:'Подтверждён',D:'Собран'};const classes={N:'badge-new',A:'badge-work',D:'badge-done'};
+        function reflectSaved(value){const badge=document.querySelector('[data-detail-status-badge] .badge');if(!badge)return;badge.className=`badge ${classes[value]||'badge-default'}`;badge.textContent=labels[value]||'Неизвестный статус';}
+        async function saveRequested(){
+            if(saving)return;
+            while(requested!==saved){
+                const target=requested;saving=true;state.className='status-save-state is-saving';state.textContent='Сохраняется…';
+                try{
+                    const response=await fetch(statusForm.action,{method:'POST',credentials:'same-origin',headers:{Accept:'application/json','Content-Type':'application/x-www-form-urlencoded','X-CSRF-Token':csrf},body:new URLSearchParams({status:target,csrf_token:csrf})});
+                    const payload=await response.json().catch(()=>null);if(!response.ok||payload?.ok!==true)throw new Error(payload?.message||`Ошибка сохранения (${response.status})`);
+                    saved=target;select.dataset.savedStatus=target;reflectSaved(target);
+                    if(requested===target){state.className='status-save-state is-saved';state.textContent='Сохранено';}
+                }catch(error){
+                    if(requested===target){requested=saved;select.value=saved;state.className='status-save-state is-error';state.textContent='Не сохранено';window.VechasuNotify?.error(error.message||'Не удалось сохранить статус');}
+                }finally{saving=false;}
+            }
+        }
+        select.addEventListener('change',()=>{requested=select.value;saveRequested();});
+        statusForm.addEventListener('submit',event=>event.preventDefault());
+    }
     const mappingEndpoint=row=>`/api/orders/${encodeURIComponent(row.dataset.orderId)}/items/${encodeURIComponent(row.dataset.orderItemId)}/mapping`;
     function mappingError(form,message,error){const node=form?.querySelector('[data-order-mapping-error]');if(node){node.textContent=message;node.hidden=false;}window.VechasuNotify?.error(message);console.error('Order item mapping failed',error||message);}
     function updateOrderMappingState(state){
@@ -304,7 +330,7 @@
     }
     function showSavedMapping(row,data){
         const product=data.mapping.product;const summary=row.querySelector('[data-order-mapping-summary]');const state=row.querySelector('[data-order-mapping-state]');const actions=row.querySelector('[data-order-mapping-actions]');const form=row.querySelector('[data-order-map-form]');
-        summary.querySelector('[data-mapping-product-name]').textContent=`ERP: ${product.name} · ID ${product.id}`;
+        summary.querySelector('[data-mapping-product-name]').textContent=product.name;
         summary.querySelector('[data-mapping-product-meta]').textContent=`${product.brand||'Без бренда'} · ${product.category||'Без категории'} · остаток ${product.stock_display??product.stock??0}`;
         summary.hidden=false;state.hidden=true;actions.hidden=false;form.hidden=true;form.querySelector('[data-order-mapping-error]').hidden=true;updateOrderMappingState(data.order);
     }
@@ -316,8 +342,8 @@
     document.querySelectorAll('[data-order-item-row]').forEach(row=>{
         const form=row.querySelector('[data-order-map-form]');
         row.querySelector('[data-change-order-mapping]')?.addEventListener('click',()=>{form.hidden=false;form.querySelector('[data-order-mapping-error]').hidden=true;window.initializeSharedCatalogCascades?.(form);form.querySelector('.brand-combobox-search')?.focus();});
-        row.querySelector('[data-remove-order-mapping]')?.addEventListener('click',async event=>{const button=event.currentTarget;button.disabled=true;try{const data=await mappingRequest(row,'DELETE');row.querySelector('[data-order-mapping-summary]').hidden=true;row.querySelector('[data-order-mapping-actions]').hidden=true;const state=row.querySelector('[data-order-mapping-state]');state.textContent='Не сопоставлен';state.hidden=false;form.hidden=false;window.clearSharedCatalogCombobox?.(form.querySelector('[data-shared-catalog-kind="product"]'));updateOrderMappingState(data.order);}catch(error){mappingError(form,error.message,error);}finally{button.disabled=false;}});
-        form.addEventListener('submit',async event=>{event.preventDefault();if(form.dataset.submitting==='1')return;const productId=form.querySelector('input[name="product_id"]')?.value?.trim();if(!productId){mappingError(form,'Выберите товар ERP из каталога');return;}const button=form.querySelector('button[type="submit"]');form.dataset.submitting='1';button.disabled=true;button.textContent='Сопоставляем…';try{const data=await mappingRequest(row,'POST',productId);if(String(data?.mapping?.product?.id)!==String(productId)){throw new Error('Сервер подтвердил другой товар ERP');}showSavedMapping(row,data);window.VechasuNotify?.success('Сопоставление сохранено');}catch(error){mappingError(form,error.message,error);}finally{delete form.dataset.submitting;button.disabled=false;button.textContent='Сопоставить';}});
+        row.querySelector('[data-remove-order-mapping]')?.addEventListener('click',async event=>{const button=event.currentTarget;button.disabled=true;try{const data=await mappingRequest(row,'DELETE');row.querySelector('[data-order-mapping-summary]').hidden=true;row.querySelector('[data-order-mapping-actions]').hidden=true;const state=row.querySelector('[data-order-mapping-state]');state.textContent='Не удалось определить товар ERP';state.hidden=false;form.hidden=false;window.clearSharedCatalogCombobox?.(form.querySelector('[data-shared-catalog-kind="product"]'));updateOrderMappingState(data.order);}catch(error){mappingError(form,error.message,error);}finally{button.disabled=false;}});
+        form.addEventListener('submit',async event=>{event.preventDefault();if(form.dataset.submitting==='1')return;const productId=form.querySelector('input[name="product_id"]')?.value?.trim();if(!productId){mappingError(form,'Выберите товар ERP из каталога');return;}const button=form.querySelector('button[type="submit"]');form.dataset.submitting='1';button.disabled=true;button.textContent='Выбираем…';try{const data=await mappingRequest(row,'POST',productId);if(String(data?.mapping?.product?.id)!==String(productId)){throw new Error('Сервер подтвердил другой товар ERP');}showSavedMapping(row,data);window.VechasuNotify?.success('Товар ERP выбран');}catch(error){mappingError(form,error.message,error);}finally{delete form.dataset.submitting;button.disabled=false;button.textContent='Выбрать товар';}});
     });
     const modal=document.getElementById('orderSaleModal'); if(!modal)return;
     const tracking=modal.querySelector('[data-order-sale-tracking]'); const trackingStorageKey='order-sale-tracking:{{ detail_id if selected_order else "" }}';

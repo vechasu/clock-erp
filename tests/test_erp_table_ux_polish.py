@@ -34,7 +34,7 @@ class ErpTableUxPolishTest(unittest.TestCase):
         )
         self.assertNotIn('class="warehouse-table-toolbar"', source)
 
-    def test_stock_filter_is_replaced_by_persistent_tabs(self):
+    def test_stock_filter_stays_inside_products_workspace(self):
         source = self.source("app/templates/warehouse.html")
         stock_header = source.split(
             '<th data-column-key="stock">', 1
@@ -44,8 +44,8 @@ class ErpTableUxPolishTest(unittest.TestCase):
         self.assertNotIn('id="warehouseFilterInStock"', source)
         self.assertNotIn('name="in_stock"', source)
         self.assertNotIn("Только в наличии", source)
-        workspace = self.source("app/templates/_products_workspace.html")
-        self.assertIn("'out_of_stock'", workspace)
+        self.assertIn('name="stock_state"', source)
+        self.assertIn('value="out"', source)
 
     def test_resize_scroll_and_action_column_contracts_remain(self):
         contracts = {

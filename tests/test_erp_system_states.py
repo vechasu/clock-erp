@@ -52,7 +52,7 @@ class ErpSystemStatesContractTest(unittest.TestCase):
 
     def test_mutating_workflows_opt_in_with_contextual_labels(self):
         expectations = {
-            "orders.html": ("Сохраняем статус…", "Сопоставляем…", "Проводим продажу…"),
+            "orders.html": ("Сохраняется…", "Сопоставляем…", "Проводим продажу…"),
             "sales.html": ("Проводим продажу…", "Отменяем продажу…", "Проводим возврат…"),
             "receipts.html": ("Проводим приход…", "Сохраняем приход…", "Отменяем приход…"),
             "warehouse.html": ("Сохраняем товар…", "Удаляем товар…"),

@@ -89,7 +89,8 @@ class ActiveFilterChipsTest(unittest.TestCase):
         self.assertIn('id="warehouseSearchInput"', self.warehouse)
         self.assertNotIn('id="warehouseInStockToggle"', self.warehouse)
         self.assertNotIn('name="in_stock"', self.warehouse)
-        self.assertIn("'out_of_stock'", self.products_workspace)
+        self.assertIn('name="stock_state"', self.warehouse)
+        self.assertIn('value="out"', self.warehouse)
         reset = self.warehouse.split(
             "function resetWarehouseTableFilters()", 1
         )[1].split("function clearWarehouseFilter", 1)[0]

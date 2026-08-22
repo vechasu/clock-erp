@@ -376,7 +376,7 @@ class CatalogFilteringTest(unittest.TestCase):
         self.assertIn("Бренд: 666 Barcelona", html)
         self.assertIn("Категория: Наручные часы", html)
         self.assertIn("Сбросить всё", html)
-        self.assertEqual(html.count('data-product-id="'), 4)
+        self.assertEqual(html.count('data-product-id="'), 100)
 
     def test_warehouse_period_chip_variants_and_stock_chip(self):
         variants = (
