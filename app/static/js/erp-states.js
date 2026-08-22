@@ -158,8 +158,14 @@
             .forEach(function (form) { rememberBaseline(form); });
     });
 
-    global.addEventListener("pageshow", function () {
-        document.querySelectorAll("form[data-erp-pending], form[data-single-submit]").forEach(reset);
+    global.addEventListener("pageshow", function (event) {
+        document.querySelectorAll("form[data-erp-pending], form[data-single-submit]").forEach(function (form) {
+            if (event.persisted
+                || form.dataset.erpPendingActive === "1"
+                || form.dataset.erpSubmitQueued === "1"
+                || form.dataset.submitting === "1"
+                || form.dataset.submitted === "1") reset(form);
+        });
         document.querySelectorAll("[data-erp-async-pending='1']").forEach(function (control) {
             delete control.dataset.erpAsyncPending;
             control.disabled = false;

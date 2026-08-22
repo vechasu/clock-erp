@@ -68,6 +68,11 @@ test('ERP pending lifecycle protects valid submits and restores safely', async (
   expect(validButton.textContent).toBe('Сохранить');
   expect(valid.hasAttribute('aria-busy')).toBe(false);
 
+  validButton.textContent = 'Динамическое состояние';
+  window.dispatchEvent(new Event('pageshow'));
+  expect(validButton.textContent).toBe('Динамическое состояние');
+  validButton.textContent = 'Сохранить';
+
   await expect(
     window.VechasuStates.run(validButton, 'Повторяем…', async () => {
       throw new Error('network');
