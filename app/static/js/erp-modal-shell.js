@@ -10,6 +10,8 @@
         "textarea:not([disabled])",
         "[tabindex]:not([tabindex='-1'])",
     ].join(",");
+    const returnFocus = new WeakMap();
+    let inerted = [];
 
     function activeModal() {
         const modals = Array.from(
@@ -24,6 +26,67 @@
                 return element.getClientRects().length > 0
                     && element.getAttribute("aria-hidden") !== "true";
             });
+    }
+
+    function restoreBackground() {
+        inerted.forEach(function (record) {
+            record.element.inert = record.inert;
+        });
+        inerted = [];
+    }
+
+    function hideBackground(modal) {
+        restoreBackground();
+        let child = modal;
+        let parent = modal.parentElement;
+        while (parent && parent !== document.body) {
+            Array.from(parent.children).forEach(function (sibling) {
+                if (sibling === child || sibling.contains(modal)) return;
+                inerted.push({
+                    element: sibling,
+                    inert: sibling.inert,
+                });
+                sibling.inert = true;
+            });
+            child = parent;
+            parent = parent.parentElement;
+        }
+    }
+
+    function opened(modal) {
+        return modal.classList.contains("is-open")
+            && modal.getAttribute("aria-hidden") !== "true";
+    }
+
+    function synchronizeModal() {
+        const modal = activeModal();
+        if (!modal) {
+            restoreBackground();
+            document.body.classList.remove("modal-open");
+            document.querySelectorAll("[data-erp-modal-shell]")
+                .forEach(function (candidate) {
+                    const target = returnFocus.get(candidate);
+                    if (target && target.isConnected) target.focus();
+                    returnFocus.delete(candidate);
+                });
+            return;
+        }
+
+        document.body.classList.add("modal-open");
+        if (!returnFocus.has(modal) && !modal.contains(document.activeElement)) {
+            returnFocus.set(modal, document.activeElement);
+        }
+        hideBackground(modal);
+        globalThis.requestAnimationFrame(function () {
+            if (!opened(modal) || modal.contains(document.activeElement)) return;
+            const preferred = modal.querySelector(
+                "[autofocus], [data-initial-focus], "
+                + "input:not([type='hidden']):not([disabled]), "
+                + "select:not([disabled]), textarea:not([disabled]), "
+                + ".modal-close, button:not([disabled])"
+            );
+            (preferred || modal.querySelector(".modal-dialog") || modal).focus();
+        });
     }
 
     document.addEventListener("click", function (event) {
@@ -41,6 +104,18 @@
         }
 
         if (event.key === "Escape") {
+            if (modal.getAttribute("aria-busy") === "true"
+                || modal.hasAttribute("data-erp-escape-locked")) {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                return;
+            }
+            const close = modal.querySelector(
+                "[data-close-modal], [data-close-sale-dialog], "
+                + "[data-close-receipt-modal], .modal-close, "
+                + "button[value='cancel'], button[formmethod='dialog']"
+            );
+            if (close) close.click();
             event.preventDefault();
             event.stopImmediatePropagation();
             return;
@@ -75,8 +150,14 @@
                     dialog.setAttribute("tabindex", "-1");
                 }
             });
-        if (activeModal()) {
-            document.body.classList.add("modal-open");
-        }
+        synchronizeModal();
+        const observer = new MutationObserver(synchronizeModal);
+        document.querySelectorAll("[data-erp-modal-shell]")
+            .forEach(function (modal) {
+                observer.observe(modal, {
+                    attributes: true,
+                    attributeFilter: ["class", "aria-hidden", "hidden"],
+                });
+            });
     });
 })();

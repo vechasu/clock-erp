@@ -5,12 +5,12 @@
 {% block auth_content %}
 <section class="auth-card" aria-labelledby="login-title">
     <header class="auth-card-header">
-        <h2 id="login-title">Войти в ERP</h2>
+        <h1 id="login-title">Войти в ERP</h1>
         <p>Используйте рабочий аккаунт сотрудника TicTacToy.</p>
     </header>
 
     {% if error %}
-        <div class="auth-alert" role="alert">{{ error }}</div>
+        <div class="auth-alert" id="login-error" role="alert" tabindex="-1">{{ error }}</div>
     {% endif %}
     {% if notice == "password-changed" %}
         <div class="invitation-confirmed erp-success-state" role="status">Пароль изменён. Войдите с новым паролем.</div>
@@ -35,6 +35,7 @@
                     autocomplete="email"
                     inputmode="email"
                     required
+                    {% if error %}aria-invalid="true" aria-describedby="login-error"{% endif %}
                 >
             </div>
 
@@ -49,6 +50,7 @@
                         maxlength="128"
                         autocomplete="current-password"
                         required
+                        {% if error %}aria-invalid="true" aria-describedby="login-error"{% endif %}
                     >
                     <button
                         class="password-toggle"

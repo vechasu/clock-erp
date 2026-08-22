@@ -40,6 +40,7 @@
             role="combobox"
             aria-haspopup="listbox"
             aria-expanded="false"
+            aria-label="Выберите {{ item_label }}"
             {% if disabled %}disabled{% endif %}
         >
             <span class="brand-combobox-value">
@@ -57,6 +58,7 @@
                     data-brand-search-input
                     type="text"
                     placeholder="Поиск: {{ item_label }}"
+                    aria-label="Поиск: {{ item_label }}"
                     autocomplete="off"
                 >
                 <button

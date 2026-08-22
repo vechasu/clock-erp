@@ -1458,7 +1458,7 @@
 >
     {% include "_sidebar.html" %}
 
-    <main class="main">
+    <main class="main" id="main-content" tabindex="-1">
         {% if message %}
             <div class="notice notice-{{ notice or 'success' }}" data-erp-notification-source>
                 {{ message }}
@@ -1589,6 +1589,7 @@
                         id="salesSearch"
                         class="search erp-search-input"
                         type="search"
+                        aria-label="Поиск продаж"
                         placeholder="Поиск в «{{ active_source_label }}»"
                         autocomplete="off"
                     >
@@ -1720,7 +1721,7 @@
                 <a
                     class="erp-secondary-action sales-toolbar-action{% if sales_filters.today == '1' %} is-active{% endif %}"
                     href="{{ today_url }}"
-                    aria-pressed="{{ 'true' if sales_filters.today == '1' else 'false' }}"
+                    {% if sales_filters.today == '1' %}aria-current="date"{% endif %}
                     data-sales-today
                 >Сегодня</a>
 

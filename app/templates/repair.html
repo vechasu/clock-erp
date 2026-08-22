@@ -11,7 +11,7 @@
 {% from "_pagination.html" import render_erp_pagination %}
 <div class="app">
     {% include "_sidebar.html" %}
-    <main class="repair-main">
+    <main class="repair-main" id="main-content" tabindex="-1">
         <div class="repair-shell">
             {% if message %}<div class="notice notice-{{ notice or 'success' }}" data-erp-notification-source>{{ message }}</div>{% endif %}
             <header class="repair-header erp-workspace-header">
@@ -86,7 +86,7 @@
 </div>
 
 <div id="repairBackdrop" class="repair-backdrop"></div>
-<aside id="repairDrawer" class="repair-drawer" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="repairDrawerTitle" tabindex="-1">
+<aside id="repairDrawer" class="repair-drawer" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="repairDrawerTitle" tabindex="-1" hidden>
     <div class="repair-drawer-head"><div><h2 id="repairDrawerTitle">Карточка ремонта</h2><div id="repairDrawerSubtitle" class="repair-drawer-subtitle"></div></div><button id="repairDrawerClose" class="repair-close" type="button" aria-label="Закрыть">×</button></div>
     <div id="repairDrawerBody" class="repair-drawer-body"></div>
     <div id="repairDrawerFooter" class="repair-drawer-footer"></div>
@@ -150,11 +150,12 @@
     }
     function openDrawer() {
         if (!drawer.classList.contains('open')) drawerReturnFocus = document.activeElement;
+        drawer.hidden = false;
         drawer.classList.add('open'); backdrop.classList.add('open'); drawer.setAttribute('aria-hidden','false'); document.body.classList.add('repair-drawer-open');
         requestAnimationFrame(() => drawer.querySelector('button, input, select, textarea, [tabindex="0"]')?.focus());
     }
     function closeDrawer() {
-        drawer.classList.remove('open'); backdrop.classList.remove('open'); drawer.setAttribute('aria-hidden','true'); document.body.classList.remove('repair-drawer-open'); activeRepair = null; editingId = '';
+        drawer.classList.remove('open'); backdrop.classList.remove('open'); drawer.setAttribute('aria-hidden','true'); drawer.hidden = true; document.body.classList.remove('repair-drawer-open'); activeRepair = null; editingId = '';
         if (drawerReturnFocus instanceof HTMLElement && drawerReturnFocus.isConnected) drawerReturnFocus.focus();
         drawerReturnFocus = null;
     }

@@ -1609,7 +1609,7 @@
 <div class="app">
     {% include "_sidebar.html" %}
 
-    <main class="main">
+    <main class="main" id="main-content" tabindex="-1">
         <header class="page-header receipt-page-header erp-workspace-header">
             <div class="erp-workspace-heading">
                 <h1>Приход</h1>
@@ -1662,6 +1662,7 @@
                 class="search erp-search-input"
                 id="receiptSearch"
                 type="search"
+                aria-label="Поиск приходов"
                 placeholder="Поиск"
                 value="{{ receipt_filters.q }}"
                 oninput="scheduleReceiptFilter()"
@@ -1682,10 +1683,10 @@
                 </summary>
                 <div class="receipt-advanced-filter-panel">
                     <div class="receipt-advanced-filter-grid">
-                        <select class="control erp-control" id="receiptBrandFilter">
+                        <select class="control erp-control" id="receiptBrandFilter" aria-label="Фильтр по бренду">
                             <option value="">Все бренды</option>
                         </select>
-                        <select class="control erp-control" id="receiptCategoryFilter">
+                        <select class="control erp-control" id="receiptCategoryFilter" aria-label="Фильтр по категории">
                             <option value="">Все категории</option>
                         </select>
                         <div class="receipt-product-filter-field">
@@ -1719,7 +1720,7 @@
                                 </div>
                             </div>
                         </div>
-                        <select class="control erp-control" id="receiptStatusFilter">
+                        <select class="control erp-control" id="receiptStatusFilter" aria-label="Фильтр по статусу">
                             <option value="">Все статусы</option>
                             <option value="Проведён"{% if receipt_filters.receipt_status == 'Проведён' %} selected{% endif %}>Проведён</option>
                             <option value="Отменён"{% if receipt_filters.receipt_status == 'Отменён' %} selected{% endif %}>Отменён</option>
@@ -2226,7 +2227,6 @@
                                                 <span
                                                     class="receipt-action-button receipt-moysklad-button is-disabled"
                                                     title="Документ МоегоСклада недоступен"
-                                                    aria-label="Документ МоегоСклада недоступен"
                                                 >
                                                     <svg
                                                         viewBox="0 0 24 24"
@@ -2241,6 +2241,7 @@
                                                         <path d="M10 14L21 3"/>
                                                         <path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/>
                                                     </svg>
+                                                    <span class="erp-visually-hidden">Документ МоегоСклада недоступен</span>
                                                 </span>
                                             {% endif %}
                                             <!-- RECEIPT MOYSKLAD ACTION V2 END -->
@@ -2689,6 +2690,7 @@
     aria-hidden="true"
     data-erp-modal-shell
     data-erp-modal-lock
+    data-erp-escape-locked
 >
     <div class="modal-dialog receipt-edit-dialog">
         <div class="modal-header">

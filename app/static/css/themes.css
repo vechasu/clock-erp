@@ -21,7 +21,7 @@ html[data-theme="classic"] {
     --theme-surface-raised: #ffffff;
     --theme-text: #172033;
     --theme-text-strong: #0f172a;
-    --theme-text-muted: #64748b;
+    --theme-text-muted: #56657a;
     --theme-border: #e2e8f0;
     --theme-border-strong: #cbd5e1;
     --theme-primary: #2563eb;
@@ -284,6 +284,14 @@ html[data-theme] :where(
     .field-hint,
     .empty,
     .empty-state
+) {
+    color: var(--theme-text-muted) !important;
+}
+
+html[data-theme] :where(
+    .erp-datetime-time,
+    .erp-muted-value,
+    .sales-edit-label
 ) {
     color: var(--theme-text-muted) !important;
 }

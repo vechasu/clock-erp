@@ -4020,7 +4020,7 @@
     <div class="app">
         {% include "_sidebar.html" %}
 
-        <main class="main">
+        <main class="main" id="main-content" tabindex="-1">
             {{ products_workspace_header(
                 'out_of_stock' if out_of_stock else 'products',
                 product_metrics,
@@ -4191,6 +4191,7 @@
                             id="warehouseSearchInput"
                             class="erp-search-input"
                             type="text"
+                            aria-label="Поиск товаров"
                             name="q"
                             value="{{ query }}"
                             placeholder="Поиск по названию или артикулу"

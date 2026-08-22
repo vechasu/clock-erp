@@ -11,7 +11,7 @@
 {% from "_navigation_icons.html" import navigation_icon %}
 <div class="app">
     {% include "_sidebar.html" %}
-    <main class="journal-main">
+    <main class="journal-main" id="main-content" tabindex="-1">
         <div class="journal-shell">
             <header class="journal-header erp-workspace-header">
                 <div class="erp-workspace-heading">
@@ -149,7 +149,7 @@
 </div>
 
 <div id="journalDrawerBackdrop" class="journal-drawer-backdrop"></div>
-<aside id="journalDrawer" class="journal-drawer" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="journalDrawerTitle" tabindex="-1">
+<aside id="journalDrawer" class="journal-drawer" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="journalDrawerTitle" tabindex="-1" hidden>
     <div class="journal-drawer-head">
         <div><h2 id="journalDrawerTitle">Событие</h2><div id="journalDrawerAction"></div></div>
         <button id="journalDrawerClose" class="journal-close" type="button" aria-label="Закрыть">×</button>
@@ -335,6 +335,7 @@
         drawer.classList.remove("open");
         backdrop.classList.remove("open");
         drawer.setAttribute("aria-hidden", "true");
+        drawer.hidden = true;
         document.body.classList.remove("journal-drawer-open");
         if (drawerReturnFocus instanceof HTMLElement && drawerReturnFocus.isConnected) drawerReturnFocus.focus();
         drawerReturnFocus = null;
@@ -436,6 +437,7 @@
         title.textContent = "Событие";
         action.textContent = "Загрузка…";
         content.innerHTML = '<div class="journal-loading erp-loading-state" role="status">Загружаем детали события…</div>';
+        drawer.hidden = false;
         drawer.classList.add("open"); backdrop.classList.add("open");
         drawer.setAttribute("aria-hidden", "false");
         drawer.setAttribute("aria-busy", "true");

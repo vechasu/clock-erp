@@ -87,7 +87,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/products-workspace.css') }}">
     <script defer src="{{ url_for('static', filename='js/products-tabs.js') }}"></script>
 </head>
-<body class="brands-page"><div class="app">{% include "_sidebar.html" %}<main class="main">
+<body class="brands-page"><div class="app">{% include "_sidebar.html" %}<main class="main" id="main-content" tabindex="-1">
     {% from "_products_workspace.html" import products_workspace_header %}
     {{ products_workspace_header('brands', product_metrics) }}
     {% if request.args.get('notice') and request.args.get('message') %}<div class="notice notice-{{ request.args.get('notice') }}" role="{{ 'alert' if request.args.get('notice') in ['error', 'danger'] else 'status' }}" data-erp-notification-source>{{ request.args.get('message') }}</div>{% endif %}
