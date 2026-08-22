@@ -9,7 +9,7 @@ class ProductsRedesignStructureTest(unittest.TestCase):
     def source(self, name):
         return (ROOT / "app" / "templates" / name).read_text(encoding="utf-8")
 
-    def test_five_tabs_are_persistent_on_all_catalog_screens(self):
+    def test_four_tabs_are_persistent_on_all_catalog_screens(self):
         workspace = self.source("_products_workspace.html")
         for name in (
             "warehouse.html", "warehouse_analytics.html", "warehouse_brands.html",
@@ -18,19 +18,19 @@ class ProductsRedesignStructureTest(unittest.TestCase):
             source = self.source(name)
             self.assertIn("products_workspace_header", source)
             self.assertNotIn("Часы закончились", source)
-        for label in (
-            "Аналитика", "В наличии", "Нет в наличии", "Бренды", "Категории"
-        ):
+        for label in ("Товары", "Бренды", "Категории", "Аналитика"):
             self.assertIn(label, workspace)
-        self.assertIn("warehouse-tab-badge", workspace)
+        self.assertNotIn("('products', 'В наличии'", workspace)
+        self.assertNotIn("('out_of_stock', 'Нет в наличии'", workspace)
 
     def test_products_header_and_actions_match_compact_design(self):
         source = self.source("warehouse.html")
         workspace = self.source("_products_workspace.html")
         self.assertIn("Каталог и складские остатки", workspace)
         self.assertIn("products-workspace-metrics", workspace)
-        self.assertIn("Экспортировать найденные", workspace)
-        self.assertIn("Экспортировать все товары", workspace)
+        self.assertNotIn("Экспортировать найденные", workspace)
+        self.assertNotIn("Экспортировать все товары", workspace)
+        self.assertIn('name="stock_state"', source)
         self.assertIn(">Инвентаризация</a>", workspace)
         self.assertIn("+ Добавить товар", workspace)
         self.assertNotIn("Только в наличии", source)
