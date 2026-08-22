@@ -765,6 +765,7 @@ html[data-theme] :where(
     .alert-success,
     .badge-green,
     .badge-success,
+    .badge-done,
     .status-success,
     .receipt-status-valid
 ) {
@@ -779,6 +780,8 @@ html[data-theme] :where(
     .alert-error,
     .badge-red,
     .badge-error,
+    .badge-new,
+    .badge-cancel,
     .status-error,
     .receipt-status-error,
     .receipt-message-error
@@ -792,6 +795,7 @@ html[data-theme] :where(
     .notice-warning,
     .alert-warning,
     .badge-warning,
+    .badge-work,
     .status-warning,
     .candidate-note
 ) {
@@ -803,7 +807,7 @@ html[data-theme] :where(
 html[data-theme] :where(
     .notice-info,
     .alert-info,
-    .badge,
+    .badge:not(.badge-new):not(.badge-work):not(.badge-done):not(.badge-cancel),
     .badge-gray,
     .status-info,
     .receipt-safe-note

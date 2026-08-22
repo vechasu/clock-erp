@@ -638,7 +638,7 @@ class UnifiedCatalogApiTest(unittest.TestCase):
         self.remote.create_stock_enter_many.assert_called_once()
         self.remote.upload_product_image.assert_called_once()
 
-    def test_receipt_request_initializes_shared_catalog_schema_once(self):
+    def test_receipt_request_reuses_initialized_shared_catalog_schema(self):
         original_initialize_schema = CatalogDatabase._initialize_schema
         initialize_calls = []
 
@@ -656,8 +656,7 @@ class UnifiedCatalogApiTest(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(len(initialize_calls), 1)
-        self.assertTrue(initialize_calls[0].cache_initialization)
+        self.assertEqual(initialize_calls, [])
 
     def test_multipart_receipt_accepts_png_and_jpeg_for_existing_product(self):
         fixtures = (

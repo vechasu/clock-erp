@@ -25,6 +25,7 @@
     --erp-radius-lg: 18px;
     --erp-control-radius: var(--theme-control-radius, 10px);
     --erp-control-height: var(--theme-control-height, 42px);
+    --erp-compact-control-height: 34px;
     --erp-font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     --erp-type-page-title-size: 28px;
     --erp-type-page-title-weight: 800;
@@ -1487,6 +1488,92 @@ body.modal-open {
     padding: var(--erp-space-3) var(--erp-space-5);
     border-color: var(--erp-border);
     background: color-mix(in srgb, var(--erp-surface) 97%, transparent);
+}
+
+/* Dense desktop workspaces keep native controls and mobile touch targets. */
+@media (min-width: 1024px) {
+    .warehouse-page .erp-toolbar-card { padding: 6px 8px; }
+    .warehouse-page .search-form.erp-toolbar { gap: 6px; }
+
+    .warehouse-page .erp-search-input,
+    .warehouse-page .warehouse-filter-actions select,
+    .warehouse-page .search-form.erp-toolbar .erp-secondary-action {
+        height: var(--erp-compact-control-height) !important;
+        min-height: var(--erp-compact-control-height) !important;
+        padding-top: 0 !important;
+        padding-bottom: 0 !important;
+        border-radius: 9px;
+        font-size: 13px;
+    }
+
+    .warehouse-page .erp-search-input {
+        padding-right: 36px !important;
+        padding-left: 11px !important;
+    }
+
+    .warehouse-page .warehouse-filter-actions select {
+        appearance: auto;
+        padding-right: 8px !important;
+        padding-left: 10px !important;
+    }
+
+    .warehouse-page .warehouse-filter-actions .erp-filter-trigger {
+        min-width: 124px;
+        padding-right: 10px;
+        padding-left: 10px;
+    }
+
+    .warehouse-page .warehouse-column-settings > .erp-secondary-action {
+        min-width: 96px;
+    }
+
+    #filterDrawer.drawer {
+        right: -380px;
+        width: 380px;
+        padding: 16px !important;
+    }
+
+    #filterDrawer .drawer-header {
+        margin-bottom: 12px !important;
+        padding-bottom: 10px !important;
+    }
+
+    #filterDrawer .drawer-title { font-size: 20px !important; }
+
+    #filterDrawer .category-cell-form {
+        gap: 6px !important;
+        padding: 12px !important;
+        margin-bottom: 0;
+    }
+
+    #filterDrawer .brand-combobox-trigger,
+    #filterDrawer .filter-select-wrap select,
+    #filterDrawer .warehouse-date-trigger {
+        height: 36px !important;
+        min-height: 36px !important;
+        padding-top: 0 !important;
+        padding-bottom: 0 !important;
+        border-radius: 10px !important;
+        font-size: 13px !important;
+        line-height: 34px !important;
+    }
+
+    #filterDrawer .warehouse-filter-drawer-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin-top: 4px;
+    }
+
+    #filterDrawer .warehouse-filter-drawer-actions > * {
+        min-height: 34px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0 10px;
+        border-radius: 9px;
+        font-size: 12px;
+    }
 }
 
 #manualSaleModal .sales-form-actions .button-primary {

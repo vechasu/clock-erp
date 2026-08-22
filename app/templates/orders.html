@@ -86,8 +86,10 @@
                         <a href="{{ url_for('order_page', order_id=oid, page=request.args.get('page',1), q=request.args.get('q',''), status=request.args.get('status','all'), period=request.args.get('period','all')) if oid else '#' }}"{% if not oid %} aria-disabled="true"{% endif %} class="order-row{% if selected_order and (selected_order.get('id')|string == oid|string) %} active{% endif %}" data-status="{{ code }}" data-search="{{ number }} {{ customer }} {{ phone }}">
                             <div class="order-row-head"><span class="order-number">Заказ №{{ number }}</span>{{ status_badge(code,label) }}</div>
                             <div class="order-meta">
-                                <span>{{ customer or 'Клиент не указан' }}</span><strong>{% if total is not none %}<span class="money-value" data-amount="{{ total }}"></span> ₽{% else %}—{% endif %}</strong>
-                                <span class="phone">{{ phone or 'Телефон не указан' }}</span><span class="date-value" data-date="{{ created }}"></span>
+                                {% if customer %}<span class="order-customer">{{ customer }}</span>{% endif %}
+                                <strong class="order-total">{% if total is not none %}<span class="money-value" data-amount="{{ total }}"></span> ₽{% else %}—{% endif %}</strong>
+                                {% if phone %}<span class="phone order-phone">{{ phone }}</span>{% endif %}
+                                <span class="date-value order-date" data-date="{{ created }}"></span>
                             </div>
                             {% if order.get('comment') %}<div class="order-list-comment" title="{{ order.get('comment') }}">Комментарий: {{ order.get('comment') }}</div>{% endif %}
                         </a>

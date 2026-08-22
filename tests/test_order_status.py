@@ -15,7 +15,10 @@ from app.services.order_status import (
 class OrderStatusServiceTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
-        self.database = CatalogDatabase(Path(self.temp.name) / "catalog.sqlite3")
+        self.database = CatalogDatabase(
+            Path(self.temp.name) / "catalog.sqlite3",
+            cache_initialization=False,
+        )
         self.service = OrderStatusService(self.database)
 
     def tearDown(self):

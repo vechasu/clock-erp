@@ -1,4 +1,7 @@
+import tempfile
+import time
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from app import web
@@ -50,6 +53,44 @@ class InternalOrdersTest(unittest.TestCase):
                     "Управление заказами интернет-магазина",
                     response.get_data(as_text=True),
                 )
+
+    def test_orders_workspace_does_not_fetch_bitrix_detail(self):
+        with (
+            mock.patch.object(web, "get_orders", return_value=self.orders),
+            mock.patch.object(web, "get_order") as get_order,
+            mock.patch.object(web, "build_order_product_mapping_context", return_value={}),
+            mock.patch.object(web, "is_order_stock_written_off", return_value=False),
+            mock.patch.object(web, "get_order_conducted_sale", return_value=None),
+        ):
+            response = self.client.get("/app/orders")
+
+        self.assertEqual(response.status_code, 200)
+        get_order.assert_not_called()
+
+    def test_orders_workspace_reads_durable_snapshot_without_network(self):
+        original_cache = dict(web.ORDERS_CACHE)
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "orders_cache.json"
+                path.write_text(
+                    '{"items":[{"id":"18593","status":"A"}],'
+                    '"loaded_at":%s}' % time.time(),
+                    encoding="utf-8",
+                )
+                web.ORDERS_CACHE.update(items=[], loaded_at=0, error="")
+                with (
+                    mock.patch.object(web, "get_orders_cache_path", return_value=path),
+                    mock.patch.object(web, "schedule_orders_refresh") as schedule,
+                    mock.patch.object(web.requests, "get") as request_get,
+                ):
+                    orders = web.get_orders()
+
+            self.assertEqual(orders[0]["id"], "18593")
+            request_get.assert_not_called()
+            schedule.assert_not_called()
+        finally:
+            web.ORDERS_CACHE.clear()
+            web.ORDERS_CACHE.update(original_cache)
 
     def test_list_search_and_status_filters_are_restored(self):
         html = self.get_orders_page().get_data(as_text=True)

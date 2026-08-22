@@ -16,6 +16,7 @@ import os
 import fcntl
 import re
 import sqlite3
+import threading
 import uuid
 import click
 import requests
@@ -279,6 +280,8 @@ ORDERS_CACHE = {
 }
 
 ORDERS_CACHE_SECONDS = 60
+ORDERS_CACHE_LOCK = threading.RLock()
+ORDERS_REFRESH_LOCK = threading.Lock()
 
 WAREHOUSE_CACHE = {
     "items": [],
@@ -798,6 +801,52 @@ def get_order_overrides_path(create=False):
     return path / "order_overrides.json"
 
 
+def get_orders_cache_path(create=False):
+    path = Path(app.instance_path)
+    if create:
+        path.mkdir(parents=True, exist_ok=True)
+    return path / "orders_cache.json"
+
+
+def load_orders_cache():
+    path = get_orders_cache_path()
+    if not path.exists():
+        return [], 0
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        items = payload.get("items") if isinstance(payload, dict) else None
+        loaded_at = float(payload.get("loaded_at") or 0)
+    except (OSError, TypeError, ValueError):
+        app.logger.warning("Order cache snapshot could not be read")
+        return [], 0
+    return (items, loaded_at) if isinstance(items, list) else ([], 0)
+
+
+def save_orders_cache(items, loaded_at):
+    path = get_orders_cache_path(create=True)
+    temporary = path.with_name("{}.{}.tmp".format(path.name, uuid.uuid4().hex))
+    try:
+        temporary.write_text(
+            json.dumps(
+                {"items": items, "loaded_at": loaded_at},
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ),
+            encoding="utf-8",
+        )
+        temporary.replace(path)
+    except OSError:
+        app.logger.warning("Order cache snapshot could not be written")
+        return False
+    finally:
+        try:
+            if temporary.exists():
+                temporary.unlink()
+        except OSError:
+            pass
+    return True
+
+
 def load_order_overrides():
     path = get_order_overrides_path()
     if not path.exists():
@@ -828,12 +877,9 @@ def get_order(order_id):
     return normalized
 
 
-def get_orders(force=False):
+def refresh_orders_cache():
+    """Refresh the durable Bitrix snapshot outside ordinary page requests."""
     now = time.time()
-
-    if not force and ORDERS_CACHE["items"] and now - ORDERS_CACHE["loaded_at"] < ORDERS_CACHE_SECONDS:
-        return ORDERS_CACHE["items"]
-
     try:
         order_status_service().retry_pending(update_order_status, limit=10)
         # The legacy list endpoint exposes a fixed recent window and ignores
@@ -856,22 +902,64 @@ def get_orders(force=False):
             if normalized_order:
                 orders.append(normalized_order)
 
-        ORDERS_CACHE["items"] = orders
-        ORDERS_CACHE["loaded_at"] = now
-        ORDERS_CACHE["error"] = ""
+        with ORDERS_CACHE_LOCK:
+            ORDERS_CACHE["items"] = orders
+            ORDERS_CACHE["loaded_at"] = now
+            ORDERS_CACHE["error"] = ""
+        save_orders_cache(orders, now)
 
         return orders
 
     except (BitrixReadOnlyError, requests.RequestException, ValueError) as error:
-        ORDERS_CACHE["error"] = type(error).__name__
+        with ORDERS_CACHE_LOCK:
+            ORDERS_CACHE["error"] = type(error).__name__
         app.logger.warning(
             "Bitrix order list unavailable: %s", type(error).__name__
         )
 
-        if ORDERS_CACHE["items"]:
+        with ORDERS_CACHE_LOCK:
             return ORDERS_CACHE["items"]
 
-        return []
+
+def schedule_orders_refresh():
+    if app.testing or ORDERS_REFRESH_LOCK.locked():
+        return
+
+    def refresh():
+        if not ORDERS_REFRESH_LOCK.acquire(blocking=False):
+            return
+        try:
+            with app.app_context():
+                refresh_orders_cache()
+        finally:
+            ORDERS_REFRESH_LOCK.release()
+
+    threading.Thread(
+        target=refresh,
+        name="orders-cache-refresh",
+        daemon=True,
+    ).start()
+
+
+def get_orders(force=False):
+    """Return a local snapshot; only an explicit retry waits for Bitrix."""
+    if force:
+        return refresh_orders_cache()
+
+    now = time.time()
+    with ORDERS_CACHE_LOCK:
+        if ORDERS_CACHE["loaded_at"]:
+            items = ORDERS_CACHE["items"]
+            loaded_at = ORDERS_CACHE["loaded_at"]
+        else:
+            items, loaded_at = load_orders_cache()
+            if loaded_at:
+                ORDERS_CACHE["items"] = items
+                ORDERS_CACHE["loaded_at"] = loaded_at
+
+    if not loaded_at or now - loaded_at >= ORDERS_CACHE_SECONDS:
+        schedule_orders_refresh()
+    return items
 
 
 def update_order_status(order_id, new_status):
@@ -939,20 +1027,12 @@ def orders_page():
     list_state = prepare_orders_list(orders, request.args)
     orders_page_rows = list_state["rows"]
     selected_order = orders_page_rows[0] if orders_page_rows else None
-    detail_error = ""
-    if selected_order and selected_order.get("id"):
-        try:
-            selected_order = get_order(selected_order["id"]) or selected_order
-        except BitrixReadOnlyError as error:
-            detail_error = type(error).__name__
-            selected_order = dict(selected_order)
-            selected_order["sync_state"] = "error"
     return render_orders_page(
         orders=orders,
         list_state=list_state,
         selected_order=selected_order,
         selected_order_explicit=False,
-        detail_error=detail_error,
+        detail_error="",
     )
 
 
@@ -2337,8 +2417,21 @@ def order_status_update(order_id):
             500,
         )
 
-    ORDERS_CACHE["items"] = []
-    ORDERS_CACHE["loaded_at"] = 0
+    with ORDERS_CACHE_LOCK:
+        for cached_order in ORDERS_CACHE["items"]:
+            cached_id = cached_order.get("id") or cached_order.get("ID")
+            if str(cached_id or "") == str(order_id):
+                cached_order["status"] = new_status
+                cached_order["bitrix_status"] = new_status
+                cached_order["status_name"] = {
+                    "N": "Не подтверждён",
+                    "A": "Подтверждён",
+                    "D": "Собран",
+                }[new_status]
+        cached_items = copy.deepcopy(ORDERS_CACHE["items"])
+        cached_loaded_at = ORDERS_CACHE["loaded_at"]
+    if cached_items:
+        save_orders_cache(cached_items, cached_loaded_at)
     return order_status_reply(
         order_id, True, "Статус заказа обновлён в ERP и Bitrix"
     )
@@ -3626,7 +3719,6 @@ def warehouse_page():
             page_end=pagination["end"],
             total_found=catalog["total"],
             pagination=pagination,
-            stock_operations=get_catalog_stock_history(),
             active_brand_inventory=active_brand_inventory,
             warehouse_table_ui_e2e=(
                 app.testing

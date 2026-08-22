@@ -154,11 +154,13 @@ class ProductTimeRankingTest(unittest.TestCase):
                     mock.patch.object(web, "ExcelProductCatalog", return_value=catalog_service), \
                     mock.patch.object(web, "SharedCatalog", return_value=shared_catalog), \
                     mock.patch.object(web, "load_catalog_taxonomy", return_value=taxonomy), \
-                    mock.patch.object(web, "get_catalog_stock_history", return_value=[]), \
-                    mock.patch.object(web, "render_template", return_value="ok"):
+                    mock.patch.object(web, "get_catalog_stock_history") as stock_history, \
+                    mock.patch.object(web, "render_template", return_value="ok") as render:
                 web.warehouse_page()
             call = catalog_service.list_products.call_args.kwargs
             self.assertEqual((call["sort_by"], call["sort_dir"]), expected)
+            stock_history.assert_not_called()
+            self.assertNotIn("stock_operations", render.call_args.kwargs)
 
 
 class SalesTimeRankingTest(unittest.TestCase):
