@@ -15545,12 +15545,11 @@ def get_navigation_items(include_disabled=False):
 
 @app.context_processor
 def inject_sidebar_navigation():
-    app_settings = load_app_settings()
     return {
         "sidebar_navigation_items": get_navigation_items(),
         "sidebar_brand": {
-            "title": app_settings["erp_name"],
-            "subtitle": app_settings["company_name"],
+            "title": "TTT",
+            "subtitle": "Внутренняя система",
         },
     }
 

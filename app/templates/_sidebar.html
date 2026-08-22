@@ -1,7 +1,4 @@
 {% from "_navigation_icons.html" import navigation_icon %}
-<a class="erp-skip-link" href="#main-content">
-    Перейти к основному содержимому
-</a>
 <link
     rel="stylesheet"
     href="{{ url_for('static', filename='css/sidebar.css') }}"
@@ -18,10 +15,13 @@
     rel="stylesheet"
     href="{{ url_for('static', filename='css/erp-states.css') }}"
 >
+<a class="erp-skip-link" href="#main-content">
+    Перейти к основному содержимому
+</a>
 <aside
     class="sidebar"
     id="appSidebar"
-    aria-label="Навигация Vechasu ERP"
+    aria-label="Навигация внутренней системы TTT"
 >
     <div class="sidebar-brand">
         <a
@@ -30,7 +30,9 @@
             aria-label="{{ sidebar_brand.title }} — главная"
             title="{{ sidebar_brand.title }}"
         >
-            <span class="sidebar-logo-mark" aria-hidden="true">VE</span>
+            <span class="sidebar-logo-mark" aria-hidden="true">
+                <img src="{{ url_for('static', filename='img/tictactoy-logo.svg') }}" alt="" width="30" height="10">
+            </span>
             <span class="sidebar-brand-copy">
                 <span class="sidebar-brand-title">
                     {{ sidebar_brand.title }}
