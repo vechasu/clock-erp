@@ -179,6 +179,10 @@ app.wsgi_app = ProxyFix(
 )
 configure_auth(app, PROJECT_ROOT)
 
+# Gunicorn imports this module once per worker. Pay the one required schema
+# verification during worker startup so the first ERP screen never inherits it.
+CatalogDatabase().initialize()
+
 
 LEGACY_FRONTEND_REDIRECTS = {
     "/": "/app/products",
