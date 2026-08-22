@@ -38,6 +38,13 @@ class BaseLayoutRegressionTest(unittest.TestCase):
         )
         sidebar = self.source("app/templates/_sidebar.html")
         self.assertIn('class="sidebar-logo-mark"', sidebar)
+        self.assertIn("img/tictactoy-logo.svg", sidebar)
+        self.assertNotIn(">VE<", sidebar)
+        self.assertNotIn("Vechasu ERP", sidebar)
+        self.assertLess(
+            sidebar.index("css/erp-states.css"),
+            sidebar.index('class="erp-skip-link"'),
+        )
         self.assertIn('id="sidebarToggle"', sidebar)
         self.assertIn('class="sidebar-system-status"', sidebar)
         self.assertIn('class="sidebar-user"', sidebar)
