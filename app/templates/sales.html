@@ -1517,12 +1517,6 @@
                         {{ tab.label }}
                     </a>
                 {% endfor %}
-                <a
-                    class="sales-tab erp-section-tab{% if sales_view == 'archive' %} is-active{% endif %}"
-                    href="{{ archive_url }}"
-                    data-sales-archive-tab
-                    {% if sales_view == 'archive' %}aria-current="page"{% endif %}
-                >Архив</a>
             </div>
         </nav>
 
