@@ -3265,8 +3265,15 @@ def warehouse_page():
     selected_cell = request.args.get("cell", "").strip()
     created_date_from = request.args.get("date_from", "").strip()
     created_date_to = request.args.get("date_to", "").strip()
-    in_stock = False
-    out_of_stock = warehouse_view == "out_of_stock"
+    stock_state = (request.args.get("stock_state") or "all").strip()
+    if warehouse_view == "out_of_stock":
+        stock_state = "out"
+    elif warehouse_view == "in_stock":
+        stock_state = "in"
+    if stock_state not in {"all", "in", "out"}:
+        stock_state = "all"
+    in_stock = stock_state == "in"
+    out_of_stock = stock_state == "out"
     check_state = (request.args.get("check_state") or "all").strip()
     if check_state not in {"all", "unchecked", "partial", "complete"}:
         check_state = "all"
@@ -3317,6 +3324,7 @@ def warehouse_page():
         bool(selected_model),
         bool(selected_cell),
         bool(created_date_from or created_date_to),
+        stock_state != "all",
         check_state != "all",
     ))
     warehouse_active_filter_label = format_active_filter_label(
@@ -3340,7 +3348,7 @@ def warehouse_page():
         category_id=selected_category_id or None,
         include_cell_item_names=False,
         include_facets=False,
-        stock_state="out" if out_of_stock else "in",
+        stock_state=stock_state,
         check_state=check_state if out_of_stock else "all",
     )
     catalog_items = build_excel_warehouse_items(catalog["items"])
@@ -3445,6 +3453,7 @@ def warehouse_page():
             in_stock=in_stock,
             warehouse_view=warehouse_view,
             out_of_stock=out_of_stock,
+            stock_state=stock_state,
             check_state=check_state,
             out_of_stock_count=(
                 tab_counts["out_of_stock"]

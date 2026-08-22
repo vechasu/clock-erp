@@ -4022,7 +4022,7 @@
 
         <main class="main" id="main-content" tabindex="-1">
             {{ products_workspace_header(
-                'out_of_stock' if out_of_stock else 'products',
+                'products',
                 product_metrics,
                 add_button=true,
                 export_filtered_url=export_filtered_url
@@ -4143,6 +4143,17 @@
                         <span class="erp-filter-chip-remove" aria-hidden="true">×</span>
                     </button>
                 {% endif %}
+                {% if stock_state != 'all' %}
+                    <button
+                        class="erp-filter-chip"
+                        type="button"
+                        onclick="clearWarehouseFilter('stock_state')"
+                        aria-label="Снять фильтр Наличие"
+                    >
+                        <span class="erp-filter-chip-label">Наличие: {{ 'В наличии' if stock_state == 'in' else 'Нет в наличии' }}</span>
+                        <span class="erp-filter-chip-remove" aria-hidden="true">×</span>
+                    </button>
+                {% endif %}
                 {% if warehouse_active_filter_count >= 2 %}
                     <button
                         class="erp-active-filters-reset"
@@ -4154,7 +4165,6 @@
 
             <div class="search-card erp-toolbar-card">
                 <form id="warehouseSearchForm" class="search-form erp-toolbar" method="get" action="/warehouse">
-                    {% if out_of_stock %}<input type="hidden" name="view" value="out_of_stock">{% endif %}
                     <input type="hidden" name="sort_by" value="{{ sort_by }}">
                     <input type="hidden" name="sort_dir" value="{{ sort_dir }}">
                     <input type="hidden" name="per_page" value="{{ per_page }}">
@@ -4209,6 +4219,14 @@
                     </div>
 
                     <div class="warehouse-filter-actions">
+                        <label class="warehouse-add-field">
+                            <span class="sr-only">Наличие</span>
+                            <select name="stock_state" onchange="this.form.submit()" aria-label="Наличие товара">
+                                <option value="all"{% if stock_state == 'all' %} selected{% endif %}>Все товары</option>
+                                <option value="in"{% if stock_state == 'in' %} selected{% endif %}>В наличии</option>
+                                <option value="out"{% if stock_state == 'out' %} selected{% endif %}>Нет в наличии</option>
+                            </select>
+                        </label>
                         {% if out_of_stock %}
                             <label class="warehouse-add-field">
                                 <span class="sr-only">Статус проверки</span>
@@ -6545,6 +6563,9 @@
                 "cell",
                 "date_from",
                 "date_to",
+                "stock_state",
+                "check_state",
+                "view",
                 "page"
             ].forEach(name => url.searchParams.delete(name));
             navigateWithWarehouseParams(url);
@@ -6558,6 +6579,7 @@
                 model: ["model"],
                 cell: ["cell"],
                 date: ["date_from", "date_to"],
+                stock_state: ["stock_state", "check_state", "view"],
             }[filterName] || [];
 
             parameterNames.forEach((name) => {
