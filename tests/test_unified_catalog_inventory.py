@@ -28,7 +28,10 @@ from scripts.migrate_unified_catalog import (
 class UnifiedCatalogInventoryTest(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
-        self.database = CatalogDatabase(Path(self.temp.name) / "catalog.db")
+        self.database = CatalogDatabase(
+            Path(self.temp.name) / "catalog.db",
+            cache_initialization=False,
+        )
         self.database.initialize()
         with self.database.transaction() as connection:
             connection.execute(

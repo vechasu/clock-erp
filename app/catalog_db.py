@@ -969,7 +969,7 @@ class CatalogDatabase:
     _schema_cache = {}
     _schema_cache_lock = threading.Lock()
 
-    def __init__(self, path=None, cache_initialization=False):
+    def __init__(self, path=None, cache_initialization=True):
         configured_path = path or os.getenv("CATALOG_DATABASE_PATH")
         self.path = Path(configured_path) if configured_path else DEFAULT_CATALOG_DATABASE_PATH
         self.cache_initialization = bool(cache_initialization)

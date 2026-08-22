@@ -42,7 +42,12 @@ class CatalogDatabaseTest(unittest.TestCase):
     def setUp(self):
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.database_path = Path(self.temporary_directory.name) / "catalog.db"
-        self.database = CatalogDatabase(self.database_path)
+        # Migration tests intentionally mutate the schema between initialize
+        # calls, so they opt out of the production process cache.
+        self.database = CatalogDatabase(
+            self.database_path,
+            cache_initialization=False,
+        )
         self.database.initialize()
 
     def tearDown(self):
@@ -87,7 +92,10 @@ class CatalogDatabaseTest(unittest.TestCase):
             )
             connection.commit()
 
-        CatalogDatabase(self.database_path).initialize()
+        CatalogDatabase(
+            self.database_path,
+            cache_initialization=False,
+        ).initialize()
 
         with self.database.connect() as connection:
             columns = [

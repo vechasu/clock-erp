@@ -567,3 +567,42 @@ html[data-theme] .orders-page .orders-secondary-submit:hover:not(:disabled) {
         font-size: 12px;
     }
 }
+
+@media (min-width: 1024px) {
+    .orders-page .panel-toolbar.erp-toolbar {
+        gap: 6px;
+        padding: 8px;
+    }
+
+    .orders-page .field,
+    .orders-page .button {
+        height: 34px;
+        min-height: 34px;
+        padding-top: 0;
+        padding-bottom: 0;
+        font-size: 13px;
+    }
+
+    .orders-page .order-row {
+        min-height: 62px;
+        padding: 6px 10px;
+    }
+
+    .orders-page .order-meta {
+        display: flex;
+        min-width: 0;
+        align-items: center;
+        gap: 6px 10px;
+        margin-top: 3px;
+        line-height: 1.25;
+    }
+
+    .orders-page .order-customer,
+    .orders-page .order-phone { flex: 1 1 auto; }
+
+    .orders-page .order-total,
+    .orders-page .order-date { flex: 0 0 auto; }
+
+    .orders-page .card-head { padding: 10px 12px; }
+    .orders-page .actions { gap: 6px; }
+}
