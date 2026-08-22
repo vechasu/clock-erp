@@ -64,7 +64,7 @@ class SalesListDesignSystemContractTest(unittest.TestCase):
         for query_key in (
             '"q"', '"date_from"', '"date_to"', '"sort"', '"sort_dir"',
             '"brand_id"', '"category_id"', '"product_id"', '"status"',
-            '"per_page"', '"today"', '"view"',
+            '"per_page"', '"today"',
         ):
             self.assertIn(query_key, web)
 

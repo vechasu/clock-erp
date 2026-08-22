@@ -1466,7 +1466,7 @@ class SalesInventoryWebTest(SalesInventoryTest):
         self.assertEqual(self.stock(self.product["id"]), before)
         self.assertEqual(sales[0]["id"], "legacy")
 
-    def test_archive_route_moves_sale_between_views_and_keeps_kpi(self):
+    def test_archive_route_keeps_sale_in_regular_history_and_kpi(self):
         sale = self.create_managed_sale(sale_id="archive-web")
         response = self.client.post(
             "/sales/archive",
@@ -1479,11 +1479,12 @@ class SalesInventoryWebTest(SalesInventoryTest):
         )
         self.assertEqual(response.status_code, 302)
         active = self.client.get("/app/sales?source=all").get_data(as_text=True)
-        archive = self.client.get(
+        legacy_archive_url = self.client.get(
             "/app/sales?source=all&view=archive"
         ).get_data(as_text=True)
-        self.assertNotIn('data-sale-id="archive-web"', active)
-        self.assertIn('data-sale-id="archive-web"', archive)
+        self.assertIn('data-sale-id="archive-web"', active)
+        self.assertIn('data-sale-id="archive-web"', legacy_archive_url)
+        self.assertNotIn("data-sales-archive-tab", active)
         self.assertIn('id="statSales"', active)
         self.assertIn(">1</span>", active)
 

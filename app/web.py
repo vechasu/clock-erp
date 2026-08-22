@@ -11133,13 +11133,9 @@ def sales_page():
     )
 
     sales_kpis = calculate_sales_kpis(sales)
-    sales_view = (
-        "archive" if request.args.get("view") == "archive" else "active"
-    )
-    sales = [
-        sale for sale in sales
-        if bool(sale.get("archived_at")) == (sales_view == "archive")
-    ]
+    # Archive is storage metadata, not a separate user workspace. Archived
+    # history remains available through the ordinary list, search and filters.
+    sales_view = "active"
     total_filtered_sales = len(sales)
     page, per_page = parse_erp_pagination()
     allowed_sort_fields = {
@@ -11225,7 +11221,6 @@ def sales_page():
             "status",
             "per_page",
             "today",
-            "view",
         )
     }
 
@@ -11248,11 +11243,6 @@ def sales_page():
         }
         for tab in SALES_SOURCE_TABS
     ]
-    archive_query = {
-        key: value for key, value in preserved_filters.items()
-        if value and key != "view"
-    }
-    archive_query.update({"source": filters["source"], "view": "archive"})
     today_query = {
         key: value for key, value in preserved_filters.items()
         if value and key != "today"
@@ -11275,7 +11265,6 @@ def sales_page():
         pagination=pagination,
         source_tabs=source_tabs,
         sales_view=sales_view,
-        archive_url=url_for("sales_page", **archive_query),
         today_url=url_for("sales_page", **today_query),
         active_source=active_source,
         active_source_label=(
