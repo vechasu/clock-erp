@@ -126,17 +126,21 @@ class OrdersUiRedesignTest(unittest.TestCase):
         self.assertIn("css/erp-components.css", html)
         self.assertIn("css/orders.css", html)
         self.assertIn('class="orders-kpis erp-workspace-metrics"', html)
-        for label in (
-            "Всего заказов", "Не подтверждены", "Подтверждены", "Собраны"
-        ):
+        for label in ("Не подтверждены", "Подтверждены", "Собраны"):
             self.assertIn(label, html)
-        for label in ("Источник", "Доставка", "Оплата", "Примечания"):
+        self.assertNotIn("Всего заказов", html)
+        for label in (
+            "Способ доставки", "Способ оплаты", "Статус оплаты",
+            "Комментарий покупателя", "Внутренние комментарии",
+        ):
             self.assertIn(label, html)
 
     def test_pending_guard_covers_status_tracking_and_sale_actions(self):
         self.assertIn("function setPending(form,label)", self.source)
         self.assertIn("form.dataset.submitting==='1'", self.source)
-        self.assertIn(".status-form')?.addEventListener('submit'", self.source)
+        self.assertIn("data-status-autosave", self.source)
+        self.assertIn("async function saveRequested()", self.source)
+        self.assertIn("while(requested!==saved)", self.source)
         self.assertIn("[data-tracking-form]')?.addEventListener('submit'", self.source)
         self.assertIn("[data-order-sale-form]')?.addEventListener('submit'", self.source)
 

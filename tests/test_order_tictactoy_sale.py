@@ -95,6 +95,35 @@ class OrderTictactoySaleTest(unittest.TestCase):
         )
         self.assertIn(str(created["id"]), [item["id"] for item in self.shared.list_products(query="BRADLEY-NEW")])
 
+    def test_unique_bitrix_product_id_maps_automatically_without_persisting(self):
+        with self.database.transaction() as connection:
+            connection.execute(
+                "UPDATE catalog_excel_products SET bitrix_external_product_id = ? "
+                "WHERE id = ?",
+                ("bx-watch", self.watch["id"]),
+            )
+        context = web.build_order_product_mapping_context(
+            [self.order["products"][0]], mappings={}, catalog=self.shared,
+        )
+        mapping = context["line:line-1"]
+        self.assertEqual(mapping["state"], "mapped")
+        self.assertEqual(mapping["mapping_method"], "bitrix_product_id")
+        self.assertEqual(mapping["product"]["id"], str(self.watch["id"]))
+        self.assertEqual(web.load_order_product_mappings("18593", self.database), {})
+
+    def test_ambiguous_bitrix_product_id_keeps_manual_fallback(self):
+        with self.database.transaction() as connection:
+            connection.execute(
+                "UPDATE catalog_excel_products SET bitrix_external_product_id = ? "
+                "WHERE id IN (?, ?)",
+                ("bx-watch", self.watch["id"], self.strap["id"]),
+            )
+        context = web.build_order_product_mapping_context(
+            [self.order["products"][0]], mappings={}, catalog=self.shared,
+        )
+        self.assertEqual(context["line:line-1"]["state"], "unmapped")
+        self.assertIsNone(context["line:line-1"]["product"])
+
     def test_order_counts_use_distinct_existing_non_cancelled_orders(self):
         orders = [
             self.order,
@@ -267,13 +296,13 @@ class OrderTictactoySaleTest(unittest.TestCase):
                 order["products"], mappings=mappings, catalog=self.shared
             )
 
-        self.assertIn("Не сопоставлен", before.get_data(as_text=True))
+        self.assertIn("Не удалось определить товар ERP", before.get_data(as_text=True))
         self.assertEqual(first.status_code, 200)
         self.assertEqual(repeated.status_code, 200)
         for response in (reopened, reopened_again):
             html = response.get_data(as_text=True)
-            self.assertIn("ERP: RIVAL GALAXY", html)
-            self.assertIn("Сопоставлен", html)
+            self.assertIn("RIVAL GALAXY", html)
+            self.assertIn("Изменить товар ERP", html)
             self.assertNotIn("Есть несопоставленные позиции", html)
         self.assertEqual(
             mappings["line:basket-21113-1"]["product_id"], str(rival["id"])
@@ -306,7 +335,8 @@ class OrderTictactoySaleTest(unittest.TestCase):
             "Чтобы провести продажу, сначала подтвердите заказ.", html
         )
         self.assertIn('name="status"', html)
-        self.assertIn(">Сохранить статус</button>", html)
+        self.assertNotIn(">Сохранить статус</button>", html)
+        self.assertIn("data-status-autosave", html)
         self.assertNotIn('id="orderSaleModal"', html)
 
     def test_confirmed_order_keeps_active_sale_action(self):

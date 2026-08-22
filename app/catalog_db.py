@@ -735,6 +735,18 @@ CREATE TABLE IF NOT EXISTS erp_order_product_mappings (
 CREATE INDEX IF NOT EXISTS idx_erp_order_product_mappings_product
     ON erp_order_product_mappings(product_id, order_id);
 
+CREATE TABLE IF NOT EXISTS erp_order_comments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id TEXT NOT NULL,
+    text TEXT NOT NULL CHECK (length(trim(text)) > 0),
+    author_name TEXT NOT NULL,
+    author_user_id TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_erp_order_comments_order_created
+    ON erp_order_comments(order_id, created_at, id);
+
 CREATE TABLE IF NOT EXISTS erp_sale_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     sale_id TEXT NOT NULL REFERENCES erp_sales(id) ON DELETE RESTRICT,

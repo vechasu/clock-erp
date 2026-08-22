@@ -66,7 +66,7 @@ class InternalOrdersTest(unittest.TestCase):
         self.assertIn("function applyFilters()", html)
         self.assertIn("rowText.includes(query)", html)
 
-    def test_detail_route_keeps_server_pagination_and_four_status_kpis(self):
+    def test_detail_route_keeps_server_pagination_and_three_status_kpis(self):
         orders = [
             {
                 "id": str(index), "number": str(index),
@@ -90,8 +90,10 @@ class InternalOrdersTest(unittest.TestCase):
         )
         self.assertIn("Найдено: 45", html)
         self.assertIn(">2 / 3<", html)
-        for value in ("45", "15"):
-            self.assertIn('class="erp-stat-value">{}</strong>'.format(value), html)
+        self.assertNotIn("Всего заказов", html)
+        self.assertEqual(
+            html.count('class="erp-stat-value">15</strong>'), 3
+        )
 
     def test_order_without_bitrix_id_does_not_break_the_list(self):
         response = self.get_orders_page(orders=[{

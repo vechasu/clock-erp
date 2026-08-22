@@ -218,8 +218,8 @@ class SettingsContractTest(unittest.TestCase):
             wraps=web.load_app_settings,
         ) as loader:
             self.client.get("/settings")
-            # One page load plus the existing shared sidebar context load.
-            self.assertEqual(loader.call_count, 2)
+            # Branding in the shared sidebar is static; the page owns the only load.
+            self.assertEqual(loader.call_count, 1)
 
             loader.reset_mock()
             self.client.post(

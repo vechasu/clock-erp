@@ -103,16 +103,14 @@ class ProductExcelExportTest(unittest.TestCase):
         for cell in sheet[2]:
             self.assertNotEqual(cell.data_type, "f")
 
-    def test_export_actions_are_visible_and_preserve_current_filters(self):
+    def test_export_actions_are_hidden_from_products_workspace(self):
         page = self.client.get(
             "/app/products?view=out_of_stock&q=Celeste&check_state=unchecked"
         )
         markup = page.get_data(as_text=True)
-        self.assertIn("Экспортировать найденные", markup)
-        self.assertIn("Экспортировать все товары", markup)
-        self.assertIn("scope=filtered", markup)
-        self.assertIn("q=Celeste", markup)
-        self.assertIn("check_state=unchecked", markup)
+        self.assertNotIn("Экспортировать найденные", markup)
+        self.assertNotIn("Экспортировать все товары", markup)
+        self.assertNotIn("scope=filtered", markup)
 
     def test_export_enrichment_chunks_more_than_sqlite_variable_limit(self):
         products = [

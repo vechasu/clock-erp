@@ -1056,6 +1056,7 @@ def render_orders_page(
         order_sale_pricing=build_order_sale_pricing(
             (selected_order or {}).get("products") or []
         ),
+        order_comments=load_order_comments(order_id) if order_id else [],
         selected_order_explicit=selected_order_explicit,
         orders_total=list_state["total"],
         orders_page=list_state["page"],
@@ -1157,6 +1158,9 @@ def bitrix_order_product_identity(product):
         "bitrix_product_id": product_id,
         "bitrix_sku_id": sku_id,
         "bitrix_order_line_id": line_id,
+        "bitrix_xml_id": str(first_order_product_value(
+            product, "xml_id", "XML_ID"
+        )).strip(),
     }
 
 
@@ -1236,12 +1240,49 @@ def build_order_product_mapping_context(
         for row in saved_rows
         if isinstance(row, dict) and row.get("product_id") not in (None, "")
     ]
+    automatic_ids = []
+    catalog.database.initialize()
+    with catalog.database.connect() as connection:
+        for identity, saved in zip(identities, saved_rows):
+            if isinstance(saved, dict) and saved.get("product_id"):
+                automatic_ids.append(None)
+                continue
+            clauses = []
+            parameters = []
+            product_id = identity["bitrix_product_id"]
+            xml_id = identity["bitrix_xml_id"]
+            if product_id:
+                clauses.append(
+                    "(trim(COALESCE(bitrix_external_product_id, '')) = ? "
+                    "OR CAST(bitrix_catalog_product_id AS TEXT) = ?)"
+                )
+                parameters.extend((product_id, product_id))
+            if xml_id:
+                clauses.append(
+                    "lower(trim(COALESCE(bitrix_xml_id, ''))) = lower(?)"
+                )
+                parameters.append(xml_id)
+            if not clauses:
+                automatic_ids.append(None)
+                continue
+            rows = connection.execute(
+                "SELECT DISTINCT id FROM catalog_excel_products WHERE "
+                "deleted_at IS NULL AND (" + " OR ".join(clauses) + ") "
+                "ORDER BY id LIMIT 2",
+                parameters,
+            ).fetchall()
+            automatic_id = rows[0]["id"] if len(rows) == 1 else None
+            automatic_ids.append(automatic_id)
+            if automatic_id is not None:
+                product_ids.append(automatic_id)
     products_by_id = catalog.products_by_ids(
         product_ids, include_archived=True
     )
     result = {}
 
-    for product, identity, saved in zip(products, identities, saved_rows):
+    for product, identity, saved, automatic_id in zip(
+        products, identities, saved_rows, automatic_ids
+    ):
         key = identity["bitrix_product_id"]
         context = {
             **identity,
@@ -1249,14 +1290,23 @@ def build_order_product_mapping_context(
             "state_label": "Не сопоставлен",
             "product": None,
             "saved": saved if isinstance(saved, dict) else {},
+            "mapping_method": "manual" if isinstance(saved, dict) else "",
         }
         if not identity["bitrix_order_line_id"]:
             context.update({
                 "state": "missing_external_id",
                 "state_label": "У позиции нет стабильного ID Bitrix",
             })
-        elif isinstance(saved, dict) and saved.get("product_id"):
-            selected = products_by_id.get(str(saved.get("product_id")))
+        elif (
+            (isinstance(saved, dict) and saved.get("product_id"))
+            or automatic_id is not None
+        ):
+            selected_id = (
+                saved.get("product_id")
+                if isinstance(saved, dict) and saved.get("product_id")
+                else automatic_id
+            )
+            selected = products_by_id.get(str(selected_id))
             if selected is None:
                 context.update({
                     "state": "missing",
@@ -1278,6 +1328,9 @@ def build_order_product_mapping_context(
                     "state": "mapped",
                     "state_label": "Сопоставлен",
                     "product": selected,
+                    "mapping_method": (
+                        "manual" if isinstance(saved, dict) else "bitrix_product_id"
+                    ),
                 })
         mapping_key = order_product_mapping_key(product)
         result[mapping_key or "missing:{}".format(len(result))] = context
@@ -1369,6 +1422,42 @@ def delete_order_product_mapping(order_id, order_item_id, database=None):
             (str(order_id), str(order_item_id)),
         )
     return cursor.rowcount > 0
+
+
+def load_order_comments(order_id, database=None):
+    database = database or CatalogDatabase()
+    database.initialize()
+    with database.connect() as connection:
+        rows = connection.execute(
+            "SELECT id, order_id, text, author_name, author_user_id, created_at "
+            "FROM erp_order_comments WHERE order_id = ? "
+            "ORDER BY created_at, id",
+            (str(order_id),),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def add_order_comment(order_id, text, author_name, author_user_id="", database=None):
+    text = str(text or "").strip()
+    if not text:
+        raise ValueError("Введите комментарий")
+    if len(text) > 2000:
+        raise ValueError("Комментарий не должен превышать 2000 символов")
+    author_name = str(author_name or "").strip() or "Сотрудник ERP"
+    created_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    database = database or CatalogDatabase()
+    database.initialize()
+    with database.transaction() as connection:
+        cursor = connection.execute(
+            "INSERT INTO erp_order_comments "
+            "(order_id, text, author_name, author_user_id, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (
+                str(order_id), text, author_name,
+                str(author_user_id or "").strip() or None, created_at,
+            ),
+        )
+    return cursor.lastrowid
 
 
 def get_order_product_mapping(mapping_context, product):
@@ -2137,6 +2226,50 @@ def validate_order_status_transition(current_status, new_status):
     return target in ORDER_STATUS_TRANSITIONS.get(current, set())
 
 
+def order_status_reply(order_id, ok, message, status=200):
+    if request.accept_mimetypes.best == "application/json":
+        return jsonify({
+            "ok": bool(ok),
+            "order_id": str(order_id),
+            "message": str(message),
+        }), status
+    return redirect(url_for(
+        "order_page", order_id=order_id,
+        notice="success" if ok else "error", message=message,
+    ))
+
+
+@app.post("/order/<int:order_id>/comments")
+def order_comment_add(order_id):
+    text = str(request.form.get("text") or "").strip()
+    try:
+        order = get_order(order_id)
+    except BitrixReadOnlyError:
+        order = None
+    if order is None:
+        return redirect(url_for(
+            "order_page", order_id=order_id, notice="error",
+            message="Не удалось проверить заказ перед добавлением комментария",
+        ))
+    user = current_auth_user() or {}
+    try:
+        add_order_comment(
+            order_id,
+            text,
+            current_sales_user_name() or "Сотрудник ERP",
+            user.get("id") or user.get("email") or "",
+        )
+    except (ValueError, sqlite3.Error) as error:
+        return redirect(url_for(
+            "order_page", order_id=order_id, notice="error",
+            message=str(error),
+        ))
+    return redirect(url_for(
+        "order_page", order_id=order_id, notice="success",
+        message="Внутренний комментарий добавлен",
+    ))
+
+
 @app.route("/order/<int:order_id>/status", methods=["POST"])
 def order_status_update(order_id):
     new_status = str(request.form.get("status", "")).strip().upper()
@@ -2146,10 +2279,9 @@ def order_status_update(order_id):
         "D": ERP_ASSEMBLED,
     }
     if new_status not in targets:
-        return redirect(url_for(
-            "order_page", order_id=order_id, notice="error",
-            message="Выберите допустимый статус заказа",
-        ))
+        return order_status_reply(
+            order_id, False, "Выберите допустимый статус заказа", 400
+        )
     service = order_status_service()
     if service.get(order_id) is None:
         current_order = next((
@@ -2162,10 +2294,10 @@ def order_status_update(order_id):
             except BitrixReadOnlyError:
                 current_order = None
         if current_order is None:
-            return redirect(url_for(
-                "order_page", order_id=order_id, notice="error",
-                message="Заказ не найден или Bitrix временно недоступен",
-            ))
+            return order_status_reply(
+                order_id, False,
+                "Заказ не найден или Bitrix временно недоступен", 404,
+            )
         service.ingest(
             order_id,
             current_order.get("bitrix_status") or current_order.get("status"),
@@ -2177,22 +2309,19 @@ def order_status_update(order_id):
         and current.get("bitrix_status") == new_status
         and current.get("sync_status") == "synced"
     ):
-        return redirect(url_for(
-            "order_page", order_id=order_id, notice="success",
-            message="Статус заказа уже актуален",
-        ))
+        return order_status_reply(
+            order_id, True, "Статус заказа уже актуален"
+        )
 
     result = update_order_status(order_id, new_status)
     if not isinstance(result, dict) or result.get("status") != "ok":
         error_message = (
             result.get("message") if isinstance(result, dict) else None
         )
-        return redirect(url_for(
-            "order_page", order_id=order_id, notice="error",
-            message=str(error_message or (
-                "Bitrix не принял изменение статуса"
-            )),
-        ))
+        return order_status_reply(
+            order_id, False,
+            str(error_message or "Bitrix не принял изменение статуса"), 502,
+        )
     try:
         service.record_synced_change(
             order_id, target, current_sales_user_name() or "ERP"
@@ -2201,20 +2330,18 @@ def order_status_update(order_id):
         app.logger.exception(
             "Bitrix order status accepted but local save failed: %s", order_id
         )
-        return redirect(url_for(
-            "order_page", order_id=order_id, notice="error",
-            message=(
-                "Bitrix принял статус, но ERP не смогла сохранить "
-                "его. Обновите заказ из Bitrix."
-            ),
-        ))
+        return order_status_reply(
+            order_id, False,
+            "Bitrix принял статус, но ERP не смогла сохранить его. "
+            "Обновите заказ из Bitrix.",
+            500,
+        )
 
     ORDERS_CACHE["items"] = []
     ORDERS_CACHE["loaded_at"] = 0
-    return redirect(url_for(
-        "order_page", order_id=order_id, notice="success",
-        message="Статус заказа обновлён в ERP и Bitrix",
-    ))
+    return order_status_reply(
+        order_id, True, "Статус заказа обновлён в ERP и Bitrix"
+    )
 
 
 
