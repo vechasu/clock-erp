@@ -5,15 +5,15 @@
 {% block auth_content %}
 <section class="auth-card" aria-labelledby="register-title">
     <header class="auth-card-header">
-        <h2 id="register-title">Создать аккаунт</h2>
+        <h1 id="register-title">Создать аккаунт</h1>
         <p>Регистрация доступна только по одноразовому приглашению администратора.</p>
     </header>
 
     {% if invitation_error %}
-        <div class="auth-alert" role="alert">{{ invitation_error }}</div>
+        <div class="auth-alert" id="registration-error" role="alert" tabindex="-1">{{ invitation_error }}</div>
     {% endif %}
     {% if errors.form %}
-        <div class="auth-alert" role="alert">{{ errors.form }}</div>
+        <div class="auth-alert" id="registration-form-error" role="alert" tabindex="-1">{{ errors.form }}</div>
     {% endif %}
 
     {% if invitation %}
@@ -52,11 +52,12 @@
                             maxlength="128"
                             autocomplete="new-password"
                             required
+                            {% if field_id == "password" and not errors.password %}aria-describedby="password_hint"{% endif %}
                             {% if errors.get(field_id) %}aria-invalid="true" aria-describedby="{{ field_id }}_error"{% endif %}
                         >
                         <button class="password-toggle" type="button" data-password-toggle="{{ field_id }}" aria-pressed="false">Показать</button>
                     </div>
-                    {% if field_id == "password" and not errors.password %}<p class="auth-hint">Не менее 8 символов.</p>{% endif %}
+                    {% if field_id == "password" and not errors.password %}<p class="auth-hint" id="password_hint">Не менее 8 символов.</p>{% endif %}
                     {% if errors.get(field_id) %}<p class="auth-error" id="{{ field_id }}_error" role="alert">{{ errors.get(field_id) }}</p>{% endif %}
                 </div>
             {% endfor %}

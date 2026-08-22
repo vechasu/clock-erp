@@ -5,6 +5,78 @@
     --erp-state-primary: var(--theme-primary, #2563eb);
     --erp-state-danger: var(--theme-error, #b42318);
     --erp-state-success: var(--theme-success, #166534);
+    --erp-accessibility-focus: var(--theme-focus, #2563eb);
+    --erp-accessibility-focus-halo: var(--theme-surface, #ffffff);
+}
+
+.erp-skip-link {
+    position: fixed;
+    z-index: 100000;
+    top: 10px;
+    left: 10px;
+    max-width: calc(100vw - 20px);
+    padding: 11px 16px;
+    border: 2px solid var(--erp-accessibility-focus);
+    border-radius: 9px;
+    background: var(--theme-surface, #fff);
+    color: var(--theme-text, #172033);
+    font-size: 14px;
+    font-weight: 800;
+    line-height: 1.25;
+    text-decoration: none;
+    transform: translateY(calc(-100% - 20px));
+    transition: transform 0.14s ease;
+}
+
+.erp-skip-link:focus {
+    transform: translateY(0);
+}
+
+:where(
+    a[href],
+    button,
+    input,
+    select,
+    textarea,
+    summary,
+    [role="button"],
+    [role="tab"],
+    [role="menuitem"],
+    [tabindex]
+):focus-visible {
+    outline: 3px solid var(--erp-accessibility-focus) !important;
+    outline-offset: 3px !important;
+    box-shadow: 0 0 0 2px var(--erp-accessibility-focus-halo) !important;
+}
+
+.sidebar :where(a[href], button):focus-visible,
+.mobile-erp-navigation :where(a[href], button):focus-visible {
+    --erp-accessibility-focus: #93c5fd;
+    --erp-accessibility-focus-halo: #0d2a49;
+}
+
+main:focus-visible {
+    outline-offset: -4px !important;
+}
+
+.erp-scroll-region {
+    scroll-margin: 8px;
+}
+
+.erp-scroll-region:focus-visible {
+    border-radius: 8px;
+}
+
+th[aria-sort] .receipt-sort-button,
+th[aria-sort] [data-sort],
+th[aria-sort] button {
+    min-height: 24px;
+    min-width: 24px;
+}
+
+.journal-search-submit {
+    min-width: 24px !important;
+    min-height: 24px !important;
 }
 
 .erp-system-state,
@@ -195,8 +267,21 @@ textarea:disabled,
 }
 
 @media (prefers-reduced-motion: reduce) {
+    html:focus-within {
+        scroll-behavior: auto;
+    }
+
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+    }
+
     .erp-loading-state::before,
     [data-erp-pending].is-erp-pending [data-erp-pending-indicator]::before {
-        animation-duration: 1.5s;
+        animation: none;
     }
 }

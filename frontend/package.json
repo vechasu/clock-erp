@@ -17,9 +17,11 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:e2e:list": "playwright test --list",
+    "test:a11y": "playwright test --config playwright.accessibility.config.ts",
     "preview": "vite preview"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
     "@eslint/js": "9.39.5",
     "@playwright/test": "1.62.0",
     "@types/node": "26.1.2",

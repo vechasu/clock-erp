@@ -130,6 +130,135 @@
         if (node) node.textContent = message || "";
     }
 
+    function accessibleTableName(table, index) {
+        const explicit = table.getAttribute("aria-label")
+            || table.getAttribute("aria-labelledby");
+        if (explicit) return explicit;
+        const heading = document.querySelector("main h1");
+        return (heading ? heading.textContent.trim() : "Данные")
+            + (index ? " — таблица " + (index + 1) : " — таблица данных");
+    }
+
+    function updateSortableHeader(header) {
+        const control = header.querySelector(
+            "button[data-sort], a[data-sort], .receipt-sort-button"
+        );
+        if (!control) return;
+        const active = control.classList.contains("is-active")
+            || Boolean(control.querySelector(".is-active"));
+        let direction = "none";
+        if (active) {
+            const value = String(
+                control.dataset.direction
+                || control.getAttribute("data-sort-direction")
+                || control.textContent
+                || ""
+            ).toLowerCase();
+            direction = value.includes("desc") || value.includes("↓")
+                ? "descending" : "ascending";
+        }
+        header.setAttribute("aria-sort", direction);
+    }
+
+    function initializeTables() {
+        document.querySelectorAll("table").forEach(function (table, index) {
+            if (!table.hasAttribute("aria-label")
+                && !table.hasAttribute("aria-labelledby")) {
+                table.setAttribute("aria-label", accessibleTableName(table, index));
+            }
+            table.querySelectorAll("thead th").forEach(function (header) {
+                if (!header.hasAttribute("scope")) {
+                    header.setAttribute("scope", "col");
+                }
+                updateSortableHeader(header);
+            });
+            table.querySelectorAll("tbody th").forEach(function (header) {
+                if (!header.hasAttribute("scope")) {
+                    header.setAttribute("scope", "row");
+                }
+            });
+        });
+    }
+
+    function initializeScrollRegions() {
+        const candidates = document.querySelectorAll(
+            "[class*='table-wrap'], [class*='table-scroll'], "
+            + ".table-container, [data-erp-scroll-region]"
+        );
+        candidates.forEach(function (region) {
+            const styles = global.getComputedStyle(region);
+            const scrollable = region.scrollWidth > region.clientWidth + 1
+                && ["auto", "scroll"].includes(styles.overflowX);
+            if (!scrollable) return;
+            region.classList.add("erp-scroll-region");
+            if (!region.hasAttribute("tabindex")) region.tabIndex = 0;
+            if (!region.hasAttribute("role")) region.setAttribute("role", "region");
+            if (!region.hasAttribute("aria-label")
+                && !region.hasAttribute("aria-labelledby")) {
+                const table = region.querySelector("table");
+                region.setAttribute(
+                    "aria-label",
+                    (table && table.getAttribute("aria-label"))
+                    || "Таблица с горизонтальной прокруткой"
+                );
+            }
+        });
+    }
+
+    function initializeAccessibility() {
+        const main = document.querySelector("main");
+        const skipLink = document.querySelector(".erp-skip-link");
+        if (main && !main.id) main.id = "main-content";
+        if (main && !main.hasAttribute("tabindex")) main.tabIndex = -1;
+        if (skipLink && main) {
+            skipLink.addEventListener("click", function () {
+                global.setTimeout(function () {
+                    main.focus({preventScroll: true});
+                }, 0);
+            });
+        }
+
+        document.querySelectorAll(
+            "[role='status'], [role='alert'], [aria-live], "
+            + ".erp-loading-state, .erp-success-state, .erp-error-state"
+        ).forEach(function (region) {
+            if (!region.hasAttribute("role")) {
+                region.setAttribute(
+                    "role",
+                    region.classList.contains("erp-error-state")
+                        ? "alert" : "status"
+                );
+            }
+            if (!region.hasAttribute("aria-live")) {
+                region.setAttribute(
+                    "aria-live",
+                    region.getAttribute("role") === "alert"
+                        ? "assertive" : "polite"
+                );
+            }
+            if (!region.hasAttribute("aria-atomic")) {
+                region.setAttribute("aria-atomic", "true");
+            }
+        });
+
+        document.querySelectorAll('[aria-disabled="true"]').forEach(function (control) {
+            if (!/^(BUTTON|INPUT|SELECT|TEXTAREA)$/.test(control.tagName)
+                && !control.hasAttribute("tabindex")) control.tabIndex = -1;
+        });
+
+        initializeTables();
+        initializeScrollRegions();
+
+        const formError = document.querySelector(
+            ".auth-alert[role='alert']:not(:empty), "
+            + ".erp-form-error[data-focus-error]:not(:empty)"
+        );
+        if (formError && formError.getClientRects().length) {
+            if (!formError.hasAttribute("tabindex")) formError.tabIndex = -1;
+            formError.focus();
+        }
+    }
+
     document.addEventListener("submit", function (event) {
         const form = event.target;
         if (!(form instanceof HTMLFormElement)
@@ -153,9 +282,24 @@
         }, 0);
     }, true);
 
-    document.addEventListener("DOMContentLoaded", function () {
+    function initializeDocument() {
+        initializeAccessibility();
         document.querySelectorAll("form[data-erp-pending], form[data-single-submit]")
             .forEach(function (form) { rememberBaseline(form); });
+    }
+
+    if (document.readyState === "loading") {
+        document.addEventListener(
+            "DOMContentLoaded",
+            initializeDocument,
+            {once: true}
+        );
+    } else {
+        initializeDocument();
+    }
+
+    global.addEventListener("resize", function () {
+        global.requestAnimationFrame(initializeScrollRegions);
     });
 
     global.addEventListener("pageshow", function (event) {
@@ -173,5 +317,11 @@
         });
     });
 
-    global.VechasuStates = Object.freeze({begin, reset, run, setFieldError});
+    global.VechasuStates = Object.freeze({
+        begin,
+        reset,
+        run,
+        setFieldError,
+        initializeAccessibility,
+    });
 })(window);

@@ -20,7 +20,7 @@
 <body>
 <div class="app">
     {% include "_sidebar.html" %}
-    <main class="main">
+    <main class="main" id="main-content" tabindex="-1">
         <div class="page-head">
             <div><h1 class="page-title">Приход {{ receipt.number }}</h1><p class="page-note">Проведён {{ receipt.posted_at[:19]|replace('T', ' ') }}</p></div>
             <a class="button button-primary" href="{{ url_for('excel_products_page') }}">К товарам</a>

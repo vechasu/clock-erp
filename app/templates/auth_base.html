@@ -135,7 +135,7 @@
             margin: 70px 0;
         }
 
-        .auth-brand-copy h1 {
+        .auth-brand-heading {
             max-width: 420px;
             margin: 0 0 18px;
             font-size: clamp(34px, 4.2vw, 58px);
@@ -179,7 +179,7 @@
             margin-bottom: 28px;
         }
 
-        .auth-card-header h2 {
+        .auth-card-header h1 {
             margin: 0 0 8px;
             font-size: clamp(27px, 4vw, 34px);
             letter-spacing: -0.04em;
@@ -527,6 +527,9 @@
     <script async src="{{ url_for('static', filename='js/erp-states.js') }}"></script>
 </head>
 <body>
+    <a class="erp-skip-link" href="#main-content">
+        Перейти к основному содержимому
+    </a>
     <div class="auth-page">
         <aside class="auth-brand-panel" aria-label="Vechasu ERP">
             <a class="auth-logo" href="{{ url_for('auth.register') }}">
@@ -538,7 +541,7 @@
             </a>
 
             <div class="auth-brand-copy">
-                <h1>Работа магазина в одном месте.</h1>
+                <p class="auth-brand-heading">Работа магазина в одном месте.</p>
                 <p>
                     Заказы, товары, остатки и ежедневные операции
                     команды TicTacToy.
@@ -550,7 +553,7 @@
             </div>
         </aside>
 
-        <main class="auth-content">
+        <main class="auth-content" id="main-content" tabindex="-1">
             {% block auth_content %}{% endblock %}
         </main>
     </div>
