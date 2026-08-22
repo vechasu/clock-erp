@@ -6,10 +6,12 @@
             сотрудником; безопасный срок по умолчанию — 72 часа.
         </p>
 
-        <form
-            class="invitation-form"
-            method="post"
-            action="{{ url_for('auth.create_invitation') }}"
+    <form
+        class="invitation-form"
+        method="post"
+        action="{{ url_for('auth.create_invitation') }}"
+        data-erp-pending
+        data-pending-label="Создаём приглашение…"
         >
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
@@ -82,6 +84,8 @@
                         <form
                             method="post"
                             action="{{ url_for('auth.revoke_invitation', invitation_id=invitation.id) }}"
+                            data-erp-pending
+                            data-pending-label="Отзываем приглашение…"
                         >
                             <input
                                 type="hidden"

@@ -18,7 +18,7 @@ class JournalDesignSystemContractTest(unittest.TestCase):
             "journal-tab erp-section-tab",
             "journal-toolbar erp-toolbar",
             "journal-control erp-control",
-            "journal-empty erp-empty-state",
+            "journal-empty {{ 'erp-no-results-state' if has_query_state else 'erp-empty-state' }}",
             "journal-loading erp-loading-state",
             "journal-error erp-error-state",
         ):

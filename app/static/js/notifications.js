@@ -186,8 +186,8 @@
 
     function apiMessage(payload) {
         if (!payload || typeof payload !== "object") return "";
-        if (payload.error && typeof payload.error.message === "string") return text(payload.error.message);
-        return typeof payload.message === "string" ? text(payload.message) : "";
+        if (payload.error && typeof payload.error.message === "string") return safeServerNotice(payload.error.message);
+        return typeof payload.message === "string" ? safeServerNotice(payload.message) : "";
     }
 
     function safeError(response, payload, fallback) {
@@ -204,7 +204,7 @@
 
     function safeServerNotice(value) {
         const message = text(value);
-        if (/traceback|integrityerror|sqlite|sqlalchemy|exception|\/opt\/|\/users\//i.test(message)) {
+        if (/traceback|integrityerror|sqlite|sqlalchemy|exception|password|secret|token|authorization|bearer|cookie|session|\.env|\/opt\/|\/users\/|\/private\/|\/root\//i.test(message)) {
             return "Сервер не смог выполнить операцию. Повторите позже.";
         }
         return message;
@@ -441,17 +441,4 @@
         if (!consumeServerNotice()) restoreRemembered();
     });
 
-    document.addEventListener("submit", function (event) {
-        const form = event.target;
-        if (!(form instanceof HTMLFormElement) || form.method.toUpperCase() === "GET") return;
-        global.setTimeout(function () {
-            if (event.defaultPrevented || !form.isConnected) return;
-            const submitter = event.submitter || form.querySelector("button[type='submit'], input[type='submit']");
-            if (submitter) {
-                submitter.disabled = true;
-                submitter.setAttribute("aria-busy", "true");
-            }
-            show("loading", text(form.dataset.loadingMessage, "Операция выполняется…"));
-        }, 0);
-    }, true);
 })(window);

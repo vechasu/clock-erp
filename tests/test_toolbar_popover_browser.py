@@ -131,6 +131,11 @@ class ToolbarPopoverBrowserTest(unittest.TestCase):
                 r'data-sales-filters-e2e-error="([^"]*)"',
                 result.stdout,
             )
+            if not error:
+                error = re.search(
+                    r'data-sales-channel-e2e="fail-([^"]*)"',
+                    result.stdout,
+                )
             self.fail(
                 error.group(1) if error else result.stderr[-2000:]
             )

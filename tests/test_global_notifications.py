@@ -67,6 +67,8 @@ class GlobalNotificationSystemTest(unittest.TestCase):
         self.assertIn("response.status >= 500", script)
         for marker in ("traceback", "integrityerror", "sqlite", "sqlalchemy"):
             self.assertIn(marker, script.lower())
+        for marker in ("password", "secret", "token", "authorization"):
+            self.assertIn(marker, script.lower())
         web = self.source("app/web.py")
         self.assertIn("def api_internal_server_error(error):", web)
         self.assertIn('"INTERNAL_ERROR"', web)

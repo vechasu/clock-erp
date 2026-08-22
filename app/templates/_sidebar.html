@@ -11,6 +11,10 @@
     rel="stylesheet"
     href="{{ url_for('static', filename='css/notifications.css') }}"
 >
+<link
+    rel="stylesheet"
+    href="{{ url_for('static', filename='css/erp-states.css') }}"
+>
 <aside
     class="sidebar"
     id="appSidebar"
@@ -124,7 +128,7 @@
                     </span>
                     <span class="sidebar-user-role" title="{{ current_user.email }}">{{ current_user.email }}</span>
                 </span>
-                <form method="post" action="{{ url_for('auth.logout') }}">
+                <form method="post" action="{{ url_for('auth.logout') }}" data-erp-pending data-pending-label="Выходим…">
                     <input
                         type="hidden"
                         name="csrf_token"
@@ -225,5 +229,6 @@
 </div>
 
 <script async src="{{ url_for('static', filename='js/theme.js') }}"></script>
+<script async src="{{ url_for('static', filename='js/erp-states.js') }}"></script>
 <script async src="{{ url_for('static', filename='js/notifications.js') }}"></script>
 <script async src="{{ url_for('static', filename='js/sidebar.js') }}"></script>

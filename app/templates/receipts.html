@@ -2269,6 +2269,8 @@
                                                 method="post"
                                                 action="/receipts/delete"
                                                 onsubmit="return confirm('Отменить этот приход? Остаток будет возвращён обратным движением, а история документа сохранится.');"
+                                                data-erp-pending
+                                                data-pending-label="Отменяем приход…"
                                             >
                                                 <input
                                                     type="hidden"
@@ -2279,8 +2281,8 @@
                                                 <button
                                                     class="receipt-action-button receipt-delete-button"
                                                     type="submit"
-                                                    title="Отменить приход"
-                                                    aria-label="Отменить приход"
+                                                    title="{{ 'Приход уже отменён' if receipt.status == 'cancelled' else 'Отменить приход' }}"
+                                                    aria-label="{{ 'Приход уже отменён' if receipt.status == 'cancelled' else 'Отменить приход' }}"
                                                     {% if receipt.status == 'cancelled' %}disabled{% endif %}
                                                 >
                                                     <svg
@@ -2310,13 +2312,15 @@
                     </table>
                 </div>
             {% else %}
-                <div class="empty receipt-empty-state erp-empty-state">
+                <div class="empty receipt-empty-state {{ 'erp-no-results-state' if receipt_filters.q or receipt_filters.receipt_document or receipt_filters.receipt_comment or receipt_filters.receipt_brand or receipt_filters.receipt_brand_id or receipt_filters.receipt_category or receipt_filters.receipt_category_id or receipt_filters.receipt_product or receipt_filters.receipt_product_id or receipt_filters.receipt_status or receipt_date_from or receipt_date_to else 'erp-empty-state' }}" role="status">
                     {% if receipt_filters.q or receipt_filters.receipt_document or receipt_filters.receipt_comment or receipt_filters.receipt_brand or receipt_filters.receipt_brand_id or receipt_filters.receipt_category or receipt_filters.receipt_category_id or receipt_filters.receipt_product or receipt_filters.receipt_product_id or receipt_filters.receipt_status or receipt_date_from or receipt_date_to %}
                         <strong>Ничего не найдено</strong>
                         <span>Измените поиск, период или активные фильтры.</span>
+                        <a class="erp-state-action" href="{{ url_for('receipts_page') }}">Сбросить фильтры</a>
                     {% else %}
                         <strong>Приходов пока нет</strong>
                         <span>Создайте первый приход, чтобы он появился в списке.</span>
+                        <button class="erp-state-action" type="button" onclick="openReceiptModal()">Создать приход</button>
                     {% endif %}
                 </div>
             {% endif %}
@@ -2358,6 +2362,8 @@
                 action="/receipts/create"
                 id="receiptForm"
                 enctype="multipart/form-data"
+                data-erp-pending
+                data-pending-label="Проводим приход…"
             >
                 <input
                     type="hidden"
@@ -2693,7 +2699,7 @@
             <button class="modal-close" type="button" aria-label="Закрыть" data-receipt-edit-close>×</button>
         </div>
         <div class="modal-body">
-            <form id="receiptEditModalForm" enctype="multipart/form-data">
+            <form id="receiptEditModalForm" enctype="multipart/form-data" data-erp-pending data-pending-label="Сохраняем приход…">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="receipt_id">
                 <input type="hidden" name="product_id">

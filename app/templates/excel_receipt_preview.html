@@ -86,7 +86,7 @@
             {% if draft.receipt %}
             <a class="button button-primary" href="{{ url_for('excel_receipt_page', receipt_id=draft.receipt.id) }}">Открыть проведённый приход</a>
             {% elif draft.status == 'ready' %}
-            <form method="post" action="{{ url_for('excel_receipt_post', draft_id=draft.id) }}">
+            <form method="post" action="{{ url_for('excel_receipt_post', draft_id=draft.id) }}" data-erp-pending data-pending-label="Проводим приход…">
                 <button class="button button-primary" type="submit">Оформить приход</button>
                 <div class="receipt-confirm-note">Только это подтверждение создаст документ, карточки и операции остатков.</div>
             </form>

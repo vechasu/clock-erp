@@ -20,7 +20,8 @@ class ReceiptsListDesignSystemContractTest(unittest.TestCase):
             "receipt-data-card erp-table-card erp-table-shell",
             "erp-table-scroll erp-scroll-hint",
             "receipts-table erp-data-table",
-            "receipt-empty-state erp-empty-state",
+            "receipt-empty-state {{ 'erp-no-results-state'",
+            "else 'erp-empty-state'",
         ):
             with self.subTest(contract=contract):
                 self.assertIn(contract, template)
