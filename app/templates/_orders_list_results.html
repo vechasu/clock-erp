@@ -1,0 +1,61 @@
+{% macro order_status_badge(code, existing_label='') -%}
+    {% set normalized = code|string|upper %}
+    {% set label = 'Не подтверждён' if normalized == 'N' else 'Подтверждён' if normalized == 'A' else 'Собран' if normalized == 'D' else existing_label or 'Неизвестный статус' %}
+    <span class="badge {% if normalized == 'N' %}badge-new{% elif normalized == 'A' %}badge-work{% elif normalized == 'D' %}badge-done{% else %}badge-default{% endif %}">{{ label }}</span>
+{%- endmacro %}
+{% macro item_count_label(count) -%}
+    {% if count is none %}
+        Количество уточняется
+    {% else %}
+        {{ count|int if count == count|int else count }} {% if count|int % 10 == 1 and count|int % 100 != 11 %}товар{% elif count|int % 10 in [2,3,4] and count|int % 100 not in [12,13,14] %}товара{% else %}товаров{% endif %}
+    {% endif %}
+{%- endmacro %}
+<div data-orders-results>
+    <div class="orders-list" id="ordersList">
+        {% for order in orders %}
+            {% set oid = order.get('id') or order.get('ID') %}
+            {% set number = order.get('number') or order.get('ACCOUNT_NUMBER') or oid or 'Без внешнего ID' %}
+            {% set code = order.get('status') or 'UNKNOWN' %}
+            {% set customer = order.get('customer') or 'Клиент не указан' %}
+            {% set phone = order.get('phone') or 'Телефон не указан' %}
+            {% set total = order.get('order_total') if order.get('order_total') is not none else order.get('price') %}
+            {% set created = order.get('created_at') or order.get('date') or '' %}
+            <a href="{{ url_for('order_page', order_id=oid, page=request.args.get('page',1), page_size=orders_page_size, q=request.args.get('q',''), status=request.args.get('status','all'), period=request.args.get('period','all')) if oid else '#' }}"{% if not oid %} aria-disabled="true"{% endif %} class="order-row{% if selected_order and (selected_order.get('id')|string == oid|string) %} active{% endif %}" data-order-id="{{ oid }}">
+                <div class="order-row-head">
+                    <span class="order-number">Заказ №{{ number }}</span>
+                    <span class="order-row-badges">
+                        {{ order_status_badge(code, order.get('status_name') or '') }}
+                        {% if order.get('sale_completed') %}<span class="sale-fact-badge" title="Продажа {{ order.get('conducted_sale_id') }}">✓ Продажа проведена</span>{% endif %}
+                    </span>
+                </div>
+                <div class="order-customer-line"><span>{{ customer }}</span><span class="phone">{{ phone }}</span></div>
+                <div class="order-context">
+                    <strong>{% if total is not none %}<span class="money-value" data-amount="{{ total }}"></span> ₽{% else %}—{% endif %}</strong>
+                    <span class="date-value" data-date="{{ created }}"></span>
+                    <span>{{ item_count_label(order.get('item_units')) }}</span>
+                </div>
+            </a>
+        {% else %}
+            {% if sync_error %}
+                <div class="empty erp-error-state" role="alert"><strong>Не удалось загрузить заказы</strong><span>Список временно недоступен; ранее загруженные данные не изменены.</span><a class="erp-state-action" href="{{ request.path }}?retry=1">Повторить загрузку</a></div>
+            {% elif request.args.get('q') or request.args.get('status','all') != 'all' or request.args.get('period','all') != 'all' %}
+                <div class="empty erp-no-results-state" role="status"><strong>По текущим условиям заказы не найдены</strong><span>Заказы не удалены — измените поиск или фильтры.</span><a class="erp-state-action" href="{{ url_for('orders_page') }}">Сбросить фильтры</a></div>
+            {% else %}
+                <div class="empty erp-empty-state" role="status"><strong>Заказов пока нет</strong><span>Новые заказы появятся после загрузки из Bitrix.</span></div>
+            {% endif %}
+        {% endfor %}
+    </div>
+    <footer class="list-footer erp-pagination">
+        <span>Найдено: {{ orders_total }} заказов</span>
+        <label class="orders-page-size">Показывать:
+            <select class="field" name="page_size" aria-label="Заказов на странице" data-orders-page-size>
+                {% for size in orders_page_sizes %}<option value="{{ size }}"{% if orders_page_size == size %} selected{% endif %}>{{ size }}</option>{% endfor %}
+            </select>
+        </label>
+        <span class="pagination">
+            {% if orders_page > 1 %}<a class="page-link" data-orders-page-link href="{{ url_for('orders_page', page=orders_page - 1, page_size=orders_page_size, q=request.args.get('q',''), status=request.args.get('status','all'), period=request.args.get('period','all')) }}" aria-label="Предыдущая страница">←</a>{% else %}<span class="page-link is-disabled" aria-hidden="true">←</span>{% endif %}
+            <span>Страница {{ orders_page }} из {{ orders_page_count }}</span>
+            {% if orders_page < orders_page_count %}<a class="page-link" data-orders-page-link href="{{ url_for('orders_page', page=orders_page + 1, page_size=orders_page_size, q=request.args.get('q',''), status=request.args.get('status','all'), period=request.args.get('period','all')) }}" aria-label="Следующая страница">→</a>{% else %}<span class="page-link is-disabled" aria-hidden="true">→</span>{% endif %}
+        </span>
+    </footer>
+</div>

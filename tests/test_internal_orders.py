@@ -104,8 +104,9 @@ class InternalOrdersTest(unittest.TestCase):
             self.assertNotIn(
                 'data-filter="{}"'.format(removed_status), html
             )
-        self.assertIn("function applyFilters()", html)
-        self.assertIn("rowText.includes(query)", html)
+        self.assertIn("async function loadOrdersResults", html)
+        self.assertIn("ordersSearchController?.abort()", html)
+        self.assertIn("requestId!==ordersSearchRequest", html)
 
     def test_detail_route_keeps_server_pagination_and_three_status_kpis(self):
         orders = [
@@ -130,7 +131,8 @@ class InternalOrdersTest(unittest.TestCase):
             20,
         )
         self.assertIn("Найдено: 45", html)
-        self.assertIn(">2 / 3<", html)
+        self.assertIn("Страница 2 из 3", html)
+        self.assertIn('aria-label="Заказов на странице"', html)
         self.assertNotIn("Всего заказов", html)
         self.assertEqual(
             html.count('class="erp-stat-value">15</strong>'), 3

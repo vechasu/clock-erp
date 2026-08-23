@@ -1,6 +1,14 @@
 """Read-only fixture server for responsive orders UI smoke checks."""
 
+import os
+import tempfile
+from pathlib import Path
+
 from app import web
+
+
+PREVIEW_ROOT = Path(tempfile.mkdtemp(prefix="clock-erp-orders-preview-"))
+os.environ["ORDERS_DATABASE_PATH"] = str(PREVIEW_ROOT / "orders.db")
 
 
 def fixture_orders():
@@ -26,6 +34,7 @@ def fixture_orders():
             "delivery": "СДЭК до пункта выдачи",
             "source": "Интернет-магазин",
             "products_count": 2,
+            "item_units": 2,
             "products": [],
             "sync_state": "complete",
         })
@@ -93,13 +102,16 @@ def mapping_context(products, **_kwargs):
     }
 
 
-web.app.config.update(TESTING=True, AUTH_TESTING=False)
+web.app.config.update(
+    TESTING=True, AUTH_TESTING=False, ORDERS_SNAPSHOT_TESTING=True
+)
 web.get_orders = lambda force=False: ORDERS
 web.get_order = fixture_order
 web.load_order_product_mappings = lambda _order_id: {}
 web.build_catalog_product_order_counts = lambda *args, **kwargs: {}
 web.build_order_product_mapping_context = mapping_context
 web.get_order_conducted_sale = lambda _order_id: None
+web.bulk_conducted_order_sales = lambda _order_ids, database=None: {}
 web.has_legacy_order_stock_writeoff = lambda _order_id: False
 
 

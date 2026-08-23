@@ -117,9 +117,9 @@ class OrdersUiRedesignTest(unittest.TestCase):
         self.assertEqual(filters.count("data-auto-submit-filter"), 2)
         self.assertNotIn(">Найти<", filters)
         self.assertIn("url_for('orders_page')", filters)
-        self.assertIn("filter.form?.requestSubmit()", self.source)
+        self.assertIn("loadOrdersResults(ordersFilterUrl())", self.source)
         self.assertIn("event.key==='Enter'", self.source)
-        self.assertIn("searchInput.form?.requestSubmit()", self.source)
+        self.assertIn("ordersSearchController?.abort()", self.source)
 
     def test_shared_erp_foundation_kpis_and_order_context_are_rendered(self):
         html = self.render_selected_order()
@@ -143,6 +143,18 @@ class OrdersUiRedesignTest(unittest.TestCase):
         self.assertIn("while(requested!==saved)", self.source)
         self.assertIn("[data-tracking-form]')?.addEventListener('submit'", self.source)
         self.assertIn("[data-order-sale-form]')?.addEventListener('submit'", self.source)
+
+    def test_internal_comments_are_compact_append_only_and_have_shortcuts(self):
+        comments = self.source.split(
+            'class="section order-comments"', 1
+        )[1].split('<section class="section">', 1)[0]
+        self.assertIn("Видны только сотрудникам", comments)
+        self.assertIn('rows="1"', comments)
+        self.assertIn("Добавить внутренний комментарий…", comments)
+        self.assertIn("event.ctrlKey||event.metaKey", self.source)
+        self.assertIn("employeeCommentForm.requestSubmit()", self.source)
+        self.assertNotIn("Удалить комментарий", comments)
+        self.assertNotIn("Редактировать комментарий", comments)
 
     def test_desktop_mapping_is_one_row_with_flexible_product(self):
         self.assertIn(
