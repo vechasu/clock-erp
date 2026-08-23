@@ -1434,7 +1434,7 @@
                 ? "Сначала выберите бренд"
                 : "Выберите категорию",
             model: disabled
-                ? "Сначала выберите бренд и категорию"
+                ? "Сначала выберите категорию"
                 : "Выберите модель",
             product: disabled
                 ? scope?.dataset.catalogProductDisabledPlaceholder

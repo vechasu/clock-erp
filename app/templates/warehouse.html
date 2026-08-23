@@ -2630,6 +2630,13 @@
             box-shadow: 0 16px 40px rgba(15, 23, 42, 0.14);
         }
 
+        #filterDrawer .brand-combobox-options {
+            max-height: min(320px, calc(100vh - 220px));
+            overflow-x: hidden;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+        }
+
         #filterDrawer .brand-combobox-search {
             border-color: #dce3ed;
             background: #fbfcfe;
@@ -4017,7 +4024,7 @@
 
     </style>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/erp-components.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-combobox.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-combobox.css', v='products-filter-20260823') }}">
     <script defer src="{{ url_for('static', filename='js/table-scroll-hint.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/erp-modal-shell.js') }}"></script>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/products-workspace.css') }}">
@@ -5082,7 +5089,7 @@
             {{ render_catalog_combobox(
                 "filterBrandCombobox",
                 "brand",
-                filter_brand_groups,
+                [],
                 selected_brand,
                 true,
                 "бренд",
@@ -5093,7 +5100,8 @@
                 shared_catalog_kind="brand",
                 selected_id=selected_brand_id,
                 id_input_name="brand_id",
-                selected_label=selected_brand
+                selected_label=selected_brand,
+                search_placeholder="Поиск бренда..."
             ) }}
 
             <div class="category-cell-form-title">
@@ -5114,7 +5122,8 @@
                 selected_id=selected_category_id,
                 id_input_name="category_id",
                 selected_label=selected_category,
-                disabled=not selected_brand_id
+                disabled=not selected_brand_id,
+                search_placeholder="Поиск категории..."
             ) }}
 
             <div class="category-cell-form-title">Модель</div>
@@ -5133,7 +5142,8 @@
                 selected_id=selected_model_id,
                 id_input_name="model_id",
                 selected_label=selected_model,
-                disabled=not (selected_brand_id and selected_category_id)
+                disabled=not (selected_brand_id and selected_category_id),
+                search_placeholder="Поиск модели..."
             ) }}
 
             <div class="category-cell-form-title">
@@ -5366,7 +5376,7 @@
         </div>
     </aside>
 
-    <script src="{{ url_for('static', filename='js/catalog-combobox.js', v='catalog-combobox-20260823') }}"></script>
+    <script src="{{ url_for('static', filename='js/catalog-combobox.js', v='catalog-combobox-20260823-products-filter') }}"></script>
     <script src="{{ url_for('static', filename='js/toolbar-popover-coordinator.js') }}"></script>
     <script>
         const stockHistoryCache = new Map();
