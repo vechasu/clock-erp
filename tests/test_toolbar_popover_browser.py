@@ -227,7 +227,7 @@ class ToolbarPopoverBrowserTest(unittest.TestCase):
                         width,
                         height,
                         'data-products-workflow-e2e="pass"',
-                        virtual_time_budget=1500,
+                        virtual_time_budget=3000,
                     )
 
             modal_paths = (

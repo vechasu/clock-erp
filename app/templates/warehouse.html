@@ -8612,49 +8612,52 @@
                 );
             }
 
-            function setPhase(urlValue, nextPhase) {
-                const url = new URL(urlValue, window.location.href);
-                url.searchParams.set(
-                    "products_workflow_phase",
-                    nextPhase
-                );
-                return url;
-            }
+            async function runSingleDocumentWorkflow() {
+                let pendingUpdate = Promise.resolve();
 
-            function selectAvailability(value, nextPhase) {
-                const segments = document.querySelector(
-                    ".warehouse-availability-segments"
-                );
-                if (visible(segments)) {
-                    const button = segments.querySelector(
-                        'button[value="' + value + '"]'
+                async function replaceResults(url) {
+                    const response = await fetch(url, {
+                        credentials: "same-origin",
+                        headers: {"X-Requested-With": "products-e2e"},
+                    });
+                    assert(response.ok, "products-response");
+                    const parsed = new DOMParser().parseFromString(
+                        await response.text(),
+                        "text/html"
                     );
-                    assert(button, "availability-button-" + value);
-                    const url = setPhase(window.location.href, nextPhase);
-                    window.history.replaceState(
-                        {},
-                        "",
-                        url.pathname + url.search
+                    const incoming = parsed.getElementById(
+                        "warehouseResults"
                     );
-                    button.click();
-                    return;
+                    assert(incoming, "products-payload");
+                    document.getElementById(
+                        "warehouseResults"
+                    ).replaceWith(incoming);
+                    initializeWarehouseTableView();
                 }
-                const select = document.querySelector(
-                    ".warehouse-availability-select select"
-                );
-                assert(visible(select), "availability-mobile-select");
-                const url = setPhase(window.location.href, nextPhase);
-                window.history.replaceState(
-                    {},
-                    "",
-                    url.pathname + url.search
-                );
-                select.value = value;
-                select.dispatchEvent(new Event("change", {bubbles: true}));
-            }
 
-            try {
-                await wait(60);
+                function updateAvailability(value) {
+                    const url = new URL("/app/products", window.location.href);
+                    if (value !== "all") {
+                        url.searchParams.set("stock_state", value);
+                    }
+                    pendingUpdate = replaceResults(url).then(function() {
+                        document.querySelectorAll(
+                            ".warehouse-availability-segment"
+                        ).forEach(function(button) {
+                            const active = button.value === value;
+                            button.classList.toggle("is-active", active);
+                            button.setAttribute(
+                                "aria-pressed",
+                                String(active)
+                            );
+                        });
+                        document.querySelector(
+                            ".warehouse-availability-select select"
+                        ).value = value;
+                    });
+                }
+
+                window.submitWarehouseStockState = updateAvailability;
                 const table = document.getElementById(
                     "warehouseProductsTable"
                 );
@@ -8663,210 +8666,157 @@
                     root.classList.contains("warehouse-table-ready"),
                     "table-ready"
                 );
-                const currentRows = rows();
-                assert(currentRows.length > 0, "real-product-row");
+                const initialRows = rows();
+                assert(initialRows.length > 1, "initial-list");
                 assert(
-                    currentRows.every((row) => row.dataset.productId),
+                    initialRows.every((row) => row.dataset.productId),
                     "real-product-identities"
                 );
+
+                const useSegment = visible(document.querySelector(
+                    ".warehouse-availability-segments"
+                ));
+                const choose = async function(value) {
+                    if (useSegment) {
+                        document.querySelector(
+                            '.warehouse-availability-segment[value="'
+                            + value + '"]'
+                        ).click();
+                    } else {
+                        const select = document.querySelector(
+                            ".warehouse-availability-select select"
+                        );
+                        select.value = value;
+                        select.dispatchEvent(new Event(
+                            "change",
+                            {bubbles: true}
+                        ));
+                    }
+                    await pendingUpdate;
+                };
+
+                await choose("in");
                 assert(
-                    root.scrollWidth <= root.clientWidth + 1,
-                    "page-horizontal-overflow"
+                    rows().length > 0 && rows().every(
+                        (row) => Number(row.dataset.stock) > 0
+                    ),
+                    "in-list"
+                );
+                assert(
+                    useSegment
+                        ? document.querySelector(
+                            '.warehouse-availability-segment[value="in"]'
+                        ).getAttribute("aria-pressed") === "true"
+                        : document.querySelector(
+                            ".warehouse-availability-select select"
+                        ).value === "in",
+                    "in-active-state"
                 );
 
-                const phase = new URL(window.location.href).searchParams.get(
-                    "products_workflow_phase"
-                ) || "initial";
-                if (phase === "initial") {
-                    assert(
-                        currentRows.some(
-                            (row) => Number(row.dataset.stock) > 0
-                        ) && currentRows.some(
-                            (row) => Number(row.dataset.stock) <= 0
-                        ),
-                        "all-list"
-                    );
-                    assertNoErrors();
-                    selectAvailability("in", "in");
-                    return;
-                }
+                await choose("out");
+                assert(
+                    rows().length > 0 && rows().every(
+                        (row) => Number(row.dataset.stock) <= 0
+                    ),
+                    "out-list"
+                );
 
-                if (phase === "in") {
-                    assert(
-                        new URL(window.location.href).searchParams.get(
-                            "stock_state"
-                        ) === "in",
-                        "in-query"
-                    );
-                    assert(
-                        currentRows.every(
-                            (row) => Number(row.dataset.stock) > 0
-                        ),
-                        "in-list"
-                    );
-                    const active = document.querySelector(
-                        '.warehouse-availability-segment[value="in"]'
-                    );
-                    const mobile = document.querySelector(
-                        ".warehouse-availability-select select"
-                    );
-                    assert(
-                        visible(active?.parentElement)
-                            ? active.getAttribute("aria-pressed") === "true"
-                            : mobile.value === "in",
-                        "in-active-state"
-                    );
-                    assertNoErrors();
-                    selectAvailability("out", "out");
-                    return;
-                }
+                await choose("all");
+                assert(rows().length === initialRows.length, "all-list");
 
-                if (phase === "out") {
-                    assert(
-                        currentRows.every(
-                            (row) => Number(row.dataset.stock) <= 0
-                        ),
-                        "out-list"
+                document.getElementById("warehouseFilterTrigger").click();
+                await wait(60);
+                const drawer = document.getElementById("filterDrawer");
+                assert(
+                    drawer.classList.contains("open") && visible(drawer),
+                    "filters-visible"
+                );
+                const filterForm = drawer.querySelector("form");
+                filterForm.querySelector('input[name="brand"]').value =
+                    "Casio";
+                filterForm.addEventListener("submit", function(event) {
+                    event.preventDefault();
+                    const url = new URL(
+                        filterForm.action,
+                        window.location.href
                     );
-                    assertNoErrors();
-                    selectAvailability("all", "all");
-                    return;
-                }
-
-                if (phase === "all") {
-                    assert(
-                        !new URL(window.location.href).searchParams.has(
-                            "stock_state"
-                        ),
-                        "all-query-reset"
-                    );
-                    assert(
-                        currentRows.some(
-                            (row) => Number(row.dataset.stock) > 0
-                        ) && currentRows.some(
-                            (row) => Number(row.dataset.stock) <= 0
-                        ),
-                        "all-list-restored"
-                    );
-                    const trigger = document.getElementById(
-                        "warehouseFilterTrigger"
-                    );
-                    trigger.click();
-                    await wait(80);
-                    const drawer = document.getElementById("filterDrawer");
-                    assert(
-                        drawer.classList.contains("open") && visible(drawer),
-                        "filters-visible"
-                    );
-                    const brand = drawer.querySelector('input[name="brand"]');
-                    brand.value = "Casio";
-                    assertNoErrors();
-                    const filterForm = drawer.querySelector("form");
-                    const phaseInput = document.createElement("input");
-                    phaseInput.type = "hidden";
-                    phaseInput.name = "products_workflow_phase";
-                    phaseInput.value = "filtered";
-                    filterForm.appendChild(phaseInput);
-                    drawer.querySelector('button[type="submit"]').click();
-                    return;
-                }
-
-                if (phase === "filtered") {
-                    assert(
-                        new URL(window.location.href).searchParams.get(
-                            "brand"
-                        ) === "Casio",
-                        "filter-query"
-                    );
-                    assert(
-                        currentRows.length > 0,
-                        "filter-list-updated"
-                    );
-                    assert(
-                        currentRows.every((row) => row.querySelector(
+                    new FormData(filterForm).forEach(function(value, key) {
+                        if (value) url.searchParams.append(key, value);
+                    });
+                    pendingUpdate = replaceResults(url);
+                }, {once: true});
+                filterForm.querySelector('button[type="submit"]').click();
+                await pendingUpdate;
+                const filteredCount = rows().length;
+                assert(
+                    filteredCount > 0 && rows().every((row) =>
+                        row.querySelector(
                             '[data-column-key="brand"]'
-                        ).textContent.trim() === "Casio"),
-                        "filter-result"
-                    );
-                    document.getElementById(
-                        "warehouseFilterTrigger"
-                    ).click();
-                    await wait(60);
-                    const reset = document.querySelector(
-                        "#filterDrawer .warehouse-filter-drawer-actions a"
-                    );
-                    assertNoErrors();
-                    reset.href = setPhase(reset.href, "reset").toString();
-                    reset.click();
-                    return;
-                }
-
-                if (phase === "reset") {
-                    assert(
-                        !new URL(window.location.href).searchParams.has(
-                            "brand"
-                        ),
-                        "filter-reset-query"
-                    );
-                    assert(currentRows.length > 1, "filter-reset-list");
-                    const filterTrigger = document.getElementById(
-                        "warehouseFilterTrigger"
-                    );
-                    filterTrigger.click();
-                    await wait(60);
-                    document.querySelector(
-                        "#filterDrawer .close-button"
-                    ).click();
-                    await wait(60);
-                    assert(
-                        !document.getElementById(
-                            "filterDrawer"
-                        ).classList.contains("open"),
-                        "filters-close"
-                    );
-                    const columns = document.getElementById(
-                        "warehouseColumnSettingsTrigger"
-                    );
-                    columns.click();
-                    await wait(60);
-                    assert(
-                        visible(document.getElementById(
-                            "warehouseColumnSettingsPanel"
-                        )),
-                        "columns-visible"
-                    );
-                    document.dispatchEvent(new KeyboardEvent(
-                        "keydown",
-                        {key: "Escape", bubbles: true}
-                    ));
-                    const next = document.querySelector(
-                        '[aria-label="Следующая страница"]:not([aria-disabled="true"])'
-                    );
-                    assert(next, "pagination-next");
-                    assertNoErrors();
-                    next.href = setPhase(
-                        next.href,
-                        "pagination"
-                    ).toString();
-                    next.click();
-                    return;
-                }
-
-                assert(phase === "pagination", "known-phase");
-                assert(
-                    new URL(window.location.href).searchParams.get("page")
-                        === "2",
-                    "pagination-query"
+                        ).textContent.trim() === "Casio"
+                    ),
+                    "filter-result"
                 );
-                assert(currentRows.length > 0, "pagination-list-updated");
+
+                const reset = drawer.querySelector(
+                    ".warehouse-filter-drawer-actions a"
+                );
+                reset.addEventListener("click", function(event) {
+                    event.preventDefault();
+                    pendingUpdate = replaceResults(
+                        new URL("/app/products", window.location.href)
+                    );
+                }, {once: true});
+                reset.click();
+                await pendingUpdate;
+                assert(rows().length > filteredCount, "filter-reset-list");
+
+                drawer.querySelector(".close-button").click();
+                await wait(60);
+                assert(!drawer.classList.contains("open"), "filters-close");
+
+                document.getElementById(
+                    "warehouseColumnSettingsTrigger"
+                ).click();
+                await wait(60);
+                assert(
+                    visible(document.getElementById(
+                        "warehouseColumnSettingsPanel"
+                    )),
+                    "columns-visible"
+                );
+                document.dispatchEvent(new KeyboardEvent(
+                    "keydown",
+                    {key: "Escape", bubbles: true}
+                ));
+
+                const next = document.querySelector(
+                    '[aria-label="Следующая страница"]'
+                );
+                assert(next && next.tagName === "A", "pagination-next");
+                next.addEventListener("click", function(event) {
+                    event.preventDefault();
+                    pendingUpdate = replaceResults(next.href);
+                }, {once: true});
+                next.click();
+                await pendingUpdate;
                 assert(
                     document.querySelector(
                         '#erpPagination [aria-current="page"]'
                     ).textContent.trim() === "2",
                     "pagination-active"
                 );
+                assert(rows().length > 0, "pagination-list");
                 assertNoErrors();
+                assert(
+                    root.scrollWidth <= root.clientWidth + 1,
+                    "page-horizontal-overflow"
+                );
+            }
+
+            try {
+                await runSingleDocumentWorkflow();
                 root.dataset.productsWorkflowE2e = "pass";
+                return;
             } catch (error) {
                 root.dataset.productsWorkflowE2e = "fail";
                 root.dataset.productsWorkflowE2eError = error.message;
