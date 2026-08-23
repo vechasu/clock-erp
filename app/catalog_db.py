@@ -880,6 +880,13 @@ CREATE TABLE IF NOT EXISTS erp_inventory_sessions (
     id TEXT PRIMARY KEY,
     brand_id INTEGER NOT NULL REFERENCES erp_brands(id) ON DELETE RESTRICT,
     active_brand_id INTEGER UNIQUE REFERENCES erp_brands(id) ON DELETE RESTRICT,
+    scope_type TEXT CHECK (scope_type IN ('brand', 'category', 'model')),
+    category_id INTEGER REFERENCES erp_categories(id) ON DELETE RESTRICT,
+    model_id INTEGER REFERENCES erp_models(id) ON DELETE RESTRICT,
+    idempotency_key TEXT UNIQUE,
+    scope_brand_name TEXT,
+    scope_category_name TEXT,
+    scope_model_name TEXT,
     status TEXT NOT NULL CHECK (status IN ('draft', 'active', 'completed', 'cancelled')),
     started_by TEXT,
     completed_by TEXT,
@@ -901,7 +908,6 @@ CREATE INDEX IF NOT EXISTS idx_erp_inventory_brand_status
     ON erp_inventory_sessions(brand_id, status);
 CREATE INDEX IF NOT EXISTS idx_erp_inventory_sessions_status
     ON erp_inventory_sessions(status, started_at DESC);
-
 CREATE TABLE IF NOT EXISTS erp_inventory_items (
     id TEXT PRIMARY KEY,
     session_id TEXT NOT NULL REFERENCES erp_inventory_sessions(id) ON DELETE RESTRICT,
@@ -922,6 +928,15 @@ CREATE TABLE IF NOT EXISTS erp_inventory_items (
     idempotency_key TEXT UNIQUE,
     error_message TEXT,
     reactivated INTEGER NOT NULL DEFAULT 0 CHECK (reactivated IN (0, 1)),
+    snapshot_name TEXT,
+    snapshot_article TEXT,
+    snapshot_brand_id INTEGER REFERENCES erp_brands(id) ON DELETE RESTRICT,
+    snapshot_category_id INTEGER REFERENCES erp_categories(id) ON DELETE RESTRICT,
+    snapshot_model_id INTEGER REFERENCES erp_models(id) ON DELETE RESTRICT,
+    snapshot_brand_name TEXT,
+    snapshot_category_name TEXT,
+    snapshot_model_name TEXT,
+    snapshot_photo_url TEXT,
     UNIQUE (session_id, product_id)
 );
 
@@ -1120,7 +1135,7 @@ class CatalogDatabase:
 
     @staticmethod
     def _ensure_inventory_constraints(connection):
-        """Keep active-session uniqueness compatible with production SQLite 3.7."""
+        """Add scope/snapshot metadata while preserving every legacy document."""
         columns = {
             row["name"]
             for row in connection.execute(
@@ -1132,6 +1147,22 @@ class CatalogDatabase:
                 "ALTER TABLE erp_inventory_sessions ADD COLUMN active_brand_id INTEGER "
                 "REFERENCES erp_brands(id) ON DELETE RESTRICT"
             )
+        session_additions = (
+            ("scope_type", "TEXT"),
+            ("category_id", "INTEGER REFERENCES erp_categories(id) ON DELETE RESTRICT"),
+            ("model_id", "INTEGER REFERENCES erp_models(id) ON DELETE RESTRICT"),
+            ("idempotency_key", "TEXT"),
+            ("scope_brand_name", "TEXT"),
+            ("scope_category_name", "TEXT"),
+            ("scope_model_name", "TEXT"),
+        )
+        for name, declaration in session_additions:
+            if name not in columns:
+                connection.execute(
+                    "ALTER TABLE erp_inventory_sessions ADD COLUMN {} {}".format(
+                        name, declaration
+                    )
+                )
         item_columns = {
             row["name"]
             for row in connection.execute(
@@ -1143,17 +1174,36 @@ class CatalogDatabase:
                 "ALTER TABLE erp_inventory_items ADD COLUMN reactivated INTEGER "
                 "NOT NULL DEFAULT 0 CHECK (reactivated IN (0, 1))"
             )
-        connection.execute(
-            "UPDATE erp_inventory_sessions SET active_brand_id = brand_id "
-            "WHERE status = 'active' AND active_brand_id IS NULL"
+        item_additions = (
+            ("snapshot_name", "TEXT"),
+            ("snapshot_article", "TEXT"),
+            ("snapshot_brand_id", "INTEGER REFERENCES erp_brands(id) ON DELETE RESTRICT"),
+            ("snapshot_category_id", "INTEGER REFERENCES erp_categories(id) ON DELETE RESTRICT"),
+            ("snapshot_model_id", "INTEGER REFERENCES erp_models(id) ON DELETE RESTRICT"),
+            ("snapshot_brand_name", "TEXT"),
+            ("snapshot_category_name", "TEXT"),
+            ("snapshot_model_name", "TEXT"),
+            ("snapshot_photo_url", "TEXT"),
         )
+        for name, declaration in item_additions:
+            if name not in item_columns:
+                connection.execute(
+                    "ALTER TABLE erp_inventory_items ADD COLUMN {} {}".format(
+                        name, declaration
+                    )
+                )
         connection.execute(
             "UPDATE erp_inventory_sessions SET active_brand_id = NULL "
-            "WHERE status <> 'active' AND active_brand_id IS NOT NULL"
+            "WHERE active_brand_id IS NOT NULL"
+        )
+        connection.execute("DROP INDEX IF EXISTS idx_erp_inventory_one_active_brand")
+        connection.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_erp_inventory_idempotency "
+            "ON erp_inventory_sessions(idempotency_key)"
         )
         connection.execute(
-            "CREATE UNIQUE INDEX IF NOT EXISTS idx_erp_inventory_one_active_brand "
-            "ON erp_inventory_sessions(active_brand_id)"
+            "CREATE INDEX IF NOT EXISTS idx_erp_inventory_sessions_scope "
+            "ON erp_inventory_sessions(status, brand_id, category_id, model_id)"
         )
 
     @staticmethod

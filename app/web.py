@@ -3230,7 +3230,11 @@ def inventory_start_api():
     payload = _inventory_payload()
     def action():
         session, created = BrandInventory().start(
-            payload.get("brand_id"), _inventory_actor()
+            payload.get("brand_id"),
+            _inventory_actor(),
+            category_id=payload.get("category_id"),
+            model_id=payload.get("model_id"),
+            idempotency_key=payload.get("idempotency_key", ""),
         )
         return {
             "ok": True,
@@ -3239,8 +3243,8 @@ def inventory_start_api():
             "message": (
                 "Инвентаризация начата."
                 if created else
-                "Для бренда {} уже проводится инвентаризация."
-                .format(session["brand_name"])
+                "Инвентаризация этого состава уже активна: {}."
+                .format(session["scope_label"])
             ),
         }
     return _inventory_json(action)
@@ -3458,20 +3462,43 @@ def warehouse_page():
     selected_category = request.args.get("category", "").strip()
     selected_brand = request.args.get("brand", "").strip()
     selected_model = request.args.get("model", "").strip()
+    selected_model_id = request.args.get("model_id", "").strip()
     selected_brand_id = request.args.get("brand_id", "").strip()
     selected_category_id = request.args.get("category_id", "").strip()
     shared_catalog = SharedCatalog()
+    shared_brands = shared_catalog.list_brands(limit=200)
+    if not selected_brand_id and selected_brand:
+        selected_brand_match = next((
+            item for item in shared_brands
+            if str(item.get("name") or "").strip().casefold()
+            == selected_brand.casefold()
+        ), None)
+        if selected_brand_match:
+            selected_brand_id = str(selected_brand_match["id"])
     if selected_brand_id:
         selected_brand_match = next(
             (
                 item
-                for item in shared_catalog.list_brands(limit=200)
+                for item in shared_brands
                 if str(item.get("id") or "") == selected_brand_id
             ),
             None,
         )
         if selected_brand_match:
             selected_brand = selected_brand_match["name"]
+        else:
+            selected_brand_id = ""
+            selected_brand = ""
+    if not selected_category_id and selected_category and selected_brand_id:
+        selected_category_match = next((
+            item for item in shared_catalog.list_category_options(
+                brand_id=selected_brand_id, limit=200, only_used_by_brand=True
+            )
+            if str(item.get("name") or "").strip().casefold()
+            == selected_category.casefold()
+        ), None)
+        if selected_category_match:
+            selected_category_id = str(selected_category_match["id"])
     if selected_category_id:
         selected_category_match = next(
             (
@@ -3479,13 +3506,51 @@ def warehouse_page():
                 for item in shared_catalog.list_category_options(
                     brand_id=selected_brand_id or None,
                     limit=200,
+                    only_used_by_brand=True,
                 )
-                if str(item.get("id") or "") == selected_category_id
+                if selected_category_id in {
+                    str(item.get("id") or ""),
+                    *(str(value) for value in item.get("category_ids", [])),
+                }
             ),
             None,
         )
         if selected_category_match:
             selected_category = selected_category_match["name"]
+        else:
+            selected_category_id = ""
+            selected_category = ""
+            selected_model_id = ""
+            selected_model = ""
+    if not selected_brand_id:
+        selected_category_id = ""
+        selected_category = ""
+        selected_model_id = ""
+        selected_model = ""
+    if (selected_model_id or selected_model) and selected_brand_id and selected_category_id:
+        selected_model_match = next(
+            (
+                item for item in shared_catalog.list_model_options(
+                    selected_brand_id, selected_category_id, limit=200
+                )
+                if (
+                    str(item.get("id") or "") == selected_model_id
+                    if selected_model_id else
+                    str(item.get("name") or "").strip().casefold()
+                    == selected_model.casefold()
+                )
+            ),
+            None,
+        )
+        if selected_model_match:
+            selected_model_id = str(selected_model_match["id"])
+            selected_model = selected_model_match["name"]
+        else:
+            selected_model_id = ""
+            selected_model = ""
+    elif not selected_category_id:
+        selected_model_id = ""
+        selected_model = ""
     selected_cell = request.args.get("cell", "").strip()
     created_date_from = request.args.get("date_from", "").strip()
     created_date_to = request.args.get("date_to", "").strip()
@@ -3545,7 +3610,7 @@ def warehouse_page():
     warehouse_active_filter_count = sum((
         bool(selected_brand_id or selected_brand),
         bool(selected_category_id or selected_category),
-        bool(selected_model),
+        bool(selected_model_id or selected_model),
         bool(selected_cell),
         bool(created_date_from or created_date_to),
         stock_state != "all",
@@ -3559,7 +3624,7 @@ def warehouse_page():
         query=query,
         brand=selected_brand if not selected_brand_id else "",
         category=selected_category if not selected_category_id else "",
-        model=selected_model,
+        model=selected_model if not selected_model_id else "",
         cell=selected_cell,
         hide_zero=False,
         sort_by=sort_by,
@@ -3570,6 +3635,7 @@ def warehouse_page():
         created_to=created_date_to,
         brand_id=selected_brand_id or None,
         category_id=selected_category_id or None,
+        model_id=selected_model_id or None,
         include_cell_item_names=False,
         include_facets=False,
         stock_state=stock_state,
@@ -3600,7 +3666,7 @@ def warehouse_page():
             filtered_items.append(item)
         items = filtered_items
     taxonomy = load_catalog_taxonomy()
-    shared_brand_groups = shared_catalog.list_brands(limit=200)
+    shared_brand_groups = shared_brands
     inventory_brand_id = selected_brand_id
     if not inventory_brand_id and selected_brand:
         inventory_brand_match = next(
@@ -3669,6 +3735,7 @@ def warehouse_page():
             selected_category=selected_category,
             selected_brand=selected_brand,
             selected_model=selected_model,
+            selected_model_id=selected_model_id,
             selected_category_id=selected_category_id,
             selected_brand_id=selected_brand_id,
             selected_cell=selected_cell,
@@ -3790,11 +3857,13 @@ def warehouse_products_export():
             created_from, created_to = created_to, created_from
         brand_id = (request.args.get("brand_id") or "").strip()
         category_id = (request.args.get("category_id") or "").strip()
+        model_id = (request.args.get("model_id") or "").strip()
         filters = {
             "query": (request.args.get("q") or "").strip(),
             "brand": "" if brand_id.isdigit() else (request.args.get("brand") or "").strip(),
             "category": "" if category_id.isdigit() else (request.args.get("category") or "").strip(),
             "model": (request.args.get("model") or "").strip(),
+            "model_id": model_id if model_id.isdigit() else None,
             "cell": (request.args.get("cell") or "").strip(),
             "hide_zero": request.args.get("in_stock") == "1",
             "sort_by": sort_by,

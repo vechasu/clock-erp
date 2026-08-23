@@ -163,7 +163,7 @@ class CatalogFilteringTest(unittest.TestCase):
                 rows,
             )
 
-    def test_brand_category_and_intersection_filters_are_complete(self):
+    def test_brand_category_filters_use_exact_canonical_category_id(self):
         brand_only = self.excel.list_products(
             brand_id=self.brand["id"],
             per_page=200,
@@ -174,24 +174,32 @@ class CatalogFilteringTest(unittest.TestCase):
         )
         intersection = self.excel.list_products(
             brand_id=self.brand["id"],
-            category_id=self.category_id,
+            category_id=self.duplicate_category_id,
             per_page=200,
         )
 
         self.assertEqual(brand_only["total"], 120)
-        self.assertEqual(category_only["total"], 121)
+        self.assertEqual(category_only["total"], 1)
         self.assertEqual(intersection["total"], 120)
+        self.assertEqual(
+            self.excel.list_products(
+                brand_id=self.brand["id"],
+                category_id=self.category_id,
+                per_page=200,
+            )["total"],
+            0,
+        )
 
     def test_stock_tabs_replace_duplicate_in_stock_toggle(self):
         all_items = self.excel.list_products(
             brand_id=self.brand["id"],
-            category_id=self.category_id,
+            category_id=self.duplicate_category_id,
             hide_zero=False,
             per_page=200,
         )
         in_stock = self.excel.list_products(
             brand_id=self.brand["id"],
-            category_id=self.category_id,
+            category_id=self.duplicate_category_id,
             hide_zero=True,
             per_page=200,
         )
@@ -259,7 +267,7 @@ class CatalogFilteringTest(unittest.TestCase):
             )
 
         result = self.excel.list_products(
-            brand_id=self.brand["id"], category_id=self.category_id,
+            brand_id=self.brand["id"], category_id=self.duplicate_category_id,
             hide_zero=True, sort_by="stock", sort_dir="asc", per_page=200,
         )
 
@@ -366,7 +374,7 @@ class CatalogFilteringTest(unittest.TestCase):
         response = self.client.get(
             "/warehouse?brand_id={}&category_id={}&per_page=100".format(
                 self.brand["id"],
-                self.category_id,
+                self.duplicate_category_id,
             )
         )
         html = response.get_data(as_text=True)
@@ -374,7 +382,7 @@ class CatalogFilteringTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(html.count('class="erp-filter-chip"'), 2)
         self.assertIn("Бренд: 666 Barcelona", html)
-        self.assertIn("Категория: Наручные часы", html)
+        self.assertIn("Категория:   НАРУЧНЫЕ ЧАСЫ  ", html)
         self.assertIn("Сбросить всё", html)
         self.assertEqual(html.count('data-product-id="'), 100)
 
@@ -403,7 +411,7 @@ class CatalogFilteringTest(unittest.TestCase):
     def test_sales_uses_positive_stock_while_receipts_keep_full_catalog(self):
         query = "brand_id={}&category_id={}&limit=200".format(
             self.brand["id"],
-            self.category_id,
+            self.duplicate_category_id,
         )
         sales = self.client.get("/api/v1/sales/catalog?" + query).get_json()
         receipts = self.client.get(
@@ -424,7 +432,7 @@ class CatalogFilteringTest(unittest.TestCase):
         options = self.client.get(
             "/api/v1/catalog/options?type=product&limit=200"
             "&brand_id={}&category_id={}&available_for_sale=1".format(
-                self.brand["id"], self.category_id
+                self.brand["id"], self.duplicate_category_id
             )
         ).get_json()
         brands = self.client.get(
@@ -447,6 +455,7 @@ class CatalogFilteringTest(unittest.TestCase):
         )
         self.assertEqual(len(categories["data"]), 1)
         self.assertEqual(categories["data"][0]["name"].strip().casefold(), "наручные часы")
+        self.assertEqual(categories["data"][0]["id"], self.duplicate_category_id)
         self.assertEqual(options["meta"]["total"], 4)
         self.assertEqual(len(options["data"]), 4)
         self.assertTrue(all(item["stock"] > 0 for item in options["data"]))
@@ -538,7 +547,7 @@ class CatalogFilteringTest(unittest.TestCase):
             with self.subTest(source=source):
                 query = (
                     "source={}&brand_id={}&category_id={}&limit=200"
-                ).format(source, self.brand["id"], self.category_id)
+                ).format(source, self.brand["id"], self.duplicate_category_id)
                 products = self.client.get(
                     "/api/v1/sales/catalog?" + query
                 ).get_json()
@@ -680,7 +689,7 @@ class CatalogFilteringTest(unittest.TestCase):
         url = (
             "/api/v1/catalog/options?type=product&limit=200"
             "&brand_id={}&category_id={}&q=Новая%20позиция"
-        ).format(self.brand["id"], self.category_id)
+        ).format(self.brand["id"], self.duplicate_category_id)
         self.assertEqual(self.client.get(url).get_json()["data"], [])
         self._insert_products(
             count=1,
@@ -691,7 +700,7 @@ class CatalogFilteringTest(unittest.TestCase):
         refreshed = self.client.get(url).get_json()["data"]
         self.assertEqual(len(refreshed), 1)
 
-    def test_normalized_duplicate_categories_are_one_option(self):
+    def test_category_options_preserve_canonical_ids_without_name_merge(self):
         options = self.client.get(
             "/api/v1/catalog/options?type=category&category_scope=brand"
             "&brand_id={}&limit=200".format(self.brand["id"])
@@ -703,7 +712,20 @@ class CatalogFilteringTest(unittest.TestCase):
         self.assertEqual(len(matching), 1)
         self.assertEqual(
             matching[0]["category_ids"],
-            [self.category_id, self.duplicate_category_id],
+            [self.duplicate_category_id],
+        )
+        self.assertEqual(matching[0]["id"], self.duplicate_category_id)
+
+        global_options = self.client.get(
+            "/api/v1/catalog/options?type=category&category_scope=all&limit=200"
+        ).get_json()["data"]
+        matching_global = [
+            item for item in global_options
+            if item["name"].strip().casefold() == "наручные часы"
+        ]
+        self.assertEqual(
+            {item["id"] for item in matching_global},
+            {self.category_id, self.duplicate_category_id},
         )
 
     def test_category_compatibility_groups_include_inactive_sales_aliases(self):
@@ -728,7 +750,7 @@ class CatalogFilteringTest(unittest.TestCase):
         response = self.client.get(
             "/api/v1/catalog/options?type=product&limit=200"
             "&brand_id={}&category_id={}&q=Barcelona%2000007".format(
-                self.brand["id"], self.category_id
+                self.brand["id"], self.duplicate_category_id
             )
         ).get_json()["data"]
         self.assertEqual(len(response), 1)

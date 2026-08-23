@@ -24,10 +24,13 @@ class ActiveFilterChipsTest(unittest.TestCase):
         self.assertIn('data-warehouse-filter="brand"', self.warehouse)
         self.assertIn('data-warehouse-filter="category"', self.warehouse)
 
-    def test_warehouse_chip_removes_only_its_own_url_parameters(self):
-        self.assertIn('brand: ["brand", "brand_id"]', self.warehouse)
+    def test_warehouse_chip_removes_its_dependent_url_parameters(self):
         self.assertIn(
-            'category: ["category", "category_id"]',
+            'brand: ["brand", "brand_id", "category", "category_id", "model", "model_id"]',
+            self.warehouse,
+        )
+        self.assertIn(
+            'category: ["category", "category_id", "model", "model_id"]',
             self.warehouse,
         )
         self.assertIn('url.searchParams.delete("page")', self.warehouse)

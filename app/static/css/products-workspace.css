@@ -397,7 +397,28 @@
 
 .warehouse-page .warehouse-products-table {
     table-layout: fixed !important;
-    min-width: max-content !important;
+    width: 100%;
+    min-width: 100% !important;
+}
+
+.warehouse-page .warehouse-availability-segments {
+    min-height: var(--erp-compact-control-height, 34px);
+    align-items: center;
+    border-color: var(--erp-border, #e1e8f5);
+    background: #f4f7ff;
+}
+
+.warehouse-page .warehouse-availability-segment {
+    display: inline-flex;
+    min-height: 100%;
+    align-items: center;
+    justify-content: center;
+    padding: 0 12px;
+    font-family: var(--erp-font-family, Inter, sans-serif);
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.2;
+    text-align: center;
 }
 
 .warehouse-page .warehouse-products-table :is(

@@ -52,6 +52,14 @@ class InventoryJournalTest(unittest.TestCase):
     def start(self, user="Максим"):
         return self.inventory.start(self.brand_id, user)[0]
 
+    def legacy(self, session):
+        with self.database.transaction() as connection:
+            connection.execute(
+                "UPDATE erp_inventory_sessions SET scope_type=NULL, "
+                "scope_brand_name=NULL WHERE id=?", (session["id"],),
+            )
+        return self.inventory.get(session["id"])
+
     def item(self, session):
         return self.inventory.list_items(session["id"])[0]
 
@@ -65,7 +73,10 @@ class InventoryJournalTest(unittest.TestCase):
     def test_01_start_creates_one_inventory_document_event(self):
         session = self.start()
         event = self.event(session)
-        self.assertEqual(event["object_label_snapshot"], "Инвентаризация · Alpha")
+        self.assertEqual(
+            event["object_label_snapshot"],
+            "Инвентаризация · Alpha · весь бренд",
+        )
         self.assertEqual(event["actor_display_name_snapshot"], "Максим")
 
     def test_02_continue_does_not_duplicate_document_event(self):
@@ -106,7 +117,7 @@ class InventoryJournalTest(unittest.TestCase):
         self.assertEqual(document["positions"][0]["result"], "Недостача")
 
     def test_07_new_product_is_one_added_position(self):
-        session = self.start()
+        session = self.legacy(self.start())
         self.inventory.add_new(session["id"], "Новые часы", "NEW-1", 2, "Анна", "new")
         document = self.read_model.get_document(session["id"])
         self.assertEqual(document["summary"]["added_positions"], 1)
@@ -117,7 +128,7 @@ class InventoryJournalTest(unittest.TestCase):
             name="Архивные часы", article="OLD-1", brand="Alpha", category="Часы", stock=0
         )
         self.catalog.delete_product(archived["id"])
-        session = self.start()
+        session = self.legacy(self.start())
         self.inventory.add_existing(session["id"], archived["id"], 1, "Анна", "restore")
         document = self.read_model.get_document(session["id"])
         self.assertEqual(document["summary"]["reactivated_positions"], 1)

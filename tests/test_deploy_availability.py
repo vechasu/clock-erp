@@ -40,6 +40,8 @@ class DeployAvailabilityTest(unittest.TestCase):
             'if [[ "$DATABASE_MIGRATION_REQUIRED" == "1" && -f instance/catalog.db ]]',
             script,
         )
+        self.assertIn("scripts/migrate_inventory_scopes.py", script)
+        self.assertNotIn("scripts/consolidate_global_categories.py", script)
 
     def test_daily_backup_and_disk_guard_run_before_code_update(self):
         script = DEPLOY_SCRIPT.read_text(encoding="utf-8")

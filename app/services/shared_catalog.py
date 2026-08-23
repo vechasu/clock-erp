@@ -7,10 +7,7 @@ import unicodedata
 
 from app.catalog_db import CatalogDatabase
 from app.services.audit_journal import AuditJournal
-from app.services.inventory_lock import (
-    assert_brand_without_active_inventory,
-    unlocked_product_sql,
-)
+from app.services.inventory_lock import unlocked_product_sql
 
 
 class DuplicateCatalogValueError(ValueError):
@@ -1346,69 +1343,93 @@ class SharedCatalog:
                 ],
             ).fetchall()
 
-        grouped = {}
-        for row in rows:
-            key = normalized_name(row["name"])
-            current = grouped.get(key)
-            if current is None:
-                current = {
-                    "canonical": row,
-                    "category_ids": [],
-                    "product_count": 0,
-                    "selected_product_count": 0,
-                    "global_stock_total": 0.0,
-                    "selected_stock_total": 0.0,
-                    "used_by_brand": False,
-                }
-                grouped[key] = current
-            current["category_ids"].append(int(row["id"]))
-            if int(row["id"]) < int(current["canonical"]["id"]):
-                current["canonical"] = row
-            current["product_count"] += int(row["product_count"])
-            current["selected_product_count"] += int(
-                row["selected_product_count"]
-            )
-            current["global_stock_total"] += float(
-                row["global_stock_total"] or 0
-            )
-            current["selected_stock_total"] += float(
-                row["selected_stock_total"] or 0
-            )
-            current["used_by_brand"] = (
-                current["used_by_brand"] or bool(row["used_by_brand"])
-            )
-
-        available = grouped.values()
+        available = rows
         if only_used_by_brand:
             available = (
-                item for item in available if item["used_by_brand"]
+                row for row in available
+                if int(row["selected_product_count"]) > 0
             )
         ordered = sorted(
             available,
-            key=lambda item: (
-                not item["used_by_brand"],
-                normalized_name(item["canonical"]["name"]),
-                int(item["canonical"]["id"]),
+            key=lambda row: (
+                not bool(row["used_by_brand"]),
+                normalized_name(row["name"]),
+                int(row["id"]),
             ),
         )
         result = []
-        for item in ordered[:max(1, min(int(limit), 100))]:
-            prepared = dict(item["canonical"])
+        for row in ordered[:max(1, min(int(limit), 100))]:
+            prepared = dict(row)
             prepared["product_count"] = (
-                item["selected_product_count"]
-                if available_for_sale and selected_brand_id is not None
-                else item["product_count"]
+                row["selected_product_count"]
+                if selected_brand_id is not None
+                else row["product_count"]
             )
             prepared["stock_total"] = (
-                item["selected_stock_total"]
+                row["selected_stock_total"]
                 if selected_brand_id is not None
-                else item["global_stock_total"]
+                else row["global_stock_total"]
             )
             result.append({
                 **self._category(prepared),
-                "category_ids": sorted(set(item["category_ids"])),
+                "category_ids": [int(row["id"])],
             })
         return result
+
+    def list_model_options(self, brand_id, category_id, query="", limit=50):
+        """Return models backed by products in one validated brand/category pair."""
+        self.database.initialize()
+        try:
+            brand_id = int(brand_id)
+            category_id = int(category_id)
+        except (TypeError, ValueError):
+            raise ValueError("Сначала выберите бренд и категорию.")
+        where = ["p.active = 1", "p.brand_id = ?", "m.active = 1"]
+        parameters = [brand_id]
+        if category_id == 0:
+            where.append("p.category_id IS NULL")
+            category_predicate = "p.category_id IS NULL"
+        else:
+            category_predicate = "p.category_id = ?"
+            where.append(category_predicate)
+            parameters.append(category_id)
+        normalized_query = catalog_search_key(query)
+        with self.database.connect() as connection:
+            if category_id != 0 and connection.execute(
+                "SELECT 1 FROM erp_categories WHERE id = ? AND active = 1",
+                (category_id,),
+            ).fetchone() is None:
+                raise ValueError("Категория не найдена.")
+            exists = connection.execute(
+                "SELECT 1 FROM catalog_excel_products p WHERE p.active = 1 "
+                "AND p.brand_id = ? AND " + category_predicate + " LIMIT 1",
+                [brand_id] + ([] if category_id == 0 else [category_id]),
+            ).fetchone()
+            if exists is None:
+                raise ValueError(
+                    "Категория не содержит товаров выбранного бренда."
+                )
+            if normalized_query:
+                register_catalog_search(connection)
+                where.append("catalog_search_key(m.name) LIKE ? ESCAPE '\\'")
+                parameters.append(catalog_prefix_pattern(normalized_query))
+            parameters.append(max(1, min(int(limit), 200)))
+            rows = connection.execute(
+                "SELECT m.id, m.brand_id, m.name, COUNT(p.id) AS product_count, "
+                "COALESCE(SUM(p.stock), 0) AS stock_total "
+                "FROM catalog_excel_products p JOIN erp_models m ON m.id = p.model_id "
+                "WHERE " + " AND ".join(where) +
+                " GROUP BY m.id ORDER BY m.name COLLATE NOCASE, m.id LIMIT ?",
+                parameters,
+            ).fetchall()
+        return [{
+            "id": int(row["id"]),
+            "brand_id": int(row["brand_id"]),
+            "name": row["name"],
+            "product_count": int(row["product_count"]),
+            "stock_total": normalized_stock_value(row["stock_total"]),
+            "stock_display": format_stock_value(row["stock_total"]),
+        } for row in rows]
 
     def category_compatibility_groups(self):
         """Return canonical IDs plus legacy aliases for each logical category."""
@@ -1473,11 +1494,7 @@ class SharedCatalog:
             if int(category_id) == 0:
                 where.append("p.category_id IS NULL")
             else:
-                where.append(
-                    "c.normalized_name = ("
-                    "SELECT selected.normalized_name FROM erp_categories selected "
-                    "WHERE selected.id = ?)"
-                )
+                where.append("p.category_id = ?")
                 parameters.append(int(category_id))
         if in_stock:
             where.append("p.stock > 0")
@@ -1555,11 +1572,7 @@ class SharedCatalog:
                 "CASE WHEN COALESCE("
                 "p.moysklad_product_id, mm.moysklad_product_id, '') = '' "
                 "THEN 1 ELSE 0 END AS can_create_moysklad, "
-                "p.brand_id, COALESCE(("
-                "SELECT MIN(canonical.id) FROM erp_categories canonical "
-                "WHERE canonical.active = 1 "
-                "AND canonical.normalized_name = c.normalized_name"
-                "), p.category_id) AS category_id, "
+                "p.brand_id, p.category_id, "
                 "COALESCE(b.name, '') AS brand, "
                 "COALESCE(c.name, '') AS category, "
                 "COALESCE(p.cell, '') AS cell, p.stock, p.active, p.deleted_at, "
@@ -1627,11 +1640,7 @@ class SharedCatalog:
                 "CASE WHEN COALESCE("
                 "p.moysklad_product_id, mm.moysklad_product_id, '') = '' "
                 "THEN 1 ELSE 0 END AS can_create_moysklad, "
-                "p.brand_id, COALESCE(("
-                "SELECT MIN(canonical.id) FROM erp_categories canonical "
-                "WHERE canonical.active = 1 "
-                "AND canonical.normalized_name = c.normalized_name"
-                "), p.category_id) AS category_id, "
+                "p.brand_id, p.category_id, "
                 "COALESCE(b.name, '') AS brand, "
                 "COALESCE(c.name, '') AS category, "
                 "COALESCE(p.cell, '') AS cell, p.stock, p.active, p.deleted_at, "
@@ -1675,11 +1684,7 @@ class SharedCatalog:
                     "CASE WHEN COALESCE("
                     "p.moysklad_product_id, mm.moysklad_product_id, '') = '' "
                     "THEN 1 ELSE 0 END AS can_create_moysklad, "
-                    "p.brand_id, COALESCE(("
-                    "SELECT MIN(canonical.id) FROM erp_categories canonical "
-                    "WHERE canonical.active = 1 "
-                    "AND canonical.normalized_name = c.normalized_name"
-                    "), p.category_id) AS category_id, "
+                    "p.brand_id, p.category_id, "
                     "COALESCE(b.name, '') AS brand, "
                     "COALESCE(c.name, '') AS category, "
                     "COALESCE(p.cell, '') AS cell, p.stock, p.active, "
@@ -1877,9 +1882,6 @@ class SharedCatalog:
             raise ValueError("Название бренда обязательно.")
         self.database.initialize()
         with self.database.transaction() as connection:
-            assert_brand_without_active_inventory(
-                connection, brand_id, CatalogReferenceError
-            )
             current = ensure_brand(
                 connection,
                 brand_id=brand_id,
@@ -2012,9 +2014,6 @@ class SharedCatalog:
     def archive_brand(self, brand_id):
         self.database.initialize()
         with self.database.transaction() as connection:
-            assert_brand_without_active_inventory(
-                connection, brand_id, CatalogReferenceError
-            )
             count = connection.execute(
                 "SELECT COUNT(*) FROM catalog_excel_products "
                 "WHERE brand_id = ? AND active = 1",

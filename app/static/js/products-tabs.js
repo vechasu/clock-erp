@@ -5,12 +5,12 @@
     const allowedParameters = {
         analytics: [],
         products: [
-            "q", "brand", "brand_id", "category", "category_id", "model",
+            "q", "brand", "brand_id", "category", "category_id", "model", "model_id",
             "cell", "date_from", "date_to", "sort_by", "sort_dir", "page",
             "per_page"
         ],
         out_of_stock: [
-            "q", "brand", "brand_id", "category", "category_id", "model",
+            "q", "brand", "brand_id", "category", "category_id", "model", "model_id",
             "cell", "date_from", "date_to", "check_state", "sort_by",
             "sort_dir", "page", "per_page"
         ],
