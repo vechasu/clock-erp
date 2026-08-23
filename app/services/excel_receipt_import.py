@@ -30,7 +30,6 @@ from app.services.excel_product_catalog import (
     utc_now,
 )
 from app.services.inventory_lock import (
-    assert_named_brand_without_active_inventory,
     assert_product_can_join_brand,
     assert_products_unlocked,
 )
@@ -467,11 +466,6 @@ class ExcelReceiptImportService:
                     preexisting, result, claimed_product_ids
                 )
                 if existing is None:
-                    assert_named_brand_without_active_inventory(
-                        connection,
-                        result.get("excel_brand"),
-                        ExcelDraftBlockedError,
-                    )
                     continue
                 claimed_product_ids.add(existing["id"])
                 assert_products_unlocked(

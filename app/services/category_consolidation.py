@@ -17,6 +17,7 @@ OPERATIONAL_TABLES = {
 
 IMMUTABLE_HISTORY_TABLES = {
     "catalog_excel_receipt_rows",
+    "erp_inventory_sessions",
     "erp_receipt_items",
     "erp_sale_items",
 }

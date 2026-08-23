@@ -78,7 +78,7 @@ class InventoryLockModeTest(unittest.TestCase):
                 (product["id"],),
             ).fetchone()[0])
 
-    def test_start_locks_pending_and_confirmation_returns_one_product(self):
+    def test_snapshot_stays_locked_until_document_completion(self):
         session = self.start()
         self.assertEqual(self.listed_ids(), set())
         self.assertEqual(self.shared_ids(), set())
@@ -89,26 +89,26 @@ class InventoryLockModeTest(unittest.TestCase):
             session["id"], self.item(session, self.first)["id"], 3,
             idempotency_key="unlock-first",
         )
-        self.assertEqual(self.listed_ids(), {self.first["id"]})
-        self.assertEqual(self.shared_ids(), {str(self.first["id"])})
+        self.assertEqual(self.listed_ids(), set())
+        self.assertEqual(self.shared_ids(), set())
         progress = self.inventory.active_for_brand(self.brand_id)
         self.assertEqual(progress["checked_positions"], 1)
-        self.assertEqual(progress["locked_positions"], 1)
+        self.assertEqual(progress["locked_positions"], 2)
         self.assertEqual(progress["progress_percent"], 50)
 
-    def test_confirmed_zero_is_unlocked_but_standard_stock_filter_hides_it(self):
+    def test_confirmed_zero_stays_locked_and_stock_filter_hides_it(self):
         session = self.start()
         self.inventory.confirm(
             session["id"], self.item(session, self.first)["id"], 0,
             idempotency_key="zero", confirm_zero=True,
         )
-        self.assertIn(self.first["id"], self.listed_ids())
+        self.assertNotIn(self.first["id"], self.listed_ids())
         in_stock = self.catalog.list_products(
             brand_id=self.brand_id, hide_zero=True, per_page=100
         )
         self.assertNotIn(self.first["id"], {item["id"] for item in in_stock["items"]})
 
-    def test_sales_and_receipts_are_blocked_until_confirmation(self):
+    def test_sales_and_receipts_are_blocked_until_completion(self):
         session = self.start()
         with self.assertRaisesRegex(SalesInventoryError, "находится на инвентаризации"):
             self.sales.create_sale(
@@ -125,6 +125,16 @@ class InventoryLockModeTest(unittest.TestCase):
             session["id"], self.item(session, self.first)["id"], 3,
             idempotency_key="confirm-before-sale",
         )
+        with self.assertRaisesRegex(SalesInventoryError, "находится на инвентаризации"):
+            self.sales.create_sale(
+                {"id": "still-blocked", "source": "Tictactoy"},
+                self.first["id"], 1, 100,
+            )
+        self.inventory.confirm(
+            session["id"], self.item(session, self.second)["id"], 2,
+            idempotency_key="confirm-second",
+        )
+        self.inventory.complete(session["id"], confirmation=True)
         self.sales.create_sale(
             {"id": "allowed-sale", "source": "Tictactoy"},
             self.first["id"], 1, 100,
@@ -174,28 +184,30 @@ class InventoryLockModeTest(unittest.TestCase):
             session["id"], self.item(session, self.second)["id"], 3,
             idempotency_key="release-receipt",
         )
+        self.inventory.complete(session["id"], confirmation=True)
         self.sales.return_sale("before-inventory", 1)
         self.receipts.cancel_receipt(receipt["id"])
         self.assertEqual((self.stock(self.first), self.stock(self.second)), (3, 2))
 
-    def test_product_mutations_and_new_brand_entries_are_blocked(self):
+    def test_stock_and_bulk_mutations_are_blocked_but_snapshot_metadata_is_not(self):
         self.start()
         with self.assertRaisesRegex(ValueError, "находится на инвентаризации"):
             self.catalog.update_product(self.first["id"], stock=4)
-        with self.assertRaisesRegex(ValueError, "находится на инвентаризации"):
-            self.catalog.delete_product(self.first["id"], force=True)
-        with self.assertRaisesRegex(ValueError, "уже проводится инвентаризация"):
-            self.catalog.create_product(
-                name="Unexpected", article="LOCK-NEW", brand_id=self.brand_id,
-                category="Часы", stock=1,
+        self.catalog.update_product(self.first["id"], name="Snapshot renamed")
+        created = self.catalog.create_product(
+            name="Independent new SKU", article="LOCK-NEW", brand_id=self.brand_id,
+            category="Часы", stock=1,
+        )
+        self.assertNotIn(created["id"], {
+            item["product_id"] for item in self.inventory.list_items(
+                self.inventory.active_for_brand(self.brand_id)["id"]
             )
-        with self.assertRaisesRegex(ValueError, "уже проводится инвентаризация"):
-            self.catalog.update_product(
-                self.other["id"], brand="Alpha", brand_id=self.brand_id
-            )
-        with self.assertRaisesRegex(CatalogReferenceError, "уже проводится инвентаризация"):
-            self.shared.rename_brand(self.brand_id, "Alpha Renamed")
-        with self.assertRaisesRegex(ValueError, "уже проводится инвентаризация"):
+        })
+        self.catalog.update_product(
+            self.other["id"], brand="Alpha", brand_id=self.brand_id
+        )
+        self.shared.rename_brand(self.brand_id, "Alpha Renamed")
+        with self.assertRaisesRegex(ValueError, "инвентаризац"):
             self.catalog.delete_brand_catalog(self.brand_id, force=True)
 
     def test_cancel_and_completed_history_do_not_lock_products(self):
@@ -260,7 +272,7 @@ class InventoryLockModeWebTest(unittest.TestCase):
         page = self.client.get("/warehouse?brand_id={}".format(self.brand_id))
         markup = page.get_data(as_text=True)
         self.assertEqual(page.status_code, 200)
-        self.assertIn("UI Brand находится на инвентаризации", markup)
+        self.assertIn("UI Brand · весь бренд находится на инвентаризации", markup)
         self.assertIn("Проверено 0 из 1", markup)
         self.assertIn("На инвентаризации: 1 позиция", markup)
         self.assertNotIn("UI Locked</a>", markup)
@@ -285,12 +297,12 @@ class InventoryLockModeWebTest(unittest.TestCase):
         refreshed = self.client.get("/warehouse?brand_id={}".format(self.brand_id))
         markup = refreshed.get_data(as_text=True)
         self.assertIn("Проверено 1 из 1", markup)
-        self.assertNotIn("На инвентаризации:", markup)
-        self.assertIn("UI Locked", markup)
+        self.assertIn("На инвентаризации: 1 позиция", markup)
+        self.assertNotIn("UI Locked</a>", markup)
         available_brands = self.client.get(
             "/api/v1/catalog/options?type=brand&available_for_sale=1"
         ).get_json()
-        self.assertIn(
+        self.assertNotIn(
             self.brand_id,
             {item["id"] for item in available_brands["data"]},
         )

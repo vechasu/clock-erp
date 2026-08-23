@@ -192,7 +192,7 @@ if [[ "$CURRENT_COMMIT" != "$PREVIOUS_COMMIT" ]]; then
 fi
 
 if git diff --name-only "$PREVIOUS_COMMIT" "$CURRENT_COMMIT" |
-    grep -Eq '^(app/catalog_db\.py|scripts/(migrate_auth_mvp|migrate_unified_catalog|consolidate_global_categories)\.py)$'; then
+    grep -Eq '^(app/catalog_db\.py|scripts/(migrate_auth_mvp|migrate_inventory_scopes)\.py)$'; then
     DATABASE_MIGRATION_REQUIRED=1
 fi
 
@@ -290,33 +290,12 @@ if [[ "$DATABASE_MIGRATION_REQUIRED" == "1" && -f instance/catalog.db ]]; then
         systemctl stop "$SERVICE_NAME"
         SERVICE_STOPPED=1
     fi
-    "$PYTHON_BIN" scripts/migrate_unified_catalog.py \
+    "$PYTHON_BIN" scripts/migrate_inventory_scopes.py \
         --database instance/catalog.db \
-        --backup-dir "$BACKUP_DIR/temporary/catalog-migrations" \
+        --backup-dir "$BACKUP_DIR/temporary/inventory-scope-migrations" \
         --apply
 
-    CATEGORY_MIGRATION_TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
-    CATEGORY_DRY_RUN_PATH="$BACKUP_DIR/category-consolidation-dry-run-$CATEGORY_MIGRATION_TIMESTAMP.json"
-    CATEGORY_RESULT_PATH="$BACKUP_DIR/category-consolidation-result-$CATEGORY_MIGRATION_TIMESTAMP.json"
-    "$PYTHON_BIN" scripts/consolidate_global_categories.py \
-        --database instance/catalog.db \
-        --output "$CATEGORY_DRY_RUN_PATH"
-    CATEGORY_PLAN_SHA="$($PYTHON_BIN - "$CATEGORY_DRY_RUN_PATH" <<'PYTHON_PLAN'
-import json
-import sys
-
-with open(sys.argv[1], encoding="utf-8") as source:
-    print(json.load(source)["plan_sha256"])
-PYTHON_PLAN
-)"
-    "$PYTHON_BIN" scripts/consolidate_global_categories.py \
-        --database instance/catalog.db \
-        --apply \
-        --expected-plan-sha256 "$CATEGORY_PLAN_SHA" \
-        --output "$CATEGORY_RESULT_PATH"
     sqlite3 instance/catalog.db "PRAGMA quick_check;" | grep -qx "ok"
-    printf 'CATEGORY_DRY_RUN_PATH=%s\n' "$CATEGORY_DRY_RUN_PATH"
-    printf 'CATEGORY_RESULT_PATH=%s\n' "$CATEGORY_RESULT_PATH"
 fi
 
 if [[ "$SERVICE_STOPPED" == "1" ]]; then

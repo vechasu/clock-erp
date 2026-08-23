@@ -303,6 +303,15 @@ class CatalogApplication:
                 only_used_by_brand=only_used_by_brand,
                 available_for_sale=available_for_sale,
             )
+        elif kind == "model":
+            if brand_id in (None, "") or category_id in (None, ""):
+                raise ValueError("Сначала выберите бренд и категорию.")
+            items = catalog.list_model_options(
+                brand_id=brand_id,
+                category_id=category_id,
+                query=query,
+                limit=limit,
+            )
         elif kind == "product":
             items = catalog.list_products(
                 brand_id=brand_id,
@@ -313,7 +322,7 @@ class CatalogApplication:
             )
         else:
             return None
-        if kind in {"brand", "category"}:
+        if kind in {"brand", "category", "model"}:
             items = [
                 {**item, "count": item.get("product_count", 0)}
                 for item in items

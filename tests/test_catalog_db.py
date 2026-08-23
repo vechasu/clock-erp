@@ -151,6 +151,83 @@ class CatalogDatabaseTest(unittest.TestCase):
 
         self.assertEqual(len(initialize_calls), 1)
 
+    def test_inventory_scope_migration_is_additive_idempotent_and_preserves_legacy_rows(self):
+        connection = sqlite3.connect(":memory:")
+        connection.row_factory = sqlite3.Row
+        connection.executescript("""
+            CREATE TABLE erp_inventory_sessions (
+                id TEXT PRIMARY KEY,
+                brand_id INTEGER NOT NULL,
+                active_brand_id INTEGER,
+                status TEXT NOT NULL,
+                started_at TEXT NOT NULL,
+                start_positions INTEGER NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL
+            );
+            CREATE UNIQUE INDEX idx_erp_inventory_one_active_brand
+                ON erp_inventory_sessions(active_brand_id);
+            CREATE TABLE erp_inventory_items (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                product_id INTEGER NOT NULL,
+                snapshot_stock INTEGER NOT NULL,
+                status TEXT NOT NULL,
+                appearance TEXT NOT NULL,
+                snapshot_at TEXT NOT NULL,
+                snapshot_movement_rowid INTEGER NOT NULL DEFAULT 0,
+                reactivated INTEGER NOT NULL DEFAULT 0
+            );
+            INSERT INTO erp_inventory_sessions VALUES
+                ('legacy', 7, 7, 'completed', '2026-08-01', 1, '2026-08-01');
+            INSERT INTO erp_inventory_items VALUES
+                ('legacy-item', 'legacy', 99, 4, 'confirmed', 'snapshot',
+                 '2026-08-01', 0, 0);
+        """)
+
+        CatalogDatabase._ensure_inventory_constraints(connection)
+        CatalogDatabase._ensure_inventory_constraints(connection)
+
+        session_columns = {
+            row["name"] for row in connection.execute(
+                "PRAGMA table_info(erp_inventory_sessions)"
+            )
+        }
+        item_columns = {
+            row["name"] for row in connection.execute(
+                "PRAGMA table_info(erp_inventory_items)"
+            )
+        }
+        legacy = connection.execute(
+            "SELECT id, brand_id, status, start_positions, scope_type "
+            "FROM erp_inventory_sessions WHERE id='legacy'"
+        ).fetchone()
+        legacy_item = connection.execute(
+            "SELECT id, product_id, snapshot_stock, status, snapshot_name "
+            "FROM erp_inventory_items WHERE id='legacy-item'"
+        ).fetchone()
+        indexes = {
+            row["name"] for row in connection.execute(
+                "PRAGMA index_list(erp_inventory_sessions)"
+            )
+        }
+        connection.close()
+
+        self.assertTrue({
+            "scope_type", "category_id", "model_id", "idempotency_key",
+            "scope_brand_name", "scope_category_name", "scope_model_name",
+        }.issubset(session_columns))
+        self.assertTrue({
+            "snapshot_name", "snapshot_article", "snapshot_brand_id",
+            "snapshot_category_id", "snapshot_model_id",
+            "snapshot_brand_name", "snapshot_category_name",
+            "snapshot_model_name", "snapshot_photo_url",
+        }.issubset(item_columns))
+        self.assertEqual(tuple(legacy), ("legacy", 7, "completed", 1, None))
+        self.assertEqual(tuple(legacy_item), ("legacy-item", 99, 4, "confirmed", None))
+        self.assertNotIn("idx_erp_inventory_one_active_brand", indexes)
+        self.assertIn("idx_erp_inventory_idempotency", indexes)
+        self.assertIn("idx_erp_inventory_sessions_scope", indexes)
+
     def test_external_product_identity_is_unique_but_name_and_article_are_not(self):
         product_values = (
             "Watch", "watch", "SKU", "Brand", "bitrix", "same-name",

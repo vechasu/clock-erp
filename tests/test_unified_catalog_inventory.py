@@ -136,7 +136,7 @@ class UnifiedCatalogInventoryTest(unittest.TestCase):
             casio["category_id"],
         )
 
-    def test_legacy_per_brand_category_copy_resolves_to_global_id(self):
+    def test_legacy_per_brand_category_copy_keeps_its_canonical_id(self):
         casio = self.create_product()
         seiko = self.create_product(
             name="Seiko Legacy Category",
@@ -165,6 +165,7 @@ class UnifiedCatalogInventoryTest(unittest.TestCase):
 
         options = self.catalog.list_category_options(
             brand_id=seiko["brand_id"],
+            only_used_by_brand=True,
         )
         wristwatch_options = [
             item for item in options
@@ -172,17 +173,17 @@ class UnifiedCatalogInventoryTest(unittest.TestCase):
         ]
         self.assertEqual(
             [item["id"] for item in wristwatch_options],
-            [casio["category_id"]],
+            [legacy_category_id],
         )
         products = self.catalog.list_products(
             brand_id=seiko["brand_id"],
-            category_id=casio["category_id"],
+            category_id=legacy_category_id,
         )
         self.assertEqual([item["id"] for item in products], [str(seiko["id"])])
-        self.assertEqual(products[0]["category_id"], casio["category_id"])
+        self.assertEqual(products[0]["category_id"], legacy_category_id)
         self.assertEqual(
             self.catalog.products_by_ids([seiko["id"]])[str(seiko["id"])]["category_id"],
-            casio["category_id"],
+            legacy_category_id,
         )
 
     def test_rename_is_visible_through_shared_product_without_relinking_history(self):

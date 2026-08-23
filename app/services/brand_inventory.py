@@ -57,6 +57,127 @@ class BrandInventory:
         return row
 
     @staticmethod
+    def _category(connection, brand_id, category_id):
+        try:
+            category_id = int(category_id)
+        except (TypeError, ValueError):
+            raise InventoryError("Категория не найдена.")
+        if category_id == 0:
+            exists = connection.execute(
+                "SELECT 1 FROM catalog_excel_products "
+                "WHERE active = 1 AND brand_id = ? AND category_id IS NULL LIMIT 1",
+                (int(brand_id),),
+            ).fetchone()
+            if exists is None:
+                raise InventoryError("У выбранного бренда нет товаров без категории.")
+            return {"id": None, "requested_id": 0, "name": "Без категории", "normalized_name": ""}
+        row = connection.execute(
+            "SELECT id, name FROM erp_categories "
+            "WHERE id = ? AND active = 1", (category_id,)
+        ).fetchone()
+        if row is None:
+            raise InventoryError("Категория не найдена.")
+        exists = connection.execute(
+            "SELECT 1 FROM catalog_excel_products p WHERE p.active = 1 "
+            "AND p.brand_id = ? AND p.category_id = ? LIMIT 1",
+            (int(brand_id), category_id),
+        ).fetchone()
+        if exists is None:
+            raise InventoryError("Категория не содержит товаров выбранного бренда.")
+        return dict(row, requested_id=category_id)
+
+    @staticmethod
+    def _model(connection, brand_id, category, model_id):
+        try:
+            model_id = int(model_id)
+        except (TypeError, ValueError):
+            raise InventoryError("Модель не найдена.")
+        row = connection.execute(
+            "SELECT id, name, normalized_name FROM erp_models "
+            "WHERE id = ? AND brand_id = ? AND active = 1",
+            (model_id, int(brand_id)),
+        ).fetchone()
+        if row is None:
+            raise InventoryError("Модель не найдена.")
+        category_sql, category_parameters = BrandInventory._category_predicate(category)
+        exists = connection.execute(
+            "SELECT 1 FROM catalog_excel_products p WHERE p.active = 1 "
+            "AND p.brand_id = ? AND " + category_sql + " AND "
+            "p.model_id = ? "
+            "LIMIT 1",
+            [int(brand_id)] + category_parameters + [model_id],
+        ).fetchone()
+        if exists is None:
+            raise InventoryError(
+                "Модель не содержит товаров выбранных бренда и категории."
+            )
+        return row
+
+    @staticmethod
+    def _category_predicate(category):
+        if category["requested_id"] == 0:
+            return "p.category_id IS NULL", []
+        return "p.category_id = ?", [int(category["id"])]
+
+    @staticmethod
+    def _scope_label(brand_name, category_name=None, model_name=None):
+        if model_name:
+            return "{} → {} → {}".format(brand_name, category_name, model_name)
+        if category_name:
+            return "{} → {}".format(brand_name, category_name)
+        return "{} · весь бренд".format(brand_name)
+
+    def _scope(self, connection, brand_id, category_id=None, model_id=None):
+        brand = self._brand(connection, brand_id)
+        if model_id not in (None, "") and category_id in (None, ""):
+            raise InventoryError("Для выбора модели сначала выберите категорию.")
+        category = (
+            self._category(connection, brand["id"], category_id)
+            if category_id not in (None, "") else None
+        )
+        model = (
+            self._model(connection, brand["id"], category, model_id)
+            if model_id not in (None, "") else None
+        )
+        scope_type = "model" if model else "category" if category else "brand"
+        return {
+            "type": scope_type,
+            "brand": brand,
+            "category": category,
+            "model": model,
+            "label": self._scope_label(
+                brand["name"],
+                category["name"] if category else None,
+                model["name"] if model else None,
+            ),
+        }
+
+    @staticmethod
+    def _snapshot_products(connection, scope):
+        where = ["p.active = 1", "p.brand_id = ?"]
+        parameters = [int(scope["brand"]["id"])]
+        if scope["category"]:
+            category_sql, category_parameters = BrandInventory._category_predicate(
+                scope["category"]
+            )
+            where.append(category_sql)
+            parameters.extend(category_parameters)
+        if scope["model"]:
+            where.append("p.model_id = ?")
+            parameters.append(int(scope["model"]["id"]))
+        return connection.execute(
+            "SELECT p.id, CAST(p.stock AS INTEGER) AS stock, p.stock AS raw_stock, "
+            "p.excel_name_raw, "
+            "p.excel_article, p.brand_id, p.category_id, p.model_id, "
+            "p.excel_brand, p.excel_category, p.model, p.bitrix_thumbnail_url, "
+            "COALESCE((SELECT MAX(m.rowid) FROM catalog_stock_movements m "
+            "WHERE m.product_id = p.id), 0) AS movement_rowid "
+            "FROM catalog_excel_products p WHERE " + " AND ".join(where) +
+            " ORDER BY p.id",
+            parameters,
+        ).fetchall()
+
+    @staticmethod
     def _latest_movement_rowid(connection, product_id):
         return int(connection.execute(
             "SELECT COALESCE(MAX(rowid), 0) FROM catalog_stock_movements WHERE product_id = ?",
@@ -76,58 +197,136 @@ class BrandInventory:
             raise InventoryConflict("Инвентаризация уже завершена или отменена.")
         return row
 
-    def start(self, brand_id, user_name=""):
+    def start(self, brand_id, user_name="", category_id=None, model_id=None,
+              idempotency_key=""):
         self.initialize()
         now = utc_now()
+        idempotency_key = str(idempotency_key or "").strip() or None
         with self.database.transaction() as connection:
-            brand = self._brand(connection, brand_id)
-            existing = connection.execute(
-                "SELECT id FROM erp_inventory_sessions WHERE brand_id = ? "
-                "AND status = 'active' LIMIT 1", (brand["id"],)
-            ).fetchone()
-            if existing:
-                return self._detail(connection, existing["id"]), False
-            fractional = connection.execute(
-                "SELECT COUNT(*) FROM catalog_excel_products WHERE active = 1 "
-                "AND brand_id = ? AND ABS(stock - CAST(stock AS INTEGER)) > 0.000001",
-                (brand["id"],),
-            ).fetchone()[0]
-            if fractional:
-                raise InventoryError(
-                    "У бренда есть дробные остатки; сначала исправьте данные склада."
+            if idempotency_key:
+                repeated = connection.execute(
+                    "SELECT id FROM erp_inventory_sessions WHERE idempotency_key = ?",
+                    (idempotency_key,),
+                ).fetchone()
+                if repeated:
+                    return self._detail(connection, repeated["id"]), False
+            scope = self._scope(connection, brand_id, category_id, model_id)
+            brand = scope["brand"]
+            products = self._snapshot_products(connection, scope)
+            if not products:
+                raise InventoryError("В выбранной области нет товаров для инвентаризации.")
+            for row in products:
+                try:
+                    raw_stock = float(row["raw_stock"])
+                except (TypeError, ValueError):
+                    raise InventoryError(
+                        "В выбранной области есть некорректные остатки; "
+                        "сначала исправьте данные склада."
+                    )
+                if raw_stock < 0:
+                    raise InventoryError(
+                        "В выбранной области есть отрицательные остатки; "
+                        "сначала исправьте данные склада."
+                    )
+                if abs(raw_stock - int(raw_stock)) > 0.000001:
+                    raise InventoryError(
+                        "В выбранной области есть дробные остатки; "
+                        "сначала исправьте данные склада."
+                    )
+            product_ids = [int(row["id"]) for row in products]
+            conflicts = connection.execute(
+                "SELECT s.id, s.scope_type, s.brand_id, s.category_id, s.model_id, "
+                "s.scope_brand_name, s.scope_category_name, s.scope_model_name, "
+                "i.product_id "
+                "FROM erp_inventory_items i JOIN erp_inventory_sessions s "
+                "ON s.id = i.session_id WHERE s.status = 'active' "
+                "ORDER BY s.started_at, s.id, i.product_id"
+            ).fetchall()
+            requested_ids = set(product_ids)
+            overlapping_sessions = {}
+            for conflict_row in conflicts:
+                product_id = int(conflict_row["product_id"])
+                if product_id not in requested_ids:
+                    continue
+                current = overlapping_sessions.setdefault(
+                    conflict_row["id"],
+                    {"session": conflict_row, "product_ids": set()},
+                )
+                current["product_ids"].add(product_id)
+            if overlapping_sessions:
+                overlap = next(iter(overlapping_sessions.values()))
+                conflict = overlap["session"]
+                same_scope = (
+                    (conflict["scope_type"] or "brand") == scope["type"]
+                    and int(conflict["brand_id"]) == int(brand["id"])
+                    and (conflict["category_id"] or None) == (
+                        scope["category"]["id"] if scope["category"] else None
+                    )
+                    and (conflict["model_id"] or None) == (
+                        scope["model"]["id"] if scope["model"] else None
+                    )
+                )
+                active_count = connection.execute(
+                    "SELECT COUNT(*) FROM erp_inventory_items WHERE session_id = ?",
+                    (conflict["id"],),
+                ).fetchone()[0]
+                if (
+                    same_scope
+                    and len(overlap["product_ids"]) == len(products)
+                    and int(active_count) == len(products)
+                ):
+                    return self._detail(connection, conflict["id"]), False
+                conflict_label = self._scope_label(
+                    conflict["scope_brand_name"] or brand["name"],
+                    conflict["scope_category_name"], conflict["scope_model_name"],
+                )
+                raise InventoryConflict(
+                    "Нельзя начать инвентаризацию: часть товаров уже участвует "
+                    "в активной инвентаризации №{} ({}).".format(
+                        conflict["id"], conflict_label
+                    )
                 )
             session_id = uuid.uuid4().hex
-            products = connection.execute(
-                "SELECT p.id, CAST(p.stock AS INTEGER) AS stock, "
-                "COALESCE((SELECT MAX(m.rowid) FROM catalog_stock_movements m "
-                "WHERE m.product_id = p.id), 0) AS movement_rowid "
-                "FROM catalog_excel_products p WHERE p.active = 1 "
-                "AND p.brand_id = ? AND p.stock > 0 ORDER BY p.id",
-                (brand["id"],),
-            ).fetchall()
             connection.execute(
-                "INSERT INTO erp_inventory_sessions (id, brand_id, active_brand_id, status, "
-                "started_by, started_at, start_positions, updated_at) "
-                "VALUES (?, ?, ?, 'active', ?, ?, ?, ?)",
-                (session_id, brand["id"], brand["id"], user_name or None,
-                 now, len(products), now),
+                "INSERT INTO erp_inventory_sessions (id, brand_id, active_brand_id, "
+                "scope_type, category_id, model_id, idempotency_key, scope_brand_name, "
+                "scope_category_name, scope_model_name, status, started_by, started_at, "
+                "start_positions, updated_at) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, "
+                "'active', ?, ?, ?, ?)",
+                (session_id, brand["id"], scope["type"],
+                 scope["category"]["id"] if scope["category"] else None,
+                 scope["model"]["id"] if scope["model"] else None,
+                 idempotency_key, brand["name"],
+                 scope["category"]["name"] if scope["category"] else None,
+                 scope["model"]["name"] if scope["model"] else None,
+                 user_name or None, now, len(products), now),
             )
             for product in products:
                 connection.execute(
                     "INSERT INTO erp_inventory_items (id, session_id, product_id, "
-                    "snapshot_stock, status, appearance, snapshot_at, snapshot_movement_rowid) "
-                    "VALUES (?, ?, ?, ?, 'pending', 'snapshot', ?, ?)",
+                    "snapshot_stock, status, appearance, snapshot_at, snapshot_movement_rowid, "
+                    "snapshot_name, snapshot_article, snapshot_brand_id, snapshot_category_id, "
+                    "snapshot_model_id, snapshot_brand_name, snapshot_category_name, "
+                    "snapshot_model_name, snapshot_photo_url) VALUES (?, ?, ?, ?, 'pending', "
+                    "'snapshot', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (uuid.uuid4().hex, session_id, product["id"], int(product["stock"]),
-                     now, int(product["movement_rowid"])),
+                     now, int(product["movement_rowid"]), product["excel_name_raw"],
+                     product["excel_article"], product["brand_id"], product["category_id"],
+                     product["model_id"], product["excel_brand"], product["excel_category"],
+                     product["model"], product["bitrix_thumbnail_url"]),
                 )
             AuditJournal(self.database).record(
                 "inventory", session_id, "created",
-                "Инвентаризация · {}".format(brand["name"]),
+                "Инвентаризация · {}".format(scope["label"]),
                 object_secondary=session_id,
                 metadata={
                     "number": session_id,
                     "brand": brand["name"],
                     "brand_id": brand["id"],
+                    "scope_type": scope["type"],
+                    "category_id": scope["category"]["id"] if scope["category"] else None,
+                    "model_id": scope["model"]["id"] if scope["model"] else None,
+                    "scope_label": scope["label"],
                     "positions": len(products),
                 },
                 actor_id=user_name, actor_name=user_name,
@@ -176,7 +375,10 @@ class BrandInventory:
             params = [str(session_id)]
             query = str(query or "").strip()
             if query:
-                where.append("(p.excel_name_raw LIKE ? OR COALESCE(p.excel_article, '') LIKE ?)")
+                where.append(
+                    "(COALESCE(i.snapshot_name, p.excel_name_raw) LIKE ? OR "
+                    "COALESCE(i.snapshot_article, p.excel_article, '') LIKE ?)"
+                )
                 term = "%{}%".format(query)
                 params.extend((term, term))
             if category_id not in (None, ""):
@@ -184,17 +386,23 @@ class BrandInventory:
                     category_id = int(category_id)
                 except (TypeError, ValueError):
                     raise InventoryError("Категория не найдена.")
-                where.append("p.category_id = ?")
+                where.append("COALESCE(i.snapshot_category_id, p.category_id) = ?")
                 params.append(category_id)
             limit = max(1, min(int(limit or 250), 500))
             offset = max(0, int(offset or 0))
             rows = connection.execute(
-                "SELECT i.*, p.excel_name_raw AS name, p.excel_article AS article, "
-                "p.stock AS current_stock, p.bitrix_thumbnail_url AS photo_url, "
-                "p.category_id, c.name AS category_name FROM erp_inventory_items i "
+                "SELECT i.*, COALESCE(i.snapshot_name, p.excel_name_raw) AS name, "
+                "COALESCE(i.snapshot_article, p.excel_article) AS article, "
+                "p.stock AS current_stock, "
+                "COALESCE(i.snapshot_photo_url, p.bitrix_thumbnail_url) AS photo_url, "
+                "COALESCE(i.snapshot_category_id, p.category_id) AS category_id, "
+                "COALESCE(i.snapshot_category_name, p.excel_category, c.name) AS category_name, "
+                "COALESCE(i.snapshot_model_name, p.model) AS model_name "
+                "FROM erp_inventory_items i "
                 "JOIN catalog_excel_products p ON p.id = i.product_id "
-                "LEFT JOIN erp_categories c ON c.id = p.category_id WHERE {} "
-                "ORDER BY p.excel_name_raw COLLATE NOCASE, p.id LIMIT ? OFFSET ?".format(
+                "LEFT JOIN erp_categories c ON c.id = COALESCE(i.snapshot_category_id, p.category_id) "
+                "WHERE {} ORDER BY COALESCE(i.snapshot_name, p.excel_name_raw) "
+                "COLLATE NOCASE, p.id LIMIT ? OFFSET ?".format(
                     " AND ".join(where)
                 ), params + [limit, offset],
             ).fetchall()
@@ -272,6 +480,10 @@ class BrandInventory:
         self.initialize()
         with self.database.connect() as connection:
             session = self._session(connection, session_id, active=True)
+            if session["scope_type"]:
+                raise InventoryError(
+                    "Состав этой инвентаризации зафиксирован при создании."
+                )
             term = "%{}%".format(query)
             rows = connection.execute(
                 "SELECT p.id, p.excel_name_raw AS name, p.excel_article AS article, "
@@ -295,6 +507,10 @@ class BrandInventory:
         self.initialize()
         with self.database.transaction() as connection:
             session = self._session(connection, session_id, active=True)
+            if session["scope_type"]:
+                raise InventoryError(
+                    "Нельзя добавлять SKU вне зафиксированного snapshot."
+                )
             product = connection.execute(
                 "SELECT * FROM catalog_excel_products WHERE id = ?", (int(product_id),)
             ).fetchone()
@@ -352,6 +568,10 @@ class BrandInventory:
         self.initialize()
         with self.database.transaction() as connection:
             session = self._session(connection, session_id, active=True)
+            if session["scope_type"]:
+                raise InventoryError(
+                    "Нельзя добавлять SKU вне зафиксированного snapshot."
+                )
             repeated = connection.execute(
                 "SELECT * FROM erp_inventory_items WHERE session_id = ? AND idempotency_key = ?",
                 (session["id"], key),
@@ -459,9 +679,16 @@ class BrandInventory:
             raise InventoryError("Подтвердите завершение инвентаризации.")
         self.initialize()
         with self.database.transaction() as connection:
-            session = self._session(connection, session_id, active=True)
+            session = self._session(connection, session_id)
+            if session["status"] == "completed":
+                return {
+                    "ok": True, "repeated": True,
+                    "session": self._detail(connection, session_id),
+                }
+            if session["status"] != "active":
+                raise InventoryConflict("Инвентаризация уже завершена или отменена.")
             pending = connection.execute(
-                "SELECT i.*, p.stock, p.brand_id AS current_brand_id, "
+                "SELECT i.*, p.stock, "
                 "p.id AS inventory_product_id, "
                 "COALESCE((SELECT MAX(m.rowid) FROM catalog_stock_movements m "
                 "WHERE m.product_id = p.id), 0) AS current_movement_rowid "
@@ -475,8 +702,7 @@ class BrandInventory:
                     continue
                 latest = int(row["current_movement_rowid"])
                 if (
-                    int(row["current_brand_id"] or 0) != int(session["brand_id"])
-                    or latest > int(row["snapshot_movement_rowid"])
+                    latest > int(row["snapshot_movement_rowid"])
                     or int(row["stock"]) != int(row["snapshot_stock"])
                 ):
                     conflicts.append(row)
@@ -526,7 +752,10 @@ class BrandInventory:
             )
             AuditJournal(self.database).record(
                 "inventory", session["id"], "cancelled",
-                "Инвентаризация · {}".format(session["brand_name"]),
+                "Инвентаризация · {}".format(self._scope_label(
+                    session["scope_brand_name"] or session["brand_name"],
+                    session["scope_category_name"], session["scope_model_name"],
+                )),
                 object_secondary=session["id"],
                 before={"status": "active"},
                 after={"status": "cancelled"},
@@ -613,11 +842,6 @@ class BrandInventory:
         ).fetchone()
         if product is None:
             raise InventoryError("Товар не найден.")
-        session = connection.execute(
-            "SELECT brand_id FROM erp_inventory_sessions WHERE id = ?", (str(session_id),)
-        ).fetchone()
-        if session is None or int(product["brand_id"] or 0) != int(session["brand_id"]):
-            raise InventoryConflict("Бренд товара изменился после начала инвентаризации.")
         return item, product
 
     def _detail(self, connection, session_id):
@@ -635,17 +859,26 @@ class BrandInventory:
         for key in ("total_positions", "checked_positions", "remaining", "added_positions"):
             data[key] = int(totals[key] or 0)
         data["locked_positions"] = (
-            data["remaining"] if data["status"] == "active" else 0
+            data["total_positions"] if data["status"] == "active" else 0
         )
         data["progress_percent"] = (
             int(round(100.0 * data["checked_positions"] / data["total_positions"]))
             if data["total_positions"] else 100
         )
+        data["scope_type"] = data.get("scope_type") or "brand"
+        data["legacy_scope"] = row["scope_type"] is None
+        data["scope_label"] = self._scope_label(
+            data.get("scope_brand_name") or data["brand_name"],
+            data.get("scope_category_name"), data.get("scope_model_name"),
+        )
         data["categories"] = [dict(item) for item in connection.execute(
-            "SELECT DISTINCT c.id, c.name FROM erp_inventory_items i "
-            "JOIN catalog_excel_products p ON p.id = i.product_id "
-            "JOIN erp_categories c ON c.id = p.category_id WHERE i.session_id = ? "
-            "ORDER BY c.name COLLATE NOCASE", (row["id"],)
+            "SELECT DISTINCT COALESCE(i.snapshot_category_id, p.category_id) AS id, "
+            "COALESCE(i.snapshot_category_name, p.excel_category, c.name) AS name "
+            "FROM erp_inventory_items i JOIN catalog_excel_products p ON p.id = i.product_id "
+            "LEFT JOIN erp_categories c ON c.id = COALESCE(i.snapshot_category_id, p.category_id) "
+            "WHERE i.session_id = ? AND COALESCE(i.snapshot_category_name, "
+            "p.excel_category, c.name, '') <> '' ORDER BY name COLLATE NOCASE",
+            (row["id"],)
         ).fetchall()]
         return data
 

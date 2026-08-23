@@ -71,7 +71,7 @@ class InventorySnapshotRestorationTest(unittest.TestCase):
         active = self.inventory.start(self.one["brand_id"], "Максим")[0]
 
         plan = self.restoration.plan("ZIRO", completed["id"])
-        self.assertEqual(plan["snapshot_positions"], 2)
+        self.assertEqual(plan["snapshot_positions"], 3)
         self.assertEqual(plan["snapshot_stock"], 6)
         self.assertEqual(plan["positions_to_restore"], 2)
         self.assertEqual(plan["stock_delta"], 6)

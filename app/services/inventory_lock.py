@@ -1,7 +1,6 @@
 """Canonical availability rules for products in an active brand inventory."""
 
 
-LOCKED_ITEM_STATUSES = ("pending", "conflict", "error")
 LOCKED_PRODUCT_MESSAGE = (
     "Товар сейчас находится на инвентаризации. "
     "Сначала подтвердите его фактический остаток."
@@ -14,20 +13,24 @@ def locked_products(connection, product_ids):
     identifiers = sorted({int(value) for value in product_ids})
     if not identifiers:
         return {}
-    placeholders = ",".join("?" for _ in identifiers)
-    status_placeholders = ",".join("?" for _ in LOCKED_ITEM_STATUSES)
-    rows = connection.execute(
-        "SELECT i.product_id, i.session_id, i.status, s.brand_id, "
-        "b.name AS brand_name FROM erp_inventory_items i "
-        "JOIN erp_inventory_sessions s ON s.id = i.session_id "
-        "JOIN erp_brands b ON b.id = s.brand_id "
-        "WHERE s.status = 'active' AND i.status IN ({}) "
-        "AND i.product_id IN ({})".format(
-            status_placeholders, placeholders
-        ),
-        list(LOCKED_ITEM_STATUSES) + identifiers,
-    ).fetchall()
-    return {int(row["product_id"]): dict(row) for row in rows}
+    locks = {}
+    # Production SQLite 3.7 is limited to 999 bound variables. Brand-level
+    # operations can legitimately contain several thousand products.
+    for start in range(0, len(identifiers), 500):
+        chunk = identifiers[start:start + 500]
+        placeholders = ",".join("?" for _ in chunk)
+        rows = connection.execute(
+            "SELECT i.product_id, i.session_id, i.status, s.brand_id, "
+            "b.name AS brand_name FROM erp_inventory_items i "
+            "JOIN erp_inventory_sessions s ON s.id = i.session_id "
+            "JOIN erp_brands b ON b.id = s.brand_id "
+            "WHERE s.status = 'active' AND i.product_id IN ({})".format(
+                placeholders
+            ),
+            chunk,
+        ).fetchall()
+        locks.update({int(row["product_id"]): dict(row) for row in rows})
+    return locks
 
 
 def assert_products_unlocked(connection, product_ids, error_type=ValueError):
@@ -102,19 +105,8 @@ def assert_named_brand_without_active_inventory(
 
 def assert_product_can_join_brand(
         connection, product_id, brand_id, error_type=ValueError):
-    """Allow existing inventory members, but reject untracked brand entrants."""
-    if brand_id in (None, ""):
-        return
-    inventory = active_brand_inventory(connection, brand_id)
-    if inventory is None:
-        return
-    member = connection.execute(
-        "SELECT 1 FROM erp_inventory_items "
-        "WHERE session_id = ? AND product_id = ? LIMIT 1",
-        (inventory["id"], int(product_id)),
-    ).fetchone()
-    if member is None:
-        raise error_type(ACTIVE_BRAND_MESSAGE.format(inventory["brand_name"]))
+    """Snapshot membership is immutable; only the product itself can be locked."""
+    assert_products_unlocked(connection, [product_id], error_type)
 
 
 def assert_no_active_inventory(connection, error_type=ValueError):
@@ -135,5 +127,5 @@ def unlocked_product_sql(product_alias="p"):
         "ON inventory_lock_session.id = inventory_lock_item.session_id "
         "WHERE inventory_lock_item.product_id = {}.id "
         "AND inventory_lock_session.status = 'active' "
-        "AND inventory_lock_item.status IN ('pending','conflict','error'))"
+        ")"
     ).format(product_alias)

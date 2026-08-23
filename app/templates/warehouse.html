@@ -4067,7 +4067,7 @@
             {% if active_brand_inventory %}
                 <section class="inventory-lock-panel" aria-label="Статус инвентаризации бренда">
                     <div>
-                        <h2>{{ active_brand_inventory.brand_name }} находится на инвентаризации</h2>
+                        <h2>{{ active_brand_inventory.scope_label }} находится на инвентаризации</h2>
                         <p class="inventory-lock-copy">
                             Проверено {{ active_brand_inventory.checked_positions }} из {{ active_brand_inventory.total_positions }} позиций · {{ active_brand_inventory.progress_percent }}%
                         </p>
@@ -4202,6 +4202,7 @@
                     {% endif %}
                     {% if selected_model %}
                         <input type="hidden" name="model" value="{{ selected_model }}">
+                        <input type="hidden" name="model_id" value="{{ selected_model_id }}">
                     {% endif %}
 
                     {% if created_date_from %}
@@ -5059,7 +5060,6 @@
             method="get"
             action="/warehouse"
             data-shared-catalog-scope
-            data-catalog-category-without-brand="true"
         >
             <input type="hidden" name="per_page" value="{{ per_page }}">
             {% if stock_state != 'all' %}<input type="hidden" name="stock_state" value="{{ stock_state }}">{% endif %}
@@ -5074,18 +5074,6 @@
             {% if selected_cell %}
                 <input type="hidden" name="cell" value="{{ selected_cell }}">
             {% endif %}
-
-            <div class="category-cell-form-title">
-                Модель
-            </div>
-            <input
-                class="brand-combobox-trigger"
-                type="text"
-                name="model"
-                value="{{ selected_model }}"
-                placeholder="Все модели"
-                autocomplete="off"
-            >
 
             <input type="hidden" name="sort_by" value="{{ sort_by }}">
             <input type="hidden" name="sort_dir" value="{{ sort_dir }}">
@@ -5125,7 +5113,27 @@
                 shared_catalog_kind="category",
                 selected_id=selected_category_id,
                 id_input_name="category_id",
-                selected_label=selected_category
+                selected_label=selected_category,
+                disabled=not selected_brand_id
+            ) }}
+
+            <div class="category-cell-form-title">Модель</div>
+
+            {{ render_catalog_combobox(
+                "filterModelCombobox",
+                "model",
+                [],
+                selected_model,
+                true,
+                "модель",
+                "Все модели",
+                prefix_search=true,
+                component_class="filter-combobox",
+                shared_catalog_kind="model",
+                selected_id=selected_model_id,
+                id_input_name="model_id",
+                selected_label=selected_model,
+                disabled=not (selected_brand_id and selected_category_id)
             ) }}
 
             <div class="category-cell-form-title">
@@ -6642,6 +6650,7 @@
                 "category",
                 "category_id",
                 "model",
+                "model_id",
                 "cell",
                 "date_from",
                 "date_to",
@@ -6656,9 +6665,9 @@
         function clearWarehouseFilter(filterName) {
             const url = new URL(window.location.href);
             const parameterNames = {
-                brand: ["brand", "brand_id"],
-                category: ["category", "category_id"],
-                model: ["model"],
+                brand: ["brand", "brand_id", "category", "category_id", "model", "model_id"],
+                category: ["category", "category_id", "model", "model_id"],
+                model: ["model", "model_id"],
                 cell: ["cell"],
                 date: ["date_from", "date_to"],
                 stock_state: ["stock_state", "check_state", "view"],
@@ -7054,6 +7063,7 @@
 
         function applyWarehouseTableWidths(table, widths) {
             let totalWidth = 0;
+            const renderedWidths = {};
             warehouseTableDefaults.order.forEach(function(key) {
                 const width = Math.max(
                     warehouseTableMinimumWidths[key],
@@ -7062,12 +7072,42 @@
                         Number(widths[key]) || warehouseTableDefaults.widths[key]
                     )
                 );
-                const column = table.querySelector('col[data-column-key="' + key + '"]');
-                if (column) column.style.width = width + "px";
                 widths[key] = width;
+                renderedWidths[key] = width;
+                const column = table.querySelector('col[data-column-key="' + key + '"]');
                 if (!column || !column.hidden) totalWidth += width;
             });
-            table.style.width = totalWidth + "px";
+            const scrollBody = document.getElementById("warehouseTableScrollBody");
+            let extra = Math.max(0, (scrollBody?.clientWidth || 0) - totalWidth);
+            const flexibleColumns = ["name", "category", "model"].filter(function(key) {
+                const column = table.querySelector('col[data-column-key="' + key + '"]');
+                return column && !column.hidden;
+            });
+            while (extra > 0.5 && flexibleColumns.length) {
+                const share = extra / flexibleColumns.length;
+                let applied = 0;
+                flexibleColumns.slice().forEach(function(key) {
+                    const capacity = warehouseTableMaximumWidths[key] - renderedWidths[key];
+                    const growth = Math.max(0, Math.min(share, capacity));
+                    renderedWidths[key] += growth;
+                    applied += growth;
+                    if (capacity <= share + 0.5) {
+                        flexibleColumns.splice(flexibleColumns.indexOf(key), 1);
+                    }
+                });
+                if (applied <= 0.5) break;
+                extra -= applied;
+            }
+            let renderedTotal = 0;
+            warehouseTableDefaults.order.forEach(function(key) {
+                const column = table.querySelector('col[data-column-key="' + key + '"]');
+                if (column) column.style.width = renderedWidths[key] + "px";
+                if (!column || !column.hidden) renderedTotal += renderedWidths[key];
+            });
+            table.style.width = Math.max(
+                renderedTotal,
+                scrollBody?.clientWidth || 0
+            ) + "px";
             syncWarehouseTableScrollbars(table);
         }
 
@@ -7239,6 +7279,9 @@
             );
             initializeWarehouseColumnSettings(table, view, viewSignal);
             initializeWarehouseTableScrollbars(table, viewSignal);
+            window.addEventListener("resize", function() {
+                applyWarehouseTableWidths(table, view.widths);
+            }, { signal: viewSignal });
 
             window.matchMedia("(min-width: 768px)").addEventListener(
                 "change",

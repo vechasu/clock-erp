@@ -15,7 +15,6 @@ from app.catalog_db import CatalogDatabase
 from app.services.audit_journal import AuditJournal
 from app.services.brand_values import is_numeric_brand, normalize_brand
 from app.services.inventory_lock import (
-    assert_brand_without_active_inventory,
     assert_no_active_inventory,
     assert_product_can_join_brand,
     assert_products_unlocked,
@@ -787,7 +786,7 @@ class ExcelProductCatalog:
                       match_status="all", hide_zero=False, sort_by="name",
                       sort_dir="asc", page=1, per_page=50,
                       created_from="", created_to="", brand_id=None,
-                      category_id=None, product_id=None,
+                      category_id=None, model_id=None, product_id=None,
                       include_cell_item_names=True, include_facets=True,
                       include_inventory_locked=False, stock_state="all",
                       check_state="all"):
@@ -838,19 +837,15 @@ class ExcelProductCatalog:
             )
             model_key = re.sub(r"\s+", "", canonical_model_text(model)).casefold()
             parameters.extend([model_key, catalog_search_key(model_key)])
+        if model_id not in (None, ""):
+            where.append("p.model_id = ?")
+            parameters.append(int(model_id))
         if category_id not in (None, ""):
             selected_category_id = int(category_id)
             if selected_category_id == 0:
                 where.append("p.category_id IS NULL")
             else:
-                where.append(
-                    "p.category_id IN ("
-                    "SELECT matching.id FROM erp_categories matching "
-                    "WHERE matching.active = 1 "
-                    "AND matching.normalized_name = ("
-                    "SELECT selected.normalized_name "
-                    "FROM erp_categories selected WHERE selected.id = ?))"
-                )
+                where.append("p.category_id = ?")
                 parameters.append(selected_category_id)
         if product_id not in (None, ""):
             where.append("p.id = ?")
@@ -1298,10 +1293,6 @@ class ExcelProductCatalog:
                 brand_id=brand_id,
                 create=True,
             )
-            if brand_row is not None:
-                assert_brand_without_active_inventory(
-                    connection, brand_row["id"]
-                )
             category_row = ensure_category(
                 connection,
                 brand_row["id"] if brand_row else None,
@@ -1431,7 +1422,8 @@ class ExcelProductCatalog:
             ).fetchone()
             if product is None:
                 raise ValueError("Товар не найден.")
-            assert_products_unlocked(connection, [product_id])
+            if stock is not None:
+                assert_products_unlocked(connection, [product_id])
             values = dict(product)
             if name is not None:
                 values["excel_name_raw"] = text(name)
@@ -1636,7 +1628,6 @@ class ExcelProductCatalog:
             ).fetchone()
             if product is None:
                 raise ValueError("Товар не найден.")
-            assert_products_unlocked(connection, [product_id])
             if float(product["stock"] or 0) != 0:
                 raise ProductDeleteBlockedError(
                     "Товар с ненулевым остатком нельзя удалить."
@@ -1664,7 +1655,6 @@ class ExcelProductCatalog:
             ).fetchone()
             if product is None:
                 raise ValueError("Товар не найден.")
-            assert_products_unlocked(connection, [product_id])
             self._validate_products_for_delete([product], force)
             result = self._delete_product_in_transaction(
                 connection, product, force=force, actor_id=actor_id,
@@ -1727,7 +1717,6 @@ class ExcelProductCatalog:
             ).fetchone()
             if brand is None:
                 raise ValueError("Бренд не найден.")
-            assert_brand_without_active_inventory(connection, brand["id"])
             category = None
             parameters = [int(brand_id)]
             product_where = "p.brand_id = ? AND p.active = 1"
@@ -1747,6 +1736,9 @@ class ExcelProductCatalog:
                 product_where + " ORDER BY p.id",
                 parameters,
             ).fetchall()
+            assert_products_unlocked(
+                connection, [row["id"] for row in products]
+            )
             self._validate_products_for_delete(products, force)
             for product in products:
                 self._delete_product_in_transaction(

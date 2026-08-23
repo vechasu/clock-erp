@@ -1180,6 +1180,11 @@
             return;
         }
 
+        window.clearTimeout(searchTimers.get(combobox));
+        searchTimers.delete(combobox);
+        requestControllers.get(combobox)?.abort();
+        requestControllers.delete(combobox);
+        setSharedCatalogLoading(combobox, false);
         window.replaceCatalogComboboxOptions(
             combobox,
             [],
@@ -1227,6 +1232,10 @@
         if (
             (kind === "category" && brandId === "" && !categoryWithoutBrand)
             || (
+                kind === "model"
+                && (brandId === "" || categoryId === "")
+            )
+            || (
                 kind === "product"
                 && !globalProductOptions
                 && (brandId === "" || categoryId === "")
@@ -1265,10 +1274,12 @@
         if (scope?.dataset.catalogInStock === "true") {
             parameters.set("available_for_sale", "1");
         }
-        if (kind === "product") {
+        if (kind === "product" || kind === "model") {
             if (categoryId !== "") {
                 parameters.set("category_id", categoryId);
             }
+        }
+        if (kind === "product") {
             if (scope?.dataset.catalogInStock === "true") {
                 parameters.set("in_stock", "1");
             }
@@ -1422,6 +1433,9 @@
             category: disabled
                 ? "Сначала выберите бренд"
                 : "Выберите категорию",
+            model: disabled
+                ? "Сначала выберите бренд и категорию"
+                : "Выберите модель",
             product: disabled
                 ? scope?.dataset.catalogProductDisabledPlaceholder
                     || "Сначала выберите бренд и категорию"
@@ -1456,10 +1470,16 @@
                     scope,
                     "product"
                 );
+                const model = sharedCatalogCombobox(scope, "model");
                 window.clearSharedCatalogCombobox(category);
+                window.clearSharedCatalogCombobox(model);
                 window.clearSharedCatalogCombobox(product);
                 clearSharedCatalogOptions(
                     category,
+                    "Ничего не найдено"
+                );
+                clearSharedCatalogOptions(
+                    model,
                     "Ничего не найдено"
                 );
                 clearSharedCatalogOptions(
@@ -1475,12 +1495,16 @@
                     )
                 );
                 setCascadeFieldDisabled(scope, "product", true);
+                setCascadeFieldDisabled(scope, "model", true);
             } else if (kind === "category") {
+                const model = sharedCatalogCombobox(scope, "model");
                 const product = sharedCatalogCombobox(
                     scope,
                     "product"
                 );
+                window.clearSharedCatalogCombobox(model);
                 window.clearSharedCatalogCombobox(product);
+                clearSharedCatalogOptions(model, "Ничего не найдено");
                 clearSharedCatalogOptions(
                     product,
                     "Ничего не найдено"
@@ -1492,6 +1516,19 @@
                         sharedCatalogCombobox(scope, "category")
                     )
                 );
+                setCascadeFieldDisabled(
+                    scope,
+                    "model",
+                    !selectedSharedCatalogId(
+                        sharedCatalogCombobox(scope, "category")
+                    )
+                );
+            } else if (kind === "model") {
+                const product = sharedCatalogCombobox(scope, "product");
+                if (product && scope.dataset.catalogProductDependsOnModel === "true") {
+                    window.clearSharedCatalogCombobox(product);
+                    clearSharedCatalogOptions(product, "Ничего не найдено");
+                }
             }
         } finally {
             delete scope.dataset.catalogCascadeResetting;
@@ -1509,7 +1546,7 @@
         scope.dataset.catalogCascadeResetting = "1";
 
         try {
-            ["brand", "category", "product"].forEach(function(kind) {
+            ["brand", "category", "model", "product"].forEach(function(kind) {
                 const combobox = sharedCatalogCombobox(scope, kind);
 
                 if (!combobox) {
@@ -1560,6 +1597,16 @@
         );
         setCascadeFieldDisabled(
             scope,
+            "model",
+            selectedSharedCatalogId(
+                sharedCatalogCombobox(scope, "brand")
+            ) === ""
+            || selectedSharedCatalogId(
+                sharedCatalogCombobox(scope, "category")
+            ) === ""
+        );
+        setCascadeFieldDisabled(
+            scope,
             "product",
             selectedSharedCatalogId(
                 sharedCatalogCombobox(scope, "brand")
@@ -1596,7 +1643,14 @@
 
         const brand = sharedCatalogCombobox(scope, "brand");
         const category = sharedCatalogCombobox(scope, "category");
+        const model = sharedCatalogCombobox(scope, "model");
 
+        setCascadeFieldDisabled(
+            scope,
+            "model",
+            !selectedSharedCatalogId(brand)
+            || !selectedSharedCatalogId(category)
+        );
         setCascadeFieldDisabled(
             scope,
             "category",
