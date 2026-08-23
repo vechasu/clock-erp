@@ -130,6 +130,7 @@ class OrdersSnapshotStore:
                     created_sort TEXT NOT NULL,
                     status TEXT NOT NULL,
                     item_units REAL,
+                    detail_loaded INTEGER NOT NULL DEFAULT 0,
                     payload_json TEXT NOT NULL,
                     loaded_at REAL NOT NULL
                 );
@@ -145,6 +146,17 @@ class OrdersSnapshotStore:
                 );
                 """
             )
+            columns = {
+                row["name"]
+                for row in connection.execute(
+                    "PRAGMA table_info(orders_snapshot)"
+                ).fetchall()
+            }
+            if "detail_loaded" not in columns:
+                connection.execute(
+                    "ALTER TABLE orders_snapshot ADD COLUMN detail_loaded "
+                    "INTEGER NOT NULL DEFAULT 0"
+                )
         return self
 
     def loaded_at(self):
@@ -170,10 +182,11 @@ class OrdersSnapshotStore:
         loaded_at = float(loaded_at or 0)
         with self.connection() as connection:
             preserved = {
-                row["order_id"]: row["item_units"]
+                row["order_id"]: row
                 for row in connection.execute(
-                    "SELECT order_id, item_units FROM orders_snapshot "
-                    "WHERE item_units IS NOT NULL"
+                    "SELECT order_id, item_units, detail_loaded, payload_json "
+                    "FROM orders_snapshot WHERE item_units IS NOT NULL "
+                    "OR detail_loaded = 1"
                 ).fetchall()
             }
             connection.execute("DELETE FROM orders_snapshot")
@@ -181,9 +194,19 @@ class OrdersSnapshotStore:
                 order_id = _text(order.get("id") or order.get("ID"))
                 if not order_id:
                     continue
+                preserved_row = preserved.get(order_id)
+                detail_loaded = int(
+                    preserved_row["detail_loaded"] if preserved_row else 0
+                )
+                if preserved_row:
+                    previous = json.loads(preserved_row["payload_json"])
+                    order = dict(order)
+                    for field in ("customer", "phone"):
+                        if not order.get(field) and previous.get(field):
+                            order[field] = previous[field]
                 item_units = order_item_units(order)
-                if item_units is None:
-                    item_units = preserved.get(order_id)
+                if item_units is None and preserved_row:
+                    item_units = preserved_row["item_units"]
                 created = order.get("created_at") or order.get("date")
                 total = (
                     order.get("order_total")
@@ -194,8 +217,8 @@ class OrdersSnapshotStore:
                     "INSERT INTO orders_snapshot "
                     "(order_id, source_position, number_fold, customer_fold, "
                     "phone_digits, amount_search, date_search, created_sort, "
-                    "status, item_units, payload_json, loaded_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "status, item_units, detail_loaded, payload_json, loaded_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         order_id,
                         position,
@@ -207,6 +230,7 @@ class OrdersSnapshotStore:
                         _created_sort(created),
                         _text(order.get("status")).upper(),
                         item_units,
+                        detail_loaded,
                         json.dumps(order, ensure_ascii=False, separators=(",", ":")),
                         loaded_at,
                     ),
@@ -245,11 +269,57 @@ class OrdersSnapshotStore:
             )
         return cursor.rowcount > 0
 
-    def missing_item_unit_ids(self, limit=200):
+    def enrich_from_detail(self, order_id, detail):
+        """Persist list-safe authoritative fields from one read-only detail fetch."""
+        self.initialize()
+        order_id = _text(order_id)
+        with self.connection() as connection:
+            row = connection.execute(
+                "SELECT payload_json FROM orders_snapshot WHERE order_id = ?",
+                (order_id,),
+            ).fetchone()
+            if row is None:
+                return False
+            payload = json.loads(row["payload_json"])
+            for field in (
+                "number", "customer", "phone", "order_total", "price",
+                "created_at", "date", "status", "status_name",
+            ):
+                value = detail.get(field)
+                if value not in (None, ""):
+                    payload[field] = value
+            units = order_item_units(detail)
+            created = payload.get("created_at") or payload.get("date")
+            total = (
+                payload.get("order_total")
+                if payload.get("order_total") is not None
+                else payload.get("price")
+            )
+            cursor = connection.execute(
+                "UPDATE orders_snapshot SET number_fold = ?, customer_fold = ?, "
+                "phone_digits = ?, amount_search = ?, date_search = ?, "
+                "created_sort = ?, status = ?, item_units = ?, detail_loaded = 1, "
+                "payload_json = ? WHERE order_id = ?",
+                (
+                    _text(payload.get("number") or order_id).casefold(),
+                    _text(payload.get("customer")).casefold(),
+                    _phone_digits(payload.get("phone")),
+                    _amount_search(total),
+                    _date_search(created),
+                    _created_sort(created),
+                    _text(payload.get("status")).upper(),
+                    units,
+                    json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+                    order_id,
+                ),
+            )
+        return cursor.rowcount > 0
+
+    def missing_detail_ids(self, limit=200):
         self.initialize()
         with self.connection() as connection:
             rows = connection.execute(
-                "SELECT order_id FROM orders_snapshot WHERE item_units IS NULL "
+                "SELECT order_id FROM orders_snapshot WHERE detail_loaded = 0 "
                 "ORDER BY source_position, order_id LIMIT ?",
                 (max(1, min(int(limit), 200)),),
             ).fetchall()

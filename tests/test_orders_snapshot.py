@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+import sqlite3
 from datetime import datetime
 from pathlib import Path
 from unittest import mock
@@ -122,12 +123,27 @@ class OrdersSnapshotStoreTest(unittest.TestCase):
         backfill_store = OrdersSnapshotStore(
             Path(self.temporary.name) / "backfill-orders.db"
         )
-        summaries = [dict(row, products=[]) for row in self.orders[:3]]
+        summaries = [
+            dict(row, products=[], customer="", phone="")
+            for row in self.orders[:3]
+        ]
         backfill_store.replace(summaries, 1001)
         client = mock.Mock()
         client.get_order.side_effect = [
-            {"id": summaries[0]["id"], "products": [{"quantity": 2}, {"quantity": 3}]},
-            {"id": summaries[1]["id"], "products": [{"quantity": 4}]},
+            {
+                "id": summaries[0]["id"], "number": summaries[0]["number"],
+                "customer": "Мария Тестова", "phone": "+7 (900) 555-11-22",
+                "order_total": summaries[0]["order_total"],
+                "created_at": summaries[0]["created_at"], "status": "N",
+                "products": [{"quantity": 2}, {"quantity": 3}],
+            },
+            {
+                "id": summaries[1]["id"], "number": summaries[1]["number"],
+                "customer": "Пётр Тестов", "phone": "+7 (901) 444-33-22",
+                "order_total": summaries[1]["order_total"],
+                "created_at": summaries[1]["created_at"], "status": "A",
+                "products": [{"quantity": 4}],
+            },
         ]
 
         with mock.patch.object(web, "normalize_order", side_effect=lambda order: order):
@@ -137,9 +153,39 @@ class OrdersSnapshotStoreTest(unittest.TestCase):
 
         self.assertEqual(result, {"requested": 2, "updated": 2, "errors": 0})
         self.assertEqual(backfill_store.get(summaries[0]["id"])["item_units"], 5)
+        self.assertEqual(
+            backfill_store.get(summaries[0]["id"])["customer"], "Мария Тестова"
+        )
+        self.assertEqual(backfill_store.query({"q": "тестова"})["total"], 1)
+        self.assertEqual(backfill_store.query({"q": "9005551122"})["total"], 1)
         self.assertEqual(backfill_store.get(summaries[1]["id"])["item_units"], 4)
         self.assertIsNone(backfill_store.get(summaries[2]["id"])["item_units"])
+        self.assertEqual(backfill_store.missing_detail_ids(), [summaries[2]["id"]])
         self.assertEqual(client.get_order.call_count, 2)
+
+    def test_existing_snapshot_schema_gets_additive_detail_marker(self):
+        legacy_path = Path(self.temporary.name) / "legacy-orders.db"
+        with sqlite3.connect(str(legacy_path)) as connection:
+            connection.execute(
+                "CREATE TABLE orders_snapshot ("
+                "order_id TEXT PRIMARY KEY, source_position INTEGER NOT NULL, "
+                "number_fold TEXT NOT NULL, customer_fold TEXT NOT NULL, "
+                "phone_digits TEXT NOT NULL, amount_search TEXT NOT NULL, "
+                "date_search TEXT NOT NULL, created_sort TEXT NOT NULL, "
+                "status TEXT NOT NULL, item_units REAL, payload_json TEXT NOT NULL, "
+                "loaded_at REAL NOT NULL)"
+            )
+
+        legacy_store = OrdersSnapshotStore(legacy_path).initialize()
+
+        with legacy_store.connection() as connection:
+            columns = {
+                row["name"]
+                for row in connection.execute(
+                    "PRAGMA table_info(orders_snapshot)"
+                ).fetchall()
+            }
+        self.assertIn("detail_loaded", columns)
 
 
 class OrdersListIntegrationTest(unittest.TestCase):
