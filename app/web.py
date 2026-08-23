@@ -49,6 +49,11 @@ from app.services.order_status import (
     OrderStatusService,
 )
 from app.services.order_print import build_order_print_context
+from app.services.orders_snapshot import (
+    PAGE_SIZES as ORDER_PAGE_SIZES,
+    OrdersSnapshotStore,
+    order_item_units,
+)
 from app.services.brand_values import normalize_brand
 from app.services.catalog_reader import CatalogReader
 from app.catalog.application import CatalogApplication
@@ -286,6 +291,7 @@ ORDERS_CACHE = {
 ORDERS_CACHE_SECONDS = 60
 ORDERS_CACHE_LOCK = threading.RLock()
 ORDERS_REFRESH_LOCK = threading.Lock()
+ORDER_ITEM_COUNT_REFRESH_LOCK = threading.Lock()
 
 WAREHOUSE_CACHE = {
     "items": [],
@@ -888,7 +894,8 @@ def refresh_orders_cache():
         order_status_service().retry_pending(update_order_status, limit=10)
         # The legacy list endpoint exposes a fixed recent window and ignores
         # pagination parameters. Keep its established request contract, cap the
-        # local window, and load exactly one detail card only after selection.
+        # local window. Detail cards stay on-demand; a bounded background read
+        # fills only missing item-unit counters for compact list rows.
         response = requests.get(ORDERS_URL, timeout=20)
         response.raise_for_status()
         payload = response.json()
@@ -911,6 +918,12 @@ def refresh_orders_cache():
             ORDERS_CACHE["loaded_at"] = now
             ORDERS_CACHE["error"] = ""
         save_orders_cache(orders, now)
+        try:
+            snapshot_store = OrdersSnapshotStore()
+            snapshot_store.replace(orders, now)
+            backfill_order_item_units(snapshot_store, limit=5)
+        except sqlite3.Error:
+            app.logger.exception("Order query snapshot could not be refreshed")
 
         return orders
 
@@ -923,6 +936,52 @@ def refresh_orders_cache():
 
         with ORDERS_CACHE_LOCK:
             return ORDERS_CACHE["items"]
+
+
+def backfill_order_item_units(store=None, client=None, limit=200):
+    """Read missing current-order details and persist only the derived unit count."""
+    store = store or OrdersSnapshotStore()
+    client = client or bitrix_orders_client()
+    result = {"requested": 0, "updated": 0, "errors": 0}
+    for order_id in store.missing_item_unit_ids(limit=limit):
+        result["requested"] += 1
+        try:
+            raw_order = client.get_order(order_id)
+            normalized = normalize_order(raw_order) if raw_order else None
+            item_units = order_item_units(normalized or {})
+            if item_units is None:
+                result["errors"] += 1
+                continue
+            if store.set_item_units(order_id, item_units):
+                result["updated"] += 1
+        except BitrixReadOnlyError:
+            result["errors"] += 1
+            app.logger.warning(
+                "Order item count unavailable order_id=%s", order_id
+            )
+    return result
+
+
+def schedule_order_item_unit_backfill(store):
+    if app.testing or ORDER_ITEM_COUNT_REFRESH_LOCK.locked():
+        return
+    if not store.missing_item_unit_ids(limit=1):
+        return
+
+    def refresh():
+        if not ORDER_ITEM_COUNT_REFRESH_LOCK.acquire(blocking=False):
+            return
+        try:
+            with app.app_context():
+                backfill_order_item_units(store, limit=10)
+        finally:
+            ORDER_ITEM_COUNT_REFRESH_LOCK.release()
+
+    threading.Thread(
+        target=refresh,
+        name="order-item-count-refresh",
+        daemon=True,
+    ).start()
 
 
 def schedule_orders_refresh():
@@ -1027,8 +1086,9 @@ def overview_page():
 @app.route("/orders")
 @app.route("/app/orders")
 def orders_page():
-    orders = get_orders(force=request.args.get("retry") == "1")
-    list_state = prepare_orders_list(orders, request.args)
+    orders, list_state = current_orders_list_state(
+        request.args, force=request.args.get("retry") == "1"
+    )
     orders_page_rows = list_state["rows"]
     selected_order = orders_page_rows[0] if orders_page_rows else None
     return render_orders_page(
@@ -1038,6 +1098,102 @@ def orders_page():
         selected_order_explicit=False,
         detail_error="",
     )
+
+
+@app.get("/api/orders")
+def orders_list_api():
+    _orders, list_state = current_orders_list_state(request.args)
+    selected_id = str(request.args.get("selected_id") or "").strip()
+    selected_order = next((
+        order for order in list_state["rows"]
+        if str(order.get("id") or order.get("ID") or "") == selected_id
+    ), None)
+    html = render_template(
+        "_orders_list_results.html",
+        orders=list_state["rows"],
+        selected_order=selected_order,
+        orders_total=list_state["total"],
+        orders_page=list_state["page"],
+        orders_page_size=list_state["page_size"],
+        orders_page_sizes=ORDER_PAGE_SIZES,
+        orders_page_count=list_state["page_count"],
+        sync_error=ORDERS_CACHE.get("error", ""),
+    )
+    return jsonify({
+        "ok": True,
+        "html": html,
+        "total_filtered": list_state["total"],
+        "total_available": list_state.get("physical_total", list_state["total"]),
+        "page": list_state["page"],
+        "page_size": list_state["page_size"],
+        "page_count": list_state["page_count"],
+    })
+
+
+def bulk_conducted_order_sales(order_ids, database=None):
+    order_ids = [str(value or "").strip() for value in order_ids]
+    order_ids = list(dict.fromkeys(value for value in order_ids if value))
+    if not order_ids:
+        return {}
+    database = database or CatalogDatabase()
+    try:
+        if not database.exists():
+            return {}
+        placeholders = ",".join("?" for _value in order_ids)
+        with database.connect() as connection:
+            rows = connection.execute(
+                "SELECT id, external_order_id FROM erp_sales "
+                "WHERE source = 'tictactoy' AND cancelled_at IS NULL "
+                "AND deleted_at IS NULL AND external_order_id IN ({}) "
+                "ORDER BY inserted_at DESC, id DESC".format(placeholders),
+                order_ids,
+            ).fetchall()
+    except sqlite3.Error:
+        app.logger.exception("Failed to inspect conducted order sales in bulk")
+        return {}
+    result = {}
+    for row in rows:
+        result.setdefault(str(row["external_order_id"]), str(row["id"]))
+    return result
+
+
+def enrich_orders_list_rows(rows, database=None):
+    prepared = [dict(order) for order in rows]
+    sale_ids = bulk_conducted_order_sales(
+        [order.get("id") or order.get("ID") for order in prepared],
+        database=database,
+    )
+    for order in prepared:
+        order_id = str(order.get("id") or order.get("ID") or "")
+        units = order.get("item_units")
+        order["item_units"] = (
+            units if units not in (None, "") else order_item_units(order)
+        )
+        order["conducted_sale_id"] = sale_ids.get(order_id, "")
+        order["sale_completed"] = bool(order["conducted_sale_id"])
+    return prepared
+
+
+def current_orders_list_state(args, force=False):
+    orders = get_orders(force=force)
+    if app.testing and not app.config.get("ORDERS_SNAPSHOT_TESTING"):
+        state = prepare_orders_list(orders, args)
+        state["page_size"] = 20
+        state["physical_total"] = len(orders)
+        state["rows"] = enrich_orders_list_rows(state["rows"])
+        return orders, state
+    loaded_at = ORDERS_CACHE.get("loaded_at") or 0
+    if not loaded_at:
+        cached_orders, cached_loaded_at = load_orders_cache()
+        if cached_orders and not orders:
+            orders = cached_orders
+        loaded_at = cached_loaded_at
+    store = OrdersSnapshotStore()
+    store.ensure(orders, loaded_at)
+    schedule_order_item_unit_backfill(store)
+    state = store.query(args)
+    state["rows"] = enrich_orders_list_rows(state["rows"])
+    return state["rows"], state
 
 
 def prepare_orders_list(orders, args):
@@ -1090,6 +1246,7 @@ def prepare_orders_list(orders, args):
         "total": total,
         "page": page,
         "page_count": page_count,
+        "page_size": per_page,
         "kpis": {
             "total": len(orders),
             "unconfirmed": counts["N"],
@@ -1144,6 +1301,8 @@ def render_orders_page(
         selected_order_explicit=selected_order_explicit,
         orders_total=list_state["total"],
         orders_page=list_state["page"],
+        orders_page_size=list_state.get("page_size", 20),
+        orders_page_sizes=ORDER_PAGE_SIZES,
         orders_page_count=list_state["page_count"],
         order_kpis=list_state["kpis"],
         sync_error=detail_error or ORDERS_CACHE.get("error", ""),
@@ -1515,7 +1674,7 @@ def load_order_comments(order_id, database=None):
         rows = connection.execute(
             "SELECT id, order_id, text, author_name, author_user_id, created_at "
             "FROM erp_order_comments WHERE order_id = ? "
-            "ORDER BY created_at, id",
+            "ORDER BY created_at DESC, id DESC",
             (str(order_id),),
         ).fetchall()
     return [dict(row) for row in rows]
@@ -1528,17 +1687,29 @@ def add_order_comment(order_id, text, author_name, author_user_id="", database=N
     if len(text) > 2000:
         raise ValueError("Комментарий не должен превышать 2000 символов")
     author_name = str(author_name or "").strip() or "Сотрудник ERP"
-    created_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    created_at = now.isoformat()
+    duplicate_after = (now - timedelta(seconds=30)).isoformat()
+    order_id = str(order_id)
+    author_user_id = str(author_user_id or "").strip() or None
     database = database or CatalogDatabase()
     database.initialize()
     with database.transaction() as connection:
+        duplicate = connection.execute(
+            "SELECT id FROM erp_order_comments WHERE order_id = ? "
+            "AND text = ? AND author_name = ? "
+            "AND COALESCE(author_user_id, '') = COALESCE(?, '') "
+            "AND created_at >= ? ORDER BY id DESC LIMIT 1",
+            (order_id, text, author_name, author_user_id, duplicate_after),
+        ).fetchone()
+        if duplicate is not None:
+            return duplicate["id"]
         cursor = connection.execute(
             "INSERT INTO erp_order_comments "
             "(order_id, text, author_name, author_user_id, created_at) "
             "VALUES (?, ?, ?, ?, ?)",
             (
-                str(order_id), text, author_name,
-                str(author_user_id or "").strip() or None, created_at,
+                order_id, text, author_name, author_user_id, created_at,
             ),
         )
     return cursor.lastrowid
@@ -1640,11 +1811,13 @@ def order_page(order_id):
     if not bitrix_order_url:
         abort(404)
 
-    orders = get_orders()
+    orders, list_state = current_orders_list_state(request.args)
     selected_order = next((
         order for order in orders
         if str(order.get("id") or order.get("ID")) == str(order_id)
     ), None)
+    if selected_order is None and not app.testing:
+        selected_order = OrdersSnapshotStore().get(order_id)
 
     detail_error = ""
     try:
@@ -1666,7 +1839,7 @@ def order_page(order_id):
 
     return render_orders_page(
         orders=orders,
-        list_state=prepare_orders_list(orders, request.args),
+        list_state=list_state,
         selected_order=selected_order,
         selected_order_explicit=True,
         detail_error=detail_error,
@@ -2325,6 +2498,8 @@ def order_status_reply(order_id, ok, message, status=200):
 
 @app.post("/order/<int:order_id>/comments")
 def order_comment_add(order_id):
+    if not can_view_orders():
+        abort(403)
     text = str(request.form.get("text") or "").strip()
     try:
         order = get_order(order_id)
@@ -2436,6 +2611,12 @@ def order_status_update(order_id):
         cached_loaded_at = ORDERS_CACHE["loaded_at"]
     if cached_items:
         save_orders_cache(cached_items, cached_loaded_at)
+        try:
+            OrdersSnapshotStore().replace(cached_items, cached_loaded_at)
+        except sqlite3.Error:
+            app.logger.exception(
+                "Order query snapshot status update failed: %s", order_id
+            )
     return order_status_reply(
         order_id, True, "Статус заказа обновлён в ERP и Bitrix"
     )

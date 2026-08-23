@@ -49,6 +49,11 @@ h1 { font-size:27px; line-height:1.15; letter-spacing:-.025em; }
 .order-row.active { border-left-color:var(--blue); background:var(--theme-active,#eff6ff); }
 .order-row-head { justify-content:space-between; gap:10px; }
 .order-number { font-weight:750; }
+.order-row-badges { display:flex; align-items:center; justify-content:flex-end; gap:5px; flex-wrap:wrap; }
+.order-customer-line { display:flex; min-width:0; align-items:center; gap:6px 10px; margin-top:5px; color:#334155; font-size:12px; }
+.order-customer-line span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.order-customer-line span:first-child { flex:1 1 auto; }
+.sale-fact-badge { display:inline-flex; align-items:center; padding:3px 7px; border:1px solid #bfdbfe; border-radius:999px; background:#eff6ff; color:#1d4ed8; font-size:10px; font-weight:700; white-space:nowrap; }
 .order-meta { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:4px 10px; margin-top:7px; color:var(--muted); font-size:12px; }
 .order-meta .phone { color:#334155; }
 .badge { display:inline-flex; align-items:center; gap:5px; padding:3px 8px; border-radius:999px; font-size:11px; font-weight:700; white-space:nowrap; }
@@ -58,9 +63,12 @@ h1 { font-size:27px; line-height:1.15; letter-spacing:-.025em; }
 .badge-done { color:#15803d; background:#dcfce7; }
 .badge-cancel { color:#b91c1c; background:#fee2e2; }
 .badge-default { color:#475569; background:#e8edf3; }
-.list-footer { flex:0 0 auto; justify-content:space-between; padding:10px 12px; color:var(--muted); border-top:1px solid var(--line); font-size:12px; }
+.list-footer { display:flex; flex:0 0 auto; justify-content:space-between; align-items:center; gap:8px 12px; padding:10px 12px; color:var(--muted); border-top:1px solid var(--line); font-size:12px; }
 .pagination { gap:5px; }
 .page-link { padding:4px 7px; color:#334155; text-decoration:none; border:1px solid var(--line); border-radius:5px; background:#fff; }
+.page-link.is-disabled { opacity:.45; }
+.orders-page-size { display:inline-flex; align-items:center; gap:6px; white-space:nowrap; }
+.orders-page-size .field { width:auto; min-height:30px; height:30px; padding:2px 28px 2px 8px; font-size:12px; }
 .detail-scroll { min-height:0; overflow:auto; }
 .card-head { position:sticky; top:0; z-index:8; justify-content:space-between; gap:14px; padding:14px 16px; border-bottom:1px solid var(--line); background:var(--theme-surface,#fff); }
 .card-title { display:flex; align-items:center; gap:9px; flex-wrap:wrap; }
@@ -140,8 +148,10 @@ details.more summary::-webkit-details-marker { display:none; }
 .employee-comment { padding:9px 11px; border:1px solid var(--line); border-radius:8px; background:var(--soft); overflow-wrap:anywhere; }
 .employee-comment small { display:block; margin-top:4px; color:var(--muted); }
 .employee-comment-empty { color:var(--muted); }
+.order-comments-head > div span,.order-comments-head > span { color:var(--muted); font-size:11px; }
 .employee-comment-form { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; align-items:end; margin-top:9px; }
-.employee-comment-form .field { width:100%; height:auto; min-height:58px; padding-block:8px; resize:vertical; }
+.employee-comment-form .field { width:100%; height:auto; min-height:40px; max-height:112px; padding-block:8px; resize:vertical; }
+.employee-comment-form .button { width:auto; }
 @media (max-width:1200px) {
     .page-head { grid-template-columns:minmax(220px,1fr) auto; }
     .sync-state { grid-column:1/-1; justify-self:start; }
@@ -173,6 +183,7 @@ details.more summary::-webkit-details-marker { display:none; }
     .order-map-form { grid-template-columns:1fr; }
     .tracking-form { flex-direction:column; }
     .customer-grid { grid-template-columns:1fr 1fr; }
+    .list-footer { flex-wrap:wrap; }
 }
 @media (max-width:420px) {
     h1 { font-size:24px; }
@@ -182,6 +193,8 @@ details.more summary::-webkit-details-marker { display:none; }
     .filter-selects { align-items:stretch; flex-direction:column; }
     .filter-reset { width:100%; }
     .customer-grid { grid-template-columns:1fr; }
+    .employee-comment-form { grid-template-columns:1fr; }
+    .employee-comment-form .button { justify-self:start; }
     .card-head,.detail-body { padding-inline:12px; }
     .actions { width:100%; }
     .actions .button,.actions form { flex:1 1 auto; }
@@ -355,7 +368,7 @@ html[data-theme] .orders-page .orders-secondary-submit:hover:not(:disabled) {
 
 .orders-page .order-context {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 4px 10px;
     margin-top: 8px;
     padding-top: 8px;

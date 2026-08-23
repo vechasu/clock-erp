@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/erp-components.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-combobox.css') }}">
     <script defer src="{{ url_for('static', filename='js/catalog-combobox.js', v='catalog-combobox-20260823') }}"></script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/orders.css', v='orders-final-erp-v2') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/orders.css', v='orders-search-pagination-comments-v3') }}">
 </head>
 <body class="orders-page" data-has-selected-order="{{ 1 if selected_order_explicit|default(false) else 0 }}">
 {% from "_catalog_combobox.html" import render_catalog_combobox %}
@@ -58,7 +58,7 @@
         <div class="workspace" id="ordersWorkspace" data-layout-mode="split">
             <section class="panel orders-list-panel" aria-label="Список заказов">
                 <form class="panel-toolbar filters erp-toolbar" method="get" action="{{ url_for('orders_page') }}">
-                    <div class="erp-search-wrap"><input class="field field-search erp-search-input" type="search" id="orderSearch" name="q" value="{{ request.args.get('q','') }}" placeholder="Номер, клиент или телефон" aria-label="Поиск заказов"></div>
+                    <div class="erp-search-wrap"><input class="field field-search erp-search-input" type="search" id="orderSearch" name="q" value="{{ request.args.get('q','') }}" placeholder="Номер, ФИО, телефон, сумма или дата" aria-label="Поиск заказов" autocomplete="off"></div>
                     <div class="filter-selects">
                         <select class="field" name="status" aria-label="Статус заказа" data-auto-submit-filter>
                             {% for value,label in [('all','Все статусы'),('N','Не подтверждён'),('A','Подтверждён'),('D','Собран')] %}
@@ -72,45 +72,8 @@
                         <button class="button button-secondary list-collapse-control" type="button" data-collapse-list>Свернуть список</button>
                     </div>
                 </form>
-                <div class="orders-list" id="ordersList">
-                    {% for order in orders %}
-                        {% set oid = order.get('id') or order.get('ID') %}
-                        {% set number = order.get('number') or order.get('ACCOUNT_NUMBER') or oid or 'Без внешнего ID' %}
-                        {% set code = order.get('status') or 'UNKNOWN' %}
-                        {% set label = order.get('status_name') or '' %}
-                        {% set customer = order.get('customer') or '' %}
-                        {% set phone = order.get('phone') or '' %}
-                        {% set total = order.get('order_total') if order.get('order_total') is not none else order.get('price') %}
-                        {% set created = order.get('created_at') or order.get('date') or '' %}
-                        {% set products_count = order.get('products_count') if order.get('products_count') is not none else (order.get('products') or [])|length %}
-                        <a href="{{ url_for('order_page', order_id=oid, page=request.args.get('page',1), q=request.args.get('q',''), status=request.args.get('status','all'), period=request.args.get('period','all')) if oid else '#' }}"{% if not oid %} aria-disabled="true"{% endif %} class="order-row{% if selected_order and (selected_order.get('id')|string == oid|string) %} active{% endif %}" data-status="{{ code }}" data-search="{{ number }} {{ customer }} {{ phone }}">
-                            <div class="order-row-head"><span class="order-number">Заказ №{{ number }}</span>{{ status_badge(code,label) }}</div>
-                            <div class="order-meta">
-                                {% if customer %}<span class="order-customer">{{ customer }}</span>{% endif %}
-                                <strong class="order-total">{% if total is not none %}<span class="money-value" data-amount="{{ total }}"></span> ₽{% else %}—{% endif %}</strong>
-                                {% if phone %}<span class="phone order-phone">{{ phone }}</span>{% endif %}
-                                <span class="date-value order-date" data-date="{{ created }}"></span>
-                            </div>
-                            {% if order.get('comment') %}<div class="order-list-comment" title="{{ order.get('comment') }}">Комментарий: {{ order.get('comment') }}</div>{% endif %}
-                        </a>
-                    {% else %}
-                        {% if sync_error %}
-                            <div class="empty erp-error-state" role="alert"><strong>Не удалось загрузить заказы</strong><span>Список временно недоступен; ранее загруженные данные не изменены.</span><a class="erp-state-action" href="{{ request.path }}?retry=1">Повторить загрузку</a></div>
-                        {% elif request.args.get('q') or request.args.get('status','all') != 'all' or request.args.get('period','all') != 'all' %}
-                            <div class="empty erp-no-results-state" role="status"><strong>По текущим условиям заказы не найдены</strong><span>Заказы не удалены — измените поиск или фильтры.</span><a class="erp-state-action" href="{{ url_for('orders_page') }}">Сбросить фильтры</a></div>
-                        {% else %}
-                            <div class="empty erp-empty-state" role="status"><strong>Заказов пока нет</strong><span>Новые заказы появятся после загрузки из Bitrix.</span></div>
-                        {% endif %}
-                    {% endfor %}
-                </div>
-                <footer class="list-footer pagination erp-pagination">
-                    <span>Найдено: {{ orders_total|default(orders|length) }}</span>
-                    <span class="pagination">
-                        {% if orders_page > 1 %}<a class="page-link" href="{{ url_for('orders_page', page=orders_page - 1, q=request.args.get('q',''), status=request.args.get('status','all'), period=request.args.get('period','all')) }}">←</a>{% endif %}
-                        <span>{{ orders_page }} / {{ orders_page_count }}</span>
-                        {% if orders_page < orders_page_count %}<a class="page-link" href="{{ url_for('orders_page', page=orders_page + 1, q=request.args.get('q',''), status=request.args.get('status','all'), period=request.args.get('period','all')) }}">→</a>{% endif %}
-                    </span>
-                </footer>
+                {# Included results provide erp-empty-state, erp-no-results-state and «Сбросить фильтры». #}
+                {% include "_orders_list_results.html" %}
             </section>
 
             <section class="panel order-detail-panel" aria-label="Карточка заказа">
@@ -212,16 +175,16 @@
                             <div class="order-note-value">{{ selected_order.get('comment') or 'Комментарий не оставлен.' }}</div>
                         </section>
                         <section class="section order-comments">
-                            <div class="section-head"><h3>Внутренние комментарии</h3></div>
+                            <div class="section-head order-comments-head"><div><h3>Внутренние комментарии</h3><span>Видны только сотрудникам</span></div>{% if order_comments %}<span>{{ order_comments|length }} записей</span>{% endif %}</div>
                             <div class="employee-comment-feed">
                                 {% for comment in order_comments %}
                                     <article class="employee-comment"><div>{{ comment.text }}</div><small>{{ comment.author_name }} · <span class="date-value" data-date="{{ comment.created_at }}"></span></small></article>
                                 {% else %}<div class="employee-comment-empty">Комментариев сотрудников пока нет.</div>{% endfor %}
                             </div>
-                            <form class="employee-comment-form" method="post" action="/order/{{ detail_id }}/comments" data-erp-pending data-pending-label="Добавляем…">
+                            <form class="employee-comment-form" method="post" action="/order/{{ detail_id }}/comments" data-employee-comment-form>
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                 <label class="sr-only" for="employeeOrderComment">Внутренний комментарий</label>
-                                <textarea class="field" id="employeeOrderComment" name="text" maxlength="2000" rows="2" required placeholder="Добавить внутренний комментарий"></textarea>
+                                <textarea class="field" id="employeeOrderComment" name="text" maxlength="2000" rows="1" required placeholder="Добавить внутренний комментарий…"></textarea>
                                 <button class="button button-secondary" type="submit">Добавить</button>
                             </form>
                         </section>
@@ -288,11 +251,36 @@
     document.querySelectorAll('.date-value').forEach(node=>node.textContent=formatDate(node.dataset.date));
     document.querySelectorAll('[data-sync-time]').forEach(node=>{const raw=Number(node.dataset.syncTime);node.textContent=formatDate(raw?new Date(raw*1000).toISOString():node.dataset.syncTime);});
 
-    const searchInput=document.getElementById('orderSearch'); const rows=Array.from(document.querySelectorAll('.order-row'));
-    function applyFilters(){const query=(searchInput?.value||'').toLowerCase().trim();rows.forEach(row=>{const rowText=(row.dataset.search||'').toLowerCase();row.hidden=!rowText.includes(query);});}
-    searchInput?.addEventListener('input',applyFilters);
-    searchInput?.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();searchInput.form?.requestSubmit();}});
-    document.querySelectorAll('[data-auto-submit-filter]').forEach(filter=>filter.addEventListener('change',()=>filter.form?.requestSubmit()));
+    const searchInput=document.getElementById('orderSearch');
+    const filtersForm=searchInput?.form;
+    let ordersSearchTimer=null;
+    let ordersSearchController=null;
+    let ordersSearchRequest=0;
+    function formatOrdersResults(scope){scope.querySelectorAll('.money-value').forEach(node=>node.textContent=formatMoney(node.dataset.amount));scope.querySelectorAll('.date-value').forEach(node=>node.textContent=formatDate(node.dataset.date));}
+    async function loadOrdersResults(url,{push=false}={}){
+        const requestId=++ordersSearchRequest;
+        ordersSearchController?.abort();
+        const controller=new AbortController();ordersSearchController=controller;
+        const target=new URL(url,window.location.href);target.pathname='/api/orders';
+        const active=document.querySelector('.order-row.active');if(active?.dataset.orderId)target.searchParams.set('selected_id',active.dataset.orderId);
+        try{
+            const response=await fetch(target,{headers:{Accept:'application/json'},signal:controller.signal,credentials:'same-origin'});
+            const payload=await response.json();if(!response.ok||payload?.ok!==true)throw new Error('Не удалось обновить заказы');
+            if(requestId!==ordersSearchRequest)return;
+            const current=document.querySelector('[data-orders-results]');current.outerHTML=payload.html;
+            const displayUrl=new URL(target);displayUrl.pathname='{{ url_for("orders_page") }}';displayUrl.searchParams.delete('selected_id');
+            window.history[push?'pushState':'replaceState']({},'',displayUrl.pathname+displayUrl.search);
+            formatOrdersResults(document.querySelector('[data-orders-results]'));
+        }catch(error){if(error.name!=='AbortError'){window.VechasuNotify?.error(error.message||'Не удалось обновить заказы');}}
+        finally{if(ordersSearchController===controller)ordersSearchController=null;}
+    }
+    function ordersFilterUrl(){const url=new URL('{{ url_for("orders_page") }}',window.location.origin);new FormData(filtersForm).forEach((value,key)=>{if(value&&value!=='all')url.searchParams.set(key,value);});url.searchParams.delete('page');const pageSize=document.querySelector('[data-orders-page-size]')?.value||'20';url.searchParams.set('page_size',pageSize);return url;}
+    searchInput?.addEventListener('input',()=>{window.clearTimeout(ordersSearchTimer);ordersSearchTimer=window.setTimeout(()=>loadOrdersResults(ordersFilterUrl()),250);});
+    searchInput?.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();window.clearTimeout(ordersSearchTimer);loadOrdersResults(ordersFilterUrl());}});
+    document.querySelectorAll('[data-auto-submit-filter]').forEach(filter=>filter.addEventListener('change',()=>loadOrdersResults(ordersFilterUrl())));
+    document.querySelector('.orders-list-panel')?.addEventListener('change',event=>{if(!event.target.matches('[data-orders-page-size]'))return;loadOrdersResults(ordersFilterUrl());});
+    document.querySelector('.orders-list-panel')?.addEventListener('click',event=>{const link=event.target.closest('[data-orders-page-link]');if(!link)return;event.preventDefault();loadOrdersResults(link.href,{push:true});});
+    window.addEventListener('popstate',()=>loadOrdersResults(window.location.href));
     function setPending(form,label){
         if(form.dataset.submitting==='1')return false;
         const button=form.querySelector('button[type="submit"]');form.dataset.submitting='1';
@@ -300,6 +288,9 @@
         return true;
     }
     document.querySelector('[data-tracking-form]')?.addEventListener('submit',event=>{if(!setPending(event.currentTarget,'Сохраняем…'))event.preventDefault();});
+    const employeeCommentForm=document.querySelector('[data-employee-comment-form]');
+    employeeCommentForm?.addEventListener('submit',event=>{const text=employeeCommentForm.querySelector('textarea');if(!text.value.trim()){event.preventDefault();text.focus();return;}if(!setPending(employeeCommentForm,'Добавляем…'))event.preventDefault();});
+    employeeCommentForm?.querySelector('textarea')?.addEventListener('keydown',event=>{if(event.key==='Enter'&&(event.ctrlKey||event.metaKey)){event.preventDefault();employeeCommentForm.requestSubmit();}});
     const statusForm=document.querySelector('[data-status-autosave]');
     if(statusForm){
         const select=statusForm.querySelector('select[name="status"]');const state=statusForm.querySelector('[data-status-save-state]');const csrf=statusForm.querySelector('input[name="csrf_token"]').value;
