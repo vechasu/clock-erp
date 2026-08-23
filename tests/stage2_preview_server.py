@@ -343,9 +343,21 @@ preview_receipts[2].update({
 
 web.CATALOG_TAXONOMY_PATH = PREVIEW_ROOT / "catalog_taxonomy.json"
 web.get_warehouse_items = lambda *args, **kwargs: [dict(item) for item in warehouse_items]
-web.get_excel_warehouse_items = lambda *args, **kwargs: [
-    dict(item) for item in warehouse_items
-]
+
+
+def fixture_excel_warehouse_items(*args, **kwargs):
+    catalog = kwargs.get("catalog")
+    if not catalog:
+        return [dict(item) for item in warehouse_items]
+    by_id = {str(item["id"]): item for item in warehouse_items}
+    return [
+        dict(by_id[str(item["id"])])
+        for item in catalog.get("items", [])
+        if str(item.get("id")) in by_id
+    ]
+
+
+web.get_excel_warehouse_items = fixture_excel_warehouse_items
 web.load_receipts = lambda: [dict(receipt) for receipt in preview_receipts]
 web.api_receipt_records = lambda: tuple(
     dict(receipt) for receipt in preview_receipts

@@ -5,6 +5,21 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>ТТТ ERP — Склад</title>
+    {% if config.TESTING and request.args.get("products_workflow_e2e") == "1" %}
+    <script>
+        window.__productsWorkflowE2eErrors = [];
+        window.addEventListener("error", function(event) {
+            window.__productsWorkflowE2eErrors.push(
+                event.message || "uncaught-error"
+            );
+        });
+        window.addEventListener("unhandledrejection", function(event) {
+            window.__productsWorkflowE2eErrors.push(
+                String(event.reason || "unhandled-rejection")
+            );
+        });
+    </script>
+    {% endif %}
 
     <style>
         * {
@@ -4218,10 +4233,47 @@
                         </button>
                     </div>
 
+                    {% if config.TESTING and request.args.get("products_workflow_e2e") == "1" %}
+                        <input type="hidden" name="products_workflow_e2e" value="1">
+                    {% endif %}
+
                     <div class="warehouse-filter-actions">
-                        <label class="warehouse-add-field">
-                            <span class="sr-only">Наличие</span>
-                            <select name="stock_state" onchange="this.form.submit()" aria-label="Наличие товара">
+                        <div
+                            class="warehouse-availability-segments"
+                            role="group"
+                            aria-label="Наличие товара"
+                        >
+                            <button
+                                type="button"
+                                name="stock_state"
+                                value="all"
+                                class="warehouse-availability-segment{% if stock_state == 'all' %} is-active{% endif %}"
+                                aria-pressed="{{ 'true' if stock_state == 'all' else 'false' }}"
+                                onclick="submitWarehouseStockState('all')"
+                            >Все</button>
+                            <button
+                                type="button"
+                                name="stock_state"
+                                value="in"
+                                class="warehouse-availability-segment{% if stock_state == 'in' %} is-active{% endif %}"
+                                aria-pressed="{{ 'true' if stock_state == 'in' else 'false' }}"
+                                onclick="submitWarehouseStockState('in')"
+                            >В наличии</button>
+                            <button
+                                type="button"
+                                name="stock_state"
+                                value="out"
+                                class="warehouse-availability-segment{% if stock_state == 'out' %} is-active{% endif %}"
+                                aria-pressed="{{ 'true' if stock_state == 'out' else 'false' }}"
+                                onclick="submitWarehouseStockState('out')"
+                            >Нет в наличии</button>
+                        </div>
+                        <label class="warehouse-availability-select">
+                            <span class="sr-only">Наличие товара</span>
+                            <select
+                                aria-label="Наличие товара"
+                                onchange="submitWarehouseStockState(this.value)"
+                            >
                                 <option value="all"{% if stock_state == 'all' %} selected{% endif %}>Все товары</option>
                                 <option value="in"{% if stock_state == 'in' %} selected{% endif %}>В наличии</option>
                                 <option value="out"{% if stock_state == 'out' %} selected{% endif %}>Нет в наличии</option>
@@ -5010,6 +5062,10 @@
             data-catalog-category-without-brand="true"
         >
             <input type="hidden" name="per_page" value="{{ per_page }}">
+            {% if stock_state != 'all' %}<input type="hidden" name="stock_state" value="{{ stock_state }}">{% endif %}
+            {% if config.TESTING and request.args.get("products_workflow_e2e") == "1" %}
+                <input type="hidden" name="products_workflow_e2e" value="1">
+            {% endif %}
             {% if out_of_stock %}<input type="hidden" name="view" value="out_of_stock"><input type="hidden" name="check_state" value="{{ check_state }}">{% endif %}
             {% if query %}
                 <input type="hidden" name="q" value="{{ query }}">
@@ -5127,7 +5183,8 @@
                         q=query or None,
                         sort_by=sort_by if sort_by != 'name' else None,
                         sort_dir=sort_dir if sort_dir != 'asc' else None,
-                        per_page=per_page
+                        per_page=per_page,
+                        products_workflow_e2e='1' if config.TESTING and request.args.get('products_workflow_e2e') == '1' else None
                     ) }}"
                 >Сбросить фильтры</a>
             </div>
@@ -6564,6 +6621,17 @@
             window.location.assign(
                 url.pathname + (query ? "?" + query : "") + url.hash
             );
+        }
+
+        function submitWarehouseStockState(stockState) {
+            const url = new URL(window.location.href);
+            if (stockState === "all") {
+                url.searchParams.delete("stock_state");
+            } else {
+                url.searchParams.set("stock_state", stockState);
+            }
+            url.searchParams.delete("page");
+            navigateWithWarehouseParams(url);
         }
 
         function resetWarehouseTableFilters() {
@@ -8492,6 +8560,266 @@
             } catch (error) {
                 root.dataset.toolbarPopoverE2e =
                     "fail-" + error.message;
+            }
+        });
+    </script>
+    {% endif %}
+
+    {% if config.TESTING and request.args.get("products_workflow_e2e") == "1" %}
+    <script>
+        window.addEventListener("load", async function() {
+            const root = document.documentElement;
+            const wait = (milliseconds) => new Promise(
+                (resolve) => window.setTimeout(resolve, milliseconds)
+            );
+
+            function assert(condition, message) {
+                if (!condition) throw new Error(message);
+            }
+
+            function visible(element) {
+                if (!element) return false;
+                const style = window.getComputedStyle(element);
+                const bounds = element.getBoundingClientRect();
+                return style.display !== "none"
+                    && style.visibility !== "hidden"
+                    && bounds.width > 0
+                    && bounds.height > 0
+                    && bounds.right > 0
+                    && bounds.left < window.innerWidth
+                    && bounds.bottom > 0
+                    && bounds.top < window.innerHeight;
+            }
+
+            function displayed(element) {
+                if (!element) return false;
+                const style = window.getComputedStyle(element);
+                return style.display !== "none"
+                    && style.visibility !== "hidden"
+                    && element.getBoundingClientRect().height > 0;
+            }
+
+            function rows() {
+                return Array.from(document.querySelectorAll(
+                    "#warehouseProductsTable tbody tr"
+                )).filter(displayed);
+            }
+
+            function assertNoErrors() {
+                assert(
+                    window.__productsWorkflowE2eErrors.length === 0,
+                    "uncaught-js-error"
+                );
+            }
+
+            async function runSingleDocumentWorkflow() {
+                let pendingUpdate = Promise.resolve();
+
+                async function replaceResults(url) {
+                    const response = await fetch(url, {
+                        credentials: "same-origin",
+                        headers: {"X-Requested-With": "products-e2e"},
+                    });
+                    assert(response.ok, "products-response");
+                    const parsed = new DOMParser().parseFromString(
+                        await response.text(),
+                        "text/html"
+                    );
+                    const incoming = parsed.getElementById(
+                        "warehouseResults"
+                    );
+                    assert(incoming, "products-payload");
+                    document.getElementById(
+                        "warehouseResults"
+                    ).replaceWith(incoming);
+                    initializeWarehouseTableView();
+                }
+
+                function updateAvailability(value) {
+                    const url = new URL("/app/products", window.location.href);
+                    if (value !== "all") {
+                        url.searchParams.set("stock_state", value);
+                    }
+                    pendingUpdate = replaceResults(url).then(function() {
+                        document.querySelectorAll(
+                            ".warehouse-availability-segment"
+                        ).forEach(function(button) {
+                            const active = button.value === value;
+                            button.classList.toggle("is-active", active);
+                            button.setAttribute(
+                                "aria-pressed",
+                                String(active)
+                            );
+                        });
+                        document.querySelector(
+                            ".warehouse-availability-select select"
+                        ).value = value;
+                    });
+                }
+
+                window.submitWarehouseStockState = updateAvailability;
+                const table = document.getElementById(
+                    "warehouseProductsTable"
+                );
+                assert(table && displayed(table), "table-visible");
+                assert(
+                    root.classList.contains("warehouse-table-ready"),
+                    "table-ready"
+                );
+                const initialRows = rows();
+                assert(initialRows.length > 1, "initial-list");
+                assert(
+                    initialRows.every((row) => row.dataset.productId),
+                    "real-product-identities"
+                );
+
+                const useSegment = visible(document.querySelector(
+                    ".warehouse-availability-segments"
+                ));
+                const choose = async function(value) {
+                    if (useSegment) {
+                        document.querySelector(
+                            '.warehouse-availability-segment[value="'
+                            + value + '"]'
+                        ).click();
+                    } else {
+                        const select = document.querySelector(
+                            ".warehouse-availability-select select"
+                        );
+                        select.value = value;
+                        select.dispatchEvent(new Event(
+                            "change",
+                            {bubbles: true}
+                        ));
+                    }
+                    await pendingUpdate;
+                };
+
+                await choose("in");
+                assert(
+                    rows().length > 0 && rows().every(
+                        (row) => Number(row.dataset.stock) > 0
+                    ),
+                    "in-list"
+                );
+                assert(
+                    useSegment
+                        ? document.querySelector(
+                            '.warehouse-availability-segment[value="in"]'
+                        ).getAttribute("aria-pressed") === "true"
+                        : document.querySelector(
+                            ".warehouse-availability-select select"
+                        ).value === "in",
+                    "in-active-state"
+                );
+
+                await choose("out");
+                assert(
+                    rows().length > 0 && rows().every(
+                        (row) => Number(row.dataset.stock) <= 0
+                    ),
+                    "out-list"
+                );
+
+                await choose("all");
+                assert(rows().length === initialRows.length, "all-list");
+
+                document.getElementById("warehouseFilterTrigger").click();
+                await wait(60);
+                const drawer = document.getElementById("filterDrawer");
+                assert(
+                    drawer.classList.contains("open") && visible(drawer),
+                    "filters-visible"
+                );
+                const filterForm = drawer.querySelector("form");
+                filterForm.querySelector('input[name="brand"]').value =
+                    "Casio";
+                filterForm.addEventListener("submit", function(event) {
+                    event.preventDefault();
+                    const url = new URL(
+                        filterForm.action,
+                        window.location.href
+                    );
+                    new FormData(filterForm).forEach(function(value, key) {
+                        if (value) url.searchParams.append(key, value);
+                    });
+                    pendingUpdate = replaceResults(url);
+                }, {once: true});
+                filterForm.querySelector('button[type="submit"]').click();
+                await pendingUpdate;
+                const filteredCount = rows().length;
+                assert(
+                    filteredCount > 0 && rows().every((row) =>
+                        row.querySelector(
+                            '[data-column-key="brand"]'
+                        ).textContent.trim() === "Casio"
+                    ),
+                    "filter-result"
+                );
+
+                const reset = drawer.querySelector(
+                    ".warehouse-filter-drawer-actions a"
+                );
+                reset.addEventListener("click", function(event) {
+                    event.preventDefault();
+                    pendingUpdate = replaceResults(
+                        new URL("/app/products", window.location.href)
+                    );
+                }, {once: true});
+                reset.click();
+                await pendingUpdate;
+                assert(rows().length > filteredCount, "filter-reset-list");
+
+                drawer.querySelector(".close-button").click();
+                await wait(60);
+                assert(!drawer.classList.contains("open"), "filters-close");
+
+                document.getElementById(
+                    "warehouseColumnSettingsTrigger"
+                ).click();
+                await wait(60);
+                assert(
+                    visible(document.getElementById(
+                        "warehouseColumnSettingsPanel"
+                    )),
+                    "columns-visible"
+                );
+                document.dispatchEvent(new KeyboardEvent(
+                    "keydown",
+                    {key: "Escape", bubbles: true}
+                ));
+
+                const next = document.querySelector(
+                    '[aria-label="Следующая страница"]'
+                );
+                assert(next && next.tagName === "A", "pagination-next");
+                next.addEventListener("click", function(event) {
+                    event.preventDefault();
+                    pendingUpdate = replaceResults(next.href);
+                }, {once: true});
+                next.click();
+                await pendingUpdate;
+                assert(
+                    document.querySelector(
+                        '#erpPagination [aria-current="page"]'
+                    ).textContent.trim() === "2",
+                    "pagination-active"
+                );
+                assert(rows().length > 0, "pagination-list");
+                assertNoErrors();
+                assert(
+                    root.scrollWidth <= root.clientWidth + 1,
+                    "page-horizontal-overflow"
+                );
+            }
+
+            try {
+                await runSingleDocumentWorkflow();
+                root.dataset.productsWorkflowE2e = "pass";
+                return;
+            } catch (error) {
+                root.dataset.productsWorkflowE2e = "fail";
+                root.dataset.productsWorkflowE2eError = error.message;
             }
         });
     </script>

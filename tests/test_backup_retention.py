@@ -5,8 +5,14 @@ import tarfile
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
-from scripts.retain_erp_backups import create_backup, discover_backups, retention_plan
+from scripts.retain_erp_backups import (
+    _backup_sqlite_database,
+    create_backup,
+    discover_backups,
+    retention_plan,
+)
 
 
 class BackupRetentionTest(unittest.TestCase):
@@ -101,6 +107,38 @@ class BackupRetentionTest(unittest.TestCase):
         self.assertEqual(len(discover_backups(self.root)["daily"]), 1)
         with tarfile.open(str(first), "r:gz") as backup:
             self.assertIn("instance/catalog.db", backup.getnames())
+
+    def test_legacy_python_uses_sqlite_cli_backup(self):
+        class LegacyConnection:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        source = Path(self.temp.name) / "source.db"
+        destination = Path(self.temp.name) / "destination.db"
+        with mock.patch(
+            "scripts.retain_erp_backups.sqlite3.connect",
+            return_value=LegacyConnection(),
+        ), mock.patch(
+            "scripts.retain_erp_backups.shutil.which",
+            return_value="/usr/bin/sqlite3",
+        ), mock.patch(
+            "scripts.retain_erp_backups.subprocess.run"
+        ) as run:
+            _backup_sqlite_database(source, destination)
+
+        run.assert_called_once_with(
+            [
+                "/usr/bin/sqlite3",
+                str(source),
+                ".backup '{}'".format(destination),
+            ],
+            check=True,
+            stdout=mock.ANY,
+            stderr=mock.ANY,
+        )
 
 
 if __name__ == "__main__":
