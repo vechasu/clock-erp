@@ -943,16 +943,15 @@ def backfill_order_item_units(store=None, client=None, limit=200):
     store = store or OrdersSnapshotStore()
     client = client or bitrix_orders_client()
     result = {"requested": 0, "updated": 0, "errors": 0}
-    for order_id in store.missing_item_unit_ids(limit=limit):
+    for order_id in store.missing_detail_ids(limit=limit):
         result["requested"] += 1
         try:
             raw_order = client.get_order(order_id)
             normalized = normalize_order(raw_order) if raw_order else None
-            item_units = order_item_units(normalized or {})
-            if item_units is None:
+            if not normalized:
                 result["errors"] += 1
                 continue
-            if store.set_item_units(order_id, item_units):
+            if store.enrich_from_detail(order_id, normalized):
                 result["updated"] += 1
         except BitrixReadOnlyError:
             result["errors"] += 1
@@ -965,7 +964,7 @@ def backfill_order_item_units(store=None, client=None, limit=200):
 def schedule_order_item_unit_backfill(store):
     if app.testing or ORDER_ITEM_COUNT_REFRESH_LOCK.locked():
         return
-    if not store.missing_item_unit_ids(limit=1):
+    if not store.missing_detail_ids(limit=1):
         return
 
     def refresh():
