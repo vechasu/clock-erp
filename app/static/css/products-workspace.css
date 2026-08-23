@@ -289,6 +289,21 @@
     display: block;
 }
 
+@media (min-width: 1024px) {
+    .products-workspace-metrics,
+    .warehouse-page .products-workspace-metrics {
+        min-height: 48px;
+        margin-bottom: 8px;
+    }
+
+    .products-workspace-metrics .erp-workspace-metric,
+    .warehouse-page .products-workspace-metrics .erp-workspace-metric {
+        min-height: 48px;
+        height: 48px;
+        padding: 4px 12px;
+    }
+}
+
 .catalog-list-controls {
     display: flex;
     min-height: 64px;

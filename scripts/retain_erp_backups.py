@@ -8,6 +8,7 @@ import os
 import re
 import shutil
 import sqlite3
+import subprocess
 import tarfile
 import tempfile
 from pathlib import Path
@@ -168,6 +169,29 @@ def apply_plan(actions, backup_root, apply_changes):
     )
 
 
+def _backup_sqlite_database(source, destination):
+    with sqlite3.connect(str(source)) as source_connection:
+        backup = getattr(source_connection, "backup", None)
+        if callable(backup):
+            with sqlite3.connect(str(destination)) as destination_connection:
+                backup(destination_connection)
+            return
+
+    sqlite_binary = shutil.which("sqlite3")
+    if not sqlite_binary:
+        raise RuntimeError(
+            "SQLite backup requires the sqlite3 CLI on this Python version"
+        )
+    subprocess.run(
+        [sqlite_binary, str(source), ".backup '{}'".format(
+            str(destination).replace("'", "''")
+        )],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+
 def _copy_runtime_data(project_root, staging):
     copied = False
     env_path = project_root / ".env"
@@ -185,12 +209,15 @@ def _copy_runtime_data(project_root, staging):
                 candidate = Path(str(destination) + suffix)
                 if candidate.exists() or candidate.is_symlink():
                     candidate.unlink()
-            with sqlite3.connect(str(source)) as source_connection:
-                with sqlite3.connect(str(destination)) as destination_connection:
-                    source_connection.backup(destination_connection)
-                    result = destination_connection.execute("PRAGMA quick_check").fetchone()
-                    if not result or result[0] != "ok":
-                        raise sqlite3.DatabaseError("SQLite backup quick_check failed: {}".format(source))
+            _backup_sqlite_database(source, destination)
+            with sqlite3.connect(str(destination)) as destination_connection:
+                result = destination_connection.execute(
+                    "PRAGMA quick_check"
+                ).fetchone()
+                if not result or result[0] != "ok":
+                    raise sqlite3.DatabaseError(
+                        "SQLite backup quick_check failed: {}".format(source)
+                    )
         copied = True
     if not copied:
         raise RuntimeError("no .env or instance directory found in {}".format(project_root))

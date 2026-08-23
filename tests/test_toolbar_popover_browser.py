@@ -38,6 +38,18 @@ class ToolbarPopoverStructureTest(unittest.TestCase):
             self.assertIn("js/toolbar-popover-coordinator.js", source)
             self.assertIn("createErpToolbarPopoverCoordinator", source)
 
+    def test_products_compact_controls_keep_visible_drawer_contract(self):
+        warehouse = self.source("app/templates/warehouse.html")
+        components = self.source("app/static/css/erp-components.css")
+        workspace = self.source("app/static/css/products-workspace.css")
+
+        self.assertIn("warehouse-availability-segments", warehouse)
+        self.assertIn("warehouse-availability-select", warehouse)
+        self.assertIn('aria-label="Наличие товара"', warehouse)
+        self.assertIn("#filterDrawer.drawer:not(.open)", components)
+        self.assertIn("#filterDrawer.drawer.open", components)
+        self.assertIn("min-height: 48px", workspace)
+
     def test_sales_reference_manager_and_modal_lock_are_unchanged(self):
         sales = self.source("app/templates/sales.html")
         modal_shell = self.source("app/static/js/erp-modal-shell.js")
@@ -105,7 +117,10 @@ class ToolbarPopoverBrowserTest(unittest.TestCase):
             None,
         )
 
-    def run_chrome(self, chrome, url, width, height, marker):
+    def run_chrome(
+        self, chrome, url, width, height, marker,
+        virtual_time_budget=3500,
+    ):
         with tempfile.TemporaryDirectory() as temp:
             result = subprocess.run(
                 [
@@ -116,7 +131,7 @@ class ToolbarPopoverBrowserTest(unittest.TestCase):
                     "--disable-dev-shm-usage",
                     f"--user-data-dir={Path(temp) / 'profile'}",
                     f"--window-size={width},{height}",
-                    "--virtual-time-budget=3500",
+                    f"--virtual-time-budget={virtual_time_budget}",
                     "--dump-dom",
                     url,
                 ],
@@ -134,6 +149,11 @@ class ToolbarPopoverBrowserTest(unittest.TestCase):
             if not error:
                 error = re.search(
                     r'data-sales-channel-e2e="fail-([^"]*)"',
+                    result.stdout,
+                )
+            if not error:
+                error = re.search(
+                    r'data-products-workflow-e2e-error="([^"]*)"',
                     result.stdout,
                 )
             self.fail(
@@ -192,6 +212,23 @@ class ToolbarPopoverBrowserTest(unittest.TestCase):
                             height,
                             'data-toolbar-popover-e2e="pass"',
                         )
+
+            for width, height in (
+                (1440, 900),
+                (1920, 1080),
+                (900, 1024),
+                (390, 844),
+            ):
+                with self.subTest(path="products-workflow", width=width):
+                    self.run_chrome(
+                        chrome,
+                        f"http://127.0.0.1:{port}/app/products"
+                        "?products_workflow_e2e=1",
+                        width,
+                        height,
+                        'data-products-workflow-e2e="pass"',
+                        virtual_time_budget=12000,
+                    )
 
             modal_paths = (
                 (
