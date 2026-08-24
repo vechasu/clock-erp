@@ -174,6 +174,16 @@ class OrderCommentSyncTest(unittest.TestCase):
         self.assertEqual(comment["updated_at"], comment["created_at"])
         self.assertEqual(comment["source"], "erp")
 
+    def test_external_mapping_index_uses_legacy_sqlite_compatible_sql(self):
+        source = (Path(__file__).resolve().parents[1] / "app/catalog_db.py").read_text(
+            encoding="utf-8"
+        )
+        statement = source.split(
+            '"CREATE UNIQUE INDEX IF NOT EXISTS idx_erp_order_comments_external "',
+            1,
+        )[1].split(")\n", 1)[0]
+        self.assertNotIn("WHERE", statement)
+
 
 if __name__ == "__main__":
     unittest.main()
