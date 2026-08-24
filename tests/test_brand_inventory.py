@@ -120,13 +120,36 @@ class BrandInventoryTest(unittest.TestCase):
         self.assertEqual(second["id"], first["id"])
         self.assertEqual(second["remaining"], 1)
 
-    def test_zero_stock_is_in_snapshot_and_must_be_explicitly_checked(self):
-        self.product(stock=0)
+    def test_snapshot_contains_only_strictly_positive_stock(self):
+        positive = self.product(stock=3)
+        zero = self.product(stock=0, name="Zero", article="ZERO")
+        negative = self.product(stock=1, name="Negative", article="NEGATIVE")
+        with self.database.transaction() as connection:
+            connection.execute(
+                "UPDATE catalog_excel_products SET stock = -2 WHERE id = ?",
+                (negative["id"],),
+            )
         session = self.start()
         self.assertEqual(session["start_positions"], 1)
-        result = self.service.complete(session["id"], confirmation=True)
-        self.assertFalse(result["ok"])
-        self.assertEqual(self.service.get(session["id"])["status"], "active")
+        items = self.service.list_items(session["id"])
+        self.assertEqual([item["product_id"] for item in items], [positive["id"]])
+        self.assertNotIn(zero["id"], {item["product_id"] for item in items})
+        self.assertNotIn(negative["id"], {item["product_id"] for item in items})
+
+    def test_nonpositive_scope_does_not_create_empty_inventory(self):
+        self.product(stock=0)
+        negative = self.product(stock=1, name="Negative", article="NEGATIVE")
+        with self.database.transaction() as connection:
+            connection.execute(
+                "UPDATE catalog_excel_products SET stock = -1 WHERE id = ?",
+                (negative["id"],),
+            )
+        with self.assertRaisesRegex(InventoryError, "нет товаров"):
+            self.service.start(self.brand_id())
+        with self.database.connect() as connection:
+            self.assertEqual(connection.execute(
+                "SELECT COUNT(*) FROM erp_inventory_sessions"
+            ).fetchone()[0], 0)
 
     def test_matching_quantity_is_confirmed_without_movement(self):
         product = self.product()
@@ -327,6 +350,7 @@ class BrandInventoryTest(unittest.TestCase):
 
     def test_new_product_is_atomic_and_duplicate_is_rejected(self):
         self.product(stock=0)
+        self.product(name="Активная позиция", article="ACTIVE-1")
         session = self.make_legacy(self.start())
         result = self.service.add_new(
             session["id"], "Найденные часы", "NEW-1", 2, idempotency_key="new"
@@ -385,11 +409,22 @@ class BrandInventoryTest(unittest.TestCase):
     def test_brand_category_and_model_scopes_use_exact_snapshots(self):
         watch_x1 = self.product(name="X steel", article="X-1", model="Model X")
         watch_x2 = self.product(name="X leather", article="X-2", model="Model X")
+        zero_x = self.product(
+            stock=0, name="X zero", article="X-0", model="Model X"
+        )
+        negative_x = self.product(
+            name="X negative", article="X-NEG", model="Model X"
+        )
         watch_y = self.product(name="Y", article="Y-1", model="Model Y")
         strap = self.product(name="Strap", article="S-1", category="Ремешки", model="S")
         other = self.product(
             name="Other X", article="O-1", brand="Other", model="Model X"
         )
+        with self.database.transaction() as connection:
+            connection.execute(
+                "UPDATE catalog_excel_products SET stock = -1 WHERE id = ?",
+                (negative_x["id"],),
+            )
         brand_id, category_id, model_id = self.classification_ids(watch_x1["id"])
 
         brand_session, created = self.service.start(brand_id, idempotency_key="brand")
@@ -398,6 +433,12 @@ class BrandInventoryTest(unittest.TestCase):
             {row["product_id"] for row in self.service.list_items(brand_session["id"])},
             {watch_x1["id"], watch_x2["id"], watch_y["id"], strap["id"]},
         )
+        self.assertNotIn(zero_x["id"], {
+            row["product_id"] for row in self.service.list_items(brand_session["id"])
+        })
+        self.assertNotIn(negative_x["id"], {
+            row["product_id"] for row in self.service.list_items(brand_session["id"])
+        })
         self.assertEqual(brand_session["scope_type"], "brand")
         self.service.cancel(brand_session["id"], "scope test")
 
@@ -452,7 +493,7 @@ class BrandInventoryTest(unittest.TestCase):
             connection.execute(
                 "UPDATE catalog_excel_products SET excel_name_raw='Renamed', "
                 "excel_brand='Changed', excel_category='Changed', model='Changed', "
-                "active=0 WHERE id=?", (original["id"],),
+                "active=0, stock=0 WHERE id=?", (original["id"],),
             )
         added = self.product(
             name="New matching SKU", article="NEW-SNAPSHOT", model="Model X"
