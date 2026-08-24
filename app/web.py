@@ -2743,10 +2743,18 @@ def order_comment_add(order_id):
             user.get("id") or user.get("email") or "",
             external_order_id=str(order_id),
         )
-    except (ValueError, sqlite3.Error) as error:
+    except ValueError as error:
         if request.accept_mimetypes.best == "application/json":
             return jsonify({"ok": False, "message": str(error)}), 400
         return redirect(url_for("order_page", order_id=order_id, notice="error", message=str(error)))
+    except sqlite3.Error:
+        app.logger.exception("Order comment save failed order_id=%s", order_id)
+        message = "Не удалось сохранить комментарий. Попробуйте ещё раз."
+        if request.accept_mimetypes.best == "application/json":
+            return jsonify({"ok": False, "message": message}), 500
+        return redirect(url_for(
+            "order_page", order_id=order_id, notice="error", message=message,
+        ))
     schedule_order_comment_sync(comment_id=comment["id"])
     if request.accept_mimetypes.best == "application/json":
         comment["can_edit"] = True
