@@ -5,16 +5,20 @@ import math
 import os
 import re
 import sqlite3
+import logging
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
+
+from app.services.customer_identity import link_order_safely
 
 
 PAGE_SIZES = (20, 50, 100, 200)
 DATE_QUERY = re.compile(r"^(\d{2})\.(\d{2})\.(\d{2}|\d{4})$")
 AMOUNT_QUERY = re.compile(r"^[\d\s.,₽]+$")
 PHONE_QUERY = re.compile(r"^[+\d\s()\-]+$")
+LOGGER = logging.getLogger(__name__)
 
 
 def _text(value):
@@ -137,6 +141,24 @@ class OrdersSnapshotStore:
                     payload_json TEXT NOT NULL,
                     loaded_at REAL NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS customers (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL DEFAULT '',
+                    name_fold TEXT NOT NULL DEFAULT '',
+                    phone TEXT NOT NULL DEFAULT '',
+                    normalized_phone TEXT NOT NULL DEFAULT '',
+                    email TEXT NOT NULL DEFAULT '',
+                    normalized_email TEXT NOT NULL DEFAULT '',
+                    country TEXT NOT NULL DEFAULT '',
+                    region TEXT NOT NULL DEFAULT '',
+                    city TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_customers_normalized_phone
+                    ON customers(normalized_phone);
+                CREATE INDEX IF NOT EXISTS idx_customers_normalized_email
+                    ON customers(normalized_email);
                 CREATE INDEX IF NOT EXISTS idx_orders_snapshot_ordering
                     ON orders_snapshot(source_position, order_id);
                 CREATE INDEX IF NOT EXISTS idx_orders_snapshot_status_ordering
@@ -155,6 +177,24 @@ class OrdersSnapshotStore:
                     "PRAGMA table_info(orders_snapshot)"
                 ).fetchall()
             }
+            customer_columns = {
+                row["name"]
+                for row in connection.execute("PRAGMA table_info(customers)").fetchall()
+            }
+            if "name_fold" not in customer_columns:
+                connection.execute(
+                    "ALTER TABLE customers ADD COLUMN name_fold TEXT NOT NULL DEFAULT ''"
+                )
+            for customer in connection.execute(
+                "SELECT id, name FROM customers WHERE name_fold = '' AND name != ''"
+            ).fetchall():
+                connection.execute(
+                    "UPDATE customers SET name_fold = ? WHERE id = ?",
+                    (_text(customer["name"]).casefold(), customer["id"]),
+                )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_customers_name ON customers(name_fold)"
+            )
             if "detail_loaded" not in columns:
                 connection.execute(
                     "ALTER TABLE orders_snapshot ADD COLUMN detail_loaded "
@@ -174,6 +214,10 @@ class OrdersSnapshotStore:
                     "ALTER TABLE orders_snapshot ADD COLUMN extra_fold "
                     "TEXT NOT NULL DEFAULT ''"
                 )
+            if "customer_id" not in columns:
+                connection.execute(
+                    "ALTER TABLE orders_snapshot ADD COLUMN customer_id INTEGER"
+                )
             connection.execute(
                 "UPDATE orders_snapshot SET source = 'tictactoy' "
                 "WHERE source IS NULL OR trim(source) = ''"
@@ -189,6 +233,10 @@ class OrdersSnapshotStore:
             connection.execute(
                 "CREATE INDEX IF NOT EXISTS idx_orders_snapshot_source_ordering "
                 "ON orders_snapshot(source, source_position, order_id)"
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_orders_snapshot_customer_created "
+                "ON orders_snapshot(customer_id, created_sort)"
             )
         return self
 
@@ -217,9 +265,9 @@ class OrdersSnapshotStore:
             preserved = {
                 row["order_id"]: row
                 for row in connection.execute(
-                    "SELECT order_id, item_units, detail_loaded, payload_json "
+                    "SELECT order_id, item_units, detail_loaded, payload_json, customer_id "
                     "FROM orders_snapshot WHERE source = 'tictactoy' AND "
-                    "(item_units IS NOT NULL OR detail_loaded = 1)"
+                    "(item_units IS NOT NULL OR detail_loaded = 1 OR customer_id IS NOT NULL)"
                 ).fetchall()
             }
             connection.execute(
@@ -236,12 +284,17 @@ class OrdersSnapshotStore:
                 if preserved_row:
                     previous = json.loads(preserved_row["payload_json"])
                     order = dict(order)
-                    for field in ("customer", "phone"):
+                    for field in ("customer", "phone", "email", "country", "region", "city"):
                         if not order.get(field) and previous.get(field):
                             order[field] = previous[field]
                 item_units = order_item_units(order)
                 if item_units is None and preserved_row:
                     item_units = preserved_row["item_units"]
+                customer_id = preserved_row["customer_id"] if preserved_row else None
+                if customer_id is None:
+                    customer_id = link_order_safely(
+                        connection, order, logger=LOGGER
+                    )["customer_id"]
                 created = order.get("created_at") or order.get("date")
                 total = (
                     order.get("order_total")
@@ -252,8 +305,8 @@ class OrdersSnapshotStore:
                     "INSERT INTO orders_snapshot "
                     "(order_id, source, external_order_id, source_position, number_fold, customer_fold, extra_fold, "
                     "phone_digits, amount_search, date_search, created_sort, "
-                    "status, item_units, detail_loaded, payload_json, loaded_at) "
-                    "VALUES (?, 'tictactoy', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "status, item_units, detail_loaded, payload_json, loaded_at, customer_id) "
+                    "VALUES (?, 'tictactoy', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         order_id,
                         order_id,
@@ -270,6 +323,7 @@ class OrdersSnapshotStore:
                         detail_loaded,
                         json.dumps(order, ensure_ascii=False, separators=(",", ":")),
                         loaded_at,
+                        customer_id,
                     ),
                 )
             connection.execute(
@@ -290,7 +344,7 @@ class OrdersSnapshotStore:
                     continue
                 order_id = "wb:" + wb_order_id
                 existing = connection.execute(
-                    "SELECT order_id FROM orders_snapshot "
+                    "SELECT order_id, customer_id FROM orders_snapshot "
                     "WHERE source = 'wildberries' AND external_order_id = ?",
                     (wb_order_id,),
                 ).fetchone()
@@ -321,14 +375,20 @@ class OrdersSnapshotStore:
                     json.dumps(order, ensure_ascii=False, separators=(",", ":")),
                     float(datetime.now().timestamp()),
                 )
+                customer_id = existing["customer_id"] if existing else None
+                if customer_id is None:
+                    customer_id = link_order_safely(
+                        connection, order, logger=LOGGER
+                    )["customer_id"]
                 if existing:
                     connection.execute(
                         "UPDATE orders_snapshot SET source_position = ?, number_fold = ?, "
                         "customer_fold = ?, extra_fold = ?, phone_digits = ?, amount_search = ?, "
                         "date_search = ?, created_sort = ?, status = ?, item_units = ?, "
-                        "detail_loaded = 1, payload_json = ?, loaded_at = ? "
+                        "detail_loaded = 1, payload_json = ?, loaded_at = ?, "
+                        "customer_id = COALESCE(customer_id, ?) "
                         "WHERE source = 'wildberries' AND external_order_id = ?",
-                        values + (wb_order_id,),
+                        values + (customer_id, wb_order_id),
                     )
                     updated += 1
                 else:
@@ -336,9 +396,9 @@ class OrdersSnapshotStore:
                         "INSERT INTO orders_snapshot (order_id, source, external_order_id, "
                         "source_position, number_fold, customer_fold, extra_fold, phone_digits, "
                         "amount_search, date_search, created_sort, status, item_units, "
-                        "detail_loaded, payload_json, loaded_at) "
-                        "VALUES (?, 'wildberries', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)",
-                        (order_id, wb_order_id) + values,
+                        "detail_loaded, payload_json, loaded_at, customer_id) "
+                        "VALUES (?, 'wildberries', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)",
+                        (order_id, wb_order_id) + values + (customer_id,),
                     )
                     added += 1
         return {"added": added, "updated": updated}
@@ -352,7 +412,7 @@ class OrdersSnapshotStore:
         self.initialize()
         with self.connection() as connection:
             row = connection.execute(
-                "SELECT payload_json, item_units FROM orders_snapshot "
+                "SELECT payload_json, item_units, customer_id FROM orders_snapshot "
                 "WHERE order_id = ?",
                 (_text(order_id),),
             ).fetchone()
@@ -360,6 +420,7 @@ class OrdersSnapshotStore:
             return None
         payload = json.loads(row["payload_json"])
         payload["item_units"] = row["item_units"]
+        payload["customer_id"] = row["customer_id"]
         return payload
 
     def set_item_units(self, order_id, item_units):
@@ -384,7 +445,7 @@ class OrdersSnapshotStore:
                 return False
             payload = json.loads(row["payload_json"])
             for field in (
-                "number", "customer", "phone", "order_total", "price",
+                "number", "customer", "phone", "email", "country", "region", "city", "order_total", "price",
                 "created_at", "date", "status", "status_name",
             ):
                 value = detail.get(field)
@@ -415,6 +476,14 @@ class OrdersSnapshotStore:
                     order_id,
                 ),
             )
+            customer_id = link_order_safely(
+                connection, payload, logger=LOGGER
+            )["customer_id"]
+            if customer_id is not None:
+                connection.execute(
+                    "UPDATE orders_snapshot SET customer_id = COALESCE(customer_id, ?) "
+                    "WHERE order_id = ?", (customer_id, order_id)
+                )
         return cursor.rowcount > 0
 
     def missing_detail_ids(self, limit=200):
@@ -495,7 +564,7 @@ class OrdersSnapshotStore:
             page_count = max(1, int(math.ceil(float(total) / page_size)))
             page = min(page, page_count)
             rows = connection.execute(
-                "SELECT payload_json, item_units FROM orders_snapshot"
+                "SELECT payload_json, item_units, customer_id FROM orders_snapshot"
                 + where_sql
                 + " ORDER BY source_position ASC, order_id DESC LIMIT ? OFFSET ?",
                 parameters + [page_size, (page - 1) * page_size],
@@ -511,6 +580,7 @@ class OrdersSnapshotStore:
         for row in rows:
             payload = json.loads(row["payload_json"])
             payload["item_units"] = row["item_units"]
+            payload["customer_id"] = row["customer_id"]
             result_rows.append(payload)
         counts = {row["status"]: int(row["count"]) for row in status_rows}
         return {

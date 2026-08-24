@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Vechasu ERP — Клиенты</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/themes.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/erp-components.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/customers.css') }}">
+</head>
+<body class="customers-page">
+{% from "_pagination.html" import render_erp_pagination %}
+<div class="app">
+    {% include "_sidebar.html" %}
+    <main class="main" id="main-content" tabindex="-1">
+        <header class="erp-workspace-header">
+            <div class="erp-workspace-heading">
+                <h1>Клиенты</h1>
+                <p>Контакты покупателей и история связанных заказов</p>
+            </div>
+        </header>
+
+        <section class="customer-panel" aria-label="Список клиентов">
+            <form class="customer-toolbar" method="get" action="{{ url_for('customers_page') }}">
+                <div class="customer-search">
+                    <input class="customer-input" type="search" name="q" value="{{ query }}" placeholder="Имя, телефон, email или номер заказа" aria-label="Поиск клиентов">
+                    <button class="customer-button" type="submit">Найти</button>
+                    {% if query %}<a class="customer-reset" href="{{ url_for('customers_page') }}">Очистить</a>{% endif %}
+                </div>
+                <strong class="customer-found">Найдено: {{ customers_total }} клиентов</strong>
+            </form>
+
+            {% if data_error %}
+                <div class="customer-empty erp-error-state" role="alert"><h2>Не удалось загрузить клиентов</h2><p>Данные заказов не изменены. Повторите безопасную загрузку.</p><a class="customer-button" href="{{ request.full_path }}">Повторить</a></div>
+            {% elif customers %}
+                <div class="customer-table-wrap">
+                    <table class="customer-table">
+                        <thead><tr><th>Клиент</th><th>Телефон</th><th>Email</th><th>Город</th><th>Заказов</th><th>Последний заказ</th></tr></thead>
+                        <tbody>
+                        {% for customer in customers %}
+                            <tr data-href="{{ url_for('customer_detail_page', customer_id=customer.id) }}">
+                                <td><a class="customer-name" href="{{ url_for('customer_detail_page', customer_id=customer.id) }}">{{ customer.name or 'Без имени' }}</a></td>
+                                <td>{{ customer.phone or '—' }}</td>
+                                <td>{% if customer.email %}<a href="mailto:{{ customer.email }}">{{ customer.email }}</a>{% else %}—{% endif %}</td>
+                                <td>{{ customer.city or '—' }}</td>
+                                <td>{{ customer.orders_count }}</td>
+                                <td>{{ customer.last_order_at[:10] if customer.last_order_at else '—' }}</td>
+                            </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {{ render_erp_pagination(pagination, "Страницы клиентов") }}
+            {% elif query %}
+                <div class="customer-empty"><h2>Ничего не найдено</h2><p>Попробуйте изменить запрос или очистить поиск.</p><a class="customer-button" href="{{ url_for('customers_page') }}">Очистить поиск</a></div>
+            {% else %}
+                <div class="customer-empty"><h2>Клиентов пока нет</h2><p>Клиенты появятся автоматически после безопасного сопоставления заказов.</p></div>
+            {% endif %}
+        </section>
+    </main>
+</div>
+<script src="{{ url_for('static', filename='js/theme.js') }}"></script>
+<script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
+<script>
+document.querySelectorAll('tr[data-href]').forEach((row) => row.addEventListener('click', (event) => {
+    if (!event.target.closest('a')) window.location.href = row.dataset.href;
+}));
+</script>
+</body>
+</html>

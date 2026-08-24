@@ -16,7 +16,9 @@ jobs:
   tests:
     name: Python 3.10 safety checks
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # The complete Python suite includes real headless-browser regressions and
+    # now exceeds ten minutes on shared runners while completing locally.
+    timeout-minutes: 20
     env:
       CI: "true"
       FLASK_ENV: testing
