@@ -225,7 +225,7 @@ PRODUCTION_SQLITE_VERSION="$(
 printf 'PRODUCTION_SQLITE=%s\n' "$PRODUCTION_SQLITE_VERSION"
 (
     cd "$RELEASE_DIR"
-    "$PYTHON_BIN" -m compileall -q app scripts tests
+    "$PYTHON_BIN" -m compileall -q app scripts
     "$PYTHON_BIN" - <<'PYTHON_CHECK'
 import ast
 from pathlib import Path

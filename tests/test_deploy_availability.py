@@ -88,6 +88,11 @@ class DeployAvailabilityTest(unittest.TestCase):
             script,
         )
 
+    def test_production_python_only_compiles_runtime_sources(self):
+        script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn('"$PYTHON_BIN" -m compileall -q app scripts', script)
+        self.assertNotIn('"$PYTHON_BIN" -m compileall -q app scripts tests', script)
+
 
 if __name__ == "__main__":
     unittest.main()
