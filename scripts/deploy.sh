@@ -43,6 +43,8 @@ readonly PROJECT_DIR="/opt/clock-erp"
 readonly SERVICE_NAME="clock-erp"
 readonly BACKUP_DIR="/opt/clock-erp-backups"
 readonly RETENTION_TOOL="/usr/local/sbin/clock-erp-backup-retention"
+readonly RETENTION_CRON="/etc/cron.d/clock-erp-backup-retention"
+readonly RETENTION_LOGROTATE="/etc/logrotate.d/clock-erp-backup-retention"
 readonly MAX_BACKUP_DISK_USAGE=85
 readonly BITRIX_ENDPOINT_SOURCE="$PROJECT_DIR/bitrix/catalog-export.php"
 readonly BITRIX_ENDPOINT_TARGET="/var/www/admin/data/www/tictactoy.ru/api/catalog-export.php"
@@ -191,6 +193,16 @@ fi
 if [[ "$CURRENT_COMMIT" != "$PREVIOUS_COMMIT" ]]; then
     DEPLOY_UPDATED=1
 fi
+
+install -o root -g root -m 0755 scripts/retain_erp_backups.py "$RETENTION_TOOL"
+install -o root -g root -m 0644 ops/clock-erp-backup-retention.cron "$RETENTION_CRON"
+install -o root -g root -m 0644 \
+    ops/clock-erp-backup-retention.logrotate "$RETENTION_LOGROTATE"
+"$RETENTION_TOOL" \
+    --backup-root "$BACKUP_DIR" \
+    --project-root "$PROJECT_DIR" \
+    --archive-runtime-backups \
+    --apply
 
 if git diff --name-only "$PREVIOUS_COMMIT" "$CURRENT_COMMIT" |
     grep -Eq '^(app/catalog_db\.py|scripts/(migrate_auth_mvp|migrate_inventory_scopes)\.py)$'; then
