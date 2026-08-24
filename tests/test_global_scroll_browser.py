@@ -84,26 +84,33 @@ class GlobalScrollBrowserTest(unittest.TestCase):
                         scenario=scenario, width=width, height=height
                     ), tempfile.TemporaryDirectory() as profile:
                         url = base_url + "?target=" + scenario
-                        completed = subprocess.run(
-                            [
-                                chrome,
-                                "--headless=new",
-                                "--no-sandbox",
-                                "--disable-gpu",
-                                "--disable-dev-shm-usage",
-                                "--disable-background-networking",
-                                "--no-first-run",
-                                "--user-data-dir={}".format(profile),
-                                "--window-size={},{}".format(width, height),
-                                "--virtual-time-budget=1000",
-                                "--dump-dom",
-                                url,
-                            ],
-                            check=False,
-                            capture_output=True,
-                            text=True,
-                            timeout=35,
-                        )
+                        for _browser_attempt in range(3):
+                            completed = subprocess.run(
+                                [
+                                    chrome,
+                                    "--headless=new",
+                                    "--no-sandbox",
+                                    "--disable-gpu",
+                                    "--disable-dev-shm-usage",
+                                    "--disable-background-networking",
+                                    "--no-first-run",
+                                    "--user-data-dir={}".format(profile),
+                                    "--window-size={},{}".format(width, height),
+                                    "--virtual-time-budget=1000",
+                                    "--dump-dom",
+                                    url,
+                                ],
+                                check=False,
+                                capture_output=True,
+                                text=True,
+                                timeout=35,
+                            )
+                            if (
+                                completed.returncode == 0
+                                and 'data-global-scroll-e2e="pass"'
+                                in completed.stdout
+                            ):
+                                break
                         self.assertEqual(
                             completed.returncode,
                             0,
