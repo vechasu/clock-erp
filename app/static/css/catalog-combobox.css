@@ -340,7 +340,7 @@
 }
 
 .product-category-context dt { color: #64748b; }
-.product-category-context dd { margin: 0; color: #111827; overflow-wrap: anywhere; }
+.product-category-context dd { margin: 0; color: #111827; overflow-wrap: break-word; }
 
 .catalog-create-field select {
     width: 100%;
