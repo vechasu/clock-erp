@@ -6347,7 +6347,7 @@
                 '[data-shared-catalog-kind="category"]'
             );
 
-            async function resolveSelection(combobox, emptyLabel) {
+            async function resolveSelection(combobox, kind, emptyLabel) {
                 const idInput = combobox.querySelector(".catalog-combobox-id");
                 const labelInput = combobox.querySelector(
                     ".brand-combobox-hidden"
@@ -6358,10 +6358,36 @@
                 if (selectedId === "0" && selectedLabel === "Без категории") {
                     return {id: 0, name: selectedLabel};
                 }
-                const items = await window.loadSharedCatalogOptions(
-                    combobox,
-                    selectedLabel
+                const parameters = new URLSearchParams({
+                    type: kind,
+                    limit: "200",
+                    q: selectedLabel,
+                });
+                if (kind === "category") {
+                    const brandId = brand.querySelector(
+                        ".catalog-combobox-id"
+                    )?.value || "";
+                    if (brandId) parameters.set("brand_id", brandId);
+                    parameters.set("category_scope", "all");
+                }
+                const response = await fetch(
+                    "/api/v1/catalog/options?" + parameters.toString(),
+                    {
+                        credentials: "same-origin",
+                        headers: {Accept: "application/json"},
+                    }
                 );
+                const payload = await response.json();
+                if (!response.ok) {
+                    throw new Error(
+                        payload?.message
+                        || payload?.error?.message
+                        || "Не удалось проверить справочник."
+                    );
+                }
+                const items = Array.isArray(payload?.data)
+                    ? payload.data
+                    : [];
                 const exactLabel = window.normalizeComboboxSearchValue(
                     selectedLabel
                 );
@@ -6381,6 +6407,7 @@
 
             const brandItem = await resolveSelection(
                 brand,
+                "brand",
                 "Выберите бренд из списка или создайте новый."
             );
             const categoryLabel = category.querySelector(
@@ -6395,6 +6422,7 @@
             }
             await resolveSelection(
                 category,
+                "category",
                 "Выберите категорию из списка или создайте новую."
             );
         }
@@ -9942,9 +9970,12 @@
             }];
             let writes = 0;
             const payloads = [];
-            const waitForSave = async function(form) {
-                for (let attempt = 0; attempt < 50; attempt += 1) {
-                    if (form.dataset.submitting !== "true") return;
+            const waitForSave = async function(form, expectedWrites) {
+                for (let attempt = 0; attempt < 300; attempt += 1) {
+                    if (
+                        writes >= expectedWrites
+                        && form.dataset.submitting !== "true"
+                    ) return;
                     await new Promise(resolve => window.setTimeout(resolve, 10));
                 }
                 throw new Error("save-timeout");
@@ -10013,7 +10044,7 @@
                 stageReplacement();
                 form.requestSubmit();
                 form.requestSubmit();
-                await waitForSave(form);
+                await waitForSave(form, 1);
                 result.replacePayload = writes === 1
                     && payloads[0].action === "replace"
                     && payloads[0].fileId === ""
@@ -10032,7 +10063,7 @@
                 document.getElementById("detailPhotoRemove").click();
                 form.requestSubmit();
                 form.requestSubmit();
-                await waitForSave(form);
+                await waitForSave(form, 2);
                 const row = openButton.closest("tr");
                 result.removePayload = writes === 2
                     && payloads[1].action === "remove"
