@@ -105,6 +105,9 @@
                         role="option"
                         data-brand="{{ option_value|e }}"
                         data-brand-search="{{ option.name|lower|e }}"
+                        {% if shared_catalog_kind and option.id is defined %}
+                            data-catalog-item="{{ option|tojson|forceescape }}"
+                        {% endif %}
                     >
                         <span class="brand-combobox-option-label">
                             {{ option.name }}

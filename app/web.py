@@ -3221,13 +3221,15 @@ def merge_catalog_groups(groups, taxonomy_values):
             group.get("stock_display")
             or format_stock_number(stock_total)
         )
-        merged.setdefault(catalog_label_key(name), {
+        prepared = {
+            **dict(group),
             "name": name,
             "count": count,
             "product_count": count,
             "stock_total": stock_total,
             "stock_display": stock_display,
-        })
+        }
+        merged.setdefault(catalog_label_key(name), prepared)
     for value in taxonomy_values:
         name = str(value or "").strip()
         if name:
@@ -17073,6 +17075,13 @@ def api_product_resource(product_id):
             409,
             {"existing": error.existing},
         )
+    except CatalogReferenceError as error:
+        code = (
+            "CATEGORY_NOT_FOUND"
+            if str(error) == "Категория не найдена."
+            else "PRODUCT_REFERENCE_INVALID"
+        )
+        return api_error(code, str(error), 422)
     except ValueError as error:
         return api_error("PRODUCT_VALIDATION_FAILED", str(error), 422)
     WAREHOUSE_CACHE["items"] = []

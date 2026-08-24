@@ -1677,6 +1677,175 @@
         );
     }
 
+    let catalogCreateModalState = null;
+
+    function catalogCreateModal() {
+        return document.querySelector(
+            "[data-shared-catalog-create-modal]"
+        );
+    }
+
+    function closeCatalogCreateModal(restoreFocus) {
+        const modal = catalogCreateModal();
+        const returnFocus = catalogCreateModalState?.combobox?.querySelector(
+            ".brand-combobox-trigger"
+        );
+
+        if (!modal) return;
+        modal.hidden = true;
+        modal.querySelector("[data-catalog-create-form]")
+            ?.removeAttribute("aria-busy");
+        catalogCreateModalState = null;
+        if (restoreFocus !== false) returnFocus?.focus();
+    }
+
+    function openCatalogCreateModal(action, combobox, scope, kind, name) {
+        const modal = catalogCreateModal();
+
+        if (!modal) return false;
+        const brandLabel = sharedCatalogCombobox(scope, "brand")
+            ?.dataset.sharedCatalogSelectedLabel || "";
+        const labels = {
+            brand: ["Новый бренд", "Бренд сохранится в едином справочнике ERP."],
+            category: [
+                "Новая категория",
+                brandLabel
+                    ? "Бренд: " + brandLabel
+                    : "Категория сохранится в едином справочнике ERP.",
+            ],
+        };
+        if (!labels[kind]) return false;
+
+        catalogCreateModalState = {action, combobox, scope, kind};
+        modal.querySelector("[data-catalog-create-title]").textContent =
+            labels[kind][0];
+        modal.querySelector("[data-catalog-create-description]").textContent =
+            labels[kind][1];
+        const nameInput = modal.querySelector("[data-catalog-create-name]");
+        const error = modal.querySelector("[data-catalog-create-error]");
+        nameInput.value = name;
+        error.textContent = "";
+        modal.hidden = false;
+        window.setBrandDropdownOpen(combobox, false);
+        window.requestAnimationFrame(function() {
+            nameInput.focus();
+            nameInput.select();
+        });
+        return true;
+    }
+
+    async function createSharedCatalogValue(
+        action,
+        combobox,
+        scope,
+        kind,
+        rawName
+    ) {
+        const name = String(rawName || "").replace(/\s+/g, " ").trim();
+        if (!name) throw new Error("Введите название.");
+        const brandId = selectedSharedCatalogId(
+            sharedCatalogCombobox(scope, "brand")
+        );
+        const categoryId = selectedSharedCatalogId(
+            sharedCatalogCombobox(scope, "category")
+        );
+        if (kind === "category" && brandId === "") {
+            throw new Error("Сначала выберите бренд.");
+        }
+        const paths = {
+            brand: "/api/v1/brands",
+            category: "/api/v1/categories",
+            product: "/api/v1/products",
+        };
+        const payload = kind === "brand"
+            ? {name}
+            : kind === "category"
+                ? {name, brand_id: Number(brandId)}
+                : {
+                    name,
+                    article: "",
+                    brand_id: Number(brandId),
+                    category_id: Number(categoryId),
+                    brand: "",
+                    category: "",
+                    cell: "",
+                    stock: 0,
+                    product_image: null,
+                };
+        const empty = combobox.querySelector("[data-brand-empty]");
+
+        if (action) {
+            action.disabled = true;
+            action.textContent = "Создаём…";
+        }
+        setSharedCatalogLoading(combobox, true);
+
+        try {
+            const response = await fetch(paths[kind], {
+                method: "POST",
+                credentials: "same-origin",
+                headers: {
+                    Accept: "application/json",
+                    "Content-Type": "application/json",
+                    "X-CSRF-Token": catalogCsrfToken(scope),
+                },
+                body: JSON.stringify(payload),
+            });
+            const result = await response.json();
+            const existing = response.status === 409
+                ? result?.fields?.existing
+                : null;
+            if (!response.ok && !existing) {
+                throw new Error(
+                    result?.message
+                    || result?.error?.message
+                    || "Не удалось сохранить значение"
+                );
+            }
+            const item = existing || result.data;
+            const created = !existing && result?.meta?.created !== false;
+
+            if (kind === "brand" || kind === "category") {
+                combobox.dataset.catalogInlineCreating = "true";
+            }
+            try {
+                window.setSharedCatalogComboboxValue(combobox, item);
+            } finally {
+                delete combobox.dataset.catalogInlineCreating;
+            }
+            combobox.dataset.sharedCatalogNewValue = created ? "true" : "false";
+            combobox.dispatchEvent(
+                new CustomEvent("shared-catalog:created", {
+                    bubbles: true,
+                    detail: {
+                        kind,
+                        item,
+                        created,
+                        reactivated: result?.meta?.reactivated === true,
+                    },
+                })
+            );
+            const search = combobox.querySelector(".brand-combobox-search");
+            if (search) search.value = "";
+            await window.loadSharedCatalogOptions(combobox, "");
+            window.setBrandDropdownOpen(combobox, false);
+            return item;
+        } catch (error) {
+            if (empty) {
+                empty.textContent = error.message
+                    || "Не удалось сохранить значение";
+                empty.hidden = false;
+            }
+            throw error;
+        } finally {
+            setSharedCatalogLoading(combobox, false);
+            window.updateCatalogCreateAction(
+                combobox,
+                combobox.querySelector(".brand-combobox-search")?.value || ""
+            );
+        }
+    }
+
     function initializeSharedCatalogInlineCreation() {
         if (document.documentElement.dataset.catalogInlineCreateBound === "1") {
             return;
@@ -1706,6 +1875,14 @@
             }
 
             event.preventDefault();
+            if (
+                (kind === "brand" || kind === "category")
+                && openCatalogCreateModal(
+                    action, combobox, scope, kind, name
+                )
+            ) {
+                return;
+            }
             if (!name) {
                 const search = combobox.querySelector(
                     ".brand-combobox-search"
@@ -1713,126 +1890,82 @@
                 search?.focus();
                 return;
             }
-            const brandId = selectedSharedCatalogId(
-                sharedCatalogCombobox(scope, "brand")
-            );
-            const categoryId = selectedSharedCatalogId(
-                sharedCatalogCombobox(scope, "category")
-            );
-            const paths = {
-                brand: "/api/v1/brands",
-                category: "/api/v1/categories",
-                product: "/api/v1/products",
-            };
-            const payload = kind === "brand"
-                ? {name}
-                : kind === "category"
-                    ? {name, brand_id: Number(brandId)}
-                    : {
-                        name,
-                        article: "",
-                        brand_id: Number(brandId),
-                        category_id: Number(categoryId),
-                        brand: "",
-                        category: "",
-                        cell: "",
-                        stock: 0,
-                        product_image: null,
-                    };
-            const empty = combobox.querySelector(
-                "[data-brand-empty]"
-            );
-
-            action.disabled = true;
-            action.textContent = "Создаём…";
-            setSharedCatalogLoading(combobox, true);
-
             try {
-                const response = await fetch(paths[kind], {
-                    method: "POST",
-                    credentials: "same-origin",
-                    headers: {
-                        Accept: "application/json",
-                        "Content-Type": "application/json",
-                        "X-CSRF-Token": catalogCsrfToken(scope),
-                    },
-                    body: JSON.stringify(payload),
+                await createSharedCatalogValue(
+                    action, combobox, scope, kind, name
+                );
+            } catch (_error) {}
+        });
+
+        const modal = catalogCreateModal();
+        const modalForm = modal?.querySelector("[data-catalog-create-form]");
+        modal?.querySelectorAll(
+            "[data-catalog-create-close], [data-catalog-create-cancel]"
+        ).forEach(function(button) {
+            button.addEventListener("click", function() {
+                closeCatalogCreateModal(true);
+            });
+        });
+        modal?.addEventListener("keydown", function(event) {
+            if (event.key === "Escape") {
+                event.preventDefault();
+                closeCatalogCreateModal(true);
+                return;
+            }
+            if (event.key === "Tab") {
+                const focusable = Array.from(modal.querySelectorAll(
+                    "button:not([disabled]), input:not([disabled])"
+                )).filter(function(element) {
+                    return !element.closest("[hidden]");
                 });
-                const result = await response.json();
-
-                if (
-                    response.status === 409
-                    && result?.fields?.existing
-                    && (kind === "brand" || kind === "category")
-                ) {
-                    combobox.dataset.catalogInlineCreating = "true";
-                    try {
-                        window.setSharedCatalogComboboxValue(
-                            combobox,
-                            result.fields.existing
-                        );
-                    } finally {
-                        delete combobox.dataset.catalogInlineCreating;
-                    }
-                    window.setBrandDropdownOpen(combobox, false);
-                    return;
-                }
-
-                if (!response.ok) {
-                    throw new Error(
-                        result?.message
-                        || result?.error?.message
-                        || "Не удалось сохранить значение"
-                    );
-                }
-
-                if (kind === "brand" || kind === "category") {
-                    combobox.dataset.catalogInlineCreating = "true";
-                }
-                try {
-                    window.setSharedCatalogComboboxValue(
-                        combobox,
-                        result.data
-                    );
-                } finally {
-                    delete combobox.dataset.catalogInlineCreating;
-                }
-                combobox.dataset.sharedCatalogNewValue =
-                    result?.meta?.created === false ? "false" : "true";
-                combobox.dispatchEvent(
-                    new CustomEvent("shared-catalog:created", {
-                        bubbles: true,
-                        detail: {
-                            kind,
-                            item: result.data,
-                            created: result?.meta?.created !== false,
-                            reactivated: result?.meta?.reactivated === true,
-                        },
-                    })
+                if (!focusable.length) return;
+                const current = focusable.indexOf(document.activeElement);
+                const next = event.shiftKey
+                    ? (current <= 0 ? focusable.length - 1 : current - 1)
+                    : (current >= focusable.length - 1 ? 0 : current + 1);
+                event.preventDefault();
+                focusable[next].focus();
+            }
+        });
+        modal?.addEventListener("click", function(event) {
+            if (event.target === modal) closeCatalogCreateModal(true);
+        });
+        modalForm?.addEventListener("submit", async function(event) {
+            event.preventDefault();
+            if (!catalogCreateModalState || modalForm.dataset.submitting === "1") {
+                return;
+            }
+            const state = catalogCreateModalState;
+            const name = modalForm.querySelector(
+                "[data-catalog-create-name]"
+            ).value;
+            const error = modalForm.querySelector(
+                "[data-catalog-create-error]"
+            );
+            const submit = modalForm.querySelector(
+                "[data-catalog-create-submit]"
+            );
+            modalForm.dataset.submitting = "1";
+            modalForm.setAttribute("aria-busy", "true");
+            submit.disabled = true;
+            error.textContent = "";
+            try {
+                await createSharedCatalogValue(
+                    state.action,
+                    state.combobox,
+                    state.scope,
+                    state.kind,
+                    name
                 );
-                const search = combobox.querySelector(
-                    ".brand-combobox-search"
-                );
-
-                if (search) {
-                    search.value = "";
-                }
-                await window.loadSharedCatalogOptions(combobox, "");
-                window.setBrandDropdownOpen(combobox, false);
-            } catch (error) {
-                if (empty) {
-                    empty.textContent = error.message
-                        || "Не удалось сохранить значение";
-                    empty.hidden = false;
-                }
+                closeCatalogCreateModal(false);
+                state.combobox.querySelector(".brand-combobox-trigger")?.focus();
+            } catch (createError) {
+                error.textContent = createError.message
+                    || "Не удалось сохранить значение";
             } finally {
-                setSharedCatalogLoading(combobox, false);
-                window.updateCatalogCreateAction(
-                    combobox,
-                    combobox.querySelector(
-                        ".brand-combobox-search"
-                    )?.value || ""
-                );
+                delete modalForm.dataset.submitting;
+                modalForm.removeAttribute("aria-busy");
+                submit.disabled = false;
             }
         });
     }

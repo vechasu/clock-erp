@@ -17,8 +17,10 @@ class ProductsFilterPresentationTest(unittest.TestCase):
         self.assertIn('"brand",\n                [],', brand_call)
         self.assertIn('shared_catalog_kind="brand"', brand_call)
         self.assertIn('search_placeholder="Поиск бренда..."', brand_call)
-        self.assertIn("v='products-filter-20260823'", template)
-        self.assertIn("v='catalog-combobox-20260823-products-filter'", template)
+        self.assertIn(
+            "v='catalog-combobox-20260824-product-hierarchy'",
+            template,
+        )
 
     def test_children_stay_rendered_and_disabled_until_parent_selection(self):
         template = (ROOT / "app/templates/warehouse.html").read_text(
