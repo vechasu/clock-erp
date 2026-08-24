@@ -3,6 +3,7 @@
 
 import argparse
 import json
+import shutil
 import sqlite3
 import sys
 from datetime import datetime, timezone
@@ -57,12 +58,23 @@ def backup_database(path, backup_dir):
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
     target = backup_dir / "orders-before-customers-{}.db".format(stamp)
     source = sqlite3.connect(str(path))
-    destination = sqlite3.connect(str(target))
     try:
-        source.backup(destination)
+        backup_method = getattr(source, "backup", None)
+        if backup_method is not None:
+            destination = sqlite3.connect(str(target))
+            try:
+                backup_method(destination)
+            finally:
+                destination.close()
+        else:
+            # Python 3.6 does not expose Connection.backup(). The deploy flow
+            # stops the service before --apply; checkpoint any WAL pages before
+            # making the byte-for-byte fallback copy.
+            source.execute("PRAGMA wal_checkpoint(FULL)").fetchall()
     finally:
-        destination.close()
         source.close()
+    if not target.exists():
+        shutil.copy2(str(path), str(target))
     target.chmod(0o600)
     return target
 
