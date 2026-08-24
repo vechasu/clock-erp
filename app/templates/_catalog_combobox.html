@@ -1,4 +1,4 @@
-{% macro render_catalog_combobox(component_id, input_name, options, selected_value="", include_all=false, item_label="значение", all_label="Все", disabled=false, prefix_search=true, empty_label="Ничего не найдено", component_class="", clear_selection_on_search_clear=false, input_id="", search_enabled=true, form_id="", action_kind="", action_label="", all_count=none, shared_catalog_kind="", selected_id="", id_input_name="", selected_label="", selected_item=none, search_placeholder="") %}
+{% macro render_catalog_combobox(component_id, input_name, options, selected_value="", include_all=false, item_label="значение", all_label="Все", disabled=false, prefix_search=true, empty_label="Ничего не найдено", component_class="", clear_selection_on_search_clear=false, input_id="", search_enabled=true, form_id="", action_kind="", action_label="", all_count=none, shared_catalog_kind="", selected_id="", id_input_name="", selected_label="", selected_item=none, search_placeholder="", floating_layer=false, dropdown_max_height=340) %}
     <div
         id="{{ component_id }}"
         class="brand-combobox{% if component_class %} {{ component_class }}{% endif %}"
@@ -13,6 +13,8 @@
         data-search-enabled="{{ 'true' if search_enabled else 'false' }}"
         data-clear-selection-on-search-clear="{{ 'true' if clear_selection_on_search_clear else 'false' }}"
         data-all-label="{{ all_label if include_all else 'Выберите ' ~ item_label }}"
+        data-dropdown-max-height="{{ dropdown_max_height }}"
+        {% if floating_layer %}data-floating-layer="viewport"{% endif %}
     >
         <input
             {% if input_id %}id="{{ input_id }}"{% endif %}
@@ -40,6 +42,7 @@
             role="combobox"
             aria-haspopup="listbox"
             aria-expanded="false"
+            aria-controls="{{ component_id }}Listbox"
             aria-label="Выберите {{ item_label }}"
             {% if disabled %}disabled{% endif %}
         >
@@ -59,6 +62,8 @@
                     type="text"
                     placeholder="{{ search_placeholder or 'Поиск: ' ~ item_label }}"
                     aria-label="{{ search_placeholder or 'Поиск: ' ~ item_label }}"
+                    aria-controls="{{ component_id }}Listbox"
+                    aria-autocomplete="list"
                     autocomplete="off"
                 >
                 <button
@@ -69,12 +74,19 @@
                     hidden
                 >×</button>
             </div>
-            <div class="brand-combobox-options" role="listbox">
+            <div
+                id="{{ component_id }}Listbox"
+                class="brand-combobox-options"
+                role="listbox"
+                aria-label="Варианты: {{ item_label }}"
+            >
                 {% if action_kind and action_label %}
                     <button
                         class="catalog-combobox-action"
                         type="button"
                         role="option"
+                        tabindex="-1"
+                        aria-selected="false"
                         data-catalog-create-action="{{ action_kind }}"
                         data-catalog-create-label="{{ action_label }}"
                         hidden
@@ -87,6 +99,8 @@
                         class="brand-combobox-option{% if not selected_value %} active{% endif %}"
                         type="button"
                         role="option"
+                        tabindex="-1"
+                        aria-selected="{{ 'true' if not selected_value else 'false' }}"
                         data-brand=""
                         data-brand-search="{{ all_label|lower|e }}"
                     >
@@ -103,6 +117,8 @@
                         class="brand-combobox-option{% if selected_value == option_value %} active{% endif %}"
                         type="button"
                         role="option"
+                        tabindex="-1"
+                        aria-selected="{{ 'true' if selected_value == option_value else 'false' }}"
                         data-brand="{{ option_value|e }}"
                         data-brand-search="{{ option.name|lower|e }}"
                         {% if shared_catalog_kind and option.id is defined %}

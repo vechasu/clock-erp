@@ -44,9 +44,16 @@
         const roomBelow = bottomBoundary - triggerRect.bottom - gap;
         const roomAbove = triggerRect.top - topBoundary - gap;
         const openAbove = roomBelow < 220 && roomAbove > roomBelow;
+        const configuredMaxHeight = Number.parseInt(
+            combobox.dataset.dropdownMaxHeight || "340",
+            10
+        );
+        const listMaxHeight = Number.isFinite(configuredMaxHeight)
+            ? Math.min(340, Math.max(160, configuredMaxHeight))
+            : 340;
         const availableHeight = Math.max(
             150,
-            Math.min(410, openAbove ? roomAbove : roomBelow)
+            Math.min(listMaxHeight + 70, openAbove ? roomAbove : roomBelow)
         );
 
         dropdown.classList.add("is-viewport-positioned");
@@ -65,7 +72,7 @@
             );
             options.style.maxHeight = Math.max(
                 88,
-                Math.min(340, availableHeight - dropdownChrome)
+                Math.min(listMaxHeight, availableHeight - dropdownChrome)
             ) + "px";
         }
 
@@ -137,6 +144,18 @@
                 "aria-expanded",
                 isOpen ? "true" : "false"
             );
+            if (!isOpen) {
+                trigger.removeAttribute("aria-activedescendant");
+            }
+        }
+
+        if (!isOpen) {
+            combobox.querySelector(".brand-combobox-search")
+                ?.removeAttribute("aria-activedescendant");
+            combobox.querySelectorAll(".is-keyboard-active")
+                .forEach(function(option) {
+                    option.classList.remove("is-keyboard-active");
+                });
         }
 
         if (
@@ -163,6 +182,26 @@
         document.querySelectorAll("[data-brand-combobox].open")
             .forEach(positionComboboxDropdown);
     }, true);
+
+    if (typeof ResizeObserver === "function") {
+        const triggerResizeObserver = new ResizeObserver(function(entries) {
+            entries.forEach(function(entry) {
+                const combobox = entry.target.closest(
+                    "[data-brand-combobox]"
+                );
+                if (combobox?.classList.contains("open")) {
+                    positionComboboxDropdown(combobox);
+                }
+            });
+        });
+        document.addEventListener("DOMContentLoaded", function() {
+            document.querySelectorAll(
+                "[data-brand-combobox] .brand-combobox-trigger"
+            ).forEach(function(trigger) {
+                triggerResizeObserver.observe(trigger);
+            });
+        });
+    }
 
     window.toggleBrandDropdown = function(event, combobox) {
         if (event) {
@@ -411,6 +450,12 @@
                     "active",
                     (option.dataset.brand || "") === value
                 );
+                option.setAttribute(
+                    "aria-selected",
+                    (option.dataset.brand || "") === value
+                        ? "true"
+                        : "false"
+                );
             });
 
         if (previousValue !== value) {
@@ -511,6 +556,12 @@
                 button.className = "brand-combobox-option";
                 button.type = "button";
                 button.setAttribute("role", "option");
+                button.setAttribute("tabindex", "-1");
+                button.setAttribute("aria-selected", "false");
+                button.id = combobox.id
+                    ? combobox.id + "Option" + optionsElement.children.length
+                    : "catalogComboboxOption" + Math.random()
+                        .toString(36).slice(2);
                 button.dataset.brand = option.value || "";
                 button.dataset.brandSearch =
                     option.searchText || option.label || "";
@@ -635,6 +686,21 @@
                 }
 
                 searchInput.dataset.searchBound = "1";
+                combobox.querySelectorAll(
+                    ".brand-combobox-option"
+                ).forEach(function(option, index) {
+                    option.setAttribute("tabindex", "-1");
+                    option.setAttribute(
+                        "aria-selected",
+                        option.classList.contains("active")
+                            ? "true"
+                            : "false"
+                    );
+                    if (!option.id) {
+                        option.id = (combobox.id || "catalogCombobox")
+                            + "Option" + index;
+                    }
+                });
                 trigger.addEventListener("click", function(event) {
                     window.toggleBrandDropdown(event, combobox);
 
@@ -647,6 +713,26 @@
                             combobox,
                             searchInput.value
                         );
+                    }
+                });
+                trigger.addEventListener("keydown", function(event) {
+                    if (
+                        event.key === "ArrowDown"
+                        || event.key === "ArrowUp"
+                        || event.key === "Home"
+                        || event.key === "End"
+                    ) {
+                        event.preventDefault();
+                        window.setBrandDropdownOpen(combobox, true);
+                        window.setTimeout(function() {
+                            searchInput.focus();
+                            searchInput.dispatchEvent(new KeyboardEvent(
+                                "keydown",
+                                {key: event.key, bubbles: true}
+                            ));
+                        }, 25);
+                    } else if (event.key === "Escape") {
+                        window.setBrandDropdownOpen(combobox, false);
                     }
                 });
                 searchInput.addEventListener("input", function() {
@@ -783,10 +869,39 @@
                                     .classList.add(
                                         "is-keyboard-active"
                                     );
+                                searchInput.setAttribute(
+                                    "aria-activedescendant",
+                                    visibleOptions[nextIndex].id
+                                );
                                 visibleOptions[nextIndex]
                                     .scrollIntoView({
                                         block: "nearest",
                                     });
+                            }
+                        } else if (
+                            event.key === "Home"
+                            || event.key === "End"
+                        ) {
+                            event.preventDefault();
+                            const nextIndex = event.key === "Home"
+                                ? 0
+                                : visibleOptions.length - 1;
+                            if (nextIndex >= 0) {
+                                visibleOptions.forEach(function(option) {
+                                    option.classList.remove(
+                                        "is-keyboard-active"
+                                    );
+                                });
+                                visibleOptions[nextIndex].classList.add(
+                                    "is-keyboard-active"
+                                );
+                                searchInput.setAttribute(
+                                    "aria-activedescendant",
+                                    visibleOptions[nextIndex].id
+                                );
+                                visibleOptions[nextIndex].scrollIntoView({
+                                    block: "nearest",
+                                });
                             }
                         } else if (event.key === "Enter") {
                             const activeOption =
@@ -840,6 +955,15 @@
                         combobox,
                         false
                     );
+                }
+            });
+    });
+
+    document.addEventListener("focusin", function(event) {
+        document.querySelectorAll("[data-brand-combobox].open")
+            .forEach(function(combobox) {
+                if (!combobox.contains(event.target)) {
+                    window.setBrandDropdownOpen(combobox, false);
                 }
             });
     });
@@ -1349,8 +1473,14 @@
         const emptyMessage = combobox?.querySelector(
             "[data-brand-empty]"
         );
+        const options = combobox?.querySelector(
+            ".brand-combobox-options"
+        );
 
         combobox?.classList.toggle("is-loading", loading);
+        if (options) {
+            options.setAttribute("aria-busy", loading ? "true" : "false");
+        }
 
         if (emptyMessage && loading) {
             emptyMessage.textContent = "Загрузка…";
