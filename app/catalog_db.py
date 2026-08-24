@@ -1111,8 +1111,7 @@ class CatalogDatabase:
         )
         connection.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_erp_order_comments_external "
-            "ON erp_order_comments(external_system, external_id) "
-            "WHERE external_system IS NOT NULL AND external_id IS NOT NULL"
+            "ON erp_order_comments(external_system, external_id)"
         )
         connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_erp_order_comments_sync "
