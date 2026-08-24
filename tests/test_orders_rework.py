@@ -106,7 +106,8 @@ class OrdersReworkTest(unittest.TestCase):
             / "app/static/css/orders.css"
         ).read_text(encoding="utf-8")
         self.assertIn("@media (max-width:780px)", styles)
-        self.assertIn("Свернуть список", html)
+        self.assertNotIn("Свернуть список", html)
+        self.assertNotIn("data-collapse-list", html)
         self.assertIn('data-has-selected-order="1"', html)
         self.assertNotIn("window.confirm", html)
         self.assertNotIn("orderStatusConfirm", html)

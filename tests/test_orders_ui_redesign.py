@@ -115,12 +115,26 @@ class OrdersUiRedesignTest(unittest.TestCase):
         self.assertIn('class="field field-search erp-search-input"', filters)
         self.assertIn('class="filter-selects"', filters)
         self.assertEqual(filters.count("data-auto-submit-filter"), 3)
+        self.assertEqual(filters.count('<select class="field"'), 3)
         self.assertIn('name="source"', filters)
+        self.assertIn('name="status"', filters)
+        self.assertIn('name="period"', filters)
+        self.assertNotIn("Свернуть список", filters)
+        self.assertNotIn("data-collapse-list", self.source)
         self.assertNotIn(">Найти<", filters)
         self.assertIn("url_for('orders_page')", filters)
         self.assertIn("loadOrdersResults(ordersFilterUrl())", self.source)
         self.assertIn("event.key==='Enter'", self.source)
         self.assertIn("ordersSearchController?.abort()", self.source)
+
+        styles = (
+            Path(__file__).resolve().parents[1]
+            / "app/static/css/orders.css"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "grid-template-columns:repeat(3,minmax(0,1fr))", styles
+        )
+        self.assertIn("@media (max-width: 960px)", styles)
 
     def test_shared_erp_foundation_kpis_and_order_context_are_rendered(self):
         html = self.render_selected_order()
