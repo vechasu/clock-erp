@@ -48,6 +48,7 @@ readonly BITRIX_ENDPOINT_SOURCE="$PROJECT_DIR/bitrix/catalog-export.php"
 readonly BITRIX_ENDPOINT_TARGET="/var/www/admin/data/www/tictactoy.ru/api/catalog-export.php"
 SERVICE_STOPPED=0
 DATABASE_MIGRATION_REQUIRED=0
+CUSTOMER_MIGRATION_REQUIRED=0
 readonly HEALTHCHECK_URLS=(
     "http://127.0.0.1:5000/register"
     "http://127.0.0.1:5000/login"
@@ -196,6 +197,11 @@ if git diff --name-only "$PREVIOUS_COMMIT" "$CURRENT_COMMIT" |
     DATABASE_MIGRATION_REQUIRED=1
 fi
 
+if git diff --name-only "$PREVIOUS_COMMIT" "$CURRENT_COMMIT" |
+    grep -Eq '^(app/services/(customer_identity|orders_snapshot)\.py|scripts/migrate_customers\.py)$'; then
+    CUSTOMER_MIGRATION_REQUIRED=1
+fi
+
 if [[ -x venv/bin/python ]]; then
     PYTHON_BIN="venv/bin/python"
 else
@@ -225,6 +231,10 @@ print(
     f"{len(template_files)} templates"
 )
 PYTHON_CHECK
+
+if [[ "$CUSTOMER_MIGRATION_REQUIRED" == "1" && -f instance/orders.db ]]; then
+    "$PYTHON_BIN" scripts/migrate_customers.py --database instance/orders.db
+fi
 
 if [[ -f "$BITRIX_ENDPOINT_SOURCE" && -f "$BITRIX_ENDPOINT_TARGET" ]]; then
     /opt/php81/bin/php -l "$BITRIX_ENDPOINT_SOURCE" >/dev/null
@@ -281,6 +291,18 @@ if [[ "$DATABASE_MIGRATION_REQUIRED" == "1" && -f instance/auth.db ]]; then
     "$PYTHON_BIN" scripts/migrate_auth_mvp.py \
         --database instance/auth.db \
         --backup-dir "$BACKUP_DIR/auth-migrations" \
+        --apply
+fi
+
+if [[ "$CUSTOMER_MIGRATION_REQUIRED" == "1" && -f instance/orders.db ]]; then
+    check_backup_disk_usage
+    if [[ "$SERVICE_STOPPED" != "1" ]]; then
+        systemctl stop "$SERVICE_NAME"
+        SERVICE_STOPPED=1
+    fi
+    "$PYTHON_BIN" scripts/migrate_customers.py \
+        --database instance/orders.db \
+        --backup-dir "$BACKUP_DIR/customer-migrations" \
         --apply
 fi
 

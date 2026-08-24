@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Vechasu ERP — {{ customer.name or 'Клиент' }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/themes.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/erp-components.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/customers.css') }}">
+</head>
+<body class="customers-page">
+{% from "_pagination.html" import render_erp_pagination %}
+{% macro order_status(order) -%}
+    {% set code = (order.status or '')|upper %}
+    <span class="customer-badge customer-badge-{{ 'new' if code == 'N' else 'work' if code == 'A' else 'done' if code == 'D' else 'default' }}">{{ order.status_name or ('Не подтверждён' if code == 'N' else 'Подтверждён' if code == 'A' else 'Собран' if code == 'D' else code or 'Неизвестно') }}</span>
+{%- endmacro %}
+{% macro orders_table(orders) -%}
+    {% if orders %}
+    <div class="customer-table-wrap"><table class="customer-table"><thead><tr><th>Номер</th><th>Дата</th><th>Источник</th><th>Статус</th><th>Сумма</th></tr></thead><tbody>
+    {% for order in orders %}
+        {% set is_wb = order.source == 'wildberries' %}
+        {% set order_id = order.wb_order_id if is_wb else (order.id or order.ID) %}
+        <tr><td><a class="customer-name" href="{{ url_for('wildberries_order_page', wb_order_id=order_id) if is_wb else url_for('order_page', order_id=order_id) }}">№{{ order.number or order_id }}</a></td><td>{{ (order.created_at or order.date or '')[:10] or '—' }}</td><td>{{ order.source_name or ('Wildberries' if is_wb else 'Tictactoy') }}</td><td>{{ order_status(order) }}</td><td>{% if order.order_total is not none %}{{ '%.2f'|format(order.order_total) }} ₽{% elif order.price is not none %}{{ '%.2f'|format(order.price) }} ₽{% else %}—{% endif %}</td></tr>
+    {% endfor %}
+    </tbody></table></div>
+    {% else %}<div class="customer-empty"><h2>Заказов пока нет</h2></div>{% endif %}
+{%- endmacro %}
+<div class="app">
+    {% include "_sidebar.html" %}
+    <main class="main" id="main-content" tabindex="-1">
+        <nav class="customer-breadcrumbs" aria-label="Хлебные крошки"><a href="{{ url_for('customers_page') }}">Клиенты</a><span>›</span><span>{{ customer.name or 'Без имени' }}</span></nav>
+        <header class="erp-workspace-header customer-detail-head">
+            <div class="erp-workspace-heading"><h1>{{ customer.name or 'Без имени' }}</h1><p>Карточка клиента</p></div>
+        </header>
+        <section class="customer-facts" aria-label="Контактные данные">
+            <div><span>Телефон</span><strong>{% if customer.phone %}<a href="tel:{{ customer.phone }}">{{ customer.phone }}</a>{% else %}—{% endif %}</strong></div>
+            <div><span>Email</span><strong>{% if customer.email %}<a href="mailto:{{ customer.email }}">{{ customer.email }}</a>{% else %}—{% endif %}</strong></div>
+            <div><span>Страна</span><strong>{{ customer.country or '—' }}</strong></div>
+            <div><span>Регион</span><strong>{{ customer.region or '—' }}</strong></div>
+            <div><span>Город</span><strong>{{ customer.city or '—' }}</strong></div>
+        </section>
+        <section class="customer-metrics" aria-label="Показатели клиента">
+            <div><span>Заказов</span><strong>{{ customer.orders_count }}</strong></div>
+            <div><span>Первый заказ</span><strong>{{ customer.first_order_at[:10] if customer.first_order_at else '—' }}</strong></div>
+            <div><span>Последний заказ</span><strong>{{ customer.last_order_at[:10] if customer.last_order_at else '—' }}</strong></div>
+        </section>
+        <nav class="customer-tabs" aria-label="Разделы карточки клиента">
+            <a class="{{ 'active' if tab == 'overview' else '' }}" href="{{ url_for('customer_detail_page', customer_id=customer.id) }}">Обзор</a>
+            <a class="{{ 'active' if tab == 'orders' else '' }}" href="{{ url_for('customer_detail_page', customer_id=customer.id, tab='orders') }}">Заказы</a>
+        </nav>
+        <section class="customer-panel customer-detail-panel">
+            {% if tab == 'overview' %}<div class="customer-section-head"><div><h2>Последние заказы</h2><p>Недавняя история заказов клиента</p></div>{% if customer.orders_count %}<a href="{{ url_for('customer_detail_page', customer_id=customer.id, tab='orders') }}">Все заказы</a>{% endif %}</div>{% endif %}
+            {{ orders_table(customer_orders) }}
+            {% if pagination %}{{ render_erp_pagination(pagination, "Страницы заказов клиента") }}{% endif %}
+        </section>
+    </main>
+</div>
+<script src="{{ url_for('static', filename='js/theme.js') }}"></script>
+<script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
+</body>
+</html>

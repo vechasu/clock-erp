@@ -59,6 +59,7 @@ from app.services.orders_snapshot import (
     OrdersSnapshotStore,
     order_item_units,
 )
+from app.services.customer_identity import CustomerStore, CUSTOMER_PAGE_SIZES
 from app.services.wildberries_orders import synchronize_wildberries_orders
 from app.services.brand_values import normalize_brand
 from app.services.catalog_reader import CatalogReader
@@ -1138,6 +1139,73 @@ def orders_list_api():
     })
 
 
+def customer_store():
+    return CustomerStore(OrdersSnapshotStore())
+
+
+@app.get("/app/customers")
+def customers_page():
+    query = str(request.args.get("q") or "").strip()
+    try:
+        result = customer_store().list(
+            query=query,
+            page=request.args.get("page", 1),
+            per_page=request.args.get("per_page", 20),
+        )
+    except sqlite3.Error:
+        app.logger.exception("Customer list could not be loaded")
+        return render_template(
+            "customers.html", customers=[], customers_total=0, query=query,
+            pagination=None, data_error=True,
+        ), 503
+    pagination = build_erp_pagination(
+        "customers_page", result["total"], result["page"], result["per_page"],
+        per_page_options=CUSTOMER_PAGE_SIZES,
+    )
+    return render_template(
+        "customers.html", customers=result["rows"], customers_total=result["total"],
+        query=query, pagination=pagination,
+    )
+
+
+@app.get("/app/customers/<int:customer_id>")
+def customer_detail_page(customer_id):
+    try:
+        store = customer_store()
+        customer = store.get(customer_id)
+    except sqlite3.Error:
+        app.logger.exception("Customer card could not be loaded customer_id=%s", customer_id)
+        return render_template(
+            "customers.html", customers=[], customers_total=0, query="",
+            pagination=None, data_error=True,
+        ), 503
+    if customer is None:
+        abort(404)
+    tab = "orders" if request.args.get("tab") == "orders" else "overview"
+    per_page = request.args.get("per_page", 20) if tab == "orders" else 20
+    try:
+        orders = store.orders(
+            customer_id, page=request.args.get("page", 1), per_page=per_page
+        )
+    except sqlite3.Error:
+        app.logger.exception("Customer orders could not be loaded customer_id=%s", customer_id)
+        return render_template(
+            "customers.html", customers=[], customers_total=0, query="",
+            pagination=None, data_error=True,
+        ), 503
+    pagination = None
+    if tab == "orders":
+        pagination = build_erp_pagination(
+            "customer_detail_page", orders["total"], orders["page"], orders["per_page"],
+            per_page_options=CUSTOMER_PAGE_SIZES, customer_id=customer_id,
+        )
+    return render_template(
+        "customer_detail.html", customer=customer, tab=tab,
+        customer_orders=orders["rows"] if tab == "orders" else orders["rows"][:5],
+        pagination=pagination,
+    )
+
+
 @app.post("/api/orders/wildberries/sync")
 def wildberries_orders_sync_api():
     require_csrf_when_authenticated()
@@ -1354,6 +1422,7 @@ def render_orders_page(
         order_kpis=list_state["kpis"],
         sync_error=detail_error or ORDERS_CACHE.get("error", ""),
         last_sync_at=ORDERS_CACHE.get("loaded_at") or None,
+        selected_customer_id=(selected_order or {}).get("customer_id"),
     )
 
 
@@ -1906,6 +1975,9 @@ def order_page(order_id):
     try:
         full_order = get_order(order_id)
         if full_order:
+            snapshot_order = OrdersSnapshotStore().get(order_id)
+            if snapshot_order and snapshot_order.get("customer_id"):
+                full_order["customer_id"] = snapshot_order["customer_id"]
             selected_order = full_order
     except BitrixReadOnlyError as error:
         detail_error = type(error).__name__
@@ -3389,7 +3461,8 @@ def parse_erp_pagination():
     return page, per_page
 
 
-def build_erp_pagination(endpoint, total, page, per_page):
+def build_erp_pagination(endpoint, total, page, per_page, per_page_options=None, **endpoint_args):
+    per_page_options = tuple(per_page_options or ERP_PER_PAGE_OPTIONS)
     pages = max(1, (total + per_page - 1) // per_page)
     page = min(max(1, page), pages)
     arguments = request.args.to_dict(flat=True)
@@ -3398,6 +3471,7 @@ def build_erp_pagination(endpoint, total, page, per_page):
     def page_url(number):
         query = dict(arguments)
         query["page"] = str(number)
+        query.update(endpoint_args)
         return url_for(endpoint, **query)
 
     numbers = {1, pages, max(1, page - 1), page, min(pages, page + 1)}
@@ -3421,7 +3495,7 @@ def build_erp_pagination(endpoint, total, page, per_page):
     return {
         "page": page,
         "per_page": per_page,
-        "per_page_options": ERP_PER_PAGE_OPTIONS,
+        "per_page_options": per_page_options,
         "pages": pages,
         "total": total,
         "start": (page - 1) * per_page + 1 if total else 0,
@@ -16037,13 +16111,26 @@ NAVIGATION_DEFINITIONS = [
         "active_prefixes": ["/app/repairs", "/repair"],
     },
     {
+        "key": "customers",
+        "label": "Клиенты",
+        "description": "Клиенты и связанные заказы.",
+        "icon": "customers",
+        "href": "/app/customers",
+        "mobile_href": "/app/customers",
+        "position": 7,
+        "group": "main",
+        "mobile_primary": False,
+        "active_exact": [],
+        "active_prefixes": ["/app/customers"],
+    },
+    {
         "key": "settings",
         "label": "Настройки",
         "description": "Настройки ERP.",
         "icon": "settings",
         "href": "/app/settings",
         "mobile_href": "/app/settings",
-        "position": 7,
+        "position": 8,
         "group": "system",
         "mobile_primary": False,
         "active_exact": [],
