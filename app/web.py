@@ -38,6 +38,11 @@ from app.clients.bitrix_orders import (
     BitrixReadOnlyError,
     normalize_order as normalize_bitrix_order,
 )
+from app.clients.wildberries_orders import (
+    DEFAULT_BASE_URL as WB_DEFAULT_BASE_URL,
+    WildberriesOrdersReadOnlyClient,
+    WildberriesReadOnlyError,
+)
 from app.services.bitrix_catalog_importer import BitrixCatalogImporter
 from app.services.audit_journal import AuditJournal
 from app.services.inventory_journal import InventoryJournal
@@ -54,6 +59,7 @@ from app.services.orders_snapshot import (
     OrdersSnapshotStore,
     order_item_units,
 )
+from app.services.wildberries_orders import synchronize_wildberries_orders
 from app.services.brand_values import normalize_brand
 from app.services.catalog_reader import CatalogReader
 from app.catalog.application import CatalogApplication
@@ -292,6 +298,7 @@ ORDERS_CACHE_SECONDS = 60
 ORDERS_CACHE_LOCK = threading.RLock()
 ORDERS_REFRESH_LOCK = threading.Lock()
 ORDER_ITEM_COUNT_REFRESH_LOCK = threading.Lock()
+WB_SYNC_LOCK = threading.Lock()
 
 WAREHOUSE_CACHE = {
     "items": [],
@@ -766,6 +773,8 @@ def normalize_order(order):
         return None
     result = dict(order)
     result.update(normalized)
+    result["source"] = "tictactoy"
+    result["source_name"] = "Tictactoy"
     result["id"] = normalized["external_id"]
     result["number"] = normalized["number"] or normalized["external_id"]
     result["date"] = normalized["created_at"]
@@ -1129,6 +1138,40 @@ def orders_list_api():
     })
 
 
+@app.post("/api/orders/wildberries/sync")
+def wildberries_orders_sync_api():
+    require_csrf_when_authenticated()
+    if not WB_SYNC_LOCK.acquire(blocking=False):
+        return jsonify({
+            "ok": False,
+            "error": {"code": "WB_SYNC_RUNNING", "message": "Синхронизация Wildberries уже выполняется"},
+        }), 409
+    try:
+        client = WildberriesOrdersReadOnlyClient(
+            token=os.getenv("WB_API_TOKEN"),
+            base_url=os.getenv("WB_API_BASE_URL", WB_DEFAULT_BASE_URL),
+        )
+        result = synchronize_wildberries_orders(client, OrdersSnapshotStore())
+        return jsonify({"ok": True, "result": result})
+    except WildberriesReadOnlyError as error:
+        app.logger.warning("Wildberries order sync unavailable code=%s", error.code)
+        status = 400 if error.code == "WB_NOT_CONFIGURED" else 503
+        if error.code == "WB_RATE_LIMITED":
+            status = 429
+        return jsonify({
+            "ok": False,
+            "error": {"code": error.code, "message": str(error)},
+        }), status
+    except (sqlite3.Error, ValueError):
+        app.logger.exception("Wildberries order sync failed")
+        return jsonify({
+            "ok": False,
+            "error": {"code": "WB_SYNC_FAILED", "message": "Не удалось сохранить заказы Wildberries"},
+        }), 503
+    finally:
+        WB_SYNC_LOCK.release()
+
+
 def bulk_conducted_order_sales(order_ids, database=None):
     order_ids = [str(value or "").strip() for value in order_ids]
     order_ids = list(dict.fromkeys(value for value in order_ids if value))
@@ -1200,9 +1243,13 @@ def prepare_orders_list(orders, args):
     query = str(args.get("q") or "").strip().casefold()
     status_filter = str(args.get("status") or "all").strip().upper()
     period = str(args.get("period") or "all").strip()
+    source_filter = str(args.get("source") or "all").strip().casefold()
     filtered_orders = []
     now = datetime.now()
     for order in orders:
+        order_source = str(order.get("source") or "tictactoy").casefold()
+        if source_filter in {"tictactoy", "wildberries"} and order_source != source_filter:
+            continue
         search_text = " ".join(str(order.get(key) or "") for key in (
             "number", "id", "customer", "phone"
         )).casefold()
@@ -1271,7 +1318,8 @@ def render_orders_page(
         mappings=mappings,
         order_counts=order_counts,
     )
-    conducted_sale = get_order_conducted_sale(order_id)
+    is_wildberries = (selected_order or {}).get("source") == "wildberries"
+    conducted_sale = None if is_wildberries else get_order_conducted_sale(order_id)
     sale_state = build_order_sale_state(
         selected_order or {}, order_mappings, conducted_sale,
         has_legacy_order_stock_writeoff(order_id),
@@ -1281,7 +1329,7 @@ def render_orders_page(
         "orders.html",
         orders=list_state["rows"],
         selected_order=selected_order,
-        selected_order_bitrix_url=build_bitrix_order_url(
+        selected_order_bitrix_url="" if is_wildberries else build_bitrix_order_url(
             (selected_order or {}).get("id")
             or (selected_order or {}).get("ID")
         ),
@@ -1381,6 +1429,7 @@ def build_order_sale_pricing(products):
 
 
 def bitrix_order_product_identity(product):
+    source = str(product.get("source") or "tictactoy").strip().casefold()
     product_id = str(first_order_product_value(
         product,
         "product_id", "PRODUCT_ID", "offer_id", "OFFER_ID",
@@ -1397,11 +1446,18 @@ def bitrix_order_product_identity(product):
         "row_id", "ROW_ID", "id", "ID",
     )).strip()
     return {
+        "source": source,
         "bitrix_product_id": product_id,
         "bitrix_sku_id": sku_id,
         "bitrix_order_line_id": line_id,
         "bitrix_xml_id": str(first_order_product_value(
             product, "xml_id", "XML_ID"
+        )).strip(),
+        "barcode": str(first_order_product_value(
+            product, "barcode", "BARCODE", "sku", "SKU"
+        )).strip(),
+        "article": str(first_order_product_value(
+            product, "article", "ARTICLE", "vendorCode", "vendor_code"
         )).strip(),
     }
 
@@ -1489,30 +1545,50 @@ def build_order_product_mapping_context(
             if isinstance(saved, dict) and saved.get("product_id"):
                 automatic_ids.append(None)
                 continue
-            clauses = []
-            parameters = []
-            product_id = identity["bitrix_product_id"]
-            xml_id = identity["bitrix_xml_id"]
-            if product_id:
-                clauses.append(
-                    "(trim(COALESCE(bitrix_external_product_id, '')) = ? "
-                    "OR CAST(bitrix_catalog_product_id AS TEXT) = ?)"
-                )
-                parameters.extend((product_id, product_id))
-            if xml_id:
-                clauses.append(
-                    "lower(trim(COALESCE(bitrix_xml_id, ''))) = lower(?)"
-                )
-                parameters.append(xml_id)
-            if not clauses:
+            attempts = []
+            if identity["source"] == "wildberries":
+                if identity["barcode"]:
+                    attempts.append((
+                        ["lower(trim(COALESCE(cp.barcode, ''))) = lower(?)"],
+                        [identity["barcode"]],
+                    ))
+                if identity["article"]:
+                    attempts.append((
+                        ["lower(trim(COALESCE(p.excel_article, ''))) = lower(?)"],
+                        [identity["article"]],
+                    ))
+            else:
+                clauses = []
+                parameters = []
+                product_id = identity["bitrix_product_id"]
+                xml_id = identity["bitrix_xml_id"]
+                if product_id:
+                    clauses.append(
+                        "(trim(COALESCE(bitrix_external_product_id, '')) = ? "
+                        "OR CAST(bitrix_catalog_product_id AS TEXT) = ?)"
+                    )
+                    parameters.extend((product_id, product_id))
+                if xml_id:
+                    clauses.append(
+                        "lower(trim(COALESCE(bitrix_xml_id, ''))) = lower(?)"
+                    )
+                    parameters.append(xml_id)
+                if clauses:
+                    attempts.append((clauses, parameters))
+            if not attempts:
                 automatic_ids.append(None)
                 continue
-            rows = connection.execute(
-                "SELECT DISTINCT id FROM catalog_excel_products WHERE "
-                "deleted_at IS NULL AND (" + " OR ".join(clauses) + ") "
-                "ORDER BY id LIMIT 2",
-                parameters,
-            ).fetchall()
+            rows = []
+            for clauses, parameters in attempts:
+                rows = connection.execute(
+                    "SELECT DISTINCT p.id FROM catalog_excel_products p "
+                    "LEFT JOIN catalog_products cp ON cp.id = p.bitrix_catalog_product_id WHERE "
+                    "p.deleted_at IS NULL AND (" + " OR ".join(clauses) + ") "
+                    "ORDER BY p.id LIMIT 2",
+                    parameters,
+                ).fetchall()
+                if rows:
+                    break
             automatic_id = rows[0]["id"] if len(rows) == 1 else None
             automatic_ids.append(automatic_id)
             if automatic_id is not None:
@@ -1571,7 +1647,10 @@ def build_order_product_mapping_context(
                     "state_label": "Сопоставлен",
                     "product": selected,
                     "mapping_method": (
-                        "manual" if isinstance(saved, dict) else "bitrix_product_id"
+                        "manual" if isinstance(saved, dict) else (
+                            "wb_barcode_or_article" if identity["source"] == "wildberries"
+                            else "bitrix_product_id"
+                        )
                     ),
                 })
         mapping_key = order_product_mapping_key(product)
@@ -1772,11 +1851,14 @@ def build_order_sale_state(
     status = str((order or {}).get("status") or "").strip().upper()
     sale_id = str((conducted_sale or {}).get("id") or "").strip() or None
     sale_completed = sale_id is not None
+    is_wildberries = (order or {}).get("source") == "wildberries"
     readiness = build_order_sale_readiness(
         order, mapping_context, sale_completed or legacy_writeoff
     )
 
-    if sale_completed:
+    if is_wildberries:
+        block_reason = "Заказы Wildberries подключены только для чтения."
+    elif sale_completed:
         block_reason = "Продажа по этому заказу уже проведена."
     elif legacy_writeoff:
         block_reason = (
@@ -1792,6 +1874,8 @@ def build_order_sale_state(
 
     return {
         "can_create_sale": (
+            not is_wildberries
+            and
             not sale_completed
             and not legacy_writeoff
             and status in {"A", "D"}
@@ -1842,6 +1926,23 @@ def order_page(order_id):
         selected_order=selected_order,
         selected_order_explicit=True,
         detail_error=detail_error,
+    )
+
+
+@app.get("/order/wildberries/<wb_order_id>")
+def wildberries_order_page(wb_order_id):
+    if not can_view_orders():
+        abort(403)
+    order = OrdersSnapshotStore().get("wb:" + str(wb_order_id))
+    if not order or order.get("source") != "wildberries":
+        abort(404)
+    orders, list_state = current_orders_list_state(request.args)
+    return render_orders_page(
+        orders=orders,
+        list_state=list_state,
+        selected_order=order,
+        selected_order_explicit=True,
+        detail_error="",
     )
 
 
@@ -2284,19 +2385,25 @@ def order_item_mapping_response(order, order_item_id, product, saved, database, 
 
 
 @app.route(
-    "/api/orders/<int:order_id>/items/<order_item_id>/mapping",
+    "/api/orders/<order_id>/items/<order_item_id>/mapping",
     methods=["POST", "DELETE"],
 )
 def order_item_mapping_api(order_id, order_item_id):
     require_csrf_when_authenticated()
     order_item_id = str(order_item_id or "").strip()
-    try:
-        order = get_order(order_id)
-    except BitrixReadOnlyError:
-        return order_item_mapping_error(
-            order_id, order_item_id, "ORDER_UNAVAILABLE",
-            "Не удалось проверить заказ: Bitrix временно недоступен", 503,
-        )
+    if str(order_id).startswith("wb:"):
+        order = OrdersSnapshotStore().get(order_id)
+    else:
+        if not str(order_id).isdigit():
+            order = None
+        else:
+            try:
+                order = get_order(order_id)
+            except BitrixReadOnlyError:
+                return order_item_mapping_error(
+                    order_id, order_item_id, "ORDER_UNAVAILABLE",
+                    "Не удалось проверить заказ: Bitrix временно недоступен", 503,
+                )
     if not order:
         return order_item_mapping_error(
             order_id, order_item_id, "ORDER_NOT_FOUND", "Заказ не найден", 404,
