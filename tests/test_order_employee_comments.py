@@ -55,7 +55,8 @@ class OrderEmployeeCommentsTest(unittest.TestCase):
         self.assertEqual(first, repeated)
         self.assertEqual(len(web.load_order_comments("21114", self.database)), 1)
         rules = {rule.rule for rule in web.app.url_map.iter_rules()}
-        self.assertNotIn("/order/<int:order_id>/comments/<int:comment_id>", rules)
+        self.assertIn("/order/<int:order_id>/comments/<int:comment_id>", rules)
+        self.assertFalse(any("delete" in rule for rule in rules if "comments" in rule))
 
     def test_multiline_text_is_preserved(self):
         text = "Первая строка\nВторая строка"
@@ -67,6 +68,14 @@ class OrderEmployeeCommentsTest(unittest.TestCase):
         )
 
     def test_route_uses_backend_identity_and_rejects_missing_access(self):
+        service = mock.Mock()
+        service.create.return_value = {
+            "id": 1, "order_id": "21114", "text": "Текст",
+            "author_name": "Максим", "author_user_id": "user-1",
+            "created_at": "2026-08-24T12:00:00+00:00",
+            "updated_at": "2026-08-24T12:00:00+00:00",
+            "sync_status": "pending", "source": "erp",
+        }
         original_config = dict(web.app.config)
         web.app.config.update(TESTING=True, AUTH_TESTING=False)
         client = web.app.test_client()
@@ -76,15 +85,16 @@ class OrderEmployeeCommentsTest(unittest.TestCase):
                 mock.patch.object(web, "get_order", return_value={"id": "21114"}),
                 mock.patch.object(web, "current_auth_user", return_value={"id": "user-1"}),
                 mock.patch.object(web, "current_sales_user_name", return_value="Максим"),
-                mock.patch.object(web, "add_order_comment") as add_comment,
+                mock.patch.object(web, "order_comments_service", return_value=service),
             ):
                 response = client.post(
                     "/order/21114/comments",
                     data={"text": "Текст", "author_name": "Подмена"},
                 )
             self.assertEqual(response.status_code, 302)
-            add_comment.assert_called_once_with(
-                21114, "Текст", "Максим", "user-1"
+            service.create.assert_called_once_with(
+                "21114", "Текст", "Максим", "user-1",
+                external_order_id="21114",
             )
 
             with mock.patch.object(web, "can_view_orders", return_value=False):
