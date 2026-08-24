@@ -68,10 +68,20 @@ class InventorySnapshotRestorationTest(unittest.TestCase):
     def test_restore_is_atomic_audited_and_idempotent(self):
         completed = self._completed_inventory()
         self.catalog.delete_product(self.one["id"])
+        with self.database.transaction() as connection:
+            connection.execute(
+                "UPDATE catalog_excel_products SET stock = 1 WHERE id = ?",
+                (self.zero["id"],),
+            )
         active = self.inventory.start(self.one["brand_id"], "Максим")[0]
+        with self.database.transaction() as connection:
+            connection.execute(
+                "UPDATE catalog_excel_products SET stock = 0 WHERE id = ?",
+                (self.zero["id"],),
+            )
 
         plan = self.restoration.plan("ZIRO", completed["id"])
-        self.assertEqual(plan["snapshot_positions"], 3)
+        self.assertEqual(plan["snapshot_positions"], 2)
         self.assertEqual(plan["snapshot_stock"], 6)
         self.assertEqual(plan["positions_to_restore"], 2)
         self.assertEqual(plan["stock_delta"], 6)
