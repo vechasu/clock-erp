@@ -164,12 +164,37 @@ class OrdersUiRedesignTest(unittest.TestCase):
             'class="section order-comments"', 1
         )[1].split('<section class="section">', 1)[0]
         self.assertIn("Видны только сотрудникам", comments)
-        self.assertIn('rows="1"', comments)
+        self.assertIn('rows="3"', comments)
         self.assertIn("Добавить внутренний комментарий…", comments)
         self.assertIn("event.ctrlKey||event.metaKey", self.source)
         self.assertIn("employeeCommentForm.requestSubmit()", self.source)
         self.assertNotIn("Удалить комментарий", comments)
-        self.assertNotIn("Редактировать комментарий", comments)
+        self.assertIn("Редактировать", comments)
+
+    def test_order_card_uses_two_columns_and_escapes_comment_text(self):
+        self.assertIn(
+            "grid-template-columns:minmax(0,1.65fr) minmax(280px,1fr)",
+            self.source,
+        )
+        for section in (
+            "order-products", "order-information", "order-delivery",
+            "order-payment", "order-comments",
+        ):
+            self.assertIn(section, self.source)
+        self.assertIn("@container (max-width:760px)", self.source)
+        with mock.patch.object(web, "load_order_comments", return_value=[{
+            "id": 1,
+            "text": "<script>alert(1)</script>",
+            "author_name": "Bitrix",
+            "author_user_id": None,
+            "created_at": "2026-08-24T12:00:00+00:00",
+            "updated_at": "2026-08-24T12:00:00+00:00",
+            "source": "bitrix_legacy",
+            "sync_status": "synced",
+        }]):
+            html = self.render_selected_order()
+        self.assertIn("&lt;script&gt;alert(1)&lt;/script&gt;", html)
+        self.assertNotIn("<script>alert(1)</script>", html)
 
     def test_desktop_mapping_is_one_row_with_flexible_product(self):
         self.assertIn(
