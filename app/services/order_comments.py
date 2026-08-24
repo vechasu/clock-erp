@@ -2,6 +2,7 @@
 
 import hashlib
 import logging
+import sqlite3
 from datetime import datetime, timedelta, timezone
 
 from app.clients.bitrix_order_comments import BitrixOrderCommentError
@@ -42,36 +43,48 @@ class OrderCommentsService:
         self.database.initialize()
 
     @staticmethod
-    def _upsert_sync_state(connection, order_id, external_order_id, updated_at,
-                           external_hash=None, external_updated_at=None):
-        """Update-or-insert sync state using SQL supported by SQLite 3.7.17."""
-        if external_hash is None and external_updated_at is None:
-            cursor = connection.execute(
-                "UPDATE erp_order_comment_sync_state "
-                "SET external_order_id = ?, updated_at = ? WHERE order_id = ?",
-                (str(external_order_id), updated_at, str(order_id)),
-            )
-        else:
-            cursor = connection.execute(
+    def _save_sync_state(connection, order_id, external_order_id, updated_at,
+                         external_hash=None, external_updated_at=None):
+        """Save sync state with SQLite 3.7-compatible update/insert SQL."""
+        order_id = str(order_id)
+        external_order_id = str(external_order_id)
+
+        def update_existing():
+            if external_hash is None and external_updated_at is None:
+                return connection.execute(
+                    "UPDATE erp_order_comment_sync_state "
+                    "SET external_order_id = ?, updated_at = ? WHERE order_id = ?",
+                    (external_order_id, updated_at, order_id),
+                )
+            return connection.execute(
                 "UPDATE erp_order_comment_sync_state SET external_order_id = ?, "
                 "last_external_hash = ?, last_external_updated_at = ?, "
                 "updated_at = ? WHERE order_id = ?",
                 (
-                    str(external_order_id), external_hash,
-                    external_updated_at, updated_at, str(order_id),
+                    external_order_id, external_hash,
+                    external_updated_at, updated_at, order_id,
                 ),
             )
+
+        cursor = update_existing()
         if cursor.rowcount:
             return
-        connection.execute(
-            "INSERT INTO erp_order_comment_sync_state "
-            "(order_id, external_order_id, last_external_hash, "
-            "last_external_updated_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-            (
-                str(order_id), str(external_order_id), external_hash,
-                external_updated_at, updated_at,
-            ),
-        )
+        try:
+            connection.execute(
+                "INSERT INTO erp_order_comment_sync_state "
+                "(order_id, external_order_id, last_external_hash, "
+                "last_external_updated_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+                (
+                    order_id, external_order_id, external_hash,
+                    external_updated_at, updated_at,
+                ),
+            )
+        except sqlite3.IntegrityError:
+            # A concurrent transaction may have inserted the primary key after
+            # our first UPDATE. Re-read through a guarded UPDATE without using
+            # modern UPSERT syntax; unrelated integrity errors still surface.
+            if not update_existing().rowcount:
+                raise
 
     def list(self, order_id):
         self._initialize()
@@ -134,7 +147,7 @@ class OrderCommentsService:
             )
             comment_id = cursor.lastrowid
             if external_order_id:
-                self._upsert_sync_state(
+                self._save_sync_state(
                     connection, order_id, external_order_id, created_at
                 )
             return self.get(order_id, comment_id, connection)
@@ -187,38 +200,59 @@ class OrderCommentsService:
         digest = str((snapshot or {}).get("hash") or text_hash(text))
         updated_at = (snapshot or {}).get("updated_at")
         now = utc_now().isoformat()
-        known = connection.execute(
+        known_by_hash = connection.execute(
             "SELECT id FROM erp_order_comments WHERE order_id = ? AND sync_hash = ? "
             "ORDER BY id DESC LIMIT 1",
             (str(order_id), digest),
         ).fetchone()
-        if text and known is None:
-            external_id = "order:{}:{}:{}".format(
-                external_order_id, BITRIX_FIELD_REFERENCE, digest
-            )
-            connection.execute(
-                "INSERT OR IGNORE INTO erp_order_comments "
-                "(order_id, text, author_name, created_at, updated_at, "
-                "external_system, external_id, external_updated_at, sync_status, "
-                "sync_hash, source) VALUES (?, ?, 'Bitrix', ?, ?, 'bitrix', ?, ?, "
-                "'conflict' , ?, ?)",
-                (
-                    str(order_id), text, now, now,
-                    external_id, updated_at, digest,
-                    "bitrix_conflict" if conflict else "bitrix_legacy",
-                ),
-            )
-            if not conflict:
-                connection.execute(
-                    "UPDATE erp_order_comments SET sync_status = 'synced' "
+        external_id = "order:{}:{}:{}".format(
+            external_order_id, BITRIX_FIELD_REFERENCE, digest
+        )
+        known_external = connection.execute(
+            "SELECT id, order_id FROM erp_order_comments "
+            "WHERE external_system = 'bitrix' AND external_id = ?",
+            (external_id,),
+        ).fetchone()
+        imported = False
+        if text and known_by_hash is None and known_external is None:
+            try:
+                cursor = connection.execute(
+                    "INSERT INTO erp_order_comments "
+                    "(order_id, text, author_name, created_at, updated_at, "
+                    "external_system, external_id, external_updated_at, sync_status, "
+                    "sync_hash, source) VALUES (?, ?, 'Bitrix', ?, ?, 'bitrix', ?, ?, "
+                    "'conflict' , ?, ?)",
+                    (
+                        str(order_id), text, now, now,
+                        external_id, updated_at, digest,
+                        "bitrix_conflict" if conflict else "bitrix_legacy",
+                    ),
+                )
+                known_external = {"id": cursor.lastrowid, "order_id": str(order_id)}
+                imported = True
+            except sqlite3.IntegrityError:
+                known_external = connection.execute(
+                    "SELECT id, order_id FROM erp_order_comments "
                     "WHERE external_system = 'bitrix' AND external_id = ?",
                     (external_id,),
-                )
-        self._upsert_sync_state(
+                ).fetchone()
+                if known_external is None:
+                    raise
+        if (
+            not conflict
+            and known_external is not None
+            and str(known_external["order_id"]) == str(order_id)
+        ):
+            connection.execute(
+                "UPDATE erp_order_comments SET sync_status = 'synced' "
+                "WHERE id = ? AND order_id = ?",
+                (known_external["id"], str(order_id)),
+            )
+        self._save_sync_state(
             connection, order_id, external_order_id, now,
             external_hash=digest, external_updated_at=updated_at,
         )
-        return bool(text and known is None), None
+        return imported, known_external or known_by_hash
 
     def pull(self, order_id, external_order_id):
         client = self.client_factory()

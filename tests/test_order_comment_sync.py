@@ -190,8 +190,101 @@ class OrderCommentSyncTest(unittest.TestCase):
             / "app/services/order_comments.py"
         ).read_text(encoding="utf-8")
         self.assertNotIn("ON CONFLICT", source)
+        self.assertNotIn("DO UPDATE", source)
+        self.assertNotIn("DO NOTHING", source)
+        self.assertNotIn("INSERT OR IGNORE", source)
         self.assertNotIn("excluded.", source)
         self.assertNotIn("RETURNING", source)
+
+    def test_multiple_local_comments_keep_null_external_identity(self):
+        first = self.service.create(
+            "local-order", "Первый локальный", "Максим", "user-1"
+        )
+        second = self.service.create(
+            "local-order", "Второй локальный", "Максим", "user-1"
+        )
+
+        with self.database.connect() as connection:
+            rows = connection.execute(
+                "SELECT id, external_system, external_id, sync_status "
+                "FROM erp_order_comments WHERE order_id = ? ORDER BY id",
+                ("local-order",),
+            ).fetchall()
+        self.assertEqual([row["id"] for row in rows], [first["id"], second["id"]])
+        self.assertEqual(
+            [(row["external_system"], row["external_id"]) for row in rows],
+            [(None, None), (None, None)],
+        )
+        self.assertEqual(
+            [row["sync_status"] for row in rows],
+            ["not_applicable", "not_applicable"],
+        )
+
+    def test_external_insert_integrity_race_rereads_existing_comment(self):
+        self.database.initialize()
+        snapshot = {
+            "text": "Гонка импорта",
+            "hash": text_hash("Гонка импорта"),
+            "updated_at": "2026-08-24T12:00:00+03:00",
+        }
+
+        class RacingConnection:
+            def __init__(self, connection):
+                self.connection = connection
+                self.triggered = False
+
+            def execute(self, statement, parameters=()):
+                if (
+                    not self.triggered
+                    and statement.startswith("INSERT INTO erp_order_comments ")
+                ):
+                    self.triggered = True
+                    self.connection.execute(statement, parameters)
+                    raise sqlite3.IntegrityError("simulated concurrent insert")
+                return self.connection.execute(statement, parameters)
+
+        with self.database.transaction() as connection:
+            racing = RacingConnection(connection)
+            imported, existing = self.service._store_external_snapshot(
+                "erp-order", "bitrix-order", snapshot, racing
+            )
+
+        self.assertFalse(imported)
+        self.assertIsNotNone(existing)
+        self.assertEqual(len(self.service.list("erp-order")), 1)
+
+    def test_sync_state_insert_integrity_race_retries_update(self):
+        self.database.initialize()
+
+        class RacingConnection:
+            def __init__(self, connection):
+                self.connection = connection
+                self.triggered = False
+
+            def execute(self, statement, parameters=()):
+                if (
+                    not self.triggered
+                    and statement.startswith(
+                        "INSERT INTO erp_order_comment_sync_state "
+                    )
+                ):
+                    self.triggered = True
+                    self.connection.execute(statement, parameters)
+                    raise sqlite3.IntegrityError("simulated concurrent insert")
+                return self.connection.execute(statement, parameters)
+
+        with self.database.transaction() as connection:
+            racing = RacingConnection(connection)
+            self.service._save_sync_state(
+                racing, "erp-order", "bitrix-order",
+                "2026-08-24T12:00:00+00:00",
+            )
+            state = connection.execute(
+                "SELECT external_order_id FROM erp_order_comment_sync_state "
+                "WHERE order_id = ?",
+                ("erp-order",),
+            ).fetchone()
+        self.assertEqual(state["external_order_id"], "bitrix-order")
 
     def test_sync_state_update_then_insert_is_repeatable_and_preserves_state(self):
         first = self.service.create(

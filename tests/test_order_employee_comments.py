@@ -1,3 +1,4 @@
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -102,6 +103,104 @@ class OrderEmployeeCommentsTest(unittest.TestCase):
                     "/order/21114/comments", data={"text": "Текст"}
                 )
             self.assertEqual(forbidden.status_code, 403)
+        finally:
+            web.app.config.clear()
+            web.app.config.update(original_config)
+
+    def test_post_persists_two_comments_and_reload_returns_updated_count(self):
+        service = web.order_comments_service(
+            self.database, client_factory=lambda: None
+        )
+        original_config = dict(web.app.config)
+        web.app.config.update(TESTING=True, AUTH_TESTING=False)
+        client = web.app.test_client()
+        try:
+            with (
+                mock.patch.object(web, "can_view_orders", return_value=True),
+                mock.patch.object(
+                    web, "current_auth_user", return_value={"id": "user-1"}
+                ),
+                mock.patch.object(
+                    web, "current_sales_user_name", return_value="Максим"
+                ),
+                mock.patch.object(
+                    web, "order_comments_service", return_value=service
+                ),
+            ):
+                first = client.post(
+                    "/order/29999/comments",
+                    data={"text": "Первый комментарий"},
+                    headers={"Accept": "application/json"},
+                )
+                second = client.post(
+                    "/order/29999/comments",
+                    data={"text": "Второй комментарий"},
+                    headers={"Accept": "application/json"},
+                )
+
+            self.assertEqual(first.status_code, 201)
+            self.assertEqual(second.status_code, 201)
+            self.assertEqual(first.get_json()["comment"]["order_id"], "29999")
+            reloaded = web.order_comments_service(
+                self.database, client_factory=lambda: None
+            ).list("29999")
+            self.assertEqual(len(reloaded), 2)
+            self.assertEqual(
+                [row["text"] for row in reloaded],
+                ["Второй комментарий", "Первый комментарий"],
+            )
+        finally:
+            web.app.config.clear()
+            web.app.config.update(original_config)
+
+    def test_post_empty_comment_returns_validation_without_write(self):
+        service = web.order_comments_service(
+            self.database, client_factory=lambda: None
+        )
+        original_config = dict(web.app.config)
+        web.app.config.update(TESTING=True, AUTH_TESTING=False)
+        client = web.app.test_client()
+        try:
+            with (
+                mock.patch.object(web, "can_view_orders", return_value=True),
+                mock.patch.object(web, "current_auth_user", return_value={}),
+                mock.patch.object(web, "order_comments_service", return_value=service),
+            ):
+                response = client.post(
+                    "/order/29999/comments", data={"text": "   "},
+                    headers={"Accept": "application/json"},
+                )
+            self.assertEqual(response.status_code, 400)
+            self.assertEqual(response.get_json()["message"], "Введите комментарий")
+            self.assertEqual(service.list("29999"), [])
+        finally:
+            web.app.config.clear()
+            web.app.config.update(original_config)
+
+    def test_post_hides_raw_sql_error_from_user(self):
+        service = mock.Mock()
+        service.create.side_effect = sqlite3.OperationalError(
+            'near "ON": syntax error'
+        )
+        original_config = dict(web.app.config)
+        web.app.config.update(TESTING=True, AUTH_TESTING=False)
+        client = web.app.test_client()
+        try:
+            with (
+                mock.patch.object(web, "can_view_orders", return_value=True),
+                mock.patch.object(web, "current_auth_user", return_value={}),
+                mock.patch.object(web, "order_comments_service", return_value=service),
+            ):
+                response = client.post(
+                    "/order/29999/comments", data={"text": "Текст"},
+                    headers={"Accept": "application/json"},
+                )
+            self.assertEqual(response.status_code, 500)
+            message = response.get_json()["message"]
+            self.assertEqual(
+                message, "Не удалось сохранить комментарий. Попробуйте ещё раз."
+            )
+            self.assertNotIn("near", message)
         finally:
             web.app.config.clear()
             web.app.config.update(original_config)
