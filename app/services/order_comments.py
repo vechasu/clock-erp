@@ -41,6 +41,38 @@ class OrderCommentsService:
     def _initialize(self):
         self.database.initialize()
 
+    @staticmethod
+    def _upsert_sync_state(connection, order_id, external_order_id, updated_at,
+                           external_hash=None, external_updated_at=None):
+        """Update-or-insert sync state using SQL supported by SQLite 3.7.17."""
+        if external_hash is None and external_updated_at is None:
+            cursor = connection.execute(
+                "UPDATE erp_order_comment_sync_state "
+                "SET external_order_id = ?, updated_at = ? WHERE order_id = ?",
+                (str(external_order_id), updated_at, str(order_id)),
+            )
+        else:
+            cursor = connection.execute(
+                "UPDATE erp_order_comment_sync_state SET external_order_id = ?, "
+                "last_external_hash = ?, last_external_updated_at = ?, "
+                "updated_at = ? WHERE order_id = ?",
+                (
+                    str(external_order_id), external_hash,
+                    external_updated_at, updated_at, str(order_id),
+                ),
+            )
+        if cursor.rowcount:
+            return
+        connection.execute(
+            "INSERT INTO erp_order_comment_sync_state "
+            "(order_id, external_order_id, last_external_hash, "
+            "last_external_updated_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+            (
+                str(order_id), str(external_order_id), external_hash,
+                external_updated_at, updated_at,
+            ),
+        )
+
     def list(self, order_id):
         self._initialize()
         with self.database.connect() as connection:
@@ -102,12 +134,8 @@ class OrderCommentsService:
             )
             comment_id = cursor.lastrowid
             if external_order_id:
-                connection.execute(
-                    "INSERT INTO erp_order_comment_sync_state "
-                    "(order_id, external_order_id, updated_at) VALUES (?, ?, ?) "
-                    "ON CONFLICT(order_id) DO UPDATE SET external_order_id=excluded.external_order_id, "
-                    "updated_at=excluded.updated_at",
-                    (order_id, str(external_order_id), created_at),
+                self._upsert_sync_state(
+                    connection, order_id, external_order_id, created_at
                 )
             return self.get(order_id, comment_id, connection)
 
@@ -186,16 +214,9 @@ class OrderCommentsService:
                     "WHERE external_system = 'bitrix' AND external_id = ?",
                     (external_id,),
                 )
-        connection.execute(
-            "INSERT INTO erp_order_comment_sync_state "
-            "(order_id, external_order_id, last_external_hash, "
-            "last_external_updated_at, updated_at) VALUES (?, ?, ?, ?, ?) "
-            "ON CONFLICT(order_id) DO UPDATE SET "
-            "external_order_id=excluded.external_order_id, "
-            "last_external_hash=excluded.last_external_hash, "
-            "last_external_updated_at=excluded.last_external_updated_at, "
-            "updated_at=excluded.updated_at",
-            (str(order_id), str(external_order_id), digest, updated_at, now),
+        self._upsert_sync_state(
+            connection, order_id, external_order_id, now,
+            external_hash=digest, external_updated_at=updated_at,
         )
         return bool(text and known is None), None
 
