@@ -13,21 +13,17 @@ fail() {
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
-
 cd "$PROJECT_ROOT"
 
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 \
     || fail "Локальная папка не является Git-репозиторием"
-
 current_branch="$(git symbolic-ref --quiet --short HEAD || true)"
 [[ "$current_branch" == "$EXPECTED_BRANCH" ]] \
     || fail "Ожидалась локальная ветка main, текущая ветка: ${current_branch:-detached HEAD}"
-
-local_status="$(git status --porcelain --untracked-files=normal)"
-[[ -z "$local_status" ]] \
+[[ -z "$(git status --porcelain --untracked-files=normal)" ]] \
     || fail "Локальный репозиторий содержит незакоммиченные изменения"
 
-printf 'Pushing %s/%s...\n' "$REMOTE_NAME" "$EXPECTED_BRANCH"
+printf 'PRECHECK: pushing %s/%s\n' "$REMOTE_NAME" "$EXPECTED_BRANCH"
 git push "$REMOTE_NAME" "$EXPECTED_BRANCH"
 
 ssh \
@@ -42,6 +38,7 @@ readonly REMOTE_NAME="origin"
 readonly PROJECT_DIR="/opt/clock-erp"
 readonly SERVICE_NAME="clock-erp"
 readonly BACKUP_DIR="/opt/clock-erp-backups"
+readonly REHEARSAL_ROOT="$BACKUP_DIR/migration-rehearsals"
 readonly RETENTION_TOOL="/usr/local/sbin/clock-erp-backup-retention"
 readonly RETENTION_CRON="/etc/cron.d/clock-erp-backup-retention"
 readonly RETENTION_LOGROTATE="/etc/logrotate.d/clock-erp-backup-retention"
@@ -50,316 +47,279 @@ readonly BITRIX_ENDPOINT_SOURCE="$PROJECT_DIR/bitrix/catalog-export.php"
 readonly BITRIX_ENDPOINT_TARGET="/var/www/admin/data/www/tictactoy.ru/api/catalog-export.php"
 readonly BITRIX_COMMENT_ENDPOINT_SOURCE="$PROJECT_DIR/bitrix/order-comments.php"
 readonly BITRIX_COMMENT_ENDPOINT_TARGET="/var/www/admin/data/www/tictactoy.ru/api/order-comments.php"
-SERVICE_STOPPED=0
-DATABASE_MIGRATION_REQUIRED=0
-CUSTOMER_MIGRATION_REQUIRED=0
 readonly HEALTHCHECK_URLS=(
     "http://127.0.0.1:5000/register"
     "http://127.0.0.1:5000/login"
 )
 
+FAILURE_STAGE="PRECHECK"
 PREVIOUS_COMMIT=""
+CURRENT_COMMIT=""
+FETCHED_COMMIT=""
+PRODUCTION_SQLITE_VERSION=""
+RELEASE_DIR=""
+SERVICE_STOPPED=0
 DEPLOY_UPDATED=0
+CATALOG_MIGRATION_REQUIRED=0
+UNREGISTERED_MIGRATION_CHANGE=0
+CATALOG_MIGRATION_STARTED=0
+CATALOG_ROLLBACK_BACKUP=""
+DATA_SNAPSHOT_BEFORE=""
 BITRIX_ENDPOINT_BACKUP=""
 BITRIX_ENDPOINT_UPDATED=0
 BITRIX_COMMENT_ENDPOINT_BACKUP=""
 BITRIX_COMMENT_ENDPOINT_UPDATED=0
+BITRIX_COMMENT_TARGET_EXISTED=0
+
+cleanup_release() {
+    if [[ -n "$RELEASE_DIR" && "$RELEASE_DIR" == "$BACKUP_DIR/temporary/release-"* ]]; then
+        rm -rf -- "$RELEASE_DIR"
+        RELEASE_DIR=""
+    fi
+}
 
 rollback() {
     local exit_code=$?
     trap - ERR
     set +e
+    printf 'ROLLBACK: stage=%s exit_code=%s\n' "$FAILURE_STAGE" "$exit_code" >&2
 
-    printf 'DEPLOY_ERROR: deployment failed with exit code %s\n' "$exit_code" >&2
-
+    if [[ "$SERVICE_STOPPED" != "1" && "$CATALOG_MIGRATION_STARTED" == "1" ]]; then
+        systemctl stop "$SERVICE_NAME"
+        SERVICE_STOPPED=1
+    fi
+    if [[ "$CATALOG_MIGRATION_STARTED" == "1" && -f "$CATALOG_ROLLBACK_BACKUP" ]]; then
+        local failed_database="${CATALOG_ROLLBACK_BACKUP%.db}-failed.db"
+        cp -p instance/catalog.db "$failed_database"
+        cp -p "$CATALOG_ROLLBACK_BACKUP" instance/catalog.db
+        sqlite3 instance/catalog.db "PRAGMA quick_check;" | grep -qx "ok"
+        printf 'ROLLBACK_OK: restored verified catalog database backup\n' >&2
+    fi
     if [[ "$BITRIX_ENDPOINT_UPDATED" == "1" && -f "$BITRIX_ENDPOINT_BACKUP" ]]; then
         install -o admin -g admin -m 0640 \
             "$BITRIX_ENDPOINT_BACKUP" "$BITRIX_ENDPOINT_TARGET"
-        printf 'ROLLBACK_OK: restored Bitrix catalog endpoint\n' >&2
     fi
-
     if [[ "$BITRIX_COMMENT_ENDPOINT_UPDATED" == "1" ]]; then
         if [[ -f "$BITRIX_COMMENT_ENDPOINT_BACKUP" ]]; then
             install -o admin -g admin -m 0640 \
                 "$BITRIX_COMMENT_ENDPOINT_BACKUP" "$BITRIX_COMMENT_ENDPOINT_TARGET"
-        else
+        elif [[ "$BITRIX_COMMENT_TARGET_EXISTED" == "0" ]]; then
             rm -f -- "$BITRIX_COMMENT_ENDPOINT_TARGET"
         fi
-        printf 'ROLLBACK_OK: restored Bitrix order-comment endpoint\n' >&2
     fi
-
     if [[ "$DEPLOY_UPDATED" == "1" && -n "$PREVIOUS_COMMIT" ]]; then
-        local rollback_status
-        rollback_status="$(git status --porcelain --untracked-files=normal 2>/dev/null)"
-
-        if [[ -n "$rollback_status" ]]; then
-            printf '%s\n' \
-                'ROLLBACK_BLOCKED: server repository became dirty; no files were removed or reset' >&2
-            if [[ "$SERVICE_STOPPED" == "1" ]]; then
-                systemctl start "$SERVICE_NAME"
-                SERVICE_STOPPED=0
-            fi
-        else
-            printf 'Rolling back to %s...\n' "$PREVIOUS_COMMIT" >&2
+        if [[ -z "$(git status --porcelain --untracked-files=normal)" ]]; then
             git reset --hard "$PREVIOUS_COMMIT"
-            systemctl restart "$SERVICE_NAME"
-
-            if systemctl is-active --quiet "$SERVICE_NAME"; then
-                printf 'ROLLBACK_OK: restored %s and restarted %s\n' \
-                    "$PREVIOUS_COMMIT" "$SERVICE_NAME" >&2
-            else
-                printf 'ROLLBACK_ERROR: %s is not active after rollback\n' \
-                    "$SERVICE_NAME" >&2
-            fi
+            printf 'ROLLBACK_OK: restored code commit %s\n' "$PREVIOUS_COMMIT" >&2
+        else
+            printf 'ROLLBACK_BLOCKED: server source tree became dirty\n' >&2
         fi
-    elif [[ "$SERVICE_STOPPED" == "1" ]]; then
-        systemctl start "$SERVICE_NAME"
     fi
-
+    if [[ "$SERVICE_STOPPED" == "1" ]]; then
+        systemctl start "$SERVICE_NAME"
+        SERVICE_STOPPED=0
+    elif [[ "$DEPLOY_UPDATED" == "1" ]]; then
+        systemctl restart "$SERVICE_NAME"
+    fi
+    systemctl is-active --quiet "$SERVICE_NAME" \
+        && printf 'ROLLBACK_OK: service active\n' >&2
+    cleanup_release
     exit "$exit_code"
 }
-
 trap rollback ERR
 
+check_backup_disk_usage() {
+    local usage
+    usage="$(df -P "$BACKUP_DIR" | awk 'NR == 2 { gsub(/%/, "", $5); print $5 }')"
+    [[ "$usage" =~ ^[0-9]+$ ]] \
+        || { printf 'BACKUP_ERROR: cannot determine disk usage\n' >&2; return 1; }
+    (( usage < MAX_BACKUP_DISK_USAGE )) \
+        || { printf 'BACKUP_ERROR: disk usage is %s%%\n' "$usage" >&2; return 1; }
+}
+
+printf 'PRECHECK: repository, service, disk, active operations\n'
 cd "$PROJECT_DIR"
-
 git rev-parse --is-inside-work-tree >/dev/null 2>&1
-
 server_branch="$(git symbolic-ref --quiet --short HEAD || true)"
-if [[ "$server_branch" != "$EXPECTED_BRANCH" ]]; then
-    printf 'Server branch must be main, current branch: %s\n' \
-        "${server_branch:-detached HEAD}" >&2
-    false
-fi
-
+[[ "$server_branch" == "$EXPECTED_BRANCH" ]] \
+    || { printf 'Server branch must be main: %s\n' "$server_branch" >&2; false; }
 server_source_status="$(
     git status --porcelain --untracked-files=normal |
         awk 'substr($0, 4, 9) != "instance/" { print }'
 )"
-if [[ -n "$server_source_status" ]]; then
+[[ -z "$server_source_status" ]] \
+    || { printf 'Server source tree is dirty; deployment stopped\n' >&2; false; }
+systemctl is-active --quiet "$SERVICE_NAME"
+PREVIOUS_COMMIT="$(git rev-parse HEAD)"
+mkdir -p "$BACKUP_DIR" "$BACKUP_DIR/temporary" "$REHEARSAL_ROOT"
+chmod 700 "$BACKUP_DIR" "$BACKUP_DIR/temporary" "$REHEARSAL_ROOT"
+check_backup_disk_usage
+
+git fetch "$REMOTE_NAME"
+FETCHED_COMMIT="$(git rev-parse "$REMOTE_NAME/$EXPECTED_BRANCH")"
+changed_files="$(git diff --name-only "$PREVIOUS_COMMIT" "$FETCHED_COMMIT")"
+if printf '%s\n' "$changed_files" | grep -Eq \
+    '^(app/(catalog_db|schema_migrations)\.py|scripts/migration_preflight\.py)$'; then
+    CATALOG_MIGRATION_REQUIRED=1
+fi
+if printf '%s\n' "$changed_files" | grep -Eq \
+    '^scripts/migrate_(auth_mvp|brand_inventory|customers|inventory_scopes|repair_cases|unified_catalog)\.py$'; then
+    UNREGISTERED_MIGRATION_CHANGE=1
+fi
+if [[ "$UNREGISTERED_MIGRATION_CHANGE" == "1" ]]; then
     printf '%s\n' \
-        'Server source tree is dirty; deployment stopped without changes' >&2
+        'PRECHECK_FAILED: changed legacy migration script is not registered in production preflight' >&2
     false
 fi
+if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" && -f instance/catalog.db ]]; then
+    active_inventory_count="$(
+        sqlite3 instance/catalog.db \
+            "SELECT COUNT(*) FROM erp_inventory_sessions WHERE status = 'active';"
+    )"
+    if [[ "$active_inventory_count" != "0" ]]; then
+        printf 'DEPLOY_BLOCKED: %s active inventory session(s)\n' \
+            "$active_inventory_count" >&2
+        sqlite3 instance/catalog.db \
+            "SELECT 'DEPLOY_BLOCKED_DETAILS: sessions=' || COUNT(*) || \
+             ', items=' || COALESCE(SUM(item_count),0) FROM ( \
+             SELECT s.id, COUNT(i.id) AS item_count \
+             FROM erp_inventory_sessions s \
+             LEFT JOIN erp_inventory_items i ON i.session_id=s.id \
+             WHERE s.status='active' GROUP BY s.id);" >&2
+        false
+    fi
+fi
 
-PREVIOUS_COMMIT="$(git rev-parse HEAD)"
-
-mkdir -p "$BACKUP_DIR"
-chmod 700 "$BACKUP_DIR"
-
+printf 'BACKUP: retention, disk guard, daily backup\n'
+FAILURE_STAGE="BACKUP"
 if [[ -x "$RETENTION_TOOL" ]]; then
-    "$RETENTION_TOOL" \
-        --backup-root "$BACKUP_DIR" \
-        --apply
+    "$RETENTION_TOOL" --backup-root "$BACKUP_DIR" --apply
 elif [[ -f scripts/retain_erp_backups.py ]]; then
-    python3 scripts/retain_erp_backups.py \
-        --backup-root "$BACKUP_DIR" \
-        --apply
+    python3 scripts/retain_erp_backups.py --backup-root "$BACKUP_DIR" --apply
 else
     printf 'BACKUP_ERROR: retention tool is not installed\n' >&2
     false
 fi
-
-check_backup_disk_usage() {
-    local backup_disk_usage
-    backup_disk_usage="$(
-        df -P "$BACKUP_DIR" |
-            awk 'NR == 2 { gsub(/%/, "", $5); print $5 }'
-    )"
-    if [[ ! "$backup_disk_usage" =~ ^[0-9]+$ ]]; then
-        printf 'BACKUP_ERROR: cannot determine disk usage for %s\n' \
-            "$BACKUP_DIR" >&2
-        return 1
-    fi
-    if (( backup_disk_usage >= MAX_BACKUP_DISK_USAGE )); then
-        printf 'BACKUP_ERROR: disk usage is %s%% (limit %s%%); deployment stopped before backup\n' \
-            "$backup_disk_usage" "$MAX_BACKUP_DISK_USAGE" >&2
-        return 1
-    fi
-}
-
 check_backup_disk_usage
 if [[ -x "$RETENTION_TOOL" ]]; then
-    "$RETENTION_TOOL" \
-        --backup-root "$BACKUP_DIR" \
-        --project-root "$PROJECT_DIR" \
-        --create-daily \
-        --apply
+    "$RETENTION_TOOL" --backup-root "$BACKUP_DIR" \
+        --project-root "$PROJECT_DIR" --create-daily --apply
 else
-    python3 scripts/retain_erp_backups.py \
-        --backup-root "$BACKUP_DIR" \
-        --project-root "$PROJECT_DIR" \
-        --create-daily \
-        --apply
+    python3 scripts/retain_erp_backups.py --backup-root "$BACKUP_DIR" \
+        --project-root "$PROJECT_DIR" --create-daily --apply
 fi
 
-git fetch "$REMOTE_NAME"
-FETCHED_COMMIT="$(git rev-parse "$REMOTE_NAME/$EXPECTED_BRANCH")"
+printf 'MIGRATION PREFLIGHT: stage release and rehearse exact runtime\n'
+FAILURE_STAGE="MIGRATION PREFLIGHT"
+RELEASE_DIR="$(mktemp -d "$BACKUP_DIR/temporary/release-XXXXXX")"
+chmod 700 "$RELEASE_DIR"
+git archive "$FETCHED_COMMIT" | tar -x -C "$RELEASE_DIR"
+if [[ -x venv/bin/python ]]; then
+    PYTHON_BIN="$PROJECT_DIR/venv/bin/python"
+else
+    PYTHON_BIN="python3"
+fi
+PRODUCTION_SQLITE_VERSION="$(
+    "$PYTHON_BIN" -c 'import sqlite3; print(sqlite3.sqlite_version)'
+)"
+printf 'PRODUCTION_SQLITE=%s\n' "$PRODUCTION_SQLITE_VERSION"
+(
+    cd "$RELEASE_DIR"
+    "$PYTHON_BIN" -m compileall -q app scripts tests
+    "$PYTHON_BIN" - <<'PYTHON_CHECK'
+import ast
+from pathlib import Path
+from jinja2 import Environment
+for path in sorted(Path('app').rglob('*.py')):
+    ast.parse(path.read_text(encoding='utf-8'), filename=str(path))
+environment = Environment()
+for path in sorted(Path('app/templates').glob('*.html')):
+    environment.parse(path.read_text(encoding='utf-8'))
+PYTHON_CHECK
+)
+PREFLIGHT_REPORT="$(mktemp "$REHEARSAL_ROOT/preflight-report-XXXXXX.json")"
+chmod 600 "$PREFLIGHT_REPORT"
+if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" && -f instance/catalog.db ]]; then
+    PYTHONPATH="$RELEASE_DIR" "$PYTHON_BIN" \
+        "$RELEASE_DIR/scripts/migration_preflight.py" preflight \
+        --database "$PROJECT_DIR/instance/catalog.db" \
+        --source-root "$RELEASE_DIR" \
+        --app-commit "$FETCHED_COMMIT" \
+        --expected-sqlite-version "$PRODUCTION_SQLITE_VERSION" \
+        --rehearsal-root "$REHEARSAL_ROOT" \
+        --retention-days 7 \
+        --report "$PREFLIGHT_REPORT"
+fi
+
+printf 'APPLICATION UPDATE: fast-forward to verified commit\n'
+FAILURE_STAGE="APPLICATION UPDATE"
 git merge --ff-only "$FETCHED_COMMIT"
-
 CURRENT_COMMIT="$(git rev-parse HEAD)"
-if [[ "$CURRENT_COMMIT" != "$FETCHED_COMMIT" ]]; then
-    printf 'Updated commit %s does not match fetched commit %s\n' \
-        "$CURRENT_COMMIT" "$FETCHED_COMMIT" >&2
-    false
-fi
-
+[[ "$CURRENT_COMMIT" == "$FETCHED_COMMIT" ]]
 if [[ "$CURRENT_COMMIT" != "$PREVIOUS_COMMIT" ]]; then
     DEPLOY_UPDATED=1
 fi
-
 install -o root -g root -m 0755 scripts/retain_erp_backups.py "$RETENTION_TOOL"
 install -o root -g root -m 0644 ops/clock-erp-backup-retention.cron "$RETENTION_CRON"
 install -o root -g root -m 0644 \
     ops/clock-erp-backup-retention.logrotate "$RETENTION_LOGROTATE"
-"$RETENTION_TOOL" \
-    --backup-root "$BACKUP_DIR" \
-    --project-root "$PROJECT_DIR" \
-    --archive-runtime-backups \
-    --apply
-
-if git diff --name-only "$PREVIOUS_COMMIT" "$CURRENT_COMMIT" |
-    grep -Eq '^(app/catalog_db\.py|scripts/(migrate_auth_mvp|migrate_inventory_scopes)\.py)$'; then
-    DATABASE_MIGRATION_REQUIRED=1
-fi
-
-if git diff --name-only "$PREVIOUS_COMMIT" "$CURRENT_COMMIT" |
-    grep -Eq '^(app/services/(customer_identity|orders_snapshot)\.py|scripts/migrate_customers\.py)$'; then
-    CUSTOMER_MIGRATION_REQUIRED=1
-fi
-
-if [[ -x venv/bin/python ]]; then
-    PYTHON_BIN="venv/bin/python"
-else
-    PYTHON_BIN="python3"
-fi
-
-"$PYTHON_BIN" - <<'PYTHON_CHECK'
-import ast
-from pathlib import Path
-
-project_root = Path.cwd()
-python_files = sorted((project_root / "app").rglob("*.py"))
-
-for path in python_files:
-    ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-
-from jinja2 import Environment
-
-environment = Environment()
-template_files = sorted((project_root / "app" / "templates").glob("*.html"))
-
-for path in template_files:
-    environment.parse(path.read_text(encoding="utf-8"))
-
-print(
-    f"CHECKS_OK: {len(python_files)} Python files, "
-    f"{len(template_files)} templates"
-)
-PYTHON_CHECK
-
-if [[ "$CUSTOMER_MIGRATION_REQUIRED" == "1" && -f instance/orders.db ]]; then
-    "$PYTHON_BIN" scripts/migrate_customers.py --database instance/orders.db
-fi
 
 if [[ -f "$BITRIX_ENDPOINT_SOURCE" && -f "$BITRIX_ENDPOINT_TARGET" ]]; then
     /opt/php81/bin/php -l "$BITRIX_ENDPOINT_SOURCE" >/dev/null
-    BITRIX_ENDPOINT_BACKUP="$BACKUP_DIR/bitrix-catalog-export-$(date +%Y%m%d-%H%M%S).php"
+    BITRIX_ENDPOINT_BACKUP="$BACKUP_DIR/bitrix-catalog-$(date +%Y%m%d-%H%M%S).php"
     cp -p "$BITRIX_ENDPOINT_TARGET" "$BITRIX_ENDPOINT_BACKUP"
     chmod 600 "$BITRIX_ENDPOINT_BACKUP"
     install -o admin -g admin -m 0640 \
         "$BITRIX_ENDPOINT_SOURCE" "$BITRIX_ENDPOINT_TARGET"
     BITRIX_ENDPOINT_UPDATED=1
-    printf 'BITRIX_BACKUP_PATH=%s\n' "$BITRIX_ENDPOINT_BACKUP"
 fi
-
-
 if [[ -f "$BITRIX_COMMENT_ENDPOINT_SOURCE" ]]; then
     /opt/php81/bin/php -l "$BITRIX_COMMENT_ENDPOINT_SOURCE" >/dev/null
     if [[ -f "$BITRIX_COMMENT_ENDPOINT_TARGET" ]]; then
-        BITRIX_COMMENT_ENDPOINT_BACKUP="$BACKUP_DIR/bitrix-order-comments-$(date +%Y%m%d-%H%M%S).php"
+        BITRIX_COMMENT_TARGET_EXISTED=1
+        BITRIX_COMMENT_ENDPOINT_BACKUP="$BACKUP_DIR/bitrix-comments-$(date +%Y%m%d-%H%M%S).php"
         cp -p "$BITRIX_COMMENT_ENDPOINT_TARGET" "$BITRIX_COMMENT_ENDPOINT_BACKUP"
         chmod 600 "$BITRIX_COMMENT_ENDPOINT_BACKUP"
     fi
     install -o admin -g admin -m 0640 \
         "$BITRIX_COMMENT_ENDPOINT_SOURCE" "$BITRIX_COMMENT_ENDPOINT_TARGET"
     BITRIX_COMMENT_ENDPOINT_UPDATED=1
-    printf 'BITRIX_COMMENT_BACKUP_PATH=%s\n' "${BITRIX_COMMENT_ENDPOINT_BACKUP:-new-file}"
 fi
 
-if [[ -f instance/repair_cases.json ]]; then
-    mkdir -p "$BACKUP_DIR/temporary/repair-data"
-    chmod 700 "$BACKUP_DIR/temporary" "$BACKUP_DIR/temporary/repair-data"
-    "$PYTHON_BIN" scripts/migrate_repair_cases.py \
-        --path instance/repair_cases.json \
-        --backup-dir "$BACKUP_DIR/temporary/repair-data" \
-        --apply
-fi
-
-if [[ "$DATABASE_MIGRATION_REQUIRED" == "1" && -f instance/catalog.db ]]; then
-    active_inventory_count="$(
-        sqlite3 instance/catalog.db \
-            "SELECT COUNT(*) FROM erp_inventory_sessions WHERE status = 'active';" \
-            2>/dev/null || printf '0'
-    )"
-    if [[ "$active_inventory_count" != "0" ]]; then
-        active_inventory_details="$(
-            sqlite3 -separator ' | ' instance/catalog.db \
-                "SELECT s.id, b.name, s.status, s.started_at, "\
-"COALESCE(s.started_by, 'system'), COUNT(i.id), "\
-"SUM(CASE WHEN i.status IN ('confirmed','adjusted','added','missing') "\
-"THEN 1 ELSE 0 END), "\
-"SUM(CASE WHEN i.status IN ('pending','conflict','error') "\
-"THEN 1 ELSE 0 END) "\
-"FROM erp_inventory_sessions s "\
-"JOIN erp_brands b ON b.id=s.brand_id "\
-"LEFT JOIN erp_inventory_items i ON i.session_id=s.id "\
-"WHERE s.status='active' GROUP BY s.id ORDER BY s.started_at;"
-        )"
-        printf 'DEPLOY_BLOCKED: %s active inventory session(s) require uninterrupted access\n' \
-            "$active_inventory_count" >&2
-        printf 'DEPLOY_BLOCKED_DETAILS: id | brand | status | started_at | actor | positions | checked | remaining\n%s\n' \
-            "$active_inventory_details" >&2
-        false
-    fi
-fi
-
-if [[ "$DATABASE_MIGRATION_REQUIRED" == "1" && -f instance/auth.db ]]; then
-    check_backup_disk_usage
+if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" && -f instance/catalog.db ]]; then
+    printf 'PRODUCTION MIGRATION: stop service, backup, apply verified migration\n'
+    FAILURE_STAGE="PRODUCTION MIGRATION"
     systemctl stop "$SERVICE_NAME"
     SERVICE_STOPPED=1
-    "$PYTHON_BIN" scripts/migrate_auth_mvp.py \
-        --database instance/auth.db \
-        --backup-dir "$BACKUP_DIR/auth-migrations" \
-        --apply
-fi
-
-if [[ "$CUSTOMER_MIGRATION_REQUIRED" == "1" && -f instance/orders.db ]]; then
-    check_backup_disk_usage
-    if [[ "$SERVICE_STOPPED" != "1" ]]; then
-        systemctl stop "$SERVICE_NAME"
-        SERVICE_STOPPED=1
+    if systemctl is-active --quiet "$SERVICE_NAME"; then
+        printf 'Service did not stop before production migration\n' >&2
+        false
     fi
-    "$PYTHON_BIN" scripts/migrate_customers.py \
-        --database instance/orders.db \
-        --backup-dir "$BACKUP_DIR/customer-migrations" \
-        --apply
-fi
-
-if [[ "$DATABASE_MIGRATION_REQUIRED" == "1" && -f instance/catalog.db ]]; then
-    check_backup_disk_usage
-    if [[ "$SERVICE_STOPPED" != "1" ]]; then
-        systemctl stop "$SERVICE_NAME"
-        SERVICE_STOPPED=1
-    fi
-    "$PYTHON_BIN" scripts/migrate_inventory_scopes.py \
+    DATA_SNAPSHOT_BEFORE="$($PYTHON_BIN scripts/data_safety_snapshot.py --instance-dir instance)"
+    rollback_directory="$(mktemp -d "$BACKUP_DIR/production-migration-XXXXXX")"
+    chmod 700 "$rollback_directory"
+    CATALOG_ROLLBACK_BACKUP="$rollback_directory/catalog-before.db"
+    sqlite3 instance/catalog.db ".backup '$CATALOG_ROLLBACK_BACKUP'"
+    chmod 600 "$CATALOG_ROLLBACK_BACKUP"
+    sqlite3 "$CATALOG_ROLLBACK_BACKUP" "PRAGMA quick_check;" | grep -qx "ok"
+    CATALOG_MIGRATION_STARTED=1
+    "$PYTHON_BIN" scripts/migration_preflight.py apply \
         --database instance/catalog.db \
-        --backup-dir "$BACKUP_DIR/temporary/inventory-scope-migrations" \
-        --apply
-
-    sqlite3 instance/catalog.db "PRAGMA quick_check;" | grep -qx "ok"
+        --source-root "$PROJECT_DIR" \
+        --app-commit "$CURRENT_COMMIT" \
+        --expected-sqlite-version "$PRODUCTION_SQLITE_VERSION" \
+        --service-stopped \
+        --report "$rollback_directory/apply-report.json"
+    DATA_SNAPSHOT_AFTER="$($PYTHON_BIN scripts/data_safety_snapshot.py --instance-dir instance)"
+    if [[ "$DATA_SNAPSHOT_BEFORE" != "$DATA_SNAPSHOT_AFTER" ]]; then
+        printf 'POST-DEPLOY DATA SAFETY: business aggregate mismatch\n' >&2
+        false
+    fi
+    printf 'DATA_SAFETY_OK=%s\n' "$DATA_SNAPSHOT_AFTER"
 fi
 
+printf 'SERVICE START: controlled start or graceful reload\n'
+FAILURE_STAGE="SERVICE START"
 if [[ "$SERVICE_STOPPED" == "1" ]]; then
     systemctl start "$SERVICE_NAME"
     SERVICE_STOPPED=0
@@ -368,52 +328,45 @@ else
 fi
 systemctl is-active --quiet "$SERVICE_NAME"
 
+printf 'HEALTH CHECK: public routes and startup log\n'
+FAILURE_STAGE="HEALTH CHECK"
 for healthcheck_url in "${HEALTHCHECK_URLS[@]}"; do
-    http_status=""
-
+    http_status="000"
     for attempt in {1..10}; do
-        if ! http_status="$(
-            curl --location --silent --show-error \
-                --max-time 10 \
-                --output /dev/null \
-                --write-out '%{http_code}' \
-                "$healthcheck_url"
-        )"; then
-            http_status="000"
-        fi
-
-        if [[ "$http_status" == "200" ]]; then
-            break
-        fi
-
+        http_status="$(
+            curl --location --silent --show-error --max-time 10 \
+                --output /dev/null --write-out '%{http_code}' "$healthcheck_url" \
+                || printf '000'
+        )"
+        [[ "$http_status" == "200" ]] && break
         sleep 1
     done
-
-    if [[ "$http_status" != "200" ]]; then
-        printf 'HTTP health check failed: %s returned %s\n' \
-            "$healthcheck_url" "$http_status" >&2
-        false
-    fi
-
+    [[ "$http_status" == "200" ]] \
+        || { printf 'HTTP health check failed: %s=%s\n' "$healthcheck_url" "$http_status" >&2; false; }
     printf 'HTTP_200=%s\n' "$healthcheck_url"
 done
+root_status="$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 10 http://127.0.0.1:5000/)"
+[[ "$root_status" == "302" ]]
 
-root_headers="$(
-    curl --silent --show-error --max-time 10 --head \
-        http://127.0.0.1:5000/ |
-        tr -d '\r'
-)"
-printf '%s\n' "$root_headers" | grep -Eq '^HTTP/[^ ]+ 302'
-printf '%s\n' "$root_headers" |
-    grep -Eiq '^location: (https?://[^/]+)?/(register|login)(\?[^[:space:]]*)?$'
-
+printf 'POST-DEPLOY INTEGRITY: schema, ledger, data and service\n'
+FAILURE_STAGE="POST-DEPLOY INTEGRITY"
+if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" && -f instance/catalog.db ]]; then
+    "$PYTHON_BIN" scripts/migration_preflight.py verify \
+        --database instance/catalog.db \
+        --source-root "$PROJECT_DIR" \
+        --expected-sqlite-version "$PRODUCTION_SQLITE_VERSION" \
+        --report "${CATALOG_ROLLBACK_BACKUP%.db}-post-deploy.json"
+fi
+systemctl is-active --quiet "$SERVICE_NAME"
 if journalctl -u "$SERVICE_NAME" --since "-2 minutes" \
     --priority=err --no-pager --quiet | grep -q .; then
-    printf '%s\n' 'Service reported errors after restart' >&2
+    printf 'Service reported errors after deployment\n' >&2
     false
 fi
+[[ -z "$(git status --porcelain --untracked-files=normal | awk 'substr($0, 4, 9) != "instance/" { print }')" ]]
 
+cleanup_release
 trap - ERR
 printf 'DEPLOY_COMMIT=%s\n' "$CURRENT_COMMIT"
-printf '%s\n' 'DEPLOY_OK'
+printf 'DEPLOY_OK\n'
 REMOTE_SCRIPT

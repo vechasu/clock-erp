@@ -1,0 +1,721 @@
+"""Production-safe catalog schema migration tracking and verification.
+
+The production runtime uses SQLite 3.7.17.  Keep this module compatible with
+Python 3.6 and avoid SQL features introduced after that SQLite release.
+"""
+
+from __future__ import print_function
+
+import ast
+import fcntl
+import hashlib
+import inspect
+import json
+import os
+import re
+import sqlite3
+import subprocess
+import tempfile
+from datetime import datetime, timezone
+from pathlib import Path
+
+
+LEDGER_TABLE = "erp_migration_ledger"
+BASELINE_ID = "2026-08-24-production-schema-baseline-v1"
+BASELINE_NAME = "Production schema baseline after SQLite 3.7 compatibility"
+BASELINE_DEFINITION = "\n".join((
+    BASELINE_ID,
+    BASELINE_NAME,
+    "ledger-v1",
+    "catalog-schema-contract-v1",
+    "legacy-initializer-rehearsed-before-worker-start",
+))
+BASELINE_CHECKSUM = hashlib.sha256(
+    BASELINE_DEFINITION.encode("utf-8")
+).hexdigest()
+
+MIGRATIONS = (
+    {
+        "id": BASELINE_ID,
+        "name": BASELINE_NAME,
+        "checksum": BASELINE_CHECKSUM,
+        "transactional": False,
+        "recovery": "restore verified database backup while service is stopped",
+    },
+)
+
+REQUIRED_TABLES = {
+    "catalog_excel_products",
+    "catalog_stock_movements",
+    "erp_audit_events",
+    "erp_brands",
+    "erp_categories",
+    "erp_inventory_items",
+    "erp_inventory_sessions",
+    "erp_order_comments",
+    "erp_order_comment_sync_state",
+    "erp_order_product_mappings",
+    "erp_order_statuses",
+    "erp_receipt_items",
+    "erp_receipts",
+    "erp_sale_items",
+    "erp_sales",
+    "erp_schema_migrations",
+    LEDGER_TABLE,
+}
+
+REQUIRED_COMMENT_COLUMNS = {
+    "id",
+    "order_id",
+    "text",
+    "author_name",
+    "created_at",
+    "updated_at",
+    "external_system",
+    "external_id",
+    "sync_status",
+    "source",
+    "sync_attempts",
+    "next_retry_at",
+    "last_sync_error",
+}
+
+LEDGER_COLUMNS = {
+    "migration_id",
+    "name",
+    "checksum",
+    "state",
+    "applied_at",
+    "app_commit",
+    "details_json",
+}
+
+BUSINESS_TABLES = (
+    ("products", "catalog_excel_products", None),
+    ("sales", "erp_sales", None),
+    ("sale_items", "erp_sale_items", None),
+    ("stock_movements", "catalog_stock_movements", None),
+    ("order_statuses", "erp_order_statuses", None),
+    ("order_mappings", "erp_order_product_mappings", None),
+    ("receipts", "erp_receipts", None),
+    ("receipt_items", "erp_receipt_items", None),
+    ("comments", "erp_order_comments", None),
+    ("audit_events", "erp_audit_events", None),
+    (
+        "active_inventories",
+        "erp_inventory_sessions",
+        "status = 'active'",
+    ),
+    (
+        "active_inventory_items",
+        "erp_inventory_items",
+        "session_id IN (SELECT id FROM erp_inventory_sessions "
+        "WHERE status = 'active')",
+    ),
+)
+
+LEDGER_SQL = """
+CREATE TABLE IF NOT EXISTS erp_migration_ledger (
+    migration_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    checksum TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('applying', 'applied', 'failed')),
+    applied_at TEXT,
+    app_commit TEXT,
+    details_json TEXT NOT NULL DEFAULT '{}'
+)
+"""
+
+
+class MigrationError(RuntimeError):
+    pass
+
+
+class MigrationBusyError(MigrationError):
+    pass
+
+
+def utc_now():
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def _table_names(connection):
+    return {
+        row[0]
+        for row in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'"
+        ).fetchall()
+    }
+
+
+def _columns(connection, table):
+    return {row[1] for row in connection.execute(
+        "PRAGMA table_info({})".format(table)
+    ).fetchall()}
+
+
+def integrity_report(connection):
+    quick_rows = connection.execute("PRAGMA quick_check").fetchall()
+    quick = [str(row[0]) for row in quick_rows]
+    foreign_keys = [tuple(row) for row in connection.execute(
+        "PRAGMA foreign_key_check"
+    ).fetchall()]
+    return {
+        "quick_check": quick,
+        "foreign_key_violations": len(foreign_keys),
+    }
+
+
+def require_integrity(connection, stage):
+    report = integrity_report(connection)
+    if report["quick_check"] != ["ok"]:
+        raise MigrationError(
+            "{}: PRAGMA quick_check failed: {}".format(
+                stage, ", ".join(report["quick_check"])
+            )
+        )
+    if report["foreign_key_violations"]:
+        raise MigrationError(
+            "{}: PRAGMA foreign_key_check found {} violation(s)".format(
+                stage, report["foreign_key_violations"]
+            )
+        )
+    return report
+
+
+def business_snapshot(connection):
+    tables = _table_names(connection)
+    result = {}
+    for label, table, condition in BUSINESS_TABLES:
+        if table not in tables:
+            result[label] = None
+            continue
+        statement = "SELECT COUNT(*) FROM {}".format(table)
+        if condition:
+            statement += " WHERE " + condition
+        result[label] = int(connection.execute(statement).fetchone()[0])
+    if "catalog_excel_products" in tables:
+        value = connection.execute(
+            "SELECT COALESCE(SUM(stock), 0) FROM catalog_excel_products "
+            "WHERE active = 1"
+        ).fetchone()[0]
+        result["active_stock_sum"] = float(value or 0)
+    else:
+        result["active_stock_sum"] = None
+    return result
+
+
+def _normalized_default(value):
+    return None if value is None else " ".join(str(value).split())
+
+
+def schema_structure(connection):
+    tables = sorted(
+        name for name in _table_names(connection)
+        if not name.startswith("sqlite_")
+    )
+    structure = {"tables": {}, "indexes": [], "triggers": []}
+    for table in tables:
+        columns = []
+        for row in connection.execute(
+            "PRAGMA table_info({})".format(table)
+        ).fetchall():
+            columns.append((
+                str(row[1]),
+                str(row[2] or "").upper(),
+                int(row[3]),
+                _normalized_default(row[4]),
+                int(row[5]),
+            ))
+        columns.sort(key=lambda item: item[0])
+        foreign_keys = []
+        for row in connection.execute(
+            "PRAGMA foreign_key_list({})".format(table)
+        ).fetchall():
+            foreign_keys.append(tuple(str(value) for value in row[2:8]))
+        structure["tables"][table] = {
+            "columns": columns,
+            "foreign_keys": sorted(foreign_keys),
+        }
+        for row in connection.execute(
+            "PRAGMA index_list({})".format(table)
+        ).fetchall():
+            index_name = str(row[1])
+            unique = int(row[2])
+            index_columns = tuple(
+                str(index_row[2])
+                for index_row in connection.execute(
+                    "PRAGMA index_info('{}')".format(
+                        index_name.replace("'", "''")
+                    )
+                ).fetchall()
+            )
+            stable_name = index_name
+            structure["indexes"].append(
+                (table, stable_name, unique, index_columns)
+            )
+    structure["indexes"].sort()
+    for row in connection.execute(
+        "SELECT name, tbl_name, sql FROM sqlite_master "
+        "WHERE type = 'trigger' ORDER BY name"
+    ).fetchall():
+        structure["triggers"].append((
+            str(row[0]), str(row[1]), " ".join(str(row[2] or "").split())
+        ))
+    return structure
+
+
+def schema_fingerprint(connection):
+    payload = json.dumps(
+        schema_structure(connection),
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def schema_source_checksum():
+    from app.catalog_db import CatalogDatabase, SCHEMA
+
+    methods = [CatalogDatabase._initialize_schema]
+    methods.extend(
+        getattr(CatalogDatabase, name)
+        for name in sorted(dir(CatalogDatabase))
+        if name.startswith("_ensure_")
+    )
+    source = [SCHEMA]
+    source.extend(inspect.getsource(method) for method in methods)
+    normalized = "\n".join(" ".join(item.split()) for item in source)
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def verify_schema_contract(connection):
+    tables = _table_names(connection)
+    missing_tables = sorted(REQUIRED_TABLES - tables)
+    if missing_tables:
+        raise MigrationError(
+            "schema contract: missing tables: {}".format(
+                ", ".join(missing_tables)
+            )
+        )
+    missing_comments = sorted(
+        REQUIRED_COMMENT_COLUMNS - _columns(connection, "erp_order_comments")
+    )
+    if missing_comments:
+        raise MigrationError(
+            "schema contract: erp_order_comments missing columns: {}".format(
+                ", ".join(missing_comments)
+            )
+        )
+    missing_ledger = sorted(
+        LEDGER_COLUMNS - _columns(connection, LEDGER_TABLE)
+    )
+    if missing_ledger:
+        raise MigrationError(
+            "schema contract: migration ledger missing columns: {}".format(
+                ", ".join(missing_ledger)
+            )
+        )
+    index = connection.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?",
+        ("idx_erp_order_comments_external",),
+    ).fetchone()
+    if index is None:
+        raise MigrationError(
+            "schema contract: idx_erp_order_comments_external is missing"
+        )
+    index_sql = " ".join(str(index[0] or "").upper().split())
+    if " WHERE " in index_sql:
+        raise MigrationError(
+            "schema contract: idx_erp_order_comments_external is a partial index"
+        )
+    index_rows = connection.execute(
+        "PRAGMA index_info(idx_erp_order_comments_external)"
+    ).fetchall()
+    if [row[2] for row in index_rows] != ["external_system", "external_id"]:
+        raise MigrationError(
+            "schema contract: external comment index has unexpected columns"
+        )
+    unique = None
+    for row in connection.execute(
+        "PRAGMA index_list(erp_order_comments)"
+    ).fetchall():
+        if row[1] == "idx_erp_order_comments_external":
+            unique = int(row[2])
+            break
+    if unique != 1:
+        raise MigrationError(
+            "schema contract: external comment index is not unique"
+        )
+    return True
+
+
+def _migration_by_id(migration_id):
+    for migration in MIGRATIONS:
+        if migration["id"] == migration_id:
+            return migration
+    return None
+
+
+def verify_ledger(connection):
+    if LEDGER_TABLE not in _table_names(connection):
+        raise MigrationError("migration ledger is missing")
+    rows = connection.execute(
+        "SELECT migration_id, name, checksum, state FROM " + LEDGER_TABLE
+    ).fetchall()
+    seen = set()
+    for row in rows:
+        migration_id = str(row[0])
+        migration = _migration_by_id(migration_id)
+        if migration is None:
+            raise MigrationError(
+                "unknown migration in ledger: {}".format(migration_id)
+            )
+        if str(row[2]) != migration["checksum"]:
+            raise MigrationError(
+                "migration checksum mismatch: {}".format(migration_id)
+            )
+        if str(row[3]) != "applied":
+            raise MigrationError(
+                "migration is not fully applied: {} state={}".format(
+                    migration_id, row[3]
+                )
+            )
+        seen.add(migration_id)
+    missing = [m["id"] for m in MIGRATIONS if m["id"] not in seen]
+    if missing:
+        raise MigrationError(
+            "migration ledger is incomplete: {}".format(", ".join(missing))
+        )
+    return True
+
+
+def _migration_lock_path(database_path):
+    path = Path(database_path).resolve()
+    return path.parent / ".catalog-migration.lock"
+
+
+class MigrationLock:
+    def __init__(self, database_path):
+        self.path = _migration_lock_path(database_path)
+        self.handle = None
+
+    def __enter__(self):
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.handle = self.path.open("a+")
+        try:
+            fcntl.flock(self.handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except (IOError, OSError):
+            self.handle.close()
+            self.handle = None
+            raise MigrationBusyError(
+                "another migration runner holds {}".format(self.path)
+            )
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        if self.handle is not None:
+            fcntl.flock(self.handle.fileno(), fcntl.LOCK_UN)
+            self.handle.close()
+
+
+def apply_migrations(database_path, app_commit="", ddl_observer=None):
+    from app.catalog_db import CatalogDatabase
+
+    path = Path(database_path).resolve()
+    with MigrationLock(path):
+        connection = sqlite3.connect(str(path))
+        try:
+            connection.execute("PRAGMA foreign_keys = ON")
+            connection.execute(LEDGER_SQL)
+            connection.commit()
+            known_ids = {migration["id"] for migration in MIGRATIONS}
+            rows = connection.execute(
+                "SELECT migration_id, checksum, state FROM " + LEDGER_TABLE
+            ).fetchall()
+            for migration_id, checksum, state in rows:
+                if migration_id not in known_ids:
+                    raise MigrationError(
+                        "unknown migration in ledger: {}".format(migration_id)
+                    )
+                migration = _migration_by_id(migration_id)
+                if checksum != migration["checksum"]:
+                    raise MigrationError(
+                        "migration checksum mismatch: {}".format(migration_id)
+                    )
+                if state != "applied":
+                    raise MigrationError(
+                        "partially applied migration detected: {} state={}".format(
+                            migration_id, state
+                        )
+                    )
+        finally:
+            connection.close()
+
+        for migration in MIGRATIONS:
+            connection = sqlite3.connect(str(path))
+            try:
+                row = connection.execute(
+                    "SELECT checksum, state FROM {} WHERE migration_id = ?".format(
+                        LEDGER_TABLE
+                    ),
+                    (migration["id"],),
+                ).fetchone()
+                if row is not None:
+                    continue
+                connection.execute(
+                    "INSERT INTO {} (migration_id, name, checksum, state, "
+                    "applied_at, app_commit, details_json) "
+                    "VALUES (?, ?, ?, 'applying', NULL, ?, ?)".format(
+                        LEDGER_TABLE
+                    ),
+                    (
+                        migration["id"],
+                        migration["name"],
+                        migration["checksum"],
+                        str(app_commit or "") or None,
+                        json.dumps(
+                            {
+                                "transactional": migration["transactional"],
+                                "recovery": migration["recovery"],
+                            },
+                            sort_keys=True,
+                        ),
+                    ),
+                )
+                connection.commit()
+            finally:
+                connection.close()
+
+            try:
+                CatalogDatabase(
+                    path,
+                    cache_initialization=False,
+                    ddl_observer=ddl_observer,
+                ).initialize(allow_schema_changes=True)
+                connection = sqlite3.connect(str(path))
+                try:
+                    verify_schema_contract(connection)
+                    require_integrity(connection, migration["id"])
+                    connection.execute(
+                        "UPDATE {} SET state = 'applied', applied_at = ?, "
+                        "app_commit = ? WHERE migration_id = ? "
+                        "AND state = 'applying'".format(LEDGER_TABLE),
+                        (utc_now(), str(app_commit or "") or None, migration["id"]),
+                    )
+                    if connection.total_changes != 1:
+                        raise MigrationError(
+                            "migration state changed concurrently: {}".format(
+                                migration["id"]
+                            )
+                        )
+                    connection.commit()
+                finally:
+                    connection.close()
+            except Exception:
+                connection = sqlite3.connect(str(path))
+                try:
+                    connection.execute(
+                        "UPDATE {} SET state = 'failed' "
+                        "WHERE migration_id = ? AND state = 'applying'".format(
+                            LEDGER_TABLE
+                        ),
+                        (migration["id"],),
+                    )
+                    connection.commit()
+                finally:
+                    connection.close()
+                raise
+
+        connection = sqlite3.connect(str(path))
+        try:
+            verify_ledger(connection)
+            verify_schema_contract(connection)
+            integrity = require_integrity(connection, "migration-complete")
+            return {
+                "latest_migration": MIGRATIONS[-1]["id"],
+                "schema_fingerprint": schema_fingerprint(connection),
+                "schema_source_checksum": schema_source_checksum(),
+                "business": business_snapshot(connection),
+                "integrity": integrity,
+            }
+        finally:
+            connection.close()
+
+
+def guard_paths(database_path):
+    parent = Path(database_path).resolve().parent
+    return (
+        parent / ".catalog-schema-preflight-required",
+        parent / ".catalog-schema-state.json",
+    )
+
+
+def runtime_guard_required(database_path):
+    if str(database_path) == ":memory:":
+        return False
+    sentinel, unused_marker = guard_paths(database_path)
+    return sentinel.exists()
+
+
+def write_runtime_guard(database_path, app_commit):
+    path = Path(database_path).resolve()
+    connection = sqlite3.connect(str(path))
+    try:
+        verify_ledger(connection)
+        verify_schema_contract(connection)
+        require_integrity(connection, "runtime-guard")
+        state = {
+            "app_commit": str(app_commit or ""),
+            "latest_migration": MIGRATIONS[-1]["id"],
+            "migration_checksum": MIGRATIONS[-1]["checksum"],
+            "schema_fingerprint": schema_fingerprint(connection),
+            "schema_source_checksum": schema_source_checksum(),
+            "sqlite_version": sqlite3.sqlite_version,
+            "written_at": utc_now(),
+        }
+    finally:
+        connection.close()
+    sentinel, marker = guard_paths(path)
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    file_descriptor, temporary_name = tempfile.mkstemp(
+        prefix=".catalog-schema-state-",
+        suffix=".tmp",
+        dir=str(marker.parent),
+    )
+    try:
+        with os.fdopen(file_descriptor, "w") as handle:
+            json.dump(state, handle, sort_keys=True)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(temporary_name, 0o600)
+        os.replace(temporary_name, str(marker))
+    except Exception:
+        try:
+            os.unlink(temporary_name)
+        except OSError:
+            pass
+        raise
+    sentinel_descriptor, sentinel_temporary = tempfile.mkstemp(
+        prefix=".catalog-schema-preflight-required-",
+        suffix=".tmp",
+        dir=str(sentinel.parent),
+    )
+    try:
+        with os.fdopen(sentinel_descriptor, "w") as handle:
+            handle.write(MIGRATIONS[-1]["id"] + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(sentinel_temporary, 0o600)
+        os.replace(sentinel_temporary, str(sentinel))
+    except Exception:
+        try:
+            os.unlink(sentinel_temporary)
+        except OSError:
+            pass
+        raise
+    return state
+
+
+def verify_runtime_guard(database_path):
+    path = Path(database_path).resolve()
+    sentinel, marker = guard_paths(path)
+    if not sentinel.exists():
+        return False
+    if not marker.exists():
+        raise MigrationError("schema preflight marker is missing")
+    try:
+        state = json.loads(marker.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise MigrationError("schema preflight marker is invalid: {}".format(error))
+    expected = {
+        "latest_migration": MIGRATIONS[-1]["id"],
+        "migration_checksum": MIGRATIONS[-1]["checksum"],
+        "schema_source_checksum": schema_source_checksum(),
+    }
+    for key, value in expected.items():
+        if state.get(key) != value:
+            raise MigrationError(
+                "schema preflight marker mismatch: {}".format(key)
+            )
+    connection = sqlite3.connect(
+        "file:{}?mode=ro".format(path), uri=True
+    )
+    try:
+        verify_ledger(connection)
+        verify_schema_contract(connection)
+        fingerprint = schema_fingerprint(connection)
+    finally:
+        connection.close()
+    if fingerprint != state.get("schema_fingerprint"):
+        raise MigrationError("production schema changed after migration preflight")
+    return True
+
+
+def sqlite_backup(source, target, sqlite_binary="sqlite3"):
+    source = Path(source).resolve()
+    target = Path(target).resolve()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    escaped = str(target).replace("'", "''")
+    completed = subprocess.run(
+        [sqlite_binary, str(source), ".backup '{}'".format(escaped)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True,
+    )
+    if completed.returncode != 0:
+        raise MigrationError(
+            "SQLite backup failed: {}".format(
+                completed.stderr.strip() or "unknown sqlite3 error"
+            )
+        )
+    os.chmod(str(target), 0o600)
+    return target
+
+
+def validate_known_sql_compatibility(source_root):
+    source_root = Path(source_root)
+    paths = [source_root / "app" / "catalog_db.py"]
+    paths.extend(sorted((source_root / "scripts").glob("migrate_*.py")))
+    forbidden = (
+        (re.compile(r"\bON\s+CONFLICT\b", re.I), "modern UPSERT"),
+        (re.compile(r"\bRETURNING\b", re.I), "RETURNING"),
+        (re.compile(r"\bWITHOUT\s+ROWID\b", re.I), "WITHOUT ROWID"),
+        (re.compile(r"\bGENERATED\s+ALWAYS\b", re.I), "generated column"),
+        (re.compile(r"\bDROP\s+COLUMN\b", re.I), "ALTER TABLE DROP COLUMN"),
+        (re.compile(r"\bRENAME\s+COLUMN\b", re.I), "ALTER TABLE RENAME COLUMN"),
+        (re.compile(r"\bOVER\s*\(", re.I), "window function"),
+        (re.compile(r"\bCREATE\s+TABLE\b[^;]*\bSTRICT\b", re.I | re.S), "STRICT table"),
+        (
+            re.compile(
+                r"\bCREATE\s+(?:UNIQUE\s+)?INDEX\b[^;]*\bWHERE\b",
+                re.I | re.S,
+            ),
+            "partial index",
+        ),
+    )
+    violations = []
+    for path in paths:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            value = None
+            if isinstance(node, ast.Str):
+                value = node.s
+            elif hasattr(ast, "Constant") and isinstance(node, ast.Constant):
+                value = node.value if isinstance(node.value, str) else None
+            if not value:
+                continue
+            for pattern, label in forbidden:
+                if pattern.search(value):
+                    violations.append(
+                        "{}:{}: {}".format(path, getattr(node, "lineno", 0), label)
+                    )
+    if violations:
+        raise MigrationError(
+            "SQL incompatible with production SQLite 3.7.17:\n{}".format(
+                "\n".join(violations)
+            )
+        )
+    return [str(path) for path in paths]

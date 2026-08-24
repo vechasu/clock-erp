@@ -58,8 +58,14 @@ jobs:
       # Tests use temporary databases and fake/mock clients. No integration
       # scripts, production secrets, SSH, deploy, Bitrix writes or MoySklad
       # writes are invoked by this workflow.
+      - name: Check production SQLite SQL compatibility
+        run: python scripts/migration_preflight.py static-check --source-root .
+
+      - name: Validate deploy shell
+        run: bash -n scripts/deploy.sh
+
       - name: Run unit tests
-        run: python -m unittest discover -s tests -v
+        run: python scripts/run_backend_tests.py --start-directory tests
 
       - name: Compile Python sources
         run: python -m compileall app scripts tests
