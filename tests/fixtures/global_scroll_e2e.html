@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ERP global scroll regression</title>
+    <link rel="stylesheet" href="/app/static/css/sidebar.css">
+    <style>
+        * { box-sizing: border-box; }
+        body { margin: 0; }
+        .main { padding: 24px 26px 32px; }
+        .long-content { height: 1400px; }
+        .bottom-action { min-height: 42px; }
+    </style>
+</head>
+<body>
+    <div class="app">
+        <aside class="sidebar" aria-label="Навигация"></aside>
+        <main class="main" id="main-content">
+            <div class="long-content" aria-hidden="true"></div>
+            <button class="bottom-action" type="button">Нижнее действие</button>
+        </main>
+        <nav class="mobile-erp-navigation" aria-label="Мобильная навигация"></nav>
+    </div>
+    <script>
+        const result = document.createElement("output");
+        result.id = "scrollE2eResult";
+        document.body.append(result);
+
+        const action = document.querySelector(".bottom-action");
+        const scenario = new URLSearchParams(window.location.search).get("target");
+        action.textContent = scenario === "customers" ? "Страница 2" : "Добавить";
+        action.dataset.target = scenario === "customers" ? "pagination" : "comment";
+        let clicked = false;
+        action.addEventListener("click", () => { clicked = true; });
+
+        window.scrollTo(0, document.documentElement.scrollHeight);
+        action.click();
+
+        requestAnimationFrame(() => {
+            const htmlStyle = getComputedStyle(document.documentElement);
+            const bodyStyle = getComputedStyle(document.body);
+            const actionRect = action.getBoundingClientRect();
+            const sidebarRect = document.querySelector(".sidebar").getBoundingClientRect();
+            const mobileNavigation = document.querySelector(".mobile-erp-navigation");
+            const mobileNavigationStyle = getComputedStyle(mobileNavigation);
+            const mobileNavigationRect = mobileNavigation.getBoundingClientRect();
+            const mobile = mobileNavigationStyle.display !== "none";
+            const atEnd = Math.abs(
+                window.scrollY
+                - (document.documentElement.scrollHeight - window.innerHeight)
+            ) <= 1;
+            const contentBottom = mobile
+                ? mobileNavigationRect.top
+                : window.innerHeight;
+            const bottomGap = contentBottom - actionRect.bottom;
+            const sidebarStable = mobile
+                ? sidebarRect.height === 0
+                : sidebarRect.top === 0
+                    && sidebarRect.bottom === window.innerHeight;
+            const passed = (
+                htmlStyle.overflowY === "auto"
+                && bodyStyle.overflowY === "visible"
+                && atEnd
+                && actionRect.top >= 0
+                && bottomGap >= 31
+                && bottomGap <= 33
+                && sidebarStable
+                && clicked
+            );
+            result.dataset.globalScrollE2e = passed ? "pass" : "fail";
+            result.dataset.scenario = scenario || "order";
+            result.dataset.details = JSON.stringify({
+                htmlOverflowY: htmlStyle.overflowY,
+                bodyOverflowY: bodyStyle.overflowY,
+                atEnd,
+                bottomGap,
+                mobile,
+                sidebarTop: sidebarRect.top,
+                sidebarBottom: sidebarRect.bottom,
+                viewportHeight: window.innerHeight,
+                clicked,
+            });
+        });
+    </script>
+</body>
+</html>
