@@ -61,6 +61,7 @@
             const heightBefore = card.getBoundingClientRect().height;
             window.setBrandDropdownOpen(brand, true);
             await delay(20);
+            window.dispatchEvent(new Event("resize"));
             const heightOpen = card.getBoundingClientRect().height;
             const dropdownStyle = getComputedStyle(brand.querySelector(".brand-combobox-dropdown"));
             result.floating = heightBefore === heightOpen && dropdownStyle.position === "fixed";
