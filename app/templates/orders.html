@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/erp-components.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-combobox.css', v='catalog-combobox-20260824-product-hierarchy') }}">
     <script defer src="{{ url_for('static', filename='js/catalog-combobox.js', v='catalog-combobox-20260824-product-hierarchy') }}"></script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/orders.css', v='orders-search-pagination-comments-v3') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/orders.css', v='orders-list-filters-v4') }}">
 </head>
 <body class="orders-page" data-has-selected-order="{{ 1 if selected_order_explicit|default(false) else 0 }}">
 {% from "_catalog_combobox.html" import render_catalog_combobox %}
@@ -60,7 +60,10 @@
         <div class="workspace" id="ordersWorkspace" data-layout-mode="split">
             <section class="panel orders-list-panel" aria-label="Список заказов">
                 <form class="panel-toolbar filters erp-toolbar" method="get" action="{{ url_for('orders_page') }}">
-                    <div class="erp-search-wrap"><input class="field field-search erp-search-input" type="search" id="orderSearch" name="q" value="{{ request.args.get('q','') }}" placeholder="Номер, ФИО, телефон, сумма или дата" aria-label="Поиск заказов" autocomplete="off"></div>
+                    <div class="erp-search-wrap">
+                        <input class="field field-search erp-search-input" type="search" id="orderSearch" name="q" value="{{ request.args.get('q','') }}" placeholder="Номер, ФИО, телефон, сумма или дата" aria-label="Поиск заказов" autocomplete="off">
+                        {% if request.args.get('q') or request.args.get('status','all') != 'all' or request.args.get('period','all') != 'all' or request.args.get('source','all') != 'all' %}<a class="filter-reset" href="{{ url_for('orders_page') }}">Сбросить</a>{% endif %}
+                    </div>
                     <div class="filter-selects">
                         <select class="field" name="source" aria-label="Источник заказа" data-auto-submit-filter>
                             {% for value,label in [('all','Все источники'),('tictactoy','Tictactoy'),('wildberries','Wildberries')] %}<option value="{{ value }}"{% if request.args.get('source','all') == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
@@ -73,8 +76,6 @@
                         <select class="field" name="period" aria-label="Период" data-auto-submit-filter>
                             {% for value,label in [('all','За всё время'),('today','Сегодня'),('7d','7 дней'),('30d','30 дней')] %}<option value="{{ value }}"{% if request.args.get('period','all') == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
                         </select>
-                        {% if request.args.get('q') or request.args.get('status','all') != 'all' or request.args.get('period','all') != 'all' or request.args.get('source','all') != 'all' %}<a class="button button-secondary filter-reset" href="{{ url_for('orders_page') }}">Сбросить</a>{% endif %}
-                        <button class="button button-secondary list-collapse-control" type="button" data-collapse-list>Свернуть список</button>
                     </div>
                 </form>
                 {# Included results provide erp-empty-state, erp-no-results-state and «Сбросить фильтры». #}
@@ -263,7 +264,6 @@
     applyMode(initial,false);
     options.forEach(option=>option.addEventListener('click',()=>applyMode(option.dataset.layoutMode)));
     switcher?.addEventListener('keydown',event=>{if(!['ArrowLeft','ArrowRight'].includes(event.key))return;event.preventDefault();const current=modes.indexOf(workspace.dataset.layoutMode);const next=Math.max(0,Math.min(2,current+(event.key==='ArrowRight'?1:-1)));applyMode(modes[next]);options[next]?.focus();});
-    document.querySelector('[data-collapse-list]')?.addEventListener('click',()=>applyMode('card'));
     document.querySelector('[data-show-list]')?.addEventListener('click',()=>applyMode('list'));
 
     function formatMoney(value){const number=Number(String(value??'').replace(',','.'));return Number.isFinite(number)?new Intl.NumberFormat('ru-RU',{minimumFractionDigits:Number.isInteger(number)?0:2,maximumFractionDigits:2}).format(number):'—';}
