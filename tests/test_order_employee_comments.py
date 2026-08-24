@@ -1,6 +1,7 @@
 import sqlite3
 import tempfile
 import unittest
+from contextlib import ExitStack
 from pathlib import Path
 from unittest import mock
 
@@ -81,13 +82,22 @@ class OrderEmployeeCommentsTest(unittest.TestCase):
         web.app.config.update(TESTING=True, AUTH_TESTING=False)
         client = web.app.test_client()
         try:
-            with (
-                mock.patch.object(web, "can_view_orders", return_value=True),
-                mock.patch.object(web, "get_order", return_value={"id": "21114"}),
-                mock.patch.object(web, "current_auth_user", return_value={"id": "user-1"}),
-                mock.patch.object(web, "current_sales_user_name", return_value="Максим"),
-                mock.patch.object(web, "order_comments_service", return_value=service),
-            ):
+            with ExitStack() as stack:
+                stack.enter_context(mock.patch.object(
+                    web, "can_view_orders", return_value=True
+                ))
+                stack.enter_context(mock.patch.object(
+                    web, "get_order", return_value={"id": "21114"}
+                ))
+                stack.enter_context(mock.patch.object(
+                    web, "current_auth_user", return_value={"id": "user-1"}
+                ))
+                stack.enter_context(mock.patch.object(
+                    web, "current_sales_user_name", return_value="Максим"
+                ))
+                stack.enter_context(mock.patch.object(
+                    web, "order_comments_service", return_value=service
+                ))
                 response = client.post(
                     "/order/21114/comments",
                     data={"text": "Текст", "author_name": "Подмена"},
@@ -115,18 +125,19 @@ class OrderEmployeeCommentsTest(unittest.TestCase):
         web.app.config.update(TESTING=True, AUTH_TESTING=False)
         client = web.app.test_client()
         try:
-            with (
-                mock.patch.object(web, "can_view_orders", return_value=True),
-                mock.patch.object(
+            with ExitStack() as stack:
+                stack.enter_context(mock.patch.object(
+                    web, "can_view_orders", return_value=True
+                ))
+                stack.enter_context(mock.patch.object(
                     web, "current_auth_user", return_value={"id": "user-1"}
-                ),
-                mock.patch.object(
+                ))
+                stack.enter_context(mock.patch.object(
                     web, "current_sales_user_name", return_value="Максим"
-                ),
-                mock.patch.object(
+                ))
+                stack.enter_context(mock.patch.object(
                     web, "order_comments_service", return_value=service
-                ),
-            ):
+                ))
                 first = client.post(
                     "/order/29999/comments",
                     data={"text": "Первый комментарий"},
@@ -161,11 +172,16 @@ class OrderEmployeeCommentsTest(unittest.TestCase):
         web.app.config.update(TESTING=True, AUTH_TESTING=False)
         client = web.app.test_client()
         try:
-            with (
-                mock.patch.object(web, "can_view_orders", return_value=True),
-                mock.patch.object(web, "current_auth_user", return_value={}),
-                mock.patch.object(web, "order_comments_service", return_value=service),
-            ):
+            with ExitStack() as stack:
+                stack.enter_context(mock.patch.object(
+                    web, "can_view_orders", return_value=True
+                ))
+                stack.enter_context(mock.patch.object(
+                    web, "current_auth_user", return_value={}
+                ))
+                stack.enter_context(mock.patch.object(
+                    web, "order_comments_service", return_value=service
+                ))
                 response = client.post(
                     "/order/29999/comments", data={"text": "   "},
                     headers={"Accept": "application/json"},
@@ -186,11 +202,16 @@ class OrderEmployeeCommentsTest(unittest.TestCase):
         web.app.config.update(TESTING=True, AUTH_TESTING=False)
         client = web.app.test_client()
         try:
-            with (
-                mock.patch.object(web, "can_view_orders", return_value=True),
-                mock.patch.object(web, "current_auth_user", return_value={}),
-                mock.patch.object(web, "order_comments_service", return_value=service),
-            ):
+            with ExitStack() as stack:
+                stack.enter_context(mock.patch.object(
+                    web, "can_view_orders", return_value=True
+                ))
+                stack.enter_context(mock.patch.object(
+                    web, "current_auth_user", return_value={}
+                ))
+                stack.enter_context(mock.patch.object(
+                    web, "order_comments_service", return_value=service
+                ))
                 response = client.post(
                     "/order/29999/comments", data={"text": "Текст"},
                     headers={"Accept": "application/json"},
