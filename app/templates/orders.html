@@ -129,8 +129,10 @@
                     <div class="detail-body">
                         {% if selected_order.get('status_sync_state') == 'pending' %}<div class="warning">Статус сохранён в ERP и ожидает синхронизации с Bitrix. Повторные попытки выполняются автоматически.</div>{% elif selected_order.get('status_sync_state') == 'unknown' %}<div class="warning">Bitrix передал неизвестный статус. Текущий статус ERP сохранён, событие записано в журнал.</div>{% endif %}
                         {% if selected_order.get('sync_state') == 'partial' %}<div class="warning">Карточка загружена частично. Недоступны: {{ selected_order.get('sync_missing')|join(', ') }}. Небезопасные действия заблокированы.</div>{% elif selected_order.get('sync_state') == 'error' %}<div class="warning">Не удалось загрузить полную карточку. <a href="{{ request.path }}?retry=1">Повторить загрузку</a>.</div>{% endif %}
+                        <div class="order-detail-grid">
+                        <div class="order-detail-main">
                         {% if is_wb %}
-                        <section class="section">
+                        <section class="section order-information">
                             <div class="section-head"><h3>Wildberries FBS</h3></div>
                             <div class="customer-grid">
                                 <div class="fact"><span class="fact-label">Номер WB</span><span class="fact-value">{{ selected_order.get('wb_order_id') }}</span></div>
@@ -139,24 +141,35 @@
                                 {% if selected_order.get('delivery_type') %}<div class="fact"><span class="fact-label">Доставка</span><span class="fact-value">{{ selected_order.get('delivery_type')|upper }}</span></div>{% endif %}
                             </div>
                         </section>
-                        {% else %}<section class="section">
-                            <div class="section-head"><h3>Клиент и доставка</h3></div>
+                        {% else %}<section class="section order-information">
+                            <div class="section-head"><h3>Информация о клиенте</h3></div>
                             <div class="customer-grid">
                                 <div class="fact"><span class="fact-label">Клиент</span><span class="fact-value">{% if selected_customer_id %}<a href="{{ url_for('customer_detail_page', customer_id=selected_customer_id) }}">{{ selected_order.get('customer') or 'Открыть клиента' }}</a>{% else %}{{ selected_order.get('customer') or 'Не указан' }}{% endif %}</span></div>
                                 <div class="fact"><span class="fact-label">Телефон</span><span class="fact-value">{% if selected_order.get('phone') %}<a href="tel:{{ selected_order.get('phone')|replace(' ','') }}">{{ selected_order.get('phone') }}</a>{% else %}Не указан{% endif %}</span></div>
                                 <div class="fact"><span class="fact-label">Email</span><span class="fact-value">{% if selected_order.get('email') %}<a href="mailto:{{ selected_order.get('email') }}">{{ selected_order.get('email') }}</a>{% else %}Не указан{% endif %}</span></div>
                                 <div class="fact geography-fact"><span class="fact-label">География доставки</span><span class="fact-value">{{ [order_geography.country, order_geography.region, order_geography.city or selected_order.get('city')]|select|join(' · ') or 'Не указана' }}</span></div>
+                            </div>
+                        </section>
+                        <section class="section order-delivery">
+                            <div class="section-head"><h3>Доставка</h3></div>
+                            <div class="customer-grid">
                                 <div class="fact"><span class="fact-label">Адрес</span><span class="fact-value">{{ selected_order.get('address') or selected_order.get('delivery_address') or 'Не указан' }}</span></div>
                                 <div class="fact"><span class="fact-label">Способ доставки</span><span class="fact-value">{{ selected_order.get('delivery') or 'Не передан Bitrix' }}</span></div>
+                                <div class="fact tracking-fact"><label class="fact-label" for="orderTracking">Трекинг</label><form class="tracking-form" method="post" action="/order/{{ detail_id }}/tracking" data-tracking-form data-erp-pending data-pending-label="Сохраняем трекинг…"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input class="field" id="orderTracking" name="tracking" maxlength="255" value="{{ request.args.get('tracking_value', order_tracking or '') }}" placeholder="Номер отправления"><button class="button button-secondary orders-secondary-submit" type="submit">Сохранить</button></form></div>
+                            </div>
+                        </section>
+                        <section class="section order-payment">
+                            <div class="section-head"><h3>Оплата</h3></div>
+                            <div class="customer-grid">
                                 <div class="fact"><span class="fact-label">Способ оплаты</span><span class="fact-value">{{ selected_order.get('payment') or 'Не передан Bitrix' }}</span></div>
                                 <div class="fact"><span class="fact-label">Статус оплаты</span><span class="fact-value">{{ selected_order.get('paid_name') or ('Оплачен' if selected_order.get('paid')|string|upper == 'Y' else 'Не оплачен') }}</span></div>
-                                <div class="fact tracking-fact"><label class="fact-label" for="orderTracking">Трекинг</label><form class="tracking-form" method="post" action="/order/{{ detail_id }}/tracking" data-tracking-form data-erp-pending data-pending-label="Сохраняем трекинг…"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input class="field" id="orderTracking" name="tracking" maxlength="255" value="{{ request.args.get('tracking_value', order_tracking or '') }}" placeholder="Номер отправления"><button class="button button-secondary orders-secondary-submit" type="submit">Сохранить</button></form></div>
+                                <div class="fact"><span class="fact-label">Сумма к оплате</span><span class="fact-value">{% if detail_total is not none %}<span class="money-value" data-amount="{{ detail_total }}"></span> ₽{% else %}—{% endif %}</span></div>
                             </div>
                         </section>
                         {% endif %}
 
-                        <section class="section">
-                            <div class="section-head"><h3>Состав заказа · {{ detail_products|length }}</h3></div>
+                        <section class="section order-products">
+                            <div class="section-head"><h3>Товары в заказе · {{ detail_products|length }}</h3></div>
                             {% if detail_products %}<div class="product-list">
                             {% for product in detail_products %}
                                 {% set pid = product.get('product_id') or product.get('PRODUCT_ID') or product.get('id') or product.get('ID') or '' %}
@@ -173,7 +186,7 @@
                                         <div class="product-copy">
                                             <div class="product-name">{{ product.get('name') or product.get('NAME') or 'Товар без названия' }}</div>
                                             <div class="product-note">{% if is_wb %}{{ qty }} шт.{% else %}{{ product.get('brand') or (mapped.brand if mapped else 'Бренд не указан') }} · {{ product.get('category') or (mapped.category if mapped else 'Категория не указана') }} · {{ qty }} шт.{% endif %}</div>
-                                            {% if is_wb %}<div class="product-note">Артикул: {{ product.get('article') or '—' }}{% if product.get('barcode') %} · Barcode: {{ product.get('barcode') }}{% endif %}{% if product.get('nm_id') is not none %} · nmId: {{ product.get('nm_id') }}{% endif %}</div>{% endif %}
+                                            <div class="product-note">Артикул: {{ product.get('sku') or product.get('SKU') or product.get('article') or product.get('ARTICLE') or (mapped.article if mapped else '') or '—' }}{% if is_wb and product.get('barcode') %} · Barcode: {{ product.get('barcode') }}{% endif %}{% if is_wb and product.get('nm_id') is not none %} · nmId: {{ product.get('nm_id') }}{% endif %}</div>
                                             <div class="mapping" data-order-mapping{% if mapped and mapping.state == 'mapped' and mapping.mapping_method != 'manual' %} hidden{% endif %}>
                                                 <span class="map-state bad" data-order-mapping-state{% if mapped and mapping.state == 'mapped' %} hidden{% endif %}>{{ mapping.state_label if mapping and mapping.state not in ['unmapped', 'missing_external_id'] else 'Не удалось определить товар ERP' }}</span>
                                                 <div data-order-mapping-summary hidden><div class="mapping-card"><div class="mapping-copy"><strong data-mapping-product-name></strong><span data-mapping-product-meta></span></div></div></div>
@@ -195,23 +208,9 @@
                             <div class="section-head"><h3>Комментарий покупателя</h3></div>
                             <div class="order-note-value">{{ selected_order.get('comment') or 'Комментарий не оставлен.' }}</div>
                         </section>
-                        <section class="section order-comments">
-                            <div class="section-head order-comments-head"><div><h3>Внутренние комментарии</h3><span>Видны только сотрудникам</span></div>{% if order_comments %}<span>{{ order_comments|length }} записей</span>{% endif %}</div>
-                            <div class="employee-comment-feed">
-                                {% for comment in order_comments %}
-                                    <article class="employee-comment"><div>{{ comment.text }}</div><small>{{ comment.author_name }} · <span class="date-value" data-date="{{ comment.created_at }}"></span></small></article>
-                                {% else %}<div class="employee-comment-empty">Комментариев сотрудников пока нет.</div>{% endfor %}
-                            </div>
-                            <form class="employee-comment-form" method="post" action="/order/{{ detail_id }}/comments" data-employee-comment-form>
-                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                <label class="sr-only" for="employeeOrderComment">Внутренний комментарий</label>
-                                <textarea class="field" id="employeeOrderComment" name="text" maxlength="2000" rows="1" required placeholder="Добавить внутренний комментарий…"></textarea>
-                                <button class="button button-secondary" type="submit">Добавить</button>
-                            </form>
-                        </section>
                         {% endif %}
 
-                        {% if not is_wb %}<section class="section">
+                        {% if not is_wb %}<section class="section order-calculation">
                             <div class="section-head"><h3>Расчёт заказа</h3></div>
                             <div class="calculation-layout">
                                 <div class="summary">
@@ -228,6 +227,28 @@
                             </div>
                             {% if not legacy_calc_ok and not selected_order.get('calculation_complete') %}<div class="warning">Bitrix не передал отдельную стоимость доставки. Итог не записан в доставку; проведение продажи заблокировано до получения полного расчёта.</div>{% elif not legacy_calc_ok and not selected_order.get('calculation_consistent') %}<div class="warning">Расчёт не сходится: товары − скидка + доставка ≠ итог. Проведение заблокировано.</div>{% endif %}
                         </section>{% endif %}
+                        </div>
+                        <section class="section order-comments" aria-labelledby="internalCommentsTitle">
+                            <div class="section-head order-comments-head"><div><h3 id="internalCommentsTitle">Внутренние комментарии</h3><span>Видны только сотрудникам</span></div><span data-comment-count>{{ order_comments|length }} записей</span></div>
+                            <div class="employee-comment-feed" data-comment-feed>
+                                {% for comment in order_comments %}
+                                    <article class="employee-comment" data-comment-id="{{ comment.id }}"{% if loop.index > 8 %} data-comment-overflow hidden{% endif %}>
+                                        <div class="employee-comment-meta"><strong>{{ comment.author_name }}</strong><time class="date-value" datetime="{{ comment.created_at }}" data-date="{{ comment.created_at }}"></time>{% if comment.can_edit %}<details class="comment-menu"><summary aria-label="Действия с комментарием">⋯</summary><button type="button" data-edit-comment>Редактировать</button></details>{% endif %}</div>
+                                        <div class="employee-comment-text" data-comment-text>{{ comment.text }}</div>
+                                        <div class="employee-comment-state">{% if comment.updated_at and comment.updated_at != comment.created_at %}<span>изменено</span>{% endif %}{% if comment.sync_status in ['pending','error'] %}<span>Bitrix: ожидает синхронизации</span>{% elif comment.sync_status == 'conflict' %}<span class="comment-conflict">Конфликт синхронизации — обе версии сохранены</span>{% endif %}</div>
+                                        {% if comment.can_edit %}<form class="employee-comment-edit" method="post" action="{% if is_wb %}/order/wildberries/{{ selected_order.get('wb_order_id') }}/comments/{{ comment.id }}{% else %}/order/{{ detail_id }}/comments/{{ comment.id }}{% endif %}" data-comment-edit-form hidden><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><label class="sr-only" for="editComment{{ comment.id }}">Редактировать внутренний комментарий</label><textarea class="field" id="editComment{{ comment.id }}" name="text" maxlength="2000" rows="3" required>{{ comment.text }}</textarea><div><button class="button button-secondary" type="button" data-cancel-comment-edit>Отмена</button><button class="button button-primary" type="submit">Сохранить</button></div><p class="comment-form-error" role="alert" hidden></p></form>{% endif %}
+                                    </article>
+                                {% else %}<div class="employee-comment-empty" data-comment-empty>Комментариев сотрудников пока нет.</div>{% endfor %}
+                            </div>
+                            {% if order_comments|length > 8 %}<button class="comment-show-more" type="button" data-comment-show-more>Показать ещё {{ order_comments|length - 8 }}</button>{% endif %}
+                            <form class="employee-comment-form" method="post" action="{{ order_comment_action }}" data-employee-comment-form>
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <label class="sr-only" for="employeeOrderComment">Внутренний комментарий</label>
+                                <textarea class="field" id="employeeOrderComment" name="text" maxlength="2000" rows="3" required placeholder="Добавить внутренний комментарий…"></textarea>
+                                <div class="employee-comment-compose-actions"><p class="comment-form-error" role="alert" data-comment-error hidden></p><button class="button button-primary" type="submit">Добавить</button></div>
+                            </form>
+                        </section>
+                        </div>
                     </div>
                 </div>
             {% else %}<div class="empty"><strong>Выберите заказ в списке</strong><br>Полная карточка загрузится отдельным безопасным запросом.</div>{% endif %}
@@ -310,8 +331,35 @@
     }
     document.querySelector('[data-tracking-form]')?.addEventListener('submit',event=>{if(!setPending(event.currentTarget,'Сохраняем…'))event.preventDefault();});
     const employeeCommentForm=document.querySelector('[data-employee-comment-form]');
-    employeeCommentForm?.addEventListener('submit',event=>{const text=employeeCommentForm.querySelector('textarea');if(!text.value.trim()){event.preventDefault();text.focus();return;}if(!setPending(employeeCommentForm,'Добавляем…'))event.preventDefault();});
+    const employeeCommentFeed=document.querySelector('[data-comment-feed]');
+    const commentCsrf=employeeCommentForm?.querySelector('input[name="csrf_token"]')?.value||'';
+    function commentDate(value){if(!value)return '';const date=new Date(value);return Number.isNaN(date.getTime())?value:new Intl.DateTimeFormat('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}).format(date);}
+    function commentNode(comment,editAction){
+        const article=document.createElement('article');article.className='employee-comment';article.dataset.commentId=comment.id;
+        const meta=document.createElement('div');meta.className='employee-comment-meta';
+        const author=document.createElement('strong');author.textContent=comment.author_name||'Сотрудник ERP';
+        const time=document.createElement('time');time.className='date-value';time.dateTime=comment.created_at||'';time.textContent=commentDate(comment.created_at);
+        meta.append(author,time);
+        if(comment.can_edit){const details=document.createElement('details');details.className='comment-menu';const summary=document.createElement('summary');summary.setAttribute('aria-label','Действия с комментарием');summary.textContent='⋯';const edit=document.createElement('button');edit.type='button';edit.dataset.editComment='';edit.textContent='Редактировать';details.append(summary,edit);meta.append(details);}
+        const text=document.createElement('div');text.className='employee-comment-text';text.dataset.commentText='';text.textContent=comment.text;
+        const state=document.createElement('div');state.className='employee-comment-state';if(comment.sync_status==='pending'||comment.sync_status==='error'){const pending=document.createElement('span');pending.textContent='Bitrix: ожидает синхронизации';state.append(pending);}
+        article.append(meta,text,state);
+        if(comment.can_edit){const form=document.createElement('form');form.className='employee-comment-edit';form.method='post';form.action=editAction;form.dataset.commentEditForm='';form.hidden=true;const csrf=document.createElement('input');csrf.type='hidden';csrf.name='csrf_token';csrf.value=commentCsrf;const label=document.createElement('label');label.className='sr-only';label.textContent='Редактировать внутренний комментарий';const textarea=document.createElement('textarea');textarea.className='field';textarea.name='text';textarea.maxLength=2000;textarea.rows=3;textarea.required=true;textarea.value=comment.text;const actions=document.createElement('div');const cancel=document.createElement('button');cancel.className='button button-secondary';cancel.type='button';cancel.dataset.cancelCommentEdit='';cancel.textContent='Отмена';const save=document.createElement('button');save.className='button button-primary';save.type='submit';save.textContent='Сохранить';actions.append(cancel,save);const error=document.createElement('p');error.className='comment-form-error';error.setAttribute('role','alert');error.hidden=true;form.append(csrf,label,textarea,actions,error);article.append(form);}
+        return article;
+    }
+    employeeCommentForm?.addEventListener('submit',async event=>{
+        event.preventDefault();if(employeeCommentForm.dataset.submitting==='1')return;
+        const text=employeeCommentForm.querySelector('textarea');const error=employeeCommentForm.querySelector('[data-comment-error]');const button=employeeCommentForm.querySelector('button[type="submit"]');
+        if(!text.value.trim()){error.textContent='Введите комментарий';error.hidden=false;text.focus();return;}
+        employeeCommentForm.dataset.submitting='1';button.disabled=true;button.textContent='Добавляем…';error.hidden=true;
+        try{const response=await fetch(employeeCommentForm.action,{method:'POST',credentials:'same-origin',headers:{Accept:'application/json'},body:new FormData(employeeCommentForm)});const payload=await response.json().catch(()=>null);if(!response.ok||payload?.ok!==true)throw new Error(payload?.message||'Не удалось добавить комментарий');const node=commentNode(payload.comment,`${employeeCommentForm.action}/${payload.comment.id}`);employeeCommentFeed.querySelector('[data-comment-empty]')?.remove();employeeCommentFeed.prepend(node);text.value='';const count=document.querySelector('[data-comment-count]');const total=employeeCommentFeed.querySelectorAll('[data-comment-id]').length;if(count)count.textContent=`${total} записей`;window.VechasuNotify?.success('Внутренний комментарий добавлен');}
+        catch(failure){error.textContent=failure.message||'Не удалось добавить комментарий';error.hidden=false;}
+        finally{delete employeeCommentForm.dataset.submitting;button.disabled=false;button.textContent='Добавить';}
+    });
     employeeCommentForm?.querySelector('textarea')?.addEventListener('keydown',event=>{if(event.key==='Enter'&&(event.ctrlKey||event.metaKey)){event.preventDefault();employeeCommentForm.requestSubmit();}});
+    employeeCommentFeed?.addEventListener('click',event=>{const article=event.target.closest('[data-comment-id]');if(!article)return;if(event.target.closest('[data-edit-comment]')){article.querySelector('[data-comment-text]').hidden=true;const form=article.querySelector('[data-comment-edit-form]');form.hidden=false;form.querySelector('textarea').focus();article.querySelector('.comment-menu')?.removeAttribute('open');}if(event.target.closest('[data-cancel-comment-edit]')){article.querySelector('[data-comment-text]').hidden=false;article.querySelector('[data-comment-edit-form]').hidden=true;}});
+    employeeCommentFeed?.addEventListener('submit',async event=>{const form=event.target.closest('[data-comment-edit-form]');if(!form)return;event.preventDefault();if(form.dataset.submitting==='1')return;const textarea=form.querySelector('textarea');const error=form.querySelector('.comment-form-error');const button=form.querySelector('button[type="submit"]');if(!textarea.value.trim()){error.textContent='Введите комментарий';error.hidden=false;textarea.focus();return;}form.dataset.submitting='1';button.disabled=true;button.textContent='Сохраняем…';try{const response=await fetch(form.action,{method:'POST',credentials:'same-origin',headers:{Accept:'application/json'},body:new FormData(form)});const payload=await response.json().catch(()=>null);if(!response.ok||payload?.ok!==true)throw new Error(payload?.message||'Не удалось сохранить комментарий');const article=form.closest('[data-comment-id]');article.querySelector('[data-comment-text]').textContent=payload.comment.text;article.querySelector('[data-comment-text]').hidden=false;form.hidden=true;const state=article.querySelector('.employee-comment-state');state.textContent='';const edited=document.createElement('span');edited.textContent='изменено';state.append(edited);window.VechasuNotify?.success('Комментарий сохранён');}catch(failure){error.textContent=failure.message||'Не удалось сохранить комментарий';error.hidden=false;}finally{delete form.dataset.submitting;button.disabled=false;button.textContent='Сохранить';}});
+    document.querySelector('[data-comment-show-more]')?.addEventListener('click',event=>{employeeCommentFeed.querySelectorAll('[data-comment-overflow]').forEach(comment=>comment.hidden=false);event.currentTarget.remove();});
     const statusForm=document.querySelector('[data-status-autosave]');
     if(statusForm){
         const select=statusForm.querySelector('select[name="status"]');const state=statusForm.querySelector('[data-status-save-state]');const csrf=statusForm.querySelector('input[name="csrf_token"]').value;

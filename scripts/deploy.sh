@@ -48,6 +48,8 @@ readonly RETENTION_LOGROTATE="/etc/logrotate.d/clock-erp-backup-retention"
 readonly MAX_BACKUP_DISK_USAGE=85
 readonly BITRIX_ENDPOINT_SOURCE="$PROJECT_DIR/bitrix/catalog-export.php"
 readonly BITRIX_ENDPOINT_TARGET="/var/www/admin/data/www/tictactoy.ru/api/catalog-export.php"
+readonly BITRIX_COMMENT_ENDPOINT_SOURCE="$PROJECT_DIR/bitrix/order-comments.php"
+readonly BITRIX_COMMENT_ENDPOINT_TARGET="/var/www/admin/data/www/tictactoy.ru/api/order-comments.php"
 SERVICE_STOPPED=0
 DATABASE_MIGRATION_REQUIRED=0
 CUSTOMER_MIGRATION_REQUIRED=0
@@ -60,6 +62,8 @@ PREVIOUS_COMMIT=""
 DEPLOY_UPDATED=0
 BITRIX_ENDPOINT_BACKUP=""
 BITRIX_ENDPOINT_UPDATED=0
+BITRIX_COMMENT_ENDPOINT_BACKUP=""
+BITRIX_COMMENT_ENDPOINT_UPDATED=0
 
 rollback() {
     local exit_code=$?
@@ -72,6 +76,16 @@ rollback() {
         install -o admin -g admin -m 0640 \
             "$BITRIX_ENDPOINT_BACKUP" "$BITRIX_ENDPOINT_TARGET"
         printf 'ROLLBACK_OK: restored Bitrix catalog endpoint\n' >&2
+    fi
+
+    if [[ "$BITRIX_COMMENT_ENDPOINT_UPDATED" == "1" ]]; then
+        if [[ -f "$BITRIX_COMMENT_ENDPOINT_BACKUP" ]]; then
+            install -o admin -g admin -m 0640 \
+                "$BITRIX_COMMENT_ENDPOINT_BACKUP" "$BITRIX_COMMENT_ENDPOINT_TARGET"
+        else
+            rm -f -- "$BITRIX_COMMENT_ENDPOINT_TARGET"
+        fi
+        printf 'ROLLBACK_OK: restored Bitrix order-comment endpoint\n' >&2
     fi
 
     if [[ "$DEPLOY_UPDATED" == "1" && -n "$PREVIOUS_COMMIT" ]]; then
@@ -257,6 +271,20 @@ if [[ -f "$BITRIX_ENDPOINT_SOURCE" && -f "$BITRIX_ENDPOINT_TARGET" ]]; then
         "$BITRIX_ENDPOINT_SOURCE" "$BITRIX_ENDPOINT_TARGET"
     BITRIX_ENDPOINT_UPDATED=1
     printf 'BITRIX_BACKUP_PATH=%s\n' "$BITRIX_ENDPOINT_BACKUP"
+fi
+
+
+if [[ -f "$BITRIX_COMMENT_ENDPOINT_SOURCE" ]]; then
+    /opt/php81/bin/php -l "$BITRIX_COMMENT_ENDPOINT_SOURCE" >/dev/null
+    if [[ -f "$BITRIX_COMMENT_ENDPOINT_TARGET" ]]; then
+        BITRIX_COMMENT_ENDPOINT_BACKUP="$BACKUP_DIR/bitrix-order-comments-$(date +%Y%m%d-%H%M%S).php"
+        cp -p "$BITRIX_COMMENT_ENDPOINT_TARGET" "$BITRIX_COMMENT_ENDPOINT_BACKUP"
+        chmod 600 "$BITRIX_COMMENT_ENDPOINT_BACKUP"
+    fi
+    install -o admin -g admin -m 0640 \
+        "$BITRIX_COMMENT_ENDPOINT_SOURCE" "$BITRIX_COMMENT_ENDPOINT_TARGET"
+    BITRIX_COMMENT_ENDPOINT_UPDATED=1
+    printf 'BITRIX_COMMENT_BACKUP_PATH=%s\n' "${BITRIX_COMMENT_ENDPOINT_BACKUP:-new-file}"
 fi
 
 if [[ -f instance/repair_cases.json ]]; then

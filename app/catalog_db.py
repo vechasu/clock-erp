@@ -741,11 +741,30 @@ CREATE TABLE IF NOT EXISTS erp_order_comments (
     text TEXT NOT NULL CHECK (length(trim(text)) > 0),
     author_name TEXT NOT NULL,
     author_user_id TEXT,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    updated_at TEXT,
+    external_system TEXT,
+    external_id TEXT,
+    external_updated_at TEXT,
+    sync_status TEXT NOT NULL DEFAULT 'not_applicable',
+    sync_hash TEXT,
+    source TEXT NOT NULL DEFAULT 'erp',
+    sync_attempts INTEGER NOT NULL DEFAULT 0,
+    next_retry_at TEXT,
+    last_sync_error TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_erp_order_comments_order_created
     ON erp_order_comments(order_id, created_at, id);
+
+CREATE TABLE IF NOT EXISTS erp_order_comment_sync_state (
+    order_id TEXT PRIMARY KEY,
+    external_order_id TEXT NOT NULL,
+    last_external_hash TEXT,
+    last_external_updated_at TEXT,
+    last_outbound_comment_id INTEGER REFERENCES erp_order_comments(id) ON DELETE SET NULL,
+    updated_at TEXT NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS erp_sale_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1056,6 +1075,49 @@ class CatalogDatabase:
             self._ensure_inventory_constraints(connection)
             self._ensure_stock_movement_constraints(connection)
             self._ensure_order_item_mapping_schema(connection)
+            self._ensure_order_comment_schema(connection)
+
+    @staticmethod
+    def _ensure_order_comment_schema(connection):
+        """Add canonical comment history and sync metadata without rewriting rows."""
+        columns = {
+            row["name"]
+            for row in connection.execute(
+                "PRAGMA table_info(erp_order_comments)"
+            ).fetchall()
+        }
+        additions = (
+            ("updated_at", "TEXT"),
+            ("external_system", "TEXT"),
+            ("external_id", "TEXT"),
+            ("external_updated_at", "TEXT"),
+            ("sync_status", "TEXT NOT NULL DEFAULT 'not_applicable'"),
+            ("sync_hash", "TEXT"),
+            ("source", "TEXT NOT NULL DEFAULT 'erp'"),
+            ("sync_attempts", "INTEGER NOT NULL DEFAULT 0"),
+            ("next_retry_at", "TEXT"),
+            ("last_sync_error", "TEXT"),
+        )
+        for name, declaration in additions:
+            if name not in columns:
+                connection.execute(
+                    "ALTER TABLE erp_order_comments ADD COLUMN {} {}".format(
+                        name, declaration
+                    )
+                )
+        connection.execute(
+            "UPDATE erp_order_comments SET updated_at = created_at "
+            "WHERE updated_at IS NULL OR trim(updated_at) = ''"
+        )
+        connection.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_erp_order_comments_external "
+            "ON erp_order_comments(external_system, external_id) "
+            "WHERE external_system IS NOT NULL AND external_id IS NOT NULL"
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_erp_order_comments_sync "
+            "ON erp_order_comments(sync_status, next_retry_at, id)"
+        )
 
     @staticmethod
     def _ensure_order_item_mapping_schema(connection):

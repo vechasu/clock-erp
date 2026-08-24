@@ -38,6 +38,10 @@ from app.clients.bitrix_orders import (
     BitrixReadOnlyError,
     normalize_order as normalize_bitrix_order,
 )
+from app.clients.bitrix_order_comments import (
+    BitrixOrderCommentError,
+    BitrixOrderCommentsClient,
+)
 from app.clients.wildberries_orders import (
     DEFAULT_BASE_URL as WB_DEFAULT_BASE_URL,
     WildberriesOrdersReadOnlyClient,
@@ -54,6 +58,7 @@ from app.services.order_status import (
     OrderStatusService,
 )
 from app.services.order_print import build_order_print_context
+from app.services.order_comments import OrderCommentsService
 from app.services.orders_snapshot import (
     PAGE_SIZES as ORDER_PAGE_SIZES,
     OrdersSnapshotStore,
@@ -285,6 +290,7 @@ def repair_product_classification_command(mode, backup_root):
 ORDERS_URL = "https://tictactoy.ru/api/orders.php"
 ORDER_URL = "https://tictactoy.ru/api/order.php"
 UPDATE_ORDER_STATUS_URL = "https://tictactoy.ru/api/update_order_status.php"
+BITRIX_ORDER_COMMENTS_URL = "https://www.tictactoy.ru/api/order-comments.php"
 BITRIX_ADMIN_ORDER_VIEW_URL = (
     "https://www.tictactoy.ru/bitrix/admin/sale_order_view.php"
 )
@@ -300,6 +306,7 @@ ORDERS_CACHE_LOCK = threading.RLock()
 ORDERS_REFRESH_LOCK = threading.Lock()
 ORDER_ITEM_COUNT_REFRESH_LOCK = threading.Lock()
 WB_SYNC_LOCK = threading.Lock()
+ORDER_COMMENT_SYNC_LOCK = threading.Lock()
 
 WAREHOUSE_CACHE = {
     "items": [],
@@ -464,6 +471,25 @@ ORDER_STATUS_TRANSITIONS = {
 @lru_cache(maxsize=1)
 def order_status_service():
     return OrderStatusService(CatalogDatabase(cache_initialization=True))
+
+
+def bitrix_order_comments_client():
+    return BitrixOrderCommentsClient(
+        endpoint=os.getenv(
+            "BITRIX_ORDER_COMMENTS_URL", BITRIX_ORDER_COMMENTS_URL
+        ),
+        token=os.getenv("BITRIX_ORDER_COMMENTS_TOKEN")
+        or os.getenv("BITRIX_CATALOG_TOKEN"),
+        max_retries=int(os.getenv("BITRIX_API_MAX_RETRIES", "2")),
+    )
+
+
+def order_comments_service(database=None, client_factory=None):
+    return OrderCommentsService(
+        database or CatalogDatabase(cache_initialization=True),
+        client_factory=client_factory or bitrix_order_comments_client,
+        logger=app.logger,
+    )
 
 
 def to_float(value):
@@ -791,6 +817,7 @@ def normalize_order(order):
         product.update({
             "product_id": item["bitrix_product_id"],
             "name": item["name"],
+            "sku": item["sku"],
             "quantity": item["quantity"],
             "price": item["sale_unit_price"],
             "base_price": item["original_unit_price"],
@@ -1387,6 +1414,20 @@ def render_orders_page(
         order_counts=order_counts,
     )
     is_wildberries = (selected_order or {}).get("source") == "wildberries"
+    auth_user = current_auth_user() or {}
+    comments = load_order_comments(order_id) if order_id else []
+    for comment in comments:
+        comment["can_edit"] = bool(
+            comment.get("source") == "erp"
+            and (
+                str(auth_user.get("role") or "") == "admin"
+                or (
+                    auth_user.get("id") is not None
+                    and str(comment.get("author_user_id") or "")
+                    == str(auth_user.get("id"))
+                )
+            )
+        )
     conducted_sale = None if is_wildberries else get_order_conducted_sale(order_id)
     sale_state = build_order_sale_state(
         selected_order or {}, order_mappings, conducted_sale,
@@ -1412,7 +1453,12 @@ def render_orders_page(
         order_sale_pricing=build_order_sale_pricing(
             (selected_order or {}).get("products") or []
         ),
-        order_comments=load_order_comments(order_id) if order_id else [],
+        order_comments=comments,
+        order_comment_action=(
+            url_for("wildberries_order_comment_add", wb_order_id=(selected_order or {}).get("wb_order_id"))
+            if is_wildberries else url_for("order_comment_add", order_id=order_id)
+            if order_id else ""
+        ),
         selected_order_explicit=selected_order_explicit,
         orders_total=list_state["total"],
         orders_page=list_state["page"],
@@ -1815,51 +1861,55 @@ def delete_order_product_mapping(order_id, order_item_id, database=None):
 
 
 def load_order_comments(order_id, database=None):
-    database = database or CatalogDatabase()
-    database.initialize()
-    with database.connect() as connection:
-        rows = connection.execute(
-            "SELECT id, order_id, text, author_name, author_user_id, created_at "
-            "FROM erp_order_comments WHERE order_id = ? "
-            "ORDER BY created_at DESC, id DESC",
-            (str(order_id),),
-        ).fetchall()
-    return [dict(row) for row in rows]
+    return order_comments_service(database).list(order_id)
 
 
-def add_order_comment(order_id, text, author_name, author_user_id="", database=None):
-    text = str(text or "").strip()
-    if not text:
-        raise ValueError("Введите комментарий")
-    if len(text) > 2000:
-        raise ValueError("Комментарий не должен превышать 2000 символов")
-    author_name = str(author_name or "").strip() or "Сотрудник ERP"
-    now = datetime.now(timezone.utc).replace(microsecond=0)
-    created_at = now.isoformat()
-    duplicate_after = (now - timedelta(seconds=30)).isoformat()
-    order_id = str(order_id)
-    author_user_id = str(author_user_id or "").strip() or None
-    database = database or CatalogDatabase()
-    database.initialize()
-    with database.transaction() as connection:
-        duplicate = connection.execute(
-            "SELECT id FROM erp_order_comments WHERE order_id = ? "
-            "AND text = ? AND author_name = ? "
-            "AND COALESCE(author_user_id, '') = COALESCE(?, '') "
-            "AND created_at >= ? ORDER BY id DESC LIMIT 1",
-            (order_id, text, author_name, author_user_id, duplicate_after),
-        ).fetchone()
-        if duplicate is not None:
-            return duplicate["id"]
-        cursor = connection.execute(
-            "INSERT INTO erp_order_comments "
-            "(order_id, text, author_name, author_user_id, created_at) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (
-                order_id, text, author_name, author_user_id, created_at,
-            ),
-        )
-    return cursor.lastrowid
+def add_order_comment(order_id, text, author_name, author_user_id="", database=None,
+                      external_order_id=None):
+    comment = order_comments_service(database).create(
+        order_id, text, author_name, author_user_id,
+        external_order_id=external_order_id,
+    )
+    return comment["id"]
+
+
+def edit_order_comment(order_id, comment_id, text, actor_user_id,
+                       actor_is_admin=False, database=None):
+    return order_comments_service(database).edit(
+        order_id, comment_id, text, actor_user_id, actor_is_admin
+    )
+
+
+def schedule_order_comment_sync(order_id=None, external_order_id=None,
+                                comment_id=None):
+    if app.testing or ORDER_COMMENT_SYNC_LOCK.locked():
+        return
+
+    def synchronize():
+        if not ORDER_COMMENT_SYNC_LOCK.acquire(blocking=False):
+            return
+        try:
+            with app.app_context():
+                service = order_comments_service()
+                try:
+                    if order_id and external_order_id:
+                        service.pull(order_id, external_order_id)
+                    if comment_id:
+                        service.push(comment_id)
+                    service.retry_pending(limit=5)
+                except (BitrixOrderCommentError, LookupError, sqlite3.Error):
+                    app.logger.warning(
+                        "Order comment background sync deferred order_id=%s "
+                        "comment_id=%s", order_id, comment_id,
+                    )
+        finally:
+            ORDER_COMMENT_SYNC_LOCK.release()
+
+    threading.Thread(
+        target=synchronize,
+        name="order-comment-sync",
+        daemon=True,
+    ).start()
 
 
 def get_order_product_mapping(mapping_context, product):
@@ -1992,6 +2042,7 @@ def order_page(order_id):
     if selected_order is None:
         abort(404)
 
+    schedule_order_comment_sync(str(order_id), str(order_id))
     return render_orders_page(
         orders=orders,
         list_state=list_state,
@@ -2684,32 +2735,90 @@ def order_comment_add(order_id):
     if not can_view_orders():
         abort(403)
     text = str(request.form.get("text") or "").strip()
-    try:
-        order = get_order(order_id)
-    except BitrixReadOnlyError:
-        order = None
-    if order is None:
-        return redirect(url_for(
-            "order_page", order_id=order_id, notice="error",
-            message="Не удалось проверить заказ перед добавлением комментария",
-        ))
     user = current_auth_user() or {}
     try:
-        add_order_comment(
-            order_id,
-            text,
+        comment = order_comments_service().create(
+            str(order_id), text,
             current_sales_user_name() or "Сотрудник ERP",
             user.get("id") or user.get("email") or "",
+            external_order_id=str(order_id),
         )
     except (ValueError, sqlite3.Error) as error:
-        return redirect(url_for(
-            "order_page", order_id=order_id, notice="error",
-            message=str(error),
-        ))
+        if request.accept_mimetypes.best == "application/json":
+            return jsonify({"ok": False, "message": str(error)}), 400
+        return redirect(url_for("order_page", order_id=order_id, notice="error", message=str(error)))
+    schedule_order_comment_sync(comment_id=comment["id"])
+    if request.accept_mimetypes.best == "application/json":
+        comment["can_edit"] = True
+        return jsonify({"ok": True, "comment": comment}), 201
     return redirect(url_for(
         "order_page", order_id=order_id, notice="success",
         message="Внутренний комментарий добавлен",
     ))
+
+
+@app.post("/order/<int:order_id>/comments/<int:comment_id>")
+def order_comment_edit(order_id, comment_id):
+    if not can_view_orders():
+        abort(403)
+    user = current_auth_user() or {}
+    try:
+        comment = edit_order_comment(
+            str(order_id), comment_id, request.form.get("text"),
+            user.get("id") or user.get("email") or "",
+            actor_is_admin=str(user.get("role") or "") == "admin",
+        )
+    except LookupError as error:
+        return jsonify({"ok": False, "message": str(error)}), 404
+    except (PermissionError, ValueError) as error:
+        return jsonify({"ok": False, "message": str(error)}), 403 if isinstance(error, PermissionError) else 400
+    except sqlite3.Error:
+        return jsonify({"ok": False, "message": "Не удалось сохранить комментарий"}), 500
+    if comment.get("sync_status") == "pending":
+        schedule_order_comment_sync(comment_id=comment["id"])
+    comment["can_edit"] = True
+    return jsonify({"ok": True, "comment": comment})
+
+
+@app.post("/order/wildberries/<wb_order_id>/comments")
+def wildberries_order_comment_add(wb_order_id):
+    if not can_view_orders():
+        abort(403)
+    order_id = "wb:" + str(wb_order_id)
+    if not OrdersSnapshotStore().get(order_id):
+        abort(404)
+    user = current_auth_user() or {}
+    try:
+        comment = order_comments_service().create(
+            order_id, request.form.get("text"),
+            current_sales_user_name() or "Сотрудник ERP",
+            user.get("id") or user.get("email") or "",
+            external_order_id=None,
+        )
+    except ValueError as error:
+        return jsonify({"ok": False, "message": str(error)}), 400
+    comment["can_edit"] = True
+    return jsonify({"ok": True, "comment": comment}), 201
+
+
+@app.post("/order/wildberries/<wb_order_id>/comments/<int:comment_id>")
+def wildberries_order_comment_edit(wb_order_id, comment_id):
+    if not can_view_orders():
+        abort(403)
+    order_id = "wb:" + str(wb_order_id)
+    user = current_auth_user() or {}
+    try:
+        comment = edit_order_comment(
+            order_id, comment_id, request.form.get("text"),
+            user.get("id") or user.get("email") or "",
+            actor_is_admin=str(user.get("role") or "") == "admin",
+        )
+    except LookupError as error:
+        return jsonify({"ok": False, "message": str(error)}), 404
+    except (PermissionError, ValueError) as error:
+        return jsonify({"ok": False, "message": str(error)}), 403 if isinstance(error, PermissionError) else 400
+    comment["can_edit"] = True
+    return jsonify({"ok": True, "comment": comment})
 
 
 @app.route("/order/<int:order_id>/status", methods=["POST"])
