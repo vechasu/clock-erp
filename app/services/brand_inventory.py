@@ -154,7 +154,7 @@ class BrandInventory:
 
     @staticmethod
     def _snapshot_products(connection, scope):
-        where = ["p.active = 1", "p.brand_id = ?"]
+        where = ["p.active = 1", "p.brand_id = ?", "p.stock > 0"]
         parameters = [int(scope["brand"]["id"])]
         if scope["category"]:
             category_sql, category_parameters = BrandInventory._category_predicate(
