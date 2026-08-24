@@ -60,7 +60,7 @@
             await window.loadSharedCatalogOptions(brand, "");
             const heightBefore = card.getBoundingClientRect().height;
             window.setBrandDropdownOpen(brand, true);
-            await new Promise((resolve) => requestAnimationFrame(resolve));
+            await delay(20);
             const heightOpen = card.getBoundingClientRect().height;
             const dropdownStyle = getComputedStyle(brand.querySelector(".brand-combobox-dropdown"));
             result.floating = heightBefore === heightOpen && dropdownStyle.position === "fixed";
