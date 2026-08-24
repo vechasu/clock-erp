@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/static/css/catalog-combobox.css">
+    <style>
+        * { box-sizing: border-box; }
+        body { min-height: 1200px; margin: 0; padding: 24px; font-family: Arial, sans-serif; }
+        .panel { width: min(1040px, 100%); padding: 18px; border: 1px solid #e2e8f0; }
+        .start-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+        @media (max-width: 650px) { .start-grid { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+    <section class="panel" id="inventoryCard">
+        <form class="start-grid" data-shared-catalog-scope>
+            <div id="inventoryBrand" class="brand-combobox filter-combobox inventory-scope-combobox" data-brand-combobox data-shared-catalog-kind="brand" data-prefix-search="true" data-search-enabled="true" data-all-label="Выберите бренд" data-dropdown-max-height="300" data-floating-layer="viewport">
+                <input class="brand-combobox-hidden" name="brand_name" type="hidden"><input class="catalog-combobox-id" name="brand_id" type="hidden">
+                <button id="inventoryBrandTrigger" class="brand-combobox-trigger" type="button" role="combobox" aria-controls="inventoryBrandListbox" aria-expanded="false"><span class="brand-combobox-value">Выберите бренд</span><span class="brand-combobox-arrow">▾</span></button>
+                <div class="brand-combobox-dropdown"><div class="brand-combobox-search-wrap"><input class="brand-combobox-search" data-brand-search-input placeholder="Поиск бренда..."><button class="brand-combobox-search-clear" data-brand-search-clear type="button" hidden>×</button></div><div id="inventoryBrandListbox" class="brand-combobox-options" role="listbox"><div class="brand-combobox-empty" data-brand-empty hidden>Ничего не найдено</div></div></div>
+            </div>
+            <div id="inventoryCategory" class="brand-combobox filter-combobox inventory-scope-combobox" data-brand-combobox data-shared-catalog-kind="category" data-prefix-search="true" data-search-enabled="true" data-all-label="Сначала выберите бренд" data-dropdown-max-height="300" data-floating-layer="viewport">
+                <input class="brand-combobox-hidden" name="category_name" type="hidden" disabled><input class="catalog-combobox-id" name="category_id" type="hidden" disabled>
+                <button id="inventoryCategoryTrigger" class="brand-combobox-trigger" type="button" role="combobox" aria-controls="inventoryCategoryListbox" aria-expanded="false" disabled><span class="brand-combobox-value">Сначала выберите бренд</span><span class="brand-combobox-arrow">▾</span></button>
+                <div class="brand-combobox-dropdown"><div class="brand-combobox-search-wrap"><input class="brand-combobox-search" data-brand-search-input placeholder="Поиск категории..."><button class="brand-combobox-search-clear" data-brand-search-clear type="button" hidden>×</button></div><div id="inventoryCategoryListbox" class="brand-combobox-options" role="listbox"><div class="brand-combobox-empty" data-brand-empty hidden>Ничего не найдено</div></div></div>
+            </div>
+            <div id="inventoryModel" class="brand-combobox filter-combobox inventory-scope-combobox" data-brand-combobox data-shared-catalog-kind="model" data-prefix-search="true" data-search-enabled="true" data-all-label="Сначала выберите категорию" data-dropdown-max-height="300" data-floating-layer="viewport">
+                <input class="brand-combobox-hidden" name="model_name" type="hidden" disabled><input class="catalog-combobox-id" name="model_id" type="hidden" disabled>
+                <button id="inventoryModelTrigger" class="brand-combobox-trigger" type="button" role="combobox" aria-controls="inventoryModelListbox" aria-expanded="false" disabled><span class="brand-combobox-value">Сначала выберите категорию</span><span class="brand-combobox-arrow">▾</span></button>
+                <div class="brand-combobox-dropdown"><div class="brand-combobox-search-wrap"><input class="brand-combobox-search" data-brand-search-input placeholder="Поиск модели..."><button class="brand-combobox-search-clear" data-brand-search-clear type="button" hidden>×</button></div><div id="inventoryModelListbox" class="brand-combobox-options" role="listbox"><div class="brand-combobox-empty" data-brand-empty hidden>Ничего не найдено</div></div></div>
+            </div>
+        </form>
+    </section>
+    <button id="outside" type="button">Вне компонента</button>
+    <script src="/static/js/catalog-combobox.js"></script>
+    <script>
+        window.addEventListener("load", async function() {
+            const result = {};
+            const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+            const brand = document.getElementById("inventoryBrand");
+            const category = document.getElementById("inventoryCategory");
+            const model = document.getElementById("inventoryModel");
+            const card = document.getElementById("inventoryCard");
+            window.fetch = async function(url) {
+                const target = new URL(url, location.origin);
+                const type = target.searchParams.get("type");
+                const query = target.searchParams.get("q") || "";
+                await delay(query === "slow" ? 60 : 5);
+                const data = type === "brand"
+                    ? [{id: 1, name: "BENLYDESIGN", stock: 0}]
+                    : type === "category"
+                        ? query === "slow"
+                            ? [{id: 99, name: "Устаревшая категория", stock: 9}]
+                            : [{id: 2, name: query === "fast" ? "Быстрая категория" : "Наручные часы", stock: 0}]
+                        : [{id: 3, name: "G100999", stock: 1}, {id: 4, name: "L8001", stock: 998}];
+                return {ok: true, json: async () => ({data})};
+            };
+
+            await window.loadSharedCatalogOptions(brand, "");
+            const heightBefore = card.getBoundingClientRect().height;
+            window.setBrandDropdownOpen(brand, true);
+            await delay(20);
+            window.dispatchEvent(new Event("resize"));
+            const heightOpen = card.getBoundingClientRect().height;
+            const dropdownStyle = getComputedStyle(brand.querySelector(".brand-combobox-dropdown"));
+            result.floating = heightBefore === heightOpen && dropdownStyle.position === "fixed";
+            result.zeroStock = brand.querySelector(".catalog-combobox-option-count").textContent === "0 ед.";
+
+            window.setSharedCatalogComboboxValue(brand, {id: 1, name: "BENLYDESIGN"});
+            result.brandEnablesCategory = !category.querySelector(".brand-combobox-trigger").disabled;
+            const slow = window.loadSharedCatalogOptions(category, "slow");
+            const fast = window.loadSharedCatalogOptions(category, "fast");
+            await Promise.all([slow, fast]);
+            result.staleSafe = category.querySelector(".brand-combobox-option-label").textContent === "Быстрая категория";
+            window.selectBrandOption(category.querySelector(".brand-combobox-option"));
+            result.categoryEnablesModel = !model.querySelector(".brand-combobox-trigger").disabled;
+            await window.loadSharedCatalogOptions(model, "");
+            result.verticalCounts = Array.from(model.querySelectorAll(".brand-combobox-option")).every((option) => option.querySelector(".catalog-combobox-option-count"));
+
+            window.setBrandDropdownOpen(category, true);
+            window.setBrandDropdownOpen(model, true);
+            result.singleOpen = document.querySelectorAll("[data-brand-combobox].open").length === 1;
+            model.querySelector(".brand-combobox-search").value = "Нет";
+            window.filterBrandList("Нет", model);
+            result.emptyState = !model.querySelector("[data-brand-empty]").hidden;
+            model.querySelector(".brand-combobox-search").dispatchEvent(new KeyboardEvent("keydown", {key: "Escape", bubbles: true}));
+            result.escapeFocus = !model.classList.contains("open") && document.activeElement === model.querySelector(".brand-combobox-trigger");
+            window.setBrandDropdownOpen(model, true);
+            document.getElementById("outside").click();
+            result.outsideClick = !model.classList.contains("open");
+            window.setSharedCatalogComboboxValue(category, {id: 5, name: "Другая категория"});
+            result.categoryReset = model.querySelector(".catalog-combobox-id").value === "";
+            window.setSharedCatalogComboboxValue(brand, {id: 6, name: "Другой бренд"});
+            result.brandReset = category.querySelector(".catalog-combobox-id").value === "" && model.querySelector(".catalog-combobox-id").value === "";
+
+            document.documentElement.dataset.inventoryScopeComboboxE2e = Object.values(result).every(Boolean) ? "pass" : JSON.stringify(result);
+        });
+    </script>
+</body>
+</html>
