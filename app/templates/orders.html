@@ -35,6 +35,8 @@
                 <button class="view-option" type="button" data-layout-mode="split" role="radio">Разделение</button>
                 <button class="view-option" type="button" data-layout-mode="card" role="radio">Карточка</button>
             </div>
+            <button class="button button-secondary" type="button" data-wb-sync>Синхронизировать WB</button>
+            <input type="hidden" value="{{ csrf_token() }}" data-wb-sync-csrf>
             {% set selected_sync = selected_order.get('sync_state') if selected_order else '' %}
             {% set sync_class = 'error' if sync_error or selected_sync == 'error' else 'partial' if selected_sync == 'partial' else '' %}
             <div class="sync-state {{ sync_class }}" aria-live="polite">
@@ -60,6 +62,9 @@
                 <form class="panel-toolbar filters erp-toolbar" method="get" action="{{ url_for('orders_page') }}">
                     <div class="erp-search-wrap"><input class="field field-search erp-search-input" type="search" id="orderSearch" name="q" value="{{ request.args.get('q','') }}" placeholder="Номер, ФИО, телефон, сумма или дата" aria-label="Поиск заказов" autocomplete="off"></div>
                     <div class="filter-selects">
+                        <select class="field" name="source" aria-label="Источник заказа" data-auto-submit-filter>
+                            {% for value,label in [('all','Все источники'),('tictactoy','Tictactoy'),('wildberries','Wildberries')] %}<option value="{{ value }}"{% if request.args.get('source','all') == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+                        </select>
                         <select class="field" name="status" aria-label="Статус заказа" data-auto-submit-filter>
                             {% for value,label in [('all','Все статусы'),('N','Не подтверждён'),('A','Подтверждён'),('D','Собран')] %}
                                 <option value="{{ value }}" data-filter="{{ value }}"{% if request.args.get('status','all')|upper == value|upper %} selected{% endif %}>{{ label }}</option>
@@ -68,7 +73,7 @@
                         <select class="field" name="period" aria-label="Период" data-auto-submit-filter>
                             {% for value,label in [('all','За всё время'),('today','Сегодня'),('7d','7 дней'),('30d','30 дней')] %}<option value="{{ value }}"{% if request.args.get('period','all') == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
                         </select>
-                        {% if request.args.get('q') or request.args.get('status','all') != 'all' or request.args.get('period','all') != 'all' %}<a class="button button-secondary filter-reset" href="{{ url_for('orders_page') }}">Сбросить</a>{% endif %}
+                        {% if request.args.get('q') or request.args.get('status','all') != 'all' or request.args.get('period','all') != 'all' or request.args.get('source','all') != 'all' %}<a class="button button-secondary filter-reset" href="{{ url_for('orders_page') }}">Сбросить</a>{% endif %}
                         <button class="button button-secondary list-collapse-control" type="button" data-collapse-list>Свернуть список</button>
                     </div>
                 </form>
@@ -88,16 +93,18 @@
                 {% set detail_discount = selected_order.get('discount') %}
                 {% set detail_delivery = selected_order.get('delivery_price') %}
                 {% set detail_delivery_source = selected_order.get('delivery_price_source') %}
+                {% set is_wb = selected_order.get('source') == 'wildberries' %}
                 {% set legacy_calc_ok = selected_order.get('calculation_complete') is none %}
                 {% set sale_state = order_sale_state %}
                 <div class="detail-scroll">
                     <header class="card-head">
                         <div>
                             <button class="button button-secondary back-list" type="button" data-show-list>← Назад к заказам</button>
-                            <div class="card-title"><h2>Заказ №{{ detail_number }}</h2><span data-detail-status-badge>{{ status_badge(detail_status_code,detail_status_name) }}</span></div>
+                            <div class="card-title"><h2>Заказ №{{ detail_number }}</h2><span class="badge badge-default source-badge">{{ 'Wildberries' if is_wb else 'Tictactoy' }}</span><span data-detail-status-badge>{% if is_wb %}<span class="badge badge-work">{{ detail_status_name }}</span>{% else %}{{ status_badge(detail_status_code,detail_status_name) }}{% endif %}</span></div>
                             <div class="card-subtitle"><span class="date-value" data-date="{{ selected_order.get('created_at') or selected_order.get('date') }}"></span>{% if detail_total is not none %} · <strong><span class="money-value" data-amount="{{ detail_total }}"></span> ₽</strong>{% endif %}</div>
                         </div>
                         <div class="actions">
+                            {% if is_wb %}<span class="button button-secondary" aria-label="Только чтение">Только чтение</span>{% else %}
                             <form class="status-form" method="post" action="/order/{{ detail_id }}/status" data-status-autosave>
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                 <select class="field" name="status" aria-label="Статус заказа" data-saved-status="{{ detail_status_code }}">
@@ -114,13 +121,24 @@
                             {% endif %}
                             {% if selected_order_bitrix_url %}<a class="button button-secondary" href="{{ selected_order_bitrix_url }}" target="_blank" rel="noopener noreferrer">Открыть в Bitrix ↗</a>{% endif %}
                             {% if detail_id and selected_order.get('sync_state') != 'error' %}<a class="button button-secondary" href="{{ url_for('order_print_page', order_id=detail_id) }}" target="_blank" rel="noopener noreferrer"><span aria-hidden="true">⎙</span> Печать заказа</a>{% endif %}
+                            {% endif %}
                             {% if request.args.get('notice') and request.args.get('message') %}<div class="action-feedback notice-{{ request.args.get('notice') }}" role="{{ 'alert' if request.args.get('notice') == 'error' else 'status' }}">{{ request.args.get('message') }}</div>{% endif %}
                         </div>
                     </header>
                     <div class="detail-body">
                         {% if selected_order.get('status_sync_state') == 'pending' %}<div class="warning">Статус сохранён в ERP и ожидает синхронизации с Bitrix. Повторные попытки выполняются автоматически.</div>{% elif selected_order.get('status_sync_state') == 'unknown' %}<div class="warning">Bitrix передал неизвестный статус. Текущий статус ERP сохранён, событие записано в журнал.</div>{% endif %}
                         {% if selected_order.get('sync_state') == 'partial' %}<div class="warning">Карточка загружена частично. Недоступны: {{ selected_order.get('sync_missing')|join(', ') }}. Небезопасные действия заблокированы.</div>{% elif selected_order.get('sync_state') == 'error' %}<div class="warning">Не удалось загрузить полную карточку. <a href="{{ request.path }}?retry=1">Повторить загрузку</a>.</div>{% endif %}
+                        {% if is_wb %}
                         <section class="section">
+                            <div class="section-head"><h3>Wildberries FBS</h3></div>
+                            <div class="customer-grid">
+                                <div class="fact"><span class="fact-label">Номер WB</span><span class="fact-value">{{ selected_order.get('wb_order_id') }}</span></div>
+                                <div class="fact"><span class="fact-label">Статус</span><span class="fact-value">{{ selected_order.get('status_name') or selected_order.get('supplier_status') }}</span></div>
+                                {% if selected_order.get('warehouse_id') is not none %}<div class="fact"><span class="fact-label">Склад</span><span class="fact-value">{{ selected_order.get('warehouse_id') }}</span></div>{% endif %}
+                                {% if selected_order.get('delivery_type') %}<div class="fact"><span class="fact-label">Доставка</span><span class="fact-value">{{ selected_order.get('delivery_type')|upper }}</span></div>{% endif %}
+                            </div>
+                        </section>
+                        {% else %}<section class="section">
                             <div class="section-head"><h3>Клиент и доставка</h3></div>
                             <div class="customer-grid">
                                 <div class="fact"><span class="fact-label">Клиент</span><span class="fact-value">{{ selected_order.get('customer') or 'Не указан' }}</span></div>
@@ -134,6 +152,7 @@
                                 <div class="fact tracking-fact"><label class="fact-label" for="orderTracking">Трекинг</label><form class="tracking-form" method="post" action="/order/{{ detail_id }}/tracking" data-tracking-form data-erp-pending data-pending-label="Сохраняем трекинг…"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input class="field" id="orderTracking" name="tracking" maxlength="255" value="{{ request.args.get('tracking_value', order_tracking or '') }}" placeholder="Номер отправления"><button class="button button-secondary orders-secondary-submit" type="submit">Сохранить</button></form></div>
                             </div>
                         </section>
+                        {% endif %}
 
                         <section class="section">
                             <div class="section-head"><h3>Состав заказа · {{ detail_products|length }}</h3></div>
@@ -152,7 +171,8 @@
                                         {% if photo %}<img class="product-photo" src="{{ photo }}" alt="Фото товара">{% else %}<div class="product-photo" role="img" aria-label="Нет фото">Нет фото</div>{% endif %}
                                         <div class="product-copy">
                                             <div class="product-name">{{ product.get('name') or product.get('NAME') or 'Товар без названия' }}</div>
-                                            <div class="product-note">{{ product.get('brand') or (mapped.brand if mapped else 'Бренд не указан') }} · {{ product.get('category') or (mapped.category if mapped else 'Категория не указана') }} · {{ qty }} шт.</div>
+                                            <div class="product-note">{% if is_wb %}{{ qty }} шт.{% else %}{{ product.get('brand') or (mapped.brand if mapped else 'Бренд не указан') }} · {{ product.get('category') or (mapped.category if mapped else 'Категория не указана') }} · {{ qty }} шт.{% endif %}</div>
+                                            {% if is_wb %}<div class="product-note">Артикул: {{ product.get('article') or '—' }}{% if product.get('barcode') %} · Barcode: {{ product.get('barcode') }}{% endif %}{% if product.get('nm_id') is not none %} · nmId: {{ product.get('nm_id') }}{% endif %}</div>{% endif %}
                                             <div class="mapping" data-order-mapping{% if mapped and mapping.state == 'mapped' and mapping.mapping_method != 'manual' %} hidden{% endif %}>
                                                 <span class="map-state bad" data-order-mapping-state{% if mapped and mapping.state == 'mapped' %} hidden{% endif %}>{{ mapping.state_label if mapping and mapping.state not in ['unmapped', 'missing_external_id'] else 'Не удалось определить товар ERP' }}</span>
                                                 <div data-order-mapping-summary hidden><div class="mapping-card"><div class="mapping-copy"><strong data-mapping-product-name></strong><span data-mapping-product-meta></span></div></div></div>
@@ -170,7 +190,7 @@
                                 </article>
                             {% endfor %}</div>{% else %}<div class="empty">Состав заказа не загружен. Проведение продажи недоступно.</div>{% endif %}
                         </section>
-                        <section class="section order-notes">
+                        {% if not is_wb %}<section class="section order-notes">
                             <div class="section-head"><h3>Комментарий покупателя</h3></div>
                             <div class="order-note-value">{{ selected_order.get('comment') or 'Комментарий не оставлен.' }}</div>
                         </section>
@@ -188,8 +208,9 @@
                                 <button class="button button-secondary" type="submit">Добавить</button>
                             </form>
                         </section>
+                        {% endif %}
 
-                        <section class="section">
+                        {% if not is_wb %}<section class="section">
                             <div class="section-head"><h3>Расчёт заказа</h3></div>
                             <div class="calculation-layout">
                                 <div class="summary">
@@ -205,7 +226,7 @@
                                 </div>
                             </div>
                             {% if not legacy_calc_ok and not selected_order.get('calculation_complete') %}<div class="warning">Bitrix не передал отдельную стоимость доставки. Итог не записан в доставку; проведение продажи заблокировано до получения полного расчёта.</div>{% elif not legacy_calc_ok and not selected_order.get('calculation_consistent') %}<div class="warning">Расчёт не сходится: товары − скидка + доставка ≠ итог. Проведение заблокировано.</div>{% endif %}
-                        </section>
+                        </section>{% endif %}
                     </div>
                 </div>
             {% else %}<div class="empty"><strong>Выберите заказ в списке</strong><br>Полная карточка загрузится отдельным безопасным запросом.</div>{% endif %}
@@ -337,6 +358,19 @@
         row.querySelector('[data-change-order-mapping]')?.addEventListener('click',()=>{form.hidden=false;form.querySelector('[data-order-mapping-error]').hidden=true;window.initializeSharedCatalogCascades?.(form);form.querySelector('.brand-combobox-search')?.focus();});
         row.querySelector('[data-remove-order-mapping]')?.addEventListener('click',async event=>{const button=event.currentTarget;button.disabled=true;try{const data=await mappingRequest(row,'DELETE');row.querySelector('[data-order-mapping-summary]').hidden=true;row.querySelector('[data-order-mapping-actions]').hidden=true;const state=row.querySelector('[data-order-mapping-state]');state.textContent='Не удалось определить товар ERP';state.hidden=false;form.hidden=false;window.clearSharedCatalogCombobox?.(form.querySelector('[data-shared-catalog-kind="product"]'));updateOrderMappingState(data.order);}catch(error){mappingError(form,error.message,error);}finally{button.disabled=false;}});
         form.addEventListener('submit',async event=>{event.preventDefault();if(form.dataset.submitting==='1')return;const productId=form.querySelector('input[name="product_id"]')?.value?.trim();if(!productId){mappingError(form,'Выберите товар ERP из каталога');return;}const button=form.querySelector('button[type="submit"]');form.dataset.submitting='1';button.disabled=true;button.textContent='Выбираем…';try{const data=await mappingRequest(row,'POST',productId);if(String(data?.mapping?.product?.id)!==String(productId)){throw new Error('Сервер подтвердил другой товар ERP');}showSavedMapping(row,data);window.VechasuNotify?.success('Товар ERP выбран');}catch(error){mappingError(form,error.message,error);}finally{delete form.dataset.submitting;button.disabled=false;button.textContent='Выбрать товар';}});
+    });
+    const wbSyncButton=document.querySelector('[data-wb-sync]');
+    wbSyncButton?.addEventListener('click',async()=>{
+        if(wbSyncButton.disabled)return;wbSyncButton.disabled=true;wbSyncButton.textContent='Синхронизация WB…';
+        try{
+            const csrf=document.querySelector('[data-wb-sync-csrf]')?.value||'';
+            const response=await fetch('/api/orders/wildberries/sync',{method:'POST',credentials:'same-origin',headers:{Accept:'application/json','X-CSRF-Token':csrf}});
+            const payload=await response.json().catch(()=>null);
+            if(!response.ok||payload?.ok!==true)throw new Error(payload?.error?.message||`Ошибка синхронизации (${response.status})`);
+            const result=payload.result;window.VechasuNotify?.success(`WB: получено ${result.received}, добавлено ${result.added}, обновлено ${result.updated}, ошибок ${result.errors}`);
+            window.setTimeout(()=>window.location.reload(),400);
+        }catch(error){window.VechasuNotify?.error(error.message||'Не удалось синхронизировать Wildberries');}
+        finally{wbSyncButton.disabled=false;wbSyncButton.textContent='Синхронизировать WB';}
     });
     const modal=document.getElementById('orderSaleModal'); if(!modal)return;
     const tracking=modal.querySelector('[data-order-sale-tracking]'); const trackingStorageKey='order-sale-tracking:{{ detail_id if selected_order else "" }}';

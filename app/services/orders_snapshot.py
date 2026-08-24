@@ -121,9 +121,12 @@ class OrdersSnapshotStore:
                 """
                 CREATE TABLE IF NOT EXISTS orders_snapshot (
                     order_id TEXT PRIMARY KEY,
+                    source TEXT NOT NULL DEFAULT 'tictactoy',
+                    external_order_id TEXT,
                     source_position INTEGER NOT NULL,
                     number_fold TEXT NOT NULL,
                     customer_fold TEXT NOT NULL,
+                    extra_fold TEXT NOT NULL DEFAULT '',
                     phone_digits TEXT NOT NULL,
                     amount_search TEXT NOT NULL,
                     date_search TEXT NOT NULL,
@@ -157,6 +160,36 @@ class OrdersSnapshotStore:
                     "ALTER TABLE orders_snapshot ADD COLUMN detail_loaded "
                     "INTEGER NOT NULL DEFAULT 0"
                 )
+            if "source" not in columns:
+                connection.execute(
+                    "ALTER TABLE orders_snapshot ADD COLUMN source "
+                    "TEXT NOT NULL DEFAULT 'tictactoy'"
+                )
+            if "external_order_id" not in columns:
+                connection.execute(
+                    "ALTER TABLE orders_snapshot ADD COLUMN external_order_id TEXT"
+                )
+            if "extra_fold" not in columns:
+                connection.execute(
+                    "ALTER TABLE orders_snapshot ADD COLUMN extra_fold "
+                    "TEXT NOT NULL DEFAULT ''"
+                )
+            connection.execute(
+                "UPDATE orders_snapshot SET source = 'tictactoy' "
+                "WHERE source IS NULL OR trim(source) = ''"
+            )
+            connection.execute(
+                "UPDATE orders_snapshot SET external_order_id = order_id "
+                "WHERE external_order_id IS NULL OR trim(external_order_id) = ''"
+            )
+            connection.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_snapshot_source_external "
+                "ON orders_snapshot(source, external_order_id)"
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_orders_snapshot_source_ordering "
+                "ON orders_snapshot(source, source_position, order_id)"
+            )
         return self
 
     def loaded_at(self):
@@ -185,11 +218,13 @@ class OrdersSnapshotStore:
                 row["order_id"]: row
                 for row in connection.execute(
                     "SELECT order_id, item_units, detail_loaded, payload_json "
-                    "FROM orders_snapshot WHERE item_units IS NOT NULL "
-                    "OR detail_loaded = 1"
+                    "FROM orders_snapshot WHERE source = 'tictactoy' AND "
+                    "(item_units IS NOT NULL OR detail_loaded = 1)"
                 ).fetchall()
             }
-            connection.execute("DELETE FROM orders_snapshot")
+            connection.execute(
+                "DELETE FROM orders_snapshot WHERE source = 'tictactoy'"
+            )
             for position, order in enumerate(orders):
                 order_id = _text(order.get("id") or order.get("ID"))
                 if not order_id:
@@ -215,15 +250,17 @@ class OrdersSnapshotStore:
                 )
                 connection.execute(
                     "INSERT INTO orders_snapshot "
-                    "(order_id, source_position, number_fold, customer_fold, "
+                    "(order_id, source, external_order_id, source_position, number_fold, customer_fold, extra_fold, "
                     "phone_digits, amount_search, date_search, created_sort, "
                     "status, item_units, detail_loaded, payload_json, loaded_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "VALUES (?, 'tictactoy', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
+                        order_id,
                         order_id,
                         position,
                         _text(order.get("number") or order_id).casefold(),
                         _text(order.get("customer")).casefold(),
+                        "",
                         _phone_digits(order.get("phone")),
                         _amount_search(total),
                         _date_search(created),
@@ -240,6 +277,71 @@ class OrdersSnapshotStore:
                 "VALUES ('loaded_at', ?)",
                 (str(loaded_at),),
             )
+
+    def upsert_wildberries(self, orders):
+        """Idempotently store each WB assembly order as its own record."""
+        self.initialize()
+        added = 0
+        updated = 0
+        with self.connection() as connection:
+            for order in orders:
+                wb_order_id = _text(order.get("wb_order_id"))
+                if not wb_order_id:
+                    continue
+                order_id = "wb:" + wb_order_id
+                existing = connection.execute(
+                    "SELECT order_id FROM orders_snapshot "
+                    "WHERE source = 'wildberries' AND external_order_id = ?",
+                    (wb_order_id,),
+                ).fetchone()
+                created = order.get("created_at") or order.get("date")
+                total = order.get("order_total")
+                if total is None:
+                    total = order.get("price")
+                try:
+                    source_position = -int(wb_order_id)
+                except ValueError:
+                    source_position = -int(datetime.now().timestamp())
+                values = (
+                    source_position,
+                    _text(order.get("number") or wb_order_id).casefold(),
+                    _text(order.get("customer")).casefold(),
+                    " ".join(_text(value) for value in (
+                        order.get("source_name"), order.get("wb_order_id"),
+                        order.get("order_uid"), order.get("rid"),
+                        order.get("article"), " ".join(order.get("skus") or []),
+                        order.get("nm_id"), order.get("chrt_id"),
+                    )).casefold(),
+                    _phone_digits(order.get("phone")),
+                    _amount_search(total),
+                    _date_search(created),
+                    _created_sort(created),
+                    _text(order.get("status")),
+                    order_item_units(order),
+                    json.dumps(order, ensure_ascii=False, separators=(",", ":")),
+                    float(datetime.now().timestamp()),
+                )
+                if existing:
+                    connection.execute(
+                        "UPDATE orders_snapshot SET source_position = ?, number_fold = ?, "
+                        "customer_fold = ?, extra_fold = ?, phone_digits = ?, amount_search = ?, "
+                        "date_search = ?, created_sort = ?, status = ?, item_units = ?, "
+                        "detail_loaded = 1, payload_json = ?, loaded_at = ? "
+                        "WHERE source = 'wildberries' AND external_order_id = ?",
+                        values + (wb_order_id,),
+                    )
+                    updated += 1
+                else:
+                    connection.execute(
+                        "INSERT INTO orders_snapshot (order_id, source, external_order_id, "
+                        "source_position, number_fold, customer_fold, extra_fold, phone_digits, "
+                        "amount_search, date_search, created_sort, status, item_units, "
+                        "detail_loaded, payload_json, loaded_at) "
+                        "VALUES (?, 'wildberries', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)",
+                        (order_id, wb_order_id) + values,
+                    )
+                    added += 1
+        return {"added": added, "updated": updated}
 
     def ensure(self, orders, loaded_at):
         current = self.loaded_at()
@@ -319,7 +421,8 @@ class OrdersSnapshotStore:
         self.initialize()
         with self.connection() as connection:
             rows = connection.execute(
-                "SELECT order_id FROM orders_snapshot WHERE detail_loaded = 0 "
+                "SELECT order_id FROM orders_snapshot WHERE source = 'tictactoy' "
+                "AND detail_loaded = 0 "
                 "ORDER BY source_position, order_id LIMIT ?",
                 (max(1, min(int(limit), 200)),),
             ).fetchall()
@@ -329,6 +432,7 @@ class OrdersSnapshotStore:
         self.initialize()
         query = _text(args.get("q"))
         status = _text(args.get("status") or "all").upper()
+        source = _text(args.get("source") or "all").casefold()
         period = _text(args.get("period") or "all")
         try:
             page_size = int(args.get("page_size") or 20)
@@ -348,8 +452,9 @@ class OrdersSnapshotStore:
             search_clauses = [
                 "number_fold LIKE ?",
                 "customer_fold LIKE ?",
+                "extra_fold LIKE ?",
             ]
-            search_parameters = [folded, folded]
+            search_parameters = [folded, folded, folded]
             digits = _phone_digits(query)
             if digits and PHONE_QUERY.match(query):
                 search_clauses.append("phone_digits LIKE ?")
@@ -371,6 +476,9 @@ class OrdersSnapshotStore:
         if status != "ALL":
             clauses.append("status = ?")
             parameters.append(status)
+        if source in {"tictactoy", "wildberries"}:
+            clauses.append("source = ?")
+            parameters.append(source)
         if period in {"today", "7d", "30d"}:
             reference = now or datetime.now()
             days = 0 if period == "today" else 7 if period == "7d" else 30

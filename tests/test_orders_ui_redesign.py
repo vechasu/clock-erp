@@ -108,13 +108,14 @@ class OrdersUiRedesignTest(unittest.TestCase):
         ):
             self.assertIn(expected, active_row)
 
-    def test_filters_have_two_rows_and_no_find_button(self):
+    def test_filters_include_source_and_no_find_button(self):
         filters = self.source.split(
             'class="panel-toolbar filters erp-toolbar"', 1
         )[1].split("</form>", 1)[0]
         self.assertIn('class="field field-search erp-search-input"', filters)
         self.assertIn('class="filter-selects"', filters)
-        self.assertEqual(filters.count("data-auto-submit-filter"), 2)
+        self.assertEqual(filters.count("data-auto-submit-filter"), 3)
+        self.assertIn('name="source"', filters)
         self.assertNotIn(">Найти<", filters)
         self.assertIn("url_for('orders_page')", filters)
         self.assertIn("loadOrdersResults(ordersFilterUrl())", self.source)
