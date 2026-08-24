@@ -1876,6 +1876,73 @@ class SharedCatalog:
             prepared["brand_name"] = brand["name"]
             return prepared
 
+    def assign_missing_product_category(
+        self, product_id, category_id=None, category_name=None, **actor
+    ):
+        """Assign taxonomy only when the active product is still uncategorized."""
+        self.database.initialize()
+        with self.database.transaction() as connection:
+            product = connection.execute(
+                "SELECT * FROM catalog_excel_products "
+                "WHERE id = ? AND active = 1 AND deleted_at IS NULL",
+                (int(product_id),),
+            ).fetchone()
+            if product is None:
+                raise CatalogReferenceError("Товар не найден или архивирован.")
+            if product["brand_id"] is None:
+                raise CatalogReferenceError(
+                    "Сначала укажите бренд в карточке товара."
+                )
+
+            if product["category_id"] is not None:
+                current = connection.execute(
+                    "SELECT id, name FROM erp_categories WHERE id = ?",
+                    (int(product["category_id"]),),
+                ).fetchone()
+                requested_id = (
+                    int(category_id)
+                    if category_id not in (None, "")
+                    else None
+                )
+                if requested_id is not None and requested_id != current["id"]:
+                    raise CatalogReferenceError(
+                        "Категория товара уже назначена и не была изменена."
+                    )
+                return self.get_product(product_id), False
+
+            before_count = connection.execute(
+                "SELECT COUNT(*) FROM erp_categories"
+            ).fetchone()[0]
+            category = ensure_category(
+                connection,
+                product["brand_id"],
+                name=category_name,
+                category_id=category_id,
+                create=True,
+            )
+            if category is None:
+                raise CatalogReferenceError("Выберите категорию товара.")
+            connection.execute(
+                "UPDATE catalog_excel_products SET category_id = ?, "
+                "excel_category = ?, updated_at = ? WHERE id = ?",
+                (category["id"], category["name"], utc_now(), int(product_id)),
+            )
+            AuditJournal(self.database).record(
+                "product", product_id, "updated", product["excel_name_raw"],
+                "Категория назначена при сопоставлении продажи",
+                before={"category_id": None},
+                after={
+                    "category_id": int(category["id"]),
+                    "category": category["name"],
+                },
+                connection=connection,
+                **actor
+            )
+            created = connection.execute(
+                "SELECT COUNT(*) FROM erp_categories"
+            ).fetchone()[0] > before_count
+        return self.get_product(product_id), created
+
     def rename_brand(self, brand_id, name, **actor):
         name = catalog_name(name)
         if not name:

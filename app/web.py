@@ -2487,6 +2487,11 @@ def order_item_mapping_api(order_id, order_item_id):
             order_id, order_item_id, "PRODUCT_NOT_FOUND",
             "Товар ERP не найден или архивирован", 404,
         )
+    if product.get("category_id") in (None, ""):
+        return order_item_mapping_error(
+            order_id, order_item_id, "PRODUCT_CATEGORY_REQUIRED",
+            "Укажите категорию товара", 409,
+        )
     try:
         saved = save_order_product_mapping(
             order_id, order_item_id, product["id"], database
@@ -8807,66 +8812,9 @@ def manual_sale_add():
             notice="error",
         )
 
-    selected_brand = str(
-        request.form.get("product_brand") or ""
-    ).strip()
-    selected_category = str(
-        request.form.get("product_category") or ""
-    ).strip()
-    selected_brand_id = str(
-        request.form.get("brand_id") or ""
-    ).strip()
-    selected_category_id = str(
-        request.form.get("category_id") or ""
-    ).strip()
-
-    if not selected_brand:
+    if catalog_product.get("category_id") in (None, ""):
         return redirect_to_sales(
-            "Выберите бренд из каталога",
-            notice="error",
-        )
-
-    if (
-        selected_brand.casefold()
-        != catalog_product["brand"].casefold()
-    ):
-        return redirect_to_sales(
-            "Выбранный товар не относится к указанному бренду",
-            notice="error",
-        )
-
-    if not selected_category:
-        return redirect_to_sales(
-            "Выберите категорию из каталога",
-            notice="error",
-        )
-
-    if (
-        selected_category.casefold()
-        != catalog_product["category"].casefold()
-    ):
-        return redirect_to_sales(
-            "Выбранный товар не относится к указанной категории",
-            notice="error",
-        )
-
-    if (
-        selected_brand_id
-        and str(catalog_product.get("brand_id") or "")
-        != selected_brand_id
-    ):
-        return redirect_to_sales(
-            "Выбранный товар не относится к указанному бренду",
-            notice="error",
-        )
-
-    if (
-        selected_category_id
-        and str(catalog_product.get("category_id") or "")
-        != selected_category_id
-    ):
-        return redirect_to_sales(
-            "Выбранный товар не относится к указанной категории",
+            "Укажите категорию товара",
             notice="error",
         )
 
@@ -17237,6 +17185,34 @@ def api_product_movements(product_id):
         limit=limit,
     )
     return api_success(movements, total=len(movements), limit=limit)
+
+
+@app.route(
+    "/api/v1/products/<int:product_id>/category-assignment",
+    methods=["POST"],
+)
+def api_product_category_assignment(product_id):
+    require_csrf_when_authenticated()
+    try:
+        payload = api_json_payload()
+        category_id = payload.get("category_id")
+        category_name = str(payload.get("category_name") or "").strip()
+        if category_id in (None, "") and not category_name:
+            raise ValueError("Выберите или создайте категорию товара.")
+        product, category_created = SharedCatalog().assign_missing_product_category(
+            product_id,
+            category_id=category_id,
+            category_name=category_name,
+            **current_audit_actor()
+        )
+    except (CatalogReferenceError, ValueError) as error:
+        return api_error("CATEGORY_ASSIGNMENT_INVALID", str(error), 422)
+    WAREHOUSE_CACHE["items"] = []
+    WAREHOUSE_CACHE["loaded_at"] = 0
+    return api_success(
+        product,
+        category_created=category_created,
+    )
 
 
 def api_catalog_values(kind):
