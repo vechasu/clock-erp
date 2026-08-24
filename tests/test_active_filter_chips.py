@@ -94,10 +94,26 @@ class ActiveFilterChipsTest(unittest.TestCase):
         self.assertNotIn('name="in_stock"', self.warehouse)
         self.assertIn('name="stock_state"', self.warehouse)
         self.assertIn('value="out"', self.warehouse)
+        self.assertNotIn("Наличие: {{", self.warehouse)
         reset = self.warehouse.split(
             "function resetWarehouseTableFilters()", 1
         )[1].split("function clearWarehouseFilter", 1)[0]
         self.assertNotIn('"q"', reset)
+
+    def test_out_of_stock_check_filter_uses_drawer_not_toolbar(self):
+        toolbar = self.warehouse.split(
+            '<div class="search-card erp-toolbar-card">', 1
+        )[1].split('<aside\n        id="filterDrawer"', 1)[0]
+        drawer = self.warehouse.split(
+            '<aside\n        id="filterDrawer"', 1
+        )[1].split('<aside\n        id="editDrawer"', 1)[0]
+
+        self.assertNotIn('name="check_state" onchange=', toolbar)
+        self.assertIn('id="warehouseCheckState"', drawer)
+        self.assertIn('data-warehouse-filter="check_state"', self.warehouse)
+        self.assertIn('check_state: ["check_state"]', self.warehouse)
+        self.assertIn('if (stockState !== "out")', self.warehouse)
+        self.assertNotIn('stock_state != "all",', self.source("app/web.py"))
 
     def test_shared_chip_design_wraps_and_is_keyboard_native(self):
         self.assertIn(".erp-active-filters", self.css)
