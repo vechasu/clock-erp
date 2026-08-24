@@ -245,7 +245,7 @@ CREATE TABLE IF NOT EXISTS erp_brands (
     name TEXT NOT NULL,
     normalized_name TEXT NOT NULL UNIQUE,
     active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
-    bitrix_brand_id TEXT UNIQUE,
+    bitrix_brand_id TEXT,
     image_path TEXT,
     image_source TEXT CHECK (image_source IN ('bitrix', 'manual')),
     image_sha256 TEXT,
@@ -655,7 +655,7 @@ CREATE TABLE IF NOT EXISTS erp_sales (
     id TEXT PRIMARY KEY,
     source TEXT NOT NULL,
     external_order_id TEXT,
-    idempotency_key TEXT UNIQUE,
+    idempotency_key TEXT,
     status TEXT NOT NULL DEFAULT 'completed' CHECK (
         status IN ('completed', 'partially_returned', 'returned')
     ),
@@ -898,11 +898,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_catalog_stock_movements_idempotency
 CREATE TABLE IF NOT EXISTS erp_inventory_sessions (
     id TEXT PRIMARY KEY,
     brand_id INTEGER NOT NULL REFERENCES erp_brands(id) ON DELETE RESTRICT,
-    active_brand_id INTEGER UNIQUE REFERENCES erp_brands(id) ON DELETE RESTRICT,
+    active_brand_id INTEGER REFERENCES erp_brands(id) ON DELETE RESTRICT,
     scope_type TEXT CHECK (scope_type IN ('brand', 'category', 'model')),
     category_id INTEGER REFERENCES erp_categories(id) ON DELETE RESTRICT,
     model_id INTEGER REFERENCES erp_models(id) ON DELETE RESTRICT,
-    idempotency_key TEXT UNIQUE,
+    idempotency_key TEXT,
     scope_brand_name TEXT,
     scope_category_name TEXT,
     scope_model_name TEXT,
@@ -1003,10 +1003,16 @@ class CatalogDatabase:
     _schema_cache = {}
     _schema_cache_lock = threading.Lock()
 
-    def __init__(self, path=None, cache_initialization=True):
+    def __init__(
+        self,
+        path=None,
+        cache_initialization=True,
+        ddl_observer=None,
+    ):
         configured_path = path or os.getenv("CATALOG_DATABASE_PATH")
         self.path = Path(configured_path) if configured_path else DEFAULT_CATALOG_DATABASE_PATH
         self.cache_initialization = bool(cache_initialization)
+        self.ddl_observer = ddl_observer
         self._initialized = False
         self._initialize_lock = threading.Lock()
 
@@ -1027,9 +1033,41 @@ class CatalogDatabase:
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys = ON")
         connection.execute("PRAGMA busy_timeout = 5000")
+        if self.ddl_observer is not None:
+            def trace(statement):
+                normalized = str(statement or "").lstrip().upper()
+                if normalized.startswith(("CREATE ", "ALTER ", "DROP ")):
+                    self.ddl_observer(" ".join(str(statement).split()))
+
+            connection.set_trace_callback(trace)
         return connection
 
-    def initialize(self):
+    def initialize(self, allow_schema_changes=False):
+        if not allow_schema_changes and str(self.path) != ":memory:":
+            from app.schema_migrations import (
+                runtime_guard_required,
+                verify_runtime_guard,
+            )
+
+            if runtime_guard_required(self.path):
+                if self._initialized:
+                    return None
+                with self._initialize_lock:
+                    if self._initialized:
+                        return None
+                    cache_path = str(self.path.resolve())
+                    with self._schema_cache_lock:
+                        identity = self._schema_cache_identity()
+                        if (
+                            identity is None
+                            or self._schema_cache.get(cache_path) != identity
+                        ):
+                            verify_runtime_guard(self.path)
+                            identity = self._schema_cache_identity()
+                            if identity is not None:
+                                self._schema_cache[cache_path] = identity
+                        self._initialized = True
+                return None
         if not self.cache_initialization:
             return self._initialize_schema()
         if self._initialized:
@@ -1064,6 +1102,7 @@ class CatalogDatabase:
             self._ensure_audit_entity_constraints(connection)
             self._ensure_excel_receipt_constraints(connection)
             self._ensure_excel_cardinality_columns(connection)
+            self._ensure_excel_import_draft_schema(connection)
             self._ensure_product_deletion_columns(connection)
             self._ensure_product_workflow_columns(connection)
             self._ensure_product_image_columns(connection)
@@ -1490,7 +1529,7 @@ class CatalogDatabase:
                 ("shared_bitrix_row_count", "INTEGER NOT NULL DEFAULT 0"),
             ),
             "catalog_excel_import_drafts": (
-                ("parser_version", "INTEGER NOT NULL DEFAULT 1"),
+                ("parser_version", "INTEGER NOT NULL DEFAULT 2"),
                 ("positive_rows", "INTEGER NOT NULL DEFAULT 0"),
                 ("zero_rows", "INTEGER NOT NULL DEFAULT 0"),
             ),
@@ -1525,6 +1564,82 @@ class CatalogDatabase:
                         row["bitrix_catalog_product_id"],
                     ),
                 )
+
+    @staticmethod
+    def _ensure_excel_import_draft_schema(connection):
+        """Normalize the legacy parser default without changing draft data."""
+        columns = connection.execute(
+            "PRAGMA table_info(catalog_excel_import_drafts)"
+        ).fetchall()
+        parser = next(
+            (row for row in columns if row[1] == "parser_version"),
+            None,
+        )
+        if parser is not None and str(parser[4] or "").strip("'\"") == "2":
+            return
+        before = connection.execute(
+            "SELECT COUNT(*) FROM catalog_excel_import_drafts"
+        ).fetchone()[0]
+        connection.commit()
+        connection.execute("PRAGMA foreign_keys = OFF")
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(
+                "DROP TABLE IF EXISTS catalog_excel_import_drafts_migrating"
+            )
+            connection.execute(
+                "CREATE TABLE catalog_excel_import_drafts_migrating ("
+                "id TEXT PRIMARY KEY, file_sha256 TEXT NOT NULL UNIQUE, "
+                "source_filename TEXT NOT NULL, source_file BLOB NOT NULL, "
+                "sheet_name TEXT NOT NULL, header_row INTEGER NOT NULL, "
+                "parser_version INTEGER NOT NULL DEFAULT 2, "
+                "status TEXT NOT NULL CHECK (status IN ('ready','blocked','posted')), "
+                "row_count INTEGER NOT NULL, valid_rows INTEGER NOT NULL, "
+                "error_rows INTEGER NOT NULL, excluded_rows INTEGER NOT NULL, "
+                "positive_rows INTEGER NOT NULL DEFAULT 0, "
+                "zero_rows INTEGER NOT NULL DEFAULT 0, new_rows INTEGER NOT NULL, "
+                "matched_rows INTEGER NOT NULL, total_quantity REAL NOT NULL, "
+                "created_at TEXT NOT NULL, updated_at TEXT NOT NULL, "
+                "details_json TEXT NOT NULL DEFAULT '{}')"
+            )
+            connection.execute(
+                "INSERT INTO catalog_excel_import_drafts_migrating ("
+                "id, file_sha256, source_filename, source_file, sheet_name, "
+                "header_row, parser_version, status, row_count, valid_rows, "
+                "error_rows, excluded_rows, positive_rows, zero_rows, new_rows, "
+                "matched_rows, total_quantity, created_at, updated_at, details_json) "
+                "SELECT id, file_sha256, source_filename, source_file, sheet_name, "
+                "header_row, parser_version, status, row_count, valid_rows, "
+                "error_rows, excluded_rows, positive_rows, zero_rows, new_rows, "
+                "matched_rows, total_quantity, created_at, updated_at, details_json "
+                "FROM catalog_excel_import_drafts"
+            )
+            connection.execute("DROP TABLE catalog_excel_import_drafts")
+            connection.execute(
+                "ALTER TABLE catalog_excel_import_drafts_migrating "
+                "RENAME TO catalog_excel_import_drafts"
+            )
+            connection.execute(
+                "CREATE INDEX idx_catalog_excel_import_drafts_status "
+                "ON catalog_excel_import_drafts(status, created_at)"
+            )
+            after = connection.execute(
+                "SELECT COUNT(*) FROM catalog_excel_import_drafts"
+            ).fetchone()[0]
+            if before != after:
+                raise sqlite3.IntegrityError(
+                    "Excel import draft schema migration changed row count"
+                )
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.execute("PRAGMA foreign_keys = ON")
+        if connection.execute("PRAGMA foreign_key_check").fetchall():
+            raise sqlite3.IntegrityError(
+                "Excel import draft schema migration created foreign key violations"
+            )
 
     @staticmethod
     def _ensure_product_deletion_columns(connection):

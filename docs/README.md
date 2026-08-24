@@ -57,6 +57,8 @@
   интеграции; статус каждого указан в реестре.
 - [Миграция единого каталога](unified-catalog-migration.md) — действующий
   технический runbook, подтверждённый кодом миграции.
+- [Production-safe SQLite migrations](production-sqlite-migrations.md) —
+  обязательный exact-runtime preflight, журнал и rollback-контракт.
 - [Аудит единой обратной связи](unified-feedback-audit.md) — текущее описание
   механизма уведомлений, подтверждённое шаблоном, JavaScript и тестами.
 - [Полный аудит перед React-переработкой](full-react-rewrite-audit.md) и
