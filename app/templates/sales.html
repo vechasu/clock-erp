@@ -1428,7 +1428,7 @@
     >
     <link
         rel="stylesheet"
-        href="{{ url_for('static', filename='css/catalog-combobox.css', v='catalog-combobox-20260824-product-hierarchy') }}"
+        href="{{ url_for('static', filename='css/catalog-combobox.css', v='catalog-combobox-20260824-product-hierarchy-category-assignment') }}"
     >
     <link
         rel="stylesheet"
@@ -3231,7 +3231,7 @@
 </div>
 
 
-<script src="{{ url_for('static', filename='js/catalog-combobox.js', v='catalog-combobox-20260824-product-hierarchy') }}"></script>
+<script src="{{ url_for('static', filename='js/catalog-combobox.js', v='catalog-combobox-20260824-product-hierarchy-category-assignment') }}"></script>
 <script src="{{ url_for('static', filename='js/period-picker.js') }}"></script>
 <script src="{{ url_for('static', filename='js/erp-table-layout.js') }}"></script>
 <script>
@@ -6405,6 +6405,55 @@
                 saleProductError,
                 "Выберите доступный товар с остатком больше нуля.",
             );
+            return;
+        }
+
+        if (
+            !isEditing
+            && selectedProduct
+            && (selectedProduct.category_id === null
+                || selectedProduct.category_id === undefined
+                || selectedProduct.category_id === "")
+        ) {
+            event.preventDefault();
+            if (manualSaleForm.dataset.categoryAssigning === "1") return;
+            manualSaleForm.dataset.categoryAssigning = "1";
+            setSaleFormPending(true, saleSubmitButton.textContent.trim());
+            try {
+                const csrf = manualSaleForm.querySelector(
+                    'input[name="csrf_token"]'
+                )?.value || "";
+                const updated = await window.assignMissingProductCategory(
+                    selectedProduct,
+                    csrf,
+                );
+                if (!updated) return;
+                sharedSelectedSaleProduct = updated;
+                window.setSharedCatalogComboboxValue(saleCategoryCombobox, {
+                    id: updated.category_id,
+                    name: updated.category,
+                });
+                window.setSharedCatalogComboboxValue(saleProductCombobox, updated);
+                productNameInput.value = updated.name || "";
+                productMeta.textContent = [
+                    "Бренд: " + (updated.brand || "—"),
+                    "Категория: " + (updated.category || "—"),
+                    "Артикул: " + (updated.article || "—"),
+                    "Доступно: " + (updated.stock_display ?? updated.stock ?? 0),
+                    updated.barcode ? "Баркод: " + updated.barcode : "",
+                ].filter(Boolean).join(" · ");
+            } catch (error) {
+                setSaleFormError(
+                    error.message || "Не удалось назначить категорию товара"
+                );
+                return;
+            } finally {
+                delete manualSaleForm.dataset.categoryAssigning;
+                setSaleFormPending(false);
+            }
+            if (sharedSelectedSaleProduct?.category_id) {
+                manualSaleForm.requestSubmit();
+            }
             return;
         }
 

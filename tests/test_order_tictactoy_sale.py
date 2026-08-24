@@ -925,6 +925,111 @@ class OrderTictactoySaleTest(unittest.TestCase):
         self.assertEqual(saved["line:line-1"]["order_item_id"], "line-1")
         self.assertNotIn("brand_id", saved["line:line-1"])
 
+    def test_uncategorized_product_requires_assignment_before_mapping(self):
+        uncategorized = ExcelProductCatalog(self.database).create_product(
+            name="Bradley без категории", article="BRADLEY-NO-CATEGORY",
+            brand="Bradley", category="", stock=4,
+        )
+        with (
+            mock.patch.object(web, "get_order", return_value=self.order),
+            mock.patch.object(web, "CatalogDatabase", return_value=self.database),
+            mock.patch.object(web, "SharedCatalog", return_value=self.shared),
+            mock.patch.object(web, "AuditJournal"),
+        ):
+            response = self.client.post(
+                "/api/orders/18593/items/line-1/mapping",
+                json={"product_id": uncategorized["id"]},
+            )
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(
+            response.get_json()["error"]["code"],
+            "PRODUCT_CATEGORY_REQUIRED",
+        )
+        self.assertEqual(
+            web.load_order_product_mappings("18593", self.database), {}
+        )
+        self.assertEqual(
+            self.shared.get_product(uncategorized["id"])["stock"], 4
+        )
+
+    def test_category_assignment_is_atomic_idempotent_and_mapping_continues(self):
+        uncategorized = ExcelProductCatalog(self.database).create_product(
+            name="Bradley новый", article="BRADLEY-NEW-CATEGORY",
+            brand="Bradley", category="", stock=4,
+        )
+        with self.database.connect() as connection:
+            movements_before = connection.execute(
+                "SELECT COUNT(*) FROM catalog_excel_manual_stock_operations "
+                "WHERE product_id = ?",
+                (uncategorized["id"],),
+            ).fetchone()[0]
+        with mock.patch.object(web, "SharedCatalog", return_value=self.shared):
+            first = self.client.post(
+                "/api/v1/products/{}/category-assignment".format(
+                    uncategorized["id"]
+                ),
+                json={"category_name": "  Новая категория  "},
+            )
+            repeated = self.client.post(
+                "/api/v1/products/{}/category-assignment".format(
+                    uncategorized["id"]
+                ),
+                json={"category_name": "новая категория"},
+            )
+        self.assertEqual((first.status_code, repeated.status_code), (200, 200))
+        assigned = first.get_json()["data"]
+        self.assertEqual(assigned["category"], "Новая категория")
+        self.assertEqual(repeated.get_json()["data"]["category_id"],
+                         assigned["category_id"])
+        with self.database.connect() as connection:
+            category_count = connection.execute(
+                "SELECT COUNT(*) FROM erp_categories "
+                "WHERE normalized_name = 'новая категория'"
+            ).fetchone()[0]
+            movement_count = connection.execute(
+                "SELECT COUNT(*) FROM catalog_excel_manual_stock_operations "
+                "WHERE product_id = ?",
+                (uncategorized["id"],),
+            ).fetchone()[0]
+        self.assertEqual(category_count, 1)
+        self.assertEqual(movement_count, movements_before)
+        self.assertEqual(
+            self.shared.get_product(uncategorized["id"])["stock"], 4
+        )
+
+        with (
+            mock.patch.object(web, "get_order", return_value=self.order),
+            mock.patch.object(web, "CatalogDatabase", return_value=self.database),
+            mock.patch.object(web, "SharedCatalog", return_value=self.shared),
+            mock.patch.object(web, "AuditJournal"),
+        ):
+            mapped = self.client.post(
+                "/api/orders/18593/items/line-1/mapping",
+                json={"product_id": uncategorized["id"]},
+            )
+        self.assertEqual(mapped.status_code, 200)
+        self.assertEqual(
+            mapped.get_json()["data"]["mapping"]["product"]["category_id"],
+            assigned["category_id"],
+        )
+
+    def test_category_assignment_rejects_unknown_category_without_changes(self):
+        uncategorized = ExcelProductCatalog(self.database).create_product(
+            name="Bradley invalid category", article="BRADLEY-INVALID-CATEGORY",
+            brand="Bradley", category="", stock=2,
+        )
+        with mock.patch.object(web, "SharedCatalog", return_value=self.shared):
+            response = self.client.post(
+                "/api/v1/products/{}/category-assignment".format(
+                    uncategorized["id"]
+                ),
+                json={"category_id": 999999},
+            )
+        self.assertEqual(response.status_code, 422)
+        product = self.shared.get_product(uncategorized["id"])
+        self.assertIsNone(product["category_id"])
+        self.assertEqual(product["stock"], 2)
+
     def test_mapping_can_change_between_duplicate_named_erp_products(self):
         duplicate = ExcelProductCatalog(self.database).create_product(
             name="Bradley Steel", article="BRADLEY-STEEL-DUPLICATE",

@@ -849,6 +849,205 @@
     });
 })();
 
+(function initializeMissingProductCategoryAssignment() {
+    let activeRequest = null;
+
+    function modalMarkup() {
+        return `
+            <div class="product-category-modal" data-product-category-modal hidden
+                 role="dialog" aria-modal="true" aria-labelledby="productCategoryTitle">
+                <div class="product-category-dialog">
+                    <div class="catalog-create-header">
+                        <div>
+                            <h2 id="productCategoryTitle">Укажите категорию товара</h2>
+                            <p>Категория сохранится в карточке товара.</p>
+                        </div>
+                        <button class="catalog-create-close" type="button"
+                                data-product-category-cancel aria-label="Закрыть">×</button>
+                    </div>
+                    <form class="catalog-create-body" data-product-category-form>
+                        <dl class="product-category-context">
+                            <div><dt>Бренд</dt><dd data-product-category-brand>—</dd></div>
+                            <div><dt>Товар</dt><dd data-product-category-name>—</dd></div>
+                            <div><dt>Артикул / SKU</dt><dd data-product-category-article>—</dd></div>
+                            <div data-product-category-barcode-row><dt>Баркод</dt><dd data-product-category-barcode>—</dd></div>
+                            <div><dt>Текущая категория</dt><dd>Не указана</dd></div>
+                        </dl>
+                        <label class="catalog-create-field">
+                            <span>Категория *</span>
+                            <select data-product-category-select required></select>
+                        </label>
+                        <button class="product-category-create-toggle" type="button"
+                                data-product-category-create>+ Создать категорию</button>
+                        <label class="catalog-create-field" data-product-category-name-field hidden>
+                            <span>Название новой категории *</span>
+                            <input type="text" maxlength="255" autocomplete="off"
+                                   data-product-category-new-name>
+                        </label>
+                        <p class="catalog-create-error" data-product-category-error role="alert"></p>
+                        <div class="catalog-create-actions">
+                            <button type="button" data-product-category-cancel>Отмена</button>
+                            <button class="catalog-create-submit" type="submit"
+                                    data-product-category-submit>Сохранить и продолжить</button>
+                        </div>
+                    </form>
+                </div>
+            </div>`;
+    }
+
+    function assignmentModal() {
+        let modal = document.querySelector("[data-product-category-modal]");
+        if (!modal) {
+            document.body.insertAdjacentHTML("beforeend", modalMarkup());
+            modal = document.querySelector("[data-product-category-modal]");
+        }
+        return modal;
+    }
+
+    function closeAssignment(result) {
+        if (!activeRequest) return;
+        const request = activeRequest;
+        activeRequest = null;
+        request.modal.hidden = true;
+        document.body.classList.remove("product-category-modal-open");
+        request.returnFocus?.focus();
+        request.resolve(result);
+    }
+
+    async function loadCategories(product, select) {
+        const params = new URLSearchParams({
+            type: "category",
+            brand_id: String(product.brand_id),
+            category_scope: "brand",
+            limit: "200",
+        });
+        const response = await fetch("/api/v1/catalog/options?" + params, {
+            credentials: "same-origin",
+            headers: {Accept: "application/json"},
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.message || "Не удалось загрузить категории");
+        const categories = (payload.data || []).filter((item) => Number(item.id) > 0);
+        select.replaceChildren(new Option("Выберите категорию", ""));
+        categories.forEach((item) => select.add(new Option(item.name, String(item.id))));
+    }
+
+    window.assignMissingProductCategory = function(product, csrfToken) {
+        if (!product || product.category_id !== null && product.category_id !== undefined && product.category_id !== "") {
+            return Promise.resolve(product);
+        }
+        if (activeRequest) return activeRequest.promise;
+        const modal = assignmentModal();
+        const form = modal.querySelector("[data-product-category-form]");
+        const select = modal.querySelector("[data-product-category-select]");
+        const nameField = modal.querySelector("[data-product-category-name-field]");
+        const nameInput = modal.querySelector("[data-product-category-new-name]");
+        const errorNode = modal.querySelector("[data-product-category-error]");
+        const submit = modal.querySelector("[data-product-category-submit]");
+        modal.querySelector("[data-product-category-brand]").textContent = product.brand || "—";
+        modal.querySelector("[data-product-category-name]").textContent = product.name || "—";
+        modal.querySelector("[data-product-category-article]").textContent = product.article || "—";
+        modal.querySelector("[data-product-category-barcode]").textContent = product.barcode || "—";
+        modal.querySelector("[data-product-category-barcode-row]").hidden = !product.barcode;
+        form.reset();
+        nameField.hidden = true;
+        errorNode.textContent = "";
+        submit.disabled = true;
+        modal.hidden = false;
+        document.body.classList.add("product-category-modal-open");
+
+        let resolveRequest;
+        const promise = new Promise((resolve) => { resolveRequest = resolve; });
+        activeRequest = {
+            modal,
+            promise,
+            resolve: resolveRequest,
+            returnFocus: document.activeElement,
+        };
+
+        const cancel = () => closeAssignment(null);
+        const toggleCreate = () => {
+            nameField.hidden = !nameField.hidden;
+            select.disabled = !nameField.hidden;
+            select.required = nameField.hidden;
+            nameInput.required = !nameField.hidden;
+            if (!nameField.hidden) nameInput.focus();
+        };
+        const submitAssignment = async (event) => {
+            event.preventDefault();
+            if (form.dataset.submitting === "1") return;
+            form.dataset.submitting = "1";
+            form.setAttribute("aria-busy", "true");
+            submit.disabled = true;
+            errorNode.textContent = "";
+            try {
+                const response = await fetch(
+                    "/api/v1/products/" + encodeURIComponent(product.id) + "/category-assignment",
+                    {
+                        method: "POST",
+                        credentials: "same-origin",
+                        headers: {
+                            Accept: "application/json",
+                            "Content-Type": "application/json",
+                            "X-CSRF-Token": csrfToken || "",
+                        },
+                        body: JSON.stringify(nameField.hidden
+                            ? {category_id: select.value}
+                            : {category_name: nameInput.value.trim()}),
+                    },
+                );
+                const payload = await response.json();
+                if (!response.ok || payload.ok === false) {
+                    throw new Error(payload.message || "Не удалось назначить категорию");
+                }
+                closeAssignment(payload.data);
+            } catch (error) {
+                errorNode.textContent = error.message || "Не удалось назначить категорию";
+            } finally {
+                delete form.dataset.submitting;
+                form.removeAttribute("aria-busy");
+                submit.disabled = false;
+            }
+        };
+        const keydown = (event) => {
+            if (event.key === "Escape") {
+                event.preventDefault();
+                cancel();
+                return;
+            }
+            if (event.key !== "Tab") return;
+            const focusable = Array.from(modal.querySelectorAll(
+                "button:not([disabled]), select:not([disabled]), input:not([disabled])"
+            )).filter((element) => !element.closest("[hidden]"));
+            if (!focusable.length) return;
+            const current = focusable.indexOf(document.activeElement);
+            const next = event.shiftKey
+                ? (current <= 0 ? focusable.length - 1 : current - 1)
+                : (current >= focusable.length - 1 ? 0 : current + 1);
+            event.preventDefault();
+            focusable[next].focus();
+        };
+
+        modal.querySelectorAll("[data-product-category-cancel]").forEach((button) => {
+            button.onclick = cancel;
+        });
+        modal.querySelector("[data-product-category-create]").onclick = toggleCreate;
+        modal.onclick = (event) => { if (event.target === modal) cancel(); };
+        modal.onkeydown = keydown;
+        form.onsubmit = submitAssignment;
+        loadCategories(product, select).then(() => {
+            if (!activeRequest || activeRequest.modal !== modal) return;
+            submit.disabled = false;
+            select.focus();
+        }).catch((error) => {
+            if (!activeRequest || activeRequest.modal !== modal) return;
+            errorNode.textContent = error.message;
+            submit.disabled = true;
+        });
+        return promise;
+    };
+})();
+
 (function initializeSharedCatalogCascades() {
     const searchTimers = new WeakMap();
     const requestControllers = new WeakMap();

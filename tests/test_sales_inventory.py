@@ -985,6 +985,29 @@ class SalesInventoryWebTest(SalesInventoryTest):
         self.assertEqual(len(self.inventory.list_sales()), 1)
         self.assertEqual(self.stock(self.product["id"]), 1)
 
+    def test_manual_sale_uses_catalog_taxonomy_when_form_category_is_stale(self):
+        response = self.client.post(
+            "/sales/manual/add",
+            data={
+                "created_at": "2026-07-29",
+                "source": "Tictactoy",
+                "product_id": str(self.product["id"]),
+                "product_name": self.product["display_name"],
+                "product_brand": "Устаревший бренд заказа",
+                "product_category": "Устаревшая категория заказа",
+                "brand_id": "999999",
+                "category_id": "999999",
+                "quantity": "1",
+                "unit_price": "1000",
+                "idempotency_key": "stale-order-taxonomy",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        sale = self.inventory.list_sales()[0]
+        self.assertEqual(sale["brand"], self.product["display_brand"])
+        self.assertEqual(sale["category"], self.product["display_category"])
+        self.assertEqual(self.stock(self.product["id"]), 2)
+
     def test_new_sale_form_does_not_offer_return_status(self):
         self.assertNotIn("returned", web.SALE_FORM_STATUS_LABELS)
         page = self.client.get("/app/sales?source=all")
