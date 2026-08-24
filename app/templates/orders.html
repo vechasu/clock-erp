@@ -144,7 +144,7 @@
                         {% else %}<section class="section order-information">
                             <div class="section-head"><h3>Информация о клиенте</h3></div>
                             <div class="customer-grid">
-                                <div class="fact"><span class="fact-label">Клиент</span><span class="fact-value">{{ selected_order.get('customer') or 'Не указан' }}</span></div>
+                                <div class="fact"><span class="fact-label">Клиент</span><span class="fact-value">{% if selected_customer_id %}<a href="{{ url_for('customer_detail_page', customer_id=selected_customer_id) }}">{{ selected_order.get('customer') or 'Открыть клиента' }}</a>{% else %}{{ selected_order.get('customer') or 'Не указан' }}{% endif %}</span></div>
                                 <div class="fact"><span class="fact-label">Телефон</span><span class="fact-value">{% if selected_order.get('phone') %}<a href="tel:{{ selected_order.get('phone')|replace(' ','') }}">{{ selected_order.get('phone') }}</a>{% else %}Не указан{% endif %}</span></div>
                                 <div class="fact"><span class="fact-label">Email</span><span class="fact-value">{% if selected_order.get('email') %}<a href="mailto:{{ selected_order.get('email') }}">{{ selected_order.get('email') }}</a>{% else %}Не указан{% endif %}</span></div>
                                 <div class="fact geography-fact"><span class="fact-label">География доставки</span><span class="fact-value">{{ [order_geography.country, order_geography.region, order_geography.city or selected_order.get('city')]|select|join(' · ') or 'Не указана' }}</span></div>
