@@ -23,8 +23,8 @@ body[class] {
     max-width: 100%;
     min-height: 100vh;
     min-height: 100dvh;
-    overflow-x: clip;
-    overflow-y: visible;
+    overflow-x: clip !important;
+    overflow-y: visible !important;
 }
 
 .app {

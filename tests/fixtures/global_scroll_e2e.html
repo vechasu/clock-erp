@@ -8,12 +8,13 @@
     <style>
         * { box-sizing: border-box; }
         body { margin: 0; }
+        body.scroll-cascade-regression { overflow-x: hidden; overflow-y: auto; }
         .main { padding: 24px 26px 32px; }
         .long-content { height: 1400px; }
         .bottom-action { min-height: 42px; }
     </style>
 </head>
-<body>
+<body class="scroll-cascade-regression">
     <div class="app">
         <aside class="sidebar" aria-label="Навигация"></aside>
         <main class="main" id="main-content">
