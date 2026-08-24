@@ -386,7 +386,7 @@ class CatalogFilteringTest(unittest.TestCase):
         self.assertIn("Сбросить всё", html)
         self.assertEqual(html.count('data-product-id="'), 100)
 
-    def test_warehouse_period_chip_variants_and_stock_chip(self):
+    def test_warehouse_period_chips_do_not_duplicate_stock_state(self):
         variants = (
             (
                 "date_from=2026-08-01&date_to=2026-08-05",
@@ -407,6 +407,52 @@ class CatalogFilteringTest(unittest.TestCase):
 
         template = (ROOT / "app/templates/warehouse.html").read_text(encoding="utf-8")
         self.assertNotIn("Только в наличии", template)
+
+        response = self.client.get("/warehouse?stock_state=out")
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("Наличие: Нет в наличии", html)
+        self.assertNotIn('class="erp-filter-chip"', html)
+        self.assertNotIn('class="erp-filter-count"', html)
+
+    def test_out_of_stock_check_filter_lives_in_drawer_and_counts_once(self):
+        response = self.client.get(
+            "/warehouse?stock_state=out&check_state=unchecked&q=Barcelona"
+        )
+        html = response.get_data(as_text=True)
+        toolbar = html.split(
+            '<div class="search-card erp-toolbar-card">', 1
+        )[1].split('<div class="warehouse-mobile-stock-controls">', 1)[0]
+        drawer = html.split('<aside\n        id="filterDrawer"', 1)[1]
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("Статус проверки площадок", toolbar)
+        self.assertIn('id="warehouseCheckState"', drawer)
+        self.assertIn('value="unchecked" selected', drawer)
+        self.assertIn("Статус проверки: Не проверены", html)
+        self.assertEqual(html.count('class="erp-filter-chip"'), 1)
+        self.assertIn('class="erp-filter-count"', toolbar)
+        self.assertRegex(toolbar, r'class="erp-filter-count"[^>]*>1</span>')
+        self.assertIn('name="q"', toolbar)
+        self.assertIn('value="Barcelona"', toolbar)
+        self.assertIn('name="stock_state" value="out"', toolbar)
+        self.assertIn('name="check_state" value="unchecked"', toolbar)
+
+    def test_check_filter_is_not_applied_or_shown_outside_out_of_stock(self):
+        response = self.client.get(
+            "/warehouse?stock_state=in&check_state=unchecked"
+        )
+        html = response.get_data(as_text=True)
+        toolbar = html.split(
+            '<div class="search-card erp-toolbar-card">', 1
+        )[1].split('<div class="warehouse-mobile-stock-controls">', 1)[0]
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn('id="warehouseCheckState"', html)
+        self.assertNotIn("Статус проверки: Не проверены", html)
+        self.assertNotIn('name="check_state" value="unchecked"', toolbar)
+        self.assertNotIn('class="erp-filter-count"', html)
+        self.assertEqual(html.count('data-product-id="'), 4)
 
     def test_sales_uses_positive_stock_while_receipts_keep_full_catalog(self):
         query = "brand_id={}&category_id={}&limit=200".format(

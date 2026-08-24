@@ -3860,6 +3860,8 @@ def warehouse_page():
     check_state = (request.args.get("check_state") or "all").strip()
     if check_state not in {"all", "unchecked", "partial", "complete"}:
         check_state = "all"
+    if not out_of_stock:
+        check_state = "all"
     requested_sort_by = request.args.get("sort_by")
     sort_by = (requested_sort_by or "created_at").strip()
     sort_dir = (
@@ -3907,7 +3909,6 @@ def warehouse_page():
         bool(selected_model_id or selected_model),
         bool(selected_cell),
         bool(created_date_from or created_date_to),
-        stock_state != "all",
         check_state != "all",
     ))
     warehouse_active_filter_label = format_active_filter_label(
