@@ -982,6 +982,92 @@ class UnifiedCatalogApiTest(unittest.TestCase):
             self.product["category_id"],
         )
 
+    def test_product_editor_persists_global_category_without_stock_movement(self):
+        brand = self.client.post(
+            "/api/v1/brands",
+            json={"name": "ArmA"},
+        ).get_json()["data"]
+        catalog = ExcelProductCatalog(CatalogDatabase(self.database_path))
+        product = catalog.create_product(
+            name="ARMA Nubuck Brown (22 мм)",
+            article="arma-nubuck-brown-22-mm",
+            brand_id=brand["id"],
+            category="",
+            stock=999,
+        )
+        with CatalogDatabase(self.database_path).connect() as connection:
+            movements_before = connection.execute(
+                "SELECT COUNT(*) FROM catalog_excel_manual_stock_operations "
+                "WHERE product_id = ?",
+                (product["id"],),
+            ).fetchone()[0]
+
+        saved = self.client.patch(
+            "/api/v1/products/{}".format(product["id"]),
+            json={
+                "brand_id": brand["id"],
+                "category_id": self.product["category_id"],
+                "model": "",
+            },
+        )
+
+        self.assertEqual(saved.status_code, 200)
+        payload = saved.get_json()["data"]
+        self.assertEqual(payload["brand_id"], brand["id"])
+        self.assertEqual(payload["category_id"], self.product["category_id"])
+        self.assertEqual(payload["stock"], 999)
+        persisted = catalog.get_product(product["id"])
+        self.assertEqual(persisted["category_id"], self.product["category_id"])
+        self.assertIsNone(persisted["model_id"])
+        with CatalogDatabase(self.database_path).connect() as connection:
+            movements_after = connection.execute(
+                "SELECT COUNT(*) FROM catalog_excel_manual_stock_operations "
+                "WHERE product_id = ?",
+                (product["id"],),
+            ).fetchone()[0]
+            linked = connection.execute(
+                "SELECT 1 FROM erp_brand_categories "
+                "WHERE brand_id = ? AND category_id = ?",
+                (brand["id"], self.product["category_id"]),
+            ).fetchone()
+        self.assertEqual(movements_after, movements_before)
+        self.assertIsNotNone(linked)
+
+        invalid = self.client.patch(
+            "/api/v1/products/{}".format(product["id"]),
+            json={"category_id": 999999},
+        )
+        self.assertEqual(invalid.status_code, 422)
+        self.assertEqual(invalid.get_json()["code"], "CATEGORY_NOT_FOUND")
+        self.assertEqual(catalog.get_product(product["id"])["category_id"],
+                         self.product["category_id"])
+
+    def test_created_category_can_be_selected_and_saved_by_canonical_id(self):
+        brand = self.client.post(
+            "/api/v1/brands", json={"name": "ArmA"}
+        ).get_json()["data"]
+        category_response = self.client.post(
+            "/api/v1/categories",
+            json={"brand_id": brand["id"], "name": "Аксессуары ArmA"},
+        )
+        self.assertEqual(category_response.status_code, 201)
+        category = category_response.get_json()["data"]
+        saved = self.client.patch(
+            "/api/v1/products/{}".format(self.product["id"]),
+            json={
+                "brand_id": brand["id"],
+                "category_id": category["id"],
+            },
+        )
+        self.assertEqual(saved.status_code, 200)
+        reread = self.client.get(
+            "/api/v1/products/{}".format(self.product["id"])
+        ).get_json()["data"]
+        self.assertEqual(
+            (reread["brand_id"], reread["category_id"]),
+            (brand["id"], category["id"]),
+        )
+
     def test_category_creation_is_global_and_normalized(self):
         brand = self.client.post(
             "/api/v1/brands",

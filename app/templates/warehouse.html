@@ -4024,7 +4024,7 @@
 
     </style>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/erp-components.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-combobox.css', v='products-filter-20260823') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-combobox.css', v='catalog-combobox-20260824-product-hierarchy') }}">
     <script defer src="{{ url_for('static', filename='js/table-scroll-hint.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/erp-modal-shell.js') }}"></script>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/products-workspace.css') }}">
@@ -4034,7 +4034,7 @@
     {% endif %}
 </head>
 <body class="warehouse-page">
-    {% from "_catalog_combobox.html" import render_catalog_combobox %}
+    {% from "_catalog_combobox.html" import render_catalog_combobox, render_catalog_create_modal %}
     {% from "_filter_count.html" import render_filter_count %}
     {% from "_navigation_icons.html" import navigation_icon %}
     {% from "_datetime_cell.html" import render_erp_datetime %}
@@ -5256,6 +5256,7 @@
             method="post"
             action="/warehouse/edit"
             data-shared-catalog-scope
+            data-global-category-options="true"
             data-erp-pending
             data-pending-label="Сохраняем товар…"
         >
@@ -5376,7 +5377,9 @@
         </div>
     </aside>
 
-    <script src="{{ url_for('static', filename='js/catalog-combobox.js', v='catalog-combobox-20260823-products-filter') }}"></script>
+    {{ render_catalog_create_modal() }}
+
+    <script src="{{ url_for('static', filename='js/catalog-combobox.js', v='catalog-combobox-20260824-product-hierarchy') }}"></script>
     <script src="{{ url_for('static', filename='js/toolbar-popover-coordinator.js') }}"></script>
     <script>
         const stockHistoryCache = new Map();
@@ -6336,6 +6339,149 @@
             }
         }
 
+        async function canonicalizeInlineProductTaxonomy(form) {
+            const brand = form.querySelector(
+                '[data-shared-catalog-kind="brand"]'
+            );
+            const category = form.querySelector(
+                '[data-shared-catalog-kind="category"]'
+            );
+
+            async function resolveSelection(combobox, kind, emptyLabel) {
+                const idInput = combobox.querySelector(".catalog-combobox-id");
+                const labelInput = combobox.querySelector(
+                    ".brand-combobox-hidden"
+                );
+                const selectedId = String(idInput?.value || "");
+                const selectedLabel = String(labelInput?.value || "").trim();
+                if (!selectedLabel && !selectedId) return null;
+                if (selectedId === "0" && selectedLabel === "Без категории") {
+                    return {id: 0, name: selectedLabel};
+                }
+                const parameters = new URLSearchParams({
+                    type: kind,
+                    limit: "200",
+                    q: selectedLabel,
+                });
+                if (kind === "category") {
+                    const brandId = brand.querySelector(
+                        ".catalog-combobox-id"
+                    )?.value || "";
+                    if (brandId) parameters.set("brand_id", brandId);
+                    parameters.set("category_scope", "all");
+                }
+                const response = await fetch(
+                    "/api/v1/catalog/options?" + parameters.toString(),
+                    {
+                        credentials: "same-origin",
+                        headers: {Accept: "application/json"},
+                    }
+                );
+                const payload = await response.json();
+                if (!response.ok) {
+                    throw new Error(
+                        payload?.message
+                        || payload?.error?.message
+                        || "Не удалось проверить справочник."
+                    );
+                }
+                const items = Array.isArray(payload?.data)
+                    ? payload.data
+                    : [];
+                const exactLabel = window.normalizeComboboxSearchValue(
+                    selectedLabel
+                );
+                const selected = items.find(function(item) {
+                    return String(item.id) === selectedId;
+                }) || items.find(function(item) {
+                    return window.normalizeComboboxSearchValue(item.name)
+                        === exactLabel;
+                });
+                if (!selected) {
+                    window.clearSharedCatalogCombobox(combobox);
+                    throw new Error(emptyLabel);
+                }
+                window.setSharedCatalogComboboxValue(combobox, selected);
+                return selected;
+            }
+
+            const brandItem = await resolveSelection(
+                brand,
+                "brand",
+                "Выберите бренд из списка или создайте новый."
+            );
+            const categoryLabel = category.querySelector(
+                ".brand-combobox-hidden"
+            )?.value.trim() || "";
+            const categoryId = category.querySelector(
+                ".catalog-combobox-id"
+            )?.value || "";
+            if (categoryLabel && categoryId !== "0" && !brandItem) {
+                window.clearSharedCatalogCombobox(category);
+                throw new Error("Сначала выберите бренд.");
+            }
+            await resolveSelection(
+                category,
+                "category",
+                "Выберите категорию из списка или создайте новую."
+            );
+        }
+
+        function applySavedInlineProduct(form, product) {
+            const category = product.category || "Без категории";
+            const displayValues = {
+                detailName: product.name || "—",
+                detailModel: product.model || "—",
+                detailArticle: product.article || "—",
+                detailPrice: product.price_display || "—",
+                detailBrand: product.brand || "Без бренда",
+                detailCategory: category,
+                detailCell: product.cell || "—",
+            };
+            Object.entries(displayValues).forEach(function(entry) {
+                document.getElementById(entry[0]).textContent = entry[1];
+            });
+            renderProductStock(product.stock_display ?? product.stock ?? 0);
+            const editableValues = {
+                editName: product.name || "",
+                editModel: product.model || "",
+                editArticle: product.article || "",
+                editPrice: product.price ?? "",
+                editStock: String(product.stock ?? 0),
+                editCell: product.cell || "",
+            };
+            Object.entries(editableValues).forEach(function(entry) {
+                const input = document.getElementById(entry[0]);
+                input.value = entry[1];
+                input.dataset.originalValue = entry[1];
+            });
+            form.dataset.originalBrandId = product.brand_id ?? "";
+            form.dataset.originalBrand = product.brand || "";
+            form.dataset.originalCategoryId = product.category_id ?? "";
+            form.dataset.originalCategory = category;
+            window.restoreSharedCatalogCascade(form, {
+                brandId: product.brand_id ?? "",
+                brandLabel: product.brand || "",
+                categoryId: product.category_id ?? "",
+                categoryLabel: category,
+            });
+            if (detailOpenButton) {
+                Object.assign(detailOpenButton.dataset, {
+                    name: product.name || "",
+                    model: product.model || "",
+                    article: product.article || "",
+                    price: product.price ?? "",
+                    priceDisplay: product.price_display || "",
+                    brand: product.brand || "",
+                    brandId: product.brand_id ?? "",
+                    category: product.category || "",
+                    categoryId: product.category_id ?? "",
+                    stock: product.stock_display ?? product.stock ?? 0,
+                    cell: product.cell || "",
+                });
+            }
+        }
+
         document.getElementById("inlineProductForm").addEventListener("submit", async function(event) {
             event.preventDefault();
             const form = event.currentTarget;
@@ -6345,16 +6491,22 @@
             const submitButton = form.querySelector('button[type="submit"]');
             if (submitButton) submitButton.disabled = true;
             const productId = document.getElementById("editProductId").value;
-            const body = new FormData(form);
-            const photoAction = form.dataset.photoAction || "keep";
-            body.set("product_image_action", photoAction);
-            body.set("bitrix_image_file_id", form.dataset.photoFileId || "");
-            const imageInput = document.getElementById("detailPhotoInput");
-            if (imageInput.files && imageInput.files[0]) {
-                body.set("product_image", imageInput.files[0], imageInput.files[0].name);
-            }
             setDetailPhotoStatus("Сохраняем изменения…");
             try {
+                await canonicalizeInlineProductTaxonomy(form);
+                const body = new FormData(form);
+                const stockInput = document.getElementById("editStock");
+                if (stockInput.value === stockInput.dataset.originalValue) {
+                    body.delete("stock");
+                    body.delete("stock_reason");
+                }
+                const photoAction = form.dataset.photoAction || "keep";
+                body.set("product_image_action", photoAction);
+                body.set("bitrix_image_file_id", form.dataset.photoFileId || "");
+                const imageInput = document.getElementById("detailPhotoInput");
+                if (imageInput.files && imageInput.files[0]) {
+                    body.set("product_image", imageInput.files[0], imageInput.files[0].name);
+                }
                 const response = await fetch("/api/products/" + encodeURIComponent(productId), {
                     method: "PATCH",
                     body: body,
@@ -6387,6 +6539,9 @@
                         const firstUrl = detailGalleryUrls()[0] || "";
                         syncDetailRowThumbnail(firstUrl);
                     }
+                }
+                if (payload.data) {
+                    applySavedInlineProduct(form, payload.data);
                 }
                 resetDetailPhotoChanges(false);
                 document.getElementById("detailPhotoEditor").hidden = true;
@@ -9815,9 +9970,12 @@
             }];
             let writes = 0;
             const payloads = [];
-            const waitForSave = async function(form) {
-                for (let attempt = 0; attempt < 50; attempt += 1) {
-                    if (form.dataset.submitting !== "true") return;
+            const waitForSave = async function(form, expectedWrites) {
+                for (let attempt = 0; attempt < 300; attempt += 1) {
+                    if (
+                        writes >= expectedWrites
+                        && form.dataset.submitting !== "true"
+                    ) return;
                     await new Promise(resolve => window.setTimeout(resolve, 10));
                 }
                 throw new Error("save-timeout");
@@ -9886,7 +10044,7 @@
                 stageReplacement();
                 form.requestSubmit();
                 form.requestSubmit();
-                await waitForSave(form);
+                await waitForSave(form, 1);
                 result.replacePayload = writes === 1
                     && payloads[0].action === "replace"
                     && payloads[0].fileId === ""
@@ -9905,7 +10063,7 @@
                 document.getElementById("detailPhotoRemove").click();
                 form.requestSubmit();
                 form.requestSubmit();
-                await waitForSave(form);
+                await waitForSave(form, 2);
                 const row = openButton.closest("tr");
                 result.removePayload = writes === 2
                     && payloads[1].action === "remove"

@@ -425,6 +425,10 @@
     font-weight: 750;
 }
 
+.catalog-create-field[hidden] {
+    display: none;
+}
+
 .catalog-create-field input {
     width: 100%;
     height: 46px;

@@ -59,6 +59,32 @@ class CatalogCascadeUnificationTest(unittest.TestCase):
             self.source("app/templates/sales.html"),
         )
 
+    def test_product_editor_uses_canonical_global_category_ids(self):
+        warehouse = self.source("app/templates/warehouse.html")
+        editor = warehouse.split('id="inlineProductForm"', 1)[1].split(
+            "</form>", 1
+        )[0]
+        component = self.source("app/templates/_catalog_combobox.html")
+        script = self.source("app/static/js/catalog-combobox.js")
+
+        self.assertIn('data-global-category-options="true"', editor)
+        self.assertIn('data-catalog-item="{{ option|tojson|forceescape }}"',
+                      component)
+        self.assertIn("canonicalizeInlineProductTaxonomy", warehouse)
+        self.assertIn('body.delete("stock")', warehouse)
+        self.assertIn("AbortController", script)
+
+    def test_category_creation_uses_accessible_modal(self):
+        warehouse = self.source("app/templates/warehouse.html")
+        component = self.source("app/templates/_catalog_combobox.html")
+        script = self.source("app/static/js/catalog-combobox.js")
+
+        self.assertIn("render_catalog_create_modal()", warehouse)
+        self.assertIn('role="dialog"', component)
+        self.assertIn("openCatalogCreateModal", script)
+        self.assertIn('event.key === "Escape"', script)
+        self.assertIn('modalForm.dataset.submitting === "1"', script)
+
     def test_taxonomy_create_action_is_sticky_and_exact_match_safe(self):
         template = self.source("app/templates/_catalog_combobox.html")
         script = self.source("app/static/js/catalog-combobox.js")

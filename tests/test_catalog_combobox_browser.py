@@ -102,7 +102,10 @@ class CatalogComboboxStructureTest(unittest.TestCase):
                 )
                 self.assertIsNotNone(script_tag)
                 self.assertGreater(script_tag.start(), source.index("<body"))
-                self.assertIn("catalog-combobox-20260823", script_tag.group(0))
+                self.assertIn(
+                    "catalog-combobox-20260824-product-hierarchy",
+                    script_tag.group(0),
+                )
 
         orders = (PROJECT_ROOT / "app/templates/orders.html").read_text(
             encoding="utf-8"
@@ -114,7 +117,10 @@ class CatalogComboboxStructureTest(unittest.TestCase):
         )
         self.assertIsNotNone(orders_script)
         self.assertRegex(orders_script.group(0), r"\bdefer\b")
-        self.assertIn("catalog-combobox-20260823", orders_script.group(0))
+        self.assertIn(
+            "catalog-combobox-20260824-product-hierarchy",
+            orders_script.group(0),
+        )
 
     def test_external_head_scripts_cannot_block_layout_parser(self):
         for template in (
