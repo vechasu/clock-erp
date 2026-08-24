@@ -184,6 +184,144 @@ class OrderCommentSyncTest(unittest.TestCase):
         )[1].split(")\n", 1)[0]
         self.assertNotIn("WHERE", statement)
 
+    def test_comment_sync_sql_avoids_modern_upsert_syntax(self):
+        source = (
+            Path(__file__).resolve().parents[1]
+            / "app/services/order_comments.py"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("ON CONFLICT", source)
+        self.assertNotIn("excluded.", source)
+        self.assertNotIn("RETURNING", source)
+
+    def test_sync_state_update_then_insert_is_repeatable_and_preserves_state(self):
+        first = self.service.create(
+            "21119", "Первый", "Максим", "user-1",
+            external_order_id="21119",
+        )
+        self.service.push(first["id"])
+        second = self.service.create(
+            "21119", "Второй", "Максим", "user-1",
+            external_order_id="21119",
+        )
+
+        with self.database.connect() as connection:
+            state = connection.execute(
+                "SELECT * FROM erp_order_comment_sync_state WHERE order_id = ?",
+                ("21119",),
+            ).fetchone()
+        self.assertIsNotNone(state["last_external_hash"])
+        self.assertEqual(state["external_order_id"], "21119")
+        self.assertEqual(state["last_outbound_comment_id"], first["id"])
+        self.assertNotEqual(first["id"], second["id"])
+
+    def test_schema_upgrade_repeats_after_partial_previous_attempt(self):
+        partial_path = Path(self.temporary.name) / "partial.db"
+        with sqlite3.connect(str(partial_path)) as connection:
+            connection.execute(
+                "CREATE TABLE erp_order_comments (id INTEGER PRIMARY KEY, "
+                "order_id TEXT NOT NULL, text TEXT NOT NULL, author_name TEXT NOT NULL, "
+                "author_user_id TEXT, created_at TEXT NOT NULL, updated_at TEXT, "
+                "external_system TEXT, external_id TEXT)"
+            )
+            connection.execute(
+                "INSERT INTO erp_order_comments VALUES "
+                "(1, 'legacy', 'Сохранить', 'Максим', NULL, "
+                "'2026-08-20T10:00:00+00:00', NULL, NULL, NULL)"
+            )
+            connection.execute(
+                "CREATE TABLE erp_order_comment_sync_state ("
+                "order_id TEXT PRIMARY KEY, external_order_id TEXT NOT NULL, "
+                "last_external_hash TEXT, last_external_updated_at TEXT, "
+                "last_outbound_comment_id INTEGER, updated_at TEXT NOT NULL)"
+            )
+        database = CatalogDatabase(partial_path, cache_initialization=False)
+
+        database.initialize()
+        database.initialize()
+
+        with database.connect() as connection:
+            columns = {
+                row["name"]
+                for row in connection.execute(
+                    "PRAGMA table_info(erp_order_comments)"
+                ).fetchall()
+            }
+            index_sql = connection.execute(
+                "SELECT sql FROM sqlite_master WHERE type='index' AND name=?",
+                ("idx_erp_order_comments_external",),
+            ).fetchone()["sql"]
+            comment = connection.execute(
+                "SELECT text, updated_at, source FROM erp_order_comments WHERE id=1"
+            ).fetchone()
+        self.assertIn("last_sync_error", columns)
+        self.assertNotIn(" WHERE ", index_sql.upper())
+        self.assertEqual(comment["text"], "Сохранить")
+        self.assertEqual(comment["updated_at"], "2026-08-20T10:00:00+00:00")
+        self.assertEqual(comment["source"], "erp")
+
+    def test_external_unique_index_keeps_null_and_source_semantics(self):
+        self.database.initialize()
+        values = (
+            "order-a", "Текст", "Автор", "2026-08-24T10:00:00+00:00",
+        )
+        insert = (
+            "INSERT INTO erp_order_comments "
+            "(order_id, text, author_name, created_at, external_system, external_id) "
+            "VALUES (?, ?, ?, ?, ?, ?)"
+        )
+        with self.database.transaction() as connection:
+            connection.execute(insert, values + (None, None))
+            connection.execute(insert, values + (None, None))
+            connection.execute(insert, values + ("bitrix", "external-1"))
+            connection.execute(insert, values + ("other", "external-1"))
+            connection.execute(insert, values + ("bitrix", ""))
+            with self.assertRaises(sqlite3.IntegrityError):
+                connection.execute(
+                    insert,
+                    ("order-b",) + values[1:] + ("bitrix", "external-1"),
+                )
+            with self.assertRaises(sqlite3.IntegrityError):
+                connection.execute(insert, values + ("bitrix", ""))
+
+    def test_duplicate_external_mapping_stops_upgrade_without_data_loss(self):
+        duplicate_path = Path(self.temporary.name) / "duplicates.db"
+        with sqlite3.connect(str(duplicate_path)) as connection:
+            connection.execute(
+                "CREATE TABLE erp_order_comments (id INTEGER PRIMARY KEY, "
+                "order_id TEXT NOT NULL, text TEXT NOT NULL, author_name TEXT NOT NULL, "
+                "author_user_id TEXT, created_at TEXT NOT NULL, updated_at TEXT, "
+                "external_system TEXT, external_id TEXT)"
+            )
+            connection.executemany(
+                "INSERT INTO erp_order_comments VALUES "
+                "(?, ?, ?, 'Bitrix', NULL, '2026-08-20T10:00:00+00:00', "
+                "'2026-08-20T10:00:00+00:00', 'bitrix', 'duplicate')",
+                ((1, "order-a", "Первый"), (2, "order-b", "Второй")),
+            )
+        database = CatalogDatabase(duplicate_path, cache_initialization=False)
+
+        with self.assertRaises(sqlite3.IntegrityError):
+            database.initialize()
+
+        with sqlite3.connect(str(duplicate_path)) as connection:
+            rows = connection.execute(
+                "SELECT order_id, text FROM erp_order_comments ORDER BY id"
+            ).fetchall()
+        self.assertEqual(
+            rows,
+            [("order-a", "Первый"), ("order-b", "Второй")],
+        )
+
+    def test_same_snapshot_for_different_external_orders_does_not_conflict(self):
+        self.client.text = "Одинаковый текст"
+        first = self.service.pull("erp-order-a", "bitrix-order-a")
+        second = self.service.pull("erp-order-b", "bitrix-order-b")
+
+        self.assertTrue(first["imported"])
+        self.assertTrue(second["imported"])
+        self.assertEqual(len(self.service.list("erp-order-a")), 1)
+        self.assertEqual(len(self.service.list("erp-order-b")), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
