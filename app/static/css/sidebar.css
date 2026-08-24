@@ -11,10 +11,20 @@
     --sidebar-inline-padding: 12px;
 }
 
-html,
-body {
+html {
     max-width: 100%;
-    overflow-x: hidden;
+    overflow-x: clip;
+    overflow-y: auto;
+}
+
+/* Keep the document root as the only page-level vertical scroll owner. */
+body,
+body[class] {
+    max-width: 100%;
+    min-height: 100vh;
+    min-height: 100dvh;
+    overflow-x: clip;
+    overflow-y: visible;
 }
 
 .app {
@@ -528,7 +538,7 @@ body {
 
 @media (max-width: 767px) {
     body {
-        padding-bottom: calc(70px + env(safe-area-inset-bottom));
+        padding-bottom: calc(62px + env(safe-area-inset-bottom));
     }
 
     body.mobile-erp-menu-open {

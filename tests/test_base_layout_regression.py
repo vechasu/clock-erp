@@ -55,7 +55,10 @@ class BaseLayoutRegressionTest(unittest.TestCase):
         self.assertIn("--sidebar-width: 228px", sidebar_css)
         self.assertIn("--sidebar-collapsed-width: 72px", sidebar_css)
         self.assertIn("--sidebar-bg: #0d2a49", sidebar_css)
-        self.assertIn("overflow-x: hidden", sidebar_css)
+        self.assertIn("overflow-x: clip", sidebar_css)
+        self.assertIn("overflow-y: auto", sidebar_css)
+        self.assertIn("overflow-y: visible", sidebar_css)
+        self.assertNotIn("html,\nbody {", sidebar_css)
 
         products = self.source("app/templates/warehouse.html")
         self.assertIn('id="warehouseSearchInput"', products)
