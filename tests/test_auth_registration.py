@@ -11,6 +11,7 @@ from werkzeug.security import generate_password_hash
 
 from app import auth
 from app import web
+from app.domain_schema_migrations import apply_domain_migrations
 
 
 PASSWORD = "correct horse battery"
@@ -43,6 +44,7 @@ class AuthHardeningTest(unittest.TestCase):
             AUTH_GLOBAL_RATE_LIMIT=1000,
             AUTH_ABSOLUTE_SESSION_LIFETIME=auth.AUTH_ABSOLUTE_TIMEOUT_SECONDS,
         )
+        apply_domain_migrations(self.database_path, "auth", "test")
         self.store = auth.AuthStore(self.database_path)
         self.client = web.app.test_client()
 
@@ -286,6 +288,7 @@ class AuthHardeningTest(unittest.TestCase):
 
         other_db = Path(self.temp_directory.name) / "ip-limit.db"
         web.app.config.update(AUTH_DATABASE=str(other_db), LOGIN_EMAIL_RATE_LIMIT=100, LOGIN_IP_RATE_LIMIT=2)
+        apply_domain_migrations(other_db, "auth", "test")
         self.store = auth.AuthStore(other_db)
         self.client = web.app.test_client()
         self.login("one@example.com", "wrong")
@@ -456,8 +459,8 @@ class AuthHardeningTest(unittest.TestCase):
                 "INSERT INTO users (first_name,last_name,email,email_normalized,password_hash,role,active,created_at) VALUES ('A','B','legacy@example.com','legacy@example.com','hash','employee',1,?)",
                 (now,),
             )
-        auth.AuthStore(legacy_path)
-        auth.AuthStore(legacy_path)
+        apply_domain_migrations(legacy_path, "auth", "test")
+        apply_domain_migrations(legacy_path, "auth", "test")
         with sqlite3.connect(str(legacy_path)) as connection:
             columns = {row[1] for row in connection.execute("PRAGMA table_info(users)")}
             count = connection.execute("SELECT COUNT(*) FROM users WHERE email_normalized = 'legacy@example.com'").fetchone()[0]

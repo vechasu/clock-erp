@@ -15,6 +15,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.services.customer_identity import analyze_orders, backfill_customers  # noqa: E402
+from app.domain_schema_migrations import apply_domain_migrations  # noqa: E402
 from app.services.orders_snapshot import OrdersSnapshotStore  # noqa: E402
 
 
@@ -99,6 +100,7 @@ def main():
 
     before_ids = snapshot_ids(args.database)
     backup = backup_database(args.database, args.backup_dir)
+    apply_domain_migrations(args.database, "orders")
     store = OrdersSnapshotStore(args.database)
     store.initialize()
     with store.connection() as connection:

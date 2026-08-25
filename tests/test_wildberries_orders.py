@@ -6,6 +6,7 @@ from unittest import mock
 import requests
 
 from app import web
+from app.domain_schema_migrations import apply_domain_migrations
 from app.catalog_db import CatalogDatabase
 from app.clients.wildberries_orders import (
     WildberriesOrdersReadOnlyClient,
@@ -102,6 +103,7 @@ class WildberriesStorageTest(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.store = OrdersSnapshotStore(Path(self.temporary.name) / "orders.db")
+        apply_domain_migrations(self.store.path, "orders", "test")
         self.tictactoy = {
             "id": "100", "number": "TT-100", "status": "A",
             "customer": "Иван", "created_at": "2026-08-23T10:00:00Z",
@@ -226,6 +228,7 @@ class WildberriesRoutesTest(unittest.TestCase):
         self.original_config = dict(web.app.config)
         self.temporary = tempfile.TemporaryDirectory()
         self.path = Path(self.temporary.name) / "orders.db"
+        apply_domain_migrations(self.path, "orders", "test")
         web.app.config.update(TESTING=True, AUTH_TESTING=False, ORDERS_SNAPSHOT_TESTING=True)
         self.client = web.app.test_client()
 

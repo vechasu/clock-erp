@@ -200,6 +200,7 @@ def worker(worker_id, root, queue):
         from app import web
         from app.auth import AuthStore
         from app.catalog_db import CatalogDatabase
+        from app.services.customer_identity import CustomerStore
         from app.services.order_comments import OrderCommentsService
         from app.services.orders_snapshot import OrdersSnapshotStore
 
@@ -209,6 +210,7 @@ def worker(worker_id, root, queue):
         phase_counts["http_auth_setup"] = len(statements)
         OrdersSnapshotStore(root / "orders.db").initialize()
         OrdersSnapshotStore(root / "orders.db").initialize()
+        CustomerStore(OrdersSnapshotStore(root / "orders.db")).list()
         phase_counts["orders_request_and_background"] = len(statements)
         catalog = CatalogDatabase(root / "catalog.db", cache_initialization=False)
         catalog.initialize()

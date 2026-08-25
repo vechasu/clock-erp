@@ -103,6 +103,7 @@ def snapshot(instance_dir):
                 ("order_items", "erp_order_items", "order_snapshot_items"),
                 None,
             ),
+            ("customers", ("customers",), None),
         ),
     )
     orders_path = instance_dir / "orders.db"
@@ -127,9 +128,17 @@ def snapshot(instance_dir):
                 )
         finally:
             connection.close()
+    auth = database_counts(
+        instance_dir / "auth.db",
+        (
+            ("users", ("users",), None),
+            ("sessions", ("auth_sessions",), None),
+        ),
+    )
     return {
         "catalog": catalog,
         "orders": orders,
+        "auth": auth,
         "receipts_json": json_count(instance_dir / "receipts.json"),
         "repairs_json": json_count(instance_dir / "repair_cases.json"),
     }

@@ -61,9 +61,13 @@ RELEASE_DIR=""
 SERVICE_STOPPED=0
 DEPLOY_UPDATED=0
 CATALOG_MIGRATION_REQUIRED=0
+DOMAIN_MIGRATION_REQUIRED=0
 UNREGISTERED_MIGRATION_CHANGE=0
 CATALOG_MIGRATION_STARTED=0
+DOMAIN_MIGRATION_STARTED=0
 CATALOG_ROLLBACK_BACKUP=""
+AUTH_ROLLBACK_BACKUP=""
+ORDERS_ROLLBACK_BACKUP=""
 DATA_SNAPSHOT_BEFORE=""
 BITRIX_ENDPOINT_BACKUP=""
 BITRIX_ENDPOINT_UPDATED=0
@@ -84,7 +88,7 @@ rollback() {
     set +e
     printf 'ROLLBACK: stage=%s exit_code=%s\n' "$FAILURE_STAGE" "$exit_code" >&2
 
-    if [[ "$SERVICE_STOPPED" != "1" && "$CATALOG_MIGRATION_STARTED" == "1" ]]; then
+    if [[ "$SERVICE_STOPPED" != "1" && ( "$CATALOG_MIGRATION_STARTED" == "1" || "$DOMAIN_MIGRATION_STARTED" == "1" ) ]]; then
         systemctl stop "$SERVICE_NAME"
         SERVICE_STOPPED=1
     fi
@@ -94,6 +98,20 @@ rollback() {
         cp -p "$CATALOG_ROLLBACK_BACKUP" instance/catalog.db
         sqlite3 instance/catalog.db "PRAGMA quick_check;" | grep -qx "ok"
         printf 'ROLLBACK_OK: restored verified catalog database backup\n' >&2
+    fi
+    if [[ "$DOMAIN_MIGRATION_STARTED" == "1" && -f "$AUTH_ROLLBACK_BACKUP" ]]; then
+        local failed_auth="${AUTH_ROLLBACK_BACKUP%.db}-failed.db"
+        cp -p instance/auth.db "$failed_auth"
+        cp -p "$AUTH_ROLLBACK_BACKUP" instance/auth.db
+        sqlite3 instance/auth.db "PRAGMA quick_check;" | grep -qx "ok"
+        printf 'ROLLBACK_OK: restored verified auth database backup\n' >&2
+    fi
+    if [[ "$DOMAIN_MIGRATION_STARTED" == "1" && -f "$ORDERS_ROLLBACK_BACKUP" ]]; then
+        local failed_orders="${ORDERS_ROLLBACK_BACKUP%.db}-failed.db"
+        cp -p instance/orders.db "$failed_orders"
+        cp -p "$ORDERS_ROLLBACK_BACKUP" instance/orders.db
+        sqlite3 instance/orders.db "PRAGMA quick_check;" | grep -qx "ok"
+        printf 'ROLLBACK_OK: restored verified orders database backup\n' >&2
     fi
     if [[ "$BITRIX_ENDPOINT_UPDATED" == "1" && -f "$BITRIX_ENDPOINT_BACKUP" ]]; then
         install -o admin -g admin -m 0640 \
@@ -163,7 +181,11 @@ if printf '%s\n' "$changed_files" | grep -Eq \
     CATALOG_MIGRATION_REQUIRED=1
 fi
 if printf '%s\n' "$changed_files" | grep -Eq \
-    '^scripts/migrate_(auth_mvp|brand_inventory|customers|inventory_scopes|repair_cases|unified_catalog)\.py$'; then
+    '^(app/(auth|domain_schema_migrations)\.py|app/services/orders_snapshot\.py|scripts/domain_migration_preflight\.py)$'; then
+    DOMAIN_MIGRATION_REQUIRED=1
+fi
+if printf '%s\n' "$changed_files" | grep -Eq \
+    '^scripts/migrate_(brand_inventory|inventory_scopes|repair_cases|unified_catalog)\.py$'; then
     UNREGISTERED_MIGRATION_CHANGE=1
 fi
 if [[ "$UNREGISTERED_MIGRATION_CHANGE" == "1" ]]; then
@@ -250,6 +272,20 @@ if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" && -f instance/catalog.db ]]; then
         --retention-days 7 \
         --report "$PREFLIGHT_REPORT"
 fi
+if [[ "$DOMAIN_MIGRATION_REQUIRED" == "1" ]]; then
+    [[ -f instance/auth.db && -f instance/orders.db ]] \
+        || { printf 'DOMAIN_PREFLIGHT_FAILED: auth.db or orders.db is missing\n' >&2; false; }
+    DOMAIN_PREFLIGHT_REPORT="$(mktemp "$REHEARSAL_ROOT/domain-preflight-report-XXXXXX.json")"
+    chmod 600 "$DOMAIN_PREFLIGHT_REPORT"
+    PYTHONPATH="$RELEASE_DIR" "$PYTHON_BIN" \
+        "$RELEASE_DIR/scripts/domain_migration_preflight.py" preflight \
+        --auth-database "$PROJECT_DIR/instance/auth.db" \
+        --orders-database "$PROJECT_DIR/instance/orders.db" \
+        --app-commit "$FETCHED_COMMIT" \
+        --expected-sqlite-version "$PRODUCTION_SQLITE_VERSION" \
+        --rehearsal-root "$REHEARSAL_ROOT" \
+        --report "$DOMAIN_PREFLIGHT_REPORT"
+fi
 
 printf 'APPLICATION UPDATE: fast-forward to verified commit\n'
 FAILURE_STAGE="APPLICATION UPDATE"
@@ -286,8 +322,8 @@ if [[ -f "$BITRIX_COMMENT_ENDPOINT_SOURCE" ]]; then
     BITRIX_COMMENT_ENDPOINT_UPDATED=1
 fi
 
-if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" && -f instance/catalog.db ]]; then
-    printf 'PRODUCTION MIGRATION: stop service, backup, apply verified migration\n'
+if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" || "$DOMAIN_MIGRATION_REQUIRED" == "1" ]]; then
+    printf 'PRODUCTION MIGRATION: stop service, backup, apply verified migrations\n'
     FAILURE_STAGE="PRODUCTION MIGRATION"
     systemctl stop "$SERVICE_NAME"
     SERVICE_STOPPED=1
@@ -298,18 +334,41 @@ if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" && -f instance/catalog.db ]]; then
     DATA_SNAPSHOT_BEFORE="$($PYTHON_BIN scripts/data_safety_snapshot.py --instance-dir instance)"
     rollback_directory="$(mktemp -d "$BACKUP_DIR/production-migration-XXXXXX")"
     chmod 700 "$rollback_directory"
-    CATALOG_ROLLBACK_BACKUP="$rollback_directory/catalog-before.db"
-    sqlite3 instance/catalog.db ".backup '$CATALOG_ROLLBACK_BACKUP'"
-    chmod 600 "$CATALOG_ROLLBACK_BACKUP"
-    sqlite3 "$CATALOG_ROLLBACK_BACKUP" "PRAGMA quick_check;" | grep -qx "ok"
-    CATALOG_MIGRATION_STARTED=1
-    "$PYTHON_BIN" scripts/migration_preflight.py apply \
-        --database instance/catalog.db \
-        --source-root "$PROJECT_DIR" \
-        --app-commit "$CURRENT_COMMIT" \
-        --expected-sqlite-version "$PRODUCTION_SQLITE_VERSION" \
-        --service-stopped \
-        --report "$rollback_directory/apply-report.json"
+    if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" ]]; then
+        CATALOG_ROLLBACK_BACKUP="$rollback_directory/catalog-before.db"
+        sqlite3 instance/catalog.db ".backup '$CATALOG_ROLLBACK_BACKUP'"
+        chmod 600 "$CATALOG_ROLLBACK_BACKUP"
+        sqlite3 "$CATALOG_ROLLBACK_BACKUP" "PRAGMA quick_check;" | grep -qx "ok"
+        CATALOG_MIGRATION_STARTED=1
+    fi
+    if [[ "$DOMAIN_MIGRATION_REQUIRED" == "1" ]]; then
+        AUTH_ROLLBACK_BACKUP="$rollback_directory/auth-before.db"
+        ORDERS_ROLLBACK_BACKUP="$rollback_directory/orders-before.db"
+        sqlite3 instance/auth.db ".backup '$AUTH_ROLLBACK_BACKUP'"
+        sqlite3 instance/orders.db ".backup '$ORDERS_ROLLBACK_BACKUP'"
+        chmod 600 "$AUTH_ROLLBACK_BACKUP" "$ORDERS_ROLLBACK_BACKUP"
+        sqlite3 "$AUTH_ROLLBACK_BACKUP" "PRAGMA quick_check;" | grep -qx "ok"
+        sqlite3 "$ORDERS_ROLLBACK_BACKUP" "PRAGMA quick_check;" | grep -qx "ok"
+        DOMAIN_MIGRATION_STARTED=1
+    fi
+    if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" ]]; then
+        "$PYTHON_BIN" scripts/migration_preflight.py apply \
+            --database instance/catalog.db \
+            --source-root "$PROJECT_DIR" \
+            --app-commit "$CURRENT_COMMIT" \
+            --expected-sqlite-version "$PRODUCTION_SQLITE_VERSION" \
+            --service-stopped \
+            --report "$rollback_directory/catalog-apply-report.json"
+    fi
+    if [[ "$DOMAIN_MIGRATION_REQUIRED" == "1" ]]; then
+        "$PYTHON_BIN" scripts/domain_migration_preflight.py apply \
+            --auth-database instance/auth.db \
+            --orders-database instance/orders.db \
+            --app-commit "$CURRENT_COMMIT" \
+            --expected-sqlite-version "$PRODUCTION_SQLITE_VERSION" \
+            --service-stopped \
+            --report "$rollback_directory/domain-apply-report.json"
+    fi
     DATA_SNAPSHOT_AFTER="$($PYTHON_BIN scripts/data_safety_snapshot.py --instance-dir instance)"
     if [[ "$DATA_SNAPSHOT_BEFORE" != "$DATA_SNAPSHOT_AFTER" ]]; then
         printf 'POST-DEPLOY DATA SAFETY: business aggregate mismatch\n' >&2
@@ -356,6 +415,13 @@ if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" && -f instance/catalog.db ]]; then
         --source-root "$PROJECT_DIR" \
         --expected-sqlite-version "$PRODUCTION_SQLITE_VERSION" \
         --report "${CATALOG_ROLLBACK_BACKUP%.db}-post-deploy.json"
+fi
+if [[ "$DOMAIN_MIGRATION_REQUIRED" == "1" ]]; then
+    "$PYTHON_BIN" scripts/domain_migration_preflight.py verify \
+        --auth-database instance/auth.db \
+        --orders-database instance/orders.db \
+        --expected-sqlite-version "$PRODUCTION_SQLITE_VERSION" \
+        --report "${AUTH_ROLLBACK_BACKUP%.db}-post-deploy.json"
 fi
 systemctl is-active --quiet "$SERVICE_NAME"
 if journalctl -u "$SERVICE_NAME" --since "-2 minutes" \

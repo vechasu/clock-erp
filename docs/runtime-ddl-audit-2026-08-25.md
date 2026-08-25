@@ -2,6 +2,10 @@
 
 Статус: `current` для baseline `db28de11299351675fad99778b3b26a46ef3ba82`.
 
+PR-A реализован в [`domain-schema-migrations.md`](domain-schema-migrations.md):
+auth/orders/customers/comments runtime DDL удалён; оставшиеся catalog legacy
+риски и план PR-G в этом аудите сохраняют силу.
+
 Границы: SQLite DDL, schema bootstrap, legacy `_ensure_*`, startup и request
 paths. Аудит не меняет production-схему, migration order или бизнес-логику.
 Машинный allowlist: [`runtime-ddl-inventory.json`](runtime-ddl-inventory.json).

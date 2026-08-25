@@ -30,6 +30,8 @@ from flask import (
 from flask.sessions import SessionInterface, SessionMixin
 from werkzeug.security import check_password_hash, generate_password_hash
 
+from app.domain_schema_migrations import validate_auth_database
+
 
 auth = Blueprint("auth", __name__)
 
@@ -140,8 +142,7 @@ def _load_or_create_secret(path):
 class AuthStore:
     def __init__(self, path):
         self.path = Path(path)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._ensure_schema()
+        validate_auth_database(self.path)
 
     def connect(self):
         connection = sqlite3.connect(
@@ -153,114 +154,6 @@ class AuthStore:
         connection.execute("PRAGMA foreign_keys = ON")
         connection.execute("PRAGMA busy_timeout = 15000")
         return connection
-
-    def _ensure_schema(self):
-        with self.connect() as connection:
-            connection.execute("PRAGMA journal_mode = WAL")
-            connection.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS users (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    first_name TEXT NOT NULL,
-                    last_name TEXT NOT NULL,
-                    email TEXT NOT NULL,
-                    email_normalized TEXT NOT NULL UNIQUE,
-                    password_hash TEXT NOT NULL,
-                    role TEXT NOT NULL CHECK (role IN ('employee', 'admin')),
-                    active INTEGER NOT NULL DEFAULT 1,
-                    created_at INTEGER NOT NULL
-                );
-
-                CREATE TABLE IF NOT EXISTS invitations (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    token_hash TEXT NOT NULL UNIQUE,
-                    email TEXT,
-                    email_normalized TEXT,
-                    role TEXT NOT NULL CHECK (role IN ('employee', 'admin')),
-                    expires_at INTEGER NOT NULL,
-                    state TEXT NOT NULL DEFAULT 'active'
-                        CHECK (state IN ('active', 'used', 'revoked')),
-                    created_by INTEGER,
-                    created_at INTEGER NOT NULL,
-                    used_at INTEGER,
-                    used_by INTEGER,
-                    FOREIGN KEY (created_by) REFERENCES users(id),
-                    FOREIGN KEY (used_by) REFERENCES users(id)
-                );
-
-                CREATE INDEX IF NOT EXISTS invitations_state_expires
-                    ON invitations(state, expires_at);
-
-                CREATE TABLE IF NOT EXISTS auth_attempts (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    bucket TEXT NOT NULL,
-                    attempted_at INTEGER NOT NULL
-                );
-
-                CREATE INDEX IF NOT EXISTS auth_attempts_bucket_time
-                    ON auth_attempts(bucket, attempted_at);
-
-                CREATE TABLE IF NOT EXISTS auth_tokens (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id INTEGER NOT NULL,
-                    token_hash TEXT NOT NULL UNIQUE,
-                    token_type TEXT NOT NULL,
-                    expires_at INTEGER NOT NULL,
-                    used_at INTEGER,
-                    created_at INTEGER NOT NULL,
-                    FOREIGN KEY (user_id) REFERENCES users(id)
-                );
-
-                CREATE INDEX IF NOT EXISTS auth_tokens_user_type
-                    ON auth_tokens(user_id, token_type, created_at);
-
-                CREATE TABLE IF NOT EXISTS auth_sessions (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    session_hash TEXT NOT NULL UNIQUE,
-                    user_id INTEGER,
-                    data TEXT NOT NULL,
-                    expires_at INTEGER NOT NULL,
-                    created_at INTEGER NOT NULL,
-                    updated_at INTEGER NOT NULL,
-                    FOREIGN KEY (user_id) REFERENCES users(id)
-                );
-
-                CREATE INDEX IF NOT EXISTS auth_sessions_expiry
-                    ON auth_sessions(expires_at);
-
-                CREATE INDEX IF NOT EXISTS auth_sessions_user
-                    ON auth_sessions(user_id);
-                """
-            )
-            columns = {
-                row[1] for row in connection.execute("PRAGMA table_info(users)")
-            }
-            email_verification_added = "email_verified_at" not in columns
-            additions = (
-                ("email_verified_at", "INTEGER"),
-                ("updated_at", "INTEGER"),
-                ("session_version", "INTEGER NOT NULL DEFAULT 1"),
-                ("last_login_at", "INTEGER"),
-            )
-            for name, definition in additions:
-                if name not in columns:
-                    connection.execute(
-                        "ALTER TABLE users ADD COLUMN {} {}".format(
-                            name,
-                            definition,
-                        )
-                    )
-            if email_verification_added:
-                connection.execute(
-                    "UPDATE users SET email_verified_at = created_at"
-                )
-            connection.execute(
-                "UPDATE users SET updated_at = COALESCE(updated_at, created_at)"
-            )
-        try:
-            os.chmod(self.path, 0o600)
-        except OSError:
-            pass
 
     @staticmethod
     def _row_dict(row):
@@ -994,7 +887,13 @@ def regenerate_session():
 
 
 def get_auth_store():
-    return AuthStore(current_app.config["AUTH_DATABASE"])
+    database_path = str(current_app.config["AUTH_DATABASE"])
+    stores = current_app.extensions.setdefault("auth_stores", {})
+    store = stores.get(database_path)
+    if store is None:
+        store = AuthStore(database_path)
+        stores[database_path] = store
+    return store
 
 
 def auth_is_enabled():
@@ -1559,7 +1458,10 @@ def configure_auth(app, project_root):
     app.config["SESSION_COOKIE_SECURE"] = (
         os.getenv("ERP_SESSION_COOKIE_SECURE", "1").strip() != "0"
     )
-    AuthStore(app.config["AUTH_DATABASE"])
+    auth_store = AuthStore(app.config["AUTH_DATABASE"])
+    app.extensions.setdefault("auth_stores", {})[
+        str(app.config["AUTH_DATABASE"])
+    ] = auth_store
     app.session_interface = SQLiteSessionInterface(app.config["AUTH_DATABASE"])
     app.register_blueprint(auth)
 

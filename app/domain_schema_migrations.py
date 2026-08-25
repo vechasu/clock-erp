@@ -1,0 +1,701 @@
+"""Versioned auth and orders schema migrations for production SQLite 3.7.17.
+
+This module is deploy-time only. Runtime stores call the read-only validators
+and never attempt to create, alter, or repair a database schema.
+"""
+
+from __future__ import print_function
+
+import fcntl
+import hashlib
+import json
+import os
+import sqlite3
+from datetime import datetime, timezone
+from pathlib import Path
+
+
+LEDGER_TABLE = "erp_migration_ledger"
+LEDGER_SQL = """
+CREATE TABLE erp_migration_ledger (
+    migration_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    checksum TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('applying', 'applied', 'failed')),
+    applied_at TEXT,
+    app_commit TEXT,
+    details_json TEXT NOT NULL DEFAULT '{}'
+)
+"""
+
+AUTH_MIGRATION_ID = "2026-08-26-auth-baseline-v1"
+ORDERS_MIGRATION_ID = "2026-08-26-orders-customers-baseline-v1"
+
+
+class DomainMigrationError(RuntimeError):
+    pass
+
+
+class MigrationRequiredError(DomainMigrationError):
+    pass
+
+
+def _digest(parts):
+    return hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()
+
+
+AUTH_TABLE_STATEMENTS = (
+    """CREATE TABLE users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        first_name TEXT NOT NULL,
+        last_name TEXT NOT NULL,
+        email TEXT NOT NULL,
+        email_normalized TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        role TEXT NOT NULL CHECK (role IN ('employee', 'admin')),
+        active INTEGER NOT NULL DEFAULT 1,
+        created_at INTEGER NOT NULL,
+        email_verified_at INTEGER,
+        updated_at INTEGER,
+        session_version INTEGER NOT NULL DEFAULT 1,
+        last_login_at INTEGER
+    )""",
+    """CREATE TABLE invitations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        token_hash TEXT NOT NULL UNIQUE,
+        email TEXT,
+        email_normalized TEXT,
+        role TEXT NOT NULL CHECK (role IN ('employee', 'admin')),
+        expires_at INTEGER NOT NULL,
+        state TEXT NOT NULL DEFAULT 'active'
+            CHECK (state IN ('active', 'used', 'revoked')),
+        created_by INTEGER,
+        created_at INTEGER NOT NULL,
+        used_at INTEGER,
+        used_by INTEGER,
+        FOREIGN KEY (created_by) REFERENCES users(id),
+        FOREIGN KEY (used_by) REFERENCES users(id)
+    )""",
+    """CREATE TABLE auth_attempts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        bucket TEXT NOT NULL,
+        attempted_at INTEGER NOT NULL
+    )""",
+    """CREATE TABLE auth_tokens (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        token_hash TEXT NOT NULL UNIQUE,
+        token_type TEXT NOT NULL,
+        expires_at INTEGER NOT NULL,
+        used_at INTEGER,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id)
+    )""",
+    """CREATE TABLE auth_sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_hash TEXT NOT NULL UNIQUE,
+        user_id INTEGER,
+        data TEXT NOT NULL,
+        expires_at INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id)
+    )""",
+)
+
+AUTH_INDEX_STATEMENTS = (
+    "CREATE INDEX invitations_state_expires ON invitations(state, expires_at)",
+    "CREATE INDEX auth_attempts_bucket_time ON auth_attempts(bucket, attempted_at)",
+    "CREATE INDEX auth_tokens_user_type ON auth_tokens(user_id, token_type, created_at)",
+    "CREATE INDEX auth_sessions_expiry ON auth_sessions(expires_at)",
+    "CREATE INDEX auth_sessions_user ON auth_sessions(user_id)",
+)
+
+AUTH_LEGACY_USER_COLUMNS = (
+    ("id", "INTEGER", 0, None, 1),
+    ("first_name", "TEXT", 1, None, 0),
+    ("last_name", "TEXT", 1, None, 0),
+    ("email", "TEXT", 1, None, 0),
+    ("email_normalized", "TEXT", 1, None, 0),
+    ("password_hash", "TEXT", 1, None, 0),
+    ("role", "TEXT", 1, None, 0),
+    ("active", "INTEGER", 1, "1", 0),
+    ("created_at", "INTEGER", 1, None, 0),
+)
+
+AUTH_UPGRADE_STATEMENTS = (
+    "ALTER TABLE users ADD COLUMN email_verified_at INTEGER",
+    "ALTER TABLE users ADD COLUMN updated_at INTEGER",
+    "ALTER TABLE users ADD COLUMN session_version INTEGER NOT NULL DEFAULT 1",
+    "ALTER TABLE users ADD COLUMN last_login_at INTEGER",
+    "UPDATE users SET email_verified_at = created_at",
+    "UPDATE users SET updated_at = COALESCE(updated_at, created_at)",
+)
+
+ORDERS_TABLE_STATEMENTS = (
+    """CREATE TABLE orders_snapshot (
+        order_id TEXT PRIMARY KEY,
+        source_position INTEGER NOT NULL,
+        number_fold TEXT NOT NULL,
+        customer_fold TEXT NOT NULL,
+        phone_digits TEXT NOT NULL,
+        amount_search TEXT NOT NULL,
+        date_search TEXT NOT NULL,
+        created_sort TEXT NOT NULL,
+        status TEXT NOT NULL,
+        item_units REAL,
+        payload_json TEXT NOT NULL,
+        loaded_at REAL NOT NULL,
+        detail_loaded INTEGER NOT NULL DEFAULT 0,
+        source TEXT NOT NULL DEFAULT 'tictactoy',
+        external_order_id TEXT,
+        extra_fold TEXT NOT NULL DEFAULT '',
+        customer_id INTEGER
+    )""",
+    """CREATE TABLE customers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL DEFAULT '',
+        name_fold TEXT NOT NULL DEFAULT '',
+        phone TEXT NOT NULL DEFAULT '',
+        normalized_phone TEXT NOT NULL DEFAULT '',
+        email TEXT NOT NULL DEFAULT '',
+        normalized_email TEXT NOT NULL DEFAULT '',
+        country TEXT NOT NULL DEFAULT '',
+        region TEXT NOT NULL DEFAULT '',
+        city TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )""",
+    """CREATE TABLE orders_snapshot_meta (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    )""",
+)
+
+ORDERS_INDEX_STATEMENTS = (
+    "CREATE INDEX idx_customers_normalized_phone ON customers(normalized_phone)",
+    "CREATE INDEX idx_customers_normalized_email ON customers(normalized_email)",
+    "CREATE INDEX idx_customers_name ON customers(name_fold)",
+    "CREATE INDEX idx_orders_snapshot_ordering ON orders_snapshot(source_position, order_id)",
+    "CREATE INDEX idx_orders_snapshot_status_ordering ON orders_snapshot(status, source_position, order_id)",
+    "CREATE INDEX idx_orders_snapshot_created ON orders_snapshot(created_sort, source_position, order_id)",
+    "CREATE UNIQUE INDEX idx_orders_snapshot_source_external ON orders_snapshot(source, external_order_id)",
+    "CREATE INDEX idx_orders_snapshot_source_ordering ON orders_snapshot(source, source_position, order_id)",
+    "CREATE INDEX idx_orders_snapshot_customer_created ON orders_snapshot(customer_id, created_sort)",
+)
+
+ORDERS_LEGACY_COLUMNS = (
+    ("order_id", "TEXT", 0, None, 1),
+    ("source_position", "INTEGER", 1, None, 0),
+    ("number_fold", "TEXT", 1, None, 0),
+    ("customer_fold", "TEXT", 1, None, 0),
+    ("phone_digits", "TEXT", 1, None, 0),
+    ("amount_search", "TEXT", 1, None, 0),
+    ("date_search", "TEXT", 1, None, 0),
+    ("created_sort", "TEXT", 1, None, 0),
+    ("status", "TEXT", 1, None, 0),
+    ("item_units", "REAL", 0, None, 0),
+    ("payload_json", "TEXT", 1, None, 0),
+    ("loaded_at", "REAL", 1, None, 0),
+)
+
+ORDERS_UPGRADE_STATEMENTS = (
+    "ALTER TABLE orders_snapshot ADD COLUMN detail_loaded INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE orders_snapshot ADD COLUMN source TEXT NOT NULL DEFAULT 'tictactoy'",
+    "ALTER TABLE orders_snapshot ADD COLUMN external_order_id TEXT",
+    "ALTER TABLE orders_snapshot ADD COLUMN extra_fold TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE orders_snapshot ADD COLUMN customer_id INTEGER",
+    "UPDATE orders_snapshot SET source = 'tictactoy' WHERE source IS NULL OR trim(source) = ''",
+    "UPDATE orders_snapshot SET external_order_id = order_id WHERE external_order_id IS NULL OR trim(external_order_id) = ''",
+)
+
+AUTH_MIGRATION = {
+    "id": AUTH_MIGRATION_ID,
+    "name": "Verified auth schema baseline",
+    "checksum": _digest(
+        (AUTH_MIGRATION_ID, "auth-contract-v1", LEDGER_SQL)
+        + AUTH_TABLE_STATEMENTS + AUTH_INDEX_STATEMENTS + AUTH_UPGRADE_STATEMENTS
+    ),
+}
+ORDERS_MIGRATION = {
+    "id": ORDERS_MIGRATION_ID,
+    "name": "Verified orders and customers schema baseline",
+    "checksum": _digest(
+        (ORDERS_MIGRATION_ID, "orders-customers-contract-v1", LEDGER_SQL)
+        + ORDERS_TABLE_STATEMENTS + ORDERS_INDEX_STATEMENTS
+        + ORDERS_UPGRADE_STATEMENTS
+    ),
+}
+DOMAIN_MIGRATIONS = {
+    "auth": AUTH_MIGRATION,
+    "orders": ORDERS_MIGRATION,
+}
+
+
+AUTH_EXPECTED_COLUMNS = {
+    "users": AUTH_LEGACY_USER_COLUMNS + (
+        ("email_verified_at", "INTEGER", 0, None, 0),
+        ("updated_at", "INTEGER", 0, None, 0),
+        ("session_version", "INTEGER", 1, "1", 0),
+        ("last_login_at", "INTEGER", 0, None, 0),
+    ),
+    "invitations": (
+        ("id", "INTEGER", 0, None, 1), ("token_hash", "TEXT", 1, None, 0),
+        ("email", "TEXT", 0, None, 0), ("email_normalized", "TEXT", 0, None, 0),
+        ("role", "TEXT", 1, None, 0), ("expires_at", "INTEGER", 1, None, 0),
+        ("state", "TEXT", 1, "'active'", 0), ("created_by", "INTEGER", 0, None, 0),
+        ("created_at", "INTEGER", 1, None, 0), ("used_at", "INTEGER", 0, None, 0),
+        ("used_by", "INTEGER", 0, None, 0),
+    ),
+    "auth_attempts": (
+        ("id", "INTEGER", 0, None, 1), ("bucket", "TEXT", 1, None, 0),
+        ("attempted_at", "INTEGER", 1, None, 0),
+    ),
+    "auth_tokens": (
+        ("id", "INTEGER", 0, None, 1), ("user_id", "INTEGER", 1, None, 0),
+        ("token_hash", "TEXT", 1, None, 0), ("token_type", "TEXT", 1, None, 0),
+        ("expires_at", "INTEGER", 1, None, 0), ("used_at", "INTEGER", 0, None, 0),
+        ("created_at", "INTEGER", 1, None, 0),
+    ),
+    "auth_sessions": (
+        ("id", "INTEGER", 0, None, 1), ("session_hash", "TEXT", 1, None, 0),
+        ("user_id", "INTEGER", 0, None, 0), ("data", "TEXT", 1, None, 0),
+        ("expires_at", "INTEGER", 1, None, 0), ("created_at", "INTEGER", 1, None, 0),
+        ("updated_at", "INTEGER", 1, None, 0),
+    ),
+}
+
+ORDERS_EXPECTED_COLUMNS = {
+    "orders_snapshot": ORDERS_LEGACY_COLUMNS + (
+        ("detail_loaded", "INTEGER", 1, "0", 0),
+        ("source", "TEXT", 1, "'tictactoy'", 0),
+        ("external_order_id", "TEXT", 0, None, 0),
+        ("extra_fold", "TEXT", 1, "''", 0),
+        ("customer_id", "INTEGER", 0, None, 0),
+    ),
+    "customers": (
+        ("id", "INTEGER", 0, None, 1), ("name", "TEXT", 1, "''", 0),
+        ("name_fold", "TEXT", 1, "''", 0), ("phone", "TEXT", 1, "''", 0),
+        ("normalized_phone", "TEXT", 1, "''", 0), ("email", "TEXT", 1, "''", 0),
+        ("normalized_email", "TEXT", 1, "''", 0), ("country", "TEXT", 1, "''", 0),
+        ("region", "TEXT", 1, "''", 0), ("city", "TEXT", 1, "''", 0),
+        ("created_at", "TEXT", 1, None, 0), ("updated_at", "TEXT", 1, None, 0),
+    ),
+    "orders_snapshot_meta": (
+        ("key", "TEXT", 0, None, 1), ("value", "TEXT", 1, None, 0),
+    ),
+}
+
+AUTH_INDEXES = {
+    "invitations_state_expires": (0, ("state", "expires_at")),
+    "auth_attempts_bucket_time": (0, ("bucket", "attempted_at")),
+    "auth_tokens_user_type": (0, ("user_id", "token_type", "created_at")),
+    "auth_sessions_expiry": (0, ("expires_at",)),
+    "auth_sessions_user": (0, ("user_id",)),
+}
+ORDERS_INDEXES = {
+    "idx_customers_normalized_phone": (0, ("normalized_phone",)),
+    "idx_customers_normalized_email": (0, ("normalized_email",)),
+    "idx_customers_name": (0, ("name_fold",)),
+    "idx_orders_snapshot_ordering": (0, ("source_position", "order_id")),
+    "idx_orders_snapshot_status_ordering": (0, ("status", "source_position", "order_id")),
+    "idx_orders_snapshot_created": (0, ("created_sort", "source_position", "order_id")),
+    "idx_orders_snapshot_source_external": (1, ("source", "external_order_id")),
+    "idx_orders_snapshot_source_ordering": (0, ("source", "source_position", "order_id")),
+    "idx_orders_snapshot_customer_created": (0, ("customer_id", "created_sort")),
+}
+
+
+def _utc_now():
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def _tables(connection):
+    return {
+        str(row[0]) for row in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' "
+            "AND name NOT LIKE 'sqlite_%'"
+        ).fetchall()
+    }
+
+
+def _columns(connection, table):
+    return tuple(
+        (str(row[1]), str(row[2] or "").upper(), int(row[3]), row[4], int(row[5]))
+        for row in connection.execute("PRAGMA table_info({})".format(table)).fetchall()
+    )
+
+
+def _index_contract(connection, table):
+    result = {}
+    for row in connection.execute("PRAGMA index_list({})".format(table)).fetchall():
+        name = str(row[1])
+        if name.startswith("sqlite_autoindex_"):
+            continue
+        columns = tuple(
+            str(item[2]) for item in connection.execute(
+                "PRAGMA index_info('{}')".format(name.replace("'", "''"))
+            ).fetchall()
+        )
+        result[name] = (int(row[2]), columns)
+    return result
+
+
+def _unique_columns(connection, table):
+    return {
+        tuple(
+            str(item[2]) for item in connection.execute(
+                "PRAGMA index_info('{}')".format(str(row[1]).replace("'", "''"))
+            ).fetchall()
+        )
+        for row in connection.execute("PRAGMA index_list({})".format(table)).fetchall()
+        if int(row[2]) == 1
+    }
+
+
+def _verify_ledger_columns(connection):
+    expected = {
+        "migration_id", "name", "checksum", "state", "applied_at",
+        "app_commit", "details_json",
+    }
+    actual = {row[1] for row in connection.execute(
+        "PRAGMA table_info({})".format(LEDGER_TABLE)
+    ).fetchall()}
+    if actual != expected:
+        raise DomainMigrationError("domain migration ledger columns differ")
+
+
+def _verify_ledger(connection, migration):
+    if LEDGER_TABLE not in _tables(connection):
+        raise MigrationRequiredError(
+            "migration required: {} ledger is missing".format(migration["id"])
+        )
+    rows = connection.execute(
+        "SELECT migration_id, name, checksum, state FROM " + LEDGER_TABLE
+    ).fetchall()
+    if len(rows) != 1:
+        raise DomainMigrationError("unexpected domain migration ledger length")
+    row = rows[0]
+    if str(row[0]) != migration["id"]:
+        raise DomainMigrationError("unknown migration in domain ledger: {}".format(row[0]))
+    if str(row[1]) != migration["name"] or str(row[2]) != migration["checksum"]:
+        raise DomainMigrationError("migration checksum mismatch: {}".format(row[0]))
+    if str(row[3]) != "applied":
+        raise DomainMigrationError(
+            "migration is not fully applied: {} state={}".format(row[0], row[3])
+        )
+
+
+def _require_integrity(connection, label):
+    quick = [str(row[0]) for row in connection.execute("PRAGMA quick_check").fetchall()]
+    if quick != ["ok"]:
+        raise DomainMigrationError("{} quick_check failed: {}".format(label, quick))
+    foreign_keys = connection.execute("PRAGMA foreign_key_check").fetchall()
+    if foreign_keys:
+        raise DomainMigrationError(
+            "{} foreign_key_check found {} violation(s)".format(label, len(foreign_keys))
+        )
+
+
+def _verify_columns(connection, expected):
+    for table, columns in expected.items():
+        actual = _columns(connection, table)
+        if sorted(actual) != sorted(columns):
+            raise DomainMigrationError(
+                "schema contract mismatch for {}: columns differ".format(table)
+            )
+
+
+def _verify_indexes(connection, expected, table_by_prefix):
+    actual = {}
+    for table in table_by_prefix:
+        actual.update(_index_contract(connection, table))
+    if actual != expected:
+        raise DomainMigrationError("schema contract mismatch: named indexes differ")
+
+
+def verify_auth_schema(connection, require_ledger=True):
+    expected_tables = set(AUTH_EXPECTED_COLUMNS)
+    if require_ledger:
+        expected_tables.add(LEDGER_TABLE)
+    if _tables(connection) != expected_tables:
+        raise DomainMigrationError("auth schema contract: unexpected table set")
+    if require_ledger:
+        _verify_ledger_columns(connection)
+    _verify_columns(connection, AUTH_EXPECTED_COLUMNS)
+    _verify_indexes(connection, AUTH_INDEXES, AUTH_EXPECTED_COLUMNS)
+    foreign_keys = {
+        table: sorted(tuple(str(value) for value in row[2:8]) for row in connection.execute(
+            "PRAGMA foreign_key_list({})".format(table)
+        ).fetchall())
+        for table in AUTH_EXPECTED_COLUMNS
+    }
+    expected_foreign_keys = {
+        "users": [],
+        "auth_attempts": [],
+        "invitations": sorted((
+            ("users", "created_by", "id", "NO ACTION", "NO ACTION", "NONE"),
+            ("users", "used_by", "id", "NO ACTION", "NO ACTION", "NONE"),
+        )),
+        "auth_tokens": [
+            ("users", "user_id", "id", "NO ACTION", "NO ACTION", "NONE")
+        ],
+        "auth_sessions": [
+            ("users", "user_id", "id", "NO ACTION", "NO ACTION", "NONE")
+        ],
+    }
+    if foreign_keys != expected_foreign_keys:
+        raise DomainMigrationError("auth schema contract: foreign keys differ")
+    expected_unique = {
+        "users": {("email_normalized",)},
+        "invitations": {("token_hash",)},
+        "auth_tokens": {("token_hash",)},
+        "auth_sessions": {("session_hash",)},
+    }
+    for table, required in expected_unique.items():
+        if not required.issubset(_unique_columns(connection, table)):
+            raise DomainMigrationError(
+                "auth schema contract: unique constraint differs for {}".format(table)
+            )
+    if connection.execute(
+        "SELECT 1 FROM users WHERE role NOT IN ('employee','admin') OR active NOT IN (0,1) LIMIT 1"
+    ).fetchone():
+        raise DomainMigrationError("auth data contract: invalid user role or active flag")
+    if connection.execute(
+        "SELECT 1 FROM invitations WHERE state NOT IN ('active','used','revoked') LIMIT 1"
+    ).fetchone():
+        raise DomainMigrationError("auth data contract: invalid invitation state")
+    return True
+
+
+def verify_orders_schema(connection, require_ledger=True):
+    expected_tables = set(ORDERS_EXPECTED_COLUMNS)
+    if require_ledger:
+        expected_tables.add(LEDGER_TABLE)
+    if _tables(connection) != expected_tables:
+        raise DomainMigrationError("orders schema contract: unexpected table set")
+    if require_ledger:
+        _verify_ledger_columns(connection)
+    _verify_columns(connection, ORDERS_EXPECTED_COLUMNS)
+    _verify_indexes(connection, ORDERS_INDEXES, ORDERS_EXPECTED_COLUMNS)
+    if any(connection.execute(
+        "PRAGMA foreign_key_list({})".format(table)
+    ).fetchall() for table in ORDERS_EXPECTED_COLUMNS):
+        raise DomainMigrationError("orders schema contract: unexpected foreign key")
+    if ("order_id",) not in _unique_columns(connection, "orders_snapshot"):
+        raise DomainMigrationError("orders schema contract: order_id is not unique")
+    if ("key",) not in _unique_columns(connection, "orders_snapshot_meta"):
+        raise DomainMigrationError("orders schema contract: meta key is not unique")
+    if connection.execute(
+        "SELECT 1 FROM orders_snapshot WHERE trim(source) = '' OR source IS NULL "
+        "OR external_order_id IS NULL OR trim(external_order_id) = '' LIMIT 1"
+    ).fetchone():
+        raise DomainMigrationError("orders data contract: source identity is incomplete")
+    duplicates = connection.execute(
+        "SELECT source, external_order_id FROM orders_snapshot "
+        "GROUP BY source, external_order_id HAVING COUNT(*) > 1 LIMIT 1"
+    ).fetchone()
+    if duplicates:
+        raise DomainMigrationError("orders data contract: duplicate source identity")
+    return True
+
+
+def _legacy_state(connection, kind):
+    tables = _tables(connection) - {LEDGER_TABLE}
+    if not tables:
+        return "fresh"
+    if kind == "auth":
+        if tables == {"users"} and _columns(connection, "users") == AUTH_LEGACY_USER_COLUMNS:
+            return "legacy"
+    elif kind == "orders":
+        if tables == {"orders_snapshot"} and _columns(connection, "orders_snapshot") == ORDERS_LEGACY_COLUMNS:
+            return "legacy"
+    return "current"
+
+
+class DomainMigrationLock:
+    def __init__(self, path, kind):
+        self.path = Path(path).resolve().parent / ".{}-schema-migration.lock".format(kind)
+        self.handle = None
+
+    def __enter__(self):
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.handle = self.path.open("a+")
+        fcntl.flock(self.handle.fileno(), fcntl.LOCK_EX)
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        if self.handle is not None:
+            fcntl.flock(self.handle.fileno(), fcntl.LOCK_UN)
+            self.handle.close()
+
+
+def _execute(connection, statement, observer):
+    if observer is not None:
+        observer(" ".join(statement.split()))
+    connection.execute(statement)
+
+
+def _apply_auth(connection, state, observer):
+    if state == "fresh":
+        for statement in AUTH_TABLE_STATEMENTS + AUTH_INDEX_STATEMENTS:
+            _execute(connection, statement, observer)
+        return
+    if state == "legacy":
+        for statement in AUTH_UPGRADE_STATEMENTS:
+            _execute(connection, statement, observer)
+        for statement in AUTH_TABLE_STATEMENTS[1:] + AUTH_INDEX_STATEMENTS:
+            _execute(connection, statement, observer)
+        return
+    verify_auth_schema(connection)
+
+
+def _apply_orders(connection, state, observer):
+    if state == "fresh":
+        for statement in ORDERS_TABLE_STATEMENTS + ORDERS_INDEX_STATEMENTS:
+            _execute(connection, statement, observer)
+        return
+    if state == "legacy":
+        for statement in ORDERS_UPGRADE_STATEMENTS:
+            _execute(connection, statement, observer)
+        for statement in ORDERS_TABLE_STATEMENTS[1:] + ORDERS_INDEX_STATEMENTS:
+            _execute(connection, statement, observer)
+        return
+    verify_orders_schema(connection)
+
+
+def apply_domain_migrations(database_path, kind, app_commit="", observer=None):
+    if kind not in DOMAIN_MIGRATIONS:
+        raise DomainMigrationError("unknown domain database: {}".format(kind))
+    path = Path(database_path).resolve()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    migration = DOMAIN_MIGRATIONS[kind]
+    with DomainMigrationLock(path, kind):
+        connection = sqlite3.connect(str(path), timeout=30, isolation_level=None)
+        try:
+            connection.execute("PRAGMA foreign_keys = ON")
+            connection.execute("PRAGMA busy_timeout = 30000")
+            tables = _tables(connection)
+            if LEDGER_TABLE in tables:
+                _verify_ledger(connection, migration)
+                if kind == "auth":
+                    verify_auth_schema(connection)
+                else:
+                    verify_orders_schema(connection)
+                _require_integrity(connection, kind)
+                return migration_report(connection, kind)
+
+            state = _legacy_state(connection, kind)
+            if state == "current":
+                # Prove the full schema before adding a baseline ledger.
+                if kind == "auth":
+                    verify_auth_schema(connection, require_ledger=False)
+                else:
+                    verify_orders_schema(connection, require_ledger=False)
+
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                _execute(connection, LEDGER_SQL, observer)
+                connection.execute(
+                    "INSERT INTO {} (migration_id,name,checksum,state,applied_at,app_commit,details_json) "
+                    "VALUES (?,?,?,'applying',NULL,?,?)".format(LEDGER_TABLE),
+                    (migration["id"], migration["name"], migration["checksum"],
+                     str(app_commit or "") or None,
+                     json.dumps({"source_state": state, "transactional": True}, sort_keys=True)),
+                )
+                if kind == "auth":
+                    _apply_auth(connection, state, observer)
+                    verify_auth_schema(connection)
+                else:
+                    _apply_orders(connection, state, observer)
+                    verify_orders_schema(connection)
+                _require_integrity(connection, kind + "-migration")
+                connection.execute(
+                    "UPDATE {} SET state='applied', applied_at=?, app_commit=? "
+                    "WHERE migration_id=? AND state='applying'".format(LEDGER_TABLE),
+                    (_utc_now(), str(app_commit or "") or None, migration["id"]),
+                )
+                if connection.total_changes < 2:
+                    raise DomainMigrationError("migration ledger state update failed")
+                connection.commit()
+            except Exception:
+                connection.rollback()
+                raise
+            return migration_report(connection, kind)
+        finally:
+            connection.close()
+
+
+def _runtime_connection(database_path):
+    path = Path(database_path).resolve()
+    if not path.exists():
+        raise MigrationRequiredError("migration required: database is missing: {}".format(path))
+    try:
+        connection = sqlite3.connect("file:{}?mode=ro".format(path), uri=True)
+    except sqlite3.Error as error:
+        raise MigrationRequiredError("migration required: cannot open {}: {}".format(path, error))
+    connection.execute("PRAGMA foreign_keys = ON")
+    return connection
+
+
+def validate_auth_database(database_path):
+    connection = _runtime_connection(database_path)
+    try:
+        _verify_ledger(connection, AUTH_MIGRATION)
+        verify_auth_schema(connection)
+    finally:
+        connection.close()
+    return True
+
+
+def validate_orders_database(database_path):
+    connection = _runtime_connection(database_path)
+    try:
+        _verify_ledger(connection, ORDERS_MIGRATION)
+        verify_orders_schema(connection)
+    finally:
+        connection.close()
+    return True
+
+
+def _semantic_schema(connection, tables):
+    return {
+        table: {
+            "columns": sorted(_columns(connection, table)),
+            "indexes": sorted(_index_contract(connection, table).items()),
+            "foreign_keys": sorted(
+                tuple(str(value) for value in row[2:8])
+                for row in connection.execute(
+                    "PRAGMA foreign_key_list({})".format(table)
+                ).fetchall()
+            ),
+        }
+        for table in sorted(tables)
+    }
+
+
+def migration_report(connection, kind):
+    migration = DOMAIN_MIGRATIONS[kind]
+    tables = AUTH_EXPECTED_COLUMNS if kind == "auth" else ORDERS_EXPECTED_COLUMNS
+    payload = json.dumps(
+        _semantic_schema(connection, tables), sort_keys=True, separators=(",", ":")
+    )
+    counts = {
+        table: int(connection.execute("SELECT COUNT(*) FROM {}".format(table)).fetchone()[0])
+        for table in sorted(tables)
+    }
+    return {
+        "kind": kind,
+        "latest_migration": migration["id"],
+        "checksum": migration["checksum"],
+        "schema_fingerprint": hashlib.sha256(payload.encode("utf-8")).hexdigest(),
+        "business_counts": counts,
+    }
+
+
+def domain_snapshot(database_path, kind):
+    connection = _runtime_connection(database_path)
+    try:
+        return migration_report(connection, kind)
+    finally:
+        connection.close()

@@ -10,10 +10,11 @@ import sys
 import unittest
 from pathlib import Path
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+
+from app.domain_schema_migrations import apply_domain_migrations  # noqa: E402
 
 
 ORIGINAL_GETADDRINFO = socket.getaddrinfo
@@ -42,6 +43,8 @@ def main():
     parser.add_argument("--verbosity", type=int, default=2)
     arguments = parser.parse_args()
     socket.getaddrinfo = guarded_getaddrinfo
+    apply_domain_migrations(PROJECT_ROOT / "instance" / "auth.db", "auth", "test-suite")
+    apply_domain_migrations(PROJECT_ROOT / "instance" / "orders.db", "orders", "test-suite")
     suite = unittest.defaultTestLoader.discover(
         arguments.start_directory,
         pattern=arguments.pattern,

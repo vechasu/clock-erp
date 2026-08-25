@@ -6,6 +6,7 @@ from unittest import mock
 
 from app import auth, web
 from app.catalog_db import CatalogDatabase
+from app.domain_schema_migrations import apply_domain_migrations
 from app.services.brand_inventory import BrandInventory, InventoryConflict, InventoryError
 from app.services.excel_product_catalog import ExcelProductCatalog
 from app.services.sales_inventory import SalesInventory
@@ -736,6 +737,7 @@ class BrandInventoryWebTest(unittest.TestCase):
     def test_authenticated_write_requires_csrf(self):
         auth_path = Path(self.temp.name) / "auth.db"
         web.app.config.update(AUTH_TESTING=True, AUTH_DATABASE=str(auth_path))
+        apply_domain_migrations(auth_path, "auth", "test")
         user_id = auth.AuthStore(auth_path).create_initial_admin(
             "Inventory", "Admin", "inventory@example.test", "safe test password"
         )

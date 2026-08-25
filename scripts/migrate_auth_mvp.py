@@ -12,14 +12,14 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from app.auth import AuthStore
+from app.domain_schema_migrations import apply_domain_migrations, validate_auth_database
 
 
 def migrate(database, backup_dir, apply_changes):
     database = Path(database)
     if not database.exists():
         if apply_changes:
-            AuthStore(database)
+            apply_domain_migrations(database, "auth")
         return None
 
     with sqlite3.connect(str(database), timeout=15) as connection:
@@ -37,7 +37,8 @@ def migrate(database, backup_dir, apply_changes):
         datetime.now().strftime("%Y%m%d-%H%M%S")
     )
     shutil.copy2(str(database), str(backup_path))
-    AuthStore(database)
+    apply_domain_migrations(database, "auth")
+    validate_auth_database(database)
     with sqlite3.connect(str(database), timeout=15) as connection:
         result = connection.execute("PRAGMA quick_check").fetchone()[0]
         if result != "ok":
