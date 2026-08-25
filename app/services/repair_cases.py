@@ -301,7 +301,7 @@ def normalize_date(value, field_label="Дата"):
     if not text:
         return ""
     try:
-        date.fromisoformat(text)
+        datetime.strptime(text, "%Y-%m-%d")
     except ValueError as error:
         raise ValueError(f"{field_label}: укажите корректную дату") from error
     return text
