@@ -16,7 +16,13 @@ const routes = [
 
 for (const route of routes) {
   test(`${route} has no serious or critical axe violations`, async ({ page }) => {
-    await page.goto(route, { waitUntil: 'domcontentloaded' });
+    const browserErrors: string[] = [];
+    page.on('console', (message) => {
+      if (message.type() === 'error') browserErrors.push(message.text());
+    });
+    page.on('pageerror', (error) => browserErrors.push(error.message));
+
+    await page.goto(route, { waitUntil: 'load' });
     const results = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa'])
       .analyze();
@@ -30,6 +36,7 @@ for (const route of routes) {
         targets: nodes.slice(0, 5).map(({ target }) => target),
       })),
     ).toEqual([]);
+    expect(browserErrors).toEqual([]);
   });
 }
 
@@ -128,27 +135,42 @@ test('key pages reflow at required widths and 200/400 percent zoom', async ({ pa
   }
 });
 
-test('/app/products keeps page-level overflow at zero at 320px', async ({ page }) => {
-  await page.setViewportSize({ width: 320, height: 900 });
-  await page.goto('/app/products', { waitUntil: 'domcontentloaded' });
+test('/app/products keeps page-level overflow at zero at required viewports', async ({ page }) => {
+  for (const viewport of [
+    { width: 320, height: 568 },
+    { width: 360, height: 800 },
+    { width: 390, height: 844 },
+    { width: 768, height: 1024 },
+    { width: 1366, height: 768 },
+    { width: 1920, height: 1080 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto('/app/products', { waitUntil: 'domcontentloaded' });
 
-  const dimensions = await page.locator('html').evaluate(
-    (root: {
-      scrollWidth: number;
-      clientWidth: number;
-      ownerDocument: { body: { scrollWidth: number; clientWidth: number } };
-    }) => ({
-      html: {
-        scrollWidth: root.scrollWidth,
-        clientWidth: root.clientWidth,
-      },
-      body: {
-        scrollWidth: root.ownerDocument.body.scrollWidth,
-        clientWidth: root.ownerDocument.body.clientWidth,
-      },
-    }),
-  );
+    const dimensions = await page
+      .locator('html')
+      .evaluate(
+        (root: {
+          scrollWidth: number;
+          clientWidth: number;
+          ownerDocument: { body: { scrollWidth: number; clientWidth: number } };
+        }) => ({
+          html: {
+            scrollWidth: root.scrollWidth,
+            clientWidth: root.clientWidth,
+          },
+          body: {
+            scrollWidth: root.ownerDocument.body.scrollWidth,
+            clientWidth: root.ownerDocument.body.clientWidth,
+          },
+        }),
+      );
 
-  expect(dimensions.html.scrollWidth).toBe(dimensions.html.clientWidth);
-  expect(dimensions.body.scrollWidth).toBe(dimensions.body.clientWidth);
+    expect(dimensions.html.scrollWidth, JSON.stringify(viewport)).toBeLessThanOrEqual(
+      dimensions.html.clientWidth,
+    );
+    expect(dimensions.body.scrollWidth, JSON.stringify(viewport)).toBeLessThanOrEqual(
+      dimensions.body.clientWidth,
+    );
+  }
 });
