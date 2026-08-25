@@ -9,7 +9,6 @@ from __future__ import print_function
 import ast
 import fcntl
 import hashlib
-import inspect
 import json
 import os
 import re
@@ -18,6 +17,12 @@ import subprocess
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
+
+from app.catalog_migration_steps import (
+    apply_order_comment_constraints,
+    apply_fresh_catalog_schema,
+    migration_source_checksum,
+)
 
 
 LEDGER_TABLE = "erp_migration_ledger"
@@ -52,6 +57,22 @@ COMMENTS_MIGRATION_DEFINITION = "\n".join((
 COMMENTS_MIGRATION_CHECKSUM = hashlib.sha256(
     COMMENTS_MIGRATION_DEFINITION.encode("utf-8")
 ).hexdigest()
+CATALOG_RUNTIME_BASELINE_ID = "2026-08-27-catalog-schema-baseline-v1"
+CATALOG_RUNTIME_BASELINE_NAME = "Verified complete catalog schema baseline"
+CATALOG_MANIFEST_CHECKSUM = hashlib.sha256(
+    Path(__file__).resolve().with_name("catalog_schema_manifest.json").read_bytes()
+).hexdigest()
+CATALOG_RUNTIME_BASELINE_DEFINITION = "\n".join((
+    CATALOG_RUNTIME_BASELINE_ID,
+    CATALOG_RUNTIME_BASELINE_NAME,
+    "complete-catalog-contract-v1",
+    "python-3.6-sqlite-3.7.17",
+    migration_source_checksum(),
+    CATALOG_MANIFEST_CHECKSUM,
+))
+CATALOG_RUNTIME_BASELINE_CHECKSUM = hashlib.sha256(
+    CATALOG_RUNTIME_BASELINE_DEFINITION.encode("utf-8")
+).hexdigest()
 
 MIGRATIONS = (
     {
@@ -65,6 +86,13 @@ MIGRATIONS = (
         "id": COMMENTS_MIGRATION_ID,
         "name": COMMENTS_MIGRATION_NAME,
         "checksum": COMMENTS_MIGRATION_CHECKSUM,
+        "transactional": True,
+        "recovery": "restore verified catalog database backup while service is stopped",
+    },
+    {
+        "id": CATALOG_RUNTIME_BASELINE_ID,
+        "name": CATALOG_RUNTIME_BASELINE_NAME,
+        "checksum": CATALOG_RUNTIME_BASELINE_CHECKSUM,
         "transactional": True,
         "recovery": "restore verified catalog database backup while service is stopped",
     },
@@ -151,6 +179,9 @@ LEDGER_COLUMNS = {
 
 BUSINESS_TABLES = (
     ("products", "catalog_excel_products", None),
+    ("brands", "erp_brands", None),
+    ("categories", "erp_categories", None),
+    ("models", "erp_models", None),
     ("sales", "erp_sales", None),
     ("sale_items", "erp_sale_items", None),
     ("stock_movements", "catalog_stock_movements", None),
@@ -160,6 +191,28 @@ BUSINESS_TABLES = (
     ("receipt_items", "erp_receipt_items", None),
     ("comments", "erp_order_comments", None),
     ("audit_events", "erp_audit_events", None),
+    ("inventory_documents", "erp_inventory_sessions", None),
+    ("inventory_items", "erp_inventory_items", None),
+    (
+        "inventory_adjustments",
+        "catalog_stock_movements",
+        "movement_type = 'inventory_adjustment'",
+    ),
+    (
+        "sale_idempotency_keys",
+        "erp_sales",
+        "idempotency_key IS NOT NULL",
+    ),
+    (
+        "movement_idempotency_keys",
+        "catalog_stock_movements",
+        "idempotency_key IS NOT NULL",
+    ),
+    (
+        "inventory_idempotency_keys",
+        "erp_inventory_sessions",
+        "idempotency_key IS NOT NULL",
+    ),
     (
         "active_inventories",
         "erp_inventory_sessions",
@@ -261,6 +314,13 @@ def business_snapshot(connection):
         result["active_stock_sum"] = float(value or 0)
     else:
         result["active_stock_sum"] = None
+    if "catalog_stock_movements" in tables:
+        result["movement_quantity_sum"] = float(connection.execute(
+            "SELECT COALESCE(SUM(quantity_delta), 0) "
+            "FROM catalog_stock_movements"
+        ).fetchone()[0] or 0)
+    else:
+        result["movement_quantity_sum"] = None
     return result
 
 
@@ -268,12 +328,48 @@ def _normalized_default(value):
     return None if value is None else " ".join(str(value).split())
 
 
+def _check_constraints(table_sql):
+    """Extract CHECK expressions independent of whitespace and column order."""
+    sql = str(table_sql or "")
+    result = []
+    position = 0
+    while True:
+        match = re.search(r"\bCHECK\s*\(", sql[position:], re.IGNORECASE)
+        if match is None:
+            break
+        opening = position + match.end() - 1
+        depth = 1
+        cursor = opening + 1
+        quote = None
+        while cursor < len(sql) and depth:
+            character = sql[cursor]
+            if quote:
+                if character == quote:
+                    if cursor + 1 < len(sql) and sql[cursor + 1] == quote:
+                        cursor += 1
+                    else:
+                        quote = None
+            elif character in ("'", '"'):
+                quote = character
+            elif character == "(":
+                depth += 1
+            elif character == ")":
+                depth -= 1
+            cursor += 1
+        if depth:
+            break
+        expression = sql[opening + 1:cursor - 1]
+        result.append("".join(expression.lower().split()))
+        position = cursor
+    return sorted(result)
+
+
 def schema_structure(connection):
     tables = sorted(
         name for name in _table_names(connection)
         if not name.startswith("sqlite_")
     )
-    structure = {"tables": {}, "indexes": [], "triggers": []}
+    structure = {"tables": {}, "indexes": [], "triggers": [], "views": []}
     for table in tables:
         columns = []
         for row in connection.execute(
@@ -292,9 +388,14 @@ def schema_structure(connection):
             "PRAGMA foreign_key_list({})".format(table)
         ).fetchall():
             foreign_keys.append(tuple(str(value) for value in row[2:8]))
+        table_row = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?",
+            (table,),
+        ).fetchone()
         structure["tables"][table] = {
             "columns": columns,
             "foreign_keys": sorted(foreign_keys),
+            "checks": _check_constraints(table_row[0]),
         }
         for row in connection.execute(
             "PRAGMA index_list({})".format(table)
@@ -321,6 +422,12 @@ def schema_structure(connection):
         structure["triggers"].append((
             str(row[0]), str(row[1]), " ".join(str(row[2] or "").split())
         ))
+    for row in connection.execute(
+        "SELECT name, sql FROM sqlite_master WHERE type = 'view' ORDER BY name"
+    ).fetchall():
+        structure["views"].append((
+            str(row[0]), " ".join(str(row[1] or "").split())
+        ))
     return structure
 
 
@@ -335,18 +442,51 @@ def schema_fingerprint(connection):
 
 
 def schema_source_checksum():
-    from app.catalog_db import CatalogDatabase, SCHEMA
+    return migration_source_checksum()
 
-    methods = [CatalogDatabase._initialize_schema]
-    methods.extend(
-        getattr(CatalogDatabase, name)
-        for name in sorted(dir(CatalogDatabase))
-        if name.startswith("_ensure_")
-    )
-    source = [SCHEMA]
-    source.extend(inspect.getsource(method) for method in methods)
-    normalized = "\n".join(" ".join(item.split()) for item in source)
-    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+def _manifest_path():
+    return Path(__file__).resolve().with_name("catalog_schema_manifest.json")
+
+
+def expected_catalog_manifest():
+    try:
+        return json.loads(_manifest_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise MigrationError("catalog schema manifest is unavailable: {}".format(error))
+
+
+def _json_structure(connection):
+    return json.loads(json.dumps(
+        schema_structure(connection), ensure_ascii=True, sort_keys=True
+    ))
+
+
+def verify_complete_catalog_contract(connection):
+    expected = expected_catalog_manifest()
+    actual = _json_structure(connection)
+    if actual == expected:
+        return True
+    expected_tables = set(expected.get("tables", {}))
+    actual_tables = set(actual.get("tables", {}))
+    if expected_tables != actual_tables:
+        raise MigrationError(
+            "catalog schema mismatch: tables added={} missing={}".format(
+                sorted(actual_tables - expected_tables),
+                sorted(expected_tables - actual_tables),
+            )
+        )
+    for table in sorted(expected_tables):
+        if actual["tables"][table] != expected["tables"][table]:
+            raise MigrationError(
+                "catalog schema mismatch: table contract differs: {}".format(table)
+            )
+    for object_type in ("indexes", "triggers", "views"):
+        if actual.get(object_type) != expected.get(object_type):
+            raise MigrationError(
+                "catalog schema mismatch: {} differ".format(object_type)
+            )
+    raise MigrationError("catalog schema mismatch: unknown manifest difference")
 
 
 def verify_schema_contract(
@@ -460,6 +600,7 @@ def apply_order_comments_migration(connection, ddl_observer=None):
             "UPDATE erp_order_comments SET updated_at = created_at "
             "WHERE updated_at IS NULL OR trim(updated_at) = ''"
         )
+    apply_order_comment_constraints(connection)
     index_names = {
         str(row[1]) for row in connection.execute(
             "PRAGMA index_list(erp_order_comments)"
@@ -553,8 +694,6 @@ class MigrationLock:
 
 
 def apply_migrations(database_path, app_commit="", ddl_observer=None):
-    from app.catalog_db import CatalogDatabase
-
     path = Path(database_path).resolve()
     with MigrationLock(path):
         connection = sqlite3.connect(str(path))
@@ -622,11 +761,17 @@ def apply_migrations(database_path, app_commit="", ddl_observer=None):
 
             try:
                 if migration["id"] == BASELINE_ID:
-                    CatalogDatabase(
-                        path,
-                        cache_initialization=False,
-                        ddl_observer=ddl_observer,
-                    ).initialize(allow_schema_changes=True)
+                    connection = sqlite3.connect(str(path))
+                    connection.row_factory = sqlite3.Row
+                    try:
+                        connection.execute("PRAGMA foreign_keys = ON")
+                        apply_fresh_catalog_schema(connection, ddl_observer)
+                        connection.commit()
+                    except Exception:
+                        connection.rollback()
+                        raise
+                    finally:
+                        connection.close()
                 elif migration["id"] == COMMENTS_MIGRATION_ID:
                     connection = sqlite3.connect(str(path))
                     try:
@@ -639,6 +784,13 @@ def apply_migrations(database_path, app_commit="", ddl_observer=None):
                         raise
                     finally:
                         connection.close()
+                elif migration["id"] == CATALOG_RUNTIME_BASELINE_ID:
+                    connection = sqlite3.connect(str(path))
+                    try:
+                        verify_complete_catalog_contract(connection)
+                        require_integrity(connection, migration["id"])
+                    finally:
+                        connection.close()
                 else:
                     raise MigrationError(
                         "no migration operation registered: {}".format(
@@ -647,11 +799,14 @@ def apply_migrations(database_path, app_commit="", ddl_observer=None):
                     )
                 connection = sqlite3.connect(str(path))
                 try:
-                    verify_schema_contract(
-                        connection,
-                        require_comment_indexes=migration["id"] != BASELINE_ID,
-                        allow_legacy_comments=migration["id"] == BASELINE_ID,
-                    )
+                    if migration["id"] == CATALOG_RUNTIME_BASELINE_ID:
+                        verify_complete_catalog_contract(connection)
+                    else:
+                        verify_schema_contract(
+                            connection,
+                            require_comment_indexes=migration["id"] != BASELINE_ID,
+                            allow_legacy_comments=migration["id"] == BASELINE_ID,
+                        )
                     require_integrity(connection, migration["id"])
                     connection.execute(
                         "UPDATE {} SET state = 'applied', applied_at = ?, "
@@ -687,6 +842,7 @@ def apply_migrations(database_path, app_commit="", ddl_observer=None):
         try:
             verify_ledger(connection)
             verify_schema_contract(connection)
+            verify_complete_catalog_contract(connection)
             integrity = require_integrity(connection, "migration-complete")
             return {
                 "latest_migration": MIGRATIONS[-1]["id"],
@@ -708,10 +864,36 @@ def guard_paths(database_path):
 
 
 def runtime_guard_required(database_path):
-    if str(database_path) == ":memory:":
-        return False
-    sentinel, unused_marker = guard_paths(database_path)
-    return sentinel.exists()
+    """Deprecated diagnostic helper; runtime readiness never depends on it."""
+    return False
+
+
+def validate_catalog_runtime(database_path):
+    """Read-only, fail-closed catalog readiness validation for workers."""
+    path = Path(database_path).resolve()
+    if not path.is_file():
+        raise MigrationError(
+            "catalog migration required: database is missing: {}".format(path)
+        )
+    try:
+        connection = sqlite3.connect(
+            "file:{}?mode=ro".format(path), uri=True
+        )
+    except sqlite3.Error as error:
+        raise MigrationError(
+            "catalog migration required: cannot open database: {}".format(error)
+        )
+    try:
+        verify_ledger(connection)
+        verify_schema_contract(connection)
+        verify_complete_catalog_contract(connection)
+    except sqlite3.Error as error:
+        raise MigrationError(
+            "catalog schema mismatch: {}".format(error)
+        )
+    finally:
+        connection.close()
+    return True
 
 
 def write_runtime_guard(database_path, app_commit):
@@ -832,9 +1014,9 @@ def sqlite_backup(source, target, sqlite_binary="sqlite3"):
 
 def validate_known_sql_compatibility(source_root):
     source_root = Path(source_root)
-    paths = [
-        source_root / "app" / "catalog_db.py",
-    ]
+    catalog_steps = source_root / "app" / "catalog_migration_steps.py"
+    legacy_catalog = source_root / "app" / "catalog_db.py"
+    paths = [catalog_steps if catalog_steps.exists() else legacy_catalog]
     domain_migrations = source_root / "app" / "domain_schema_migrations.py"
     if domain_migrations.exists():
         paths.append(domain_migrations)

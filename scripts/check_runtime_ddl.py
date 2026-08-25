@@ -71,12 +71,18 @@ def functions(path):
 def assignment(path, name):
     source = path.read_text(encoding="utf-8")
     tree = ast.parse(source, filename=str(path))
-    for node in tree.body:
+    lines = source.splitlines(True)
+    for index, node in enumerate(tree.body):
         if isinstance(node, ast.Assign) and any(
             isinstance(target, ast.Name) and target.id == name
             for target in node.targets
         ):
-            return source_segment(source, node)
+            end = (
+                tree.body[index + 1].lineno - 1
+                if index + 1 < len(tree.body)
+                else len(lines)
+            )
+            return "".join(lines[node.lineno - 1:end]).rstrip()
     raise LookupError("{}:{} not found".format(path, name))
 
 

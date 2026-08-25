@@ -1,10 +1,13 @@
 # Runtime DDL audit — 2026-08-25
 
-Статус: `current` для baseline `db28de11299351675fad99778b3b26a46ef3ba82`.
+Статус: `archive evidence`; remediation current на baseline `82152be7`.
 
 PR-A реализован в [`domain-schema-migrations.md`](domain-schema-migrations.md):
-auth/orders/customers/comments runtime DDL удалён; оставшиеся catalog legacy
-риски и план PR-G в этом аудите сохраняют силу.
+auth/orders/customers/comments runtime DDL удалён. Catalog PR-G реализован в
+[`catalog-schema-migrations.md`](catalog-schema-migrations.md): `SCHEMA` и все
+schema `_ensure_*` перенесены в versioned runner, sentinel fail-open удалён,
+runtime DDL allowlist пуст. Таблицы и числа ниже сохранены как исходное
+доказательство BEFORE, а не как описание текущего runtime.
 
 Границы: SQLite DDL, schema bootstrap, legacy `_ensure_*`, startup и request
 paths. Аудит не меняет production-схему, migration order или бизнес-логику.

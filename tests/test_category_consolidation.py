@@ -1,3 +1,4 @@
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -11,7 +12,7 @@ from app.services.excel_product_catalog import (
     ExcelProductBatchService,
     ExcelProductCatalog,
 )
-from app.services.shared_catalog import SharedCatalog, ensure_category
+from app.services.shared_catalog import SharedCatalog, get_or_create_category
 
 
 class CategoryConsolidationTest(unittest.TestCase):
@@ -209,7 +210,11 @@ class CategoryConsolidationTest(unittest.TestCase):
                 "INSERT INTO category_future_reference (category_id) VALUES (?)",
                 (duplicate_id,),
             )
-        connection = self.database.connect()
+        # This fixture intentionally creates schema drift to exercise the
+        # consolidation safety net, so it must bypass the fail-closed runtime
+        # catalog validator after introducing that unknown table.
+        connection = sqlite3.connect(str(self.database.path))
+        connection.row_factory = sqlite3.Row
         try:
             migration = CategoryConsolidation(connection)
             plan = migration.build_plan()
@@ -246,7 +251,7 @@ class CategoryConsolidationTest(unittest.TestCase):
         try:
             migration = CategoryConsolidation(connection)
             migration.apply(migration.build_plan()["plan_sha256"])
-            row = ensure_category(
+            row = get_or_create_category(
                 connection,
                 uncategorized["brand_id"],
                 name="  НАРУЧНЫЕ  ЧАСЫ ",

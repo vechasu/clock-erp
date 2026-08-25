@@ -1,8 +1,10 @@
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
 
 from app.catalog_db import CatalogDatabase
+from app.catalog_migration_steps import apply_fresh_catalog_schema
 from app.services.order_status import (
     ERP_ASSEMBLED,
     ERP_CONFIRMED,
@@ -55,6 +57,9 @@ class OrderStatusServiceTests(unittest.TestCase):
             connection.execute("DROP TABLE erp_order_status_sync_queue")
             connection.execute("DROP TABLE erp_order_status_events")
             connection.execute("DROP TABLE erp_order_statuses")
+        with sqlite3.connect(str(self.database.path)) as connection:
+            connection.row_factory = sqlite3.Row
+            apply_fresh_catalog_schema(connection)
         self.database.initialize()
         sales = self.rows(
             "SELECT id, external_order_id FROM erp_sales WHERE id='legacy-sale'"

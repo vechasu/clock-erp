@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest import mock
 
 from app.catalog_db import CatalogDatabase
+from app.catalog_migration_steps import apply_fresh_catalog_schema
 from app.schema_migrations import (
     BASELINE_CHECKSUM,
     BASELINE_ID,
@@ -42,7 +43,13 @@ class SchemaMigrationTest(unittest.TestCase):
 
     def initialize(self, path=None):
         path = path or self.database_path
-        CatalogDatabase(path, cache_initialization=False).initialize()
+        connection = sqlite3.connect(str(path))
+        connection.row_factory = sqlite3.Row
+        try:
+            apply_fresh_catalog_schema(connection)
+            connection.commit()
+        finally:
+            connection.close()
         return path
 
     def preflight_arguments(self, database=None, report=None):
@@ -116,10 +123,8 @@ class SchemaMigrationTest(unittest.TestCase):
         self.assertEqual(count, len(MIGRATIONS))
 
     def test_interruption_leaves_explicit_failed_state_and_stops_retry(self):
-        original = CatalogDatabase._initialize_schema
-        with mock.patch.object(
-            CatalogDatabase,
-            "_initialize_schema",
+        with mock.patch(
+            "app.schema_migrations.apply_fresh_catalog_schema",
             side_effect=RuntimeError("interrupted"),
         ):
             with self.assertRaisesRegex(RuntimeError, "interrupted"):
@@ -132,7 +137,6 @@ class SchemaMigrationTest(unittest.TestCase):
         self.assertEqual(state, "failed")
         with self.assertRaisesRegex(MigrationError, "partially applied"):
             apply_migrations(self.database_path)
-        self.assertIsNotNone(original)
 
     def test_unknown_migration_is_rejected(self):
         self.initialize()

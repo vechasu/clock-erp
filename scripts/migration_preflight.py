@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import shutil
+import socket
 import sqlite3
 import sys
 import time
@@ -29,6 +30,7 @@ from app.schema_migrations import (  # noqa: E402
     sqlite_backup,
     validate_known_sql_compatibility,
     verify_ledger,
+    verify_complete_catalog_contract,
     verify_runtime_guard,
     verify_schema_contract,
     write_runtime_guard,
@@ -72,6 +74,17 @@ def ensure_runtime(expected):
     }
 
 
+def block_network_egress():
+    def blocked_connect(unused_socket, unused_address):
+        raise OSError("catalog migration preflight blocks network egress")
+
+    def blocked_getaddrinfo(*unused_args, **unused_kwargs):
+        raise OSError("catalog migration preflight blocks DNS egress")
+
+    socket.socket.connect = blocked_connect
+    socket.getaddrinfo = blocked_getaddrinfo
+
+
 def clean_expired_rehearsals(root, retention_days):
     root = Path(root).resolve()
     if not root.exists():
@@ -112,6 +125,7 @@ def migration_run(path, app_commit, ddl_state):
 
 def preflight(arguments):
     runtime = ensure_runtime(arguments.expected_sqlite_version)
+    block_network_egress()
     scanned = validate_known_sql_compatibility(arguments.source_root)
     removed = clean_expired_rehearsals(
         arguments.rehearsal_root, arguments.retention_days
@@ -135,6 +149,7 @@ def preflight(arguments):
         "scanned_sql_files": scanned,
         "expired_rehearsals_removed": removed,
         "migrations": [dict(migration) for migration in MIGRATIONS],
+        "network_egress": 0,
     }
     try:
         sqlite_backup(
@@ -164,6 +179,7 @@ def preflight(arguments):
             )
             verify_ledger(connection)
             verify_schema_contract(connection)
+            verify_complete_catalog_contract(connection)
         if first_structure != second_structure:
             raise MigrationError("migration repeat changed schema structure")
         if first_business != second_business:
@@ -247,6 +263,7 @@ def apply(arguments):
             after = business_snapshot(connection)
             verify_ledger(connection)
             verify_schema_contract(connection)
+            verify_complete_catalog_contract(connection)
         if before != after:
             raise MigrationError(
                 "production migration changed business aggregates"
@@ -281,6 +298,7 @@ def verify(arguments):
     with connect(arguments.database, read_only=True) as connection:
         verify_ledger(connection)
         verify_schema_contract(connection)
+        verify_complete_catalog_contract(connection)
         report = {
             "status": "passed",
             "stage": "POST-DEPLOY INTEGRITY",

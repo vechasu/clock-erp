@@ -1,4 +1,5 @@
 import os
+import sqlite3
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
@@ -8,6 +9,7 @@ from urllib.parse import parse_qs, urlparse
 from unittest import mock
 
 from app.catalog_db import CatalogDatabase
+from app.catalog_migration_steps import apply_fresh_catalog_schema
 from app.services.excel_product_catalog import ExcelProductCatalog
 from app.services.sales_inventory import (
     CancellationConflictError,
@@ -806,6 +808,9 @@ class SalesInventoryTest(unittest.TestCase):
                 "CREATE UNIQUE INDEX idx_erp_sales_source_external "
                 "ON erp_sales(source, external_order_id)"
             )
+        with sqlite3.connect(str(self.database_path)) as connection:
+            connection.row_factory = sqlite3.Row
+            apply_fresh_catalog_schema(connection)
         CatalogDatabase(
             self.database_path,
             cache_initialization=False,
