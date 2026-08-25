@@ -61,6 +61,9 @@ jobs:
       - name: Check production SQLite SQL compatibility
         run: python scripts/migration_preflight.py static-check --source-root .
 
+      - name: Reject untracked runtime DDL
+        run: python scripts/check_runtime_ddl.py
+
       - name: Validate deploy shell
         run: bash -n scripts/deploy.sh
 
