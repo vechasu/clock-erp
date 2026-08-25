@@ -1,22 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test as base } from '@playwright/test';
-
-const test = base.extend<{ failOnConsoleErrors: void }>({
-  failOnConsoleErrors: [
-    async ({ page }, use) => {
-      const errors: string[] = [];
-      page.on('console', (message) => {
-        if (message.type() === 'error') errors.push(message.text());
-      });
-      page.on('pageerror', (error) => errors.push(error.message));
-
-      await use();
-
-      expect(errors).toEqual([]);
-    },
-    { auto: true },
-  ],
-});
+import { expect, test } from '@playwright/test';
 
 const routes = [
   '/app/products',
@@ -33,7 +16,13 @@ const routes = [
 
 for (const route of routes) {
   test(`${route} has no serious or critical axe violations`, async ({ page }) => {
-    await page.goto(route, { waitUntil: 'domcontentloaded' });
+    const browserErrors: string[] = [];
+    page.on('console', (message) => {
+      if (message.type() === 'error') browserErrors.push(message.text());
+    });
+    page.on('pageerror', (error) => browserErrors.push(error.message));
+
+    await page.goto(route, { waitUntil: 'load' });
     const results = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa'])
       .analyze();
@@ -47,6 +36,7 @@ for (const route of routes) {
         targets: nodes.slice(0, 5).map(({ target }) => target),
       })),
     ).toEqual([]);
+    expect(browserErrors).toEqual([]);
   });
 }
 
