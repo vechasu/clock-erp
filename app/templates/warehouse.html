@@ -4028,7 +4028,12 @@
     <script defer src="{{ url_for('static', filename='js/table-scroll-hint.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/erp-modal-shell.js') }}"></script>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/products-workspace.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/erp-focus-mode.css') }}">
     <script defer src="{{ url_for('static', filename='js/products-tabs.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='js/erp-focus-mode.js') }}"></script>
+    {% if config.TESTING and request.args.get("products_focus_mode_e2e") == "1" %}
+        <script defer src="{{ url_for('static', filename='js/products-focus-mode-e2e.js') }}"></script>
+    {% endif %}
     {% if config.TESTING and request.args.get("datetime_e2e") == "1" %}
         <script defer src="{{ url_for('static', filename='js/datetime-cell-e2e.js') }}"></script>
     {% endif %}
@@ -4039,7 +4044,14 @@
     {% from "_navigation_icons.html" import navigation_icon %}
     {% from "_datetime_cell.html" import render_erp_datetime %}
     {% from "_products_workspace.html" import products_workspace_header %}
-    <div class="app">
+    <div
+        class="app"
+        data-erp-focus-mode
+        data-focus-mode-storage-key="vechasu.erp.products.focus-mode.v1"
+        data-focus-mode-subject="таблицу товаров"
+        data-focus-mode-hide=".products-workspace-header,.products-workspace-tabs,.products-workspace-metrics,#appSidebar,.mobile-erp-navigation,.mobile-erp-more-sheet,.mobile-erp-more-backdrop,#sidebarTooltip,#pageNotice,.inventory-lock-panel,#warehouseAddModal,#warehouseLoadingState"
+        data-focus-mode-overlays="#filterDrawer.open,#editDrawer.open,#warehouseColumnSettingsPanel:not([hidden]),.brand-combobox-dropdown,.warehouse-calendar-popup:not([hidden]),.modal.is-open,.mobile-erp-more-sheet.is-open"
+    >
         {% include "_sidebar.html" %}
 
         <main class="main" id="main-content" tabindex="-1">
@@ -4187,7 +4199,7 @@
             </div>
 
             <div class="search-card erp-toolbar-card">
-                <form id="warehouseSearchForm" class="search-form erp-toolbar" method="get" action="/warehouse">
+                <form id="warehouseSearchForm" class="search-form erp-toolbar" method="get" action="/warehouse" data-erp-focus-mode-toolbar>
                     <input type="hidden" name="sort_by" value="{{ sort_by }}">
                     <input type="hidden" name="sort_dir" value="{{ sort_dir }}">
                     <input type="hidden" name="per_page" value="{{ per_page }}">
@@ -4355,6 +4367,29 @@
                             hidden
                         ></div>
                     </div>
+
+                    <button
+                        id="warehouseFocusModeToggle"
+                        class="warehouse-focus-toggle search-tool-button erp-secondary-action"
+                        type="button"
+                        aria-label="Развернуть таблицу товаров"
+                        aria-pressed="false"
+                        aria-expanded="false"
+                        title="Развернуть таблицу товаров"
+                        data-erp-focus-mode-toggle
+                    >
+                        <span aria-hidden="true">
+                            <svg viewBox="0 0 20 20" data-focus-expand-icon>
+                                <path d="M8 3H3v5M12 3h5v5M8 17H3v-5M12 17h5v-5"></path>
+                                <path d="m3 3 5 5m9-5-5 5M3 17l5-5m9 5-5-5"></path>
+                            </svg>
+                            <svg viewBox="0 0 20 20" data-focus-collapse-icon hidden>
+                                <path d="M8 8H3V3M12 8h5V3M8 12H3v5M12 12h5v5"></path>
+                                <path d="M8 8 3 3m9 5 5-5M8 12l-5 5m9-5 5 5"></path>
+                            </svg>
+                        </span>
+                        <span class="warehouse-focus-label" data-focus-mode-label>Развернуть</span>
+                    </button>
 
                 </form>
             </div>
@@ -6623,6 +6658,15 @@
                 warehouseDrawerReturnFocus?.focus();
             }
         }
+
+        document.addEventListener("keydown", function(event) {
+            if (
+                event.key === "Escape"
+                && document.getElementById("filterDrawer")?.classList.contains("open")
+            ) {
+                closeAllDrawers();
+            }
+        });
 
         const warehouseSearchInput = document.getElementById("warehouseSearchInput");
         const warehouseSearchClear = document.getElementById("warehouseSearchClear");
