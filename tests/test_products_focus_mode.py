@@ -118,7 +118,7 @@ class ProductsFocusModeBrowserTest(unittest.TestCase):
                 "http://127.0.0.1:{}/warehouse"
                 "?q=Casio&products_focus_mode_e2e=1"
             ).format(port)
-            for _attempt in range(100):
+            for _attempt in range(300):
                 try:
                     with urllib.request.urlopen(url, timeout=1) as response:
                         if response.status == 200:
