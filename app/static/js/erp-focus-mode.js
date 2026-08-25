@@ -65,6 +65,7 @@
 
         const toggle = root.querySelector("[data-erp-focus-mode-toggle]");
         const storageKey = root.dataset.focusModeStorageKey;
+        const subject = root.dataset.focusModeSubject || "таблицу продаж";
         if (!toggle || !storageKey) {
             return null;
         }
@@ -120,10 +121,11 @@
             root.classList.toggle("erp-focus-mode", enabled);
             hiddenElements.forEach(enabled ? rememberAndHide : restoreElement);
             toggle.setAttribute("aria-pressed", String(enabled));
+            toggle.setAttribute("aria-expanded", String(enabled));
 
             const action = enabled ? "Свернуть" : "Развернуть";
-            toggle.setAttribute("aria-label", action + " таблицу продаж");
-            toggle.title = action + " таблицу продаж";
+            toggle.setAttribute("aria-label", action + " " + subject);
+            toggle.title = action + " " + subject;
             if (label) {
                 label.textContent = action;
             }

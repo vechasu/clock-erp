@@ -1,4 +1,4 @@
-/* Focus-mode layout is intentionally scoped to the sales workspace. */
+/* Each focus-mode layout is scoped to its own workspace. */
 .sales-page .app.erp-focus-mode {
     height: 100vh;
     height: 100dvh;
@@ -94,6 +94,130 @@ body.sales-page:has(.app.erp-focus-mode) {
     overflow: hidden;
 }
 
+.warehouse-page .app.erp-focus-mode {
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    padding-left: 0;
+    overflow: hidden;
+}
+
+.warehouse-page .app.erp-focus-mode [hidden] {
+    display: none !important;
+}
+
+.warehouse-page .app.erp-focus-mode > .main {
+    height: 100%;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 18px 20px;
+    overflow: hidden;
+}
+
+.warehouse-page .app.erp-focus-mode .erp-active-filters,
+.warehouse-page .app.erp-focus-mode .search-card {
+    flex: 0 0 auto;
+}
+
+.warehouse-page .app.erp-focus-mode .search-card {
+    position: relative;
+    z-index: 140;
+    margin-bottom: 10px;
+    border-color: #d9e1ec;
+    box-shadow:
+        0 8px 22px rgba(15, 23, 42, 0.08),
+        0 1px 0 rgba(15, 23, 42, 0.04);
+}
+
+.warehouse-page .app.erp-focus-mode #warehouseResults {
+    min-height: 0;
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.warehouse-page .app.erp-focus-mode .warehouse-table-scroll-top {
+    display: none !important;
+}
+
+.warehouse-page .app.erp-focus-mode #warehouseTableScrollBody {
+    min-height: 0;
+    display: block;
+    flex: 1 1 auto;
+    overflow: auto !important;
+    overscroll-behavior: contain;
+}
+
+.warehouse-page .app.erp-focus-mode .warehouse-products-table thead th {
+    position: sticky;
+    z-index: 35;
+    top: 0;
+    box-shadow:
+        inset 0 -1px 0 #d1d9e4,
+        0 5px 10px rgba(15, 23, 42, 0.07);
+}
+
+.warehouse-page .app.erp-focus-mode .erp-table-pagination {
+    flex: 0 0 auto;
+}
+
+.warehouse-page .warehouse-focus-toggle:focus-visible {
+    outline: 0;
+    border-color: #93b4ff;
+    box-shadow: var(--erp-focus-ring);
+}
+
+.warehouse-page .warehouse-focus-toggle[aria-pressed="true"] {
+    border-color: #b8cdfb;
+    background: #f3f7ff;
+    color: #1d4ed8;
+}
+
+.warehouse-page .warehouse-focus-toggle > span {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+}
+
+.warehouse-page .warehouse-focus-toggle svg {
+    width: 18px;
+    height: 18px;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.7;
+}
+
+.warehouse-page .warehouse-focus-toggle [hidden] {
+    display: none;
+}
+
+.warehouse-page:has(.app.erp-focus-mode) #drawerBackdrop {
+    z-index: 150;
+}
+
+.warehouse-page:has(.app.erp-focus-mode) :is(#filterDrawer, #editDrawer) {
+    z-index: 160;
+}
+
+body.warehouse-page:has(.app.erp-focus-mode) {
+    height: 100vh;
+    height: 100dvh;
+    padding-bottom: 0;
+    overflow-x: hidden !important;
+    overflow-y: hidden !important;
+}
+
+html:has(body.warehouse-page .app.erp-focus-mode) {
+    height: 100vh;
+    height: 100dvh;
+    overflow-x: hidden;
+    overflow-y: hidden;
+}
+
 @media (max-width: 767px) {
     .sales-page .sales-data-toolbar .sales-focus-toggle {
         order: 4;
@@ -122,6 +246,20 @@ body.sales-page:has(.app.erp-focus-mode) {
 
     .sales-page .app.erp-focus-mode .sales-mobile-sort {
         order: 6;
+    }
+
+    .warehouse-page .app.erp-focus-mode > .main {
+        padding: 12px;
+    }
+
+    .warehouse-page .app.erp-focus-mode .search-form.erp-toolbar {
+        align-items: stretch;
+        flex-wrap: wrap;
+    }
+
+    .warehouse-page .app.erp-focus-mode .search-form.erp-toolbar > .erp-search-wrap {
+        width: 100%;
+        flex-basis: 100%;
     }
 }
 
@@ -153,6 +291,24 @@ body.sales-page:has(.app.erp-focus-mode) {
     }
 
     .sales-page .app.erp-focus-mode .sales-column-settings-trigger .sales-toolbar-action-content > span:last-child {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+    }
+
+    .warehouse-page .warehouse-focus-toggle {
+        width: 44px;
+        min-width: 44px;
+        padding-right: 10px;
+        padding-left: 10px;
+    }
+
+    .warehouse-page .warehouse-focus-toggle .warehouse-focus-label {
         position: absolute;
         width: 1px;
         height: 1px;
