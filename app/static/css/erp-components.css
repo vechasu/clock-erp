@@ -7603,6 +7603,12 @@ select.erp-control {
     grid-template-columns: minmax(280px, 1fr) auto auto auto;
 }
 
+@media (max-width: 767px) {
+    .warehouse-page .search-form.erp-toolbar {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
 .sales-page .erp-workspace-metrics {
     width: 100%;
     max-width: none;
