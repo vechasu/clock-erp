@@ -1,80 +1,182 @@
 import base64
 from concurrent.futures import ThreadPoolExecutor
+import ipaddress
+import logging
+import socket
+from urllib.parse import urljoin, urlsplit
 
 import requests
 from app.config import MOYSKLAD_TOKEN
 
 
+LOGGER = logging.getLogger(__name__)
+MOYSKLAD_TRUSTED_ORIGINS = {
+    ("https", "api.moysklad.ru", 443),
+    ("https", "miniature-prod.moysklad.ru", 443),
+    ("https", "tinyimage-prod.moysklad.ru", 443),
+}
+IMAGE_CONTENT_TYPES = {
+    "image/jpeg": (b"\xff\xd8\xff",),
+    "image/png": (b"\x89PNG\r\n\x1a\n",),
+    "image/gif": (b"GIF87a", b"GIF89a"),
+    "image/webp": (b"RIFF",),
+}
+MAX_THUMBNAIL_BYTES = 2 * 1024 * 1024
+MAX_IMAGE_REDIRECTS = 3
+
+
+class MoySkladError(RuntimeError):
+    """Sanitized integration error which never contains credentials or URLs."""
+
+    def __init__(self, message, code="MOYSKLAD_ERROR", status=None):
+        super().__init__(message)
+        self.code = code
+        self.status = status
+
+
+def _blocked_url(reason, hostname="", code="MOYSKLAD_BLOCKED_URL"):
+    safe_hostname = "".join(
+        character for character in str(hostname or "").casefold()[:100]
+        if character.isalnum() or character in ".-:"
+    )
+    LOGGER.warning(
+        "MoySklad request blocked operation=image category=%s host=%s",
+        reason,
+        safe_hostname or "unparsed",
+    )
+    return MoySkladError("URL заблокирован политикой МойСклад", code)
+
+
+def _trusted_moysklad_url(url, resolve=False, resolver=None):
+    """Validate an exact MoySklad HTTPS origin before attaching credentials."""
+    value = str(url or "").strip()
+    try:
+        parsed = urlsplit(value)
+        port = parsed.port
+    except (TypeError, ValueError):
+        raise _blocked_url("parse_error")
+    hostname = parsed.hostname or ""
+    if (
+        parsed.scheme.casefold() != "https"
+        or not hostname
+        or hostname.endswith(".")
+        or parsed.username is not None
+        or parsed.password is not None
+        or (parsed.scheme.casefold(), hostname.casefold(), port or 443)
+        not in MOYSKLAD_TRUSTED_ORIGINS
+    ):
+        raise _blocked_url("origin_policy", hostname)
+    if resolve:
+        lookup = resolver or socket.getaddrinfo
+        try:
+            records = lookup(hostname, port or 443, 0, socket.SOCK_STREAM)
+            addresses = {record[4][0].split("%", 1)[0] for record in records}
+            safe = bool(addresses) and all(
+                ipaddress.ip_address(address).is_global for address in addresses
+            )
+        except (OSError, ValueError):
+            raise _blocked_url("dns_error", hostname)
+        if not safe:
+            raise _blocked_url("non_public_dns", hostname)
+    return parsed.geturl()
+
+
+def _valid_image_signature(content, content_type):
+    signatures = IMAGE_CONTENT_TYPES.get(content_type) or ()
+    if content_type == "image/webp":
+        return (
+            len(content) >= 12
+            and content.startswith(b"RIFF")
+            and content[8:12] == b"WEBP"
+        )
+    return any(content.startswith(signature) for signature in signatures)
+
+
+def _origin(url):
+    parsed = urlsplit(url)
+    return parsed.scheme.casefold(), (parsed.hostname or "").casefold(), parsed.port or 443
+
+
 class MoySkladClient:
     BASE_URL = "https://api.moysklad.ru/api/remap/1.2"
 
-    def __init__(self):
+    def __init__(self, token=None, session=None, resolver=None):
+        self.token = str(MOYSKLAD_TOKEN if token is None else token or "").strip()
+        self.session = session or requests.Session()
+        if session is None:
+            self.session.trust_env = False
+        self.resolver = resolver
         self.headers = {
-            "Authorization": f"Bearer {MOYSKLAD_TOKEN}",
             "Accept": "application/json;charset=utf-8",
             "Content-Type": "application/json;charset=utf-8",
         }
+        if self.token:
+            self.headers["Authorization"] = "Bearer " + self.token
+
+    def _require_configured(self):
+        if not self.token:
+            raise MoySkladError("Интеграция МойСклад не настроена", "MOYSKLAD_DISABLED")
+
+    def _api_url(self, endpoint):
+        self._require_configured()
+        endpoint = str(endpoint or "")
+        if not endpoint.startswith("/") or endpoint.startswith("//"):
+            raise MoySkladError("Некорректный endpoint МойСклад", "MOYSKLAD_BLOCKED_URL")
+        url = self.BASE_URL + endpoint
+        _trusted_moysklad_url(url)
+        return url
+
+    def _request_json(self, method, endpoint, params=None, payload=None):
+        try:
+            response = self.session.request(
+                method,
+                self._api_url(endpoint),
+                headers=self.headers,
+                params=params,
+                json=payload,
+                timeout=(3.05, 8),
+                allow_redirects=False,
+            )
+        except MoySkladError:
+            raise
+        except requests.Timeout:
+            raise MoySkladError("МойСклад не ответил вовремя", "MOYSKLAD_TIMEOUT") from None
+        except requests.RequestException:
+            raise MoySkladError("МойСклад временно недоступен", "MOYSKLAD_UNAVAILABLE") from None
+        if 300 <= response.status_code < 400:
+            raise MoySkladError("Неожиданный redirect МойСклад", "MOYSKLAD_BLOCKED_REDIRECT")
+        if response.status_code == 429:
+            raise MoySkladError("Превышен лимит запросов МойСклад", "MOYSKLAD_RATE_LIMITED", 429)
+        if response.status_code >= 400:
+            raise MoySkladError(
+                "МойСклад вернул HTTP {}".format(response.status_code),
+                "MOYSKLAD_HTTP_ERROR",
+                response.status_code,
+            )
+        if method == "DELETE":
+            return True
+        try:
+            return response.json()
+        except ValueError:
+            raise MoySkladError("МойСклад вернул некорректный JSON", "MOYSKLAD_INVALID_RESPONSE") from None
 
     def get(self, endpoint, params=None):
-        response = requests.get(
-            f"{self.BASE_URL}{endpoint}",
-            headers=self.headers,
-            params=params,
-            timeout=8,
-        )
-
-        if response.status_code >= 400:
-            print("Error:", response.status_code)
-            print(response.text)
-            return None
-
-        return response.json()
+        return self._request_json("GET", endpoint, params=params)
 
     def post(self, endpoint, payload):
-        url = f"{self.BASE_URL}{endpoint}"
-
-        response = requests.post(
-            url,
-            headers=self.headers,
-            json=payload,
-            timeout=8
-        )
-
-        response.raise_for_status()
-        return response.json()
+        return self._request_json("POST", endpoint, payload=payload)
 
     def put(self, endpoint, payload):
-        response = requests.put(
-            f"{self.BASE_URL}{endpoint}",
-            headers=self.headers,
-            json=payload,
-            timeout=8,
-        )
-
-        if response.status_code >= 400:
-            print("Error:", response.status_code)
-            print(response.text)
-            return None
-
-        return response.json()
+        return self._request_json("PUT", endpoint, payload=payload)
 
     # === RECEIPT DOCUMENT ACTIONS CLIENT V1 ===
     def delete(self, endpoint):
-        response = requests.delete(
-            f"{self.BASE_URL}{endpoint}",
-            headers=self.headers,
-            timeout=8,
-        )
-
-        if response.status_code == 404:
-            return True
-
-        if response.status_code >= 400:
-            print("Delete error:", response.status_code)
-            print(response.text)
-            return False
-
-        return True
+        try:
+            return self._request_json("DELETE", endpoint)
+        except MoySkladError as error:
+            if error.status == 404:
+                return True
+            raise
     # === RECEIPT DOCUMENT ACTIONS CLIENT V1 END ===
 
 
@@ -165,26 +267,109 @@ class MoySkladClient:
         if not url:
             return None
 
-        response = requests.get(
-            url,
-            headers=self.headers,
-            timeout=8,
-            allow_redirects=True,
-        )
-        response.raise_for_status()
-
-        content = response.content
-        content_type = str(
-            response.headers.get("Content-Type") or ""
-        ).split(";", 1)[0].strip().lower()
-
-        if not content or not content_type.startswith("image/"):
-            return None
-
-        if len(content) > 2 * 1024 * 1024:
-            raise ValueError("Миниатюра товара слишком большая")
-
-        return content, content_type
+        self._require_configured()
+        current = _trusted_moysklad_url(url, resolve=True, resolver=self.resolver)
+        visited = set()
+        for redirect_count in range(MAX_IMAGE_REDIRECTS + 1):
+            if current in visited:
+                raise MoySkladError("Циклический redirect МойСклад", "MOYSKLAD_BLOCKED_REDIRECT")
+            visited.add(current)
+            response = None
+            try:
+                response = self.session.get(
+                    current,
+                    headers={
+                        "Authorization": "Bearer " + self.token,
+                        "Accept": "image/jpeg,image/png,image/gif,image/webp",
+                    },
+                    timeout=(3.05, 8),
+                    stream=True,
+                    allow_redirects=False,
+                )
+                if response.status_code in {301, 302, 303, 307, 308}:
+                    location = response.headers.get("Location") or ""
+                    if not location or redirect_count >= MAX_IMAGE_REDIRECTS:
+                        raise MoySkladError(
+                            "Небезопасный redirect изображения МойСклад",
+                            "MOYSKLAD_BLOCKED_REDIRECT",
+                        )
+                    redirected = _trusted_moysklad_url(
+                        urljoin(current, location), resolve=True, resolver=self.resolver
+                    )
+                    if _origin(redirected) != _origin(current):
+                        LOGGER.warning(
+                            "MoySklad request blocked operation=image "
+                            "category=cross_origin_redirect host=%s",
+                            _origin(redirected)[1],
+                        )
+                        raise MoySkladError(
+                            "Redirect изображения МойСклад заблокирован",
+                            "MOYSKLAD_BLOCKED_REDIRECT",
+                        )
+                    current = redirected
+                    continue
+                if response.status_code == 429:
+                    raise MoySkladError(
+                        "Превышен лимит запросов МойСклад",
+                        "MOYSKLAD_RATE_LIMITED",
+                        429,
+                    )
+                if response.status_code >= 400:
+                    raise MoySkladError(
+                        "МойСклад вернул HTTP {}".format(response.status_code),
+                        "MOYSKLAD_HTTP_ERROR",
+                        response.status_code,
+                    )
+                content_type = str(response.headers.get("Content-Type") or "").split(
+                    ";", 1
+                )[0].strip().lower()
+                if content_type not in IMAGE_CONTENT_TYPES:
+                    raise MoySkladError(
+                        "МойСклад вернул неподдерживаемый тип изображения",
+                        "MOYSKLAD_INVALID_IMAGE",
+                    )
+                try:
+                    declared_size = int(response.headers.get("Content-Length") or 0)
+                except (TypeError, ValueError):
+                    declared_size = 0
+                if declared_size > MAX_THUMBNAIL_BYTES:
+                    raise MoySkladError(
+                        "Миниатюра товара слишком большая", "MOYSKLAD_IMAGE_TOO_LARGE"
+                    )
+                chunks = []
+                size = 0
+                for chunk in response.iter_content(64 * 1024):
+                    if not chunk:
+                        continue
+                    size += len(chunk)
+                    if size > MAX_THUMBNAIL_BYTES:
+                        raise MoySkladError(
+                            "Миниатюра товара слишком большая",
+                            "MOYSKLAD_IMAGE_TOO_LARGE",
+                        )
+                    chunks.append(chunk)
+                content = b"".join(chunks)
+                if not content or not _valid_image_signature(content, content_type):
+                    raise MoySkladError(
+                        "МойСклад вернул некорректное изображение",
+                        "MOYSKLAD_INVALID_IMAGE",
+                    )
+                return content, content_type
+            except MoySkladError:
+                raise
+            except requests.Timeout:
+                raise MoySkladError(
+                    "МойСклад не ответил вовремя", "MOYSKLAD_TIMEOUT"
+                ) from None
+            except requests.RequestException:
+                raise MoySkladError(
+                    "Не удалось скачать изображение МойСклад",
+                    "MOYSKLAD_UNAVAILABLE",
+                ) from None
+            finally:
+                if response is not None:
+                    response.close()
+        raise MoySkladError("Слишком много redirect МойСклад", "MOYSKLAD_BLOCKED_REDIRECT")
 
     def upload_product_image(self, product_id, filename, content):
         product_id = str(product_id or "").strip()
