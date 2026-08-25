@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest import mock
 
 from app import web
+from app.domain_schema_migrations import apply_domain_migrations
 from app.services.customer_identity import (
     CustomerStore,
     analyze_orders,
@@ -55,6 +56,7 @@ class CustomerMatchingTest(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.store = OrdersSnapshotStore(Path(self.temporary.name) / "orders.db")
+        apply_domain_migrations(self.store.path, "orders", "test")
         self.store.initialize()
         self.connection = self.store.connect()
 
@@ -138,6 +140,7 @@ class CustomerBackfillTest(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.store = OrdersSnapshotStore(Path(self.temporary.name) / "orders.db")
+        apply_domain_migrations(self.store.path, "orders", "test")
 
     def tearDown(self):
         self.temporary.cleanup()
@@ -179,6 +182,7 @@ class CustomerRoutesTest(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.path = Path(self.temporary.name) / "orders.db"
+        apply_domain_migrations(self.path, "orders", "test")
         OrdersSnapshotStore(self.path).replace([order(1), order(2)], 1)
         web.app.config.update(TESTING=True)
         self.client = web.app.test_client()

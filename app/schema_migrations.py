@@ -33,6 +33,25 @@ BASELINE_DEFINITION = "\n".join((
 BASELINE_CHECKSUM = hashlib.sha256(
     BASELINE_DEFINITION.encode("utf-8")
 ).hexdigest()
+COMMENTS_MIGRATION_ID = "2026-08-26-order-comments-baseline-v1"
+COMMENTS_MIGRATION_NAME = "Verified order comments schema baseline"
+COMMENT_INDEX_STATEMENTS = (
+    "CREATE UNIQUE INDEX idx_erp_order_comments_external "
+    "ON erp_order_comments(external_system, external_id)",
+    "CREATE INDEX idx_erp_order_comments_sync "
+    "ON erp_order_comments(sync_status, next_retry_at, id)",
+)
+COMMENTS_MIGRATION_DEFINITION = "\n".join((
+    COMMENTS_MIGRATION_ID,
+    COMMENTS_MIGRATION_NAME,
+    "order-comments-contract-v1",
+    "sqlite-3.7-nullable-composite-unique-index",
+    "columns:updated_at,external_system,external_id,external_updated_at,"
+    "sync_status,sync_hash,source,sync_attempts,next_retry_at,last_sync_error",
+) + COMMENT_INDEX_STATEMENTS)
+COMMENTS_MIGRATION_CHECKSUM = hashlib.sha256(
+    COMMENTS_MIGRATION_DEFINITION.encode("utf-8")
+).hexdigest()
 
 MIGRATIONS = (
     {
@@ -41,6 +60,13 @@ MIGRATIONS = (
         "checksum": BASELINE_CHECKSUM,
         "transactional": False,
         "recovery": "restore verified database backup while service is stopped",
+    },
+    {
+        "id": COMMENTS_MIGRATION_ID,
+        "name": COMMENTS_MIGRATION_NAME,
+        "checksum": COMMENTS_MIGRATION_CHECKSUM,
+        "transactional": True,
+        "recovery": "restore verified catalog database backup while service is stopped",
     },
 )
 
@@ -79,6 +105,39 @@ REQUIRED_COMMENT_COLUMNS = {
     "next_retry_at",
     "last_sync_error",
 }
+
+EXPECTED_COMMENT_COLUMNS = (
+    ("id", "INTEGER", 0, None, 1),
+    ("order_id", "TEXT", 1, None, 0),
+    ("text", "TEXT", 1, None, 0),
+    ("author_name", "TEXT", 1, None, 0),
+    ("author_user_id", "TEXT", 0, None, 0),
+    ("created_at", "TEXT", 1, None, 0),
+    ("updated_at", "TEXT", 0, None, 0),
+    ("external_system", "TEXT", 0, None, 0),
+    ("external_id", "TEXT", 0, None, 0),
+    ("external_updated_at", "TEXT", 0, None, 0),
+    ("sync_status", "TEXT", 1, "'not_applicable'", 0),
+    ("sync_hash", "TEXT", 0, None, 0),
+    ("source", "TEXT", 1, "'erp'", 0),
+    ("sync_attempts", "INTEGER", 1, "0", 0),
+    ("next_retry_at", "TEXT", 0, None, 0),
+    ("last_sync_error", "TEXT", 0, None, 0),
+)
+LEGACY_COMMENT_COLUMNS = EXPECTED_COMMENT_COLUMNS[:6]
+PARTIAL_COMMENT_COLUMNS = EXPECTED_COMMENT_COLUMNS[:9]
+COMMENT_COLUMN_ADDITIONS = (
+    ("updated_at", "TEXT"),
+    ("external_system", "TEXT"),
+    ("external_id", "TEXT"),
+    ("external_updated_at", "TEXT"),
+    ("sync_status", "TEXT NOT NULL DEFAULT 'not_applicable'"),
+    ("sync_hash", "TEXT"),
+    ("source", "TEXT NOT NULL DEFAULT 'erp'"),
+    ("sync_attempts", "INTEGER NOT NULL DEFAULT 0"),
+    ("next_retry_at", "TEXT"),
+    ("last_sync_error", "TEXT"),
+)
 
 LEDGER_COLUMNS = {
     "migration_id",
@@ -290,7 +349,11 @@ def schema_source_checksum():
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
-def verify_schema_contract(connection):
+def verify_schema_contract(
+    connection,
+    require_comment_indexes=True,
+    allow_legacy_comments=False,
+):
     tables = _table_names(connection)
     missing_tables = sorted(REQUIRED_TABLES - tables)
     if missing_tables:
@@ -299,14 +362,20 @@ def verify_schema_contract(connection):
                 ", ".join(missing_tables)
             )
         )
-    missing_comments = sorted(
-        REQUIRED_COMMENT_COLUMNS - _columns(connection, "erp_order_comments")
+    actual_comment_columns = tuple(
+        (str(row[1]), str(row[2] or "").upper(), int(row[3]), row[4], int(row[5]))
+        for row in connection.execute("PRAGMA table_info(erp_order_comments)").fetchall()
     )
-    if missing_comments:
+    known_legacy = actual_comment_columns in (
+        LEGACY_COMMENT_COLUMNS,
+        PARTIAL_COMMENT_COLUMNS,
+    )
+    if (
+        sorted(actual_comment_columns) != sorted(EXPECTED_COMMENT_COLUMNS)
+        and not (allow_legacy_comments and known_legacy)
+    ):
         raise MigrationError(
-            "schema contract: erp_order_comments missing columns: {}".format(
-                ", ".join(missing_comments)
-            )
+            "schema contract: erp_order_comments column semantics differ"
         )
     missing_ledger = sorted(
         LEDGER_COLUMNS - _columns(connection, LEDGER_TABLE)
@@ -317,6 +386,8 @@ def verify_schema_contract(connection):
                 ", ".join(missing_ledger)
             )
         )
+    if not require_comment_indexes or known_legacy:
+        return True
     index = connection.execute(
         "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?",
         ("idx_erp_order_comments_external",),
@@ -348,6 +419,67 @@ def verify_schema_contract(connection):
         raise MigrationError(
             "schema contract: external comment index is not unique"
         )
+    return True
+
+
+def apply_order_comments_migration(connection, ddl_observer=None):
+    """Verify the production comment schema; never guess a partial state."""
+    tables = _table_names(connection)
+    if "erp_order_comments" not in tables or "erp_order_comment_sync_state" not in tables:
+        raise MigrationError("order comments migration: required tables are missing")
+    actual = tuple(
+        (str(row[1]), str(row[2] or "").upper(), int(row[3]), row[4], int(row[5]))
+        for row in connection.execute("PRAGMA table_info(erp_order_comments)").fetchall()
+    )
+    if actual not in (
+        EXPECTED_COMMENT_COLUMNS,
+        LEGACY_COMMENT_COLUMNS,
+        PARTIAL_COMMENT_COLUMNS,
+    ):
+        raise MigrationError(
+            "order comments migration: unknown or partial column state"
+        )
+    existing_columns = {column[0] for column in actual}
+    duplicate = connection.execute(
+        "SELECT external_system, external_id FROM erp_order_comments "
+        "WHERE external_system IS NOT NULL AND external_id IS NOT NULL "
+        "GROUP BY external_system, external_id HAVING COUNT(*) > 1 LIMIT 1"
+    ).fetchone() if {"external_system", "external_id"}.issubset(existing_columns) else None
+    if duplicate:
+        raise MigrationError("order comments migration: duplicate external identity")
+    if actual != EXPECTED_COMMENT_COLUMNS:
+        for name, declaration in COMMENT_COLUMN_ADDITIONS:
+            if name not in existing_columns:
+                statement = "ALTER TABLE erp_order_comments ADD COLUMN {} {}".format(
+                    name, declaration
+                )
+                if ddl_observer is not None:
+                    ddl_observer(" ".join(statement.split()))
+                connection.execute(statement)
+        connection.execute(
+            "UPDATE erp_order_comments SET updated_at = created_at "
+            "WHERE updated_at IS NULL OR trim(updated_at) = ''"
+        )
+    index_names = {
+        str(row[1]) for row in connection.execute(
+            "PRAGMA index_list(erp_order_comments)"
+        ).fetchall()
+    }
+    migration_indexes = {
+        "idx_erp_order_comments_external",
+        "idx_erp_order_comments_sync",
+    }
+    present = migration_indexes & index_names
+    if present and present != migration_indexes:
+        raise MigrationError(
+            "order comments migration: partial migration index state"
+        )
+    if not present:
+        for statement in COMMENT_INDEX_STATEMENTS:
+            if ddl_observer is not None:
+                ddl_observer(" ".join(statement.split()))
+            connection.execute(statement)
+    verify_schema_contract(connection)
     return True
 
 
@@ -489,14 +621,37 @@ def apply_migrations(database_path, app_commit="", ddl_observer=None):
                 connection.close()
 
             try:
-                CatalogDatabase(
-                    path,
-                    cache_initialization=False,
-                    ddl_observer=ddl_observer,
-                ).initialize(allow_schema_changes=True)
+                if migration["id"] == BASELINE_ID:
+                    CatalogDatabase(
+                        path,
+                        cache_initialization=False,
+                        ddl_observer=ddl_observer,
+                    ).initialize(allow_schema_changes=True)
+                elif migration["id"] == COMMENTS_MIGRATION_ID:
+                    connection = sqlite3.connect(str(path))
+                    try:
+                        connection.execute("PRAGMA foreign_keys = ON")
+                        connection.execute("BEGIN IMMEDIATE")
+                        apply_order_comments_migration(connection, ddl_observer)
+                        connection.commit()
+                    except Exception:
+                        connection.rollback()
+                        raise
+                    finally:
+                        connection.close()
+                else:
+                    raise MigrationError(
+                        "no migration operation registered: {}".format(
+                            migration["id"]
+                        )
+                    )
                 connection = sqlite3.connect(str(path))
                 try:
-                    verify_schema_contract(connection)
+                    verify_schema_contract(
+                        connection,
+                        require_comment_indexes=migration["id"] != BASELINE_ID,
+                        allow_legacy_comments=migration["id"] == BASELINE_ID,
+                    )
                     require_integrity(connection, migration["id"])
                     connection.execute(
                         "UPDATE {} SET state = 'applied', applied_at = ?, "
@@ -677,7 +832,12 @@ def sqlite_backup(source, target, sqlite_binary="sqlite3"):
 
 def validate_known_sql_compatibility(source_root):
     source_root = Path(source_root)
-    paths = [source_root / "app" / "catalog_db.py"]
+    paths = [
+        source_root / "app" / "catalog_db.py",
+    ]
+    domain_migrations = source_root / "app" / "domain_schema_migrations.py"
+    if domain_migrations.exists():
+        paths.append(domain_migrations)
     paths.extend(sorted((source_root / "scripts").glob("migrate_*.py")))
     forbidden = (
         (re.compile(r"\bON\s+CONFLICT\b", re.I), "modern UPSERT"),

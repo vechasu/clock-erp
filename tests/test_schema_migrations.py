@@ -13,6 +13,7 @@ from app.schema_migrations import (
     BASELINE_ID,
     LEDGER_SQL,
     LEDGER_TABLE,
+    MIGRATIONS,
     MigrationBusyError,
     MigrationError,
     MigrationLock,
@@ -70,7 +71,7 @@ class SchemaMigrationTest(unittest.TestCase):
             ).fetchone()[0], "ok")
         self.assertEqual(row[1], BASELINE_CHECKSUM)
         self.assertEqual(row[2:], ("applied", "fresh"))
-        self.assertEqual(result["latest_migration"], BASELINE_ID)
+        self.assertEqual(result["latest_migration"], MIGRATIONS[-1]["id"])
 
     def test_previous_untracked_schema_upgrades_without_losing_data(self):
         self.initialize()
@@ -112,7 +113,7 @@ class SchemaMigrationTest(unittest.TestCase):
             count = connection.execute(
                 "SELECT COUNT(*) FROM {}".format(LEDGER_TABLE)
             ).fetchone()[0]
-        self.assertEqual(count, 1)
+        self.assertEqual(count, len(MIGRATIONS))
 
     def test_interruption_leaves_explicit_failed_state_and_stops_retry(self):
         original = CatalogDatabase._initialize_schema

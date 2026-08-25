@@ -7,6 +7,7 @@ from unittest import mock
 
 from app import web
 from app.auth import AuthStore
+from app.domain_schema_migrations import apply_domain_migrations
 from app.services import repair_cases
 from app.services.repair_cases import (
     REPAIR_SCHEMA_VERSION,
@@ -555,6 +556,7 @@ class RepairsFullCycleTest(unittest.TestCase):
 
     def test_authenticated_mutation_requires_csrf_and_employee_cannot_manual_status(self):
         auth_path = self.root / "auth.db"
+        apply_domain_migrations(auth_path, "auth", "test")
         store = AuthStore(auth_path)
         user_id = store.create_initial_admin("Иван", "Сотрудник", "employee@example.test", "StrongPassword!234")
         with store.connect() as connection:

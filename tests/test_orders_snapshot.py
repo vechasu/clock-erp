@@ -7,6 +7,7 @@ from unittest import mock
 
 from app import web
 from app.catalog_db import CatalogDatabase
+from app.domain_schema_migrations import apply_domain_migrations
 from app.services.orders_snapshot import OrdersSnapshotStore
 
 
@@ -33,6 +34,7 @@ class OrdersSnapshotStoreTest(unittest.TestCase):
         self.store = OrdersSnapshotStore(
             Path(self.temporary.name) / "orders.db"
         )
+        apply_domain_migrations(self.store.path, "orders", "test")
         self.orders = [order_row(index) for index in range(455)]
         self.store.replace(self.orders, 1000)
 
@@ -123,6 +125,7 @@ class OrdersSnapshotStoreTest(unittest.TestCase):
         backfill_store = OrdersSnapshotStore(
             Path(self.temporary.name) / "backfill-orders.db"
         )
+        apply_domain_migrations(backfill_store.path, "orders", "test")
         summaries = [
             dict(row, products=[], customer="", phone="")
             for row in self.orders[:3]
@@ -176,6 +179,7 @@ class OrdersSnapshotStoreTest(unittest.TestCase):
                 "loaded_at REAL NOT NULL)"
             )
 
+        apply_domain_migrations(legacy_path, "orders", "test")
         legacy_store = OrdersSnapshotStore(legacy_path).initialize()
 
         with legacy_store.connection() as connection:
@@ -193,6 +197,7 @@ class OrdersListIntegrationTest(unittest.TestCase):
         self.original_config = dict(web.app.config)
         self.temporary = tempfile.TemporaryDirectory()
         self.orders_path = Path(self.temporary.name) / "orders.db"
+        apply_domain_migrations(self.orders_path, "orders", "test")
         self.orders = [order_row(index) for index in range(75)]
         web.app.config.update(
             TESTING=True,

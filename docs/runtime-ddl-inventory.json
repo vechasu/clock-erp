@@ -1,5 +1,5 @@
 {
-  "baseline_commit": "db28de11299351675fad99778b3b26a46ef3ba82",
+  "baseline_commit": "b3a1fd809aa2d3a7980616724a97439722de72f7",
   "production_runtime": {
     "python": "3.6.8",
     "sqlite": "3.7.17",
@@ -24,36 +24,12 @@
       "file": "app/catalog_db.py",
       "node_type": "function",
       "symbol": "CatalogDatabase._initialize_schema",
-      "sha256": "c8f5435d6bd8527bc6ce0410d471aaa1e3bd0aa638a52e5c1dedb252eea8f927",
+      "sha256": "feb63bcb16115be559dc22de07ccd8ae985fc5d3a135d64720aa77fe23a9a605",
       "owner": "catalog-core",
       "planned_pr": "PR-G",
       "category": "A",
       "risk": "P1",
       "production_reachable": "Fail-open to legacy DDL when the runtime guard sentinel is absent"
-    },
-    {
-      "id": "RDDL-AUTH-ENSURE",
-      "file": "app/auth.py",
-      "node_type": "function",
-      "symbol": "AuthStore._ensure_schema",
-      "sha256": "08d710201fac33ffee4ea4fae8514ee66df9861b6912925ab294d4d7295bc431",
-      "owner": "auth-roles",
-      "planned_pr": "PR-B",
-      "category": "A",
-      "risk": "P0",
-      "production_reachable": "Every worker import and every AuthStore construction, including every authenticated request"
-    },
-    {
-      "id": "RDDL-ORDERS-SNAPSHOT",
-      "file": "app/services/orders_snapshot.py",
-      "node_type": "function",
-      "symbol": "OrdersSnapshotStore.initialize",
-      "sha256": "c76f8d7920b1eda31afc0bcfc8708aaca5cf24e7ca535d627a11fe707c9e26f0",
-      "owner": "orders-customers",
-      "planned_pr": "PR-A",
-      "category": "A",
-      "risk": "P0",
-      "production_reachable": "Order/customer HTTP reads, cache refresh and background item-unit refresh"
     },
     {
       "id": "DDL-LEDGER-RUNNER",
@@ -68,9 +44,19 @@
       "production_reachable": "Deploy-time runner only while the service is stopped"
     }
   ],
+  "migration_modules": [
+    {
+      "file": "app/schema_migrations.py",
+      "sha256": "895d7ae32dfb8db36590cd4d554547aed93bc8f50f985212b0b123590d371259",
+      "owner": "migration-platform"
+    },
+    {
+      "file": "app/domain_schema_migrations.py",
+      "sha256": "7b68ed97f49f6b3324e62dec66660461e7f5c53c5e97f0f528de45015b17eb31",
+      "owner": "auth-orders-migrations"
+    }
+  ],
   "ensure_functions": [
-    {"file":"app/auth.py","symbol":"AuthStore._ensure_schema","sha256":"08d710201fac33ffee4ea4fae8514ee66df9861b6912925ab294d4d7295bc431","ddl":true,"owner":"auth-roles","planned_pr":"PR-B"},
-    {"file":"app/catalog_db.py","symbol":"CatalogDatabase._ensure_order_comment_schema","sha256":"f7601f46141dbb3dc6fed93dcd61ba5fefc5ab984f30a6e1f1600b9f78bacccd","ddl":true,"owner":"order-comments","planned_pr":"PR-A"},
     {"file":"app/catalog_db.py","symbol":"CatalogDatabase._ensure_order_item_mapping_schema","sha256":"98469a8d3c5640e0f0e53dcde27eb464c957825b4912b346d733fe75897091fa","ddl":true,"owner":"orders","planned_pr":"PR-F"},
     {"file":"app/catalog_db.py","symbol":"CatalogDatabase._ensure_brand_image_columns","sha256":"07ad3e0bce6e8211e2e3c57019064a495763cad3b5cc2521ab2ef9b73b2f8c89","ddl":true,"owner":"catalog-taxonomy","planned_pr":"PR-E"},
     {"file":"app/catalog_db.py","symbol":"CatalogDatabase._ensure_inventory_constraints","sha256":"90d6f39f714b24a87b76de2ed38a9d6e28f99f6c4971791d2bb20c5524431482","ddl":true,"owner":"inventory","planned_pr":"PR-C"},
@@ -96,9 +82,9 @@
     {"file":"app/services/shared_catalog.py","symbol":"ensure_category","sha256":"7b0f614e26a5af47453e9d1c8a7c6f4991f071d43bd399610c09f013d3a26302","ddl":false,"owner":"catalog-taxonomy","planned_pr":"rename-later"}
   ],
   "legacy_scripts": [
-    {"file":"scripts/migrate_auth_mvp.py","sha256":"4439fe8b655e89aa8194c9cbe0e75e96f31c499c5fdde99d7a9e4f83741c58dd","owner":"auth-roles","planned_pr":"PR-B","category":"C"},
+    {"file":"scripts/migrate_auth_mvp.py","sha256":"8290105fb03ded4620b1b4b11ee4aa1817fded324056cb667885a94118c2096e","owner":"auth-roles","planned_pr":"delegates-versioned-runner","category":"C"},
     {"file":"scripts/migrate_brand_inventory.py","sha256":"6c4fc4b00298ba88186cc91484a6fbdb1157f0856a59d2170370004f38ecbb43","owner":"inventory","planned_pr":"PR-C","category":"C"},
-    {"file":"scripts/migrate_customers.py","sha256":"e635b14290ed9f8343d059e8df4f48fee4e77758aeb93fb6aafba4d2c3d6dfec","owner":"orders-customers","planned_pr":"PR-A","category":"C"},
+    {"file":"scripts/migrate_customers.py","sha256":"7ae00b2b2e7d0d6720b7b5d7e725a4544dd770d577d64580eda43979c6f6ac8a","owner":"orders-customers","planned_pr":"delegates-versioned-runner","category":"C"},
     {"file":"scripts/migrate_inventory_scopes.py","sha256":"2983d6a7513738af545744d5696bdd41087cddfd16604f3a0609f848e3a56eb1","owner":"inventory","planned_pr":"PR-C","category":"C"},
     {"file":"scripts/migrate_repair_cases.py","sha256":"b3dc89d2239c2044852f39ecfb89581db86dc53694dc848143527dbdd3bb0b2f","owner":"repairs","planned_pr":"PR-D","category":"C"},
     {"file":"scripts/migrate_unified_catalog.py","sha256":"3b1f3abd793a84730f96e58674dfd22373732f8a1c3f74bed8cdd0ee1a6e8f45","owner":"catalog-sales-receipts","planned_pr":"PR-E/PR-F","category":"C"}

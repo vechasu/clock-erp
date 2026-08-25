@@ -7,6 +7,7 @@ from unittest import mock
 
 from app import auth, web
 from app.catalog_db import CatalogDatabase
+from app.domain_schema_migrations import apply_domain_migrations
 from app.services.audit_journal import AuditJournal
 from app.services.excel_product_catalog import ExcelProductBatchService
 
@@ -630,6 +631,7 @@ class Stage2ProductsApiTest(unittest.TestCase):
             AUTH_TESTING=True,
             AUTH_DATABASE=str(auth_path),
         )
+        apply_domain_migrations(auth_path, "auth", "test")
         store = auth.AuthStore(auth_path)
         user_id = store.create_initial_admin(
             "API",

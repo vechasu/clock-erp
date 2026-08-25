@@ -144,6 +144,13 @@ def main():
         (item["file"], item["symbol"]): item
         for item in inventory["runtime_containers"]
     }
+    controlled_migration_files = {
+        item["file"]: item for item in inventory.get("migration_modules", [])
+    }
+    for relative, item in sorted(controlled_migration_files.items()):
+        actual = hashlib.sha256((root / relative).read_bytes()).hexdigest()
+        if actual != item["sha256"]:
+            errors.append("migration module checksum changed: {}".format(relative))
     for key, item in sorted(expected_containers.items()):
         path = root / item["file"]
         try:
@@ -162,7 +169,7 @@ def main():
     allowed_runtime = set(expected_containers) | set(expected_ensures)
     for path in sorted((root / "app").rglob("*.py")):
         relative = str(path.relative_to(root))
-        if relative == "app/schema_migrations.py":
+        if relative in controlled_migration_files:
             continue
         for symbol in sorted(ddl_containers(path)):
             if (relative, symbol) not in allowed_runtime:
@@ -171,7 +178,7 @@ def main():
                 )
 
     for relative, definitions in sorted(function_index.items()):
-        if relative == "app/schema_migrations.py":
+        if relative in controlled_migration_files:
             continue
         for symbol, (node, unused_segment) in definitions.items():
             for child in ast.walk(node):
@@ -202,6 +209,7 @@ def main():
         "tracked_runtime_containers": len(expected_containers),
         "tracked_ensure_functions": len(expected_ensures),
         "tracked_legacy_scripts": len(inventory["legacy_scripts"]),
+        "tracked_migration_modules": len(controlled_migration_files),
     }
     if arguments.json:
         print(json.dumps(report, ensure_ascii=False, sort_keys=True))
