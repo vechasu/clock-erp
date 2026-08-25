@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config';
+import { defineConfig } from 'vite';
 
 export default defineConfig({
   base: '/app/',
@@ -14,10 +14,5 @@ export default defineConfig({
     outDir: '../app/static/react',
     emptyOutDir: true,
     sourcemap: false,
-  },
-  test: {
-    environment: 'node',
-    globals: true,
-    include: ['src/**/*.{test,spec}.{ts,tsx}'],
   },
 });

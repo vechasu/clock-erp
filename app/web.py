@@ -95,6 +95,7 @@ from app.services.sales_inventory import (
     SalesInventory,
     SalesInventoryError,
     ERP_TIMEZONE,
+    positive_integer,
     sale_now_iso,
     validate_performed_sale_update,
 )
@@ -19277,14 +19278,13 @@ def normalize_api_sale_payload(payload, existing=None, require_catalog=False):
     ).strip()
     if not product_name:
         raise ValueError("Укажите название товара.")
-    quantity = parse_manual_sale_quantity(
+    quantity = positive_integer(
         payload.get("quantity")
         if "quantity" in payload
         else existing.get("quantity_value")
-        or existing.get("quantity")
+        or existing.get("quantity"),
+        "Количество",
     )
-    if quantity <= 0:
-        raise ValueError("Выберите количество от 1 до 25.")
     pricing = sale_pricing_from_mapping(payload, existing=existing)
     unit_price = (
         float(pricing["unit_price"])

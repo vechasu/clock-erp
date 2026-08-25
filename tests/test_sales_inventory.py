@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
+from decimal import Decimal
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 from unittest import mock
@@ -17,6 +18,7 @@ from app.services.sales_inventory import (
     ReturnConflictError,
     SalesInventory,
     SalesInventoryError,
+    positive_integer,
 )
 from app.services.audit_journal import AuditJournal
 
@@ -77,6 +79,142 @@ class SalesInventoryTest(unittest.TestCase):
 
     def stock(self, product_id):
         return self.catalog.get_product(product_id)["stock"]
+
+    def sale_effects(self, product_id):
+        with self.database.connect() as connection:
+            return {
+                "sales": connection.execute(
+                    "SELECT COUNT(*) FROM erp_sales"
+                ).fetchone()[0],
+                "items": connection.execute(
+                    "SELECT COUNT(*) FROM erp_sale_items"
+                ).fetchone()[0],
+                "movements": connection.execute(
+                    "SELECT COUNT(*) FROM catalog_stock_movements"
+                ).fetchone()[0],
+                "idempotency": connection.execute(
+                    "SELECT COUNT(*) FROM erp_sales "
+                    "WHERE idempotency_key IS NOT NULL"
+                ).fetchone()[0],
+                "events": connection.execute(
+                    "SELECT COUNT(*) FROM erp_audit_events "
+                    "WHERE entity_type = 'sale'"
+                ).fetchone()[0],
+                "stock": connection.execute(
+                    "SELECT stock FROM catalog_excel_products WHERE id = ?",
+                    (product_id,),
+                ).fetchone()[0],
+                "in_transaction": connection.in_transaction,
+            }
+
+    def test_positive_integer_quantity_contract(self):
+        for value in (1, "1", "1e0", Decimal("1"), 1.0):
+            with self.subTest(value=value):
+                self.assertEqual(positive_integer(value, "Количество"), 1)
+        for value in (0, -1, 0.5, "0.5", True, False, "nan", "inf"):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(
+                    SalesInventoryError,
+                    "положительным целым числом",
+                ):
+                    positive_integer(value, "Количество")
+
+    def test_fractional_sale_is_rejected_without_side_effects(self):
+        product = self.create_product(stock=1)
+        before = self.sale_effects(product["id"])
+
+        for quantity in (0.5, "0.5"):
+            with self.subTest(quantity=quantity):
+                with self.assertRaisesRegex(
+                    SalesInventoryError,
+                    "положительным целым числом",
+                ):
+                    self.inventory.create_sale(
+                        self.payload(product),
+                        product["id"],
+                        quantity,
+                        1000,
+                        idempotency_key="qa001-direct",
+                    )
+                self.assertEqual(
+                    self.sale_effects(product["id"]),
+                    before,
+                )
+
+    def test_failed_fractional_sale_does_not_consume_idempotency_key(self):
+        product = self.create_product(stock=1)
+        with self.assertRaises(SalesInventoryError):
+            self.inventory.create_sale(
+                self.payload(product, "sale-invalid"),
+                product["id"],
+                "0.5",
+                1000,
+                idempotency_key="qa001-retry",
+            )
+
+        created = self.inventory.create_sale(
+            self.payload(product, "sale-valid"),
+            product["id"],
+            "1",
+            1000,
+            idempotency_key="qa001-retry",
+        )
+
+        self.assertEqual(created["id"], "sale-valid")
+        self.assertEqual(self.stock(product["id"]), 0)
+        self.assertEqual(len(self.inventory.list_movements(product["id"])), 1)
+
+    def test_batch_fraction_is_rejected_before_any_item_mutation(self):
+        watch = self.create_product(stock=2, article="QA001-WATCH")
+        strap = self.create_product(stock=2, article="QA001-STRAP")
+        before_watch = self.sale_effects(watch["id"])
+        before_strap = self.stock(strap["id"])
+
+        with self.assertRaisesRegex(
+            SalesInventoryError,
+            "положительным целым числом",
+        ):
+            self.inventory.create_sale_batch(
+                {"source": "tictactoy", "external_order_id": "qa001-batch"},
+                [
+                    {"product_id": watch["id"], "quantity": 1, "unit_price": 1},
+                    {"product_id": strap["id"], "quantity": 0.5, "unit_price": 1},
+                ],
+                idempotency_key="qa001-batch",
+                enforce_external_unique=True,
+            )
+
+        self.assertEqual(self.sale_effects(watch["id"]), before_watch)
+        self.assertEqual(self.stock(strap["id"]), before_strap)
+
+    def test_concurrent_fractional_and_integer_sales_keep_whole_stock(self):
+        product = self.create_product(stock=1)
+
+        def sell(request):
+            sale_id, quantity = request
+            service = SalesInventory(CatalogDatabase(self.database_path))
+            try:
+                service.create_sale(
+                    self.payload(product, sale_id),
+                    product["id"],
+                    quantity,
+                    1000,
+                    idempotency_key=sale_id,
+                )
+                return "created"
+            except SalesInventoryError:
+                return "rejected"
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            results = list(executor.map(
+                sell,
+                (("qa001-fraction", 0.5), ("qa001-integer", 1)),
+            ))
+
+        self.assertCountEqual(results, ["rejected", "created"])
+        self.assertEqual(self.stock(product["id"]), 0)
+        self.assertEqual(len(self.inventory.list_sales()), 1)
+        self.assertEqual(len(self.inventory.list_movements(product["id"])), 1)
 
     def test_sale_decreases_stock_and_writes_movement_atomically(self):
         product = self.create_product(stock=3)

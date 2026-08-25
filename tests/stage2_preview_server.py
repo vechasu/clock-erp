@@ -13,21 +13,15 @@ sys.path.insert(0, str(PROJECT_ROOT))
 PREVIEW_TEMP = tempfile.TemporaryDirectory(prefix="vechasu-stage2-preview-")
 PREVIEW_ROOT = Path(PREVIEW_TEMP.name)
 os.environ["CATALOG_DATABASE_PATH"] = str(PREVIEW_ROOT / "catalog.db")
-os.environ.setdefault("ERP_AUTH_DATABASE", str(PREVIEW_ROOT / "auth.db"))
-os.environ.setdefault("ORDERS_DATABASE_PATH", str(PREVIEW_ROOT / "orders.db"))
-os.environ.setdefault("ERP_SECRET_KEY", "stage2-preview-secret")
-os.environ.setdefault("ERP_TEST_MODE", "1")
+os.environ["ERP_AUTH_DATABASE"] = str(PREVIEW_ROOT / "auth.db")
+os.environ["ORDERS_DATABASE_PATH"] = str(PREVIEW_ROOT / "orders.db")
 
 from app.schema_migrations import apply_migrations  # noqa: E402
 from app.domain_schema_migrations import apply_domain_migrations  # noqa: E402
 
 apply_migrations(PREVIEW_ROOT / "catalog.db", app_commit="stage2-preview")
-apply_domain_migrations(
-    Path(os.environ["ERP_AUTH_DATABASE"]), "auth", "stage2-preview"
-)
-apply_domain_migrations(
-    Path(os.environ["ORDERS_DATABASE_PATH"]), "orders", "stage2-preview"
-)
+apply_domain_migrations(PREVIEW_ROOT / "auth.db", "auth", "stage2-preview")
+apply_domain_migrations(PREVIEW_ROOT / "orders.db", "orders", "stage2-preview")
 
 from app import web  # noqa: E402
 from app.catalog_db import CatalogDatabase  # noqa: E402
@@ -125,7 +119,7 @@ with CatalogDatabase(PREVIEW_ROOT / "catalog.db").transaction() as connection:
     connection.execute(
         "UPDATE catalog_excel_products SET bitrix_thumbnail_url = ? "
         "WHERE id = ?",
-        ("/static/missing-product-photo.jpg", product_ids[1]),
+        ("/product-images/{}".format(fixture_local_name), product_ids[1]),
     )
 
 

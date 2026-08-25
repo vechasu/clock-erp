@@ -11,6 +11,8 @@
     "dev": "vite --host 127.0.0.1",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --pretty false",
+    "typecheck:unit": "tsc -p tsconfig.unit.json --pretty false",
+    "typecheck:e2e": "tsc -p tsconfig.e2e.json --pretty false",
     "lint": "eslint . --max-warnings 0",
     "format:check": "prettier --check .",
     "test": "vitest run",
