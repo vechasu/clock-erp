@@ -98,7 +98,7 @@ class SalesFocusModeBrowserTest(unittest.TestCase):
                 "?source=wildberries&status=completed"
                 "&sales_focus_mode_e2e=1"
             ).format(port)
-            for _attempt in range(300):
+            for _attempt in range(100):
                 try:
                     with urllib.request.urlopen(url, timeout=1) as response:
                         if response.status == 200:

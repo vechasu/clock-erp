@@ -178,14 +178,14 @@ class ToolbarPopoverBrowserTest(unittest.TestCase):
             cwd=PROJECT_ROOT,
             env=environment,
             stdout=subprocess.DEVNULL,
-            stderr=None,
+            stderr=subprocess.DEVNULL,
         )
         try:
             ready_url = (
                 f"http://127.0.0.1:{port}"
                 "/app/products?toolbar_popover_e2e=1"
             )
-            for _attempt in range(300):
+            for _attempt in range(100):
                 try:
                     with urllib.request.urlopen(
                         ready_url, timeout=1

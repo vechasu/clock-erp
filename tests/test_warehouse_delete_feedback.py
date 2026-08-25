@@ -99,14 +99,14 @@ class WarehouseDeleteFeedbackBrowserTest(unittest.TestCase):
             cwd=PROJECT_ROOT,
             env=environment,
             stdout=subprocess.DEVNULL,
-            stderr=None,
+            stderr=subprocess.DEVNULL,
         )
         url = (
             "http://127.0.0.1:{}/app/products"
             "?delete_feedback_e2e=1"
         ).format(port)
         try:
-            for _attempt in range(300):
+            for _attempt in range(100):
                 try:
                     with urllib.request.urlopen(url, timeout=1) as response:
                         if response.status == 200:

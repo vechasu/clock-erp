@@ -346,7 +346,7 @@ class CatalogComboboxBrowserTest(unittest.TestCase):
                 f"http://127.0.0.1:{port}"
                 "/app/products?warehouse_add_ui_e2e=1"
             )
-            for _attempt in range(300):
+            for _attempt in range(100):
                 try:
                     with urllib.request.urlopen(url, timeout=1) as response:
                         if response.status == 200:

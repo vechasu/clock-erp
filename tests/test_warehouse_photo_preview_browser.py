@@ -45,12 +45,12 @@ class WarehousePhotoPreviewBrowserTest(unittest.TestCase):
             cwd=PROJECT_ROOT,
             env=environment,
             stdout=subprocess.DEVNULL,
-            stderr=None,
+            stderr=subprocess.DEVNULL,
         )
         base_url = "http://127.0.0.1:{}/app/products".format(port)
         url = base_url + "?warehouse_photo_preview_e2e=1"
         try:
-            for _attempt in range(300):
+            for _attempt in range(100):
                 try:
                     with urllib.request.urlopen(url, timeout=1) as response:
                         if response.status == 200:

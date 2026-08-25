@@ -75,6 +75,9 @@ def ensure_runtime(expected):
 
 
 def block_network_egress():
+    original_connect = socket.socket.connect
+    original_getaddrinfo = socket.getaddrinfo
+
     def blocked_connect(unused_socket, unused_address):
         raise OSError("catalog migration preflight blocks network egress")
 
@@ -83,6 +86,12 @@ def block_network_egress():
 
     socket.socket.connect = blocked_connect
     socket.getaddrinfo = blocked_getaddrinfo
+
+    def restore():
+        socket.socket.connect = original_connect
+        socket.getaddrinfo = original_getaddrinfo
+
+    return restore
 
 
 def clean_expired_rehearsals(root, retention_days):
@@ -125,7 +134,6 @@ def migration_run(path, app_commit, ddl_state):
 
 def preflight(arguments):
     runtime = ensure_runtime(arguments.expected_sqlite_version)
-    block_network_egress()
     scanned = validate_known_sql_compatibility(arguments.source_root)
     removed = clean_expired_rehearsals(
         arguments.rehearsal_root, arguments.retention_days
@@ -151,6 +159,7 @@ def preflight(arguments):
         "migrations": [dict(migration) for migration in MIGRATIONS],
         "network_egress": 0,
     }
+    restore_network = block_network_egress()
     try:
         sqlite_backup(
             arguments.database,
@@ -226,6 +235,8 @@ def preflight(arguments):
         write_report(arguments.report, report)
         print(json.dumps(report, ensure_ascii=True, sort_keys=True), file=sys.stderr)
         return 1
+    finally:
+        restore_network()
 
 
 def apply(arguments):

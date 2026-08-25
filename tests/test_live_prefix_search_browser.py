@@ -82,7 +82,7 @@ class LivePrefixSearchBrowserTest(unittest.TestCase):
                 "http://127.0.0.1:{}/app/products"
                 "?live_search_e2e=1&per_page=200"
             ).format(port)
-            for _attempt in range(300):
+            for _attempt in range(100):
                 try:
                     with urllib.request.urlopen(url, timeout=1) as response:
                         if response.status == 200:

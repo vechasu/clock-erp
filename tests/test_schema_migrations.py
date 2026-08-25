@@ -1,5 +1,6 @@
 import hashlib
 import json
+import socket
 import sqlite3
 import tempfile
 import unittest
@@ -229,6 +230,8 @@ class SchemaMigrationTest(unittest.TestCase):
         self.initialize()
         report_path = self.root / "report.json"
         before = hashlib.sha256(self.database_path.read_bytes()).hexdigest()
+        original_connect = socket.socket.connect
+        original_getaddrinfo = socket.getaddrinfo
         result = migration_preflight.preflight(
             self.preflight_arguments(report=report_path)
         )
@@ -239,6 +242,8 @@ class SchemaMigrationTest(unittest.TestCase):
         self.assertTrue(report["idempotent"])
         self.assertTrue(report["schema_parity"])
         self.assertEqual(report["business_before"], report["business_after"])
+        self.assertIs(socket.socket.connect, original_connect)
+        self.assertIs(socket.getaddrinfo, original_getaddrinfo)
 
     def test_runtime_guard_prevents_worker_schema_repair(self):
         apply_migrations(self.database_path)
