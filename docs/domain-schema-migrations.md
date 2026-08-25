@@ -80,15 +80,35 @@ Comments используют обычный composite unique index
 ## Production baseline до deploy
 
 - runtime: Python 3.6.8, SQLite 3.7.17;
-- commit: `db28de11299351675fad99778b3b26a46ef3ba82`, Git clean, service active;
+- commit: `b39b71a544be9d222e2ac7f57a1fe48faed9b1ea`, Git clean, service active;
 - catalog: 49 tables, 80 named indexes, comments 6, sync states 5;
 - orders: 3 tables, 9 named indexes, orders 50, customers 51;
-- auth: 5 tables, 5 named indexes, users 1, sessions 18;
+- auth: 5 tables, 5 named indexes, users 1, sessions 28;
 - products 4 724; active stock sum 1 052 679; sales 33; movements 1 394;
 - active inventories/items: 0/0;
 - все три DB: `quick_check=ok`, foreign key violations `0`.
 
 Персональные данные и содержимое комментариев в отчёты не входят.
+
+## Exact production-runtime rehearsal
+
+На двух независимых SQLite `.backup` копиях production DB в закрытом каталоге
+`/opt/clock-erp-backups/migration-rehearsals/pr-a-4038c202-20260825183505`
+под Python 3.6.8 / SQLite 3.7.17 подтверждено:
+
+- catalog и domain preflight: `passed`, repeated run idempotent, fresh/upgraded
+  schema parity, business aggregates unchanged;
+- два параллельных runner для auth и orders сериализуются и завершаются успешно;
+- unknown/partial state, unknown migration и changed checksum fail closed;
+- искусственное прерывание откатывает transaction, повтор затем успешен;
+- 44 migration/comment regression tests проходят на exact runtime;
+- два отдельных application workers проходят import, auth, orders/background,
+  customers и comments paths с DDL trace `0` во всех фазах;
+- runtime schema, business aggregates и ledgers до/после workers неизменны;
+- network egress в domain preflight и runtime trace заблокирован.
+
+Отчёты сохранены рядом с копиями как `catalog-preflight.json`,
+`domain-preflight.json` и `runtime-ddl.json`; production DB не изменялись.
 
 ## Deploy и rollback
 
