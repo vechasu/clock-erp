@@ -178,7 +178,7 @@ class ToolbarPopoverBrowserTest(unittest.TestCase):
             cwd=PROJECT_ROOT,
             env=environment,
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stderr=None,
         )
         try:
             ready_url = (

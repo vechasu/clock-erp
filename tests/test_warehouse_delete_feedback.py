@@ -99,7 +99,7 @@ class WarehouseDeleteFeedbackBrowserTest(unittest.TestCase):
             cwd=PROJECT_ROOT,
             env=environment,
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stderr=None,
         )
         url = (
             "http://127.0.0.1:{}/app/products"

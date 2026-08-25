@@ -45,7 +45,7 @@ class WarehousePhotoPreviewBrowserTest(unittest.TestCase):
             cwd=PROJECT_ROOT,
             env=environment,
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stderr=None,
         )
         base_url = "http://127.0.0.1:{}/app/products".format(port)
         url = base_url + "?warehouse_photo_preview_e2e=1"
