@@ -102,8 +102,14 @@ jobs:
       - name: Install locked frontend dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Typecheck
+      - name: Typecheck application
         run: pnpm run typecheck
+
+      - name: Typecheck unit tests
+        run: pnpm run typecheck:unit
+
+      - name: Typecheck Playwright E2E
+        run: pnpm run typecheck:e2e
 
       - name: Lint
         run: pnpm run lint
@@ -113,3 +119,19 @@ jobs:
 
       - name: Production build
         run: pnpm run build
+
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Playwright/Axe accessibility gate
+        env:
+          CI: "true"
+          ERP_TEST_MODE: "1"
+          ERP_AUTH_ENABLED: "0"
+          BITRIX_LOGIN: ""
+          BITRIX_PASSWORD: ""
+          BITRIX_EXCHANGE_URL: ""
+          BITRIX_CATALOG_URL: ""
+          BITRIX_CATALOG_TOKEN: ""
+          MOYSKLAD_TOKEN: ""
+        run: pnpm run test:a11y
