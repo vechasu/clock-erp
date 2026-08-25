@@ -6,7 +6,7 @@ from pathlib import Path
 from app.services.product_reconciliation import (
     ProductReconciler,
     batch_id_for,
-    ensure_batch_is_new,
+    require_new_batch,
     normalize_text,
     reliable_article,
 )
@@ -161,9 +161,9 @@ class ProductReconciliationTest(unittest.TestCase):
         digest = hashlib.sha256(b"same file").hexdigest()
         batch_id = batch_id_for(digest)
         self.assertEqual(batch_id, batch_id_for(digest))
-        self.assertTrue(ensure_batch_is_new(batch_id, []))
+        self.assertTrue(require_new_batch(batch_id, []))
         with self.assertRaises(ValueError):
-            ensure_batch_is_new(batch_id, [batch_id])
+            require_new_batch(batch_id, [batch_id])
 
     def test_reconciliation_has_no_file_or_external_side_effects(self):
         with tempfile.TemporaryDirectory() as temporary_directory:

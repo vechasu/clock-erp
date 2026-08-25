@@ -4,6 +4,7 @@ from pathlib import Path
 from unittest import mock
 
 from app.catalog_db import CatalogDatabase
+from app.catalog_migration_steps import apply_fresh_catalog_schema
 from app.services.audit_journal import AuditJournal
 from app.services.excel_product_catalog import (
     ExcelProductCatalog,
@@ -253,6 +254,8 @@ class BrandManagementTest(unittest.TestCase):
                 "'2026-08-12-brand-category-relations-v2-no-zero'"
             )
 
+        with self.database.transaction() as connection:
+            apply_fresh_catalog_schema(connection)
         self.database.initialize()
 
         with self.database.connect() as connection:

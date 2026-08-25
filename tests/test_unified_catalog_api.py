@@ -638,25 +638,21 @@ class UnifiedCatalogApiTest(unittest.TestCase):
         self.remote.create_stock_enter_many.assert_called_once()
         self.remote.upload_product_image.assert_called_once()
 
-    def test_receipt_request_reuses_initialized_shared_catalog_schema(self):
-        original_initialize_schema = CatalogDatabase._initialize_schema
-        initialize_calls = []
+    def test_receipt_request_does_not_mutate_shared_catalog_schema(self):
+        def schema_sql():
+            with CatalogDatabase(self.database_path).connect() as connection:
+                return connection.execute(
+                    "SELECT type, name, sql FROM sqlite_master "
+                    "WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name"
+                ).fetchall()
 
-        def tracked_initialize_schema(database):
-            initialize_calls.append(database)
-            return original_initialize_schema(database)
-
-        with mock.patch.object(
-            CatalogDatabase,
-            "_initialize_schema",
-            tracked_initialize_schema,
-        ):
-            response = self.multipart_receipt(
-                idempotency_key="receipt-one-catalog-initialize",
-            )
+        before = schema_sql()
+        response = self.multipart_receipt(
+            idempotency_key="receipt-one-catalog-initialize",
+        )
 
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(initialize_calls, [])
+        self.assertEqual(schema_sql(), before)
 
     def test_multipart_receipt_accepts_png_and_jpeg_for_existing_product(self):
         fixtures = (

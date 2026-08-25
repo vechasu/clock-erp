@@ -177,7 +177,7 @@ git fetch "$REMOTE_NAME"
 FETCHED_COMMIT="$(git rev-parse "$REMOTE_NAME/$EXPECTED_BRANCH")"
 changed_files="$(git diff --name-only "$PREVIOUS_COMMIT" "$FETCHED_COMMIT")"
 if printf '%s\n' "$changed_files" | grep -Eq \
-    '^(app/(catalog_db|schema_migrations)\.py|scripts/migration_preflight\.py)$'; then
+    '^(app/(catalog_db|catalog_migration_steps|schema_migrations)\.py|app/catalog_schema_manifest\.json|scripts/migration_preflight\.py)$'; then
     CATALOG_MIGRATION_REQUIRED=1
 fi
 if printf '%s\n' "$changed_files" | grep -Eq \

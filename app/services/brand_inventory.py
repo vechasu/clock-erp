@@ -10,7 +10,7 @@ from app.services.excel_product_catalog import (
     _empty_enrichment,
     _json,
     article_quality,
-    ensure_unique_article,
+    require_unique_article,
     normalize_text,
 )
 
@@ -590,7 +590,7 @@ class BrandInventory:
                         duplicate["excel_name_raw"], duplicate["id"]
                     )
                 )
-            ensure_unique_article(connection, article)
+            require_unique_article(connection, article)
             batch = connection.execute(
                 "SELECT * FROM catalog_excel_batches WHERE status = 'active' "
                 "ORDER BY applied_at DESC LIMIT 1"

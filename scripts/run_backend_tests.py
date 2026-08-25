@@ -15,9 +15,36 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.domain_schema_migrations import apply_domain_migrations  # noqa: E402
+from app.catalog_db import CatalogDatabase  # noqa: E402
+from app.schema_migrations import apply_migrations  # noqa: E402
 
 
 ORIGINAL_GETADDRINFO = socket.getaddrinfo
+ORIGINAL_CATALOG_INITIALIZE = CatalogDatabase.initialize
+
+
+def initialize_test_catalog(database, allow_schema_changes=False):
+    """Explicit test harness migration; production runtime stays read-only."""
+    if str(database.path) == ":memory:":
+        raise RuntimeError("tests must use a file-backed migrated catalog database")
+    path = Path(database.path).resolve()
+    needs_migration = not path.is_file()
+    if not needs_migration:
+        try:
+            import sqlite3
+            connection = sqlite3.connect(str(path))
+            try:
+                needs_migration = connection.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' "
+                    "AND name='erp_migration_ledger'"
+                ).fetchone() is None
+            finally:
+                connection.close()
+        except sqlite3.Error:
+            needs_migration = False
+    if needs_migration:
+        apply_migrations(path, app_commit="test-suite")
+    return ORIGINAL_CATALOG_INITIALIZE(database)
 
 
 def local_host(host):
@@ -43,6 +70,7 @@ def main():
     parser.add_argument("--verbosity", type=int, default=2)
     arguments = parser.parse_args()
     socket.getaddrinfo = guarded_getaddrinfo
+    CatalogDatabase.initialize = initialize_test_catalog
     apply_domain_migrations(PROJECT_ROOT / "instance" / "auth.db", "auth", "test-suite")
     apply_domain_migrations(PROJECT_ROOT / "instance" / "orders.db", "orders", "test-suite")
     suite = unittest.defaultTestLoader.discover(

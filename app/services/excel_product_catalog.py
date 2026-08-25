@@ -34,8 +34,8 @@ from app.services.shared_catalog import (
     catalog_contains_pattern,
     catalog_prefix_pattern,
     catalog_search_key,
-    ensure_brand,
-    ensure_category,
+    get_or_create_brand,
+    get_or_create_category,
     register_catalog_search,
 )
 
@@ -78,7 +78,7 @@ def canonical_model_text(value):
     return re.sub(r"\s+", " ", value).strip()
 
 
-def ensure_model_record(connection, brand_id, model):
+def get_or_create_model_record(connection, brand_id, model):
     model = canonical_model_text(model)
     if not model or brand_id in (None, ""):
         return None
@@ -109,7 +109,7 @@ def optional_price_text(value):
     return "{:g}".format(price)
 
 
-def ensure_unique_article(connection, article, exclude_product_id=None):
+def require_unique_article(connection, article, exclude_product_id=None):
     """Reject an exact article duplicate without changing legacy rows."""
     article = text(article)
     if not article:
@@ -1289,14 +1289,14 @@ class ExcelProductCatalog:
         moysklad_product_id = text(moysklad_product_id) or None
         self.database.initialize()
         with self.database.transaction() as connection:
-            ensure_unique_article(connection, article)
-            brand_row = ensure_brand(
+            require_unique_article(connection, article)
+            brand_row = get_or_create_brand(
                 connection,
                 name=brand,
                 brand_id=brand_id,
                 create=True,
             )
-            category_row = ensure_category(
+            category_row = get_or_create_category(
                 connection,
                 brand_row["id"] if brand_row else None,
                 name=category,
@@ -1305,7 +1305,7 @@ class ExcelProductCatalog:
             )
             brand = brand_row["name"] if brand_row else ""
             category = category_row["name"] if category_row else ""
-            model_id = ensure_model_record(
+            model_id = get_or_create_model_record(
                 connection, brand_row["id"] if brand_row else None, model
             )
             duplicate = connection.execute(
@@ -1438,7 +1438,7 @@ class ExcelProductCatalog:
             if article is not None:
                 normalized_article = text(article) or None
                 if normalized_article != (text(product["excel_article"]) or None):
-                    ensure_unique_article(
+                    require_unique_article(
                         connection,
                         normalized_article,
                         exclude_product_id=product_id,
@@ -1454,7 +1454,7 @@ class ExcelProductCatalog:
             brand_changed = brand is not None or brand_id not in (None, "")
             category_changed = category is not None or category_id not in (None, "")
             if brand_changed:
-                brand_row = ensure_brand(
+                brand_row = get_or_create_brand(
                     connection,
                     name=values["excel_brand"],
                     brand_id=brand_id,
@@ -1470,14 +1470,14 @@ class ExcelProductCatalog:
                     values["category_id"] = None
                     values["excel_category"] = None
             else:
-                brand_row = ensure_brand(
+                brand_row = get_or_create_brand(
                     connection,
                     name=values["excel_brand"],
                     brand_id=values.get("brand_id"),
                     create=True,
                 )
             if category_changed:
-                category_row = ensure_category(
+                category_row = get_or_create_category(
                     connection,
                     brand_row["id"] if brand_row else None,
                     name=values["excel_category"],
@@ -1548,7 +1548,7 @@ class ExcelProductCatalog:
             values["updated_at"] = utc_now()
             _restore_columns(connection, product_id, values, PRODUCT_MUTABLE_COLUMNS)
             if model is not None or brand_changed:
-                values["model_id"] = ensure_model_record(
+                values["model_id"] = get_or_create_model_record(
                     connection, values.get("brand_id"), values.get("model")
                 )
                 connection.execute(

@@ -590,7 +590,7 @@ class BitrixERPProductSync:
         }
 
     @staticmethod
-    def _ensure_catalog_batch(connection):
+    def _get_or_create_catalog_batch(connection):
         batch = connection.execute(
             "SELECT * FROM catalog_excel_batches WHERE id = ?",
             (CATALOG_BATCH_ID,),
@@ -627,7 +627,7 @@ class BitrixERPProductSync:
         return CATALOG_BATCH_ID
 
     def _insert_card(self, connection, product, enrichment):
-        batch_id = self._ensure_catalog_batch(connection)
+        batch_id = self._get_or_create_catalog_batch(connection)
         now = utc_now()
         values = self._desired_card_values(connection, None, product, enrichment)
         excel_row = connection.execute(

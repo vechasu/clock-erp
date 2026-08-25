@@ -1,5 +1,5 @@
 {
-  "baseline_commit": "b3a1fd809aa2d3a7980616724a97439722de72f7",
+  "baseline_commit": "82152be7cc1ff7be2c61795d4eeee3d055a48eb8",
   "production_runtime": {
     "python": "3.6.8",
     "sqlite": "3.7.17",
@@ -7,30 +7,6 @@
     "preload": false
   },
   "runtime_containers": [
-    {
-      "id": "RDDL-CATALOG-BOOTSTRAP",
-      "file": "app/catalog_db.py",
-      "node_type": "assignment",
-      "symbol": "SCHEMA",
-      "sha256": "ca2c3553f3985453690edd5b61ae787c12aadcf1d8991b92c3cf30ba5e030e20",
-      "owner": "catalog-core",
-      "planned_pr": "PR-G",
-      "category": "D",
-      "risk": "P1",
-      "production_reachable": "Only if the production guard sentinel is absent or controlled migration explicitly allows schema changes"
-    },
-    {
-      "id": "RDDL-CATALOG-RUNNER",
-      "file": "app/catalog_db.py",
-      "node_type": "function",
-      "symbol": "CatalogDatabase._initialize_schema",
-      "sha256": "feb63bcb16115be559dc22de07ccd8ae985fc5d3a135d64720aa77fe23a9a605",
-      "owner": "catalog-core",
-      "planned_pr": "PR-G",
-      "category": "A",
-      "risk": "P1",
-      "production_reachable": "Fail-open to legacy DDL when the runtime guard sentinel is absent"
-    },
     {
       "id": "DDL-LEDGER-RUNNER",
       "file": "app/schema_migrations.py",
@@ -46,47 +22,69 @@
   ],
   "migration_modules": [
     {
-      "file": "app/schema_migrations.py",
-      "sha256": "895d7ae32dfb8db36590cd4d554547aed93bc8f50f985212b0b123590d371259",
-      "owner": "migration-platform"
+      "file": "app/catalog_migration_steps.py",
+      "sha256": "0bf15d149e6c8ee8248f50d5e691d15d1e77b80a0ffc85af354c6f0931e558bf",
+      "owner": "catalog-migrations"
+    },
+    {
+      "file": "app/catalog_schema_manifest.json",
+      "sha256": "48fd9e202d8016efd7edbc8ee35be1ff03417e7b854472361c28c26c8a43df5b",
+      "owner": "catalog-migrations"
     },
     {
       "file": "app/domain_schema_migrations.py",
       "sha256": "7b68ed97f49f6b3324e62dec66660461e7f5c53c5e97f0f528de45015b17eb31",
       "owner": "auth-orders-migrations"
+    },
+    {
+      "file": "app/schema_migrations.py",
+      "sha256": "baf96db513deb7d559168de4862a3ed91467451b2a2c441641024ff90a19cecf",
+      "owner": "migration-platform"
     }
   ],
-  "ensure_functions": [
-    {"file":"app/catalog_db.py","symbol":"CatalogDatabase._ensure_order_item_mapping_schema","sha256":"98469a8d3c5640e0f0e53dcde27eb464c957825b4912b346d733fe75897091fa","ddl":true,"owner":"orders","planned_pr":"PR-F"},
-    {"file":"app/catalog_db.py","symbol":"CatalogDatabase._ensure_brand_image_columns","sha256":"07ad3e0bce6e8211e2e3c57019064a495763cad3b5cc2521ab2ef9b73b2f8c89","ddl":true,"owner":"catalog-taxonomy","planned_pr":"PR-E"},
-    {"file":"app/catalog_db.py","symbol":"CatalogDatabase._ensure_inventory_constraints","sha256":"90d6f39f714b24a87b76de2ed38a9d6e28f99f6c4971791d2bb20c5524431482","ddl":true,"owner":"inventory","planned_pr":"PR-C"},
-    {"file":"app/catalog_db.py","symbol":"CatalogDatabase._ensure_audit_entity_constraints","sha256":"043c75f436e5db750836969d285c9eca46443fe34bf0ee8feff25a5d450aeea3","ddl":true,"owner":"audit-sales-receipts","planned_pr":"PR-F"},
-    {"file":"app/catalog_db.py","symbol":"CatalogDatabase._ensure_brand_category_relations","sha256":"a319d5e4c2e6a2fd50479addd9d8350f219753881980bbaaf9b030db95ad79f5","ddl":false,"owner":"catalog-taxonomy","planned_pr":"PR-E"},
-    {"file":"app/catalog_db.py","symbol":"CatalogDatabase._ensure_excel_receipt_constraints","sha256":"af9bff831964a7efaecd5c45366a8ee734b06adb3e5dc2ed90f324ce5851dfce","ddl":true,"owner":"receipts","planned_pr":"PR-F"},
-    {"file":"app/catalog_db.py","symbol":"CatalogDatabase._ensure_excel_cardinality_columns","sha256":"a70c424953fd47e1f2bfd74454350a77375739f0549adfd56dcccae3233e997a","ddl":true,"owner":"catalog-import","planned_pr":"PR-E"},
-    {"file":"app/catalog_db.py","symbol":"CatalogDatabase._ensure_excel_import_draft_schema","sha256":"f957560ce2f641310a47dd7916edae6623fc574ffa48b994b0d78e0a282d9c20","ddl":true,"owner":"catalog-import","planned_pr":"PR-E"},
-    {"file":"app/catalog_db.py","symbol":"CatalogDatabase._ensure_product_deletion_columns","sha256":"8028b57db846715fcc19cff7cc3a871bc82222c78b16532b036af75ac5c57560","ddl":true,"owner":"catalog-products","planned_pr":"PR-E"},
-    {"file":"app/catalog_db.py","symbol":"CatalogDatabase._ensure_product_workflow_columns","sha256":"3ca48e07907bc8e6bc1a53a745fea28510646f95e059b5166cd0d4a6b77818f5","ddl":true,"owner":"catalog-products","planned_pr":"PR-E"},
-    {"file":"app/catalog_db.py","symbol":"CatalogDatabase._ensure_product_image_columns","sha256":"1f4b7ddd94bec7ef079adeda9ba637d95d203c713f8ffa1b28badf38925240fa","ddl":true,"owner":"catalog-products","planned_pr":"PR-E"},
-    {"file":"app/catalog_db.py","symbol":"CatalogDatabase._ensure_receipt_constraints","sha256":"a306599de5fc310d7f9a65f5d2e00ffc310185dad73104c25975dfe89159a22c","ddl":true,"owner":"receipts","planned_pr":"PR-F"},
-    {"file":"app/catalog_db.py","symbol":"CatalogDatabase._ensure_optional_price_constraints","sha256":"59b216fb1188c204584c10f37ddccd1cd1cfee6e70cbb015bece8f6f6d788c43","ddl":true,"owner":"sales-receipts","planned_pr":"PR-F"},
-    {"file":"app/catalog_db.py","symbol":"CatalogDatabase._ensure_shared_catalog","sha256":"d303454bb448cb37e4f1a566c3b220552b2d3b9876c71e34f73bd8f19db57f17","ddl":true,"owner":"catalog-taxonomy","planned_pr":"PR-E"},
-    {"file":"app/catalog_db.py","symbol":"CatalogDatabase._ensure_stock_movement_constraints","sha256":"14c9b4b2d1044345a0167e360819f21d9364c0bbb616533587df2e6ac1327472","ddl":true,"owner":"inventory-movements","planned_pr":"PR-F"},
-    {"file":"app/catalog_db.py","symbol":"CatalogDatabase._ensure_shared_catalog.ensure_brand","sha256":"2d588a0003c23cb6b311e272e3245481e0bf3fe643dd5d23c35666bd7fefa157","ddl":false,"owner":"catalog-taxonomy","planned_pr":"PR-E"},
-    {"file":"app/catalog_db.py","symbol":"CatalogDatabase._ensure_shared_catalog.ensure_category","sha256":"99ac14202e0ef2fbed254302d48bb440eb25818691ed590251a4c89b4cbd1013","ddl":false,"owner":"catalog-taxonomy","planned_pr":"PR-E"},
-    {"file":"app/services/bitrix_erp_product_sync.py","symbol":"BitrixERPProductSync._ensure_catalog_batch","sha256":"8fe667b3b4776c0db5c8c67be82584f933526f2b2958da384e0711fbe614b420","ddl":false,"owner":"catalog-sync","planned_pr":"PR-E"},
-    {"file":"app/services/excel_product_catalog.py","symbol":"ensure_model_record","sha256":"c2613b20035369fa27b048bc64ca2cb66c9e6b5427712e077517d4e61878c663","ddl":false,"owner":"catalog-import","planned_pr":"rename-later"},
-    {"file":"app/services/excel_product_catalog.py","symbol":"ensure_unique_article","sha256":"b4cac62a04f8963830086033d77347a90e07c53cac80610f1852bab617e47f2d","ddl":false,"owner":"catalog-import","planned_pr":"rename-later"},
-    {"file":"app/services/product_reconciliation.py","symbol":"ensure_batch_is_new","sha256":"cf300d219acbef68b351e7207fd79d9be06f1286c9ef9572574e89db43bf938a","ddl":false,"owner":"catalog-reconciliation","planned_pr":"rename-later"},
-    {"file":"app/services/shared_catalog.py","symbol":"ensure_brand","sha256":"1b4e2c6561c86bfa10f4d4e8c4969542f6536a8302878c6a81ad6e199eab24a6","ddl":false,"owner":"catalog-taxonomy","planned_pr":"rename-later"},
-    {"file":"app/services/shared_catalog.py","symbol":"ensure_category","sha256":"7b0f614e26a5af47453e9d1c8a7c6f4991f071d43bd399610c09f013d3a26302","ddl":false,"owner":"catalog-taxonomy","planned_pr":"rename-later"}
-  ],
+  "ensure_functions": [],
   "legacy_scripts": [
-    {"file":"scripts/migrate_auth_mvp.py","sha256":"8290105fb03ded4620b1b4b11ee4aa1817fded324056cb667885a94118c2096e","owner":"auth-roles","planned_pr":"delegates-versioned-runner","category":"C"},
-    {"file":"scripts/migrate_brand_inventory.py","sha256":"6c4fc4b00298ba88186cc91484a6fbdb1157f0856a59d2170370004f38ecbb43","owner":"inventory","planned_pr":"PR-C","category":"C"},
-    {"file":"scripts/migrate_customers.py","sha256":"7ae00b2b2e7d0d6720b7b5d7e725a4544dd770d577d64580eda43979c6f6ac8a","owner":"orders-customers","planned_pr":"delegates-versioned-runner","category":"C"},
-    {"file":"scripts/migrate_inventory_scopes.py","sha256":"2983d6a7513738af545744d5696bdd41087cddfd16604f3a0609f848e3a56eb1","owner":"inventory","planned_pr":"PR-C","category":"C"},
-    {"file":"scripts/migrate_repair_cases.py","sha256":"b3dc89d2239c2044852f39ecfb89581db86dc53694dc848143527dbdd3bb0b2f","owner":"repairs","planned_pr":"PR-D","category":"C"},
-    {"file":"scripts/migrate_unified_catalog.py","sha256":"3b1f3abd793a84730f96e58674dfd22373732f8a1c3f74bed8cdd0ee1a6e8f45","owner":"catalog-sales-receipts","planned_pr":"PR-E/PR-F","category":"C"}
+    {
+      "file": "scripts/migrate_auth_mvp.py",
+      "sha256": "8290105fb03ded4620b1b4b11ee4aa1817fded324056cb667885a94118c2096e",
+      "owner": "auth-roles",
+      "planned_pr": "delegates-versioned-runner",
+      "category": "C"
+    },
+    {
+      "file": "scripts/migrate_brand_inventory.py",
+      "sha256": "6c4fc4b00298ba88186cc91484a6fbdb1157f0856a59d2170370004f38ecbb43",
+      "owner": "inventory",
+      "planned_pr": "PR-C",
+      "category": "C"
+    },
+    {
+      "file": "scripts/migrate_customers.py",
+      "sha256": "7ae00b2b2e7d0d6720b7b5d7e725a4544dd770d577d64580eda43979c6f6ac8a",
+      "owner": "orders-customers",
+      "planned_pr": "delegates-versioned-runner",
+      "category": "C"
+    },
+    {
+      "file": "scripts/migrate_inventory_scopes.py",
+      "sha256": "2983d6a7513738af545744d5696bdd41087cddfd16604f3a0609f848e3a56eb1",
+      "owner": "inventory",
+      "planned_pr": "PR-C",
+      "category": "C"
+    },
+    {
+      "file": "scripts/migrate_repair_cases.py",
+      "sha256": "b3dc89d2239c2044852f39ecfb89581db86dc53694dc848143527dbdd3bb0b2f",
+      "owner": "repairs",
+      "planned_pr": "PR-D",
+      "category": "C"
+    },
+    {
+      "file": "scripts/migrate_unified_catalog.py",
+      "sha256": "3b1f3abd793a84730f96e58674dfd22373732f8a1c3f74bed8cdd0ee1a6e8f45",
+      "owner": "catalog-sales-receipts",
+      "planned_pr": "PR-E/PR-F",
+      "category": "C"
+    }
   ]
 }

@@ -215,6 +215,12 @@ def worker(worker_id, root, queue):
         catalog = CatalogDatabase(root / "catalog.db", cache_initialization=False)
         catalog.initialize()
         catalog.initialize()
+        catalog.table_names()
+        with catalog.transaction() as connection:
+            connection.execute(
+                "UPDATE catalog_excel_products SET updated_at = updated_at "
+                "WHERE 1 = 0"
+            )
         OrderCommentsService(catalog, client_factory=lambda: None).list(
             "runtime-ddl-audit"
         )
@@ -263,11 +269,6 @@ def main():
     missing = [str(path) for path in required if not path.is_file()]
     if missing:
         raise SystemExit("Missing rehearsal copies: {}".format(", ".join(missing)))
-    if not (root / ".catalog-schema-preflight-required").is_file():
-        raise SystemExit("Catalog runtime guard sentinel is missing from copy")
-    if not (root / ".catalog-schema-state.json").is_file():
-        raise SystemExit("Catalog runtime guard marker is missing from copy")
-
     schemas_before = {
         path.name: schema_snapshot(path) for path in required
     }

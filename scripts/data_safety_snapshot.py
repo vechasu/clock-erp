@@ -63,12 +63,36 @@ def snapshot(instance_dir):
         instance_dir / "catalog.db",
         (
             ("products", ("catalog_excel_products",), None),
+            ("brands", ("erp_brands",), None),
+            ("categories", ("erp_categories",), None),
+            ("models", ("erp_models",), None),
             ("sales", ("erp_sales",), None),
             ("sale_items", ("erp_sale_items",), None),
             ("stock_movements", ("catalog_stock_movements",), None),
             ("receipts_db", ("erp_receipts",), None),
             ("receipt_items", ("erp_receipt_items",), None),
             ("comments", ("erp_order_comments",), None),
+            ("audit_events", ("erp_audit_events",), None),
+            ("order_mappings", ("erp_order_product_mappings",), None),
+            ("inventory_documents", ("erp_inventory_sessions",), None),
+            ("inventory_items", ("erp_inventory_items",), None),
+            (
+                "inventory_adjustments",
+                ("catalog_stock_movements",),
+                "movement_type='inventory_adjustment'",
+            ),
+            (
+                "sale_idempotency_keys", ("erp_sales",),
+                "idempotency_key IS NOT NULL",
+            ),
+            (
+                "movement_idempotency_keys", ("catalog_stock_movements",),
+                "idempotency_key IS NOT NULL",
+            ),
+            (
+                "inventory_idempotency_keys", ("erp_inventory_sessions",),
+                "idempotency_key IS NOT NULL",
+            ),
             ("active_inventories", ("erp_inventory_sessions",), "status='active'"),
             (
                 "active_inventory_items",
@@ -90,6 +114,14 @@ def snapshot(instance_dir):
                 "WHERE active=1"
             ).fetchone()[0] or 0)
             if "catalog_excel_products" in tables
+            else None
+        )
+        catalog["movement_quantity_sum"] = (
+            float(connection.execute(
+                "SELECT COALESCE(SUM(quantity_delta), 0) "
+                "FROM catalog_stock_movements"
+            ).fetchone()[0] or 0)
+            if "catalog_stock_movements" in tables
             else None
         )
     finally:

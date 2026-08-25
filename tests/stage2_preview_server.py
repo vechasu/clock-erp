@@ -14,6 +14,10 @@ PREVIEW_TEMP = tempfile.TemporaryDirectory(prefix="vechasu-stage2-preview-")
 PREVIEW_ROOT = Path(PREVIEW_TEMP.name)
 os.environ["CATALOG_DATABASE_PATH"] = str(PREVIEW_ROOT / "catalog.db")
 
+from app.schema_migrations import apply_migrations  # noqa: E402
+
+apply_migrations(PREVIEW_ROOT / "catalog.db", app_commit="stage2-preview")
+
 from app import web  # noqa: E402
 from app.catalog_db import CatalogDatabase  # noqa: E402
 from app.services.excel_product_catalog import ExcelProductBatchService  # noqa: E402

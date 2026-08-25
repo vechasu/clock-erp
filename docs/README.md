@@ -63,6 +63,8 @@
   startup/request DDL, exact-runtime trace, risk matrix и план PR-A–PR-G.
 - [Domain schema migrations](domain-schema-migrations.md) — versioned baseline,
   fail-closed runtime validation и deploy/rollback для auth/orders/customers/comments.
+- [Catalog schema migrations](catalog-schema-migrations.md) — единый
+  versioned source of truth, полный manifest и fail-closed catalog runtime.
 - [Аудит единой обратной связи](unified-feedback-audit.md) — текущее описание
   механизма уведомлений, подтверждённое шаблоном, JavaScript и тестами.
 - [Полный аудит перед React-переработкой](full-react-rewrite-audit.md) и

@@ -105,7 +105,7 @@ def potential_alias_key(value):
     return compact.replace("c", "k")
 
 
-def ensure_brand(connection, name=None, brand_id=None, create=True):
+def get_or_create_brand(connection, name=None, brand_id=None, create=True):
     if brand_id not in (None, ""):
         try:
             brand_id = int(brand_id)
@@ -153,7 +153,7 @@ def ensure_brand(connection, name=None, brand_id=None, create=True):
     ).fetchone()
 
 
-def ensure_category(
+def get_or_create_category(
     connection,
     brand_id,
     name=None,
@@ -246,13 +246,13 @@ def assign_product_taxonomy(
     brand_id=None,
     category_id=None,
 ):
-    brand_row = ensure_brand(
+    brand_row = get_or_create_brand(
         connection,
         name=brand,
         brand_id=brand_id,
         create=True,
     )
-    category_row = ensure_category(
+    category_row = get_or_create_category(
         connection,
         brand_row["id"] if brand_row else None,
         name=category if brand_row else None,
@@ -545,7 +545,7 @@ class SharedCatalog:
     def create_brand_category(self, brand_id, name, **actor):
         self.database.initialize()
         with self.database.transaction() as connection:
-            brand = ensure_brand(connection, brand_id=brand_id, create=False)
+            brand = get_or_create_brand(connection, brand_id=brand_id, create=False)
             cleaned = catalog_name(name)
             if not cleaned:
                 raise ValueError("Название категории обязательно.")
@@ -565,7 +565,7 @@ class SharedCatalog:
                 "ORDER BY id LIMIT 1",
                 (normalized_name(cleaned),),
             ).fetchone()
-            category = ensure_category(
+            category = get_or_create_category(
                 connection, brand["id"], name=cleaned, create=True
             )
             relation = connection.execute(
@@ -1736,7 +1736,7 @@ class SharedCatalog:
                     "Такой бренд уже существует: {}.".format(existing["name"]),
                     self._brand(existing),
                 )
-            row = ensure_brand(connection, name=name)
+            row = get_or_create_brand(connection, name=name)
             AuditJournal(self.database).record(
                 "brand", row["id"], "created", row["name"],
                 after={"name": row["name"]}, connection=connection, **actor
@@ -1791,7 +1791,7 @@ class SharedCatalog:
                     "Такой бренд уже существует: {}.".format(alias["name"]),
                     self._brand(alias),
                 )
-            row = ensure_brand(connection, name=name)
+            row = get_or_create_brand(connection, name=name)
             AuditJournal(self.database).record(
                 "brand", row["id"], "created", row["name"],
                 after={"name": row["name"]}, connection=connection, **actor
@@ -1830,7 +1830,7 @@ class SharedCatalog:
             raise ValueError("Название категории обязательно.")
         self.database.initialize()
         with self.database.transaction() as connection:
-            brand = ensure_brand(
+            brand = get_or_create_brand(
                 connection,
                 brand_id=brand_id,
                 create=False,
@@ -1867,7 +1867,7 @@ class SharedCatalog:
                     ),
                     prepared,
                 )
-            row = ensure_category(
+            row = get_or_create_category(
                 connection,
                 brand["id"],
                 name=name,
@@ -1913,7 +1913,7 @@ class SharedCatalog:
             before_count = connection.execute(
                 "SELECT COUNT(*) FROM erp_categories"
             ).fetchone()[0]
-            category = ensure_category(
+            category = get_or_create_category(
                 connection,
                 product["brand_id"],
                 name=category_name,
@@ -1949,7 +1949,7 @@ class SharedCatalog:
             raise ValueError("Название бренда обязательно.")
         self.database.initialize()
         with self.database.transaction() as connection:
-            current = ensure_brand(
+            current = get_or_create_brand(
                 connection,
                 brand_id=brand_id,
                 create=False,

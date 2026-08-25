@@ -104,7 +104,7 @@ def batch_id_for(file_sha256_value):
     return "bitrix-excel-{}".format(digest[:20])
 
 
-def ensure_batch_is_new(batch_id, applied_batch_ids):
+def require_new_batch(batch_id, applied_batch_ids):
     if batch_id in set(applied_batch_ids or []):
         raise ValueError("import batch has already been applied: {}".format(batch_id))
     return True

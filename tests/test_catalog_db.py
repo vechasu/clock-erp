@@ -6,6 +6,11 @@ from pathlib import Path
 from unittest import mock
 
 from app.catalog_db import CatalogDatabase
+from app.catalog_migration_steps import (
+    _apply_inventory_constraints,
+    _apply_order_item_mapping_schema,
+)
+from app.schema_migrations import validate_catalog_runtime
 from app.services.catalog_reader import CatalogReader
 from app.services.excel_product_catalog import ExcelProductCatalog
 
@@ -92,10 +97,10 @@ class CatalogDatabaseTest(unittest.TestCase):
             )
             connection.commit()
 
-        CatalogDatabase(
-            self.database_path,
-            cache_initialization=False,
-        ).initialize()
+        with sqlite3.connect(str(self.database_path)) as connection:
+            connection.row_factory = sqlite3.Row
+            _apply_order_item_mapping_schema(connection)
+        CatalogDatabase._schema_cache.clear()
 
         with self.database.connect() as connection:
             columns = [
@@ -113,33 +118,26 @@ class CatalogDatabaseTest(unittest.TestCase):
         self.assertEqual(tuple(row), ("21112", "199696", product["id"]))
 
     def test_cached_initialization_runs_schema_checks_only_once(self):
+        CatalogDatabase._schema_cache.clear()
         database = CatalogDatabase(
             self.database_path,
             cache_initialization=True,
         )
-        with mock.patch.object(
-            database,
-            "_initialize_schema",
-            wraps=database._initialize_schema,
-        ) as initialize_schema:
+        with mock.patch(
+            "app.schema_migrations.validate_catalog_runtime",
+            wraps=validate_catalog_runtime,
+        ) as validator:
             database.initialize()
             database.initialize()
 
-        initialize_schema.assert_called_once_with()
+        validator.assert_called_once_with(self.database_path)
 
     def test_cached_initialization_is_reused_by_service_instances(self):
-        original_initialize_schema = CatalogDatabase._initialize_schema
-        initialize_calls = []
-
-        def tracked_initialize_schema(database):
-            initialize_calls.append(database)
-            return original_initialize_schema(database)
-
-        with mock.patch.object(
-            CatalogDatabase,
-            "_initialize_schema",
-            tracked_initialize_schema,
-        ):
+        CatalogDatabase._schema_cache.clear()
+        with mock.patch(
+            "app.schema_migrations.validate_catalog_runtime",
+            wraps=validate_catalog_runtime,
+        ) as validator:
             CatalogDatabase(
                 self.database_path,
                 cache_initialization=True,
@@ -149,7 +147,7 @@ class CatalogDatabaseTest(unittest.TestCase):
                 cache_initialization=True,
             ).initialize()
 
-        self.assertEqual(len(initialize_calls), 1)
+        self.assertEqual(validator.call_count, 1)
 
     def test_inventory_scope_migration_is_additive_idempotent_and_preserves_legacy_rows(self):
         connection = sqlite3.connect(":memory:")
@@ -184,8 +182,8 @@ class CatalogDatabaseTest(unittest.TestCase):
                  '2026-08-01', 0, 0);
         """)
 
-        CatalogDatabase._ensure_inventory_constraints(connection)
-        CatalogDatabase._ensure_inventory_constraints(connection)
+        _apply_inventory_constraints(connection)
+        _apply_inventory_constraints(connection)
 
         session_columns = {
             row["name"] for row in connection.execute(
