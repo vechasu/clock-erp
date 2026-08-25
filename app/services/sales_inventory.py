@@ -4,6 +4,7 @@ import json
 import math
 import uuid
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation
 
 from app.catalog_db import CatalogDatabase
 from app.services.audit_journal import AuditJournal
@@ -112,6 +113,29 @@ def positive_number(value, label):
     return number
 
 
+def positive_integer(value, label):
+    """Return a positive whole-unit quantity without rounding input."""
+    if isinstance(value, bool):
+        raise SalesInventoryError(
+            "{} должно быть положительным целым числом.".format(label)
+        )
+    try:
+        number = Decimal(str(value).strip())
+    except (InvalidOperation, TypeError, ValueError):
+        raise SalesInventoryError(
+            "{} должно быть положительным целым числом.".format(label)
+        )
+    if (
+        not number.is_finite()
+        or number <= 0
+        or number != number.to_integral_value()
+    ):
+        raise SalesInventoryError(
+            "{} должно быть положительным целым числом.".format(label)
+        )
+    return int(number)
+
+
 def optional_nonnegative_number(value, label):
     if value is None or (isinstance(value, str) and not value.strip()):
         return None
@@ -156,7 +180,7 @@ class SalesInventory:
         enforce_external_unique=False,
         failure_hook=None,
     ):
-        quantity = positive_number(quantity, "Количество")
+        quantity = positive_integer(quantity, "Количество")
         pricing = calculate_sale_pricing(
             (payload or {}).get("original_unit_price", unit_price),
             (payload or {}).get("discount_type", "none"),
@@ -363,7 +387,7 @@ class SalesInventory:
                 product_id = int(item.get("product_id"))
             except (TypeError, ValueError):
                 raise SalesInventoryError("Товар продажи не найден.")
-            quantity = positive_number(item.get("quantity"), "Количество")
+            quantity = positive_integer(item.get("quantity"), "Количество")
             pricing = calculate_sale_pricing(
                 item.get("original_unit_price", item.get("unit_price")),
                 item.get("discount_type", "none"),
