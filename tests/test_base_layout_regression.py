@@ -59,6 +59,13 @@ class BaseLayoutRegressionTest(unittest.TestCase):
         self.assertIn("overflow-y: auto", sidebar_css)
         self.assertIn("overflow-x: clip !important", sidebar_css)
         self.assertIn("overflow-y: visible !important", sidebar_css)
+        self.assertIn("background: var(--theme-app-bg, #f4f7fb)", sidebar_css)
+        self.assertIn(
+            "background: var(--theme-workspace-bg, #f4f7fb)",
+            sidebar_css,
+        )
+        self.assertIn(".app > main {", sidebar_css)
+        self.assertNotIn(".app > .main {", sidebar_css)
         self.assertNotIn("html,\nbody {", sidebar_css)
 
         products = self.source("app/templates/warehouse.html")
