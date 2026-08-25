@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
+from app.domain_schema_migrations import validate_orders_database
 from app.services.customer_identity import link_order_safely
 
 
@@ -99,6 +100,7 @@ class OrdersSnapshotStore:
     def __init__(self, path=None):
         configured = path or os.getenv("ORDERS_DATABASE_PATH")
         self.path = Path(configured) if configured else Path("instance/orders.db")
+        self._schema_validated = False
 
     def connect(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -120,124 +122,9 @@ class OrdersSnapshotStore:
             connection.close()
 
     def initialize(self):
-        with self.connection() as connection:
-            connection.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS orders_snapshot (
-                    order_id TEXT PRIMARY KEY,
-                    source TEXT NOT NULL DEFAULT 'tictactoy',
-                    external_order_id TEXT,
-                    source_position INTEGER NOT NULL,
-                    number_fold TEXT NOT NULL,
-                    customer_fold TEXT NOT NULL,
-                    extra_fold TEXT NOT NULL DEFAULT '',
-                    phone_digits TEXT NOT NULL,
-                    amount_search TEXT NOT NULL,
-                    date_search TEXT NOT NULL,
-                    created_sort TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    item_units REAL,
-                    detail_loaded INTEGER NOT NULL DEFAULT 0,
-                    payload_json TEXT NOT NULL,
-                    loaded_at REAL NOT NULL
-                );
-                CREATE TABLE IF NOT EXISTS customers (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT NOT NULL DEFAULT '',
-                    name_fold TEXT NOT NULL DEFAULT '',
-                    phone TEXT NOT NULL DEFAULT '',
-                    normalized_phone TEXT NOT NULL DEFAULT '',
-                    email TEXT NOT NULL DEFAULT '',
-                    normalized_email TEXT NOT NULL DEFAULT '',
-                    country TEXT NOT NULL DEFAULT '',
-                    region TEXT NOT NULL DEFAULT '',
-                    city TEXT NOT NULL DEFAULT '',
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
-                );
-                CREATE INDEX IF NOT EXISTS idx_customers_normalized_phone
-                    ON customers(normalized_phone);
-                CREATE INDEX IF NOT EXISTS idx_customers_normalized_email
-                    ON customers(normalized_email);
-                CREATE INDEX IF NOT EXISTS idx_orders_snapshot_ordering
-                    ON orders_snapshot(source_position, order_id);
-                CREATE INDEX IF NOT EXISTS idx_orders_snapshot_status_ordering
-                    ON orders_snapshot(status, source_position, order_id);
-                CREATE INDEX IF NOT EXISTS idx_orders_snapshot_created
-                    ON orders_snapshot(created_sort, source_position, order_id);
-                CREATE TABLE IF NOT EXISTS orders_snapshot_meta (
-                    key TEXT PRIMARY KEY,
-                    value TEXT NOT NULL
-                );
-                """
-            )
-            columns = {
-                row["name"]
-                for row in connection.execute(
-                    "PRAGMA table_info(orders_snapshot)"
-                ).fetchall()
-            }
-            customer_columns = {
-                row["name"]
-                for row in connection.execute("PRAGMA table_info(customers)").fetchall()
-            }
-            if "name_fold" not in customer_columns:
-                connection.execute(
-                    "ALTER TABLE customers ADD COLUMN name_fold TEXT NOT NULL DEFAULT ''"
-                )
-            for customer in connection.execute(
-                "SELECT id, name FROM customers WHERE name_fold = '' AND name != ''"
-            ).fetchall():
-                connection.execute(
-                    "UPDATE customers SET name_fold = ? WHERE id = ?",
-                    (_text(customer["name"]).casefold(), customer["id"]),
-                )
-            connection.execute(
-                "CREATE INDEX IF NOT EXISTS idx_customers_name ON customers(name_fold)"
-            )
-            if "detail_loaded" not in columns:
-                connection.execute(
-                    "ALTER TABLE orders_snapshot ADD COLUMN detail_loaded "
-                    "INTEGER NOT NULL DEFAULT 0"
-                )
-            if "source" not in columns:
-                connection.execute(
-                    "ALTER TABLE orders_snapshot ADD COLUMN source "
-                    "TEXT NOT NULL DEFAULT 'tictactoy'"
-                )
-            if "external_order_id" not in columns:
-                connection.execute(
-                    "ALTER TABLE orders_snapshot ADD COLUMN external_order_id TEXT"
-                )
-            if "extra_fold" not in columns:
-                connection.execute(
-                    "ALTER TABLE orders_snapshot ADD COLUMN extra_fold "
-                    "TEXT NOT NULL DEFAULT ''"
-                )
-            if "customer_id" not in columns:
-                connection.execute(
-                    "ALTER TABLE orders_snapshot ADD COLUMN customer_id INTEGER"
-                )
-            connection.execute(
-                "UPDATE orders_snapshot SET source = 'tictactoy' "
-                "WHERE source IS NULL OR trim(source) = ''"
-            )
-            connection.execute(
-                "UPDATE orders_snapshot SET external_order_id = order_id "
-                "WHERE external_order_id IS NULL OR trim(external_order_id) = ''"
-            )
-            connection.execute(
-                "CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_snapshot_source_external "
-                "ON orders_snapshot(source, external_order_id)"
-            )
-            connection.execute(
-                "CREATE INDEX IF NOT EXISTS idx_orders_snapshot_source_ordering "
-                "ON orders_snapshot(source, source_position, order_id)"
-            )
-            connection.execute(
-                "CREATE INDEX IF NOT EXISTS idx_orders_snapshot_customer_created "
-                "ON orders_snapshot(customer_id, created_sort)"
-            )
+        if not self._schema_validated:
+            validate_orders_database(self.path)
+            self._schema_validated = True
         return self
 
     def loaded_at(self):

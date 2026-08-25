@@ -7,13 +7,14 @@ from unittest import mock
 
 from app import web
 from app.catalog_db import CatalogDatabase
+from app.schema_migrations import apply_migrations
 
 
 class OrderEmployeeCommentsTest(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.database = CatalogDatabase(Path(self.temporary.name) / "catalog.db")
-        self.database.initialize()
+        apply_migrations(self.database.path, app_commit="test")
 
     def tearDown(self):
         self.temporary.cleanup()

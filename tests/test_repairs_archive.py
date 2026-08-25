@@ -7,6 +7,7 @@ from unittest import mock
 
 from app import web
 from app.auth import AuthStore
+from app.domain_schema_migrations import apply_domain_migrations
 from app.services.audit_journal import AuditJournal
 from app.services.repair_cases import (
     REPAIR_STATUS_LABELS,
@@ -259,6 +260,7 @@ class RepairsArchiveTest(unittest.TestCase):
 
     def test_authenticated_archive_requires_csrf_and_keeps_existing_role_access(self):
         auth_path = self.root / "auth.db"
+        apply_domain_migrations(auth_path, "auth", "test")
         store = AuthStore(auth_path)
         user_id = store.create_initial_admin(
             "Иван", "Сотрудник", "employee@example.test", "StrongPassword!234"

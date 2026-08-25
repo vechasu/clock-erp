@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 
 from app.auth import AuthStore
+from app.domain_schema_migrations import apply_domain_migrations
 from app.schema_migrations import apply_migrations, write_runtime_guard
 from app.services.orders_snapshot import OrdersSnapshotStore
 
@@ -26,9 +27,10 @@ class RuntimeDDLGateTest(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
         report = json.loads(completed.stdout)
         self.assertTrue(report["ok"])
-        self.assertEqual(report["tracked_runtime_containers"], 5)
-        self.assertEqual(report["tracked_ensure_functions"], 25)
+        self.assertEqual(report["tracked_runtime_containers"], 3)
+        self.assertEqual(report["tracked_ensure_functions"], 23)
         self.assertEqual(report["tracked_legacy_scripts"], 6)
+        self.assertEqual(report["tracked_migration_modules"], 2)
 
     def test_new_runtime_ddl_container_is_detected(self):
         from scripts import check_runtime_ddl
@@ -52,6 +54,8 @@ class RuntimeDDLGateTest(unittest.TestCase):
             auth = root / "auth.db"
             apply_migrations(catalog, app_commit="runtime-ddl-test")
             write_runtime_guard(catalog, "runtime-ddl-test")
+            apply_domain_migrations(orders, "orders", "runtime-ddl-test")
+            apply_domain_migrations(auth, "auth", "runtime-ddl-test")
             OrdersSnapshotStore(orders).initialize()
             AuthStore(auth)
             environment = dict(os.environ)
@@ -88,14 +92,7 @@ class RuntimeDDLGateTest(unittest.TestCase):
             self.assertTrue(report["network_egress_blocked"])
             for worker in report["workers"]:
                 statements = worker["statements"]
-                self.assertIn("CREATE TABLE users", statements)
-                self.assertIn("CREATE TABLE orders_snapshot", statements)
-                self.assertFalse(any(
-                    statement.startswith("CREATE TABLE erp_")
-                    or statement.startswith("ALTER TABLE erp_")
-                    or statement.startswith("DROP TABLE erp_")
-                    for statement in statements
-                ))
+                self.assertEqual(statements, [])
 
 
 if __name__ == "__main__":

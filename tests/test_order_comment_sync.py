@@ -5,6 +5,7 @@ from pathlib import Path
 
 from app.catalog_db import CatalogDatabase
 from app.clients.bitrix_order_comments import BitrixOrderCommentError
+from app.schema_migrations import MigrationError, apply_migrations
 from app.services.order_comments import OrderCommentsService, text_hash
 
 
@@ -52,6 +53,7 @@ class OrderCommentSyncTest(unittest.TestCase):
             Path(self.temporary.name) / "catalog.db",
             cache_initialization=False,
         )
+        apply_migrations(self.database.path, app_commit="test")
         self.client = FakeBitrixComments()
         self.service = OrderCommentsService(
             self.database, client_factory=lambda: self.client
@@ -168,18 +170,18 @@ class OrderCommentSyncTest(unittest.TestCase):
                 "'2026-08-20T10:00:00+00:00')"
             )
         database = CatalogDatabase(legacy_path, cache_initialization=False)
-        database.initialize()
+        apply_migrations(legacy_path, app_commit="test")
         comment = OrderCommentsService(database).list("21119")[0]
         self.assertEqual(comment["text"], "Не потерять")
         self.assertEqual(comment["updated_at"], comment["created_at"])
         self.assertEqual(comment["source"], "erp")
 
     def test_external_mapping_index_uses_legacy_sqlite_compatible_sql(self):
-        source = (Path(__file__).resolve().parents[1] / "app/catalog_db.py").read_text(
+        source = (Path(__file__).resolve().parents[1] / "app/schema_migrations.py").read_text(
             encoding="utf-8"
         )
         statement = source.split(
-            '"CREATE UNIQUE INDEX IF NOT EXISTS idx_erp_order_comments_external "',
+            '"CREATE UNIQUE INDEX idx_erp_order_comments_external "',
             1,
         )[1].split(")\n", 1)[0]
         self.assertNotIn("WHERE", statement)
@@ -329,8 +331,8 @@ class OrderCommentSyncTest(unittest.TestCase):
             )
         database = CatalogDatabase(partial_path, cache_initialization=False)
 
-        database.initialize()
-        database.initialize()
+        apply_migrations(partial_path, app_commit="test")
+        apply_migrations(partial_path, app_commit="test")
 
         with database.connect() as connection:
             columns = {
@@ -393,8 +395,8 @@ class OrderCommentSyncTest(unittest.TestCase):
             )
         database = CatalogDatabase(duplicate_path, cache_initialization=False)
 
-        with self.assertRaises(sqlite3.IntegrityError):
-            database.initialize()
+        with self.assertRaises(MigrationError):
+            apply_migrations(duplicate_path, app_commit="test")
 
         with sqlite3.connect(str(duplicate_path)) as connection:
             rows = connection.execute(
