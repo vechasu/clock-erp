@@ -122,9 +122,9 @@ class MoySkladRequestSecurityTests(unittest.TestCase):
         client = moysklad.MoySkladClient(token="fixture-token", session=session)
         self.assertEqual(client.get("/entity/product"), {"rows": []})
         call = session.request.call_args
-        self.assertEqual(call.args[1], "https://api.moysklad.ru/api/remap/1.2/entity/product")
-        self.assertEqual(call.kwargs["headers"]["Authorization"], "Bearer fixture-token")
-        self.assertFalse(call.kwargs["allow_redirects"])
+        self.assertEqual(call[0][1], "https://api.moysklad.ru/api/remap/1.2/entity/product")
+        self.assertEqual(call[1]["headers"]["Authorization"], "Bearer fixture-token")
+        self.assertFalse(call[1]["allow_redirects"])
         with self.assertRaises(moysklad.MoySkladError):
             client.get("//attacker.test/steal")
         self.assertEqual(session.request.call_count, 1)
@@ -154,7 +154,7 @@ class MoySkladRequestSecurityTests(unittest.TestCase):
             client, session = self._client_with_images([response])
             self.assertEqual(client.download_product_thumbnail("p"), (content, content_type))
             self.assertTrue(response.closed)
-            self.assertFalse(session.get.call_args.kwargs["allow_redirects"])
+            self.assertFalse(session.get.call_args[1]["allow_redirects"])
 
     def test_cross_origin_redirect_is_blocked_without_second_request(self):
         redirect = FakeResponse(
