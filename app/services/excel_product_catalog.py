@@ -929,9 +929,12 @@ class ExcelProductCatalog:
                 page = pages
             stats = dict(connection.execute(
                 "SELECT COUNT(*) AS positions, COALESCE(SUM(p.stock), 0) AS total_stock, "
-                "SUM(CASE WHEN p.stock > 0 THEN 1 ELSE 0 END) AS positive_positions, "
-                "SUM(CASE WHEN p.stock = 0 THEN 1 ELSE 0 END) AS zero_positions, "
-                "SUM(CASE WHEN p.bitrix_catalog_product_id IS NOT NULL THEN 1 ELSE 0 END) "
+                "COALESCE(SUM(CASE WHEN p.stock > 0 THEN 1 ELSE 0 END), 0) "
+                "AS positive_positions, "
+                "COALESCE(SUM(CASE WHEN p.stock = 0 THEN 1 ELSE 0 END), 0) "
+                "AS zero_positions, "
+                "COALESCE(SUM(CASE WHEN p.bitrix_catalog_product_id IS NOT NULL "
+                "THEN 1 ELSE 0 END), 0) "
                 "AS matched_positions FROM catalog_excel_products p "
                 "JOIN catalog_excel_batches b ON b.id = p.current_batch_id "
                 "LEFT JOIN catalog_products cp "

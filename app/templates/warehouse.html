@@ -6646,17 +6646,41 @@
 
         function captureWarehouseSearchBaseline() {
             const results = document.getElementById("warehouseResults");
-            const counter = document.getElementById("visiblePositionsCount");
-            const stock = document.getElementById("totalStockCount");
             if (!results) return null;
             return {
                 html: results.innerHTML,
-                counter: counter ? counter.textContent : "",
-                stock: stock ? stock.textContent : "",
+                metrics: captureWarehouseProductMetrics(document),
             };
         }
 
-        function replaceWarehouseResults(html, counterText, stockText) {
+        function captureWarehouseProductMetrics(root) {
+            const metrics = {};
+            root.querySelectorAll("[data-product-metric]").forEach(function(element) {
+                metrics[element.dataset.productMetric] = element.textContent;
+            });
+            return metrics;
+        }
+
+        function setWarehouseProductMetricsState(state) {
+            const metrics = document.getElementById("productAnalyticsMetrics");
+            if (!metrics) return;
+            metrics.dataset.state = state;
+            if (state === "updating") {
+                metrics.setAttribute("aria-busy", "true");
+            } else {
+                metrics.removeAttribute("aria-busy");
+            }
+            if (state === "error") {
+                metrics.setAttribute(
+                    "title",
+                    "Не удалось обновить аналитику для текущих фильтров"
+                );
+            } else {
+                metrics.removeAttribute("title");
+            }
+        }
+
+        function replaceWarehouseResults(html, metrics) {
             const currentResults = document.getElementById(
                 "warehouseResults"
             );
@@ -6677,16 +6701,12 @@
                     handle.remove();
                 });
             }
-            const currentCounter = document.getElementById(
-                "visiblePositionsCount"
-            );
-            const currentStock = document.getElementById("totalStockCount");
-            if (currentCounter && counterText !== undefined) {
-                currentCounter.textContent = counterText;
-            }
-            if (currentStock && stockText !== undefined) {
-                currentStock.textContent = stockText;
-            }
+            Object.entries(metrics || {}).forEach(function(entry) {
+                const element = document.querySelector(
+                    '[data-product-metric="' + entry[0] + '"]'
+                );
+                if (element) element.textContent = entry[1];
+            });
             initializeWarehouseTableView();
             if (nextScroll) nextScroll.scrollLeft = currentScroll;
             filterWarehouseRows();
@@ -6696,8 +6716,7 @@
             if (!warehouseSearchBaseline) return false;
             replaceWarehouseResults(
                 warehouseSearchBaseline.html,
-                warehouseSearchBaseline.counter,
-                warehouseSearchBaseline.stock
+                warehouseSearchBaseline.metrics
             );
             return true;
         }
@@ -6729,8 +6748,7 @@
             if (!snapshot) return false;
             replaceWarehouseResults(
                 snapshot.html,
-                snapshot.counter,
-                snapshot.stock
+                snapshot.metrics
             );
             warehouseRenderedQuery = snapshotKey;
             return true;
@@ -6892,6 +6910,7 @@
                 loadingState.className = "warehouse-loading-state is-visible erp-loading-state";
                 loadingState.textContent = "Обновляем товары…";
             }
+            setWarehouseProductMetricsState("updating");
 
             try {
                 const response = await fetch(url, {
@@ -6919,27 +6938,16 @@
                 const currentResults = document.getElementById(
                     "warehouseResults"
                 );
-                const nextCounter = documentCopy.getElementById(
-                    "visiblePositionsCount"
-                );
-                const currentCounter = document.getElementById(
-                    "visiblePositionsCount"
-                );
-                const nextStock = documentCopy.getElementById(
-                    "totalStockCount"
-                );
 
                 if (nextResults && currentResults) {
                     replaceWarehouseResults(
                         nextResults.innerHTML,
-                        nextCounter && currentCounter
-                            ? nextCounter.textContent
-                            : undefined,
-                        nextStock ? nextStock.textContent : undefined
+                        captureWarehouseProductMetrics(documentCopy)
                     );
                     warehouseRenderedQuery =
                         normalizeWarehouseSearchValue(query);
                     cacheWarehouseSearchSnapshot(query);
+                    setWarehouseProductMetricsState("ready");
                 }
                 if (loadingState) {
                     loadingState.className = "warehouse-loading-state";
@@ -6948,12 +6956,13 @@
             } catch (error) {
                 if (error.name !== "AbortError") {
                     console.error(error);
+                    setWarehouseProductMetricsState("error");
                     if (loadingState) {
                         loadingState.className = (
                             "warehouse-loading-state is-visible is-error erp-error-state"
                         );
                         loadingState.innerHTML = (
-                            "Не удалось обновить товары."
+                            "Не удалось обновить товары и аналитику."
                             + '<button type="button" onclick="retryWarehouseResults()">'
                             + "Повторить</button>"
                         );
