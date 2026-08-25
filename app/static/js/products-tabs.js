@@ -1,6 +1,12 @@
 (function () {
     "use strict";
 
+    const existingLifecycle = window.VechasuProductsTabs;
+    if (existingLifecycle && typeof existingLifecycle.initialize === "function") {
+        existingLifecycle.initialize();
+        return;
+    }
+
     const storagePrefix = "vechasu.products.tab-state.v1.";
     const allowedParameters = {
         analytics: [],
@@ -20,7 +26,6 @@
             "per_page"
         ]
     };
-    let tabNavigationPending = false;
 
     function currentView(url) {
         const view = url.searchParams.get("view") || "products";
@@ -74,74 +79,47 @@
         link.href = url.toString();
     }
 
-    function canHandleTabClick(event, link) {
-        if (event.defaultPrevented || event.button !== 0) return false;
-        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
-            return false;
-        }
-        if (link.target && link.target !== "_self") return false;
-        return new URL(link.href, window.location.href).origin === window.location.origin;
+    function productsTabLink(target) {
+        if (!(target instanceof Element)) return null;
+        return target.closest("[data-products-tab]");
     }
 
-    async function loadTabDocument(targetUrl, addHistoryEntry) {
-        if (tabNavigationPending) return;
-        tabNavigationPending = true;
-        const main = document.querySelector("main");
-        if (main) main.setAttribute("aria-busy", "true");
-        try {
-            const response = await fetch(targetUrl, {
-                credentials: "same-origin",
-                headers: {"X-Requested-With": "products-tabs"}
-            });
-            if (!response.ok) throw new Error("Products tab request failed");
-            const html = await response.text();
-            const responseUrl = new URL(response.url || targetUrl, window.location.href);
-            if (responseUrl.origin !== window.location.origin) {
-                throw new Error("Products tab redirect changed origin");
-            }
-            if (addHistoryEntry) history.pushState({}, "", responseUrl);
-            document.open();
-            document.write(html);
-            document.close();
-        } catch (error) {
-            window.location.assign(targetUrl);
-        }
-    }
-
-    function handleTabClick(event) {
-        const link = event.currentTarget;
-        if (!canHandleTabClick(event, link)) return;
+    function prepareLink(event) {
+        const link = productsTabLink(event.target);
+        if (!link) return;
         saveCurrentState();
         restoreTargetState(link);
-        event.preventDefault();
-        loadTabDocument(link.href, true);
     }
 
-    function initialize() {
+    function refreshLinks() {
         saveCurrentState();
-        document.querySelectorAll("[data-products-tab]").forEach(function (link) {
-            restoreTargetState(link);
-            if (link.dataset.productsTabReady === "1") return;
-            link.dataset.productsTabReady = "1";
-            link.addEventListener("pointerenter", function () {
-                saveCurrentState();
-                restoreTargetState(link);
-            });
-            link.addEventListener("focus", function () {
-                saveCurrentState();
-                restoreTargetState(link);
-            });
-            link.addEventListener("click", handleTabClick);
-        });
+        document.querySelectorAll("[data-products-tab]").forEach(
+            restoreTargetState
+        );
     }
+
+    const lifecycle = {
+        initialized: false,
+        initialize: function () {
+            if (lifecycle.initialized) {
+                refreshLinks();
+                return;
+            }
+            lifecycle.initialized = true;
+            refreshLinks();
+            document.addEventListener("pointerover", prepareLink);
+            document.addEventListener("focusin", prepareLink);
+            document.addEventListener("click", prepareLink);
+            window.addEventListener("pageshow", refreshLinks);
+        }
+    };
+    window.VechasuProductsTabs = lifecycle;
 
     if (document.readyState === "loading") {
-        document.addEventListener("DOMContentLoaded", initialize, { once: true });
+        document.addEventListener("DOMContentLoaded", lifecycle.initialize, {
+            once: true
+        });
     } else {
-        initialize();
+        lifecycle.initialize();
     }
-    window.addEventListener("pageshow", initialize);
-    window.addEventListener("popstate", function () {
-        loadTabDocument(window.location.href, false);
-    });
 })();

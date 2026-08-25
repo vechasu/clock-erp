@@ -1,3 +1,5 @@
+import shutil
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -88,10 +90,108 @@ class ProductsRedesignStructureTest(unittest.TestCase):
         self.assertIn('brands: ["q", "show_empty", "brand_id"]', script)
         self.assertIn("storagePrefix + view", script)
         self.assertIn('url.searchParams.delete("view")', script)
-        self.assertIn("event.preventDefault()", script)
-        self.assertIn("await fetch(targetUrl", script)
-        self.assertIn("document.write(html)", script)
-        self.assertIn('window.addEventListener("popstate"', script)
+        self.assertIn("window.VechasuProductsTabs = lifecycle", script)
+        self.assertIn("if (lifecycle.initialized)", script)
+        self.assertIn('document.addEventListener("click", prepareLink)', script)
+        self.assertNotIn("fetch(", script)
+        self.assertNotIn("document.open()", script)
+        self.assertNotIn("document.write(", script)
+        self.assertNotIn('window.addEventListener("popstate"', script)
+
+    def test_products_tab_lifecycle_cannot_reexecute_a_full_document(self):
+        script = (ROOT / "app/static/js/products-tabs.js").read_text(
+            encoding="utf-8"
+        )
+        products = self.source("warehouse.html")
+
+        self.assertIn("const existingLifecycle = window.VechasuProductsTabs", script)
+        self.assertIn("existingLifecycle.initialize()", script)
+        self.assertIn("return;", script)
+        self.assertEqual(script.count('addEventListener("pointerover"'), 1)
+        self.assertEqual(script.count('addEventListener("focusin"'), 1)
+        self.assertEqual(script.count('addEventListener("click"'), 1)
+        self.assertEqual(
+            products.count("js/products-tabs.js"),
+            1,
+        )
+        self.assertIn(
+            'window.addEventListener("popstate", function() {\n'
+            "            loadWarehouseResultsUrl",
+            products,
+        )
+
+    def test_products_tab_script_is_idempotent_when_loaded_three_times(self):
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("Node.js is unavailable")
+        script_path = ROOT / "app/static/js/products-tabs.js"
+        harness = r"""
+const fs = require("fs");
+const vm = require("vm");
+const assert = require("assert");
+
+class FakeElement {
+    constructor(view, href) {
+        this.dataset = {productsTab: view};
+        this.href = href;
+    }
+    closest(selector) {
+        return selector === "[data-products-tab]" ? this : null;
+    }
+}
+
+const documentListeners = new Map();
+const windowListeners = new Map();
+const storage = new Map();
+const link = new FakeElement(
+    "products",
+    "https://erp.test/app/products?q=stale"
+);
+global.Element = FakeElement;
+global.document = {
+    readyState: "complete",
+    querySelectorAll: () => [link],
+    addEventListener: (type, listener) => {
+        if (!documentListeners.has(type)) documentListeners.set(type, []);
+        documentListeners.get(type).push(listener);
+    },
+};
+global.sessionStorage = {
+    getItem: (key) => storage.get(key) || null,
+    setItem: (key, value) => storage.set(key, value),
+};
+global.window = {
+    location: {href: "https://erp.test/app/products?q=Casio"},
+    addEventListener: (type, listener) => {
+        if (!windowListeners.has(type)) windowListeners.set(type, []);
+        windowListeners.get(type).push(listener);
+    },
+};
+
+const source = fs.readFileSync(process.argv[1], "utf8");
+for (let cycle = 0; cycle < 3; cycle += 1) {
+    vm.runInThisContext(source, {filename: "products-tabs.js"});
+}
+
+for (const type of ["pointerover", "focusin", "click"]) {
+    assert.strictEqual(documentListeners.get(type).length, 1, type);
+}
+assert.strictEqual(windowListeners.get("pageshow").length, 1);
+assert.strictEqual(windowListeners.has("popstate"), false);
+assert.strictEqual(window.VechasuProductsTabs.initialized, true);
+documentListeners.get("click")[0]({target: link});
+assert.strictEqual(
+    link.href,
+    "https://erp.test/app/products?q=Casio"
+);
+"""
+        result = subprocess.run(
+            [node, "-e", harness, str(script_path)],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_out_of_stock_checks_tolerate_an_empty_cycle(self):
         products = self.source("warehouse.html")

@@ -16,6 +16,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
+    "test:e2e:products": "playwright test --config playwright.products.config.ts",
     "test:e2e:list": "playwright test --list",
     "test:a11y": "playwright test --config playwright.accessibility.config.ts",
     "preview": "vite preview"

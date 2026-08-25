@@ -13,10 +13,21 @@ sys.path.insert(0, str(PROJECT_ROOT))
 PREVIEW_TEMP = tempfile.TemporaryDirectory(prefix="vechasu-stage2-preview-")
 PREVIEW_ROOT = Path(PREVIEW_TEMP.name)
 os.environ["CATALOG_DATABASE_PATH"] = str(PREVIEW_ROOT / "catalog.db")
+os.environ.setdefault("ERP_AUTH_DATABASE", str(PREVIEW_ROOT / "auth.db"))
+os.environ.setdefault("ORDERS_DATABASE_PATH", str(PREVIEW_ROOT / "orders.db"))
+os.environ.setdefault("ERP_SECRET_KEY", "stage2-preview-secret")
+os.environ.setdefault("ERP_TEST_MODE", "1")
 
 from app.schema_migrations import apply_migrations  # noqa: E402
+from app.domain_schema_migrations import apply_domain_migrations  # noqa: E402
 
 apply_migrations(PREVIEW_ROOT / "catalog.db", app_commit="stage2-preview")
+apply_domain_migrations(
+    Path(os.environ["ERP_AUTH_DATABASE"]), "auth", "stage2-preview"
+)
+apply_domain_migrations(
+    Path(os.environ["ORDERS_DATABASE_PATH"]), "orders", "stage2-preview"
+)
 
 from app import web  # noqa: E402
 from app.catalog_db import CatalogDatabase  # noqa: E402
