@@ -23,7 +23,7 @@
         <a class="erp-section-tab{% if active_view == view %} is-active{% endif %}" href="{{ url_for('warehouse_page', view=view) if view != 'products' else url_for('warehouse_page') }}" data-products-tab="{{ view }}"{% if active_view == view %} aria-current="page"{% endif %}>{{ label }}{% if count is not none %}<span class="warehouse-tab-badge">{{ count }}</span>{% endif %}</a>
     {% endfor %}
 </nav>
-<section class="products-workspace-metrics erp-workspace-metrics" aria-label="Аналитика товаров" style="--erp-workspace-metric-count:4">
+<section id="productAnalyticsMetrics" class="products-workspace-metrics erp-workspace-metrics" aria-label="Аналитика товаров" data-state="ready" style="--erp-workspace-metric-count:4">
     <article class="erp-stat-card erp-workspace-metric"><span class="erp-stat-label">Позиций</span><strong id="visiblePositionsCount" class="erp-stat-value" data-product-metric="positions">{{ product_metrics.positions }}</strong></article>
     <article class="erp-stat-card erp-workspace-metric"><span class="erp-stat-label">В наличии</span><strong class="erp-stat-value" data-product-metric="in-stock">{{ product_metrics.in_stock }}</strong></article>
     <article class="erp-stat-card erp-workspace-metric"><span class="erp-stat-label">Единиц</span><strong id="totalStockCount" class="erp-stat-value" data-product-metric="units">{{ product_metrics.units }}</strong></article>
