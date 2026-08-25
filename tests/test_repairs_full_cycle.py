@@ -7,6 +7,7 @@ from unittest import mock
 
 from app import web
 from app.auth import AuthStore
+from app.services import repair_cases
 from app.services.repair_cases import (
     REPAIR_SCHEMA_VERSION,
     load_repair_file,
@@ -234,6 +235,49 @@ class RepairsFullCycleTest(unittest.TestCase):
         self.assertNotEqual(first["id"], second["id"])
         self.assertEqual(len(load_repair_file(self.store)), 2)
         self.assertEqual(first["product_name"], "Voyager")
+
+    def test_create_without_order_works_with_python_36_date_api(self):
+        payload = base_payload(
+            client_name="Тестовый Клиент",
+            client_phone="+70000000000",
+            client_email="",
+            contact="",
+            communication_channel="phone",
+            product_name="Контрольное устройство",
+            model="Контрольное устройство",
+            problem="Не включается после доставки",
+            problem_details=(
+                "Отправка через СДЭК из пункта PLK6. "
+                "Адрес: Тестовый город, Тестовая улица, 18к2."
+            ),
+            incoming_waybill="PLK6",
+            idempotency_key="python-36-repair-create",
+        )
+
+        with mock.patch.object(repair_cases, "date", object()):
+            first = self.client.post(
+                "/api/v1/repairs",
+                json=payload,
+                headers={"Idempotency-Key": payload["idempotency_key"]},
+            )
+            repeated = self.client.post(
+                "/api/v1/repairs",
+                json=payload,
+                headers={"Idempotency-Key": payload["idempotency_key"]},
+            )
+
+        self.assertEqual(first.status_code, 201, first.get_data(as_text=True))
+        self.assertEqual(repeated.status_code, 201, repeated.get_data(as_text=True))
+        self.assertEqual(first.get_json()["data"]["id"], repeated.get_json()["data"]["id"])
+        self.assertEqual(len(load_repair_file(self.store)), 1)
+        created = first.get_json()["data"]
+        self.assertFalse(created["order_id"])
+        self.assertEqual(created["client_email"], "")
+        self.assertEqual(created["client_messenger"], "")
+        self.assertEqual(created["contact"], "+70000000000")
+        self.assertEqual(created["communication_channel"], "phone")
+        self.assertEqual(created["incoming_waybill"], "PLK6")
+        self.assertIn("СДЭК", created["problem_details"])
 
     def test_multiple_repairs_can_share_order_and_different_positions(self):
         first = self.create(order_source="our", order_id="20735", order_item_id="p-1:position:1")
