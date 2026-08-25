@@ -223,6 +223,7 @@ class BitrixProductGalleryIntegrationTest(unittest.TestCase):
                 })
                 client = BitrixCatalogClient(
                     "https://www.tictactoy.ru/api/catalog-export.php",
+                    token="fixture-token",
                     session=session,
                 )
                 product, _result = client.mutate_product_image(
@@ -242,6 +243,7 @@ class BitrixProductGalleryIntegrationTest(unittest.TestCase):
         }]}
         client = BitrixCatalogClient(
             "https://www.tictactoy.ru/api/catalog-export.php",
+            token="fixture-token",
             session=FakeSession([unchanged, unchanged]),
         )
         with self.assertRaises(BitrixCatalogWriteError) as raised:
@@ -263,6 +265,7 @@ class BitrixProductGalleryIntegrationTest(unittest.TestCase):
         }]}
         client = BitrixCatalogClient(
             "https://www.tictactoy.ru/api/catalog-export.php",
+            token="fixture-token",
             session=FakeSession(
                 before,
                 post_payload={"error": "image_save_failed"},

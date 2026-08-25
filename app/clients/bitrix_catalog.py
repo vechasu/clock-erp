@@ -444,10 +444,15 @@ class BitrixCatalogReadOnlyClient:
     def __init__(self, export_url, token=None, timeout=(3.05, 20), max_retries=3,
                  session=None, logger=None):
         if not export_url:
-            raise ValueError("BITRIX_CATALOG_URL is required")
+            raise BitrixCatalogReadOnlyError("Bitrix catalog integration is not configured")
+        if not str(token or "").strip():
+            raise BitrixCatalogReadOnlyError("Bitrix catalog token is not configured")
+        parsed = urlsplit(str(export_url))
+        if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+            raise BitrixCatalogReadOnlyError("Bitrix catalog endpoint must use HTTPS")
         self.export_url = export_url
         self.base_url = f"{urlsplit(export_url).scheme}://{urlsplit(export_url).netloc}/"
-        self.token = token
+        self.token = str(token).strip()
         self.timeout = timeout
         self.max_retries = max(0, int(max_retries))
         self.session = session or requests.Session()
@@ -462,7 +467,7 @@ class BitrixCatalogReadOnlyClient:
             try:
                 self.request_count += 1
                 response = self.session.get(self.export_url, params=params, headers=headers,
-                                            timeout=self.timeout)
+                                            timeout=self.timeout, allow_redirects=False)
             except (requests.Timeout, requests.ConnectionError) as error:
                 if attempt >= self.max_retries:
                     self.logger.error("Bitrix catalog request failed for %s: %s",
@@ -472,6 +477,8 @@ class BitrixCatalogReadOnlyClient:
                 continue
             if response.status_code in {401, 403}:
                 raise BitrixCatalogReadOnlyError(f"Bitrix catalog access denied: HTTP {response.status_code}")
+            if 300 <= response.status_code < 400:
+                raise BitrixCatalogReadOnlyError("Bitrix catalog redirect was blocked")
             if response.status_code in RETRYABLE_STATUS_CODES:
                 if attempt >= self.max_retries:
                     raise BitrixCatalogReadOnlyError(f"Bitrix catalog temporary error: HTTP {response.status_code}")

@@ -5,10 +5,34 @@ from __future__ import print_function
 
 import argparse
 import ipaddress
+import os
 import socket
+import subprocess
 import sys
 import unittest
 from pathlib import Path
+
+for secret_name in (
+    "MOYSKLAD_TOKEN",
+    "BITRIX_LOGIN",
+    "BITRIX_PASSWORD",
+    "BITRIX_CATALOG_TOKEN",
+    "BITRIX_ORDERS_TOKEN",
+    "BITRIX_ORDER_COMMENTS_TOKEN",
+    "UPDATE_ORDER_STATUS_TOKEN",
+    "WB_API_TOKEN",
+    "SMTP_USERNAME",
+    "SMTP_PASSWORD",
+):
+    os.environ[secret_name] = ""
+os.environ["ERP_TEST_MODE"] = "1"
+for proxy_name in (
+    "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
+    "http_proxy", "https_proxy", "all_proxy",
+):
+    os.environ.pop(proxy_name, None)
+os.environ["NO_PROXY"] = "*"
+os.environ["no_proxy"] = "*"
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -20,6 +44,9 @@ from app.schema_migrations import apply_migrations  # noqa: E402
 
 
 ORIGINAL_GETADDRINFO = socket.getaddrinfo
+ORIGINAL_SOCKET_CONNECT = socket.socket.connect
+ORIGINAL_CREATE_CONNECTION = socket.create_connection
+ORIGINAL_POPEN = subprocess.Popen
 ORIGINAL_CATALOG_INITIALIZE = CatalogDatabase.initialize
 
 
@@ -63,6 +90,34 @@ def guarded_getaddrinfo(host, *args, **kwargs):
     return ORIGINAL_GETADDRINFO(host, *args, **kwargs)
 
 
+def _address_host(address):
+    if isinstance(address, tuple) and address:
+        return address[0]
+    return None
+
+
+def guarded_socket_connect(sock, address):
+    host = _address_host(address)
+    if host is not None and not local_host(host):
+        raise OSError("external network disabled during backend tests")
+    return ORIGINAL_SOCKET_CONNECT(sock, address)
+
+
+def guarded_create_connection(address, *args, **kwargs):
+    host = _address_host(address)
+    if host is not None and not local_host(host):
+        raise OSError("external network disabled during backend tests")
+    return ORIGINAL_CREATE_CONNECTION(address, *args, **kwargs)
+
+
+def guarded_popen(args, *pargs, **kwargs):
+    command = args if isinstance(args, (list, tuple)) else [args]
+    executable = Path(str(command[0] or "")).name.casefold() if command else ""
+    if executable in {"curl", "wget"}:
+        raise OSError("external network subprocess disabled during backend tests")
+    return ORIGINAL_POPEN(args, *pargs, **kwargs)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--start-directory", default="tests")
@@ -70,6 +125,9 @@ def main():
     parser.add_argument("--verbosity", type=int, default=2)
     arguments = parser.parse_args()
     socket.getaddrinfo = guarded_getaddrinfo
+    socket.socket.connect = guarded_socket_connect
+    socket.create_connection = guarded_create_connection
+    subprocess.Popen = guarded_popen
     CatalogDatabase.initialize = initialize_test_catalog
     apply_domain_migrations(PROJECT_ROOT / "instance" / "auth.db", "auth", "test-suite")
     apply_domain_migrations(PROJECT_ROOT / "instance" / "orders.db", "orders", "test-suite")
