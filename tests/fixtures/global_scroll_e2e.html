@@ -43,6 +43,9 @@
             const bodyStyle = getComputedStyle(document.body);
             const actionRect = action.getBoundingClientRect();
             const sidebarRect = document.querySelector(".sidebar").getBoundingClientRect();
+            const app = document.querySelector(".app");
+            const appRect = app.getBoundingClientRect();
+            const appStyle = getComputedStyle(app);
             const mobileNavigation = document.querySelector(".mobile-erp-navigation");
             const mobileNavigationStyle = getComputedStyle(mobileNavigation);
             const mobileNavigationRect = mobileNavigation.getBoundingClientRect();
@@ -59,6 +62,16 @@
                 ? sidebarRect.height === 0
                 : sidebarRect.top === 0
                     && sidebarRect.bottom === window.innerHeight;
+            const shellFillsViewport = (
+                appRect.left === 0
+                && appRect.right === document.documentElement.clientWidth
+                && appRect.height >= window.innerHeight
+                && appStyle.backgroundColor !== "rgba(0, 0, 0, 0)"
+            );
+            const noDocumentOverflow = (
+                document.documentElement.scrollWidth
+                <= document.documentElement.clientWidth
+            );
             const passed = (
                 htmlStyle.overflowY === "auto"
                 && bodyStyle.overflowY === "visible"
@@ -67,6 +80,8 @@
                 && bottomGap >= 31
                 && bottomGap <= 33
                 && sidebarStable
+                && shellFillsViewport
+                && noDocumentOverflow
                 && clicked
             );
             result.dataset.globalScrollE2e = passed ? "pass" : "fail";
@@ -79,6 +94,12 @@
                 mobile,
                 sidebarTop: sidebarRect.top,
                 sidebarBottom: sidebarRect.bottom,
+                appLeft: appRect.left,
+                appRight: appRect.right,
+                appHeight: appRect.height,
+                appBackground: appStyle.backgroundColor,
+                documentClientWidth: document.documentElement.clientWidth,
+                documentScrollWidth: document.documentElement.scrollWidth,
                 viewportHeight: window.innerHeight,
                 clicked,
             });

@@ -12,26 +12,40 @@
 }
 
 html {
+    width: 100%;
     max-width: 100%;
+    min-width: 0;
+    min-height: 100%;
     overflow-x: clip;
     overflow-y: auto;
+    background: var(--theme-app-bg, #f4f7fb);
 }
 
 /* Keep the document root as the only page-level vertical scroll owner. */
 body,
 body[class] {
+    width: 100%;
     max-width: 100%;
+    min-width: 0;
     min-height: 100vh;
     min-height: 100dvh;
+    box-sizing: border-box;
+    margin: 0;
     overflow-x: clip !important;
     overflow-y: visible !important;
+    background: var(--theme-workspace-bg, #f4f7fb);
 }
 
 .app {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
     min-height: 100vh;
     min-height: 100dvh;
     display: block;
+    box-sizing: border-box;
     padding-left: var(--sidebar-width);
+    background: var(--theme-workspace-bg, #f4f7fb);
     transition: none;
 }
 
@@ -43,10 +57,11 @@ body[class] {
     padding-left: var(--sidebar-collapsed-width);
 }
 
-.app > .main {
+.app > main {
     width: 100%;
     min-width: 0;
     max-width: 100%;
+    box-sizing: border-box;
 }
 
 .sidebar {
