@@ -120,6 +120,24 @@ class ProductsRedesignStructureTest(unittest.TestCase):
             products,
         )
 
+    def test_products_tab_uses_automatic_content_versioning_on_full_pages(self):
+        for name in (
+            "warehouse.html", "warehouse_analytics.html",
+            "warehouse_brands.html", "warehouse_categories.html",
+        ):
+            source = self.source(name)
+            self.assertIn(
+                "static_asset_url('js/products-tabs.js')", source
+            )
+            self.assertNotIn(
+                "url_for('static', filename='js/products-tabs.js')", source
+            )
+        versioning = (
+            ROOT / "app" / "static_assets.py"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("Date.now", versioning)
+        self.assertNotIn("random", versioning.lower())
+
     def test_products_tab_script_is_idempotent_when_loaded_three_times(self):
         node = shutil.which("node")
         if not node:

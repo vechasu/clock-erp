@@ -5,6 +5,7 @@ import sys
 import tempfile
 import base64
 import hashlib
+import threading
 from pathlib import Path
 
 
@@ -25,7 +26,10 @@ apply_domain_migrations(PREVIEW_ROOT / "orders.db", "orders", "stage2-preview")
 
 from app import web  # noqa: E402
 from app.catalog_db import CatalogDatabase  # noqa: E402
-from app.services.excel_product_catalog import ExcelProductBatchService  # noqa: E402
+from app.services.excel_product_catalog import (  # noqa: E402
+    ExcelProductBatchService,
+    ExcelProductCatalog,
+)
 from app.services.audit_journal import AuditJournal  # noqa: E402
 
 
@@ -70,6 +74,19 @@ ExcelProductBatchService(CatalogDatabase(PREVIEW_ROOT / "catalog.db")).apply(
     ],
     "d" * 64,
     "stage2-preview.xlsx",
+)
+fixture_catalog_database = CatalogDatabase(PREVIEW_ROOT / "catalog.db")
+connection = fixture_catalog_database.connect()
+try:
+    tissot_id = connection.execute(
+        "SELECT id FROM catalog_excel_products WHERE excel_article = ?",
+        ("T137.407",),
+    ).fetchone()["id"]
+finally:
+    connection.close()
+ExcelProductCatalog(fixture_catalog_database).update_product(
+    tissot_id,
+    model="PRX",
 )
 projected_products = web.get_excel_warehouse_items()
 
@@ -375,6 +392,82 @@ web.build_sales_report_records = lambda warehouse_items=None: [
     dict(sale) for sale in preview_sales
 ]
 web.app.config.update(TESTING=True, AUTH_TESTING=False)
+
+
+class WarmCacheReleaseMiddleware:
+    """Serve a cadd979-like cached script before switching to the release."""
+
+    legacy_source = b"""(function () {
+window.__legacyProductsTabsExecuted = true;
+window.addEventListener('popstate', function () {
+    document.open();
+    document.write('<main>legacy document replacement</main>');
+    document.close();
+});
+})();
+"""
+
+    def __init__(self, application):
+        self.application = application
+        self.release = "current"
+        self.lock = threading.Lock()
+
+    @staticmethod
+    def response(start_response, status, body, headers):
+        start_response(status, headers + [("Content-Length", str(len(body)))])
+        return [body]
+
+    def __call__(self, environ, start_response):
+        path = environ.get("PATH_INFO", "")
+        if path.startswith("/__e2e/asset-release/"):
+            release = path.rsplit("/", 1)[-1]
+            if release not in {"baseline", "current"}:
+                return self.response(
+                    start_response, "400 Bad Request", b"invalid release", []
+                )
+            with self.lock:
+                self.release = release
+            return self.response(
+                start_response,
+                "204 No Content",
+                b"",
+                [("Cache-Control", "no-store")],
+            )
+        if path == "/__e2e/warm-cache-baseline":
+            body = (
+                b"<!doctype html><html><head>"
+                b"<script src=\"/static/js/products-tabs.js\"></script>"
+                b"</head><body><main>baseline</main></body></html>"
+            )
+            return self.response(
+                start_response,
+                "200 OK",
+                body,
+                [
+                    ("Content-Type", "text/html; charset=utf-8"),
+                    ("Cache-Control", "no-store"),
+                ],
+            )
+        with self.lock:
+            baseline = self.release == "baseline"
+        if (
+            baseline
+            and path == "/static/js/products-tabs.js"
+            and not environ.get("QUERY_STRING")
+        ):
+            return self.response(
+                start_response,
+                "200 OK",
+                self.legacy_source,
+                [
+                    ("Content-Type", "application/javascript; charset=utf-8"),
+                    ("Cache-Control", "public, max-age=31536000, immutable"),
+                ],
+            )
+        return self.application(environ, start_response)
+
+
+web.app.wsgi_app = WarmCacheReleaseMiddleware(web.app.wsgi_app)
 
 preview_journal = AuditJournal(CatalogDatabase(PREVIEW_ROOT / "catalog.db"))
 for index in range(42):

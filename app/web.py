@@ -180,8 +180,10 @@ from app.auth import (
     require_csrf_when_authenticated,
     settings_invitation_context,
 )
+from app.static_assets import register_static_asset_versioning
 
 app = Flask(__name__)
+register_static_asset_versioning(app)
 try:
     TRUSTED_PROXY_COUNT = max(
         0,

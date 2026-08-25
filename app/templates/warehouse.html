@@ -4028,7 +4028,7 @@
     <script defer src="{{ url_for('static', filename='js/erp-modal-shell.js') }}"></script>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/products-workspace.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/erp-focus-mode.css') }}">
-    <script defer src="{{ url_for('static', filename='js/products-tabs.js') }}"></script>
+    <script defer src="{{ static_asset_url('js/products-tabs.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/erp-focus-mode.js') }}"></script>
     {% if config.TESTING and request.args.get("products_focus_mode_e2e") == "1" %}
         <script defer src="{{ url_for('static', filename='js/products-focus-mode-e2e.js') }}"></script>
