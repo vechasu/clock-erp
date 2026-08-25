@@ -4127,6 +4127,13 @@ def warehouse_page():
         stock_state=stock_state,
         check_state=check_state if out_of_stock else "all",
     )
+    catalog_stats = catalog.get("stats") or {}
+    product_metrics = {
+        "positions": int(catalog_stats.get("positions") or 0),
+        "in_stock": int(catalog_stats.get("positive_positions") or 0),
+        "out_of_stock": int(catalog_stats.get("zero_positions") or 0),
+        "units": format_stock_number(catalog_stats.get("total_stock") or 0),
+    }
     catalog_items = build_excel_warehouse_items(catalog["items"])
     items = get_excel_warehouse_items(catalog=catalog)
     if out_of_stock:
@@ -16811,6 +16818,18 @@ def api_positive_int(value, default, maximum):
     return max(1, min(parsed, maximum))
 
 
+def api_optional_id(value):
+    if value in (None, ""):
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        raise ValueError("Некорректный идентификатор фильтра.")
+    if parsed < 0:
+        raise ValueError("Некорректный идентификатор фильтра.")
+    return parsed
+
+
 def serialize_api_product(product):
     projected = build_excel_warehouse_items([product])[0]
     return {
@@ -17063,6 +17082,13 @@ def api_products_collection():
         50,
         200,
     )
+    try:
+        filter_ids = {
+            name: api_optional_id(request.args.get(name))
+            for name in ("brand_id", "category_id", "model_id", "product_id")
+        }
+    except ValueError as error:
+        return api_error("PRODUCT_FILTER_INVALID", str(error), 422)
     listing = catalog_service.list_products(
         query=(
             request.args.get("q")
@@ -17072,6 +17098,7 @@ def api_products_collection():
         ).strip(),
         brand=(request.args.get("brand") or "").strip(),
         category=(request.args.get("category") or "").strip(),
+        model=(request.args.get("model") or "").strip(),
         cell=(request.args.get("cell") or "").strip(),
         match_status=(request.args.get("match_status") or "all").strip(),
         hide_zero=(
@@ -17086,9 +17113,10 @@ def api_products_collection():
         per_page=page_size,
         created_from=(request.args.get("date_from") or "").strip(),
         created_to=(request.args.get("date_to") or "").strip(),
-        brand_id=request.args.get("brand_id"),
-        category_id=request.args.get("category_id"),
-        product_id=request.args.get("product_id"),
+        brand_id=filter_ids["brand_id"],
+        category_id=filter_ids["category_id"],
+        model_id=filter_ids["model_id"],
+        product_id=filter_ids["product_id"],
         include_cell_item_names=not request.path.startswith("/api/v1/"),
         stock_state=(request.args.get("stock_state") or "all").strip(),
         check_state=(request.args.get("check_state") or "all").strip(),
