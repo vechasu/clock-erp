@@ -135,6 +135,9 @@ jobs:
       - name: Install Playwright Chromium
         run: pnpm exec playwright install --with-deps chromium
 
+      - name: Product lifecycle Playwright regression
+        run: pnpm run test:e2e:products
+
       - name: Playwright/Axe accessibility gate
         env:
           CI: "true"
