@@ -4,6 +4,7 @@ import subprocess
 import unittest
 import urllib.error
 import urllib.request
+from pathlib import Path
 from unittest import mock
 
 import requests
@@ -70,6 +71,21 @@ class NoEgressGuardTests(unittest.TestCase):
         ):
             self.assertEqual(os.environ.get(name), "")
         self.assertEqual(os.environ.get("ERP_TEST_MODE"), "1")
+
+    def test_default_databases_are_isolated_under_temporary_root(self):
+        test_root = Path(os.environ["ERP_TEST_ROOT"]).resolve()
+        project_instance = (
+            Path(run_backend_tests.PROJECT_ROOT) / "instance"
+        ).resolve()
+        for name in (
+            "CATALOG_DATABASE_PATH",
+            "ERP_AUTH_DATABASE",
+            "ORDERS_DATABASE_PATH",
+        ):
+            database_path = Path(os.environ[name]).resolve()
+            self.assertEqual(database_path.parent, test_root)
+            self.assertNotEqual(database_path.parent, project_instance)
+            self.assertTrue(database_path.is_file())
 
 
 if __name__ == "__main__":

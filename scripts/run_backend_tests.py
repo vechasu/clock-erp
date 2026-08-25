@@ -9,6 +9,7 @@ import os
 import socket
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -124,21 +125,53 @@ def main():
     parser.add_argument("--pattern", default="test*.py")
     parser.add_argument("--verbosity", type=int, default=2)
     arguments = parser.parse_args()
-    socket.getaddrinfo = guarded_getaddrinfo
-    socket.socket.connect = guarded_socket_connect
-    socket.create_connection = guarded_create_connection
-    subprocess.Popen = guarded_popen
-    CatalogDatabase.initialize = initialize_test_catalog
-    apply_domain_migrations(PROJECT_ROOT / "instance" / "auth.db", "auth", "test-suite")
-    apply_domain_migrations(PROJECT_ROOT / "instance" / "orders.db", "orders", "test-suite")
-    suite = unittest.defaultTestLoader.discover(
-        arguments.start_directory,
-        pattern=arguments.pattern,
-    )
-    result = unittest.TextTestRunner(
-        verbosity=arguments.verbosity,
-    ).run(suite)
-    return 0 if result.wasSuccessful() else 1
+    with tempfile.TemporaryDirectory(prefix="vechasu-backend-tests-") as root:
+        test_root = Path(root).resolve()
+        catalog_path = test_root / "catalog.db"
+        auth_path = test_root / "auth.db"
+        orders_path = test_root / "orders.db"
+        isolated_environment = {
+            "CATALOG_DATABASE_PATH": str(catalog_path),
+            "ERP_AUTH_DATABASE": str(auth_path),
+            "ORDERS_DATABASE_PATH": str(orders_path),
+            "ERP_SECRET_KEY": "isolated-backend-test-secret",
+            "ERP_TEST_ROOT": str(test_root),
+        }
+        previous_environment = {
+            name: os.environ.get(name) for name in isolated_environment
+        }
+        os.environ.update(isolated_environment)
+
+        socket.getaddrinfo = guarded_getaddrinfo
+        socket.socket.connect = guarded_socket_connect
+        socket.create_connection = guarded_create_connection
+        subprocess.Popen = guarded_popen
+        CatalogDatabase.initialize = initialize_test_catalog
+        if __name__ == "__main__":
+            sys.modules["scripts.run_backend_tests"] = sys.modules[__name__]
+        try:
+            apply_migrations(catalog_path, app_commit="test-suite")
+            apply_domain_migrations(auth_path, "auth", "test-suite")
+            apply_domain_migrations(orders_path, "orders", "test-suite")
+            suite = unittest.defaultTestLoader.discover(
+                arguments.start_directory,
+                pattern=arguments.pattern,
+            )
+            result = unittest.TextTestRunner(
+                verbosity=arguments.verbosity,
+            ).run(suite)
+            return 0 if result.wasSuccessful() else 1
+        finally:
+            socket.getaddrinfo = ORIGINAL_GETADDRINFO
+            socket.socket.connect = ORIGINAL_SOCKET_CONNECT
+            socket.create_connection = ORIGINAL_CREATE_CONNECTION
+            subprocess.Popen = ORIGINAL_POPEN
+            CatalogDatabase.initialize = ORIGINAL_CATALOG_INITIALIZE
+            for name, value in previous_environment.items():
+                if value is None:
+                    os.environ.pop(name, None)
+                else:
+                    os.environ[name] = value
 
 
 if __name__ == "__main__":
