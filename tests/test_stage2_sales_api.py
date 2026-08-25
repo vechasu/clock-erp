@@ -101,6 +101,75 @@ class Stage2SalesApiTest(unittest.TestCase):
             CatalogDatabase(self.database_path)
         ).get_product(self.product["id"])["stock"]
 
+    def sale_effects(self):
+        with CatalogDatabase(self.database_path).connect() as connection:
+            return {
+                "sales": connection.execute(
+                    "SELECT COUNT(*) FROM erp_sales"
+                ).fetchone()[0],
+                "items": connection.execute(
+                    "SELECT COUNT(*) FROM erp_sale_items"
+                ).fetchone()[0],
+                "movements": connection.execute(
+                    "SELECT COUNT(*) FROM catalog_stock_movements"
+                ).fetchone()[0],
+                "idempotency": connection.execute(
+                    "SELECT COUNT(*) FROM erp_sales "
+                    "WHERE idempotency_key IS NOT NULL"
+                ).fetchone()[0],
+                "events": connection.execute(
+                    "SELECT COUNT(*) FROM erp_audit_events "
+                    "WHERE entity_type = 'sale'"
+                ).fetchone()[0],
+                "stock": connection.execute(
+                    "SELECT stock FROM catalog_excel_products WHERE id = ?",
+                    (self.product["id"],),
+                ).fetchone()[0],
+                "in_transaction": connection.in_transaction,
+            }
+
+    def test_fractional_quantity_is_rejected_at_api_boundary(self):
+        before = self.sale_effects()
+        for quantity in (0.5, "0.5"):
+            with self.subTest(quantity=quantity):
+                response = self.client.post(
+                    "/api/sales",
+                    json={
+                        "created_at": "2026-07-30",
+                        "source": "Tictactoy",
+                        "product_id": str(self.product["id"]),
+                        "quantity": quantity,
+                        "unit_price": 1000,
+                        "order_number": "QA001",
+                    },
+                    headers={"Idempotency-Key": "qa001-api"},
+                )
+                self.assertEqual(response.status_code, 422)
+                self.assertEqual(
+                    response.get_json()["code"],
+                    "SALE_VALIDATION_FAILED",
+                )
+                self.assertIn(
+                    "положительным целым числом",
+                    response.get_json()["message"],
+                )
+                self.assertEqual(self.sale_effects(), before)
+
+        valid = self.client.post(
+            "/api/sales",
+            json={
+                "created_at": "2026-07-30",
+                "source": "Tictactoy",
+                "product_id": str(self.product["id"]),
+                "quantity": "1",
+                "unit_price": 1000,
+                "order_number": "QA001",
+            },
+            headers={"Idempotency-Key": "qa001-api"},
+        )
+        self.assertEqual(valid.status_code, 201)
+        self.assertEqual(self.stock(), 4)
+
     def test_create_list_catalog_patch_and_return_are_transactional(self):
         catalog = self.client.get("/api/sales/catalog").get_json()
         self.assertEqual(catalog["data"][0]["id"], str(self.product["id"]))
