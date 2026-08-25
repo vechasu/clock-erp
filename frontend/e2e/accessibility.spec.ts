@@ -127,3 +127,28 @@ test('key pages reflow at required widths and 200/400 percent zoom', async ({ pa
     }
   }
 });
+
+test('/app/products keeps page-level overflow at zero at 320px', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 900 });
+  await page.goto('/app/products', { waitUntil: 'domcontentloaded' });
+
+  const dimensions = await page.locator('html').evaluate(
+    (root: {
+      scrollWidth: number;
+      clientWidth: number;
+      ownerDocument: { body: { scrollWidth: number; clientWidth: number } };
+    }) => ({
+      html: {
+        scrollWidth: root.scrollWidth,
+        clientWidth: root.clientWidth,
+      },
+      body: {
+        scrollWidth: root.ownerDocument.body.scrollWidth,
+        clientWidth: root.ownerDocument.body.clientWidth,
+      },
+    }),
+  );
+
+  expect(dimensions.html.scrollWidth).toBe(dimensions.html.clientWidth);
+  expect(dimensions.body.scrollWidth).toBe(dimensions.body.clientWidth);
+});
