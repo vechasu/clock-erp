@@ -75,6 +75,8 @@ class GlobalScrollBrowserTest(unittest.TestCase):
             for scenario in ("customers", "order"):
                 for width, height in (
                     (1920, 1080),
+                    (1536, 864),
+                    (1440, 900),
                     (1366, 768),
                     (1024, 600),
                     (768, 520),
