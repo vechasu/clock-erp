@@ -3834,6 +3834,9 @@ def inventory_cancel_api(inventory_id):
 @app.route("/app/products")
 def warehouse_page():
     warehouse_view = (request.args.get("view") or "products").strip()
+    partial_requested = (
+        request.headers.get("X-ERP-Partial") == "products-v1"
+    )
     product_catalog = ExcelProductCatalog()
     tab_counts = product_catalog.stock_tab_counts()
     if not isinstance(tab_counts, dict):
@@ -4220,9 +4223,9 @@ def warehouse_page():
     pagination = build_erp_pagination(
         "warehouse_page", catalog["total"], page, per_page
     )
-    response = make_response(
-        render_template(
+    rendered = render_template(
             "warehouse.html",
+            partial_only=partial_requested,
             items=items,
             query=query,
             selected_category=selected_category,
@@ -4304,7 +4307,12 @@ def warehouse_page():
                 app.testing and request.args.get("pagination_e2e") == "1"
             ),
         )
-    )
+    if partial_requested:
+        response = make_response(rendered)
+        response.mimetype = "text/html"
+        response.headers["X-ERP-Partial"] = "products-v1"
+    else:
+        response = make_response(rendered)
     response.headers["Cache-Control"] = (
         "no-store, no-cache, must-revalidate, max-age=0"
     )

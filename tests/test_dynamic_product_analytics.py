@@ -161,14 +161,67 @@ class DynamicProductAnalyticsTest(unittest.TestCase):
 
     def test_frontend_updates_every_metric_and_rejects_stale_responses(self):
         source = (ROOT / "app/templates/warehouse.html").read_text(encoding="utf-8")
-        self.assertIn('captureWarehouseProductMetrics(documentCopy)', source)
+        self.assertIn('response.headers.get("X-ERP-Partial") !== "products-v1"', source)
+        self.assertIn('replaceWarehouseResults(nextResults, metrics)', source)
+        self.assertIn("const canReuseTable = Boolean(", source)
         self.assertIn('root.querySelectorAll("[data-product-metric]")', source)
         self.assertIn("requestId !== warehouseSearchRequestId", source)
         self.assertIn("warehouseSearchController.abort()", source)
         self.assertIn('setWarehouseProductMetricsState("updating")', source)
         self.assertIn('setWarehouseProductMetricsState("error")', source)
         self.assertIn("Не удалось обновить товары и аналитику.", source)
+        self.assertNotIn('parseFromString(\n                    html,', source)
+        self.assertIn(
+            'function navigateWithWarehouseParams(url, historyMode = "push")',
+            source,
+        )
         self.assertNotIn("nextCounter && currentCounter", source)
+
+    def test_partial_contract_matches_full_selection_without_global_document(self):
+        query = "q=Alpha&stock_state=in&per_page=1&sort_by=name&sort_dir=asc"
+        full = self.client.get("/app/products?" + query)
+        partial = self.client.get(
+            "/app/products?" + query,
+            headers={"X-ERP-Partial": "products-v1"},
+        )
+
+        self.assertEqual(full.status_code, 200)
+        self.assertEqual(partial.status_code, 200)
+        self.assertTrue(partial.content_type.startswith("text/html"))
+        self.assertEqual(partial.headers["X-ERP-Partial"], "products-v1")
+        partial_html = partial.get_data(as_text=True)
+        self.assertIn('data-partial-contract="products-v1"', partial_html)
+        self.assertIn('id="warehouseResults"', partial_html)
+        self.assertNotIn("<!doctype html>", partial_html.lower())
+        self.assertNotIn("<script", partial_html.lower())
+        self.assertNotIn('id="appSidebar"', partial_html)
+        full_ids = re.findall(r'data-product-id="([^"]+)"', full.get_data(as_text=True))
+        partial_ids = re.findall(r'data-product-id="([^"]+)"', partial_html)
+        self.assertEqual(partial_ids, full_ids[:len(partial_ids)])
+        self.assertLess(len(partial.data), len(full.data))
+        self.assertIn('data-total="3"', partial_html)
+        self.assertIn('data-metric-positions="3"', partial_html)
+
+    def test_ssr_table_is_not_hidden_until_javascript_initializes(self):
+        source = (ROOT / "app/templates/warehouse.html").read_text(encoding="utf-8")
+        self.assertNotIn(
+            "html:not(.warehouse-table-ready) .warehouse-products-table",
+            source,
+        )
+        response = self.client.get("/app/products?per_page=1")
+        self.assertIn('id="warehouseProductsTable"', response.get_data(as_text=True))
+
+    def test_partial_request_does_not_bypass_authentication(self):
+        web.app.config["AUTH_TESTING"] = True
+        try:
+            response = self.client.get(
+                "/app/products?q=Alpha",
+                headers={"X-ERP-Partial": "products-v1"},
+            )
+        finally:
+            web.app.config["AUTH_TESTING"] = False
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/login?next=", response.headers["Location"])
 
 
 if __name__ == "__main__":
