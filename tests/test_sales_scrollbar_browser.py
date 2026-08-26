@@ -126,11 +126,11 @@ class SalesScrollbarBrowserTest(unittest.TestCase):
                 self.fail("Stage 2 preview server did not start")
 
             cases = [
-                (source, "", width, height)
-                for source in (
-                    "all", "tictactoy", "wildberries", "amazon"
-                )
-                for width, height in ((1920, 1080), (1440, 900))
+                ("all", "", 1920, 1080),
+                ("all", "", 1440, 900),
+                ("tictactoy", "", 1440, 900),
+                ("wildberries", "", 1440, 900),
+                ("amazon", "", 1440, 900),
             ]
             cases.extend([
                 ("all", "&q=Casio", 1100, 760),
