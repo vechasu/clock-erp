@@ -4030,17 +4030,16 @@
             const tableVisible = Boolean(tableWrap.getClientRects().length);
             const hasOverflow = tableVisible && maxScroll > 1;
 
-            dock.hidden = !hasOverflow;
-            if (!hasOverflow) {
-                dock.classList.remove("is-floating");
-                return;
-            }
-
             control.max = String(Math.ceil(maxScroll));
             control.value = String(Math.min(
                 maxScroll,
                 Math.max(0, tableWrap.scrollLeft),
             ));
+            dock.hidden = !hasOverflow;
+            if (!hasOverflow) {
+                dock.classList.remove("is-floating");
+                return;
+            }
 
             const trackWidth = Math.max(1, dock.clientWidth - 16);
             const thumbWidth = Math.max(
