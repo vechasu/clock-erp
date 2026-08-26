@@ -120,6 +120,23 @@ class ProductsRedesignStructureTest(unittest.TestCase):
             products,
         )
 
+    def test_products_tabs_asset_is_versioned_once_in_every_workspace(self):
+        expected_version = "products-tabs-20260826-lifecycle-v2"
+        for template_name in (
+            "warehouse.html",
+            "warehouse_analytics.html",
+            "warehouse_brands.html",
+            "warehouse_categories.html",
+        ):
+            source = self.source(template_name)
+            self.assertEqual(source.count("js/products-tabs.js"), 1, template_name)
+            self.assertEqual(source.count(expected_version), 1, template_name)
+            self.assertNotIn(
+                "filename='js/products-tabs.js')",
+                source,
+                template_name,
+            )
+
     def test_products_tab_script_is_idempotent_when_loaded_three_times(self):
         node = shutil.which("node")
         if not node:

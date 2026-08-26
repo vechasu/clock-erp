@@ -85,7 +85,7 @@
         @media(max-width:650px) { .main { padding:16px; } .erp-workspace-header,.detail-title { align-items:stretch; flex-direction:column; } .erp-workspace-actions,.detail-actions { width:100%; } .erp-workspace-actions .brand-btn,.detail-actions>.brand-btn { flex:1; } .brand-row { grid-template-columns:minmax(0,1fr) auto; gap:8px; min-height:76px; } .brand-row .metric { display:none; } .brand-identity { display:grid; grid-template-columns:34px minmax(0,1fr); align-items:center; gap:5px 10px; } .brand-name { white-space:normal; } .brand-mobile-meta { display:block!important; grid-column:2; color:#64748b; font-size:12px; } .brand-hero-image { flex-basis:68px; width:68px; height:68px; } .category-row { grid-template-columns:minmax(0,1fr) auto; } .category-row .metric { display:none; } .summary { gap:10px 16px; } .menu-popover { width:min(250px,calc(100vw - 40px)); } .modal-actions { align-items:stretch; flex-direction:column-reverse; } .modal-actions .brand-btn { width:100%; } }
     </style>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/products-workspace.css') }}">
-    <script defer src="{{ url_for('static', filename='js/products-tabs.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='js/products-tabs.js', v='products-tabs-20260826-lifecycle-v2') }}"></script>
 </head>
 <body class="brands-page"><div class="app">{% include "_sidebar.html" %}<main class="main" id="main-content" tabindex="-1">
     {% from "_products_workspace.html" import products_workspace_header %}
