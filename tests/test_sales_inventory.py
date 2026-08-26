@@ -1325,7 +1325,10 @@ class SalesInventoryWebTest(SalesInventoryTest):
         self.assertEqual(len(self.inventory.list_sales()), 3)
         page = self.client.get("/app/sales?source=all")
         self.assertEqual(page.status_code, 200)
-        self.assertIn("Редактировать данные продажи", page.get_data(as_text=True))
+        self.assertIn(
+            'aria-label="Редактировать продажу"',
+            page.get_data(as_text=True),
+        )
 
     def test_manual_update_quantity_is_blocked(self):
         sale = self.create_managed_sale(quantity=1)
@@ -1720,7 +1723,8 @@ class SalesInventoryWebTest(SalesInventoryTest):
             page = self.client.get("/app/sales?source={}".format(source))
             self.assertEqual(page.status_code, 200)
             text = page.get_data(as_text=True)
-            self.assertIn("Редактировать данные продажи", text)
+            self.assertIn('aria-label="Редактировать продажу"', text)
+            self.assertIn('data-tooltip="Редактировать продажу"', text)
             self.assertIn("openSaleEditor", text)
             self.assertIn("Отменить продажу", text)
 
@@ -1738,7 +1742,8 @@ class SalesInventoryWebTest(SalesInventoryTest):
             "Отмена действует только в ERP и не изменяет заказ на площадке.",
             text,
         )
-        self.assertNotIn("Редактировать продажу", text)
+        self.assertIn('aria-label="Редактировать продажу"', text)
+        self.assertIn('aria-disabled="true"', text)
 
     def test_legacy_sale_is_not_written_off_during_schema_migration(self):
         self.manual_sales_path.write_text(
