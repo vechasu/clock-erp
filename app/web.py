@@ -8159,6 +8159,24 @@ def validate_optional_sale_price(value):
 
 def sale_pricing_from_mapping(values, existing=None):
     existing = existing or {}
+    legacy_pricing_fields = (
+        "original_unit_price", "discount_type",
+        "discount_value", "discount_reason",
+    )
+    if (
+        existing
+        and "unit_price" in values
+        and not any(field in values for field in legacy_pricing_fields)
+    ):
+        unit_price = validate_optional_sale_price(values.get("unit_price"))
+        return {
+            "original_unit_price": existing.get("original_unit_price"),
+            "discount_type": existing.get("discount_type", "none"),
+            "discount_value": existing.get("discount_value", 0),
+            "discount_amount": existing.get("discount_amount", 0),
+            "discount_reason": existing.get("discount_reason", ""),
+            "unit_price": unit_price,
+        }
     original = (
         values.get("original_unit_price")
         if values.get("original_unit_price") not in (None, "")
@@ -9143,6 +9161,10 @@ def manual_sale_update():
     managed_sale = SalesInventory().get_sale(managed_sale_id)
     if managed_sale is not None:
         try:
+            validate_performed_sale_update(
+                managed_sale,
+                request.form.to_dict(),
+            )
             normalized = normalize_api_sale_payload(
                 request.form.to_dict(),
                 existing=managed_sale,
@@ -9171,22 +9193,6 @@ def manual_sale_update():
     sale_id = (request.form.get("sale_id") or "").strip()
     product_name = (request.form.get("product_name") or "").strip()
     quantity = parse_manual_sale_quantity(request.form.get("quantity"))
-
-    try:
-        pricing = sale_pricing_from_mapping(request.form)
-    except ValueError as error:
-        return respond_to_sales_action(
-            str(error), notice="error", status_code=400
-        )
-
-    unit_price = (
-        float(pricing["unit_price"])
-        if pricing["unit_price"] is not None else None
-    )
-    total_amount = calculate_sale_amount(
-        unit_price,
-        quantity,
-    )
 
     if not sale_id:
         return respond_to_sales_action(
@@ -9240,12 +9246,26 @@ def manual_sale_update():
                 sale,
                 request.form.to_dict(),
             )
+            pricing = sale_pricing_from_mapping(
+                request.form,
+                existing=sale,
+            )
         except SalesInventoryError as error:
             return respond_to_sales_action(
                 str(error),
                 notice="error",
                 status_code=409,
             )
+        except ValueError as error:
+            return respond_to_sales_action(
+                str(error), notice="error", status_code=400
+            )
+
+        unit_price = (
+            float(pricing["unit_price"])
+            if pricing["unit_price"] is not None else None
+        )
+        total_amount = calculate_sale_amount(unit_price, quantity)
 
         previous_product_id = str(sale.get("product_id") or "").strip()
         product_id = str(
@@ -19403,10 +19423,10 @@ def api_sale_catalog_items():
 
 def normalize_api_sale_payload(payload, existing=None, require_catalog=False):
     existing = existing if isinstance(existing, dict) else {}
-    created_at = validate_sale_form_date(
-        payload.get("created_at")
-        or payload.get("date")
-        or existing.get("created_at")
+    created_at = (
+        str(existing.get("created_at") or "")
+        if existing
+        else validate_sale_form_date(payload.get("created_at") or payload.get("date"))
     )
     product_id = str(
         payload.get("product_id")
@@ -19559,6 +19579,16 @@ def normalize_api_sale_payload(payload, existing=None, require_catalog=False):
             for field in (
                 "original_unit_price", "discount_type",
                 "discount_value", "discount_reason",
+            )
+        ),
+        "_unit_price_explicit": (
+            "unit_price" in payload
+            and not any(
+                field in payload
+                for field in (
+                    "original_unit_price", "discount_type",
+                    "discount_value", "discount_reason",
+                )
             )
         ),
     }

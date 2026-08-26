@@ -520,10 +520,10 @@
             position: sticky;
             z-index: 3;
             right: 0;
-            width: 224px;
-            min-width: 224px;
-            max-width: 224px;
-            padding: 7px 10px;
+            width: 116px;
+            min-width: 116px;
+            max-width: 116px;
+            padding: 2px 10px;
             overflow: visible;
             background: #ffffff;
             background-clip: padding-box;
@@ -551,22 +551,23 @@
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            gap: 6px;
+            gap: 8px;
         }
 
         .sales-edit-action,
         .sales-more-trigger {
             display: inline-flex;
-            height: 34px;
-            min-height: 34px;
+            width: 44px;
+            min-width: 44px;
+            height: 44px;
+            min-height: 44px;
             align-items: center;
             justify-content: center;
-            gap: 7px;
-            padding: 0 11px;
-            border: 1px solid #bfdbfe;
+            padding: 0;
+            border: 1px solid #d8e0e9;
             border-radius: 9px;
-            background: #eff6ff;
-            color: #1d4ed8;
+            background: #ffffff;
+            color: #475569;
             cursor: pointer;
             font: inherit;
             font-size: 12px;
@@ -578,6 +579,13 @@
         .sales-edit-action:hover {
             border-color: #93c5fd;
             background: #dbeafe;
+            color: #1d4ed8;
+        }
+
+        .sales-edit-action:active:not(:disabled) {
+            border-color: #60a5fa;
+            background: #bfdbfe;
+            transform: translateY(1px);
         }
 
         .sales-edit-action:focus-visible,
@@ -598,9 +606,9 @@
         }
 
         .sales-edit-action svg {
-            width: 15px;
-            height: 15px;
-            flex: 0 0 15px;
+            width: 16px;
+            height: 16px;
+            flex: 0 0 16px;
             fill: none;
             pointer-events: none;
             stroke: currentColor;
@@ -610,8 +618,6 @@
         }
 
         .sales-more-trigger {
-            min-width: 48px;
-            padding: 0 9px;
             border-color: #d8e0e9;
             background: #ffffff;
             color: #475569;
@@ -632,6 +638,39 @@
 
         .sales-more-label {
             display: none;
+        }
+
+        .sales-edit-action[data-tooltip] {
+            position: relative;
+        }
+
+        .sales-edit-action[data-tooltip]::after {
+            position: absolute;
+            z-index: 20;
+            top: 50%;
+            right: calc(100% + 8px);
+            width: max-content;
+            max-width: 190px;
+            padding: 6px 9px;
+            border-radius: 7px;
+            background: #0f172a;
+            color: #ffffff;
+            content: attr(data-tooltip);
+            font-size: 12px;
+            font-weight: 700;
+            line-height: 1.25;
+            opacity: 0;
+            pointer-events: none;
+            transform: translate(-3px, -50%);
+            transition: opacity 120ms ease, transform 120ms ease;
+            visibility: hidden;
+        }
+
+        .sales-edit-action[data-tooltip]:hover::after,
+        .sales-edit-action[data-tooltip]:focus-visible::after {
+            opacity: 1;
+            transform: translate(0, -50%);
+            visibility: visible;
         }
 
         .sales-archive-form {
@@ -1304,29 +1343,13 @@
             }
 
             .sales-table.erp-data-table .col-actions {
-                width: 104px;
-                min-width: 104px;
-                max-width: 104px;
+                width: 116px;
+                min-width: 116px;
+                max-width: 116px;
             }
 
             .sales-table col[data-system-column="actions"] {
-                width: 104px !important;
-            }
-
-            .sales-table .sales-edit-label {
-                display: none;
-            }
-
-            .sales-table .sales-edit-action {
-                width: 36px;
-                min-width: 36px;
-                padding: 0;
-            }
-
-            .sales-table .sales-more-trigger {
-                width: 40px;
-                min-width: 40px;
-                padding: 0;
+                width: 116px !important;
             }
 
             .modal {
@@ -1373,8 +1396,12 @@
             }
 
             .mobile-erp-card-actions > .sales-edit-action {
-                min-height: 44px;
-                flex: 1 1 auto;
+                flex: 0 0 44px;
+            }
+
+            .mobile-erp-card-actions > .sales-edit-action::after {
+                right: auto;
+                left: calc(100% + 8px);
             }
 
             .mobile-erp-card-actions > .sales-more-trigger {
@@ -2059,7 +2086,7 @@
                             {% endfor %}
                             <col
                                 data-system-column="actions"
-                                style="width: 224px"
+                                style="width: 116px"
                             >
                         </colgroup>
                         <thead>
@@ -2163,7 +2190,8 @@
                                             <button
                                                 class="sales-edit-action sales-row-edit"
                                                 type="button"
-                                                aria-label="Редактировать данные продажи"
+                                                aria-label="Редактировать продажу"
+                                                data-tooltip="Редактировать продажу"
                                                 data-product-image-url="{{ sales_product_images.get(sale.product_id|string, '') }}"
                                                 {% if sales_view != 'archive' and not sale.is_cancelled %}
                                                     data-sale="{{ sale|tojson|forceescape }}"
@@ -2171,14 +2199,12 @@
                                                 {% else %}
                                                     disabled
                                                     aria-disabled="true"
-                                                    title="Редактирование недоступно"
                                                 {% endif %}
                                             >
                                                 <svg viewBox="0 0 20 20" aria-hidden="true">
                                                     <path d="M4 13.75V16h2.25L15 7.25 12.75 5 4 13.75Z"></path>
                                                     <path d="m11.75 6 2.25 2.25"></path>
                                                 </svg>
-                                                <span class="sales-edit-label">Редактировать</span>
                                             </button>
                                             <button
                                                 class="sales-more-trigger"
@@ -2368,7 +2394,8 @@
                             <button
                                 class="sales-edit-action sales-row-edit sales-mobile-edit"
                                 type="button"
-                                aria-label="Редактировать данные продажи"
+                                aria-label="Редактировать продажу"
+                                data-tooltip="Редактировать продажу"
                                 data-product-image-url="{{ sales_product_images.get(sale.product_id|string, '') }}"
                                 {% if sales_view != 'archive' and not sale.is_cancelled %}
                                     data-sale="{{ sale|tojson|forceescape }}"
@@ -2376,14 +2403,12 @@
                                 {% else %}
                                     disabled
                                     aria-disabled="true"
-                                    title="Редактирование недоступно"
                                 {% endif %}
                             >
                                 <svg viewBox="0 0 20 20" aria-hidden="true">
                                     <path d="M4 13.75V16h2.25L15 7.25 12.75 5 4 13.75Z"></path>
                                     <path d="m11.75 6 2.25 2.25"></path>
                                 </svg>
-                                <span class="sales-edit-label">Редактировать</span>
                             </button>
                             <button
                                 class="sales-more-trigger"
@@ -2735,12 +2760,12 @@
                         ></span>
                     </div>
 
-                    <div class="field sale-core-field">
+                    <div class="field sale-core-field" data-sale-legacy-price-field>
                         <label for="original_unit_price">Исходная цена</label>
                         <input id="original_unit_price" class="control" type="number" name="original_unit_price" min="0" step="0.01" inputmode="decimal" placeholder="Не указана" data-sale-pricing>
                     </div>
 
-                    <div class="field sale-core-field">
+                    <div class="field sale-core-field" data-sale-legacy-price-field>
                         <label for="discount_type">Способ скидки</label>
                         <select id="discount_type" class="control" name="discount_type" data-sale-pricing>
                             <option value="none">Без скидки</option>
@@ -2749,18 +2774,18 @@
                         </select>
                     </div>
 
-                    <div class="field sale-core-field">
+                    <div class="field sale-core-field" data-sale-legacy-price-field>
                         <label for="discount_value">Размер скидки</label>
                         <input id="discount_value" class="control" type="number" name="discount_value" min="0" step="0.01" inputmode="decimal" value="0" data-sale-pricing>
                     </div>
 
-                    <div class="field sale-core-field">
+                    <div class="field sale-core-field" data-sale-legacy-price-field>
                         <label for="discount_reason">Причина скидки</label>
                         <input id="discount_reason" class="control" type="text" name="discount_reason" maxlength="240" placeholder="Например, промокод">
                     </div>
 
                     <div class="field sale-core-field">
-                        <label for="unit_price">Итоговая цена</label>
+                        <label id="saleUnitPriceLabel" for="unit_price">Итоговая цена</label>
                         <input
                             id="unit_price"
                             class="control"
@@ -4833,9 +4858,7 @@
             invoice_number: 120,
         };
         const maximumWidth = 520;
-        const actionColumnWidth = () => (
-            window.matchMedia("(max-width: 900px)").matches ? 104 : 224
-        );
+        const actionColumnWidth = () => 116;
         const growWeights = {
             created_at: 0.25,
             order_number: 0.75,
@@ -5701,7 +5724,7 @@
         }
         modalDescription.textContent =
             isEditing
-                ? "Товар, бренд, категория, название и количество защищены; для их изменения отмените проведение. Скидку можно уточнить без повторного изменения остатка."
+                ? "Дата, бренд, категория, товар и количество защищены от изменения. Цену и остальные данные продажи можно редактировать"
                 : "Источник: " + sourceLabels[sourceKey]
                     + ". Он сохранится вместе с продажей.";
         saleSubmitButton.textContent = isEditing
@@ -5998,6 +6021,18 @@
         ].forEach((control) => {
             control.disabled = locked;
         });
+        document.getElementById("created_at").readOnly = locked;
+        document.querySelectorAll("[data-sale-legacy-price-field]")
+            .forEach((field) => {
+                field.hidden = locked;
+                field.querySelectorAll("input, select").forEach((control) => {
+                    control.disabled = locked;
+                });
+            });
+        document.getElementById("saleUnitPriceLabel").textContent = locked
+            ? "Цена"
+            : "Итоговая цена";
+        saleFinalPrice.readOnly = !locked;
     }
 
     function renderSaleProductPhoto(product) {
@@ -6350,10 +6385,6 @@
                 ? saleDateValue + "T00:00"
                 : saleDateValue,
             quantity: sale.quantity_value || sale.quantity || 1,
-            original_unit_price: sale.original_unit_price ?? sale.unit_price ?? "",
-            discount_type: sale.discount_type || "none",
-            discount_value: sale.discount_value ?? 0,
-            discount_reason: sale.discount_reason || "",
             unit_price: sale.unit_price ?? "",
             order_number: sale.order_number || "",
             track_number: sale.track_number || "",
@@ -6369,7 +6400,6 @@
                     control.value = value;
                 });
         });
-        recalculateSalePrice();
         productMeta.textContent = [
             "Артикул: " + (sale.article || "—"),
             sale.product_currently_available
