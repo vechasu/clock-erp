@@ -213,8 +213,8 @@ class CatalogFilteringTest(unittest.TestCase):
         self.assertEqual(all_items["total"], 120)
         self.assertEqual(in_stock["total"], 4)
         self.assertNotIn('id="warehouseInStockToggle"', template)
-        self.assertIn("В наличии", workspace)
-        self.assertIn("Нет в наличии", workspace)
+        self.assertIn("Моделей в наличии", workspace)
+        self.assertIn("Нет моделей", workspace)
 
     def test_stock_tab_counts_are_global_and_use_positive_stock_only(self):
         counts = self.excel.stock_tab_counts()

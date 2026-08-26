@@ -52,7 +52,12 @@ class UnifiedPageArchitectureTest(unittest.TestCase):
 
         warehouse = self.source("app/templates/_products_workspace.html")
         self.assertIn("products-workspace-metrics", warehouse)
-        for label in ("Позиций", "В наличии", "Единиц", "Нет в наличии"):
+        for label in (
+            "Всего моделей",
+            "Моделей в наличии",
+            "Остаток, шт.",
+            "Нет моделей",
+        ):
             self.assertIn(label, warehouse)
         sales = self.source("app/templates/sales.html")
         sales_metrics = sales.split("erp-workspace-metrics", 1)[1].split(
