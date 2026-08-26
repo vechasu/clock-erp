@@ -93,6 +93,31 @@ class SalesListDesignSystemContractTest(unittest.TestCase):
                 self.assertIn(endpoint, template)
         self.assertGreaterEqual(template.count('name="csrf_token"'), 6)
 
+    def test_edit_sale_action_is_compact_accessible_and_keeps_existing_flow(self):
+        template = self.source("app/templates/sales.html")
+        desktop_action = template.split(
+            'class="sales-edit-action sales-row-edit"', 1
+        )[1].split("</button>", 1)[0]
+        self.assertIn('aria-label="Редактировать продажу"', desktop_action)
+        self.assertIn('data-tooltip="Редактировать продажу"', desktop_action)
+        self.assertIn('onclick="openSaleEditor(this)"', desktop_action)
+        self.assertIn('data-sale="{{ sale|tojson|forceescape }}"', desktop_action)
+        self.assertNotIn("sales-edit-label", desktop_action)
+        self.assertNotIn(">Редактировать<", desktop_action)
+
+        for contract in (
+            "width: 116px;",
+            "width: 44px;",
+            "height: 44px;",
+            "gap: 8px;",
+            "const actionColumnWidth = () => 116;",
+            ".sales-edit-action[data-tooltip]:hover::after",
+            ".sales-edit-action[data-tooltip]:focus-visible::after",
+            ".sales-edit-action:active:not(:disabled)",
+        ):
+            with self.subTest(contract=contract):
+                self.assertIn(contract, template)
+
     def test_shared_css_is_tokenized_responsive_and_bounds_overflow(self):
         css = self.source("app/static/css/erp-components.css")
         contract = css.split(
