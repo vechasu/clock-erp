@@ -298,6 +298,92 @@
             background: #64748b;
         }
 
+        .sales-table-wrap {
+            scrollbar-width: none;
+        }
+
+        .sales-table-wrap::-webkit-scrollbar {
+            width: 0;
+            height: 0;
+        }
+
+        .sales-horizontal-scrollbar {
+            position: relative;
+            z-index: 8;
+            display: flex;
+            width: 100%;
+            height: 22px;
+            align-items: center;
+            padding: 3px 8px;
+            border-top: 1px solid #d9dee5;
+            background: rgba(248, 250, 252, 0.96);
+        }
+
+        .sales-horizontal-scrollbar[hidden] {
+            display: none;
+        }
+
+        .sales-horizontal-scrollbar.is-floating {
+            position: fixed;
+            bottom: max(8px, env(safe-area-inset-bottom));
+            left: var(--sales-scrollbar-left);
+            width: var(--sales-scrollbar-width);
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            box-shadow: 0 4px 14px rgba(15, 23, 42, 0.16);
+        }
+
+        .sales-horizontal-scrollbar input[type="range"] {
+            width: 100%;
+            height: 16px !important;
+            min-height: 16px !important;
+            margin: 0;
+            padding: 0;
+            border: 0;
+            appearance: none;
+            background: transparent;
+            cursor: ew-resize;
+        }
+
+        .sales-horizontal-scrollbar input[type="range"]::-webkit-slider-runnable-track {
+            height: 8px;
+            border: 1px solid #cbd5e1;
+            border-radius: 999px;
+            background: #e8edf3;
+        }
+
+        .sales-horizontal-scrollbar input[type="range"]::-webkit-slider-thumb {
+            width: var(--sales-scroll-thumb-width, 48px);
+            height: 12px;
+            margin-top: -3px;
+            border: 2px solid #e8edf3;
+            border-radius: 999px;
+            appearance: none;
+            background: #64748b;
+            box-shadow: 0 0 0 1px #475569;
+        }
+
+        .sales-horizontal-scrollbar input[type="range"]::-moz-range-track {
+            height: 6px;
+            border: 1px solid #cbd5e1;
+            border-radius: 999px;
+            background: #e8edf3;
+        }
+
+        .sales-horizontal-scrollbar input[type="range"]::-moz-range-thumb {
+            width: var(--sales-scroll-thumb-width, 48px);
+            height: 10px;
+            border: 1px solid #475569;
+            border-radius: 999px;
+            background: #64748b;
+        }
+
+        .sales-horizontal-scrollbar input[type="range"]:focus-visible {
+            border-radius: 999px;
+            outline: 3px solid rgba(37, 99, 235, 0.28);
+            outline-offset: 1px;
+        }
+
         .sales-table {
             width: 100%;
             min-width: 0;
@@ -2068,7 +2154,7 @@
 
             <section class="table-card erp-table-card erp-table-shell">
                 <div
-                    class="table-wrap erp-table-scroll erp-scroll-hint"
+                    class="table-wrap sales-table-wrap erp-table-scroll erp-scroll-hint"
                     data-erp-scroll-hint
                     tabindex="0"
                     aria-label="Таблица продаж с горизонтальной прокруткой"
@@ -2306,6 +2392,21 @@
                             {% endfor %}
                         </tbody>
                     </table>
+                </div>
+                <div
+                    id="salesHorizontalScrollbar"
+                    class="sales-horizontal-scrollbar"
+                    hidden
+                >
+                    <input
+                        id="salesHorizontalScrollControl"
+                        type="range"
+                        min="0"
+                        max="0"
+                        value="0"
+                        step="1"
+                        aria-label="Горизонтальная прокрутка таблицы продаж"
+                    >
                 </div>
             </section>
 
@@ -3941,6 +4042,164 @@
     const salesTable = document.querySelector(".sales-table");
     const salesTableBody = salesTable?.querySelector("tbody");
     const salesColumnDefinitions = {{ sales_columns | tojson }};
+
+    function initializeSalesHorizontalScrollbar() {
+        const tableWrap = salesTable?.closest(".table-wrap");
+        const tableCard = tableWrap?.closest(".table-card");
+        const dock = document.getElementById(
+            "salesHorizontalScrollbar"
+        );
+        const control = document.getElementById(
+            "salesHorizontalScrollControl"
+        );
+
+        if (!tableWrap || !tableCard || !dock || !control) {
+            return null;
+        }
+
+        let frame = 0;
+
+        const update = () => {
+            frame = 0;
+            const maxScroll = Math.max(
+                0,
+                tableWrap.scrollWidth - tableWrap.clientWidth,
+            );
+            const tableVisible = Boolean(tableWrap.getClientRects().length);
+            const hasOverflow = tableVisible && maxScroll > 1;
+
+            control.max = String(Math.ceil(maxScroll));
+            control.value = String(Math.min(
+                maxScroll,
+                Math.max(0, tableWrap.scrollLeft),
+            ));
+            dock.hidden = !hasOverflow;
+            if (!hasOverflow) {
+                dock.classList.remove("is-floating");
+                return;
+            }
+
+            const trackWidth = Math.max(1, dock.clientWidth - 16);
+            const thumbWidth = Math.max(
+                42,
+                Math.min(
+                    trackWidth,
+                    trackWidth * tableWrap.clientWidth
+                        / tableWrap.scrollWidth,
+                ),
+            );
+            dock.style.setProperty(
+                "--sales-scroll-thumb-width",
+                Math.round(thumbWidth) + "px",
+            );
+
+            const cardBounds = tableCard.getBoundingClientRect();
+            const viewportHeight = window.visualViewport?.height
+                || window.innerHeight;
+            const viewportWidth = window.visualViewport?.width
+                || window.innerWidth;
+            const shouldFloat = (
+                cardBounds.top < viewportHeight - dock.offsetHeight
+                && cardBounds.bottom > viewportHeight + 8
+            );
+
+            dock.classList.toggle("is-floating", shouldFloat);
+            if (shouldFloat) {
+                const left = Math.max(4, cardBounds.left);
+                const right = Math.min(
+                    viewportWidth - 4,
+                    cardBounds.right,
+                );
+                dock.style.setProperty(
+                    "--sales-scrollbar-left",
+                    Math.round(left) + "px",
+                );
+                dock.style.setProperty(
+                    "--sales-scrollbar-width",
+                    Math.max(0, Math.round(right - left)) + "px",
+                );
+            }
+        };
+
+        const scheduleUpdate = () => {
+            if (!frame) frame = requestAnimationFrame(update);
+        };
+
+        let pointerDragging = false;
+        const updateFromPointer = (event) => {
+            const bounds = control.getBoundingClientRect();
+            const maxScroll = Number(control.max) || 0;
+            const ratio = Math.min(
+                1,
+                Math.max(0, (event.clientX - bounds.left) / bounds.width),
+            );
+            const nextScroll = Math.round(maxScroll * ratio);
+            control.value = String(nextScroll);
+            tableWrap.scrollLeft = nextScroll;
+        };
+
+        control.addEventListener("input", () => {
+            tableWrap.scrollLeft = Number(control.value);
+        });
+        control.addEventListener("pointerdown", (event) => {
+            if (event.button !== 0) return;
+            pointerDragging = true;
+            control.focus({preventScroll: true});
+            control.setPointerCapture(event.pointerId);
+            updateFromPointer(event);
+            event.preventDefault();
+        });
+        control.addEventListener("pointermove", (event) => {
+            if (pointerDragging) updateFromPointer(event);
+        });
+        const finishPointerDrag = (event) => {
+            if (!pointerDragging) return;
+            updateFromPointer(event);
+            pointerDragging = false;
+            if (control.hasPointerCapture(event.pointerId)) {
+                control.releasePointerCapture(event.pointerId);
+            }
+        };
+        control.addEventListener("pointerup", finishPointerDrag);
+        control.addEventListener("pointercancel", finishPointerDrag);
+        tableWrap.addEventListener("scroll", scheduleUpdate, {passive: true});
+        window.addEventListener("scroll", scheduleUpdate, {passive: true});
+        window.addEventListener("resize", scheduleUpdate, {passive: true});
+        window.visualViewport?.addEventListener(
+            "resize",
+            scheduleUpdate,
+            {passive: true},
+        );
+        window.visualViewport?.addEventListener(
+            "scroll",
+            scheduleUpdate,
+            {passive: true},
+        );
+
+        const resizeObserver = new ResizeObserver(scheduleUpdate);
+        resizeObserver.observe(tableWrap);
+        resizeObserver.observe(salesTable);
+        const mutationObserver = new MutationObserver(scheduleUpdate);
+        mutationObserver.observe(salesTable, {
+            attributes: true,
+            childList: true,
+            subtree: true,
+            attributeFilter: ["class", "hidden", "style"],
+        });
+
+        update();
+        return {
+            update: scheduleUpdate,
+            refresh: update,
+            tableWrap,
+            control,
+            dock,
+        };
+    }
+
+    window.salesHorizontalScrollbar = (
+        initializeSalesHorizontalScrollbar()
+    );
 
     document.querySelectorAll("[data-sales-actions-trigger]")
         .forEach((trigger) => {
@@ -6587,7 +6846,7 @@
 </script>
 {% if config.TESTING and request.args.get("sales_catalog_picker_e2e") == "1" %}
 <script>
-    window.addEventListener("load", async () => {
+    window.addEventListener("load", () => {
         try {
             const root = document.documentElement;
             const form = document.getElementById("manualSaleForm");
@@ -8394,6 +8653,111 @@
         } catch (error) {
             root.dataset.salesColumnsScrollE2e = "fail";
             root.dataset.salesColumnsScrollE2eError = error.message;
+        }
+    });
+</script>
+{% endif %}
+{% if config.TESTING and request.args.get("sales_scrollbar_e2e") == "1" %}
+<script>
+    window.addEventListener("load", async () => {
+        const root = document.documentElement;
+
+        try {
+            const scrollbar = window.salesHorizontalScrollbar;
+            const {tableWrap, control, dock} = scrollbar || {};
+            const table = document.querySelector(".sales-table");
+            const lastDataHeader = Array.from(
+                table?.querySelectorAll(
+                    "thead th[data-column-key]:not([hidden])"
+                ) || []
+            ).at(-1);
+            scrollbar?.refresh();
+
+            if (
+                !tableWrap
+                || !control
+                || !dock
+                || !lastDataHeader
+                || tableWrap.scrollWidth <= tableWrap.clientWidth
+                || dock.hidden
+                || control.getBoundingClientRect().height < 12
+                || Number(control.max) <= 0
+            ) {
+                throw new Error("visible-overflow");
+            }
+
+            const maxScroll = Number(control.max);
+            control.value = String(maxScroll);
+            control.dispatchEvent(new Event("input", {bubbles: true}));
+            scrollbar.refresh();
+            const wrapBounds = tableWrap.getBoundingClientRect();
+            const lastHeaderBounds = lastDataHeader.getBoundingClientRect();
+
+            if (
+                Math.abs(tableWrap.scrollLeft - maxScroll) > 2
+                || lastHeaderBounds.right > wrapBounds.right + 2
+                || lastHeaderBounds.left < wrapBounds.left - 2
+            ) {
+                throw new Error("control-to-table");
+            }
+
+            const middleScroll = Math.round(maxScroll / 2);
+            tableWrap.scrollLeft = middleScroll;
+            tableWrap.dispatchEvent(new Event("scroll"));
+            scrollbar.refresh();
+            if (Math.abs(Number(control.value) - middleScroll) > 2) {
+                throw new Error("table-to-control");
+            }
+
+            const noteToggle = document.querySelector(
+                '[data-column-visibility-key="note"]'
+            );
+            if (noteToggle) {
+                noteToggle.click();
+                scrollbar.refresh();
+                const updatedMax = Math.max(
+                    0,
+                    tableWrap.scrollWidth - tableWrap.clientWidth,
+                );
+                if (Math.abs(Number(control.max) - updatedMax) > 2) {
+                    throw new Error("columns-update");
+                }
+                noteToggle.click();
+                scrollbar.refresh();
+            }
+
+            const initialY = window.scrollY;
+            tableWrap.closest(".table-card").scrollIntoView({block: "start"});
+            scrollbar.refresh();
+            const cardBounds = tableWrap.closest(".table-card")
+                .getBoundingClientRect();
+            const visibleDockBounds = dock.getBoundingClientRect();
+            if (
+                cardBounds.bottom > window.innerHeight + 8
+                && visibleDockBounds.top >= window.innerHeight
+            ) {
+                throw new Error("floating");
+            }
+            window.scrollTo(0, initialY);
+
+            const dockBounds = dock.getBoundingClientRect();
+            if (
+                root.scrollWidth > root.clientWidth
+                || document.body.scrollWidth > document.body.clientWidth
+                || dockBounds.left < 0
+                || dockBounds.right > window.innerWidth + 1
+                || !document.querySelector(".sales-tab.is-active")
+                || !document.getElementById("salesSearch")
+                || !document.getElementById("salesFilterTrigger")
+                || !document.getElementById("salesColumnSettingsTrigger")
+            ) {
+                throw new Error("page-contract");
+            }
+
+            root.dataset.salesScrollbarE2e = "pass";
+        } catch (error) {
+            root.dataset.salesScrollbarE2e = "fail";
+            root.dataset.salesScrollbarE2eError = error.message;
         }
     });
 </script>
