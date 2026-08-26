@@ -24,9 +24,9 @@
     {% endfor %}
 </nav>
 <section id="productAnalyticsMetrics" class="products-workspace-metrics erp-workspace-metrics" aria-label="Аналитика товаров" data-state="ready" style="--erp-workspace-metric-count:4">
-    <article class="erp-stat-card erp-workspace-metric"><span class="erp-stat-label">Позиций</span><strong id="visiblePositionsCount" class="erp-stat-value" data-product-metric="positions">{{ product_metrics.positions }}</strong></article>
-    <article class="erp-stat-card erp-workspace-metric"><span class="erp-stat-label">В наличии</span><strong class="erp-stat-value" data-product-metric="in-stock">{{ product_metrics.in_stock }}</strong></article>
-    <article class="erp-stat-card erp-workspace-metric"><span class="erp-stat-label">Единиц</span><strong id="totalStockCount" class="erp-stat-value" data-product-metric="units">{{ product_metrics.units }}</strong></article>
-    <article class="erp-stat-card erp-workspace-metric"><span class="erp-stat-label">Нет в наличии</span><strong class="erp-stat-value" data-product-metric="out-of-stock">{{ product_metrics.out_of_stock }}</strong></article>
+    <article class="erp-stat-card erp-workspace-metric"><span class="erp-stat-label">Всего моделей</span><strong id="visiblePositionsCount" class="erp-stat-value" data-product-metric="positions">{{ product_metrics.positions }}</strong></article>
+    <article class="erp-stat-card erp-workspace-metric"><span class="erp-stat-label">Моделей в наличии</span><strong class="erp-stat-value" data-product-metric="in-stock">{{ product_metrics.in_stock }}</strong></article>
+    <article class="erp-stat-card erp-workspace-metric"><span class="erp-stat-label">Остаток, шт.</span><strong id="totalStockCount" class="erp-stat-value" data-product-metric="units">{{ product_metrics.units }}</strong></article>
+    <article class="erp-stat-card erp-workspace-metric"><span class="erp-stat-label">Нет моделей</span><strong class="erp-stat-value" data-product-metric="out-of-stock">{{ product_metrics.out_of_stock }}</strong></article>
 </section>
 {% endmacro %}
