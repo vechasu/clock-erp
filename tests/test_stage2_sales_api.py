@@ -207,8 +207,11 @@ class Stage2SalesApiTest(unittest.TestCase):
                 "note": "Updated",
             },
         )
-        self.assertEqual(updated.status_code, 409)
-        self.assertEqual(updated.get_json()["code"], "SALE_NOT_EDITABLE")
+        self.assertEqual(updated.status_code, 200)
+        updated_sale = updated.get_json()["data"]
+        self.assertEqual(updated_sale["unit_price"], 1250)
+        self.assertEqual(updated_sale["total_amount"], 2500)
+        self.assertEqual(updated_sale["note"], "Updated")
         self.assertEqual(self.stock(), 3)
 
         returned = self.client.post(
@@ -608,12 +611,13 @@ class Stage2SalesApiTest(unittest.TestCase):
                 "commission_amount": 50,
             },
         )
-        self.assertEqual(updated.status_code, 409)
-        unchanged = self.client.get(
+        self.assertEqual(updated.status_code, 200)
+        reopened = self.client.get(
             "/api/sales/{}".format(sale["id"])
         ).get_json()["data"]
-        self.assertEqual(unchanged["commission"], "cash")
-        self.assertEqual(unchanged["commission_amount"], 0)
+        self.assertEqual(reopened["unit_price"], 950)
+        self.assertEqual(reopened["commission"], "cash")
+        self.assertEqual(reopened["commission_amount"], 0)
 
     def test_cash_and_sbp_are_separate_without_changing_legacy_options(self):
         self.assertEqual(web.SALE_COMMISSION_OPTIONS.count("cash"), 1)
