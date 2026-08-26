@@ -1274,7 +1274,9 @@ class ExcelProductCatalog:
             self, name, article="", brand="", category="", cell="", stock=0,
             brand_id=None, category_id=None, price=None, enforce_unique=False,
             moysklad_product_id=None, actor_id="", actor_name="",
-            actor_type="system", model=""):
+            actor_type="system", model="", local_image_path=None,
+            local_image_sha256=None, local_image_source=None,
+            local_image_updated_at=None):
         name = text(name)
         if not name:
             raise ValueError("Название товара обязательно.")
@@ -1287,6 +1289,10 @@ class ExcelProductCatalog:
         cell = text(cell)
         stock = parse_initial_stock(stock)
         moysklad_product_id = text(moysklad_product_id) or None
+        local_image_path = text(local_image_path) or None
+        local_image_sha256 = text(local_image_sha256) or None
+        local_image_source = text(local_image_source) or None
+        local_image_updated_at = text(local_image_updated_at) or None
         self.database.initialize()
         with self.database.transaction() as connection:
             require_unique_article(connection, article)
@@ -1363,6 +1369,8 @@ class ExcelProductCatalog:
                 "bitrix_link_cardinality", "shared_bitrix_row_count",
             ) + tuple(enrichment) + (
                 "moysklad_product_id", "moysklad_sync_status",
+                "local_image_path", "local_image_source",
+                "local_image_sha256", "local_image_updated_at",
                 "created_at", "updated_at",
             )
             values = (
@@ -1380,6 +1388,10 @@ class ExcelProductCatalog:
             ) + tuple(enrichment.values()) + (
                 moysklad_product_id,
                 "linked" if moysklad_product_id else "not_linked",
+                local_image_path,
+                local_image_source,
+                local_image_sha256,
+                local_image_updated_at,
                 now,
                 now,
             )

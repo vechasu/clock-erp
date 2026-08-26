@@ -1,3 +1,4 @@
+import base64
 import re
 import tempfile
 import unittest
@@ -10,6 +11,20 @@ from app.catalog_db import CatalogDatabase
 from app.domain_schema_migrations import apply_domain_migrations
 from app.services.audit_journal import AuditJournal
 from app.services.excel_product_catalog import ExcelProductBatchService
+
+
+PNG = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+)
+PNG_REPLACEMENT = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg=="
+)
+JPEG = base64.b64decode(
+    "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAABAAEDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD3+iiigD//2Q=="
+)
+WEBP = base64.b64decode(
+    "UklGRj4AAABXRUJQVlA4IDIAAADQAQCdASoBAAEAAUAmJaACdLoB+AADsAD+6SIf+8+fufP3Pn/Rn/+U/fI4/kcf/KBAAA=="
+)
 
 
 def product_result(row, name, stock, brand, category, cell):
@@ -184,11 +199,8 @@ class Stage2ProductsApiTest(unittest.TestCase):
         ).get_json()["data"]
         self.assertIsNone(sorted_items[-1]["price"])
 
-    def test_create_product_with_photo_uses_existing_moysklad_storage(self):
-        remote_id = "11111111-2222-4333-8444-555555555555"
+    def test_create_product_with_photo_uses_local_erp_storage(self):
         with mock.patch.object(web, "MoySkladClient") as client_class:
-            remote = client_class.return_value
-            remote.create_product.return_value = {"id": remote_id}
             response = self.client.post(
                 "/api/v1/products",
                 data={
@@ -199,7 +211,7 @@ class Stage2ProductsApiTest(unittest.TestCase):
                     "cell": "P-1",
                     "stock": "6",
                     "product_image": (
-                        BytesIO(b"\x89PNG\r\n\x1a\nproduct-photo"),
+                        BytesIO(PNG),
                         "watch.png",
                         "image/png",
                     ),
@@ -210,14 +222,24 @@ class Stage2ProductsApiTest(unittest.TestCase):
         self.assertEqual(response.status_code, 201)
         product = response.get_json()["data"]
         self.assertEqual(product["stock"], 6)
-        self.assertEqual(product["moysklad_product_id"], remote_id)
-        self.assertEqual(
+        self.assertEqual(product["moysklad_product_id"], "")
+        self.assertRegex(
             product["thumbnail_url"],
-            "/warehouse/product/{}/thumbnail".format(remote_id),
+            r"^/product-images/product-[a-f0-9]{64}\.png\?v=[a-f0-9]{16}$",
         )
-        create_kwargs = remote.create_product.call_args.kwargs
-        self.assertEqual(create_kwargs["image"]["filename"], "watch.png")
-        self.assertTrue(create_kwargs["image"]["content"].startswith(b"\x89PNG"))
+        self.assertTrue(
+            (
+                self.root
+                / "product_images"
+                / Path(product["thumbnail_url"].split("?", 1)[0]).name
+            )
+            .is_file()
+        )
+        self.assertIn(
+            "Синхронизация с Bitrix недоступна",
+            response.get_json()["meta"]["image_message"],
+        )
+        client_class.assert_not_called()
 
     def test_create_product_without_photo_keeps_local_creation_path(self):
         with mock.patch.object(web, "MoySkladClient") as client_class:
@@ -234,6 +256,52 @@ class Stage2ProductsApiTest(unittest.TestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.get_json()["data"]["thumbnail_url"], "")
         client_class.assert_not_called()
+
+    def test_create_product_accepts_jpeg_and_webp(self):
+        fixtures = (
+            ("JPEG Photo Product", JPEG, "watch.jpeg", "image/jpeg", ".jpg"),
+            ("WebP Photo Product", WEBP, "watch.webp", "image/webp", ".webp"),
+        )
+        for name, content, filename, mimetype, extension in fixtures:
+            with self.subTest(filename=filename):
+                response = self.client.post(
+                    "/api/v1/products",
+                    data={
+                        "name": name,
+                        "stock": "0",
+                        "product_image": (
+                            BytesIO(content), filename, mimetype,
+                        ),
+                    },
+                    content_type="multipart/form-data",
+                )
+                self.assertEqual(response.status_code, 201)
+                self.assertIn(extension + "?v=", response.get_json()["data"]["thumbnail_url"])
+
+    def test_heic_and_truncated_image_are_rejected(self):
+        for filename, content, mimetype, message in (
+            ("watch.heic", b"heic", "image/heic", "Формат HEIC не поддерживается"),
+            (
+                "watch.png",
+                b"\x89PNG\r\n\x1a\ntruncated",
+                "image/png",
+                "Файл изображения повреждён",
+            ),
+        ):
+            with self.subTest(filename=filename):
+                response = self.client.post(
+                    "/api/v1/products",
+                    data={
+                        "name": "Rejected " + filename,
+                        "stock": "0",
+                        "product_image": (
+                            BytesIO(content), filename, mimetype,
+                        ),
+                    },
+                    content_type="multipart/form-data",
+                )
+                self.assertEqual(response.status_code, 422)
+                self.assertIn(message, response.get_json()["message"])
 
     def test_invalid_product_photo_does_not_create_product(self):
         before = self.client.get("/api/v1/products?page_size=50").get_json()["meta"]["total"]
@@ -258,19 +326,21 @@ class Stage2ProductsApiTest(unittest.TestCase):
         after = self.client.get("/api/v1/products?page_size=50").get_json()["meta"]["total"]
         self.assertEqual(after, before)
 
-    def test_remote_photo_failure_does_not_leave_local_product(self):
+    def test_local_photo_storage_failure_does_not_leave_product(self):
         before = self.client.get("/api/v1/products?page_size=50").get_json()["meta"]["total"]
-        with mock.patch.object(web, "MoySkladClient") as client_class:
-            client_class.return_value.create_product.return_value = None
+        with mock.patch.object(web, "ProductImageStore") as store_class:
+            store_class.return_value.prepare_image.side_effect = OSError(
+                "storage unavailable"
+            )
             response = self.client.post(
                 "/api/v1/products",
                 data={
                     "name": "Remote Failure Product",
                     "stock": "0",
                     "product_image": (
-                        BytesIO(b"RIFF\x10\x00\x00\x00WEBPvp8 "),
-                        "watch.webp",
-                        "image/webp",
+                        BytesIO(PNG),
+                        "watch.png",
+                        "image/png",
                     ),
                 },
                 content_type="multipart/form-data",
@@ -326,7 +396,7 @@ class Stage2ProductsApiTest(unittest.TestCase):
                     "article": "PHOTO-UPDATED",
                     "product_image_action": "replace",
                     "product_image": (
-                        BytesIO(b"\x89PNG\r\n\x1a\nreplacement"),
+                        BytesIO(PNG),
                         "../replacement.png",
                         "image/png",
                     ),
@@ -350,7 +420,7 @@ class Stage2ProductsApiTest(unittest.TestCase):
         remote.upload_product_image.assert_called_once_with(
             remote_id,
             "replacement.png",
-            b"\x89PNG\r\n\x1a\nreplacement",
+            PNG,
         )
 
     def test_delete_existing_product_photo(self):
@@ -374,6 +444,61 @@ class Stage2ProductsApiTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         remote.delete_product_images.assert_called_once_with(remote_id)
         remote.upload_product_image.assert_not_called()
+
+    def test_add_replace_and_remove_local_product_photo(self):
+        product = self.client.get(
+            "/api/v1/products?page_size=1"
+        ).get_json()["data"][0]
+        product_id = product["id"]
+
+        added = self.client.patch(
+            "/api/v1/products/{}".format(product_id),
+            data={
+                "article": "LOCAL-PHOTO",
+                "product_image_action": "add",
+                "product_image": (
+                    BytesIO(PNG),
+                    "../one.png",
+                    "image/png",
+                ),
+            },
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(added.status_code, 200)
+        self.assertEqual(added.get_json()["data"]["article"], "LOCAL-PHOTO")
+        first_url = added.get_json()["data"]["thumbnail_url"]
+        self.assertRegex(
+            first_url,
+            r"^/product-images/product-[a-f0-9]{64}\.png\?v=[a-f0-9]{16}$",
+        )
+
+        replaced = self.client.patch(
+            "/api/v1/products/{}".format(product_id),
+            data={
+                "product_image_action": "replace",
+                "product_image": (
+                    BytesIO(PNG_REPLACEMENT),
+                    "two.png",
+                    "image/png",
+                ),
+            },
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(replaced.status_code, 200)
+        second_url = replaced.get_json()["data"]["thumbnail_url"]
+        self.assertNotEqual(first_url, second_url)
+
+        removed = self.client.patch(
+            "/api/v1/products/{}".format(product_id),
+            data={"product_image_action": "remove"},
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(removed.status_code, 200)
+        self.assertEqual(removed.get_json()["data"]["thumbnail_url"], "")
+        self.assertEqual(
+            removed.get_json()["data"]["article"],
+            "LOCAL-PHOTO",
+        )
 
     def test_saving_fields_without_photo_preserves_remote_image(self):
         product = self.client.get(
@@ -408,9 +533,9 @@ class Stage2ProductsApiTest(unittest.TestCase):
                     "article": "MUST-NOT-SAVE",
                     "product_image_action": "replace",
                     "product_image": (
-                        BytesIO(b"\xff\xd8\xffreplacement"),
-                        "replacement.jpg",
-                        "image/jpeg",
+                        BytesIO(PNG),
+                        "replacement.png",
+                        "image/png",
                     ),
                 },
                 content_type="multipart/form-data",
@@ -448,9 +573,9 @@ class Stage2ProductsApiTest(unittest.TestCase):
                 data={
                     "product_image_action": "replace",
                     "product_image": (
-                        BytesIO(b"\xff\xd8\xffreplacement"),
-                        "replacement.jpg",
-                        "image/jpeg",
+                        BytesIO(PNG),
+                        "replacement.png",
+                        "image/png",
                     ),
                 },
                 content_type="multipart/form-data",
@@ -487,7 +612,7 @@ class Stage2ProductsApiTest(unittest.TestCase):
         self.assertEqual(response.status_code, 422)
         client_class.assert_not_called()
 
-    def test_local_create_failure_rolls_back_remote_photo_product(self):
+    def test_duplicate_create_discards_prepared_local_photo(self):
         duplicate_name = "Duplicate Photo Product"
         initial = self.client.post(
             "/api/v1/products",
@@ -496,11 +621,7 @@ class Stage2ProductsApiTest(unittest.TestCase):
         self.assertEqual(initial.status_code, 201)
         before = self.client.get("/api/v1/products?page_size=50").get_json()["meta"]["total"]
 
-        remote_id = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
         with mock.patch.object(web, "MoySkladClient") as client_class:
-            remote = client_class.return_value
-            remote.create_product.return_value = {"id": remote_id}
-            remote.archive_product.return_value = True
             response = self.client.post(
                 "/api/v1/products",
                 data={
@@ -508,7 +629,7 @@ class Stage2ProductsApiTest(unittest.TestCase):
                     "article": "DUP-1",
                     "stock": "0",
                     "product_image": (
-                        BytesIO(b"\x89PNG\r\n\x1a\nduplicate-photo"),
+                        BytesIO(PNG),
                         "duplicate.png",
                         "image/png",
                     ),
@@ -517,7 +638,9 @@ class Stage2ProductsApiTest(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 409)
-        remote.archive_product.assert_called_once_with(remote_id)
+        client_class.assert_not_called()
+        image_root = self.root / "product_images"
+        self.assertEqual(list(image_root.iterdir()) if image_root.exists() else [], [])
         after = self.client.get("/api/v1/products?page_size=50").get_json()["meta"]["total"]
         self.assertEqual(after, before)
 

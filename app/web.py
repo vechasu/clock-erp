@@ -10,6 +10,7 @@ import time
 import copy
 import base64
 import binascii
+import hashlib
 import json
 import math
 import os
@@ -111,7 +112,10 @@ from app.services.brand_images import (
     BrandImageStore,
     BrandImageValidationError,
 )
-from app.services.product_images import ProductImageStore
+from app.services.product_images import (
+    ProductImageStore,
+    validate_product_image,
+)
 from app.services.inventory_lock import (
     assert_product_references_unlocked,
     locked_products,
@@ -3450,8 +3454,11 @@ def build_excel_warehouse_items(products):
             )
         stock = float(product.get("stock") or 0)
         local_image_url = (
-            "/product-images/{}".format(
-                Path(product.get("local_image_path") or "").name
+            "/product-images/{}?{}".format(
+                Path(product.get("local_image_path") or "").name,
+                urlencode({
+                    "v": str(product.get("local_image_sha256") or "")[:16]
+                }),
             )
             if product.get("local_image_path") else ""
         )
@@ -3460,6 +3467,21 @@ def build_excel_warehouse_items(products):
                 product.get("moysklad_product_id")
             )
             if product.get("moysklad_product_id") else ""
+        )
+        bitrix_gallery = (
+            normalized_bitrix_gallery(product)
+            if product.get("bitrix_external_product_id")
+            else []
+        )
+        local_gallery = ([{
+            "original_url": local_image_url,
+            "thumbnail_url": local_image_url,
+            "kind": "local",
+        }] if local_image_url else [])
+        visible_gallery = bitrix_gallery or local_gallery
+        visible_thumbnail_url = (
+            (visible_gallery[0].get("original_url") if visible_gallery else "")
+            or fallback_thumbnail_url
         )
         item = {
             "id": product["id"],
@@ -3482,12 +3504,8 @@ def build_excel_warehouse_items(products):
             "created_at": created_at,
             "created_at_display": created_at_display,
             "local_image_url": local_image_url,
-            "thumbnail_url": local_image_url or fallback_thumbnail_url,
-            "gallery": ([{
-                "original_url": local_image_url,
-                "thumbnail_url": local_image_url,
-                "kind": "local",
-            }] if local_image_url else []),
+            "thumbnail_url": visible_thumbnail_url,
+            "gallery": visible_gallery,
             "price": (
                 float(price) if price not in (None, "") else None
             ),
@@ -4593,6 +4611,22 @@ def warehouse_product_gallery_items(
     if legacy_urls:
         return [{"original_url": url} for url in legacy_urls]
 
+    local_path = Path(str(product.get("local_image_path") or "")).name
+    if local_path:
+        revision = str(product.get("local_image_sha256") or "").strip()
+        local_url = "/product-images/{}".format(local_path)
+        if revision:
+            local_url = "{}?{}".format(
+                local_url, urlencode({"v": revision[:16]})
+            )
+        return [{
+            "external_file_id": "",
+            "kind": "local",
+            "is_primary": True,
+            "order": 0,
+            "original_url": local_url,
+        }]
+
     moysklad_product_id = str(
         product.get("moysklad_product_id") or ""
     ).strip()
@@ -4641,11 +4675,10 @@ def warehouse_product_detail(product_id):
             "bitrix"
             if product.get("bitrix_external_product_id")
             else "moysklad"
+            if product.get("moysklad_product_id")
+            else "local"
         ),
-        "editable": bool(
-            product.get("bitrix_external_product_id")
-            or product.get("moysklad_product_id")
-        ),
+        "editable": True,
         "gallery": warehouse_product_gallery_items(
             product, live_product, moysklad_images
         ),
@@ -13702,22 +13735,47 @@ def receipts_import_preview():
 PRODUCT_IMAGE_MAX_BYTES = 3 * 1024 * 1024
 
 
+class ProductImageUploadError(ValueError):
+    def __init__(self, code, message, status=422):
+        super().__init__(message)
+        self.code = code
+        self.status = status
+
+
 def read_product_image_upload(uploaded_file, allow_webp=False):
     from werkzeug.utils import secure_filename
 
     if not uploaded_file or not uploaded_file.filename:
         return None
 
+    original_extension = Path(uploaded_file.filename).suffix.lower()
+    if original_extension in {".heic", ".heif"}:
+        raise ProductImageUploadError(
+            "PRODUCT_IMAGE_FORMAT_UNSUPPORTED",
+            "Формат HEIC не поддерживается. Выберите JPG, PNG или WebP."
+            , 415
+        )
+    if original_extension not in {".jpg", ".jpeg", ".png", ".webp"}:
+        raise ProductImageUploadError(
+            "PRODUCT_IMAGE_FORMAT_UNSUPPORTED",
+            "Недопустимое расширение файла. Выберите JPG, PNG или WebP."
+            , 415
+        )
+
     content = uploaded_file.stream.read(
         PRODUCT_IMAGE_MAX_BYTES + 1
     )
 
     if not content:
-        raise ValueError("Выбранный файл изображения пуст.")
+        raise ProductImageUploadError(
+            "PRODUCT_IMAGE_EMPTY", "Выбранный файл изображения пуст."
+        )
 
     if len(content) > PRODUCT_IMAGE_MAX_BYTES:
-        raise ValueError(
-            "Файл слишком большой. Максимальный размер — 3 МБ."
+        raise ProductImageUploadError(
+            "PRODUCT_IMAGE_TOO_LARGE",
+            "Файл слишком большой. Максимальный размер — 3 МБ.",
+            413,
         )
 
     if content.startswith(b"\xff\xd8\xff"):
@@ -13739,13 +13797,32 @@ def read_product_image_upload(uploaded_file, allow_webp=False):
         detected_mimetype = "image/webp"
     else:
         supported = "JPEG, PNG и WEBP" if allow_webp else "JPEG и PNG"
-        raise ValueError("Недопустимый формат изображения. Поддерживаются {}.".format(supported))
+        raise ProductImageUploadError(
+            "PRODUCT_IMAGE_FORMAT_UNSUPPORTED",
+            "Недопустимый формат изображения. Поддерживаются {}.".format(supported),
+            415,
+        )
 
     mimetype = str(uploaded_file.mimetype or "").lower()
 
     if mimetype and mimetype not in allowed_mimetypes:
         supported = "JPEG, PNG и WEBP" if allow_webp else "JPEG и PNG"
-        raise ValueError("Недопустимый формат изображения. Поддерживаются {}.".format(supported))
+        raise ProductImageUploadError(
+            "PRODUCT_IMAGE_MIME_MISMATCH",
+            "Недопустимый формат изображения. Поддерживаются {}.".format(supported),
+            415,
+        )
+
+    try:
+        validate_product_image(
+            content,
+            uploaded_file.filename,
+            detected_mimetype,
+        )
+    except ValueError as error:
+        raise ProductImageUploadError(
+            "PRODUCT_IMAGE_CORRUPTED", str(error), 422
+        )
 
     safe_name = secure_filename(uploaded_file.filename)
     name_without_extension = safe_name.rsplit(".", 1)[0]
@@ -13755,6 +13832,7 @@ def read_product_image_upload(uploaded_file, allow_webp=False):
         "filename": filename[:255],
         "content": content,
         "mime_type": detected_mimetype,
+        "sha256": hashlib.sha256(content).hexdigest(),
     }
 
 
@@ -16996,9 +17074,9 @@ def api_products_collection():
     catalog_service = ExcelProductCatalog()
     if request.method == "POST":
         require_csrf_when_authenticated()
-        remote_client = None
-        remote_product = None
         product_image = None
+        prepared_image = None
+        image_store = ProductImageStore(catalog_service.database)
         try:
             payload, product_image = api_product_request_payload()
             name = str(payload.get("name") or "").strip()
@@ -17006,15 +17084,11 @@ def api_products_collection():
                 raise ValueError("Название товара обязательно.")
             parse_initial_stock(payload.get("stock", 0))
             if product_image:
-                remote_client = MoySkladClient()
-                remote_product = remote_client.create_product(
-                    name=name,
-                    code="VECHASU-{}".format(uuid.uuid4().hex.upper()),
-                    article=(str(payload.get("article") or "").strip() or None),
-                    image=product_image,
+                prepared_image = image_store.prepare_image(
+                    product_image["content"],
+                    product_image["filename"],
+                    product_image["mime_type"],
                 )
-                if not str((remote_product or {}).get("id") or "").strip():
-                    raise RuntimeError("МойСклад не создал карточку с фотографией.")
             product = catalog_service.create_product(
                 name=name,
                 model=payload.get("model", ""),
@@ -17027,14 +17101,14 @@ def api_products_collection():
                 stock=payload.get("stock", 0),
                 price=payload.get("price"),
                 enforce_unique=True,
-                moysklad_product_id=(
-                    remote_product.get("id") if remote_product else None
-                ),
+                local_image_path=(prepared_image or {}).get("path"),
+                local_image_sha256=(prepared_image or {}).get("sha256"),
+                local_image_source="manual" if prepared_image else None,
+                local_image_updated_at=(prepared_image or {}).get("updated_at"),
                 **current_audit_actor()
             )
         except DuplicateCatalogValueError as error:
-            if remote_client and remote_product:
-                rollback_remote_product(remote_client, remote_product)
+            image_store.discard_prepared(prepared_image)
             return api_error(
                 "PRODUCT_ALREADY_EXISTS",
                 str(error),
@@ -17042,16 +17116,14 @@ def api_products_collection():
                 {"existing": error.existing},
             )
         except ValueError as error:
-            if remote_client and remote_product:
-                rollback_remote_product(remote_client, remote_product)
+            image_store.discard_prepared(prepared_image)
             return api_error(
                 "PRODUCT_VALIDATION_FAILED",
                 str(error),
                 422,
             )
         except Exception:
-            if remote_client and remote_product:
-                rollback_remote_product(remote_client, remote_product)
+            image_store.discard_prepared(prepared_image)
             if product_image is None:
                 raise
             app.logger.exception(
@@ -17064,7 +17136,17 @@ def api_products_collection():
             )
         WAREHOUSE_CACHE["items"] = []
         WAREHOUSE_CACHE["loaded_at"] = 0
-        return api_success(serialize_api_product(product), 201)
+        image_message = ""
+        if product_image:
+            image_message = (
+                "Фото сохранено в ERP. "
+                "Синхронизация с Bitrix недоступна до сопоставления товара."
+            )
+        return api_success(
+            serialize_api_product(product),
+            201,
+            image_message=image_message,
+        )
 
     sort_by = (
         request.args.get("sort_by")
@@ -17216,7 +17298,32 @@ def api_product_resource(product_id):
             product.get("bitrix_external_product_id") or ""
         ).strip()
         image_message = ""
-        if image_action != "keep":
+        saved_bitrix_image_identity = str(
+            product.get("local_image_external_id") or ""
+        )
+        expected_bitrix_image_identity = (
+            "{}:{}".format(bitrix_product_id, bitrix_image_file_id)
+            if bitrix_image_file_id
+            else ""
+        )
+        idempotent_bitrix_upload = bool(
+            bitrix_product_id
+            and image_action in {"add", "replace"}
+            and product_image
+            and product.get("local_image_sha256")
+            == product_image.get("sha256")
+            and saved_bitrix_image_identity.startswith(
+                "{}:".format(bitrix_product_id)
+            )
+            and (
+                image_action == "add"
+                or saved_bitrix_image_identity
+                == expected_bitrix_image_identity
+            )
+        )
+        if idempotent_bitrix_upload:
+            image_message = "Фотография уже синхронизирована с Bitrix."
+        elif image_action != "keep":
             if bitrix_product_id:
                 image_client = BitrixCatalogClient(
                     os.getenv("BITRIX_CATALOG_URL", ""),
@@ -17240,13 +17347,36 @@ def api_product_resource(product_id):
                         or bitrix_image_file_id
                         or ""
                     )
+                    try:
+                        image_store = ProductImageStore(
+                            catalog_service.database
+                        )
+                        if image_action == "remove":
+                            image_store.remove_image(product_id)
+                        else:
+                            image_store.set_image(
+                                product_id,
+                                product_image["content"],
+                                product_image["filename"],
+                                product_image["mime_type"],
+                                "manual",
+                                external_id="{}:{}".format(
+                                    bitrix_product_id, affected_file_id
+                                ),
+                            )
+                    except (OSError, ValueError):
+                        app.logger.exception(
+                            "Verified Bitrix image could not be cached for product %s",
+                            product_id,
+                        )
+                    product = catalog_service.get_product(product_id)
                     record_product_photo_operation(
                         product, image_action, affected_file_id
                     )
                     image_message = {
-                        "add": "Фото добавлено в Bitrix.",
-                        "replace": "Фото заменено в Bitrix.",
-                        "remove": "Фото удалено из Bitrix.",
+                        "add": "Фото добавлено в ERP и Bitrix.",
+                        "replace": "Фото заменено в ERP и Bitrix.",
+                        "remove": "Фото удалено из ERP и Bitrix.",
                     }[image_action]
                 except (BitrixCatalogWriteError, BitrixCatalogReadOnlyError) as error:
                     diagnostic = getattr(error, "context", {})
@@ -17289,13 +17419,7 @@ def api_product_resource(product_id):
                         502,
                         {"gallery": actual_gallery},
                     )
-            elif not remote_product_id:
-                return api_error(
-                    "PRODUCT_IMAGE_STORAGE_UNAVAILABLE",
-                    "У товара нет связанной карточки в Bitrix или МойСклад.",
-                    422,
-                )
-            else:
+            elif remote_product_id:
                 image_client = MoySkladClient()
                 actual_gallery = []
                 before_images = []
@@ -17359,7 +17483,41 @@ def api_product_resource(product_id):
                         502,
                         {"gallery": actual_gallery},
                     )
+                image_store = ProductImageStore(catalog_service.database)
+                if image_action == "remove":
+                    image_store.remove_image(product_id)
+                else:
+                    image_store.set_image(
+                        product_id,
+                        product_image["content"],
+                        product_image["filename"],
+                        product_image["mime_type"],
+                        "manual",
+                        external_id="moysklad:{}".format(remote_product_id),
+                    )
+                product = catalog_service.get_product(product_id)
                 record_product_photo_audit(product, image_action, "МойСклад")
+            else:
+                image_store = ProductImageStore(catalog_service.database)
+                if image_action == "remove":
+                    image_store.remove_image(product_id)
+                    image_message = (
+                        "Фото удалено из ERP. У товара нет связи с Bitrix."
+                    )
+                else:
+                    image_store.set_image(
+                        product_id,
+                        product_image["content"],
+                        product_image["filename"],
+                        product_image["mime_type"],
+                        "manual",
+                    )
+                    image_message = (
+                        "Фото сохранено в ERP. "
+                        "Синхронизация с Bitrix недоступна до сопоставления товара."
+                    )
+                product = catalog_service.get_product(product_id)
+                record_product_photo_audit(product, image_action, "ERP")
         updated = (
             catalog_service.update_product(
                 product_id, **payload, **current_audit_actor()
@@ -17383,6 +17541,15 @@ def api_product_resource(product_id):
         return api_error(code, str(error), 422)
     except ValueError as error:
         return api_error("PRODUCT_VALIDATION_FAILED", str(error), 422)
+    except OSError:
+        app.logger.exception(
+            "Products API failed to persist local image for %s", product_id
+        )
+        return api_error(
+            "PRODUCT_IMAGE_STORAGE_FAILED",
+            "Не удалось сохранить фотографию в ERP.",
+            500,
+        )
     WAREHOUSE_CACHE["items"] = []
     WAREHOUSE_CACHE["loaded_at"] = 0
     return api_success(
