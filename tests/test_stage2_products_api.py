@@ -279,12 +279,18 @@ class Stage2ProductsApiTest(unittest.TestCase):
                 self.assertIn(extension + "?v=", response.get_json()["data"]["thumbnail_url"])
 
     def test_heic_and_truncated_image_are_rejected(self):
-        for filename, content, mimetype, message in (
-            ("watch.heic", b"heic", "image/heic", "Формат HEIC не поддерживается"),
+        for filename, content, mimetype, status, code, message in (
+            (
+                "watch.heic", b"heic", "image/heic", 415,
+                "PRODUCT_IMAGE_FORMAT_UNSUPPORTED",
+                "Формат HEIC не поддерживается",
+            ),
             (
                 "watch.png",
                 b"\x89PNG\r\n\x1a\ntruncated",
                 "image/png",
+                422,
+                "PRODUCT_IMAGE_CORRUPTED",
                 "Файл изображения повреждён",
             ),
         ):
@@ -300,7 +306,8 @@ class Stage2ProductsApiTest(unittest.TestCase):
                     },
                     content_type="multipart/form-data",
                 )
-                self.assertEqual(response.status_code, 422)
+                self.assertEqual(response.status_code, status)
+                self.assertEqual(response.get_json()["code"], code)
                 self.assertIn(message, response.get_json()["message"])
 
     def test_invalid_product_photo_does_not_create_product(self):
@@ -320,8 +327,8 @@ class Stage2ProductsApiTest(unittest.TestCase):
                 content_type="multipart/form-data",
             )
 
-        self.assertEqual(response.status_code, 422)
-        self.assertEqual(response.get_json()["code"], "PRODUCT_VALIDATION_FAILED")
+        self.assertEqual(response.status_code, 415)
+        self.assertEqual(response.get_json()["code"], "PRODUCT_IMAGE_FORMAT_UNSUPPORTED")
         client_class.assert_not_called()
         after = self.client.get("/api/v1/products?page_size=50").get_json()["meta"]["total"]
         self.assertEqual(after, before)
@@ -375,8 +382,31 @@ class Stage2ProductsApiTest(unittest.TestCase):
             content_type="multipart/form-data",
         )
 
-        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.status_code, 413)
+        self.assertEqual(response.get_json()["code"], "PRODUCT_IMAGE_TOO_LARGE")
         self.assertIn("3 МБ", response.get_json()["message"])
+
+    def test_heic_photo_has_specific_safe_error(self):
+        response = self.client.post(
+            "/api/v1/products",
+            data={
+                "name": "HEIC Product",
+                "stock": "0",
+                "product_image": (
+                    BytesIO(b"not-heic"),
+                    "phone.heic",
+                    "image/heic",
+                ),
+            },
+            content_type="multipart/form-data",
+        )
+
+        self.assertEqual(response.status_code, 415)
+        self.assertEqual(
+            response.get_json()["code"],
+            "PRODUCT_IMAGE_FORMAT_UNSUPPORTED",
+        )
+        self.assertIn("HEIC не поддерживается", response.get_json()["message"])
 
     def test_replace_existing_product_photo_and_fields_together(self):
         product = self.client.get(
@@ -609,7 +639,11 @@ class Stage2ProductsApiTest(unittest.TestCase):
                 content_type="multipart/form-data",
             )
 
-        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.status_code, 415)
+        self.assertEqual(
+            response.get_json()["code"],
+            "PRODUCT_IMAGE_FORMAT_UNSUPPORTED",
+        )
         client_class.assert_not_called()
 
     def test_duplicate_create_discards_prepared_local_photo(self):

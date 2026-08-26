@@ -13752,14 +13752,14 @@ def read_product_image_upload(uploaded_file, allow_webp=False):
     if original_extension in {".heic", ".heif"}:
         raise ProductImageUploadError(
             "PRODUCT_IMAGE_FORMAT_UNSUPPORTED",
-            "Формат HEIC не поддерживается. Выберите JPG, PNG или WebP."
-            , 415
+            "Формат HEIC не поддерживается. Выберите JPG, PNG или WebP.",
+            415,
         )
     if original_extension not in {".jpg", ".jpeg", ".png", ".webp"}:
         raise ProductImageUploadError(
             "PRODUCT_IMAGE_FORMAT_UNSUPPORTED",
-            "Недопустимое расширение файла. Выберите JPG, PNG или WebP."
-            , 415
+            "Недопустимое расширение файла. Выберите JPG, PNG или WebP.",
+            415,
         )
 
     content = uploaded_file.stream.read(
@@ -17047,27 +17047,6 @@ def record_product_photo_audit(product, action, source):
         )
 
 
-def rollback_remote_product(client, product):
-    product_id = str((product or {}).get("id") or "").strip()
-    if not product_id:
-        return True
-    try:
-        result = client.archive_product(product_id)
-    except Exception:
-        app.logger.exception(
-            "Products API failed to roll back MoySklad product %s",
-            product_id,
-        )
-        return False
-    if result:
-        return True
-    app.logger.error(
-        "Products API could not roll back MoySklad product %s",
-        product_id,
-    )
-    return False
-
-
 @app.route("/api/products", methods=["GET", "POST"])
 @app.route("/api/v1/products", methods=["GET", "POST"])
 def api_products_collection():
@@ -17115,6 +17094,9 @@ def api_products_collection():
                 409,
                 {"existing": error.existing},
             )
+        except ProductImageUploadError as error:
+            image_store.discard_prepared(prepared_image)
+            return api_error(error.code, str(error), error.status)
         except ValueError as error:
             image_store.discard_prepared(prepared_image)
             return api_error(
@@ -17539,6 +17521,8 @@ def api_product_resource(product_id):
             else "PRODUCT_REFERENCE_INVALID"
         )
         return api_error(code, str(error), 422)
+    except ProductImageUploadError as error:
+        return api_error(error.code, str(error), error.status)
     except ValueError as error:
         return api_error("PRODUCT_VALIDATION_FAILED", str(error), 422)
     except OSError:
