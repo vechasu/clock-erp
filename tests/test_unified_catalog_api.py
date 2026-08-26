@@ -15,6 +15,14 @@ from app.services.excel_product_catalog import (
 )
 
 
+PNG = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+)
+JPEG = base64.b64decode(
+    "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAABAAEDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD3+iiigD//2Q=="
+)
+
+
 class UnifiedCatalogApiTest(unittest.TestCase):
     def setUp(self):
         self.original_config = dict(web.app.config)
@@ -607,7 +615,7 @@ class UnifiedCatalogApiTest(unittest.TestCase):
                 "quantity": "1",
                 "product_id": str(self.product["id"]),
                 "product_image": (
-                    BytesIO(b"\x89PNG\r\n\x1a\nreplacement"),
+                    BytesIO(PNG),
                     "replacement.png",
                     "image/png",
                 ),
@@ -624,12 +632,12 @@ class UnifiedCatalogApiTest(unittest.TestCase):
         self.remote.upload_product_image.assert_called_once_with(
             "ms-casio-a168",
             "replacement.png",
-            b"\x89PNG\r\n\x1a\nreplacement",
+            PNG,
         )
 
     def test_photo_upload_is_part_of_remote_receipt_creation(self):
         response = self.multipart_receipt(
-            image=b"\x89PNG\r\n\x1a\nparallel",
+            image=PNG,
             idempotency_key="receipt-parallel-remote",
         )
 
@@ -657,12 +665,12 @@ class UnifiedCatalogApiTest(unittest.TestCase):
     def test_multipart_receipt_accepts_png_and_jpeg_for_existing_product(self):
         fixtures = (
             (
-                b"\x89PNG\r\n\x1a\n" + b"png-data",
+                PNG,
                 "watch.png",
                 "image/png",
             ),
             (
-                b"\xff\xd8\xff" + b"jpeg-data",
+                JPEG,
                 "watch.jpg",
                 "image/jpeg",
             ),
@@ -720,7 +728,7 @@ class UnifiedCatalogApiTest(unittest.TestCase):
         self.assertEqual(response.status_code, 422)
         self.assertEqual(
             response.get_json()["message"],
-            "Недопустимый формат изображения. Поддерживаются JPEG и PNG.",
+            "Недопустимое расширение файла. Выберите JPG, PNG или WebP.",
         )
         oversized = self.multipart_receipt(
             quantity=2,
@@ -781,7 +789,7 @@ class UnifiedCatalogApiTest(unittest.TestCase):
         response = self.multipart_receipt(
             quantity=2,
             note="Ошибка фото",
-            image=b"\x89PNG\r\n\x1a\nbroken-remote",
+            image=PNG,
             idempotency_key="receipt-image-failure",
         )
 

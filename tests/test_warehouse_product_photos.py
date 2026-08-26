@@ -114,6 +114,28 @@ class WarehouseProductPhotosTest(unittest.TestCase):
 
         self.assertEqual(response.get_json()["gallery"], [])
 
+    def test_product_projection_exposes_saved_bitrix_file_identity(self):
+        product = {
+            "id": 42,
+            "created_at": "2026-08-26T12:00:00",
+            "stock": 3,
+            "bitrix_external_product_id": "204699",
+            "gallery": [{
+                "id": "44610",
+                "url": "https://www.tictactoy.ru/upload/watch.jpg",
+                "kind": "detail",
+            }],
+        }
+
+        item = web.build_excel_warehouse_items([product])[0]
+
+        self.assertEqual(item["bitrix_element_id"], "204699")
+        self.assertEqual(item["gallery"][0]["external_file_id"], "44610")
+        self.assertEqual(
+            item["thumbnail_url"],
+            "/warehouse/product/42/image/44610",
+        )
+
     def test_position_card_layout_photo_contract(self):
         self.assertIn('grid-template-areas: "info media"', self.template)
         self.assertIn('"media"\n                    "info"', self.template)
@@ -133,6 +155,12 @@ class WarehouseProductPhotosTest(unittest.TestCase):
         self.assertIn("warehouseProductImageAction", self.template)
         self.assertIn("restoreWarehouseProductPhoto()", self.template)
         self.assertIn("const updateBody = new FormData();", self.template)
+        self.assertIn('"bitrix_image_file_id",', self.template)
+        self.assertIn("warehouseExistingProductPhotoFileId", self.template)
+        self.assertIn(
+            'window.confirm("Удалить фотографию товара после сохранения?")',
+            self.template,
+        )
 
 
 if __name__ == "__main__":

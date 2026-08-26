@@ -439,6 +439,42 @@ class BitrixProductGalleryIntegrationTest(unittest.TestCase):
         self.assertEqual(status, 502)
         self.assertEqual(response.get_json()["code"], "PRODUCT_IMAGE_UPLOAD_FAILED")
 
+    def test_same_confirmed_bitrix_replace_is_idempotent(self):
+        product = {
+            "id": 42,
+            "bitrix_external_product_id": "204699",
+            "excel_name_raw": "Lady",
+            "stock": 4,
+            "gallery": [{
+                "id": "44610",
+                "url": "https://www.tictactoy.ru/upload/lady.jpg",
+            }],
+            "local_image_sha256": "same-digest",
+            "local_image_external_id": "204699:44610",
+        }
+        catalog = mock.Mock()
+        catalog.get_product.return_value = product
+        with web.app.test_request_context("/api/products/42", method="PATCH"), \
+                mock.patch.object(web, "require_csrf_when_authenticated"), \
+                mock.patch.object(web, "ExcelProductCatalog", return_value=catalog), \
+                mock.patch.object(web, "api_product_update_request_payload", return_value=(
+                    {}, {
+                        "filename": "lady.jpg",
+                        "content": b"same",
+                        "mime_type": "image/jpeg",
+                        "sha256": "same-digest",
+                    },
+                    "replace", "44610",
+                )), mock.patch.object(web, "BitrixCatalogClient") as client_class:
+            response, status = web.api_product_resource(42)
+
+        self.assertEqual(status, 200)
+        self.assertEqual(
+            response.get_json()["meta"]["image_message"],
+            "Фотография уже синхронизирована с Bitrix.",
+        )
+        client_class.assert_not_called()
+
     def test_card_edit_controls_are_staged_until_save(self):
         template = Path("app/templates/warehouse.html").read_text(encoding="utf-8")
         self.assertIn('id="detailPhotoAdd"', template)
@@ -464,6 +500,14 @@ class BitrixProductGalleryIntegrationTest(unittest.TestCase):
         self.assertIn("galleryFileEntries($productId)", endpoint)
         self.assertIn("'old_file' => (int) $entry['file_id']", endpoint)
         self.assertIn("mutateGalleryFiles(", endpoint)
+        self.assertIn(
+            "$previewId < 1 && $detailId < 1 && $galleryIds === array()",
+            endpoint,
+        )
+        self.assertIn(
+            "updateElementImageField(\n                $productId, 'PREVIEW_PICTURE'",
+            endpoint,
+        )
         self.assertNotIn("$values[] = $fileId", endpoint)
         self.assertNotIn("MORE_PHOTO", endpoint)
 

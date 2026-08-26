@@ -413,9 +413,16 @@ function handleImageMutation(array $properties): void
 
     $affectedFileId = $targetId;
     if ($action === 'add') {
-        $affectedFileId = mutateGalleryFiles(
-            $productId, 'add', 0, validatedImageUpload()
-        );
+        $upload = validatedImageUpload();
+        if ($previewId < 1 && $detailId < 1 && $galleryIds === array()) {
+            $affectedFileId = updateElementImageField(
+                $productId, 'PREVIEW_PICTURE', $upload
+            );
+        } else {
+            $affectedFileId = mutateGalleryFiles(
+                $productId, 'add', 0, $upload
+            );
+        }
     } elseif ($action === 'replace') {
         if ($targetId < 1) {
             exportError('image_not_found', 404);
