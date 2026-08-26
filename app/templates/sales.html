@@ -4151,7 +4151,13 @@
         });
 
         update();
-        return {update: scheduleUpdate, tableWrap, control, dock};
+        return {
+            update: scheduleUpdate,
+            refresh: update,
+            tableWrap,
+            control,
+            dock,
+        };
     }
 
     window.salesHorizontalScrollbar = (
@@ -6798,7 +6804,7 @@
 </script>
 {% if config.TESTING and request.args.get("sales_catalog_picker_e2e") == "1" %}
 <script>
-    window.addEventListener("load", async () => {
+    window.addEventListener("load", () => {
         try {
             const root = document.documentElement;
             const form = document.getElementById("manualSaleForm");
@@ -8623,12 +8629,7 @@
                     "thead th[data-column-key]:not([hidden])"
                 ) || []
             ).at(-1);
-            const waitForLayout = () => new Promise((resolve) =>
-                requestAnimationFrame(() => requestAnimationFrame(resolve))
-            );
-
-            scrollbar?.update();
-            await waitForLayout();
+            scrollbar?.refresh();
 
             if (
                 !tableWrap
@@ -8646,7 +8647,7 @@
             const maxScroll = Number(control.max);
             control.value = String(maxScroll);
             control.dispatchEvent(new Event("input", {bubbles: true}));
-            await waitForLayout();
+            scrollbar.refresh();
             const wrapBounds = tableWrap.getBoundingClientRect();
             const lastHeaderBounds = lastDataHeader.getBoundingClientRect();
 
@@ -8661,7 +8662,7 @@
             const middleScroll = Math.round(maxScroll / 2);
             tableWrap.scrollLeft = middleScroll;
             tableWrap.dispatchEvent(new Event("scroll"));
-            await waitForLayout();
+            scrollbar.refresh();
             if (Math.abs(Number(control.value) - middleScroll) > 2) {
                 throw new Error("table-to-control");
             }
@@ -8671,7 +8672,7 @@
             );
             if (noteToggle) {
                 noteToggle.click();
-                await waitForLayout();
+                scrollbar.refresh();
                 const updatedMax = Math.max(
                     0,
                     tableWrap.scrollWidth - tableWrap.clientWidth,
@@ -8680,12 +8681,12 @@
                     throw new Error("columns-update");
                 }
                 noteToggle.click();
-                await waitForLayout();
+                scrollbar.refresh();
             }
 
             const initialY = window.scrollY;
             tableWrap.closest(".table-card").scrollIntoView({block: "start"});
-            await waitForLayout();
+            scrollbar.refresh();
             const cardBounds = tableWrap.closest(".table-card")
                 .getBoundingClientRect();
             if (
