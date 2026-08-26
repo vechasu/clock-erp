@@ -21,6 +21,16 @@ const requiredViewports = [
   { width: 1920, height: 1080 },
 ];
 
+async function expectVersionedProductsTabs(page: Page) {
+  const scripts = page.locator('script[src*="products-tabs.js"]');
+  await expect(scripts).toHaveCount(1);
+  const source = await scripts.first().getAttribute('src');
+  expect(source).not.toBeNull();
+  const url = new URL(source!, page.url());
+  expect(url.pathname).toBe('/static/js/products-tabs.js');
+  expect(url.searchParams.get('v')).toMatch(/^[a-f0-9]{64}$/);
+}
+
 function observeBrowser(page: Page): BrowserEvidence {
   const evidence: BrowserEvidence = {
     consoleErrors: [],
@@ -77,7 +87,7 @@ async function expectUniqueProductsDom(page: Page, activeView: string) {
   await expect(page.locator('main#main-content')).toHaveCount(1);
   await expect(page.locator('.products-workspace-tabs')).toHaveCount(1);
   await expect(page.locator('[data-products-tab]')).toHaveCount(4);
-  await expect(page.locator('script[src*="products-tabs.js"]')).toHaveCount(1);
+  await expectVersionedProductsTabs(page);
   await expect(page.locator(`[data-products-tab="${activeView}"]`)).toHaveAttribute(
     'aria-current',
     'page',
@@ -86,6 +96,7 @@ async function expectUniqueProductsDom(page: Page, activeView: string) {
     await expect(page.locator('#warehouseResults')).toHaveCount(1);
     await expect(page.locator('#warehouseProductsTable')).toHaveCount(1);
     await expect(page.locator('#editDrawer')).toHaveCount(1);
+    await expect(page.locator('#warehouseProductsTable tbody tr').first()).toBeVisible();
   }
 }
 
@@ -335,6 +346,28 @@ test('product tabs, cards and history remain idempotent through three lifecycles
 
   expect(lifecycleInitialized).toBe(true);
   await assertNoBrowserFailures(evidence);
+});
+
+test('a cached unversioned asset cannot shadow the versioned lifecycle', async ({ page }) => {
+  const requestedScripts: string[] = [];
+  page.on('request', (request) => {
+    if (request.resourceType() === 'script' && request.url().includes('products-tabs.js')) {
+      requestedScripts.push(request.url());
+    }
+  });
+
+  await page.goto('/static/js/products-tabs.js', { waitUntil: 'load' });
+  await page.goto('/app/products?view=analytics', { waitUntil: 'load' });
+  await expectVersionedProductsTabs(page);
+  await navigateTopTab(page, observeBrowser(page), 'products');
+
+  const versionedRequests = requestedScripts.filter((source) => {
+    const url = new URL(source);
+    return /^[a-f0-9]{64}$/.test(url.searchParams.get('v') || '');
+  });
+  expect(versionedRequests.length).toBeGreaterThan(0);
+  await expect(page.locator('#warehouseProductsTable tbody tr').first()).toBeVisible();
+  expect(await page.evaluate(() => Boolean(window.VechasuProductsTabs?.initialized))).toBe(true);
 });
 
 test('required product viewports preserve cards, history and zero page overflow', async ({

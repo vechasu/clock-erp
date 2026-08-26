@@ -126,6 +126,7 @@ class ProductsRedesignStructureTest(unittest.TestCase):
             "warehouse_brands.html", "warehouse_categories.html",
         ):
             source = self.source(name)
+            self.assertEqual(source.count("js/products-tabs.js"), 1, name)
             self.assertIn(
                 "static_asset_url('js/products-tabs.js')", source
             )
