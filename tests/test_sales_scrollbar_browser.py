@@ -113,7 +113,11 @@ class SalesScrollbarBrowserTest(unittest.TestCase):
         )
         try:
             base_url = f"http://127.0.0.1:{port}/app/sales"
-            for _attempt in range(100):
+            # The shared preview fixture applies the full local schema before
+            # listening. Give heavily loaded CI runners enough time to finish
+            # that deterministic setup instead of treating startup latency as
+            # a scrollbar regression.
+            for _attempt in range(600):
                 try:
                     with urllib.request.urlopen(
                         base_url + "?source=all", timeout=1
