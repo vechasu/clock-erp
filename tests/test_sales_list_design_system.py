@@ -110,6 +110,7 @@ class SalesListDesignSystemContractTest(unittest.TestCase):
             "width: 44px;",
             "height: 44px;",
             "gap: 8px;",
+            "const actionColumnWidth = () => 116;",
             ".sales-edit-action[data-tooltip]:hover::after",
             ".sales-edit-action[data-tooltip]:focus-visible::after",
             ".sales-edit-action:active:not(:disabled)",

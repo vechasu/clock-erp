@@ -80,7 +80,7 @@
         assert(
             Math.abs(
                 actionHeader.getBoundingClientRect().width
-                - (window.innerWidth <= 900 ? 104 : 224)
+                - 116
             ) <= 1,
             "sparse-action-width"
         );
