@@ -37,7 +37,18 @@ class CancellationConflictError(SalesInventoryError):
 def validate_performed_sale_update(current, requested):
     """Validate the exact immutable business fields of a performed sale."""
     requested = dict(requested or {})
+    if "created_at" not in requested and "date" in requested:
+        requested["created_at"] = requested["date"]
     checks = (
+        (
+            "created_at",
+            "Дату",
+            lambda value: (
+                str(value or "").strip().replace(" ", "T") + "T00:00"
+                if len(str(value or "").strip()) == 10
+                else str(value or "").strip().replace(" ", "T")
+            )[:16],
+        ),
         ("product_id", "Товар", lambda value: str(value or "").strip()),
         (
             "product_name",
@@ -47,11 +58,6 @@ def validate_performed_sale_update(current, requested):
         ("brand", "Бренд", lambda value: str(value or "").strip()),
         ("category", "Категорию", lambda value: str(value or "").strip()),
         ("quantity", "Количество", lambda value: float(value)),
-        (
-            "unit_price",
-            "Цену",
-            lambda value: None if value in (None, "") else float(value),
-        ),
     )
     for field, label, normalize in checks:
         if field not in requested:
@@ -911,6 +917,9 @@ class SalesInventory:
                 "unit_price": requested_price,
             })
             pricing_explicit = bool(requested.pop("_pricing_explicit", False))
+            unit_price_explicit = bool(
+                requested.pop("_unit_price_explicit", False)
+            )
             if pricing_explicit:
                 protected_request.pop("unit_price", None)
             validate_performed_sale_update(canonical, protected_request)
@@ -945,6 +954,19 @@ class SalesInventory:
                         pricing["discount_reason"] or None, requested_price,
                         item["id"],
                     ),
+                )
+            elif unit_price_explicit:
+                pricing = {
+                    "original_unit_price": item["original_unit_price"] or current_price,
+                    "discount_type": item["discount_type"] or "none",
+                    "discount_value": item["discount_value"] or "0.00",
+                    "discount_amount": item["discount_amount"] or "0.00",
+                    "discount_reason": item["discount_reason"] or "",
+                }
+                current_pricing = {**pricing, "unit_price": current_price}
+                connection.execute(
+                    "UPDATE erp_sale_items SET unit_price = ? WHERE id = ?",
+                    (requested_price, item["id"]),
                 )
             else:
                 pricing = {
