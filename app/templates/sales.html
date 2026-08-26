@@ -2236,12 +2236,25 @@
                                             {% elif column.key == "created_at" %}
                                                 {{ render_erp_datetime(value) }}
                                             {% elif column.key == "product_name" %}
+                                                {% set product_meta = [sale.brand, sale.category, sale.article] | select | list | join(' · ') %}
                                                 <span class="sales-product-cell">
-                                                    <span class="sales-product-thumb{% if not product_image_url %} is-placeholder{% endif %}" aria-hidden="true">{% if product_image_url %}<img src="{{ product_image_url }}" alt="" loading="lazy" decoding="async" onerror="this.parentElement.classList.add('is-placeholder'); this.remove()">{% endif %}</span>
-                                                    <span
-                                                        class="{% if sale.is_manual %}manual-view-value{% else %}automatic-view-value{% endif %} product-name erp-product-primary"
-                                                    >
-                                                        {{ value or "—" }}
+                                                    <span class="sales-product-thumb{% if not product_image_url %} is-placeholder{% endif %}" aria-hidden="true">
+                                                        {% if product_image_url %}<img src="{{ product_image_url }}" alt="" loading="lazy" decoding="async" onerror="this.parentElement.classList.add('is-placeholder'); this.remove()">{% endif %}
+                                                        <svg class="sales-product-placeholder" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                                            <rect x="3.5" y="4.5" width="17" height="15" rx="2.5" stroke="currentColor" stroke-width="1.5"></rect>
+                                                            <circle cx="9" cy="10" r="1.5" fill="currentColor"></circle>
+                                                            <path d="m5.5 17 4.2-4.2 3.1 3.1 2.1-2.1 3.6 3.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
+                                                        </svg>
+                                                    </span>
+                                                    <span class="sales-product-copy">
+                                                        <span
+                                                            class="{% if sale.is_manual %}manual-view-value{% else %}automatic-view-value{% endif %} product-name erp-product-primary sales-product-name"
+                                                            title="{{ value or '—' }}"
+                                                        >{{ value or "—" }}</span>
+                                                        <span
+                                                            class="sales-product-meta"
+                                                            title="{{ product_meta or '—' }}"
+                                                        >{{ product_meta or "—" }}</span>
                                                     </span>
                                                 </span>
                                             {% elif column.key == "order_status_label" %}

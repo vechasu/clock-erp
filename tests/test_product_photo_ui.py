@@ -50,6 +50,35 @@ class ProductPhotoUiTest(unittest.TestCase):
         self.assertNotIn('name="product_image"', form)
         self.assertNotIn('type="file"', form)
 
+    def test_sales_table_product_cell_has_compact_photo_and_metadata(self):
+        self.assertIn('class="sales-product-copy"', self.sales)
+        self.assertIn('class="sales-product-meta"', self.sales)
+        self.assertIn("[sale.brand, sale.category, sale.article]", self.sales)
+        self.assertIn("join(' · ')", self.sales)
+        self.assertIn('class="sales-product-placeholder"', self.sales)
+        self.assertIn("this.parentElement.classList.add('is-placeholder')", self.sales)
+
+        styles = Path("app/static/css/erp-components.css").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(".sales-list-page .sales-product-copy", styles)
+        self.assertIn(".sales-list-page .sales-product-meta", styles)
+        self.assertIn("-webkit-line-clamp: 2;", styles)
+        self.assertIn("width: 48px;", styles)
+        self.assertIn("height: 70px;", styles)
+
+    def test_sales_table_keeps_independent_product_metadata_columns(self):
+        for key, label in (
+            ("brand", "Бренд"),
+            ("category", "Категория"),
+            ("product_name", "Товар"),
+            ("article", "Артикул"),
+            ("quantity_display", "Количество"),
+        ):
+            self.assertIn(f'("{key}", "{label}")', Path(
+                "app/web.py"
+            ).read_text(encoding="utf-8"))
+
     def test_shared_product_picker_normalizes_photo_sources(self):
         component = Path("app/static/js/catalog-combobox.js").read_text(
             encoding="utf-8"
