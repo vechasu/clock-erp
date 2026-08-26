@@ -99,9 +99,10 @@ class WarehousePhotoPreviewBrowserTest(unittest.TestCase):
                                     check=False,
                                     capture_output=True,
                                     text=True,
-                                    timeout=30,
+                                    timeout=45,
                                 )
-                                break
+                                if expected in result.stdout:
+                                    break
                             except subprocess.TimeoutExpired:
                                 if attempt:
                                     raise

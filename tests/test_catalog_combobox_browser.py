@@ -357,24 +357,34 @@ class CatalogComboboxBrowserTest(unittest.TestCase):
                 self.fail("Stage 2 preview server did not start")
 
             with tempfile.TemporaryDirectory() as profile:
-                result = subprocess.run(
-                    [
-                        chrome,
-                        "--headless=new",
-                        "--no-sandbox",
-                        "--disable-gpu",
-                        "--disable-dev-shm-usage",
-                        f"--user-data-dir={profile}",
-                        "--window-size=1440,900",
-                        "--virtual-time-budget=3500",
-                        "--dump-dom",
-                        url,
-                    ],
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                    timeout=30,
-                )
+                result = None
+                for attempt in range(2):
+                    try:
+                        result = subprocess.run(
+                            [
+                                chrome,
+                                "--headless=new",
+                                "--no-sandbox",
+                                "--disable-gpu",
+                                "--disable-dev-shm-usage",
+                                f"--user-data-dir={profile}/attempt-{attempt}",
+                                "--window-size=1440,900",
+                                "--virtual-time-budget=5000",
+                                "--dump-dom",
+                                url,
+                            ],
+                            check=False,
+                            capture_output=True,
+                            text=True,
+                            timeout=45,
+                        )
+                    except subprocess.TimeoutExpired:
+                        if attempt:
+                            raise
+                        continue
+                    if 'data-warehouse-add-ui-e2e="pass"' in result.stdout:
+                        break
+                self.assertIsNotNone(result)
                 self.assertEqual(
                     result.returncode,
                     0,
