@@ -8688,9 +8688,10 @@
             scrollbar.refresh();
             const cardBounds = tableWrap.closest(".table-card")
                 .getBoundingClientRect();
+            const visibleDockBounds = dock.getBoundingClientRect();
             if (
                 cardBounds.bottom > window.innerHeight + 8
-                && !dock.classList.contains("is-floating")
+                && visibleDockBounds.top >= window.innerHeight
             ) {
                 throw new Error("floating");
             }
