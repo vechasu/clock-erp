@@ -501,12 +501,12 @@ class SalesInventoryTest(unittest.TestCase):
             self.payload(product), product["id"], 1, 1000,
         )
         cases = (
+            ("created_at", "2026-08-05T14:14", 1, 1000, "Дату"),
             ("product_id", "999", 1, 1000, "Товар"),
             ("product_name", "Другое название", 1, 1000, "Название товара"),
             ("brand", "Другой бренд", 1, 1000, "Бренд"),
             ("category", "Другая категория", 1, 1000, "Категорию"),
             ("quantity", 2, 2, 1000, "Количество"),
-            ("unit_price", 2000, 1, 2000, "Цену"),
         )
         for field, value, quantity, price, message in cases:
             with self.subTest(field=field):
@@ -1349,6 +1349,119 @@ class SalesInventoryWebTest(SalesInventoryTest):
         movements = self.inventory.list_movements(self.product["id"])
         self.assertEqual(len(movements), 1)
 
+    def test_completed_sale_price_and_editable_fields_persist_for_all_channels(self):
+        for index, source in enumerate(
+            ("Tictactoy", "Wildberries", "Amazon"), start=1
+        ):
+            payload = self.payload(
+                self.product,
+                "editable-channel-{}".format(index),
+            )
+            payload.update({
+                "created_at": "2026-08-04T14:14",
+                "source": source,
+                "order_number": "OLD-{}".format(index),
+                "original_unit_price": "1000",
+                "discount_type": "percent",
+                "discount_value": "10",
+                "discount_reason": "Историческая скидка",
+            })
+            sale = self.inventory.create_sale(
+                payload,
+                self.product["id"],
+                1,
+                1000,
+            )
+            stock_before = self.stock(self.product["id"])
+            movements_before = self.inventory.list_movements(self.product["id"])
+
+            response = self.update_sale_form(
+                sale,
+                unit_price="777.25",
+                order_status="shipped",
+                order_number="NEW-{}".format(index),
+                track_number="TRACK-{}".format(index),
+                delivery_cost="345.67",
+                country="Германия" if source == "Amazon" else "Россия",
+                region="Москва",
+                city="Москва",
+                recipient_name="Новый получатель",
+                payment_method="Карта",
+                platform="Amazon.de",
+                invoice_number="AMZ-TRACK",
+                sticker_number="WB-STICKER",
+                note="Обновлено {}".format(source),
+                **(
+                    {"commission": "Оплата по СБП (0)"}
+                    if source == "Tictactoy" else {}
+                )
+            )
+
+            self.assertEqual(response.status_code, 200, source)
+            stored = self.inventory.get_sale(sale["id"])
+            self.assertEqual(stored["unit_price"], 777.25, source)
+            self.assertEqual(stored["total_amount"], 777.25, source)
+            self.assertEqual(stored["order_status"], "shipped", source)
+            self.assertEqual(stored["order_number"], "NEW-{}".format(index), source)
+            self.assertEqual(stored["track_number"], "TRACK-{}".format(index), source)
+            self.assertEqual(stored["delivery_cost"], 345.67, source)
+            self.assertEqual(
+                stored["country"],
+                "Германия" if source == "Amazon" else "Россия",
+                source,
+            )
+            self.assertEqual(stored["region"], "Москва", source)
+            self.assertEqual(stored["city"], "Москва", source)
+            self.assertEqual(stored["recipient_name"], "Новый получатель", source)
+            self.assertEqual(stored["payment_method"], "Карта", source)
+            self.assertEqual(stored["platform"], "Amazon.de", source)
+            self.assertEqual(stored["invoice_number"], "AMZ-TRACK", source)
+            self.assertEqual(stored["sticker_number"], "WB-STICKER", source)
+            if source == "Tictactoy":
+                self.assertEqual(stored["commission"], "Оплата по СБП (0)")
+            self.assertEqual(stored["note"], "Обновлено {}".format(source), source)
+            self.assertEqual(stored["original_unit_price"], "1000.00", source)
+            self.assertEqual(stored["discount_type"], "percent", source)
+            self.assertEqual(stored["discount_value"], "10.00", source)
+            self.assertEqual(stored["discount_reason"], "Историческая скидка", source)
+            self.assertEqual(self.stock(self.product["id"]), stock_before, source)
+            self.assertEqual(
+                self.inventory.list_movements(self.product["id"]),
+                movements_before,
+                source,
+            )
+            reopened = self.client.get("/api/v1/sales/{}".format(sale["id"]))
+            self.assertEqual(reopened.status_code, 200, source)
+            reopened_sale = reopened.get_json()["data"]
+            self.assertEqual(reopened_sale["unit_price"], 777.25, source)
+            self.assertEqual(reopened_sale["total_amount"], 777.25, source)
+
+    def test_completed_sale_date_is_rejected_by_form_and_api(self):
+        sale = self.create_managed_sale()
+        stock_before = self.stock(self.product["id"])
+        movements_before = self.inventory.list_movements(self.product["id"])
+
+        form_response = self.update_sale_form(
+            sale,
+            created_at="2026-08-05T14:14",
+            unit_price="700",
+        )
+        api_response = self.client.patch(
+            "/api/v1/sales/{}".format(sale["id"]),
+            json={"date": "2026-08-06T14:14", "unit_price": 600},
+        )
+
+        self.assertEqual(form_response.status_code, 409)
+        self.assertEqual(api_response.status_code, 409)
+        stored = self.inventory.get_sale(sale["id"])
+        self.assertEqual(stored["created_at"], "2026-08-04T14:14")
+        self.assertEqual(stored["unit_price"], 1000)
+        self.assertEqual(self.stock(self.product["id"]), stock_before)
+        self.assertEqual(
+            self.inventory.list_movements(self.product["id"]),
+            movements_before,
+        )
+
     def test_repeated_http_update_with_same_key_stays_blocked(self):
         sale = self.create_managed_sale(quantity=1)
         first = self.update_sale_form(
@@ -1408,16 +1521,17 @@ class SalesInventoryWebTest(SalesInventoryTest):
             SalesInventory,
             "update_sale",
             side_effect=RuntimeError("forced failure"),
-        ):
+        ) as update_sale:
             response = self.update_sale_form(
                 sale,
                 quantity="2",
                 note="Не должно сохраниться",
             )
 
-        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.status_code, 409)
         self.assertEqual(response.content_type, "application/json")
-        self.assertIn("не сохранены", response.get_json()["message"])
+        self.assertIn("изменить нельзя", response.get_json()["message"])
+        update_sale.assert_not_called()
         stored = self.inventory.get_sale(sale["id"])
         self.assertEqual(stored["quantity"], 1)
         self.assertEqual(stored.get("note") or "", "")
@@ -1513,7 +1627,15 @@ class SalesInventoryWebTest(SalesInventoryTest):
         self.assertIn("sales-row-edit", template)
         self.assertIn("sales-mobile-edit", template)
         self.assertIn("setProtectedSaleFieldsLocked(true)", template)
-        self.assertIn("отмените проведение", template)
+        self.assertIn('document.getElementById("created_at").readOnly = locked', template)
+        self.assertEqual(template.count("data-sale-legacy-price-field"), 5)
+        self.assertIn('? "Цена"', template)
+        self.assertIn("saleFinalPrice.readOnly = !locked", template)
+        self.assertIn(
+            "Дата, бренд, категория, товар и количество защищены от изменения. "
+            "Цену и остальные данные продажи можно редактировать",
+            template,
+        )
         self.assertIn("openCancellationModal", template)
         self.assertIn("Удалить отменённую запись?", template)
 
