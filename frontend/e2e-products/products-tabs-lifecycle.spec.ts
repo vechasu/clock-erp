@@ -1,4 +1,7 @@
 import { expect, test, type Page, type Request, type Response } from '@playwright/test';
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 type BrowserEvidence = {
   consoleErrors: string[];
@@ -18,8 +21,6 @@ const requiredViewports = [
   { width: 1920, height: 1080 },
 ];
 
-const productsTabsVersion = 'products-tabs-20260826-lifecycle-v2';
-
 async function expectVersionedProductsTabs(page: Page) {
   const scripts = page.locator('script[src*="products-tabs.js"]');
   await expect(scripts).toHaveCount(1);
@@ -27,7 +28,7 @@ async function expectVersionedProductsTabs(page: Page) {
   expect(source).not.toBeNull();
   const url = new URL(source!, page.url());
   expect(url.pathname).toBe('/static/js/products-tabs.js');
-  expect(url.searchParams.get('v')).toBe(productsTabsVersion);
+  expect(url.searchParams.get('v')).toMatch(/^[a-f0-9]{64}$/);
 }
 
 function observeBrowser(page: Page): BrowserEvidence {
@@ -157,6 +158,110 @@ async function assertNoBrowserFailures(evidence: BrowserEvidence) {
   expect(evidence.consoleErrors).toEqual([]);
 }
 
+function sha256(payload: Buffer | string) {
+  return createHash('sha256').update(payload).digest('hex');
+}
+
+test('warm legacy cache loads the content-versioned release and rolls back safely', async ({
+  page,
+  request,
+}) => {
+  test.setTimeout(120_000);
+  const evidence = observeBrowser(page);
+  const assetResponses: Response[] = [];
+  page.on('response', (response) => {
+    if (new URL(response.url()).pathname === '/static/js/products-tabs.js') {
+      assetResponses.push(response);
+    }
+  });
+
+  await request.post('/__e2e/asset-release/baseline');
+  await page.goto('/__e2e/warm-cache-baseline', { waitUntil: 'load' });
+  expect(await page.evaluate(() => Boolean(window.__legacyProductsTabsExecuted))).toBe(true);
+  expect(assetResponses).toHaveLength(1);
+  const legacyUrl = assetResponses[0].url();
+  const legacyHash = sha256(await assetResponses[0].body());
+  expect(legacyUrl).toBe('http://127.0.0.1:4174/static/js/products-tabs.js');
+
+  await request.post('/__e2e/asset-release/current');
+  const [releaseResponse] = await Promise.all([
+    page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === '/static/js/products-tabs.js' &&
+        new URL(response.url()).searchParams.has('v'),
+    ),
+    page.goto('/app/products', { waitUntil: 'load' }),
+  ]);
+  const script = page.locator('script[src*="products-tabs.js"]');
+  await expect(script).toHaveCount(1);
+  const releaseUrl = await script.getAttribute('src');
+  const expectedSource = readFileSync(resolve(process.cwd(), '../app/static/js/products-tabs.js'));
+  const expectedHash = sha256(expectedSource);
+  const executedHash = sha256(await releaseResponse.body());
+
+  expect(releaseResponse.status()).toBe(200);
+  expect(releaseUrl).toContain(`/static/js/products-tabs.js?v=${expectedHash}`);
+  expect(executedHash).toBe(expectedHash);
+  expect(executedHash).not.toBe(legacyHash);
+  expect(expectedSource.toString('utf8')).not.toContain('document.write');
+  expect(await page.evaluate(() => Boolean(window.VechasuProductsTabs?.initialized))).toBe(true);
+  expect(await page.evaluate(() => Boolean(window.__legacyProductsTabsExecuted))).toBe(false);
+  await expect(page.locator('#warehouseProductsTable tbody tr')).toHaveCount(50);
+
+  for (let cycle = 0; cycle < 3; cycle += 1) {
+    const search = page.getByRole('textbox', { name: 'Поиск товаров' });
+    await partialAction(page, evidence, () => search.fill('Tissot'));
+    await expect(page.locator('#warehouseProductsTable tbody tr')).toHaveCount(1);
+    await partialAction(page, evidence, () =>
+      page.getByRole('button', { name: 'В наличии', exact: true }).click(),
+    );
+
+    await page.getByRole('button', { name: 'Открыть фильтры товаров' }).click();
+    await page.locator('#filterBrandComboboxTrigger').click();
+    await page.locator('#filterBrandComboboxListbox [data-brand="Tissot"]').click();
+    await expect(page.locator('#filterCategoryComboboxTrigger')).toBeEnabled();
+    await page.locator('#filterCategoryComboboxTrigger').click();
+    await page.locator('#filterCategoryComboboxListbox [data-brand="Часы"]').click();
+    await expect(page.locator('#filterModelComboboxTrigger')).toBeEnabled();
+    await page.locator('#filterModelComboboxTrigger').click();
+    await page.locator('#filterModelComboboxListbox [data-brand="PRX"]').click();
+    await partialAction(page, evidence, () =>
+      page.locator('#filterDrawer form').getByRole('button', { name: 'Применить фильтры' }).click(),
+    );
+    await expect(page.locator('#warehouseProductsTable tbody tr')).toHaveCount(1);
+
+    await openProductCard(page);
+    await closeProductCard(page);
+
+    await page.getByRole('button', { name: 'Открыть фильтры товаров' }).click();
+    await partialAction(page, evidence, () =>
+      page.locator('#filterDrawer').getByRole('link', { name: 'Сбросить фильтры' }).click(),
+    );
+    const resetSearch = page.getByRole('textbox', { name: 'Поиск товаров' });
+    await partialAction(page, evidence, () => resetSearch.fill(''));
+    await partialAction(page, evidence, () =>
+      page.getByRole('button', { name: 'Все', exact: true }).click(),
+    );
+    await expect(page.locator('#warehouseProductsTable tbody tr')).toHaveCount(50);
+
+    await partialAction(page, evidence, () =>
+      page.getByRole('link', { name: 'Следующая страница' }).click(),
+    );
+    await partialAction(page, evidence, () => page.goBack());
+    await partialAction(page, evidence, () => page.goForward());
+    await partialAction(page, evidence, () => page.goBack());
+  }
+
+  expect(evidence.documentRequests).toHaveLength(2);
+  await assertNoBrowserFailures(evidence);
+
+  await request.post('/__e2e/asset-release/baseline');
+  await page.goto('/__e2e/warm-cache-baseline', { waitUntil: 'load' });
+  expect(await page.evaluate(() => Boolean(window.__legacyProductsTabsExecuted))).toBe(true);
+  expect(await page.locator('script[src="/static/js/products-tabs.js"]').count()).toBe(1);
+  await request.post('/__e2e/asset-release/current');
+});
+
 test('product tabs, cards and history remain idempotent through three lifecycles', async ({
   page,
 }) => {
@@ -175,9 +280,11 @@ test('product tabs, cards and history remain idempotent through three lifecycles
   // Controlled replay proves that a repeated lifecycle refreshes the singleton
   // instead of registering another listener set or document-write owner.
   await page.evaluate(async () => {
-    const script = document.querySelector<HTMLScriptElement>('script[src*="products-tabs.js"]');
-    if (!script) throw new Error('Versioned products-tabs.js script is missing');
-    const source = await fetch(script.src).then((response) => response.text());
+    const scriptUrl = document.querySelector<HTMLScriptElement>(
+      'script[src*="products-tabs.js"]',
+    )?.src;
+    if (!scriptUrl) throw new Error('Versioned products-tabs.js URL was not found');
+    const source = await fetch(scriptUrl).then((response) => response.text());
     for (let cycle = 0; cycle < 3; cycle += 1) (0, eval)(source);
   });
   const lifecycleInitialized = await page.evaluate(() =>
@@ -256,7 +363,7 @@ test('a cached unversioned asset cannot shadow the versioned lifecycle', async (
 
   const versionedRequests = requestedScripts.filter((source) => {
     const url = new URL(source);
-    return url.searchParams.get('v') === productsTabsVersion;
+    return /^[a-f0-9]{64}$/.test(url.searchParams.get('v') || '');
   });
   expect(versionedRequests.length).toBeGreaterThan(0);
   await expect(page.locator('#warehouseProductsTable tbody tr').first()).toBeVisible();
@@ -301,5 +408,6 @@ test('required product viewports preserve cards, history and zero page overflow'
 declare global {
   interface Window {
     VechasuProductsTabs?: { initialized: boolean };
+    __legacyProductsTabsExecuted?: boolean;
   }
 }
