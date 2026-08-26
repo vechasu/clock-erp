@@ -8,7 +8,9 @@ import os
 from pathlib import Path
 import re
 import socket
+import struct
 import tempfile
+import zlib
 from urllib.parse import urljoin, urlsplit
 
 import requests
@@ -25,6 +27,8 @@ MAX_HTML_BYTES = 2 * 1024 * 1024
 # lower-priority local file.
 SOURCE_PRIORITY = {"manual": 1, "tictactoy": 2, "bitrix": 3}
 TICTACTOY_HOSTS = {"tictactoy.ru", "www.tictactoy.ru"}
+MAX_IMAGE_PIXELS = 40 * 1000 * 1000
+MAX_IMAGE_DIMENSION = 12000
 
 
 def utc_now():
@@ -35,10 +39,132 @@ def _text(value):
     return " ".join(str(value or "").split())
 
 
+def _safe_dimensions(width, height):
+    return bool(
+        0 < width <= MAX_IMAGE_DIMENSION
+        and 0 < height <= MAX_IMAGE_DIMENSION
+        and width * height <= MAX_IMAGE_PIXELS
+    )
+
+
+def _png_dimensions(content):
+    if len(content) < 45 or content[:8] != b"\x89PNG\r\n\x1a\n":
+        return None
+    offset = 8
+    dimensions = None
+    saw_end = False
+    while offset + 12 <= len(content):
+        length = struct.unpack(">I", content[offset:offset + 4])[0]
+        chunk_end = offset + 12 + length
+        if chunk_end > len(content):
+            return None
+        chunk_type = content[offset + 4:offset + 8]
+        data = content[offset + 8:offset + 8 + length]
+        expected_crc = struct.unpack(
+            ">I", content[offset + 8 + length:chunk_end]
+        )[0]
+        if zlib.crc32(chunk_type + data) & 0xffffffff != expected_crc:
+            return None
+        if offset == 8:
+            if chunk_type != b"IHDR" or length != 13:
+                return None
+            dimensions = struct.unpack(">II", data[:8])
+        if chunk_type == b"IEND":
+            saw_end = length == 0 and chunk_end == len(content)
+            break
+        offset = chunk_end
+    return dimensions if dimensions and saw_end else None
+
+
+def _jpeg_dimensions(content):
+    if (
+        len(content) < 12
+        or content[:2] != b"\xff\xd8"
+        or content[-2:] != b"\xff\xd9"
+    ):
+        return None
+    offset = 2
+    while offset + 4 <= len(content):
+        if content[offset] != 0xff:
+            return None
+        while offset < len(content) and content[offset] == 0xff:
+            offset += 1
+        if offset >= len(content):
+            return None
+        marker = content[offset]
+        offset += 1
+        if marker in {0xd8, 0xd9} or 0xd0 <= marker <= 0xd7:
+            continue
+        if marker == 0xda:
+            return None
+        if offset + 2 > len(content):
+            return None
+        length = struct.unpack(">H", content[offset:offset + 2])[0]
+        if length < 2 or offset + length > len(content):
+            return None
+        if marker in {
+            0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7,
+            0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf,
+        }:
+            if length < 7:
+                return None
+            height, width = struct.unpack(
+                ">HH", content[offset + 3:offset + 7]
+            )
+            return width, height
+        offset += length
+    return None
+
+
+def _webp_dimensions(content):
+    if (
+        len(content) < 25
+        or content[:4] != b"RIFF"
+        or content[8:12] != b"WEBP"
+        or struct.unpack("<I", content[4:8])[0] + 8 != len(content)
+    ):
+        return None
+    chunk = content[12:16]
+    if chunk == b"VP8X" and len(content) >= 30:
+        width = 1 + int.from_bytes(content[24:27], "little")
+        height = 1 + int.from_bytes(content[27:30], "little")
+        return width, height
+    if chunk == b"VP8 " and len(content) >= 30 and content[23:26] == b"\x9d\x01\x2a":
+        width, height = struct.unpack("<HH", content[26:30])
+        return width & 0x3fff, height & 0x3fff
+    if chunk == b"VP8L" and content[20] == 0x2f:
+        bits = int.from_bytes(content[21:25], "little")
+        return (bits & 0x3fff) + 1, ((bits >> 14) & 0x3fff) + 1
+    return None
+
+
+def validate_product_image(content, filename, mime_type):
+    extension, digest = validate_image(content, filename, mime_type)
+    dimensions = {
+        "jpg": _jpeg_dimensions,
+        "png": _png_dimensions,
+        "webp": _webp_dimensions,
+    }[extension](content)
+    if not dimensions:
+        raise ValueError("Файл изображения повреждён.")
+    if not _safe_dimensions(*dimensions):
+        raise ValueError("Изображение имеет недопустимо большие размеры.")
+    return extension, digest
+
+
 class ProductImageStore:
     def __init__(self, database=None, root=None):
         self.database = database or CatalogDatabase()
-        self.root = Path(root or (PROJECT_ROOT / "instance" / "product_images"))
+        database_root = (
+            Path(self.database.path).resolve().parent
+            if str(self.database.path) != ":memory:"
+            else PROJECT_ROOT / "instance"
+        )
+        self.root = Path(
+            root
+            or os.getenv("PRODUCT_IMAGE_ROOT", "").strip()
+            or (database_root / "product_images")
+        )
 
     def _save(self, content, extension, digest):
         self.root.mkdir(parents=True, exist_ok=True)
@@ -61,22 +187,57 @@ class ProductImageStore:
                 os.unlink(temporary_name)
         return filename
 
+    def prepare_image(self, content, filename, mime_type):
+        """Validate and persist content before its database transaction."""
+        extension, digest = validate_product_image(
+            content, filename, mime_type
+        )
+        stored_name = self._save(content, extension, digest)
+        return {
+            "path": stored_name,
+            "sha256": digest,
+            "updated_at": utc_now(),
+        }
+
+    def _remove_if_unused(self, filename):
+        filename = Path(str(filename or "")).name
+        if not re.match(
+            r"^product-[a-f0-9]{64}\.(jpg|png|webp)$", filename
+        ):
+            return
+        with self.database.connect() as connection:
+            used = connection.execute(
+                "SELECT 1 FROM catalog_excel_products "
+                "WHERE local_image_path = ? LIMIT 1",
+                (filename,),
+            ).fetchone()
+        if used is None:
+            path = self.root / filename
+            if path.is_file():
+                path.unlink()
+
+    def discard_prepared(self, prepared):
+        self._remove_if_unused((prepared or {}).get("path"))
+
     def set_image(self, product_id, content, filename, mime_type, source,
                   external_id=""):
         if source not in SOURCE_PRIORITY:
             raise ValueError("Unsupported product image source")
-        extension, digest = validate_image(
-            content, filename, mime_type
-        )
+        prepared = self.prepare_image(content, filename, mime_type)
+        digest = prepared["sha256"]
         self.database.initialize()
-        stored_name = self._save(content, extension, digest)
+        stored_name = prepared["path"]
+        old_path = ""
         with self.database.transaction() as connection:
             row = connection.execute(
-                "SELECT id FROM catalog_excel_products WHERE id = ?",
+                "SELECT id, local_image_path FROM catalog_excel_products "
+                "WHERE id = ?",
                 (int(product_id),),
             ).fetchone()
             if row is None:
+                self.discard_prepared(prepared)
                 raise ValueError("Товар не найден.")
+            old_path = row["local_image_path"] or ""
             now = utc_now()
             connection.execute(
                 "UPDATE catalog_excel_products SET local_image_path = ?, "
@@ -86,7 +247,32 @@ class ProductImageStore:
                 (stored_name, source, digest, _text(external_id) or None,
                  now, now, int(product_id)),
             )
+        if old_path != stored_name:
+            self._remove_if_unused(old_path)
         return stored_name, digest
+
+    def remove_image(self, product_id):
+        self.database.initialize()
+        old_path = ""
+        with self.database.transaction() as connection:
+            row = connection.execute(
+                "SELECT local_image_path FROM catalog_excel_products "
+                "WHERE id = ? AND active = 1",
+                (int(product_id),),
+            ).fetchone()
+            if row is None:
+                raise ValueError("Товар не найден.")
+            old_path = row["local_image_path"] or ""
+            now = utc_now()
+            connection.execute(
+                "UPDATE catalog_excel_products SET local_image_path = NULL, "
+                "local_image_source = NULL, local_image_sha256 = NULL, "
+                "local_image_external_id = NULL, local_image_updated_at = ?, "
+                "updated_at = ? WHERE id = ?",
+                (now, now, int(product_id)),
+            )
+        self._remove_if_unused(old_path)
+        return bool(old_path)
 
 
 class ProductImageImporter:
