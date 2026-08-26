@@ -9806,6 +9806,7 @@
             const result = {};
             const requests = [];
             const navigations = [];
+            const originalConfirm = window.confirm;
             const wait = (milliseconds) => new Promise(
                 (resolve) => window.setTimeout(resolve, milliseconds)
             );
@@ -9835,6 +9836,7 @@
             let postBody = null;
 
             try {
+                window.confirm = () => true;
                 window.navigateAfterWarehouseAddSuccess = function(message) {
                     navigations.push(message);
                 };
@@ -10147,6 +10149,8 @@
                 document.documentElement.dataset.warehouseAddUiE2eResult = (
                     JSON.stringify(result)
                 );
+            } finally {
+                window.confirm = originalConfirm;
             }
         });
     </script>
@@ -10309,7 +10313,7 @@
                 result.fullGallery = detailGalleryItems.length === 2;
                 result.controlsVisible = (
                     !editor.hidden
-                    && !document.getElementById("detailPhotoAdd").hidden
+                    && document.getElementById("detailPhotoAdd").hidden
                     && !document.getElementById("detailPhotoReplace").hidden
                     && !document.getElementById("detailPhotoRemove").hidden
                 );
