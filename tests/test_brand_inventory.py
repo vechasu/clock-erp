@@ -121,6 +121,42 @@ class BrandInventoryTest(unittest.TestCase):
         self.assertEqual(second["id"], first["id"])
         self.assertEqual(second["remaining"], 1)
 
+    def test_history_sort_is_stable_and_summary_queries_do_not_scale_per_row(self):
+        self.product()
+        session_ids = []
+        for index in range(2):
+            session = self.start()
+            item = self.first_item(session)
+            self.service.confirm(
+                session["id"], item["id"], 4, "Максим",
+                "history-confirm-{}".format(index),
+            )
+            self.service.complete(session["id"], "Максим", confirmation=True)
+            session_ids.append(session["id"])
+        with self.database.transaction() as connection:
+            connection.execute(
+                "UPDATE erp_inventory_sessions SET started_at=? WHERE id IN (?,?)",
+                ("2026-08-18T12:00:00+00:00", session_ids[0], session_ids[1]),
+            )
+        statements = []
+        original_connect = self.database.connect
+
+        def traced_connect():
+            connection = original_connect()
+            connection.set_trace_callback(lambda statement: statements.append(statement))
+            return connection
+
+        with mock.patch.object(self.database, "connect", side_effect=traced_connect):
+            history = self.service.list_history()
+        selects = [
+            statement for statement in statements
+            if statement.lstrip().upper().startswith("SELECT")
+        ]
+        self.assertEqual([item["id"] for item in history], sorted(
+            session_ids, reverse=True
+        ))
+        self.assertEqual(len(selects), 1)
+
     def test_snapshot_contains_only_strictly_positive_stock(self):
         positive = self.product(stock=3)
         zero = self.product(stock=0, name="Zero", article="ZERO")
@@ -664,8 +700,13 @@ class BrandInventoryWebTest(unittest.TestCase):
         ).get_json()
         self.assertEqual(len(queue["items"]), 1)
         item = queue["items"][0]
-        page = self.client.get(
+        legacy = self.client.get(
             "/app/products/inventory?inventory_id={}".format(session["id"])
+        )
+        self.assertEqual(legacy.status_code, 302)
+        self.assertIn("/app/inventory/run?inventory_id=", legacy.headers["Location"])
+        page = self.client.get(
+            "/app/inventory/run?inventory_id={}".format(session["id"])
         )
         markup = page.get_data(as_text=True)
         self.assertEqual(page.status_code, 200)
@@ -696,7 +737,10 @@ class BrandInventoryWebTest(unittest.TestCase):
         self.assertEqual(started.status_code, 200)
         session = started.get_json()["session"]
 
-        page = self.client.get("/app/products/inventory")
+        legacy = self.client.get("/app/products/inventory")
+        self.assertEqual(legacy.status_code, 302)
+        self.assertIn("/app/inventory?view=start", legacy.headers["Location"])
+        page = self.client.get("/app/inventory/run")
         markup = page.get_data(as_text=True)
         self.assertEqual(page.status_code, 200)
         self.assertIn("Активные инвентаризации", markup)
@@ -733,6 +777,137 @@ class BrandInventoryWebTest(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 400)
         self.assertIn("вне зафиксированного snapshot", response.get_json()["message"])
+
+    def test_top_level_history_card_and_brand_summary_use_saved_values(self):
+        second = self.catalog.create_product(
+            name="Часы API Two", article="API-2", brand="API Brand",
+            category="Часы", stock=4,
+        )
+        started = self.client.post(
+            "/api/v1/inventories", json={"brand_id": self.brand_id}
+        ).get_json()["session"]
+        queue = self.client.get(
+            "/api/v1/inventories/{}/items".format(started["id"])
+        ).get_json()["items"]
+        by_product = {item["product_id"]: item for item in queue}
+        first_confirm = self.client.post(
+            "/api/v1/inventories/{}/items/{}/confirm".format(
+                started["id"], by_product[self.product["id"]]["id"]
+            ),
+            json={"actual_stock": 9, "idempotency_key": "surplus"},
+        )
+        shortage_confirm = self.client.post(
+            "/api/v1/inventories/{}/items/{}/confirm".format(
+                started["id"], by_product[second["id"]]["id"]
+            ),
+            json={
+                "actual_stock": 0, "confirm_zero": True,
+                "idempotency_key": "shortage",
+            },
+        )
+        self.assertEqual(first_confirm.status_code, 200)
+        self.assertEqual(shortage_confirm.status_code, 200)
+        completed = self.client.post(
+            "/api/v1/inventories/{}/complete".format(started["id"]),
+            json={"confirmation": True},
+        )
+        self.assertEqual(completed.status_code, 200)
+
+        database = CatalogDatabase(self.database_path)
+        with database.connect() as connection:
+            movements_before = connection.execute(
+                "SELECT COUNT(*) FROM catalog_stock_movements "
+                "WHERE source_type='inventory' AND source_id=?",
+                (started["id"],),
+            ).fetchone()[0]
+        repeated = self.client.post(
+            "/api/v1/inventories/{}/complete".format(started["id"]),
+            json={"confirmation": True},
+        )
+        self.assertTrue(repeated.get_json()["repeated"])
+        with database.connect() as connection:
+            movements_after = connection.execute(
+                "SELECT COUNT(*) FROM catalog_stock_movements "
+                "WHERE source_type='inventory' AND source_id=?",
+                (started["id"],),
+            ).fetchone()[0]
+        self.assertEqual(movements_after, movements_before)
+
+        history = self.client.get("/app/inventory")
+        markup = history.get_data(as_text=True)
+        self.assertEqual(history.status_code, 200)
+        self.assertIn("История", markup)
+        self.assertIn("Провести инвентаризацию", markup)
+        self.assertIn("По брендам", markup)
+        self.assertIn(started["id"], markup)
+        self.assertIn("+5", markup)
+        self.assertIn("−4", markup)
+        self.assertIn('data-navigation-key="inventory"', markup)
+
+        filtered = self.client.get(
+            "/app/inventory?brand_id={}&status=completed&discrepancies=1".format(
+                self.brand_id
+            )
+        )
+        self.assertIn(started["id"], filtered.get_data(as_text=True))
+        empty = self.client.get("/app/inventory?q=does-not-exist")
+        self.assertIn("Инвентаризации не найдены", empty.get_data(as_text=True))
+
+        card = self.client.get("/app/inventory/{}".format(started["id"]))
+        card_markup = card.get_data(as_text=True)
+        self.assertEqual(card.status_code, 200)
+        self.assertIn("Только изменения", card_markup)
+        self.assertIn("Часы API Two", card_markup)
+        self.assertNotIn("Продолжить инвентаризацию", card_markup)
+        brands = self.client.get("/app/inventory?view=brands")
+        brands_markup = brands.get_data(as_text=True)
+        self.assertIn("API Brand", brands_markup)
+        self.assertIn("Полная", brands_markup)
+
+    def test_active_document_is_continuable_and_not_latest_completed(self):
+        started = self.client.post(
+            "/api/v1/inventories", json={"brand_id": self.brand_id}
+        ).get_json()["session"]
+        history = self.client.get("/app/inventory")
+        self.assertIn(
+            "Есть незавершённая инвентаризация — продолжить",
+            history.get_data(as_text=True),
+        )
+        card = self.client.get("/app/inventory/{}".format(started["id"]))
+        self.assertIn("Продолжить инвентаризацию", card.get_data(as_text=True))
+        brands = self.client.get("/app/inventory?view=brands")
+        markup = brands.get_data(as_text=True)
+        self.assertIn("Не проводилась", markup)
+        self.assertIn("идёт проверка", markup)
+
+    def test_partial_inventory_is_not_marked_full(self):
+        with CatalogDatabase(self.database_path).connect() as connection:
+            category_id = connection.execute(
+                "SELECT category_id FROM catalog_excel_products WHERE id=?",
+                (self.product["id"],),
+            ).fetchone()[0]
+        started = self.client.post(
+            "/api/v1/inventories",
+            json={"brand_id": self.brand_id, "category_id": category_id},
+        ).get_json()["session"]
+        item = self.client.get(
+            "/api/v1/inventories/{}/items".format(started["id"])
+        ).get_json()["items"][0]
+        self.client.post(
+            "/api/v1/inventories/{}/items/{}/confirm".format(
+                started["id"], item["id"]
+            ),
+            json={"actual_stock": 4, "idempotency_key": "partial-confirm"},
+        )
+        self.client.post(
+            "/api/v1/inventories/{}/complete".format(started["id"]),
+            json={"confirmation": True},
+        )
+        markup = self.client.get(
+            "/app/inventory?view=brands&brand_id={}".format(self.brand_id)
+        ).get_data(as_text=True)
+        self.assertIn("Частичная", markup)
+        self.assertNotIn(">Полная<", markup)
 
     def test_authenticated_write_requires_csrf(self):
         auth_path = Path(self.temp.name) / "auth.db"
