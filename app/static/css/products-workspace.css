@@ -421,6 +421,13 @@
     text-align: center;
 }
 
+.warehouse-page .warehouse-availability-segment:is(.is-active, [aria-pressed="true"]),
+.warehouse-page .warehouse-availability-segment:is(.is-active, [aria-pressed="true"]):hover {
+    background: #2563eb !important;
+    color: #ffffff !important;
+    box-shadow: none !important;
+}
+
 .warehouse-page .warehouse-products-table :is(
     th[data-column-key="actions"],
     td[data-column-key="actions"]

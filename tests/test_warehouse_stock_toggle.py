@@ -22,6 +22,17 @@ class WarehouseStockToggleTest(unittest.TestCase):
         self.assertIn("color: #ffffff", active_rule)
         self.assertIn("box-shadow: none", active_rule)
 
+        workspace_css = (ROOT / "app/static/css/products-workspace.css").read_text(
+            encoding="utf-8"
+        )
+        authoritative_rule = workspace_css.split(
+            ".warehouse-page .warehouse-availability-segment:is(.is-active,", 1
+        )[1].split("}", 1)[0]
+        self.assertIn('[aria-pressed="true"]', authoritative_rule)
+        self.assertIn(":hover", authoritative_rule)
+        self.assertIn("background: #2563eb !important", authoritative_rule)
+        self.assertIn("color: #ffffff !important", authoritative_rule)
+
     def test_segment_state_updates_before_loading_and_on_history_navigation(self):
         source = (ROOT / "app/templates/warehouse.html").read_text(
             encoding="utf-8"
