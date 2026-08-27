@@ -70,8 +70,87 @@ CATALOG_RUNTIME_BASELINE_DEFINITION = "\n".join((
     migration_source_checksum(),
     CATALOG_MANIFEST_CHECKSUM,
 ))
-CATALOG_RUNTIME_BASELINE_CHECKSUM = hashlib.sha256(
-    CATALOG_RUNTIME_BASELINE_DEFINITION.encode("utf-8")
+# This checksum is intentionally frozen: an applied migration must never change
+# when a later schema manifest is introduced.
+CATALOG_RUNTIME_BASELINE_CHECKSUM = (
+    "e7ed340d47120b77791b89de2080bdb46ca995ff016c1d0829e25d4822075559"
+)
+INVENTORY_CONTROL_MIGRATION_ID = "2026-08-27-inventory-control-v1"
+INVENTORY_CONTROL_MIGRATION_NAME = "Inventory review, numbering and brand control"
+INVENTORY_CONTROL_SQL = """
+CREATE TABLE IF NOT EXISTS erp_inventory_document_numbers (
+    session_id TEXT PRIMARY KEY REFERENCES erp_inventory_sessions(id) ON DELETE RESTRICT,
+    sequence INTEGER NOT NULL UNIQUE,
+    document_number TEXT NOT NULL UNIQUE
+);
+CREATE TABLE IF NOT EXISTS erp_inventory_reviews (
+    item_id TEXT PRIMARY KEY REFERENCES erp_inventory_items(id) ON DELETE RESTRICT,
+    review_status TEXT NOT NULL DEFAULT 'new' CHECK (review_status IN (
+        'new','recount','investigating','awaiting_confirmation','resolved'
+    )),
+    reason_code TEXT,
+    reason_comment TEXT,
+    decision_code TEXT,
+    assignee_user_id INTEGER,
+    assignee_name TEXT,
+    task_id INTEGER,
+    adjustment_movement_id TEXT REFERENCES catalog_stock_movements(id) ON DELETE RESTRICT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    updated_by TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_erp_inventory_reviews_queue
+    ON erp_inventory_reviews(review_status, updated_at, item_id);
+CREATE INDEX IF NOT EXISTS idx_erp_inventory_reviews_task
+    ON erp_inventory_reviews(task_id);
+CREATE TABLE IF NOT EXISTS erp_inventory_review_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id TEXT NOT NULL REFERENCES erp_inventory_items(id) ON DELETE RESTRICT,
+    action TEXT NOT NULL,
+    actor_id TEXT,
+    actor_name TEXT,
+    details_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_erp_inventory_review_events_item
+    ON erp_inventory_review_events(item_id, created_at, id);
+CREATE TABLE IF NOT EXISTS erp_inventory_brand_controls (
+    brand_id INTEGER PRIMARY KEY REFERENCES erp_brands(id) ON DELETE RESTRICT,
+    enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0,1)),
+    interval_days INTEGER NOT NULL DEFAULT 90 CHECK (interval_days > 0),
+    assignee_user_id INTEGER,
+    assignee_name TEXT,
+    updated_at TEXT NOT NULL,
+    updated_by TEXT
+);
+CREATE TRIGGER IF NOT EXISTS trg_erp_inventory_document_number
+AFTER INSERT ON erp_inventory_sessions
+BEGIN
+    INSERT INTO erp_inventory_document_numbers(session_id, sequence, document_number)
+    SELECT NEW.id, COALESCE(MAX(sequence), 0) + 1, ''
+    FROM erp_inventory_document_numbers;
+    UPDATE erp_inventory_document_numbers
+    SET document_number = 'ИНВ-' || CASE
+        WHEN sequence < 10 THEN '000' || sequence
+        WHEN sequence < 100 THEN '00' || sequence
+        WHEN sequence < 1000 THEN '0' || sequence
+        ELSE CAST(sequence AS TEXT)
+    END
+    WHERE session_id = NEW.id;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_erp_inventory_reviews_after_completion
+AFTER UPDATE OF status ON erp_inventory_sessions
+WHEN NEW.status = 'completed' AND OLD.status <> 'completed'
+BEGIN
+    INSERT OR IGNORE INTO erp_inventory_reviews(item_id, created_at, updated_at)
+    SELECT id, COALESCE(NEW.completed_at, NEW.updated_at),
+           COALESCE(NEW.completed_at, NEW.updated_at)
+    FROM erp_inventory_items
+    WHERE session_id = NEW.id AND COALESCE(quantity_delta, 0) <> 0;
+END;
+"""
+INVENTORY_CONTROL_MIGRATION_CHECKSUM = hashlib.sha256(
+    (INVENTORY_CONTROL_MIGRATION_ID + "\n" + INVENTORY_CONTROL_SQL).encode("utf-8")
 ).hexdigest()
 
 MIGRATIONS = (
@@ -86,6 +165,13 @@ MIGRATIONS = (
         "id": COMMENTS_MIGRATION_ID,
         "name": COMMENTS_MIGRATION_NAME,
         "checksum": COMMENTS_MIGRATION_CHECKSUM,
+        "transactional": True,
+        "recovery": "restore verified catalog database backup while service is stopped",
+    },
+    {
+        "id": INVENTORY_CONTROL_MIGRATION_ID,
+        "name": INVENTORY_CONTROL_MIGRATION_NAME,
+        "checksum": INVENTORY_CONTROL_MIGRATION_CHECKSUM,
         "transactional": True,
         "recovery": "restore verified catalog database backup while service is stopped",
     },
@@ -106,6 +192,10 @@ REQUIRED_TABLES = {
     "erp_categories",
     "erp_inventory_items",
     "erp_inventory_sessions",
+    "erp_inventory_document_numbers",
+    "erp_inventory_reviews",
+    "erp_inventory_review_events",
+    "erp_inventory_brand_controls",
     "erp_order_comments",
     "erp_order_comment_sync_state",
     "erp_order_product_mappings",
@@ -321,6 +411,19 @@ def business_snapshot(connection):
         ).fetchone()[0] or 0)
     else:
         result["movement_quantity_sum"] = None
+    if "erp_inventory_items" in tables:
+        inventory_totals = connection.execute(
+            "SELECT COALESCE(SUM(snapshot_stock),0),"
+            "COALESCE(SUM(actual_stock),0),COALESCE(SUM(quantity_delta),0) "
+            "FROM erp_inventory_items"
+        ).fetchone()
+        result["inventory_snapshot_sum"] = float(inventory_totals[0] or 0)
+        result["inventory_actual_sum"] = float(inventory_totals[1] or 0)
+        result["inventory_delta_sum"] = float(inventory_totals[2] or 0)
+    else:
+        result["inventory_snapshot_sum"] = None
+        result["inventory_actual_sum"] = None
+        result["inventory_delta_sum"] = None
     return result
 
 
@@ -493,9 +596,16 @@ def verify_schema_contract(
     connection,
     require_comment_indexes=True,
     allow_legacy_comments=False,
+    allow_legacy_inventory=False,
 ):
     tables = _table_names(connection)
-    missing_tables = sorted(REQUIRED_TABLES - tables)
+    required_tables = set(REQUIRED_TABLES)
+    if allow_legacy_inventory:
+        required_tables -= {
+            "erp_inventory_document_numbers", "erp_inventory_reviews",
+            "erp_inventory_review_events", "erp_inventory_brand_controls",
+        }
+    missing_tables = sorted(required_tables - tables)
     if missing_tables:
         raise MigrationError(
             "schema contract: missing tables: {}".format(
@@ -620,7 +730,38 @@ def apply_order_comments_migration(connection, ddl_observer=None):
             if ddl_observer is not None:
                 ddl_observer(" ".join(statement.split()))
             connection.execute(statement)
-    verify_schema_contract(connection)
+    verify_schema_contract(connection, allow_legacy_inventory=True)
+    return True
+
+
+def apply_inventory_control_migration(connection, ddl_observer=None):
+    """Add control metadata and deterministically number legacy documents."""
+    if ddl_observer is not None:
+        ddl_observer("INVENTORY_CONTROL_SQL")
+    connection.executescript("BEGIN IMMEDIATE;\n" + INVENTORY_CONTROL_SQL)
+    rows = connection.execute(
+        "SELECT s.id FROM erp_inventory_sessions s "
+        "LEFT JOIN erp_inventory_document_numbers n ON n.session_id=s.id "
+        "WHERE n.session_id IS NULL ORDER BY s.started_at, s.id"
+    ).fetchall()
+    next_sequence = int(connection.execute(
+        "SELECT COALESCE(MAX(sequence),0) FROM erp_inventory_document_numbers"
+    ).fetchone()[0])
+    for row in rows:
+        next_sequence += 1
+        connection.execute(
+            "INSERT INTO erp_inventory_document_numbers"
+            "(session_id,sequence,document_number) VALUES(?,?,?)",
+            (str(row[0]), next_sequence, "ИНВ-{:04d}".format(next_sequence)),
+        )
+    now = utc_now()
+    connection.execute(
+        "INSERT OR IGNORE INTO erp_inventory_reviews(item_id,created_at,updated_at) "
+        "SELECT i.id,?,? FROM erp_inventory_items i "
+        "JOIN erp_inventory_sessions s ON s.id=i.session_id "
+        "WHERE s.status='completed' AND COALESCE(i.quantity_delta,0)<>0",
+        (now, now),
+    )
     return True
 
 
@@ -784,6 +925,17 @@ def apply_migrations(database_path, app_commit="", ddl_observer=None):
                         raise
                     finally:
                         connection.close()
+                elif migration["id"] == INVENTORY_CONTROL_MIGRATION_ID:
+                    connection = sqlite3.connect(str(path))
+                    try:
+                        connection.execute("PRAGMA foreign_keys = ON")
+                        apply_inventory_control_migration(connection, ddl_observer)
+                        connection.commit()
+                    except Exception:
+                        connection.rollback()
+                        raise
+                    finally:
+                        connection.close()
                 elif migration["id"] == CATALOG_RUNTIME_BASELINE_ID:
                     connection = sqlite3.connect(str(path))
                     try:
@@ -806,6 +958,9 @@ def apply_migrations(database_path, app_commit="", ddl_observer=None):
                             connection,
                             require_comment_indexes=migration["id"] != BASELINE_ID,
                             allow_legacy_comments=migration["id"] == BASELINE_ID,
+                            allow_legacy_inventory=migration["id"] in (
+                                BASELINE_ID, COMMENTS_MIGRATION_ID,
+                            ),
                         )
                     require_integrity(connection, migration["id"])
                     connection.execute(
