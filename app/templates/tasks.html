@@ -5,7 +5,7 @@
     <title>Vechasu ERP — Задачи</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/themes.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/erp-components.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/tasks.css', v='2') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/tasks.css', v='3') }}">
 </head>
 <body class="tasks-page"><div class="app">{% include "_sidebar.html" %}
 <main class="tasks-main" id="main-content" tabindex="-1">
@@ -18,16 +18,24 @@
         </nav>
         <section class="tasks-workspace" aria-label="Список задач">
             <div class="tasks-toolbar">
-                <input id="taskSearch" type="search" placeholder="Название, телефон, заказ, товар, комментарий…" aria-label="Поиск задач">
-                <select id="assigneeFilter" aria-label="Ответственный"><option value="">Все сотрудники</option>{% for user in task_users %}<option value="{{ user.id }}">{{ (user.first_name ~ ' ' ~ user.last_name)|trim or user.email }}</option>{% endfor %}</select>
-                <select id="priorityFilter" aria-label="Приоритет"><option value="">Все приоритеты</option><option value="urgent">Срочно</option><option value="important">Важно</option><option value="other">Другое</option></select>
-                <select id="statusFilter" aria-label="Статус"><option value="">Все статусы</option><option value="new">Новая</option><option value="in_progress">В работе</option><option value="waiting">Ожидаю</option><option value="completed">Выполнена</option><option value="cancelled">Отменена</option></select>
-                <select id="entityFilter" aria-label="Тип связи"><option value="">Все связи</option><option value="customer">Клиент</option><option value="order">Заказ</option><option value="repair">Ремонт</option><option value="product">Товар</option><option value="sale">Продажа</option><option value="purchase">Закупка</option></select>
-                <select id="dueFilter" aria-label="Срок"><option value="">Любой срок</option><option value="overdue">Просрочено</option><option value="today">Сегодня</option><option value="future">В будущем</option><option value="none">Без срока</option></select>
-                <label class="tasks-only-mine"><input id="mineFilter" type="checkbox"> Только мои</label><button id="resetFilters" type="button" hidden>Очистить</button>
+                <div class="tasks-search-wrap">
+                    <span class="tasks-search-icon" aria-hidden="true"></span>
+                    <input id="taskSearch" type="search" placeholder="Название, описание, клиент, заказ или товар" aria-label="Поиск задач" autocomplete="off">
+                    <button id="clearSearch" class="tasks-search-clear" type="button" aria-label="Очистить поиск" hidden>×</button>
+                </div>
+                <label class="tasks-only-mine"><input id="mineFilter" type="checkbox"><span>Только мои</span></label>
+                <button class="tasks-filter-toggle" id="toggleFilters" type="button" aria-expanded="false" aria-controls="advancedFilters"><span aria-hidden="true">⚙</span> Фильтры <b id="filterCount" hidden></b></button>
             </div>
-            <div id="taskStatus" class="tasks-status" role="status" aria-live="polite"></div>
-            <div id="taskList" class="tasks-list" aria-live="polite"></div>
+            <div class="tasks-filter-panel" id="advancedFilters" hidden>
+                <label><span>Ответственный</span><select id="assigneeFilter"><option value="">Все сотрудники</option>{% for user in task_users %}<option value="{{ user.id }}">{{ (user.first_name ~ ' ' ~ user.last_name)|trim or user.email }}</option>{% endfor %}</select></label>
+                <label><span>Приоритет</span><select id="priorityFilter"><option value="">Все приоритеты</option><option value="urgent">Срочно</option><option value="important">Важно</option><option value="other">Другое</option></select></label>
+                <label><span>Статус</span><select id="statusFilter"><option value="">Все статусы</option><option value="new">Новая</option><option value="in_progress">В работе</option><option value="waiting">Ожидаю</option><option value="completed">Выполнена</option><option value="cancelled">Отменена</option></select></label>
+                <label><span>Связь</span><select id="entityFilter"><option value="">Все связи</option><option value="customer">Клиент</option><option value="order">Заказ</option><option value="repair">Ремонт</option><option value="product">Товар</option><option value="sale">Продажа</option><option value="purchase">Закупка</option></select></label>
+                <label><span>Срок</span><select id="dueFilter"><option value="">Любой срок</option><option value="overdue">Просрочено</option><option value="today">Сегодня</option><option value="future">В будущем</option><option value="none">Без срока</option></select></label>
+            </div>
+            <div class="tasks-filter-summary" id="filterSummary" hidden><div class="tasks-filter-chips" id="filterChips" aria-label="Активные фильтры"></div><button id="resetFilters" type="button">Сбросить всё</button></div>
+            <div class="tasks-list-head"><div id="taskStatus" class="tasks-status" role="status" aria-live="polite" aria-atomic="true"></div></div>
+            <div id="taskList" class="tasks-list" aria-live="polite" aria-busy="false"></div>
             <div class="tasks-pagination" id="taskPagination" hidden><button id="prevPage" type="button">Назад</button><span id="pageLabel"></span><button id="nextPage" type="button">Далее</button></div>
         </section>
     </div>
@@ -57,5 +65,5 @@
     <footer><div class="task-actions" id="taskActions"><button type="button" data-action="start">Начать</button><button type="button" data-action="waiting">Ожидаю</button><button type="button" data-action="complete">Выполнить</button><button type="button" data-action="cancel">Отменить</button><button type="button" data-action="restore">Восстановить</button></div><span></span><button type="button" id="cancelTask" class="tasks-secondary">Закрыть</button><button type="submit" id="saveTask" class="tasks-primary">Сохранить</button></footer>
 </form></aside>
 <script>window.TASKS_BOOTSTRAP={csrf:{{ csrf|tojson }},currentUserId:{{ (current_user.id if current_user else 0)|tojson }},prefillType:{{ request.args.get('entity_type','')|tojson }},prefillId:{{ request.args.get('entity_id','')|tojson }},prefillTitle:{{ request.args.get('title','')|tojson }},prefillContext:{{ request.args.get('context','')|tojson }}};</script>
-<script src="{{ url_for('static', filename='js/theme.js') }}"></script><script src="{{ url_for('static', filename='js/sidebar.js') }}"></script><script src="{{ url_for('static', filename='js/notifications.js') }}"></script><script src="{{ url_for('static', filename='js/tasks.js', v='2') }}"></script>
+<script src="{{ url_for('static', filename='js/theme.js') }}"></script><script src="{{ url_for('static', filename='js/sidebar.js') }}"></script><script src="{{ url_for('static', filename='js/notifications.js') }}"></script><script src="{{ url_for('static', filename='js/tasks.js', v='3') }}"></script>
 </body></html>
