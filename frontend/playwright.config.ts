@@ -1,10 +1,13 @@
 import { defineConfig } from '@playwright/test';
 
-const baseURL = 'http://127.0.0.1:4173/app/';
+const port = 4173;
+const baseURL = `http://127.0.0.1:${port}`;
+const python = process.env.ERP_E2E_PYTHON || 'python3';
 
 export default defineConfig({
   testDir: './e2e',
-  fullyParallel: true,
+  fullyParallel: false,
+  workers: 1,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 2 : 0,
   reporter: [['list'], ['html', { open: 'never' }]],
@@ -51,8 +54,8 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'pnpm preview --host 127.0.0.1 --port 4173',
-    url: baseURL,
+    command: `PREVIEW_PORT=${port} ${python} ../tests/stage2_preview_server.py`,
+    url: `${baseURL}/login`,
     reuseExistingServer: !process.env.CI,
   },
 });

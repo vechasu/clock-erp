@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Rehearse, apply and verify auth/orders migrations on production runtime."""
+"""Rehearse, apply and verify auth/orders/tasks migrations on production runtime."""
 
 from __future__ import print_function
 
@@ -26,6 +26,7 @@ from app.domain_schema_migrations import (  # noqa: E402
     domain_snapshot,
     validate_auth_database,
     validate_orders_database,
+    validate_tasks_database,
 )
 from app.schema_migrations import sqlite_backup  # noqa: E402
 
@@ -126,15 +127,21 @@ def preflight(arguments):
         for kind, source in (
             ("auth", Path(arguments.auth_database).resolve()),
             ("orders", Path(arguments.orders_database).resolve()),
+            ("tasks", Path(arguments.tasks_database).resolve()),
         ):
             original = run_directory / "{}-original.db".format(kind)
             sequential = run_directory / "{}-sequential.db".format(kind)
             parallel = run_directory / "{}-parallel.db".format(kind)
             fresh = run_directory / "{}-fresh.db".format(kind)
-            sqlite_backup(source, original, sqlite_binary=arguments.sqlite_binary)
-            shutil.copy2(str(original), str(sequential))
-            shutil.copy2(str(original), str(parallel))
-            before = domain_snapshot(original, kind)
+            if source.is_file():
+                sqlite_backup(source, original, sqlite_binary=arguments.sqlite_binary)
+                shutil.copy2(str(original), str(sequential))
+                shutil.copy2(str(original), str(parallel))
+                before = domain_snapshot(original, kind)
+            else:
+                before = {"kind": kind, "latest_migration": None,
+                          "checksum": None, "schema_fingerprint": None,
+                          "business_counts": {"tasks": 0}}
             first = apply_domain_migrations(
                 sequential, kind, app_commit=arguments.app_commit
             )
@@ -196,6 +203,10 @@ def apply(arguments):
     before = {
         "auth": domain_snapshot(arguments.auth_database, "auth"),
         "orders": domain_snapshot(arguments.orders_database, "orders"),
+        "tasks": (domain_snapshot(arguments.tasks_database, "tasks")
+                  if Path(arguments.tasks_database).is_file() else
+                  {"kind": "tasks", "latest_migration": None, "checksum": None,
+                   "schema_fingerprint": None, "business_counts": {"tasks": 0}}),
     }
     first = {
         "auth": apply_domain_migrations(
@@ -203,6 +214,9 @@ def apply(arguments):
         ),
         "orders": apply_domain_migrations(
             arguments.orders_database, "orders", arguments.app_commit
+        ),
+        "tasks": apply_domain_migrations(
+            arguments.tasks_database, "tasks", arguments.app_commit
         ),
     }
     second = {
@@ -212,12 +226,16 @@ def apply(arguments):
         "orders": apply_domain_migrations(
             arguments.orders_database, "orders", arguments.app_commit
         ),
+        "tasks": apply_domain_migrations(
+            arguments.tasks_database, "tasks", arguments.app_commit
+        ),
     }
     after = {
         "auth": domain_snapshot(arguments.auth_database, "auth"),
         "orders": domain_snapshot(arguments.orders_database, "orders"),
+        "tasks": domain_snapshot(arguments.tasks_database, "tasks"),
     }
-    for kind in ("auth", "orders"):
+    for kind in ("auth", "orders", "tasks"):
         if before[kind]["business_counts"] != after[kind]["business_counts"]:
             raise DomainMigrationError(
                 "production {} migration changed business counts".format(kind)
@@ -236,11 +254,13 @@ def verify(arguments):
     runtime = _runtime(arguments.expected_sqlite_version)
     validate_auth_database(arguments.auth_database)
     validate_orders_database(arguments.orders_database)
+    validate_tasks_database(arguments.tasks_database)
     report = {
         "status": "passed", "stage": "DOMAIN POST-DEPLOY INTEGRITY",
         "runtime": runtime,
         "auth": domain_snapshot(arguments.auth_database, "auth"),
         "orders": domain_snapshot(arguments.orders_database, "orders"),
+        "tasks": domain_snapshot(arguments.tasks_database, "tasks"),
     }
     _write_report(arguments.report, report)
     print(json.dumps(report, ensure_ascii=True, sort_keys=True))
@@ -252,6 +272,7 @@ def parser():
     command.add_argument("mode", choices=("preflight", "apply", "verify"))
     command.add_argument("--auth-database", required=True)
     command.add_argument("--orders-database", required=True)
+    command.add_argument("--tasks-database", required=True)
     command.add_argument("--app-commit", default="")
     command.add_argument("--expected-sqlite-version", default="")
     command.add_argument("--sqlite-binary", default="sqlite3")

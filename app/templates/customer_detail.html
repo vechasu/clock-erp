@@ -25,6 +25,7 @@
         <nav class="customer-breadcrumbs" aria-label="Хлебные крошки"><a href="{{ url_for('customers_page') }}">Клиенты</a><span>›</span><span>{{ customer.name or 'Без имени' }}</span></nav>
         <header class="erp-workspace-header customer-detail-head">
             <div class="erp-workspace-heading"><h1>{{ customer.name or 'Без имени' }}</h1><p>Карточка клиента</p></div>
+            <div class="erp-workspace-actions"><a class="customer-button" href="{{ url_for('tasks_page', entity_type='customer', entity_id=customer.id) }}">Создать задачу</a></div>
         </header>
         <section class="customer-facts" aria-label="Контактные данные">
             <div><span>Телефон</span><strong>{% if customer.phone %}<a href="tel:{{ customer.phone }}">{{ customer.phone }}</a>{% else %}—{% endif %}</strong></div>

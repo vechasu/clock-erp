@@ -95,6 +95,7 @@
                     {{ navigation_icon(item.icon) }}
                 </span>
                 <span class="sidebar-label">{{ item.label }}</span>
+                {% if item.badge %}<span class="sidebar-count" aria-label="Активных задач на сегодня и просроченных: {{ item.badge }}">{{ item.badge }}</span>{% endif %}
             </a>
         {% endfor %}
     </nav>
@@ -184,6 +185,7 @@
                     {{ navigation_icon(item.icon) }}
                 </span>
                 <span>{{ item.label }}</span>
+                {% if item.badge %}<span class="mobile-erp-count">{{ item.badge }}</span>{% endif %}
             </a>
         {% endif %}
     {% endfor %}
@@ -228,6 +230,7 @@
                     {{ navigation_icon(item.icon) }}
                 </span>
                 <span>{{ item.label }}</span>
+                {% if item.badge %}<span class="sidebar-count">{{ item.badge }}</span>{% endif %}
             </a>
         {% endif %}
     {% endfor %}

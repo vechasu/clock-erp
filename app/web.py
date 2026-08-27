@@ -131,6 +131,14 @@ from app.services.shared_catalog import (
     SharedCatalog,
     normalized_name,
 )
+from app.services.tasks import (
+    ENTITY_TYPES as TASK_ENTITY_TYPES,
+    TaskNotFoundError,
+    TaskStore,
+    TaskValidationError,
+    moscow_today,
+)
+from app.domain_schema_migrations import MigrationRequiredError
 from app.sales_reporting.application import build_report_context
 from app.sales_reporting.routes import SalesReportingRoutes
 from app.system_settings.application import SettingsApplication
@@ -202,6 +210,11 @@ app.wsgi_app = ProxyFix(
     x_host=TRUSTED_PROXY_COUNT,
 )
 configure_auth(app, PROJECT_ROOT)
+app.config.setdefault(
+    "TASKS_DATABASE",
+    os.getenv("ERP_TASKS_DATABASE", "").strip()
+    or str(PROJECT_ROOT / "instance" / "tasks.db"),
+)
 
 # Gunicorn imports this module once per worker. Pay the one required schema
 # verification during worker startup so the first ERP screen never inherits it.
@@ -16443,6 +16456,19 @@ NAVIGATION_DEFINITIONS = [
         "active_prefixes": ["/app/orders", "/orders", "/order/"],
     },
     {
+        "key": "tasks",
+        "label": "Задачи",
+        "description": "Внутренние задачи и обещания клиентам.",
+        "icon": "tasks",
+        "href": "/app/tasks",
+        "mobile_href": "/app/tasks",
+        "position": 2,
+        "group": "main",
+        "mobile_primary": False,
+        "active_exact": [],
+        "active_prefixes": ["/app/tasks"],
+    },
+    {
         "key": "products",
         "label": "Товары",
         "description": "Каталог товаров.",
@@ -16563,8 +16589,14 @@ def get_active_navigation_key(current_path):
 def get_navigation_items(include_disabled=False):
     del include_disabled
     active_key = get_active_navigation_key(request.path)
+    task_badge = 0
+    try:
+        task_badge = TaskStore(app.config["TASKS_DATABASE"]).counts()["active"]
+    except (MigrationRequiredError, sqlite3.Error):
+        task_badge = 0
     return [
-        {**definition, "enabled": True, "active": definition["key"] == active_key}
+        {**definition, "enabled": True, "active": definition["key"] == active_key,
+         "badge": task_badge if definition["key"] == "tasks" else 0}
         for definition in NAVIGATION_DEFINITIONS
     ]
 
@@ -20932,6 +20964,231 @@ def api_repair_attachments(case_id):
     if not updated:
         return api_error("REPAIR_NOT_FOUND", "Ремонт не найден.", 404)
     return api_success(serialize_api_repair(find_api_repair(case_id)), 201)
+
+
+def _tasks_store():
+    return TaskStore(app.config["TASKS_DATABASE"])
+
+
+def _task_users():
+    path = Path(app.config["AUTH_DATABASE"]).resolve()
+    connection = sqlite3.connect("file:{}?mode=ro".format(path), uri=True)
+    connection.row_factory = sqlite3.Row
+    try:
+        rows = connection.execute(
+            "SELECT id,first_name,last_name,email,role FROM users WHERE active=1 ORDER BY first_name,last_name,id"
+        ).fetchall()
+    finally:
+        connection.close()
+    return [dict(row) for row in rows]
+
+
+def _task_user_exists(user_id):
+    return any(int(user["id"]) == int(user_id) for user in _task_users())
+
+
+def _task_entity(entity_type, entity_id):
+    entity_id = str(entity_id or "").strip()
+    if entity_type not in TASK_ENTITY_TYPES or not entity_id:
+        return None
+    if entity_type == "customer":
+        customer = customer_store().get(int(entity_id)) if entity_id.isdigit() else None
+        if customer:
+            return {"id": str(customer["id"]), "label": customer.get("name") or "Клиент №{}".format(entity_id),
+                    "href": "/app/customers/{}".format(entity_id)}
+    elif entity_type == "order":
+        order = OrdersSnapshotStore().get(entity_id)
+        if order:
+            number = order.get("number") or order.get("id") or entity_id
+            href = (
+                "/order/wildberries/{}".format(entity_id[3:])
+                if entity_id.startswith("wb:")
+                else "/order/{}".format(entity_id)
+            )
+            return {"id": entity_id, "label": "Заказ №{}".format(number),
+                    "href": href}
+    elif entity_type in {"product", "sale"}:
+        with CatalogDatabase().connect() as connection:
+            if entity_type == "product":
+                row = connection.execute(
+                    "SELECT id,excel_name_raw,excel_article FROM catalog_excel_products WHERE id=? AND active=1",
+                    (entity_id,),
+                ).fetchone()
+                if row:
+                    return {"id": str(row["id"]), "label": row["excel_name_raw"] or row["excel_article"] or "Товар №{}".format(entity_id),
+                            "href": "/app/products?selected_id={}".format(entity_id)}
+            else:
+                row = connection.execute(
+                    "SELECT id,external_order_id,source FROM erp_sales WHERE id=? AND deleted_at IS NULL",
+                    (entity_id,),
+                ).fetchone()
+                if row:
+                    label = "Продажа {}".format(row["external_order_id"] or str(row["id"])[:8])
+                    return {"id": str(row["id"]), "label": label,
+                            "href": "/app/sales?selected_id={}".format(row["id"])}
+    elif entity_type == "repair":
+        repair = find_api_repair(entity_id)
+        if repair:
+            return {"id": entity_id,
+                    "label": "Ремонт №{}".format(repair.get("repair_number") or entity_id[:8]),
+                    "href": "/app/repairs?selected_id={}".format(entity_id)}
+    return None
+
+
+def _serialize_tasks(rows):
+    users = {int(user["id"]): user for user in _task_users()}
+    result = []
+    for task in rows:
+        item = dict(task)
+        user = users.get(int(item["assignee_id"])) or {}
+        full_name = " ".join(str(user.get(key) or "").strip() for key in ("first_name", "last_name")).strip()
+        item["assignee_name"] = full_name or user.get("email") or "Сотрудник"
+        result.append(item)
+    return result
+
+
+def _task_api_error(error):
+    if isinstance(error, TaskValidationError):
+        return api_error("TASK_VALIDATION_FAILED", str(error), 422,
+                         {error.field: str(error)} if error.field else None)
+    if isinstance(error, TaskNotFoundError):
+        return api_error("TASK_NOT_FOUND", str(error), 404)
+    raise error
+
+
+@app.get("/app/tasks")
+def tasks_page():
+    return render_template("tasks.html", task_users=_task_users(), csrf=csrf_token())
+
+
+@app.get("/api/v1/tasks")
+def api_tasks_collection_get():
+    try:
+        listing = _tasks_store().list(
+            view=request.args.get("view", "today"), query=request.args.get("q", ""),
+            assignee_id=request.args.get("assignee_id") or None,
+            priority=request.args.get("priority", ""), entity_type=request.args.get("entity_type", ""),
+            page=request.args.get("page", 1), per_page=request.args.get("per_page", 50),
+        )
+    except TaskValidationError as error:
+        return _task_api_error(error)
+    listing["rows"] = _serialize_tasks(listing["rows"])
+    return api_success(listing)
+
+
+@app.post("/api/v1/tasks")
+def api_tasks_collection_post():
+    user = current_auth_user() or {}
+    try:
+        payload = api_json_payload()
+        payload.setdefault("assignee_id", user.get("id"))
+        payload.setdefault("idempotency_key", request.headers.get("Idempotency-Key"))
+        task, created = _tasks_store().create(
+            payload, user.get("id"), _task_user_exists, _task_entity
+        )
+    except (TaskValidationError, TaskNotFoundError) as error:
+        return _task_api_error(error)
+    return api_success(_serialize_tasks([task])[0], 201 if created else 200,
+                       duplicate=not created)
+
+
+@app.route("/api/v1/tasks/<int:task_id>", methods=["GET", "PATCH"])
+def api_task_resource(task_id):
+    user = current_auth_user() or {}
+    try:
+        if request.method == "GET":
+            task = _tasks_store().get(task_id)
+        else:
+            task = _tasks_store().update(
+                task_id, api_json_payload(), user.get("id"), _task_user_exists, _task_entity
+            )
+    except (TaskValidationError, TaskNotFoundError) as error:
+        return _task_api_error(error)
+    return api_success(_serialize_tasks([task])[0])
+
+
+@app.post("/api/v1/tasks/<int:task_id>/complete")
+def api_task_complete(task_id):
+    try:
+        task = _tasks_store().set_completed(task_id, True, current_auth_user()["id"])
+    except TaskNotFoundError as error:
+        return _task_api_error(error)
+    return api_success(_serialize_tasks([task])[0])
+
+
+@app.post("/api/v1/tasks/<int:task_id>/reopen")
+def api_task_reopen(task_id):
+    try:
+        task = _tasks_store().set_completed(task_id, False, current_auth_user()["id"])
+    except TaskNotFoundError as error:
+        return _task_api_error(error)
+    return api_success(_serialize_tasks([task])[0])
+
+
+@app.post("/api/v1/tasks/<int:task_id>/move")
+def api_task_move(task_id):
+    try:
+        payload = api_json_payload()
+        task = _tasks_store().move(task_id, str(payload.get("section") or ""), current_auth_user()["id"])
+    except (TaskValidationError, TaskNotFoundError) as error:
+        return _task_api_error(error)
+    return api_success(_serialize_tasks([task])[0])
+
+
+@app.get("/api/v1/tasks/counts")
+def api_task_counts():
+    return api_success(_tasks_store().counts())
+
+
+@app.get("/api/v1/tasks/assignees")
+def api_task_assignees():
+    return api_success(_task_users())
+
+
+@app.get("/api/v1/tasks/entities")
+def api_task_entities():
+    entity_type = str(request.args.get("type") or "").strip()
+    query = str(request.args.get("q") or "").strip()
+    if entity_type not in TASK_ENTITY_TYPES:
+        return api_error("TASK_ENTITY_TYPE_INVALID", "Неизвестный тип связи.", 422)
+    exact = _task_entity(entity_type, query) if query else None
+    results = [exact] if exact else []
+    if entity_type == "customer":
+        results += [_task_entity("customer", row["id"]) for row in customer_store().list(query=query, per_page=20)["rows"]]
+    elif entity_type == "order":
+        store = OrdersSnapshotStore().initialize()
+        folded = "%{}%".format(query.casefold())
+        with store.connection() as connection:
+            rows = connection.execute(
+                "SELECT order_id FROM orders_snapshot WHERE number_fold LIKE ? OR customer_fold LIKE ? ORDER BY created_sort DESC LIMIT 20",
+                (folded, folded),
+            ).fetchall()
+        results += [_task_entity("order", row["order_id"]) for row in rows]
+    elif entity_type in {"product", "sale"}:
+        with CatalogDatabase().connect() as connection:
+            if entity_type == "product":
+                rows = connection.execute(
+                    "SELECT id FROM catalog_excel_products WHERE active=1 AND (lower(excel_name_raw) LIKE ? OR lower(excel_article) LIKE ?) ORDER BY id DESC LIMIT 20",
+                    ("%{}%".format(query.casefold()), "%{}%".format(query.casefold())),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    "SELECT id FROM erp_sales WHERE deleted_at IS NULL AND (lower(id) LIKE ? OR lower(COALESCE(external_order_id,'')) LIKE ?) ORDER BY created_at DESC LIMIT 20",
+                    ("%{}%".format(query.casefold()), "%{}%".format(query.casefold())),
+                ).fetchall()
+        results += [_task_entity(entity_type, row["id"]) for row in rows]
+    else:
+        folded = query.casefold()
+        candidates = load_repair_cases()
+        results += [_task_entity("repair", case.get("id")) for case in candidates
+                   if folded in " ".join(str(case.get(key) or "") for key in ("repair_number", "client_name", "product_name")).casefold()][:20]
+    unique = []
+    seen = set()
+    for item in results:
+        if item and item["id"] not in seen:
+            seen.add(item["id"])
+            unique.append(item)
+    return api_success(unique[:20])
 
 
 @app.route("/app", defaults={"react_path": ""}, strict_slashes=False)

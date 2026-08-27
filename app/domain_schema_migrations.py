@@ -30,6 +30,7 @@ CREATE TABLE erp_migration_ledger (
 
 AUTH_MIGRATION_ID = "2026-08-26-auth-baseline-v1"
 ORDERS_MIGRATION_ID = "2026-08-26-orders-customers-baseline-v1"
+TASKS_MIGRATION_ID = "2026-08-27-internal-tasks-v1"
 
 
 class DomainMigrationError(RuntimeError):
@@ -184,6 +185,46 @@ ORDERS_INDEX_STATEMENTS = (
     "CREATE INDEX idx_orders_snapshot_customer_created ON orders_snapshot(customer_id, created_sort)",
 )
 
+TASKS_TABLE_STATEMENTS = (
+    """CREATE TABLE tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL CHECK (length(trim(title)) > 0),
+        description TEXT NOT NULL DEFAULT '',
+        section TEXT NOT NULL DEFAULT 'inbox'
+            CHECK (section IN ('inbox', 'anytime', 'someday')),
+        status TEXT NOT NULL DEFAULT 'active'
+            CHECK (status IN ('active', 'completed')),
+        priority TEXT NOT NULL DEFAULT 'other'
+            CHECK (priority IN ('urgent', 'important', 'other')),
+        due_date TEXT,
+        due_time TEXT,
+        author_id INTEGER NOT NULL,
+        assignee_id INTEGER NOT NULL,
+        entity_type TEXT CHECK (entity_type IS NULL OR entity_type IN
+            ('customer', 'order', 'sale', 'repair', 'product')),
+        entity_id TEXT,
+        entity_label TEXT,
+        entity_href TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        updated_by INTEGER,
+        completed_at TEXT,
+        completed_by INTEGER,
+        idempotency_key TEXT UNIQUE,
+        CHECK ((entity_type IS NULL AND entity_id IS NULL) OR
+               (entity_type IS NOT NULL AND entity_id IS NOT NULL)),
+        CHECK (due_time IS NULL OR due_date IS NOT NULL)
+    )""",
+)
+
+TASKS_INDEX_STATEMENTS = (
+    "CREATE INDEX idx_tasks_status_due ON tasks(status, due_date, due_time, id)",
+    "CREATE INDEX idx_tasks_assignee_status_due ON tasks(assignee_id, status, due_date, id)",
+    "CREATE INDEX idx_tasks_section_status ON tasks(section, status, id)",
+    "CREATE INDEX idx_tasks_entity ON tasks(entity_type, entity_id, status)",
+    "CREATE INDEX idx_tasks_completed ON tasks(status, completed_at, id)",
+)
+
 ORDERS_LEGACY_COLUMNS = (
     ("order_id", "TEXT", 0, None, 1),
     ("source_position", "INTEGER", 1, None, 0),
@@ -226,9 +267,18 @@ ORDERS_MIGRATION = {
         + ORDERS_UPGRADE_STATEMENTS
     ),
 }
+TASKS_MIGRATION = {
+    "id": TASKS_MIGRATION_ID,
+    "name": "Internal tasks schema",
+    "checksum": _digest(
+        (TASKS_MIGRATION_ID, "tasks-contract-v1", LEDGER_SQL)
+        + TASKS_TABLE_STATEMENTS + TASKS_INDEX_STATEMENTS
+    ),
+}
 DOMAIN_MIGRATIONS = {
     "auth": AUTH_MIGRATION,
     "orders": ORDERS_MIGRATION,
+    "tasks": TASKS_MIGRATION,
 }
 
 
@@ -286,6 +336,21 @@ ORDERS_EXPECTED_COLUMNS = {
     ),
 }
 
+TASKS_EXPECTED_COLUMNS = {
+    "tasks": (
+        ("id", "INTEGER", 0, None, 1), ("title", "TEXT", 1, None, 0),
+        ("description", "TEXT", 1, "''", 0), ("section", "TEXT", 1, "'inbox'", 0),
+        ("status", "TEXT", 1, "'active'", 0), ("priority", "TEXT", 1, "'other'", 0),
+        ("due_date", "TEXT", 0, None, 0), ("due_time", "TEXT", 0, None, 0),
+        ("author_id", "INTEGER", 1, None, 0), ("assignee_id", "INTEGER", 1, None, 0),
+        ("entity_type", "TEXT", 0, None, 0), ("entity_id", "TEXT", 0, None, 0),
+        ("entity_label", "TEXT", 0, None, 0), ("entity_href", "TEXT", 0, None, 0),
+        ("created_at", "TEXT", 1, None, 0), ("updated_at", "TEXT", 1, None, 0),
+        ("updated_by", "INTEGER", 0, None, 0), ("completed_at", "TEXT", 0, None, 0),
+        ("completed_by", "INTEGER", 0, None, 0), ("idempotency_key", "TEXT", 0, None, 0),
+    ),
+}
+
 AUTH_INDEXES = {
     "invitations_state_expires": (0, ("state", "expires_at")),
     "auth_attempts_bucket_time": (0, ("bucket", "attempted_at")),
@@ -303,6 +368,13 @@ ORDERS_INDEXES = {
     "idx_orders_snapshot_source_external": (1, ("source", "external_order_id")),
     "idx_orders_snapshot_source_ordering": (0, ("source", "source_position", "order_id")),
     "idx_orders_snapshot_customer_created": (0, ("customer_id", "created_sort")),
+}
+TASKS_INDEXES = {
+    "idx_tasks_status_due": (0, ("status", "due_date", "due_time", "id")),
+    "idx_tasks_assignee_status_due": (0, ("assignee_id", "status", "due_date", "id")),
+    "idx_tasks_section_status": (0, ("section", "status", "id")),
+    "idx_tasks_entity": (0, ("entity_type", "entity_id", "status")),
+    "idx_tasks_completed": (0, ("status", "completed_at", "id")),
 }
 
 
@@ -500,6 +572,32 @@ def verify_orders_schema(connection, require_ledger=True):
     return True
 
 
+def verify_tasks_schema(connection, require_ledger=True):
+    expected_tables = set(TASKS_EXPECTED_COLUMNS)
+    if require_ledger:
+        expected_tables.add(LEDGER_TABLE)
+    if _tables(connection) != expected_tables:
+        raise DomainMigrationError("tasks schema contract: unexpected table set")
+    if require_ledger:
+        _verify_ledger_columns(connection)
+    _verify_columns(connection, TASKS_EXPECTED_COLUMNS)
+    _verify_indexes(connection, TASKS_INDEXES, TASKS_EXPECTED_COLUMNS)
+    if any(connection.execute(
+        "PRAGMA foreign_key_list({})".format(table)
+    ).fetchall() for table in TASKS_EXPECTED_COLUMNS):
+        raise DomainMigrationError("tasks schema contract: unexpected foreign key")
+    if ("idempotency_key",) not in _unique_columns(connection, "tasks"):
+        raise DomainMigrationError("tasks schema contract: idempotency key is not unique")
+    invalid = connection.execute(
+        "SELECT 1 FROM tasks WHERE status NOT IN ('active','completed') "
+        "OR section NOT IN ('inbox','anytime','someday') "
+        "OR priority NOT IN ('urgent','important','other') LIMIT 1"
+    ).fetchone()
+    if invalid:
+        raise DomainMigrationError("tasks data contract: invalid enum value")
+    return True
+
+
 def _legacy_state(connection, kind):
     tables = _tables(connection) - {LEDGER_TABLE}
     if not tables:
@@ -564,6 +662,14 @@ def _apply_orders(connection, state, observer):
     verify_orders_schema(connection)
 
 
+def _apply_tasks(connection, state, observer):
+    if state == "fresh":
+        for statement in TASKS_TABLE_STATEMENTS + TASKS_INDEX_STATEMENTS:
+            _execute(connection, statement, observer)
+        return
+    verify_tasks_schema(connection)
+
+
 def apply_domain_migrations(database_path, kind, app_commit="", observer=None):
     if kind not in DOMAIN_MIGRATIONS:
         raise DomainMigrationError("unknown domain database: {}".format(kind))
@@ -580,8 +686,10 @@ def apply_domain_migrations(database_path, kind, app_commit="", observer=None):
                 _verify_ledger(connection, migration)
                 if kind == "auth":
                     verify_auth_schema(connection)
-                else:
+                elif kind == "orders":
                     verify_orders_schema(connection)
+                else:
+                    verify_tasks_schema(connection)
                 _require_integrity(connection, kind)
                 return migration_report(connection, kind)
 
@@ -590,8 +698,10 @@ def apply_domain_migrations(database_path, kind, app_commit="", observer=None):
                 # Prove the full schema before adding a baseline ledger.
                 if kind == "auth":
                     verify_auth_schema(connection, require_ledger=False)
-                else:
+                elif kind == "orders":
                     verify_orders_schema(connection, require_ledger=False)
+                else:
+                    verify_tasks_schema(connection, require_ledger=False)
 
             connection.execute("BEGIN IMMEDIATE")
             try:
@@ -606,9 +716,12 @@ def apply_domain_migrations(database_path, kind, app_commit="", observer=None):
                 if kind == "auth":
                     _apply_auth(connection, state, observer)
                     verify_auth_schema(connection)
-                else:
+                elif kind == "orders":
                     _apply_orders(connection, state, observer)
                     verify_orders_schema(connection)
+                else:
+                    _apply_tasks(connection, state, observer)
+                    verify_tasks_schema(connection)
                 _require_integrity(connection, kind + "-migration")
                 connection.execute(
                     "UPDATE {} SET state='applied', applied_at=?, app_commit=? "
@@ -658,6 +771,16 @@ def validate_orders_database(database_path):
     return True
 
 
+def validate_tasks_database(database_path):
+    connection = _runtime_connection(database_path)
+    try:
+        _verify_ledger(connection, TASKS_MIGRATION)
+        verify_tasks_schema(connection)
+    finally:
+        connection.close()
+    return True
+
+
 def _semantic_schema(connection, tables):
     return {
         table: {
@@ -676,7 +799,10 @@ def _semantic_schema(connection, tables):
 
 def migration_report(connection, kind):
     migration = DOMAIN_MIGRATIONS[kind]
-    tables = AUTH_EXPECTED_COLUMNS if kind == "auth" else ORDERS_EXPECTED_COLUMNS
+    tables = (
+        AUTH_EXPECTED_COLUMNS if kind == "auth" else
+        ORDERS_EXPECTED_COLUMNS if kind == "orders" else TASKS_EXPECTED_COLUMNS
+    )
     payload = json.dumps(
         _semantic_schema(connection, tables), sort_keys=True, separators=(",", ":")
     )
