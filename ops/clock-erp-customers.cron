@@ -1,0 +1,3 @@
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+*/10 * * * * root cd /opt/clock-erp && test -f instance/customers.db && flock -n /run/lock/clock-erp-customers-cron.lock venv/bin/python scripts/backfill_customers.py --apply --no-backup >> /var/log/clock-erp-customers.log 2>&1
