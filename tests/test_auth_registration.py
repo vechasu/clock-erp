@@ -148,6 +148,17 @@ class AuthHardeningTest(unittest.TestCase):
         self.assertNotEqual(old_sid, self.client.get_cookie("session").value)
         self.assertIsNotNone(self.session_row())
 
+    def test_username_without_email_format_can_log_in(self):
+        self.insert_user("mrv", role="admin")
+
+        page = self.client.get("/login").get_data(as_text=True)
+        self.assertIn('type="text"', page)
+        self.assertIn('autocomplete="username"', page)
+
+        response = self.login("mrv")
+        self.assertEqual(response.status_code, 302)
+        self.assertIsNotNone(self.session_row())
+
     def test_login_failures_are_indistinguishable(self):
         self.insert_user("verified@example.com")
         self.insert_user("pending@example.com", verified=False)
