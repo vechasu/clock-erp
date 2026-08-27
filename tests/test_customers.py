@@ -288,6 +288,11 @@ class CanonicalCustomerRegistryTest(unittest.TestCase):
         self.assertEqual(analytics["revenue"], 15000)
         candidates = self.registry.duplicate_candidates(second["customer_id"])
         self.assertTrue(any(item["right_customer_id"] == third["customer_id"] for item in candidates))
+        duplicate_segment = self.registry.list(filters={"segment": "duplicates"})
+        self.assertEqual(
+            {item["id"] for item in duplicate_segment["rows"]},
+            {second["customer_id"], third["customer_id"]},
+        )
         audit, created = self.registry.merge(second["customer_id"], third["customer_id"], "1", "test-merge")
         self.assertTrue(created)
         self.assertIsNotNone(self.registry.get(third["customer_id"])["merged_into_id"])

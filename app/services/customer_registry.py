@@ -337,7 +337,7 @@ class CustomerRegistry:
             "vip": ("(c.sales_count>=3 OR c.sales_amount>=100000)", []),
             "inactive": ("(c.sales_count>0 AND (c.last_sale_at IS NULL OR c.last_sale_at<?))", [boundaries["inactive"]]),
             "repair": ("c.repairs_count>0", []),
-            "duplicates": ("EXISTS (SELECT 1 FROM customer_duplicate_candidates d WHERE d.status='open' AND (d.left_customer_id=c.id OR d.right_customer_id=c.id))", []),
+            "duplicates": ("c.id IN (SELECT left_customer_id FROM customer_duplicate_candidates WHERE status='open' UNION SELECT right_customer_id FROM customer_duplicate_candidates WHERE status='open')", []),
         }.get(segment, ("1=1", []))
 
     def list(self, query="", page=1, per_page=50, filters=None, sort="last_activity", direction="desc"):
