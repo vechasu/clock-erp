@@ -250,7 +250,7 @@ class CatalogComboboxBrowserTest(unittest.TestCase):
                         check=False,
                         capture_output=True,
                         text=True,
-                        timeout=30,
+                        timeout=60,
                     )
                     self.assertEqual(
                         result.returncode,

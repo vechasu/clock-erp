@@ -367,6 +367,196 @@ class BrandInventory:
             ).fetchall()
             return [self._detail(connection, row["id"]) for row in rows]
 
+    @staticmethod
+    def _history_rows(connection):
+        rows = connection.execute(
+            "SELECT s.*, b.name AS brand_name, c.name AS category_name, "
+            "mo.name AS model_name, COUNT(i.id) AS total_positions, "
+            "COALESCE(SUM(CASE WHEN i.status IN "
+            "('confirmed','adjusted','added','missing') THEN 1 ELSE 0 END),0) "
+            "AS checked_positions, "
+            "COALESCE(SUM(CASE WHEN COALESCE(i.quantity_delta,0) <> 0 "
+            "THEN 1 ELSE 0 END),0) AS discrepancy_positions, "
+            "COALESCE(SUM(CASE WHEN i.quantity_delta > 0 "
+            "THEN i.quantity_delta ELSE 0 END),0) AS surplus, "
+            "COALESCE(SUM(CASE WHEN i.quantity_delta < 0 "
+            "THEN -i.quantity_delta ELSE 0 END),0) AS shortage "
+            "FROM erp_inventory_sessions s "
+            "JOIN erp_brands b ON b.id = s.brand_id "
+            "LEFT JOIN erp_categories c ON c.id = s.category_id "
+            "LEFT JOIN erp_models mo ON mo.id = s.model_id "
+            "LEFT JOIN erp_inventory_items i ON i.session_id = s.id "
+            "GROUP BY s.id ORDER BY s.started_at DESC, s.id DESC"
+        ).fetchall()
+        result = []
+        for row in rows:
+            item = dict(row)
+            for key in (
+                "total_positions", "checked_positions", "discrepancy_positions",
+                "surplus", "shortage",
+            ):
+                item[key] = int(item.get(key) or 0)
+            item["scope_type"] = item.get("scope_type") or "legacy"
+            item["scope_label"] = BrandInventory._scope_label(
+                item.get("scope_brand_name") or item.get("brand_name") or "—",
+                item.get("scope_category_name") or item.get("category_name"),
+                item.get("scope_model_name") or item.get("model_name"),
+            )
+            item["employee"] = (
+                item.get("completed_by") or item.get("cancelled_by")
+                or item.get("started_by") or ""
+            )
+            result.append(item)
+        return result
+
+    def list_history(self, filters=None):
+        """Return saved inventory documents without recalculating legacy values."""
+        self.initialize()
+        filters = filters or {}
+        with self.database.connect() as connection:
+            rows = self._history_rows(connection)
+        query = str(filters.get("q") or "").strip().casefold()
+        date_from = str(filters.get("date_from") or "").strip()
+        date_to = str(filters.get("date_to") or "").strip()
+        brand_id = str(filters.get("brand_id") or "").strip()
+        category_id = str(filters.get("category_id") or "").strip()
+        model_id = str(filters.get("model_id") or "").strip()
+        employee = str(filters.get("employee") or "").strip().casefold()
+        status = str(filters.get("status") or "").strip()
+        discrepancies_only = str(filters.get("discrepancies") or "") == "1"
+
+        def matches(item):
+            searchable = " ".join(str(item.get(key) or "") for key in (
+                "id", "scope_label", "employee", "brand_name",
+                "scope_category_name", "scope_model_name",
+            )).casefold()
+            started_date = str(item.get("started_at") or "")[:10]
+            if query and query not in searchable:
+                return False
+            if date_from and started_date < date_from:
+                return False
+            if date_to and started_date > date_to:
+                return False
+            if brand_id and str(item.get("brand_id") or "") != brand_id:
+                return False
+            if category_id and str(item.get("category_id") or "") != category_id:
+                return False
+            if model_id and str(item.get("model_id") or "") != model_id:
+                return False
+            if employee and employee not in str(item.get("employee") or "").casefold():
+                return False
+            if status and item.get("status") != status:
+                return False
+            if discrepancies_only and not item.get("discrepancy_positions"):
+                return False
+            return True
+
+        return [item for item in rows if matches(item)]
+
+    def history_facets(self):
+        self.initialize()
+        with self.database.connect() as connection:
+            rows = self._history_rows(connection)
+            brands = [dict(row) for row in connection.execute(
+                "SELECT id, name FROM erp_brands WHERE active = 1 "
+                "ORDER BY name COLLATE NOCASE, id"
+            ).fetchall()]
+            categories = [dict(row) for row in connection.execute(
+                "SELECT id, name FROM erp_categories WHERE active = 1 "
+                "ORDER BY name COLLATE NOCASE, id"
+            ).fetchall()]
+            models = [dict(row) for row in connection.execute(
+                "SELECT id, name FROM erp_models WHERE active = 1 "
+                "ORDER BY name COLLATE NOCASE, id"
+            ).fetchall()]
+        employees = sorted(set(
+            item["employee"] for item in rows if item.get("employee")
+        ), key=lambda value: value.casefold())
+        return {
+            "brands": brands, "categories": categories, "models": models,
+            "employees": employees,
+        }
+
+    def brand_summary(self):
+        """Return every catalog brand and its latest completed saved document."""
+        self.initialize()
+        with self.database.connect() as connection:
+            histories = self._history_rows(connection)
+            brands = [dict(row) for row in connection.execute(
+                "SELECT id, name FROM erp_brands WHERE active = 1 "
+                "ORDER BY name COLLATE NOCASE, id"
+            ).fetchall()]
+        latest = {}
+        active = set()
+        for item in histories:
+            brand_id = int(item["brand_id"])
+            if item["status"] == "active":
+                active.add(brand_id)
+            if item["status"] == "completed":
+                current = latest.get(brand_id)
+                item_key = (str(item.get("completed_at") or ""), str(item["id"]))
+                current_key = (
+                    (str(current.get("completed_at") or ""), str(current["id"]))
+                    if current else ("", "")
+                )
+                if current is None or item_key > current_key:
+                    latest[brand_id] = item
+        result = []
+        today = datetime.now(timezone.utc).date()
+        for brand in brands:
+            item = latest.get(int(brand["id"]))
+            days_since = None
+            if item and item.get("completed_at"):
+                raw_date = str(item["completed_at"])[:10]
+                try:
+                    days_since = (today - datetime.strptime(
+                        raw_date, "%Y-%m-%d"
+                    ).date()).days
+                except (TypeError, ValueError):
+                    days_since = None
+            scope_type = item.get("scope_type") if item else None
+            check_type = (
+                "full" if scope_type == "brand"
+                else "partial" if scope_type in ("category", "model", "legacy")
+                else "never"
+            )
+            result.append({
+                "id": brand["id"], "brand_name": brand["name"],
+                "latest": item, "days_since": days_since,
+                "check_type": check_type,
+                "has_active": int(brand["id"]) in active,
+            })
+        return result
+
+    def document_items(self, session_id):
+        """Read the immutable saved item values for a document card."""
+        self.initialize()
+        with self.database.connect() as connection:
+            self._session(connection, session_id)
+            rows = connection.execute(
+                "SELECT i.id, i.product_id, i.snapshot_name AS name, "
+                "i.snapshot_article AS article, i.snapshot_brand_name AS brand_name, "
+                "i.snapshot_category_name AS category_name, "
+                "i.snapshot_model_name AS model_name, i.snapshot_stock, "
+                "i.actual_stock, i.quantity_delta, i.final_stock, i.status, "
+                "i.movement_id, i.confirmed_at, i.confirmed_by "
+                "FROM erp_inventory_items i WHERE i.session_id = ? "
+                "ORDER BY COALESCE(i.snapshot_name, '') COLLATE NOCASE, i.id",
+                (str(session_id),),
+            ).fetchall()
+            result = []
+            for row in rows:
+                item = dict(row)
+                delta = item.get("quantity_delta")
+                item["result"] = (
+                    "surplus" if delta is not None and int(delta) > 0
+                    else "shortage" if delta is not None and int(delta) < 0
+                    else "match" if delta is not None and int(delta) == 0
+                    else "other"
+                )
+                result.append(item)
+            return result
+
     def list_items(self, session_id, query="", category_id=None, limit=250, offset=0):
         self.initialize()
         with self.database.connect() as connection:
@@ -853,10 +1043,19 @@ class BrandInventory:
             "THEN 1 ELSE 0 END) AS checked_positions, "
             "SUM(CASE WHEN status IN ('pending','conflict','error') "
             "THEN 1 ELSE 0 END) AS remaining, "
-            "SUM(CASE WHEN status = 'added' THEN 1 ELSE 0 END) AS added_positions "
+            "SUM(CASE WHEN status = 'added' THEN 1 ELSE 0 END) AS added_positions, "
+            "SUM(CASE WHEN COALESCE(quantity_delta,0) <> 0 THEN 1 ELSE 0 END) "
+            "AS discrepancy_positions, "
+            "SUM(CASE WHEN quantity_delta > 0 THEN quantity_delta ELSE 0 END) "
+            "AS surplus, "
+            "SUM(CASE WHEN quantity_delta < 0 THEN -quantity_delta ELSE 0 END) "
+            "AS shortage "
             "FROM erp_inventory_items WHERE session_id = ?", (row["id"],)
         ).fetchone()
-        for key in ("total_positions", "checked_positions", "remaining", "added_positions"):
+        for key in (
+            "total_positions", "checked_positions", "remaining", "added_positions",
+            "discrepancy_positions", "surplus", "shortage",
+        ):
             data[key] = int(totals[key] or 0)
         data["locked_positions"] = (
             data["total_positions"] if data["status"] == "active" else 0
