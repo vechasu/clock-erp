@@ -15953,13 +15953,24 @@ def _purchase_stock(product_id):
 
 
 def _purchase_customer(customer_id):
+    if not customer_id:
+        return None
     return customer_store().get(int(customer_id))
 
 
 def _purchase_enrich_request(item):
     prepared = dict(item)
     customer = _purchase_customer(prepared["customer_id"])
-    prepared["customer"] = customer or {"id": prepared["customer_id"], "name": "Клиент недоступен", "phone": "", "email": ""}
+    if customer:
+        prepared["customer"] = customer
+    elif prepared["customer_id"]:
+        prepared["customer"] = {
+            "id": prepared["customer_id"], "name": "Клиент недоступен", "phone": "", "email": ""
+        }
+    else:
+        prepared["customer"] = {
+            "id": None, "name": "Клиент не указан", "phone": "", "email": ""
+        }
     prepared["status_label"] = PURCHASE_STATUS_LABELS.get(prepared["status"], prepared["status"])
     prepared["channel_label"] = PURCHASE_CHANNEL_LABELS.get(prepared["channel"], prepared["channel"])
     return prepared
@@ -16052,6 +16063,14 @@ def purchases_requests_create():
         return jsonify({"ok": True, "request": _purchase_enrich_request(item)}), 201
     except PurchaseValidationError as error:
         return _purchase_error(error)
+    except (OSError, sqlite3.Error, RuntimeError):
+        app.logger.exception("Purchase request could not be created")
+        return _purchase_error(
+            PurchaseValidationError(
+                "Запрос не сохранён из-за ошибки хранилища. Повторите попытку.", "request"
+            ),
+            503,
+        )
 
 
 @app.route("/api/v1/purchases/requests/<int:request_id>", methods=["GET", "PATCH"])
@@ -16068,6 +16087,14 @@ def purchases_request_detail_api(request_id):
         return _purchase_error(error)
     except PurchaseNotFoundError as error:
         return _purchase_error(error, 404)
+    except (OSError, sqlite3.Error, RuntimeError):
+        app.logger.exception("Purchase request could not be loaded or updated request_id=%s", request_id)
+        return _purchase_error(
+            PurchaseValidationError(
+                "Запрос не сохранён из-за ошибки хранилища. Повторите попытку.", "request"
+            ),
+            503,
+        )
 
 
 @app.post("/api/v1/purchases/requests/<int:request_id>/archive")
@@ -16087,8 +16114,8 @@ def purchases_request_plan(request_id):
     try:
         plan_id = purchase_store().add_to_plan(request_id, _purchase_actor())
         return jsonify({"ok": True, "plan_item_id": plan_id})
-    except PurchaseNotFoundError as error:
-        return _purchase_error(error, 404)
+    except (PurchaseValidationError, PurchaseNotFoundError) as error:
+        return _purchase_error(error, 404 if isinstance(error, PurchaseNotFoundError) else 400)
 
 
 @app.patch("/api/v1/purchases/plan/<int:plan_id>")
