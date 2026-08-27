@@ -15873,7 +15873,7 @@ def legacy_analytics_page():
 
 def _analytics_context(section=None):
     filters = parse_filters(request.args)
-    context = BusinessAnalytics().context(
+    context = BusinessAnalytics(purchase_store=purchase_store()).context(
         section or (request.args.get("section") or "summary").strip(),
         filters,
     )
@@ -15901,7 +15901,7 @@ def analytics_section():
 @app.route("/app/analytics/export.csv")
 def analytics_export_csv():
     context = _analytics_context()
-    rows = BusinessAnalytics().csv_rows(context)
+    rows = BusinessAnalytics(purchase_store=purchase_store()).csv_rows(context)
     output = io.StringIO()
     fieldnames = sorted({key for row in rows for key in row})
     writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction="ignore")
