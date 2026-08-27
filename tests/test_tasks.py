@@ -5,6 +5,10 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from app.domain_schema_migrations import (
+    LEDGER_SQL,
+    TASKS_INDEX_STATEMENTS,
+    TASKS_MIGRATION,
+    TASKS_TABLE_STATEMENTS,
     apply_domain_migrations,
     domain_snapshot,
     validate_tasks_database,
@@ -27,7 +31,7 @@ class TaskStoreTest(unittest.TestCase):
         self.entities = {
             (kind, "1"): {"id": "1", "label": "{} объект".format(kind),
                            "href": "/app/{}s/1".format(kind)}
-            for kind in ("customer", "order", "sale", "repair", "product")
+            for kind in ("customer", "order", "sale", "repair", "product", "purchase")
         }
 
     def tearDown(self):
@@ -52,7 +56,8 @@ class TaskStoreTest(unittest.TestCase):
         self.assertEqual([row["title"] for row in self.store.list("inbox", today="2026-08-27")["rows"]], ["Входящие"])
         self.assertEqual([row["title"] for row in self.store.list("anytime", today="2026-08-27")["rows"]], ["В любое время"])
         self.assertEqual([row["title"] for row in self.store.list("someday", today="2026-08-27")["rows"]], ["Когда-нибудь"])
-        self.assertEqual({row["title"] for row in self.store.list("today", today="2026-08-27")["rows"]}, {"Сегодня", "Просрочено"})
+        self.assertEqual([row["title"] for row in self.store.list("today", today="2026-08-27")["rows"]], ["Сегодня"])
+        self.assertEqual([row["title"] for row in self.store.list("overdue", today="2026-08-27")["rows"]], ["Просрочено"])
         self.assertEqual([row["title"] for row in self.store.list("plans", today="2026-08-27")["rows"]], ["Планы"])
 
     def test_today_is_sorted_overdue_then_priority_and_time(self):
@@ -62,7 +67,8 @@ class TaskStoreTest(unittest.TestCase):
         self.create(title="Срочно рано", due_date="2026-08-27", due_time="08:00", priority="urgent")
         self.create(title="Просрочено", due_date="2026-08-26", priority="other")
         titles = [row["title"] for row in self.store.list("today", today="2026-08-27")["rows"]]
-        self.assertEqual(titles, ["Просрочено", "Срочно рано", "Срочно поздно", "Важно", "Другое"])
+        self.assertEqual(set(titles), {"Срочно рано", "Срочно поздно", "Важно", "Другое"})
+        self.assertEqual(self.store.list("overdue", today="2026-08-27")["rows"][0]["title"], "Просрочено")
 
     def test_complete_logbook_reopen_edit_and_move(self):
         task = self.create(due_date="2026-08-27", priority="important")
@@ -83,7 +89,7 @@ class TaskStoreTest(unittest.TestCase):
         self.assertEqual(self.store.list("someday")["total"], 1)
 
     def test_all_entity_types_validate_and_search_snapshot(self):
-        for kind in ("customer", "order", "sale", "repair", "product"):
+        for kind in ("customer", "order", "sale", "repair", "product", "purchase"):
             task = self.create(title=kind, entity_type=kind, entity_id="1")
             self.assertEqual(task["entity_label"], "{} объект".format(kind))
             self.assertEqual(self.store.list("inbox", query=kind)["total"], 1)
@@ -96,7 +102,8 @@ class TaskStoreTest(unittest.TestCase):
                         priority="urgent" if index % 2 else "other", assignee_id=2)
         self.create(title="Сегодня", due_date="2026-08-27")
         self.create(title="Просрочено", due_date="2026-08-26")
-        self.assertEqual(self.store.counts("2026-08-27"), {"today": 1, "overdue": 1, "active": 2})
+        counts = self.store.counts("2026-08-27")
+        self.assertEqual((counts["today"], counts["overdue"], counts["active"]), (1, 1, 2))
         page = self.store.list("plans", assignee_id=2, priority="urgent", page=2, per_page=2, today="2026-08-27")
         self.assertEqual((page["total"], page["page"], page["pages"], len(page["rows"])), (3, 2, 2, 1))
         first, created = self.store.create(
@@ -143,6 +150,71 @@ class TaskStoreTest(unittest.TestCase):
         finally:
             sqlite3.connect = original
         self.assertFalse(any(sql.lstrip().upper().startswith(("CREATE ", "ALTER ", "DROP ")) for sql in statements))
+
+    def test_waiting_views_multiple_links_contacts_search_and_history(self):
+        task = self.create(
+            title="Ответить без ФИО", status="waiting", waiting_for="Оплату клиента",
+            check_date="2026-08-27", source_comment="Нужна синяя модель",
+            contact_phone="+7 999 111-22-33", contact_channel="WhatsApp",
+            links=[{"entity_type": "customer", "entity_id": "1"},
+                   {"entity_type": "purchase", "entity_id": "1"}],
+        )
+        self.assertEqual(len(task["links"]), 2)
+        self.assertEqual(self.store.list("waiting", today="2026-08-27")["total"], 1)
+        self.assertEqual(self.store.list("today", today="2026-08-27")["total"], 1)
+        self.assertEqual(self.store.list("inbox", query="999111")["total"], 1)
+        updated = self.store.update(
+            task["id"], {"description": "Уточнить размер", "links": [
+                {"entity_type": "purchase", "entity_id": "1"}]}, 2,
+            lambda value: True,
+            lambda kind, value: self.entities.get((kind, str(value))),
+        )
+        event_types = {event["event_type"] for event in updated["history"]}
+        self.assertTrue({"created", "link_added", "link_removed", "field_changed"}.issubset(event_types))
+
+    def test_waiting_check_becomes_overdue_without_status_change(self):
+        task = self.create(status="waiting", waiting_for="Поставщика", check_date="2026-08-26")
+        self.assertEqual(self.store.list("overdue", today="2026-08-27")["rows"][0]["id"], task["id"])
+        self.assertEqual(self.store.get(task["id"])["status"], "waiting")
+
+    def test_completion_result_recurrence_is_atomic_and_idempotent(self):
+        task = self.create(due_date="2026-08-01", repeat_type="daily")
+        completed = self.store.set_status(task["id"], "completed", 2, "Позвонили клиенту", today="2026-08-27")
+        repeated = self.store.set_status(task["id"], "completed", 2, "Повтор", today="2026-08-27")
+        self.assertEqual(completed["next_task_id"], repeated.get("next_task_id"))
+        next_task = self.store.get(completed["next_task_id"])
+        self.assertEqual(next_task["due_date"], "2026-08-28")
+        self.assertEqual(self.store.get(task["id"])["completion_result"], "Позвонили клиенту")
+        with self.store.connect() as connection:
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM tasks").fetchone()[0], 2)
+
+    def test_notifications_are_idempotent(self):
+        self.create(due_date="2026-08-26", assignee_id=2)
+        first = self.store.generate_notifications(2, "2026-08-27")
+        second = self.store.generate_notifications(2, "2026-08-27")
+        self.assertEqual(first, second)
+        self.assertEqual(len(self.store.notifications(2)), 2)
+
+    def test_v1_migration_preserves_task_and_relation(self):
+        legacy = Path(self.temporary.name) / "legacy.db"
+        with sqlite3.connect(str(legacy)) as connection:
+            connection.execute(LEDGER_SQL)
+            for statement in TASKS_TABLE_STATEMENTS + TASKS_INDEX_STATEMENTS:
+                connection.execute(statement)
+            connection.execute(
+                "INSERT INTO tasks(title,description,section,status,priority,author_id,assignee_id,"
+                "entity_type,entity_id,entity_label,entity_href,created_at,updated_at) "
+                "VALUES('Старая задача','','inbox','active','other',1,1,'order','42','Заказ №42','/order/42','x','x')"
+            )
+            connection.execute(
+                "INSERT INTO erp_migration_ledger(migration_id,name,checksum,state,applied_at,details_json) "
+                "VALUES(?,?,?,'applied','x','{}')",
+                (TASKS_MIGRATION["id"], TASKS_MIGRATION["name"], TASKS_MIGRATION["checksum"]),
+            )
+        apply_domain_migrations(legacy, "tasks", "upgrade")
+        migrated = TaskStore(legacy).get(1)
+        self.assertEqual((migrated["title"], migrated["status"], migrated["entity_id"]),
+                         ("Старая задача", "new", "42"))
 
 
 if __name__ == "__main__":

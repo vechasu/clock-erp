@@ -77,6 +77,50 @@ class TasksApiTest(unittest.TestCase):
         self.assertEqual(reopened.status_code, 200)
         self.assertEqual(self.client.get("/api/v1/tasks?view=inbox").get_json()["data"]["total"], 1)
 
+    def test_waiting_contacts_result_cancel_restore_and_notifications(self):
+        self.login()
+        headers = {"X-CSRF-Token": "tasks-csrf", "Idempotency-Key": "waiting-once"}
+        created = self.client.post("/api/v1/tasks", json={
+            "title": "Запрос без ФИО", "assignee_id": self.user_id,
+            "status": "waiting", "waiting_for": "Ответ поставщика",
+            "check_date": "2020-01-01", "source_comment": "Нужен зелёный ремешок",
+            "contact_phone": "+7 999 000-11-22", "contact_channel": "WhatsApp",
+        }, headers=headers)
+        self.assertEqual(created.status_code, 201)
+        task_id = created.get_json()["data"]["id"]
+        self.assertEqual(self.client.get("/api/v1/tasks?view=waiting").get_json()["data"]["total"], 1)
+        self.assertEqual(self.client.get("/api/v1/tasks?view=overdue").get_json()["data"]["total"], 1)
+        self.assertEqual(self.client.get("/api/v1/tasks?view=waiting&q=999000").get_json()["data"]["total"], 1)
+        completed = self.client.post(
+            "/api/v1/tasks/{}/complete".format(task_id), json={"result": "Получили ответ"},
+            headers={"X-CSRF-Token": "tasks-csrf"},
+        )
+        self.assertEqual(completed.get_json()["data"]["completion_result"], "Получили ответ")
+        restored = self.client.post(
+            "/api/v1/tasks/{}/reopen".format(task_id), json={},
+            headers={"X-CSRF-Token": "tasks-csrf"},
+        )
+        self.assertEqual(restored.get_json()["data"]["status"], "new")
+        cancelled = self.client.post(
+            "/api/v1/tasks/{}/status".format(task_id), json={"status": "cancelled"},
+            headers={"X-CSRF-Token": "tasks-csrf"},
+        )
+        self.assertEqual(cancelled.get_json()["data"]["status"], "cancelled")
+        self.assertGreaterEqual(len(cancelled.get_json()["data"]["history"]), 4)
+
+    def test_task_output_is_json_escaped_and_double_submit_is_idempotent(self):
+        self.login()
+        headers = {"X-CSRF-Token": "tasks-csrf", "Idempotency-Key": "xss-once"}
+        payload = {"title": "<script>alert(1)</script>", "assignee_id": self.user_id}
+        first = self.client.post("/api/v1/tasks", json=payload, headers=headers)
+        second = self.client.post("/api/v1/tasks", json=payload, headers=headers)
+        self.assertEqual(first.get_json()["data"]["id"], second.get_json()["data"]["id"])
+        self.assertTrue(second.get_json()["meta"]["duplicate"])
+        page = self.client.get("/app/tasks").get_data(as_text=True)
+        self.assertIn("Просрочено", page)
+        self.assertIn("Ожидаю", page)
+        self.assertNotIn("<script>alert(1)</script>", page)
+
 
 if __name__ == "__main__":
     unittest.main()
