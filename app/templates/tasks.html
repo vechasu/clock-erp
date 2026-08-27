@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Vechasu ERP — Задачи</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/themes.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/erp-components.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/tasks.css') }}">
+</head>
+<body class="tasks-page">
+<div class="app">
+    {% include "_sidebar.html" %}
+    <main class="tasks-main" id="main-content" tabindex="-1">
+        <header class="erp-workspace-header tasks-header">
+            <div class="erp-workspace-heading"><h1>Задачи</h1><p>Обещания клиентам, вопросы и планы команды</p></div>
+            <button class="tasks-primary" id="newTask" type="button">+ Новая задача</button>
+        </header>
+        <div class="tasks-layout">
+            <nav class="tasks-views" aria-label="Представления задач">
+                {% for value, label in [("inbox","Входящие"),("today","Сегодня"),("plans","Планы"),("anytime","В любое время"),("someday","Когда-нибудь"),("logbook","Журнал")] %}
+                <button type="button" data-view="{{ value }}"{% if value == "today" %} class="active" aria-current="page"{% endif %}>{{ label }}<span data-view-count="{{ value }}"></span></button>
+                {% endfor %}
+            </nav>
+            <section class="tasks-workspace" aria-label="Список задач">
+                <div class="tasks-toolbar">
+                    <input id="taskSearch" type="search" placeholder="Поиск по задачам и связанным объектам" aria-label="Поиск задач">
+                    <select id="assigneeFilter" aria-label="Ответственный"><option value="">Все сотрудники</option>{% for user in task_users %}<option value="{{ user.id }}">{{ (user.first_name ~ ' ' ~ user.last_name)|trim or user.email }}</option>{% endfor %}</select>
+                    <select id="priorityFilter" aria-label="Приоритет"><option value="">Все приоритеты</option><option value="urgent">Срочно</option><option value="important">Важно</option><option value="other">Другое</option></select>
+                    <select id="entityFilter" aria-label="Тип связи"><option value="">Все связи</option><option value="customer">Клиент</option><option value="order">Заказ</option><option value="sale">Продажа</option><option value="repair">Ремонт</option><option value="product">Товар</option></select>
+                    <button id="resetFilters" type="button" hidden>Сбросить</button>
+                </div>
+                <div id="taskStatus" class="tasks-status" role="status" aria-live="polite"></div>
+                <div id="taskList" class="tasks-list" aria-live="polite"></div>
+                <div class="tasks-pagination" id="taskPagination" hidden><button id="prevPage" type="button">Назад</button><span id="pageLabel"></span><button id="nextPage" type="button">Далее</button></div>
+            </section>
+        </div>
+    </main>
+</div>
+
+<div class="tasks-modal-backdrop" id="taskBackdrop" hidden></div>
+<section class="tasks-modal" id="taskModal" role="dialog" aria-modal="true" aria-labelledby="taskModalTitle" tabindex="-1" hidden>
+    <form id="taskForm" novalidate>
+        <header><div><h2 id="taskModalTitle">Новая задача</h2><p>Сохраните вопрос сейчас — ERP вернёт его в нужный день.</p></div><button type="button" id="closeTask" aria-label="Закрыть окно">×</button></header>
+        <div class="tasks-form-body">
+            <label class="tasks-field tasks-field-wide"><span>Название *</span><input name="title" maxlength="240" required autocomplete="off"></label>
+            <label class="tasks-field tasks-field-wide"><span>Описание</span><textarea name="description" rows="4" maxlength="10000"></textarea></label>
+            <label class="tasks-field"><span>Раздел без даты</span><select name="section"><option value="inbox">Входящие</option><option value="anytime">В любое время</option><option value="someday">Когда-нибудь</option></select></label>
+            <label class="tasks-field"><span>Приоритет</span><select name="priority"><option value="urgent">Срочно</option><option value="important">Важно</option><option value="other" selected>Другое</option></select></label>
+            <label class="tasks-field"><span>Дата</span><input type="date" name="due_date"></label>
+            <label class="tasks-field"><span>Время</span><input type="time" name="due_time"></label>
+            <label class="tasks-field tasks-field-wide"><span>Ответственный</span><select name="assignee_id">{% for user in task_users %}<option value="{{ user.id }}"{% if current_user and user.id == current_user.id %} selected{% endif %}>{{ (user.first_name ~ ' ' ~ user.last_name)|trim or user.email }}</option>{% endfor %}</select></label>
+            <label class="tasks-field"><span>Связь с ERP</span><select name="entity_type"><option value="">Без связи</option><option value="customer">Клиент</option><option value="order">Заказ</option><option value="sale">Продажа</option><option value="repair">Ремонт</option><option value="product">Товар</option></select></label>
+            <div class="tasks-field" id="entitySearchWrap" hidden><span>Найти объект</span><input id="entitySearch" type="search" autocomplete="off" placeholder="Начните вводить"><div id="entityResults" class="entity-results" role="listbox" hidden></div></div>
+            <div id="selectedEntity" class="selected-entity tasks-field-wide" hidden></div>
+            <input type="hidden" name="entity_id"><input type="hidden" name="id">
+            <div class="tasks-form-error tasks-field-wide" id="taskFormError" role="alert" hidden></div>
+        </div>
+        <footer><button type="button" id="moveInbox" class="tasks-secondary" hidden>Во Входящие</button><button type="button" id="moveAnytime" class="tasks-secondary" hidden>В любое время</button><button type="button" id="moveSomeday" class="tasks-secondary" hidden>Когда-нибудь</button><span></span><button type="button" id="cancelTask" class="tasks-secondary">Отмена</button><button type="submit" id="saveTask" class="tasks-primary">Сохранить</button></footer>
+    </form>
+</section>
+<script>window.TASKS_BOOTSTRAP={csrf:{{ csrf|tojson }},currentUserId:{{ (current_user.id if current_user else 0)|tojson }},prefillType:{{ request.args.get('entity_type','')|tojson }},prefillId:{{ request.args.get('entity_id','')|tojson }}};</script>
+<script src="{{ url_for('static', filename='js/theme.js') }}"></script>
+<script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
+<script src="{{ url_for('static', filename='js/notifications.js') }}"></script>
+<script src="{{ url_for('static', filename='js/tasks.js') }}"></script>
+</body>
+</html>
