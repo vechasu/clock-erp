@@ -100,6 +100,12 @@ class DeployAvailabilityTest(unittest.TestCase):
         self.assertIn('"$PYTHON_BIN" -m compileall -q app scripts', script)
         self.assertNotIn('"$PYTHON_BIN" -m compileall -q app scripts tests', script)
 
+    def test_customer_backfill_does_not_expand_an_empty_array_on_bash_42(self):
+        script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+        self.assertNotIn('customer_rebuild_argument[@]', script)
+        self.assertIn('backfill_customers.py --apply --rebuild --backup-dir', script)
+        self.assertIn('backfill_customers.py --apply --backup-dir', script)
+
 
 if __name__ == "__main__":
     unittest.main()
