@@ -1440,6 +1440,11 @@ def render_orders_page(
         selected_order or {}, order_mappings, conducted_sale,
         has_legacy_order_stock_writeoff(order_id),
     )
+    sale_dialog_summary = build_order_sale_dialog_summary(
+        (selected_order or {}).get("products") or [],
+        mapping_context=order_mappings,
+        order_total=(selected_order or {}).get("order_total"),
+    )
 
     return render_template(
         "orders.html",
@@ -1460,6 +1465,7 @@ def render_orders_page(
         order_sale_pricing=build_order_sale_pricing(
             (selected_order or {}).get("products") or []
         ),
+        order_sale_dialog_summary=sale_dialog_summary,
         order_comments=comments,
         order_comment_action=(
             url_for("wildberries_order_comment_add", wb_order_id=(selected_order or {}).get("wb_order_id"))
@@ -1548,6 +1554,78 @@ def build_order_sale_pricing(products):
         except ValueError:
             result.append(calculate_sale_pricing(None))
     return result
+
+
+def build_order_sale_dialog_summary(products, mapping_context=None,
+                                    order_total=None):
+    """Build a read-only view of the source order for the sale dialog."""
+    lines = []
+    total_quantity = Decimal("0")
+    calculated_total = Decimal("0")
+    mapping_context = mapping_context or {}
+
+    for product in products or []:
+        raw_quantity = first_order_product_value(
+            product, "quantity", "QUANTITY"
+        )
+        try:
+            quantity = Decimal(str(
+                "1" if raw_quantity in (None, "") else raw_quantity
+            ).replace(",", "."))
+        except (InvalidOperation, TypeError, ValueError):
+            quantity = Decimal("0")
+
+        try:
+            pricing = order_line_pricing(product)
+            unit_price = Decimal(str(pricing.get("unit_price") or "0"))
+        except (InvalidOperation, TypeError, ValueError):
+            unit_price = Decimal("0")
+
+        raw_line_total = first_order_product_value(
+            product, "line_total", "LINE_TOTAL"
+        )
+        try:
+            line_total = (
+                Decimal(str(raw_line_total).replace(",", "."))
+                if raw_line_total not in (None, "")
+                else unit_price * quantity
+            )
+        except (InvalidOperation, TypeError, ValueError):
+            line_total = unit_price * quantity
+
+        mapping = get_order_product_mapping(mapping_context, product)
+        mapped_product = mapping.get("product") or {}
+        article = first_order_product_value(
+            product, "sku", "SKU", "article", "ARTICLE",
+            "vendorCode", "vendor_code",
+        ) or mapped_product.get("article") or ""
+
+        lines.append({
+            "name": str(first_order_product_value(
+                product, "name", "NAME"
+            ) or "Товар без названия"),
+            "article": str(article).strip(),
+            "quantity": float(quantity),
+            "quantity_display": format_stock_number(quantity),
+            "unit_price": format(unit_price, ".2f"),
+            "line_total": format(line_total, ".2f"),
+        })
+        total_quantity += quantity
+        calculated_total += line_total
+
+    try:
+        factual_total = Decimal(str(order_total).replace(",", "."))
+        if not factual_total.is_finite():
+            raise InvalidOperation
+    except (InvalidOperation, TypeError, ValueError):
+        factual_total = calculated_total
+
+    return {
+        "lines": lines,
+        "quantity": float(total_quantity),
+        "quantity_display": format_stock_number(total_quantity),
+        "total_amount": format(factual_total, ".2f"),
+    }
 
 
 def bitrix_order_product_identity(product):

@@ -328,6 +328,45 @@ class OrderTictactoySaleTest(unittest.TestCase):
         self.assertIn('name="csrf_token"', html)
         self.assertIn('type="button" data-close-sale-dialog', html)
 
+    def test_sale_dialog_renders_every_source_order_line_and_totals(self):
+        html = self.render_order().get_data(as_text=True)
+        self.assertIn("Позиции заказа", html)
+        self.assertIn("Часы", html)
+        self.assertIn("Ремешок", html)
+        self.assertIn("Артикул: BRADLEY-STEEL", html)
+        self.assertIn("Артикул: STRAP-1", html)
+        self.assertIn('data-amount="7500.00"', html)
+        self.assertIn('data-amount="15000.00"', html)
+        self.assertIn('data-amount="2400.00"', html)
+        self.assertIn("К списанию: <strong>3 шт.</strong>", html)
+        self.assertIn('data-amount="17400.00"', html)
+
+    def test_sale_dialog_keeps_read_only_lines_and_compact_copy(self):
+        html = self.render_order().get_data(as_text=True)
+        self.assertNotIn("Город / населённый пункт", html)
+        self.assertIn('for="orderSaleCityTrigger">Город</label>', html)
+        self.assertIn('for="orderSaleTracking">Трекинг</label>', html)
+        self.assertNotIn("Продажа создаётся атомарно", html)
+        self.assertIn(
+            "После проведения продажа появится в разделе «Продажи», "
+            "а остатки товаров спишутся.", html,
+        )
+        self.assertNotIn('name="quantity_', html)
+        self.assertNotIn('name="price_', html)
+
+    def test_sale_dialog_has_responsive_layout_and_keyboard_guards(self):
+        template = Path("app/templates/orders.html").read_text()
+        styles = Path("app/static/css/orders.css").read_text()
+        self.assertIn("width:min(940px,100%)", styles)
+        self.assertIn("max-height:calc(100dvh - 40px)", styles)
+        self.assertIn("overflow-y:auto", styles)
+        self.assertIn("grid-template-columns:repeat(3,minmax(0,1fr))", styles)
+        self.assertIn("@media (max-width:600px)", styles)
+        self.assertIn("grid-template-columns:1fr", styles)
+        self.assertIn("event.key==='Tab'", template)
+        self.assertIn("saleDialogReturnFocus?.focus()", template)
+        self.assertIn("if(!setPending(event.currentTarget,'Проводим…'))", template)
+
     def test_unconfirmed_order_keeps_sale_action_and_explains_confirmation(self):
         html = self.render_order_for({**self.order, "status": "N"})
         self.assertIn(">Провести продажу</button>", html)
