@@ -17,14 +17,21 @@ class DeployAvailabilityTest(unittest.TestCase):
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
 
-    def test_code_only_deploy_uses_graceful_gunicorn_reload(self):
+    def test_code_only_deploy_uses_full_service_restart(self):
         script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
         self.assertIn('CATALOG_MIGRATION_REQUIRED=0', script)
         self.assertIn(
+            'systemctl restart "$SERVICE_NAME"',
+            script,
+        )
+        self.assertNotIn(
             'systemctl kill --kill-who=main --signal=HUP "$SERVICE_NAME"',
             script,
         )
-        self.assertNotIn('\nsystemctl restart "$SERVICE_NAME"\nSERVICE_STOPPED=0\n', script)
+        service_start = script.index("SERVICE START: controlled full restart")
+        restart = script.index('systemctl restart "$SERVICE_NAME"', service_start)
+        health_check = script.index("HEALTH CHECK: public routes", service_start)
+        self.assertLess(restart, health_check)
 
     def test_database_migration_is_blocked_during_active_inventory(self):
         script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
@@ -74,7 +81,7 @@ class DeployAvailabilityTest(unittest.TestCase):
         backup = script.index("CATALOG_ROLLBACK_BACKUP=", production)
         apply = script.index("migration_preflight.py apply", production)
         compare = script.index('DATA_SNAPSHOT_BEFORE" != "$DATA_SNAPSHOT_AFTER', production)
-        start = script.index("SERVICE START: controlled start", production)
+        start = script.index("SERVICE START: controlled full restart", production)
         self.assertLess(stop, backup)
         self.assertLess(backup, apply)
         self.assertLess(apply, compare)

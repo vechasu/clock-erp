@@ -471,13 +471,13 @@ if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" || "$DOMAIN_MIGRATION_REQUIRED" == "1
     printf 'DATA_SAFETY_OK=%s\n' "$DATA_SNAPSHOT_AFTER"
 fi
 
-printf 'SERVICE START: controlled start or graceful reload\n'
+printf 'SERVICE START: controlled full restart\n'
 FAILURE_STAGE="SERVICE START"
 if [[ "$SERVICE_STOPPED" == "1" ]]; then
     systemctl start "$SERVICE_NAME"
     SERVICE_STOPPED=0
 else
-    systemctl kill --kill-who=main --signal=HUP "$SERVICE_NAME"
+    systemctl restart "$SERVICE_NAME"
 fi
 systemctl is-active --quiet "$SERVICE_NAME"
 
