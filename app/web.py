@@ -1309,7 +1309,9 @@ def customer_detail_page(customer_id):
     try:
         with _tasks_store().connect() as connection:
             tasks = [dict(row) for row in connection.execute(
-                "SELECT * FROM tasks WHERE entity_type='customer' AND entity_id=? ORDER BY status='active' DESC,due_date,id DESC LIMIT 200",
+                "SELECT t.* FROM tasks t JOIN task_links l ON l.task_id=t.id "
+                "WHERE l.entity_type='customer' AND l.entity_id=? "
+                "ORDER BY t.status IN ('new','in_progress','waiting') DESC,t.due_date,t.id DESC LIMIT 200",
                 (str(customer_id),),
             ).fetchall()]
     except (OSError, sqlite3.Error, RuntimeError):
@@ -1317,11 +1319,11 @@ def customer_detail_page(customer_id):
     contacts = store.contacts(customer_id)
     duplicates = store.duplicate_candidates(customer_id)
     timeline = store.timeline(customer_id, request.args.get("event_type", ""))
-    customer["open_tasks_count"] = sum(1 for item in tasks if item.get("status") == "active")
+    customer["open_tasks_count"] = sum(1 for item in tasks if item.get("status") not in {"completed", "cancelled"})
     customer["purchase_requests_count"] = len(purchase_requests)
     if any(item.get("status") not in {"notified", "sold", "closed"} and not item.get("archived") for item in purchase_requests):
         customer["segments"].append("Ожидает товар")
-    if any(item.get("status") == "active" and item.get("due_date") and item["due_date"] < datetime.now().date().isoformat() for item in tasks):
+    if any(item.get("status") not in {"completed", "cancelled"} and item.get("due_date") and item["due_date"] < datetime.now().date().isoformat() for item in tasks):
         customer["segments"].append("Требует внимания")
     return render_template(
         "customer_detail.html", customer=customer, tab=tab,

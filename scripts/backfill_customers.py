@@ -318,6 +318,8 @@ def main(argv=None):
         repairs = read_repairs(args.repairs)
         source_counts["erp_repairs"] = len(repairs)
         process(registry, repairs, report, args.failure_after)
+        with registry.connection() as connection:
+            registry.refresh_duplicate_candidates(connection)
         after = registry_counts(target)
         result = {
             "mode": "apply" if args.apply else "dry_run", "sources": dict(source_counts),

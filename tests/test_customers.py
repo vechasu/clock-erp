@@ -1,4 +1,5 @@
 import json
+import os
 import sqlite3
 import tempfile
 import unittest
@@ -220,6 +221,12 @@ class CanonicalCustomerRegistryTest(unittest.TestCase):
         relay_two = self.add(6, email="same@privaterelay.example", source="amazon")
         self.assertNotEqual(relay_one["customer_id"], relay_two["customer_id"])
 
+    def test_schema_validation_is_cached_until_database_changes(self):
+        with mock.patch("app.services.customer_registry.sqlite3.connect", wraps=sqlite3.connect) as connect:
+            self.registry.get(1)
+            self.registry.get(1)
+        self.assertEqual(connect.call_count, 3)
+
     def test_conflict_idempotency_cancellation_and_blank_preservation(self):
         phone_customer = self.add(1, name="Полное имя", phone="+7 900 000-00-01", email="one@example.ru", external_customer_id="u1")
         email_customer = self.add(2, phone="+7 900 000-00-02", email="two@example.ru")
@@ -265,6 +272,7 @@ class CanonicalCustomerRegistryTest(unittest.TestCase):
                 "INSERT INTO customer_contacts(customer_id,kind,normalized_value,display_value,source,masked,created_at,updated_at) VALUES(?, 'email', 'one@example.ru', 'One@example.ru', 'legacy', 0, '2026-01-01', '2026-01-01')",
                 (third["customer_id"],),
             )
+            self.registry.refresh_duplicate_candidates(connection)
         with self.registry.connection() as connection:
             self.registry.upsert_operation(connection, {
                 "operation_type": "sale", "source": "erp", "external_id": "s1",
@@ -350,6 +358,20 @@ class CustomerRoutesTest(unittest.TestCase):
         self.assertEqual(self.client.get("/app/customers/999999").status_code, 404)
 
         self.assertIn("Продажи", overview.get_data(as_text=True))
+
+        tasks_path = Path(os.environ["ERP_TASKS_DATABASE"])
+        with sqlite3.connect(str(tasks_path)) as connection:
+            cursor = connection.execute(
+                "INSERT INTO tasks(title,status,author_id,assignee_id,created_at,updated_at) VALUES(?, 'new', 1, 1, '2026-08-28', '2026-08-28')",
+                ("Связаться с клиентом",),
+            )
+            connection.execute(
+                "INSERT INTO task_links(task_id,entity_type,entity_id,created_at,created_by) VALUES(?, 'customer', ?, '2026-08-28', 1)",
+                (cursor.lastrowid, str(customer_id)),
+            )
+        tasks_tab = self.client.get("/app/customers/{}?tab=tasks".format(customer_id))
+        self.assertEqual(tasks_tab.status_code, 200)
+        self.assertIn("Связаться с клиентом", tasks_tab.get_data(as_text=True))
 
     def test_customer_routes_follow_global_auth_protection(self):
         with mock.patch.dict("os.environ", {"ERP_AUTH_ENABLED": "1"}, clear=False), mock.patch.dict(
