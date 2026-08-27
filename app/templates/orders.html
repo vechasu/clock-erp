@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-combobox.css', v='catalog-combobox-20260824-product-hierarchy-category-assignment') }}">
     <script defer src="{{ url_for('static', filename='js/catalog-combobox.js', v='catalog-combobox-20260824-product-hierarchy-category-assignment') }}"></script>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/orders.css', v='orders-sale-dialog-v1') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/entity-tasks.css', v='1') }}">
 </head>
 <body class="orders-page" data-has-selected-order="{{ 1 if selected_order_explicit|default(false) else 0 }}">
 {% from "_catalog_combobox.html" import render_catalog_combobox %}
@@ -128,6 +129,7 @@
                         </div>
                     </header>
                     <div class="detail-body">
+                        <section class="entity-tasks" data-entity-tasks data-entity-type="order" data-entity-id="{{ detail_id }}" aria-label="Задачи заказа">Загружаем задачи…</section>
                         {% if selected_order.get('status_sync_state') == 'pending' %}<div class="warning">Статус сохранён в ERP и ожидает синхронизации с Bitrix. Повторные попытки выполняются автоматически.</div>{% elif selected_order.get('status_sync_state') == 'unknown' %}<div class="warning">Bitrix передал неизвестный статус. Текущий статус ERP сохранён, событие записано в журнал.</div>{% endif %}
                         {% if selected_order.get('sync_state') == 'partial' %}<div class="warning">Карточка загружена частично. Недоступны: {{ selected_order.get('sync_missing')|join(', ') }}. Небезопасные действия заблокированы.</div>{% elif selected_order.get('sync_state') == 'error' %}<div class="warning">Не удалось загрузить полную карточку. <a href="{{ request.path }}?retry=1">Повторить загрузку</a>.</div>{% endif %}
                         <div class="order-detail-grid">
@@ -467,5 +469,6 @@
     if(modal.dataset.autoOpen==='1')open();
 })();
 </script>
+<script src="{{ url_for('static', filename='js/entity-tasks.js', v='1') }}"></script>
 </body>
 </html>

@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/themes.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/erp-components.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/customers.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/entity-tasks.css', v='1') }}">
 </head>
 <body class="customers-page">
 {% from "_pagination.html" import render_erp_pagination %}
@@ -33,6 +34,7 @@
             <div><span>Город</span><strong>{{ customer.city or '—' }}</strong></div>
             <div><span>Источники</span><strong>{{ customer.sources or '—' }}</strong></div>
         </section>
+        <section class="entity-tasks" data-entity-tasks data-entity-type="customer" data-entity-id="{{ customer.id }}" aria-label="Задачи клиента">Загружаем задачи…</section>
         <section class="customer-metrics" aria-label="Показатели клиента">
             <div><span>Операций</span><strong>{{ customer.operations_count }}</strong></div>
             <div><span>Завершённых заказов</span><strong>{{ customer.completed_orders_count }}</strong></div>
@@ -63,5 +65,6 @@
 </div>
 <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
 <script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
+<script src="{{ url_for('static', filename='js/entity-tasks.js', v='1') }}"></script>
 </body>
 </html>

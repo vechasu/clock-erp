@@ -6,6 +6,7 @@
     <title>ТТТ ERP — Ремонт</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/themes.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/erp-components.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/entity-tasks.css', v='1') }}">
 </head>
 <body class="repair-page">
 {% from "_pagination.html" import render_erp_pagination %}
@@ -228,7 +229,9 @@
             <section class="repair-detail-section"><h3>${repair.is_archived ? 'Архивирование' : 'Контроль'}</h3><dl class="repair-detail-grid">${repair.is_archived ? field('Дата и время', repair.archived_at_display) + field('Пользователь', repair.archived_by) : field('Следующее действие', repair.next_action) + field('Ожидаем действие', repair.waiting_for_label) + field('Контрольная дата', repair.control_date_display)}</dl></section>
             ${relationLinks ? `<section class="repair-detail-section"><h3>Связи</h3>${relationLinks}</section>` : ''}
             ${repair.is_archived ? '' : `<section class="repair-detail-section"><h3>Действия</h3>${renderActionForm(repair)}</section>`}
+            <section class="entity-tasks" data-entity-tasks data-entity-type="repair" data-entity-id="${escapeHtml(repair.id)}">Загружаем задачи…</section>
             <section class="repair-detail-section"><h3>История</h3><ul class="repair-history">${history || '<li>Событий пока нет</li>'}</ul></section>`;
+        window.VechasuEntityTasksInit?.(body);
         footer.innerHTML = `<a class="repair-button" href="/app/tasks?entity_type=repair&entity_id=${encodeURIComponent(repair.id)}&title=${encodeURIComponent('Ремонт №' + (repair.repair_number || repair.id))}">Создать задачу</a>${repair.is_archived && repair.status === 'completed' ? '<button class="repair-button" type="button" data-repeat-repair>Создать повторный ремонт</button>' : ''}${repair.is_archived ? '<button class="repair-button primary" type="button" data-restore-repair>Вернуть в активные</button>' : repair.can_archive ? '<button class="repair-button" type="button" data-archive-repair>В архив</button>' : ''}${repair.is_archived ? '' : '<button class="repair-button" type="button" data-edit-repair>Редактировать</button>'}<button class="repair-button" type="button" data-close-repair>Закрыть</button>`;
         body.querySelectorAll('[data-related]').forEach(button => button.addEventListener('click', () => loadRepair(button.dataset.related)));
         body.querySelector('[data-repair-action-form]')?.addEventListener('submit', submitAction);
@@ -384,5 +387,6 @@
     const columnState=JSON.parse(localStorage.getItem('vechasu:repair-columns')||'{}'); document.querySelectorAll('[data-repair-column]').forEach(control=>{const key=control.dataset.repairColumn;control.checked=columnState[key]!==false;document.querySelectorAll(`[data-column="${key}"]`).forEach(node=>node.hidden=!control.checked);control.addEventListener('change',()=>{columnState[key]=control.checked;localStorage.setItem('vechasu:repair-columns',JSON.stringify(columnState));document.querySelectorAll(`[data-column="${key}"]`).forEach(node=>node.hidden=!control.checked);});});
 })();
 </script>
+<script src="{{ url_for('static', filename='js/entity-tasks.js', v='1') }}"></script>
 </body>
 </html>
