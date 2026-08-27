@@ -28,7 +28,7 @@ if str(ROOT) not in sys.path:
 from app.services.customer_registry import CustomerRegistry, migrate_database  # noqa: E402
 
 
-IDENTITY_REBUILD_VERSION = "safe-identity-v1"
+IDENTITY_REBUILD_VERSION = "safe-identity-v3"
 
 
 def clean_amount(value):
