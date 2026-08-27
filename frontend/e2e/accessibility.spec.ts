@@ -8,6 +8,7 @@ const routes = [
   '/app/orders',
   '/app/tasks',
   '/app/purchases',
+  '/app/analytics',
   '/app/repairs',
   '/app/journal',
   '/app/settings',

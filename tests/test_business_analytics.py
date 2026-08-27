@@ -7,7 +7,9 @@ from app.catalog_db import CatalogDatabase
 from app.schema_migrations import apply_migrations
 from app.services.business_analytics import BusinessAnalytics, parse_filters
 from app.services.excel_product_catalog import ExcelProductCatalog
+from app.services.purchases import PurchaseStore
 from app.services.sales_inventory import SalesInventory
+from app.purchases_migrations import migrate_database as migrate_purchases
 
 
 class BusinessAnalyticsTest(unittest.TestCase):
@@ -110,6 +112,65 @@ class BusinessAnalyticsTest(unittest.TestCase):
         self.assertEqual(result["current"]["units"], 2)
         self.assertIsNone(result["current"]["revenue"])
         self.assertIsNone(result["current"]["average_order"])
+
+    def test_stock_signal_requires_repeat_demand_and_exposes_formula_inputs(self):
+        self.sales.create_sale(
+            {"source": "manual", "created_at": "2026-08-10T12:00:00+03:00"},
+            self.product["id"], 1, 100,
+        )
+        with self.database.connect() as connection:
+            connection.execute("UPDATE catalog_excel_products SET stock=0 WHERE id=?", (self.product["id"],))
+            connection.commit()
+        service = BusinessAnalytics(self.database)
+        isolated = service.context("stock", self.filters(horizon="60"))["rows"][0]
+        self.assertEqual(isolated["recommendation_code"], "insufficient")
+        self.assertEqual((isolated["units_30"], isolated["units_60"], isolated["units_90"]), (1, 1, 1))
+        self.assertTrue(isolated["preliminary"])
+
+        with self.database.connect() as connection:
+            connection.execute("UPDATE catalog_excel_products SET stock=1 WHERE id=?", (self.product["id"],))
+            connection.commit()
+        self.sales.create_sale({"source": "manual", "created_at": "2026-08-20T12:00:00+03:00"}, self.product["id"], 1, 100)
+        repeated = service.context("stock", self.filters(horizon="60"))["rows"][0]
+        self.assertEqual(repeated["recommendation_code"], "urgent")
+        self.assertGreaterEqual(repeated["recommended_quantity"], 1)
+        self.assertIn("2 ед. за 90 дней", repeated["evidence"])
+
+    def test_open_supplier_order_prevents_duplicate_purchase_recommendation(self):
+        purchases_path = Path(self.temporary.name) / "purchases.db"
+        migrate_purchases(purchases_path)
+        store = PurchaseStore(purchases_path)
+        now = "2026-08-20T10:00:00+00:00"
+        with store.connect() as connection:
+            plan_id = connection.execute(
+                "INSERT INTO purchase_plan_items(grouping_key,product_id,product_name,status,created_at,updated_at,updated_by) VALUES(?,?,?,'ordered',?,?,?)",
+                ("product:{}".format(self.product["id"]), self.product["id"], "Test watch", now, now, 1),
+            ).lastrowid
+            order_id = connection.execute(
+                "INSERT INTO supplier_orders(internal_number,supplier_name,created_date,ordered_date,currency,status,created_at,updated_at,created_by,updated_by) VALUES(?,?,?,?,?,'ordered',?,?,?,?)",
+                ("SUP-1", "Supplier", "2026-08-20", "2026-08-20", "RUB", now, now, 1, 1),
+            ).lastrowid
+            connection.execute(
+                "INSERT INTO supplier_order_items(order_id,plan_item_id,quantity,received_quantity,purchase_price,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+                (order_id, plan_id, 5, 1, 10, now, now),
+            )
+            connection.commit()
+        result = BusinessAnalytics(self.database, store).context("stock", self.filters())
+        row = next(item for item in result["rows"] if item["id"] == self.product["id"])
+        self.assertEqual((row["ordered_quantity"], row["recommendation_code"]), (4, "ordered"))
+
+    def test_stock_filters_pagination_and_attention_exclude_zero_stock_without_demand(self):
+        for index in range(55):
+            self.catalog.create_product(
+                name="Inactive demand {}".format(index), article="Z-{}".format(index),
+                brand="Brand Z", category="Watch", stock=0,
+            )
+        service = BusinessAnalytics(self.database)
+        stock = service.context("stock", self.filters(brand="Brand Z", per_page="25"))
+        summary = service.context("summary", self.filters())
+        self.assertEqual((stock["pagination"]["total"], stock["pagination"]["pages"], len(stock["rows"])), (55, 3, 25))
+        self.assertFalse(any(event["type"] == "stockout" for event in summary["attention"]))
+        self.assertIn("formula", summary["metric_registry"]["revenue"])
 
     def test_routes_navigation_fragments_and_csv_are_read_only(self):
         from app import web

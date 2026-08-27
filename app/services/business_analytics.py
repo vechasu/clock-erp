@@ -11,7 +11,9 @@ Metric contract:
 
 from __future__ import print_function
 
+import sqlite3
 from datetime import date, datetime, timedelta
+from urllib.parse import quote
 
 from app.catalog_db import CatalogDatabase
 
@@ -20,6 +22,41 @@ ERP_TIMEZONE_LABEL = "Europe/Moscow (UTC+03:00)"
 LOW_STOCK_DAYS = 14
 MIN_FORECAST_DAYS = 5
 MIN_DECLINE_SALES = 5
+STOCK_HORIZONS = (30, 60, 90)
+STOCK_PAGE_SIZES = (25, 50, 100)
+
+METRIC_REGISTRY = {
+    "revenue": {
+        "label": "Выручка", "source": "Проведённые продажи ERP",
+        "formula": "Σ (цена единицы × проданное количество после возвратов)",
+        "exclusions": "Отменённые, удалённые, архивные продажи и возвращённые единицы",
+        "limitations": "Не показывается, если хотя бы у одной проданной позиции нет цены.",
+    },
+    "sales": {
+        "label": "Продажи", "source": "Проведённые продажи ERP",
+        "formula": "Количество уникальных документов с положительным количеством после возвратов",
+        "exclusions": "Заказы, отменённые, удалённые, архивные и полностью возвращённые продажи",
+        "limitations": "Дата — created_at документа в часовом поясе ERP.",
+    },
+    "units": {
+        "label": "Проданные единицы", "source": "Строки проведённых продаж ERP",
+        "formula": "Σ max(количество − возвращено, 0)",
+        "exclusions": "Единицы из отменённых, удалённых и архивных документов",
+        "limitations": "Количество не заменяется числом строк документа.",
+    },
+    "average_order": {
+        "label": "Средний чек", "source": "Проведённые продажи ERP",
+        "formula": "Выручка ÷ количество продаж",
+        "exclusions": "Те же исключения, что у выручки и продаж",
+        "limitations": "Не рассчитывается при неполных ценах; при отсутствии продаж равен 0.",
+    },
+    "stock_recommendation": {
+        "label": "Рекомендация закупки", "source": "Остатки, продажи ERP и локальный контур закупок",
+        "formula": "max(0, средние продажи за 90 дней × горизонт − остаток − открытый заказ)",
+        "exclusions": "Отменённые заказы поставщика и закрытые клиентские запросы",
+        "limitations": "Lead time и страховой запас не хранятся: количество предварительное, срочность подтверждается спросом.",
+    },
+}
 
 SECTIONS = (
     ("summary", "Сводка"),
@@ -85,6 +122,17 @@ def parse_filters(arguments, today=None):
         start_date, end_date = end_date, start_date
     if (end_date - start_date).days > 730:
         start_date = end_date - timedelta(days=730)
+    def choice(name, allowed, default):
+        value = str(arguments.get(name) or default).strip().casefold()
+        return value if value in allowed else default
+
+    def bounded_int(name, default, allowed=None):
+        try:
+            value = int(arguments.get(name) or default)
+        except (TypeError, ValueError):
+            value = default
+        return value if allowed is None or value in allowed else default
+
     return {
         "from": start_date.isoformat(),
         "to": end_date.isoformat(),
@@ -94,14 +142,25 @@ def parse_filters(arguments, today=None):
         "category": str(arguments.get("category") or "").strip(),
         "model": str(arguments.get("model") or "").strip(),
         "product": str(arguments.get("product") or "").strip(),
+        "q": str(arguments.get("q") or "").strip()[:160],
+        "horizon": bounded_int("horizon", 60, STOCK_HORIZONS),
+        "stock_state": choice("stock_state", {"all", "out", "positive"}, "all"),
+        "recommendation": choice("recommendation", {"all", "urgent", "plan", "ordered", "stale", "enough", "insufficient"}, "all"),
+        "confidence": choice("confidence", {"all", "high", "medium", "low"}, "all"),
+        "sort": choice("sort", {"urgency", "demand", "stock", "age", "name"}, "urgency"),
+        "page": max(1, bounded_int("page", 1)),
+        "per_page": bounded_int("per_page", 50, STOCK_PAGE_SIZES),
+        "signal_type": choice("signal_type", {"all", "stockout", "low_cover", "stale", "sales_decline", "inventory"}, "all"),
+        "urgency": choice("urgency", {"all", "critical", "high", "medium", "low"}, "all"),
     }
 
 
 class BusinessAnalytics(object):
     """Single query layer shared by HTML, drill-down fragments and CSV."""
 
-    def __init__(self, database=None):
+    def __init__(self, database=None, purchase_store=None):
         self.database = database or CatalogDatabase(cache_initialization=True)
+        self.purchase_store = purchase_store
 
     @staticmethod
     def _sale_where(filters, alias="s"):
@@ -224,6 +283,7 @@ class BusinessAnalytics(object):
                 "previous": previous,
                 "changes": {key: _change(current[key], previous[key]) for key in ("revenue", "sales", "units", "average_order")},
                 "timezone": ERP_TIMEZONE_LABEL,
+                "metric_registry": METRIC_REGISTRY,
             }
             if section in ("summary", "sales"):
                 result["daily"] = self._breakdown(connection, filters, "date(s.created_at)", 800)
@@ -246,7 +306,8 @@ class BusinessAnalytics(object):
             elif section == "channels":
                 result["rows"] = self._breakdown(connection, filters, "lower(s.source)", 20)
             elif section == "stock":
-                result["rows"] = self._stock_rows(connection, filters)
+                stock = self._stock_rows(connection, filters)
+                result.update(stock)
             elif section == "inventory":
                 result["rows"] = self._inventory_rows(connection)
             elif section == "orders":
@@ -280,33 +341,141 @@ class BusinessAnalytics(object):
             values,
         ).fetchall()]
 
+    def _purchase_state(self):
+        state = {}
+        if self.purchase_store is None:
+            return state, "Источник закупок не подключён"
+        try:
+            with self.purchase_store.connect() as connection:
+                ordered_rows = connection.execute(
+                    "SELECT p.product_id,COALESCE(SUM(CASE WHEN o.status IN ('ordered','partially_received') "
+                    "THEN i.quantity-i.received_quantity ELSE 0 END),0) ordered_quantity "
+                    "FROM purchase_plan_items p JOIN supplier_order_items i ON i.plan_item_id=p.id "
+                    "JOIN supplier_orders o ON o.id=i.order_id WHERE p.product_id IS NOT NULL GROUP BY p.product_id"
+                ).fetchall()
+                request_rows = connection.execute(
+                    "SELECT p.product_id,COUNT(DISTINCT r.id) customer_requests,COALESCE(SUM(r.quantity),0) requested_quantity "
+                    "FROM purchase_plan_items p JOIN purchase_plan_requests l ON l.plan_item_id=p.id "
+                    "JOIN purchase_requests r ON r.id=l.request_id WHERE p.product_id IS NOT NULL AND r.archived=0 "
+                    "AND r.status NOT IN ('notified','sold','closed') GROUP BY p.product_id"
+                ).fetchall()
+                for row in ordered_rows:
+                    state[int(row["product_id"])] = dict(row)
+                for row in request_rows:
+                    state.setdefault(int(row["product_id"]), {}).update(dict(row))
+            return state, None
+        except (OSError, RuntimeError, sqlite3.Error):
+            return state, "Источник закупок временно недоступен"
+
+    @staticmethod
+    def _stock_classify(item, horizon):
+        units90 = float(item["units_90"] or 0)
+        stock = float(item["stock"] or 0)
+        ordered = float(item.get("ordered_quantity") or 0)
+        requested = float(item.get("requested_quantity") or 0)
+        velocity = units90 / 90.0
+        item["velocity"] = velocity
+        item["days_cover"] = stock / velocity if velocity > 0 else None
+        item["recommended_quantity"] = max(0, int(round(velocity * horizon + requested - stock - ordered)))
+        item["confidence"] = "high" if units90 >= 6 else "medium" if units90 >= 3 else "low"
+        if ordered > 0:
+            code, label = "ordered", "Уже заказано"
+        elif stock <= 0 and (units90 >= 2 or requested > 0):
+            code, label = "urgent", "Заказать срочно"
+        elif velocity > 0 and item["days_cover"] < horizon and units90 >= 3:
+            code, label = "plan", "Включить в план"
+        elif stock > 0 and (not item.get("last_sale") or int(item.get("days_since_sale") or 0) >= 90):
+            code, label = "stale", "Неликвид / проверить"
+        elif units90 >= 3:
+            code, label = "enough", "Запас достаточен"
+        else:
+            code, label = "insufficient", "Недостаточно данных"
+        item["recommendation_code"] = code
+        item["recommendation"] = label
+        item["preliminary"] = True
+        item["evidence"] = "{} ед. за 90 дней; остаток {}; в заказе {}; запросы клиентов {}".format(
+            _number(units90), _number(stock), _number(ordered), int(item.get("customer_requests") or 0)
+        )
+        return item
+
     def _stock_rows(self, connection, filters):
-        sales_filters = dict(filters)
-        where, values = self._sale_where(sales_filters)
+        anchor = _date(filters["to"], date.today())
+        cut30 = (anchor - timedelta(days=29)).isoformat()
+        cut60 = (anchor - timedelta(days=59)).isoformat()
+        cut90 = (anchor - timedelta(days=89)).isoformat()
+        catalog_clauses = ["p.active=1"]
+        valid_sale = "s.cancelled_at IS NULL AND s.deleted_at IS NULL AND s.archived_at IS NULL"
+        if filters["channel"]:
+            valid_sale += " AND lower(s.source)=?"
+        values = []
+        for start in (cut30, cut60, cut90):
+            values.extend([start, anchor.isoformat()])
+            if filters["channel"]:
+                values.append(filters["channel"])
+        if filters["channel"]:
+            values.append(filters["channel"])
+        if filters["brand"]:
+            catalog_clauses.append("coalesce(b.name,p.excel_brand,'')=?")
+            values.append(filters["brand"])
+        if filters["category"]:
+            catalog_clauses.append("coalesce(c.name,p.excel_category,'')=?")
+            values.append(filters["category"])
+        if filters["model"]:
+            catalog_clauses.append("coalesce(m.name,p.model,'')=?")
+            values.append(filters["model"])
+        if filters["product"]:
+            catalog_clauses.append("cast(p.id as text)=?")
+            values.append(filters["product"])
+        if filters["q"]:
+            catalog_clauses.append("(p.excel_name_raw LIKE ? OR coalesce(b.name,p.excel_brand,'') LIKE ? OR coalesce(p.excel_article,'') LIKE ?)")
+            pattern = "%{}%".format(filters["q"])
+            values.extend([pattern, pattern, pattern])
+        if filters["stock_state"] == "out":
+            catalog_clauses.append("p.stock<=0")
+        elif filters["stock_state"] == "positive":
+            catalog_clauses.append("p.stock>0")
         query = (
             "SELECT p.id,p.excel_name_raw name,coalesce(b.name,p.excel_brand,'Без бренда') brand,p.stock,"
-            "coalesce(sum(CASE WHEN " + where + " THEN max(i.quantity-i.returned_quantity,0) ELSE 0 END),0) units "
+            "coalesce(sum(CASE WHEN date(s.created_at) BETWEEN ? AND ? AND " + valid_sale + " THEN max(i.quantity-i.returned_quantity,0) ELSE 0 END),0) units_30,"
+            "coalesce(sum(CASE WHEN date(s.created_at) BETWEEN ? AND ? AND " + valid_sale + " THEN max(i.quantity-i.returned_quantity,0) ELSE 0 END),0) units_60,"
+            "coalesce(sum(CASE WHEN date(s.created_at) BETWEEN ? AND ? AND " + valid_sale + " THEN max(i.quantity-i.returned_quantity,0) ELSE 0 END),0) units_90,"
+            "max(CASE WHEN " + valid_sale + " AND i.quantity-i.returned_quantity>0 THEN s.created_at END) last_sale "
             "FROM catalog_excel_products p LEFT JOIN erp_brands b ON b.id=p.brand_id "
+            "LEFT JOIN erp_categories c ON c.id=p.category_id LEFT JOIN erp_models m ON m.id=p.model_id "
             "LEFT JOIN erp_sale_items i ON i.product_id=p.id LEFT JOIN erp_sales s ON s.id=i.sale_id "
-            "LEFT JOIN erp_categories c ON c.id=coalesce(i.category_id,p.category_id) LEFT JOIN erp_models m ON m.id=p.model_id "
-            "WHERE p.active=1 GROUP BY p.id ORDER BY CASE WHEN p.stock<=0 THEN 0 ELSE 1 END, units DESC LIMIT 200"
+            "WHERE " + " AND ".join(catalog_clauses) + " GROUP BY p.id"
         )
+        purchase_state, purchase_error = self._purchase_state()
         rows = []
         for row in connection.execute(query, values).fetchall():
             item = dict(row)
-            velocity = float(item["units"] or 0) / float(filters["days"] or 1)
-            item["days_cover"] = float(item["stock"] or 0) / velocity if velocity > 0 else None
-            if item["stock"] <= 0 and velocity > 0:
-                item["recommendation"] = "Заказать срочно"
-            elif item["days_cover"] is not None and item["days_cover"] < LOW_STOCK_DAYS:
-                item["recommendation"] = "Заказать"
-            elif velocity == 0:
-                item["recommendation"] = "Пока не заказывать"
-            else:
-                item["recommendation"] = "Запас достаточен"
-            item["recommended_quantity"] = max(0, int(round(velocity * 30 - float(item["stock"] or 0))))
-            rows.append(item)
-        return rows
+            item.update(purchase_state.get(int(item["id"]), {}))
+            item.setdefault("ordered_quantity", 0)
+            item.setdefault("customer_requests", 0)
+            item.setdefault("requested_quantity", 0)
+            item["days_since_sale"] = ((anchor - _date(item["last_sale"], anchor)).days if item["last_sale"] else None)
+            rows.append(self._stock_classify(item, filters["horizon"]))
+        if filters["recommendation"] != "all":
+            rows = [row for row in rows if row["recommendation_code"] == filters["recommendation"]]
+        if filters["confidence"] != "all":
+            rows = [row for row in rows if row["confidence"] == filters["confidence"]]
+        urgency = {"urgent": 0, "plan": 1, "ordered": 2, "stale": 3, "insufficient": 4, "enough": 5}
+        sorters = {
+            "urgency": lambda row: (urgency[row["recommendation_code"]], -float(row["units_90"] or 0), row["name"]),
+            "demand": lambda row: (-float(row["units_90"] or 0), row["name"]),
+            "stock": lambda row: (float(row["stock"] or 0), row["name"]),
+            "age": lambda row: (-(row["days_since_sale"] if row["days_since_sale"] is not None else 100000), row["name"]),
+            "name": lambda row: row["name"],
+        }
+        rows.sort(key=sorters[filters["sort"]])
+        total = len(rows)
+        start = (filters["page"] - 1) * filters["per_page"]
+        return {
+            "rows": rows[start:start + filters["per_page"]], "stock_all_rows": rows,
+            "pagination": {"page": filters["page"], "per_page": filters["per_page"], "total": total,
+                           "pages": max(1, (total + filters["per_page"] - 1) // filters["per_page"])},
+            "purchase_source_error": purchase_error,
+        }
 
     @staticmethod
     def _inventory_rows(connection):
@@ -318,30 +487,84 @@ class BusinessAnalytics(object):
 
     def _attention(self, connection, filters, current, previous):
         events = []
-        out_count = int(connection.execute(
-            "SELECT count(*) FROM catalog_excel_products WHERE active=1 AND stock<=0"
-        ).fetchone()[0])
-        if out_count:
-            events.append({"level": "warning", "title": "Товары закончились", "detail": "{} активных позиций имеют нулевой остаток.".format(out_count), "href": "/app/analytics?section=stock"})
+        stock_result = self._stock_rows(connection, dict(filters, page=1, per_page=100))
+        stock_rows = stock_result["stock_all_rows"]
+        urgent = [row for row in stock_rows if row["recommendation_code"] == "urgent"]
+        low = [row for row in stock_rows if row["recommendation_code"] == "plan"]
+        stale_rows = [row for row in stock_rows if row["recommendation_code"] == "stale"]
+        updated_at = datetime.now().replace(microsecond=0).isoformat()
+        stock_href = "/app/analytics?section=stock&from={}&to={}&channel={}&brand={}&horizon={}".format(
+            filters["from"], filters["to"], quote(filters["channel"]), quote(filters["brand"]), filters["horizon"]
+        )
+        if urgent:
+            events.append({"type": "stockout", "urgency": "critical", "confidence": "high" if any(row["confidence"] == "high" for row in urgent) else "medium",
+                           "title": "Дефицит с подтверждённым спросом", "detail": "{} позиций без остатка имеют повторный спрос или открытые запросы клиентов.".format(len(urgent)),
+                           "evidence": "Сигнал не включает товары без спроса и единичные продажи.", "quantity": sum(row["recommended_quantity"] for row in urgent),
+                           "money_impact": None, "updated_at": updated_at, "href": stock_href + "&recommendation=urgent&sort=urgency"})
+        if low:
+            events.append({"type": "low_cover", "urgency": "high", "confidence": "medium", "title": "Запас ниже горизонта планирования",
+                           "detail": "{} позиций с минимум 3 продажами за 90 дней требуют плановой проверки.".format(len(low)),
+                           "evidence": "Расчёт по горизонту {} дней; lead time и страховой запас не заданы.".format(filters["horizon"]),
+                           "quantity": sum(row["recommended_quantity"] for row in low), "money_impact": None, "updated_at": updated_at,
+                           "href": stock_href + "&recommendation=plan&sort=urgency"})
+        if stale_rows:
+            events.append({"type": "stale", "urgency": "medium", "confidence": "medium", "title": "Остатки без подтверждённого движения",
+                           "detail": "{} позиций в наличии не продавались 90 дней или не имеют истории продаж.".format(len(stale_rows)),
+                           "evidence": "Деньги риска не показаны: подтверждённой себестоимости по партиям нет.", "quantity": sum(float(row["stock"] or 0) for row in stale_rows),
+                           "money_impact": None, "updated_at": updated_at, "href": stock_href + "&recommendation=stale&sort=age"})
         if previous["sales"] >= MIN_DECLINE_SALES and current["sales"] < previous["sales"]:
             change = _change(current["sales"], previous["sales"])
-            events.append({"level": "warning", "title": "Количество продаж снизилось", "detail": "Изменение к равному предыдущему периоду: {}.".format(change["percent_display"]), "href": "/app/analytics?section=sales"})
+            events.append({"type": "sales_decline", "urgency": "medium", "confidence": "high", "title": "Количество продаж снизилось",
+                           "detail": "Изменение к равному предыдущему периоду: {}.".format(change["percent_display"]),
+                           "evidence": "Предыдущий период содержит {} продаж (минимум для сигнала — {}).".format(previous["sales"], MIN_DECLINE_SALES),
+                           "quantity": previous["sales"] - current["sales"], "money_impact": None, "updated_at": updated_at,
+                           "href": "/app/analytics?section=sales&from={}&to={}&channel={}&brand={}".format(filters["from"], filters["to"], quote(filters["channel"]), quote(filters["brand"]))})
+        current_brands = {row["label"]: row for row in self._breakdown(connection, filters, "coalesce(b.name,p.excel_brand,'Без бренда')", 100)}
+        previous_brands = {row["label"]: row for row in self._breakdown(connection, self._comparison_filters(filters), "coalesce(b.name,p.excel_brand,'Без бренда')", 100)}
+        brand_declines = []
+        for label, before in previous_brands.items():
+            after = current_brands.get(label, {"sales": 0, "revenue": None})
+            if before["sales"] >= 3 and after["sales"] < before["sales"]:
+                brand_declines.append((before["sales"] - after["sales"], label, before, after))
+        for difference, label, before, after in sorted(brand_declines, reverse=True)[:3]:
+            events.append({"type": "sales_decline", "urgency": "medium", "confidence": "medium", "title": "Спад продаж бренда: {}".format(label),
+                           "detail": "{} → {} продаж к равному предыдущему периоду.".format(before["sales"], after["sales"]),
+                           "evidence": "Сигнал создаётся только при минимум 3 продажах бренда в базе сравнения.", "quantity": difference,
+                           "money_impact": None, "updated_at": updated_at,
+                           "href": "/app/analytics?section=sales&from={}&to={}&channel={}&brand={}".format(filters["from"], filters["to"], quote(filters["channel"]), quote(label))})
+        inventory = connection.execute(
+            "SELECT count(*) sessions,coalesce(sum(adjusted_positions+missing_positions),0) discrepancies,max(completed_at) updated_at "
+            "FROM erp_inventory_sessions WHERE completed_at IS NOT NULL AND adjusted_positions+missing_positions>0"
+        ).fetchone()
+        if int(inventory["sessions"] or 0) >= 2:
+            events.append({"type": "inventory", "urgency": "high", "confidence": "high", "title": "Повторяющиеся расхождения инвентаризаций",
+                           "detail": "Расхождения зафиксированы в {} завершённых сессиях.".format(inventory["sessions"]),
+                           "evidence": "Суммарно {} скорректированных или отсутствующих позиций.".format(inventory["discrepancies"]),
+                           "quantity": int(inventory["discrepancies"] or 0), "money_impact": None,
+                           "updated_at": inventory["updated_at"] or updated_at, "href": "/app/analytics?section=inventory"})
         stale = connection.execute("SELECT max(finished_at) FROM catalog_sync_runs WHERE status='completed'").fetchone()[0]
         if stale:
             last = _date(stale, date.today())
             if (date.today() - last).days > 2:
-                events.append({"level": "warning", "title": "Каталог Bitrix давно не обновлялся", "detail": "Последняя успешная локальная синхронизация: {}.".format(last.isoformat()), "href": "/app/settings"})
-        return events
+                events.append({"type": "sync", "urgency": "high", "confidence": "high", "title": "Каталог Bitrix давно не обновлялся",
+                               "detail": "Последняя успешная локальная синхронизация: {}.".format(last.isoformat()), "evidence": "Возраст локального снимка превышает 2 дня.",
+                               "quantity": None, "money_impact": None, "updated_at": updated_at, "href": "/app/settings"})
+        if filters["signal_type"] != "all":
+            events = [event for event in events if event["type"] == filters["signal_type"]]
+        if filters["urgency"] != "all":
+            events = [event for event in events if event["urgency"] == filters["urgency"]]
+        order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+        return sorted(events, key=lambda event: (order[event["urgency"]], event["title"]))
 
     def csv_rows(self, context):
         section = context["section"]
         if section == "customers":
             return context.get("customer_analytics", {}).get("top", [])
         if section in ("products", "channels", "stock", "inventory", "orders"):
-            return context.get("rows", [])
+            return context.get("stock_all_rows", []) if section == "stock" else context.get("rows", [])
         if section in ("summary", "sales"):
             return context.get("daily", [])
         return []
 
 
-__all__ = ["BusinessAnalytics", "SECTIONS", "SOURCE_LABELS", "parse_filters"]
+__all__ = ["BusinessAnalytics", "METRIC_REGISTRY", "SECTIONS", "SOURCE_LABELS", "parse_filters"]
