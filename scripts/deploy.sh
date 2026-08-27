@@ -242,7 +242,7 @@ if printf '%s\n' "$changed_files" | grep -Eq \
     '^(app/customer_registry_migrations\.py|app/services/customer_registry\.py|scripts/(customer_registry_schema|backfill_customers)\.py)$'; then
     CUSTOMERS_MIGRATION_REQUIRED=1
     customer_rebuild_version="$(sqlite3 instance/customers.db "SELECT value FROM registry_meta WHERE key='identity_rebuild_version';" 2>/dev/null || true)"
-    if [[ "$customer_rebuild_version" != "safe-identity-v1" ]]; then
+    if [[ "$customer_rebuild_version" != "safe-identity-v2" ]]; then
         CUSTOMERS_REBUILD_REQUIRED=1
     fi
 fi

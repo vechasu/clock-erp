@@ -187,20 +187,33 @@ class CustomerRegistry:
             if related_ids:
                 candidates = related_ids
                 matched_by = "related_order"
-            elif external_ids:
-                candidates = external_ids
-                matched_by = "external_id"
             elif phone_ids and email_ids and phone_ids != email_ids:
                 candidates = set()
                 reason = "phone_email_cross_conflict"
                 matched_by = "conflict"
+            elif len(external_ids & (phone_ids | email_ids)) == 1:
+                candidates = external_ids & (phone_ids | email_ids)
+                matched_by = "external_id_and_contact"
             elif len(phone_ids) > 1 or len(email_ids) > 1:
                 candidates = set()
                 reason = "ambiguous_contact"
                 matched_by = "conflict"
-            else:
+            elif phone_ids or email_ids:
                 candidates = phone_ids or email_ids
                 matched_by = "phone" if phone_ids else "email" if email_ids else "operation_identity"
+            elif external_ids and not (phone or email):
+                candidates = external_ids
+                matched_by = "external_id"
+            elif external_ids:
+                # Bitrix user IDs are not always personal: guest/shared accounts
+                # can own orders with hundreds of unrelated contacts.  A source
+                # ID may corroborate a contact match, but must never override it.
+                candidates = set()
+                reason = "external_id_contact_conflict"
+                matched_by = "conflict"
+            else:
+                candidates = set()
+                matched_by = "operation_identity"
             if len(candidates) == 1:
                 customer_id = next(iter(candidates))
                 action = "matched"
