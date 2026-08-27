@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/erp-components.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-combobox.css', v='catalog-combobox-20260824-product-hierarchy-category-assignment') }}">
     <script defer src="{{ url_for('static', filename='js/catalog-combobox.js', v='catalog-combobox-20260824-product-hierarchy-category-assignment') }}"></script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/orders.css', v='orders-list-filters-v4') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/orders.css', v='orders-sale-dialog-v1') }}">
 </head>
 <body class="orders-page" data-has-selected-order="{{ 1 if selected_order_explicit|default(false) else 0 }}">
 {% from "_catalog_combobox.html" import render_catalog_combobox %}
@@ -262,8 +262,25 @@
     <div class="sale-dialog">
         <div class="sale-dialog-head"><div><h2 id="orderSaleTitle">Провести продажу</h2><p class="card-subtitle">Заказ №{{ detail_number }} · Tictactoy</p></div><button class="button button-secondary" type="button" data-close-sale-dialog aria-label="Закрыть">×</button></div>
         <form method="post" action="/order/{{ detail_id }}/stock-writeoff" data-order-sale-form data-erp-pending data-pending-label="Проводим продажу…"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <div class="sale-dialog-body">{% if request.args.get('notice') == 'error' and request.args.get('message') %}<div class="notice notice-error" role="alert">{{ request.args.get('message') }}</div>{% endif %}<p>Проверьте позиции и географию перед сохранением в разделе «Продажи».</p><div class="customer-grid" style="margin-top:12px"><div class="order-sale-location-field"><label for="orderSaleCountryTrigger">Страна</label>{{ render_catalog_combobox('orderSaleCountry','country',order_country_options,selected_value=order_geography.country or '',item_label='страну',prefix_search=true,empty_label='Страна не найдена',component_class='filter-combobox',clear_selection_on_search_clear=true) }}</div><div class="order-sale-location-field"><label for="orderSaleRegionTrigger">Регион</label>{{ render_catalog_combobox('orderSaleRegion','region',[],selected_value=order_geography.region or '',item_label='регион',disabled=not order_geography.country,prefix_search=true,empty_label='Регион не найден',component_class='filter-combobox',clear_selection_on_search_clear=true) }}</div><div class="order-sale-location-field"><label for="orderSaleCityTrigger">Город / населённый пункт</label>{{ render_catalog_combobox('orderSaleCity','city',[],selected_value=order_geography.city or '',item_label='город',disabled=not order_geography.region,prefix_search=true,empty_label='Город не найден',component_class='filter-combobox',clear_selection_on_search_clear=true) }}</div></div><ul class="sale-lines">{% for product in detail_products %}<li>{{ product.get('name') or product.get('NAME') }} · {{ product.get('quantity') or 1 }} шт.<input type="hidden" name="original_price_{{ loop.index0 }}" value="{{ product.get('base_price') or product.get('price') or '' }}"><input type="hidden" name="discount_type_{{ loop.index0 }}" value="none"><input type="hidden" name="discount_value_{{ loop.index0 }}" value="0"><input type="hidden" name="discount_reason_{{ loop.index0 }}" value=""></li>{% endfor %}</ul><label>Трекинг<input class="field" style="width:100%;margin-top:5px" name="tracking" maxlength="255" value="{{ order_tracking or '' }}" placeholder="Введите номер отправления" data-order-sale-tracking></label><div class="warning" style="margin-top:12px">Продажа создаётся атомарно с источником Tictactoy. Повторный запрос не создаст дубль и не спишет остаток повторно.</div></div>
-            <div class="sale-dialog-actions"><button class="button button-secondary" type="button" data-close-sale-dialog>Отмена</button><button class="button button-primary" type="submit" data-sale-submit>Провести продажу</button></div>
+            <div class="sale-dialog-body">
+                {% if request.args.get('notice') == 'error' and request.args.get('message') %}<div class="notice notice-error" role="alert">{{ request.args.get('message') }}</div>{% endif %}
+                <section class="sale-dialog-section" aria-labelledby="orderSaleLinesTitle">
+                    <h3 id="orderSaleLinesTitle">Позиции заказа</h3>
+                    <div class="sale-order-lines-wrap">
+                        <table class="sale-order-lines">
+                            <thead><tr><th scope="col">Товар</th><th scope="col">Количество</th><th scope="col">Цена</th><th scope="col">Сумма</th></tr></thead>
+                            <tbody>{% for item in order_sale_dialog_summary.lines %}<tr><td data-label="Товар"><strong>{{ item.name }}</strong><small>Артикул: {{ item.article or '—' }}</small></td><td data-label="Количество">{{ item.quantity_display }} шт.</td><td data-label="Цена"><span class="money-value" data-amount="{{ item.unit_price }}"></span> ₽</td><td data-label="Сумма"><strong><span class="money-value" data-amount="{{ item.line_total }}"></span> ₽</strong>{% set product = detail_products[loop.index0] %}<input type="hidden" name="original_price_{{ loop.index0 }}" value="{{ product.get('base_price') or product.get('price') or '' }}"><input type="hidden" name="discount_type_{{ loop.index0 }}" value="none"><input type="hidden" name="discount_value_{{ loop.index0 }}" value="0"><input type="hidden" name="discount_reason_{{ loop.index0 }}" value=""></td></tr>{% endfor %}</tbody>
+                        </table>
+                    </div>
+                </section>
+                <section class="sale-dialog-section" aria-labelledby="orderSaleLocationTitle">
+                    <h3 id="orderSaleLocationTitle">География</h3>
+                    <div class="sale-location-grid"><div class="order-sale-location-field"><label for="orderSaleCountryTrigger">Страна</label>{{ render_catalog_combobox('orderSaleCountry','country',order_country_options,selected_value=order_geography.country or '',item_label='страну',prefix_search=true,empty_label='Страна не найдена',component_class='filter-combobox',clear_selection_on_search_clear=true) }}</div><div class="order-sale-location-field"><label for="orderSaleRegionTrigger">Регион</label>{{ render_catalog_combobox('orderSaleRegion','region',[],selected_value=order_geography.region or '',item_label='регион',disabled=not order_geography.country,prefix_search=true,empty_label='Регион не найден',component_class='filter-combobox',clear_selection_on_search_clear=true) }}</div><div class="order-sale-location-field"><label for="orderSaleCityTrigger">Город</label>{{ render_catalog_combobox('orderSaleCity','city',[],selected_value=order_geography.city or '',item_label='город',disabled=not order_geography.region,prefix_search=true,empty_label='Город не найден',component_class='filter-combobox',clear_selection_on_search_clear=true) }}</div></div>
+                </section>
+                <div class="sale-tracking-field"><label for="orderSaleTracking">Трекинг</label><input class="field" id="orderSaleTracking" name="tracking" maxlength="255" value="{{ order_tracking or '' }}" placeholder="Введите номер отправления" data-order-sale-tracking></div>
+                <div class="sale-dialog-info">После проведения продажа появится в разделе «Продажи», а остатки товаров спишутся.</div>
+            </div>
+            <div class="sale-dialog-actions"><div class="sale-dialog-total">К списанию: <strong>{{ order_sale_dialog_summary.quantity_display }} шт.</strong> · Итого: <strong><span class="money-value" data-amount="{{ order_sale_dialog_summary.total_amount }}"></span> ₽</strong></div><div class="sale-dialog-buttons"><button class="button button-secondary" type="button" data-close-sale-dialog>Отмена</button><button class="button button-primary" type="submit" data-sale-submit>Провести продажу</button></div></div>
         </form>
     </div>
 </div>
@@ -437,13 +454,15 @@
         regionBox?.addEventListener('catalog-combobox:change',()=>updateCities(''));
     }
     document.addEventListener('DOMContentLoaded',initializeOrderSaleLocations,{once:true});
-    const open=()=>{modal.classList.add('is-open');modal.setAttribute('aria-hidden','false');modal.querySelector('[data-close-sale-dialog]')?.focus();};
-    const close=()=>{modal.classList.remove('is-open');modal.setAttribute('aria-hidden','true');};
-    document.querySelector('[data-order-sale-action]')?.addEventListener('click',event=>{if(event.currentTarget.hasAttribute('data-open-sale-dialog')){open();return;}const reason=document.getElementById('saleBlockReason')||document.querySelector('[data-order-readiness-warning]');reason?.scrollIntoView({behavior:'smooth',block:'center'});reason?.focus();});
+    const saleAction=document.querySelector('[data-order-sale-action]'); let saleDialogReturnFocus=null;
+    const focusableElements=()=>Array.from(modal.querySelectorAll('button:not([disabled]),input:not([type="hidden"]):not([disabled]),[href],[tabindex]:not([tabindex="-1"])')).filter(element=>!element.hidden&&element.getAttribute('aria-hidden')!=='true');
+    const open=()=>{saleDialogReturnFocus=document.activeElement;modal.classList.add('is-open');document.body.classList.add('has-open-sale-dialog');modal.setAttribute('aria-hidden','false');modal.querySelector('[data-close-sale-dialog]')?.focus();};
+    const close=()=>{modal.classList.remove('is-open');document.body.classList.remove('has-open-sale-dialog');modal.setAttribute('aria-hidden','true');saleDialogReturnFocus?.focus();};
+    saleAction?.addEventListener('click',event=>{if(event.currentTarget.hasAttribute('data-open-sale-dialog')){open();return;}const reason=document.getElementById('saleBlockReason')||document.querySelector('[data-order-readiness-warning]');reason?.scrollIntoView({behavior:'smooth',block:'center'});reason?.focus();});
     modal.querySelectorAll('[data-close-sale-dialog]').forEach(button=>button.addEventListener('click',close));
     modal.addEventListener('click',event=>{if(event.target===modal)close();});
-    document.addEventListener('keydown',event=>{if(event.key==='Escape'&&modal.classList.contains('is-open'))close();});
-    modal.querySelector('[data-order-sale-form]')?.addEventListener('submit',event=>{if(!setPending(event.currentTarget,'Проводим продажу…'))event.preventDefault();});
+    document.addEventListener('keydown',event=>{if(!modal.classList.contains('is-open'))return;if(event.key==='Escape'){event.preventDefault();close();return;}if(event.key==='Tab'){const focusable=focusableElements();if(!focusable.length){event.preventDefault();return;}const first=focusable[0];const last=focusable[focusable.length-1];if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}}});
+    modal.querySelector('[data-order-sale-form]')?.addEventListener('submit',event=>{if(!setPending(event.currentTarget,'Проводим…'))event.preventDefault();});
     if(modal.dataset.autoOpen==='1')open();
 })();
 </script>
