@@ -6962,13 +6962,7 @@
                 warehouseSearchInput.value = query;
                 syncWarehouseSearchClear();
             }
-            document.querySelectorAll(".warehouse-availability-segment").forEach(
-                function(button) {
-                    const active = button.value === (state?.stock_state || "all");
-                    button.classList.toggle("is-active", active);
-                    button.setAttribute("aria-pressed", String(active));
-                }
-            );
+            syncWarehouseStockStateControls(state?.stock_state || "all");
             const stockSelect = document.querySelector(
                 ".warehouse-availability-select select"
             );
@@ -6977,6 +6971,16 @@
             if (mobileSort) mobileSort.value = state?.sort_by || "created_at";
             renderWarehouseActiveFilters(state || {});
             warehouseRenderedQuery = normalizeWarehouseSearchValue(query);
+        }
+
+        function syncWarehouseStockStateControls(stockState) {
+            document.querySelectorAll(".warehouse-availability-segment").forEach(
+                function(button) {
+                    const active = button.value === stockState;
+                    button.classList.toggle("is-active", active);
+                    button.setAttribute("aria-pressed", String(active));
+                }
+            );
         }
 
         function renderWarehouseActiveFilters(state) {
@@ -7159,6 +7163,7 @@
         }
 
         function submitWarehouseStockState(stockState) {
+            syncWarehouseStockStateControls(stockState);
             const url = new URL(window.location.href);
             url.searchParams.delete("view");
             if (stockState === "all") {
@@ -7363,7 +7368,11 @@
         }, true);
 
         window.addEventListener("popstate", function() {
-            loadWarehouseResultsUrl(new URL(window.location.href), {
+            const url = new URL(window.location.href);
+            syncWarehouseStockStateControls(
+                url.searchParams.get("stock_state") || "all"
+            );
+            loadWarehouseResultsUrl(url, {
                 history: "none"
             });
         });

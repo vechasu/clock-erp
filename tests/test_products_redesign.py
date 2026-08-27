@@ -115,10 +115,10 @@ class ProductsRedesignStructureTest(unittest.TestCase):
             1,
         )
         self.assertIn(
-            'window.addEventListener("popstate", function() {\n'
-            "            loadWarehouseResultsUrl",
+            'window.addEventListener("popstate", function()',
             products,
         )
+        self.assertIn("loadWarehouseResultsUrl(url", products)
 
     def test_products_tab_uses_automatic_content_versioning_on_full_pages(self):
         for name in (
