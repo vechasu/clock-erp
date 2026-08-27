@@ -33,7 +33,7 @@ class ProductsRedesignStructureTest(unittest.TestCase):
         self.assertNotIn("Экспортировать найденные", workspace)
         self.assertNotIn("Экспортировать все товары", workspace)
         self.assertIn('name="stock_state"', source)
-        self.assertIn(">Инвентаризация</a>", workspace)
+        self.assertNotIn(">Инвентаризация</a>", workspace)
         self.assertIn("+ Добавить товар", workspace)
         self.assertNotIn("Только в наличии", source)
 
