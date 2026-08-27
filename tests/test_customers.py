@@ -362,7 +362,7 @@ class CustomerRoutesTest(unittest.TestCase):
         tasks_path = Path(os.environ["ERP_TASKS_DATABASE"])
         with sqlite3.connect(str(tasks_path)) as connection:
             cursor = connection.execute(
-                "INSERT INTO tasks(title,status,author_id,assignee_id,created_at,updated_at) VALUES(?, 'new', 1, 1, '2026-08-28', '2026-08-28')",
+                "INSERT INTO tasks(title,status,author_id,assignee_id,due_date,created_at,updated_at) VALUES(?, 'new', 1, 1, '2020-01-01', '2026-08-28', '2026-08-28')",
                 ("Связаться с клиентом",),
             )
             connection.execute(
@@ -372,6 +372,9 @@ class CustomerRoutesTest(unittest.TestCase):
         tasks_tab = self.client.get("/app/customers/{}?tab=tasks".format(customer_id))
         self.assertEqual(tasks_tab.status_code, 200)
         self.assertIn("Связаться с клиентом", tasks_tab.get_data(as_text=True))
+        attention = self.client.get("/app/customers?segment=attention")
+        self.assertEqual(attention.status_code, 200)
+        self.assertIn("Иван Иванов", attention.get_data(as_text=True))
 
     def test_customer_routes_follow_global_auth_protection(self):
         with mock.patch.dict("os.environ", {"ERP_AUTH_ENABLED": "1"}, clear=False), mock.patch.dict(

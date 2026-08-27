@@ -1229,7 +1229,9 @@ def customers_page():
     try:
         with _tasks_store().connect() as connection:
             attention_ids = [int(item[0]) for item in connection.execute(
-                "SELECT DISTINCT entity_id FROM tasks WHERE entity_type='customer' AND status='active' AND due_date IS NOT NULL AND due_date<date('now') AND entity_id GLOB '[0-9]*'"
+                "SELECT DISTINCT l.entity_id FROM tasks t JOIN task_links l ON l.task_id=t.id "
+                "WHERE l.entity_type='customer' AND t.status IN ('new','in_progress','waiting') "
+                "AND t.due_date IS NOT NULL AND t.due_date<date('now') AND l.entity_id GLOB '[0-9]*'"
             ).fetchall()]
     except (OSError, sqlite3.Error, RuntimeError):
         pass
