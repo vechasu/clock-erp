@@ -7,7 +7,12 @@
         if (options.method && options.method !== "GET") headers["X-CSRF-Token"] = config.csrf || "";
         const response = await fetch(url, { ...options, headers });
         const payload = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(payload.error?.message || payload.message || "Не удалось выполнить действие.");
+        if (!response.ok) {
+            const error = new Error(payload.error?.message || payload.message || "Не удалось выполнить действие.");
+            error.field = payload.error?.field || "";
+            error.status = response.status;
+            throw error;
+        }
         return payload;
     }
     function notify(message, failed = false) {
@@ -36,26 +41,47 @@
         [...modes].forEach((radio) => radio.addEventListener("change", updateMode)); updateMode();
         function attachSearch(input, results, endpoint, select) {
             input.addEventListener("input", pause(async () => {
+                if (input.value !== input.dataset.selectedLabel) select.clear();
                 const query = input.value.trim(); results.replaceChildren(); if (query.length < 2) return;
                 try { const payload = await api(`${endpoint}?q=${encodeURIComponent(query)}`); payload.items.forEach((item) => { const button = document.createElement("button"); button.type = "button"; button.textContent = select.label(item); button.addEventListener("click", () => { select.choose(item); results.replaceChildren(); }); results.append(button); }); }
                 catch (error) { notify(error.message, true); }
             }));
         }
-        attachSearch(document.getElementById("customerSearch"), document.getElementById("customerResults"), "/api/v1/purchases/customers", { label: (item) => `${item.name || "Без имени"} · ${item.phone || item.email || "без контакта"}`, choose: (item) => { requestForm.elements.customer_id.value = item.id; document.getElementById("customerSearch").value = `${item.name} · ${item.phone || item.email || ""}`; } });
-        attachSearch(document.getElementById("productSearch"), document.getElementById("productResults"), "/api/v1/purchases/products", { label: (item) => `${item.brand || ""} ${item.model || item.product_name} · ${item.article || "без артикула"}`, choose: (item) => { requestForm.elements.product_id.value = item.id; document.getElementById("productSearch").value = `${item.brand || ""} ${item.model || item.product_name}`; } });
+        attachSearch(document.getElementById("customerSearch"), document.getElementById("customerResults"), "/api/v1/purchases/customers", { label: (item) => `${item.name || "Без имени"} · ${item.phone || item.email || "без контакта"}`, choose: (item) => { const input = document.getElementById("customerSearch"); requestForm.elements.customer_id.value = item.id; input.value = `${item.name} · ${item.phone || item.email || ""}`; input.dataset.selectedLabel = input.value; }, clear: () => { requestForm.elements.customer_id.value = ""; } });
+        attachSearch(document.getElementById("productSearch"), document.getElementById("productResults"), "/api/v1/purchases/products", { label: (item) => `${item.brand || ""} ${item.model || item.product_name} · ${item.article || "без артикула"}`, choose: (item) => { const input = document.getElementById("productSearch"); requestForm.elements.product_id.value = item.id; input.value = `${item.brand || ""} ${item.model || item.product_name}`; input.dataset.selectedLabel = input.value; }, clear: () => { requestForm.elements.product_id.value = ""; } });
         document.getElementById("quickCustomer").addEventListener("click", async () => {
             const name = prompt("Имя клиента"); if (!name) return; const phone = prompt("Телефон (можно оставить пустым)") || ""; const email = prompt("Email (можно оставить пустым)") || "";
-            try { const payload = await api("/api/v1/purchases/customers", { method: "POST", body: JSON.stringify({ name, phone, email }) }); requestForm.elements.customer_id.value = payload.customer.id; document.getElementById("customerSearch").value = `${payload.customer.name} · ${payload.customer.phone || payload.customer.email || ""}`; notify(payload.created ? "Клиент создан." : "Найден существующий клиент."); }
+            try { const payload = await api("/api/v1/purchases/customers", { method: "POST", body: JSON.stringify({ name, phone, email }) }); const input = document.getElementById("customerSearch"); requestForm.elements.customer_id.value = payload.customer.id; input.value = `${payload.customer.name} · ${payload.customer.phone || payload.customer.email || ""}`; input.dataset.selectedLabel = input.value; notify(payload.created ? "Клиент создан." : "Найден существующий клиент."); }
             catch (error) { notify(error.message, true); }
         });
         requestForm.addEventListener("submit", async (event) => {
             event.preventDefault(); if (!requestForm.reportValidity()) return;
+            if (requestForm.dataset.submitting === "1") return;
+            requestForm.querySelectorAll("[data-field-error]").forEach((element) => { element.textContent = ""; });
+            requestForm.querySelector(".form-error").textContent = "";
             const data = Object.fromEntries(new FormData(requestForm)); delete data.product_mode;
-            if (!data.customer_id) return notify("Выберите клиента из результатов поиска.", true);
-            if (modes.value === "existing" && !data.product_id) return notify("Выберите товар из результатов поиска.", true);
-            data.product_name = data.model || document.getElementById("productSearch").value;
+            data.product_name = modes.value === "unknown" ? (data.model || "") : "";
+            const hasProduct = Boolean(data.product_id || data.product_name || data.brand || data.model || data.article || data.product_url || data.description);
+            if (!hasProduct && !data.customer_comment.trim()) {
+                const message = "Укажите товар или заполните комментарий клиента.";
+                requestForm.querySelector('[data-field-error="product_or_comment"]').textContent = message;
+                requestForm.querySelector('[data-field-error="customer_comment"]').textContent = message;
+                return;
+            }
+            if (!requestForm.dataset.requestKey) {
+                requestForm.dataset.requestKey = window.crypto?.randomUUID?.() || `purchase-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+            }
+            data.request_key = requestForm.dataset.requestKey;
+            const submit = requestForm.querySelector('button[type="submit"]');
+            requestForm.dataset.submitting = "1"; submit.disabled = true;
             try { await api("/api/v1/purchases/requests", { method: "POST", body: JSON.stringify(data) }); requestForm.closest("dialog").close(); notify("Запрос создан."); reload("requests"); }
-            catch (error) { requestForm.querySelector(".form-error").textContent = error.message; }
+            catch (error) {
+                const field = requestForm.querySelector(`[data-field-error="${error.field}"]`);
+                if (field) field.textContent = error.message;
+                requestForm.querySelector(".form-error").textContent = error.message;
+            } finally {
+                requestForm.dataset.submitting = "0"; submit.disabled = false;
+            }
         });
     }
     document.querySelectorAll("[data-plan-request]").forEach((button) => button.addEventListener("click", async () => { button.disabled = true; try { await api(`/api/v1/purchases/requests/${button.dataset.planRequest}/plan`, { method: "POST", body: "{}" }); notify("Запрос добавлен в план."); reload("plan"); } catch (error) { notify(error.message, true); button.disabled = false; } }));

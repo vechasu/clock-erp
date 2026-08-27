@@ -7,21 +7,23 @@ import sqlite3
 from pathlib import Path
 
 
-SCHEMA_VERSION = "2026-08-27-purchases-v1"
+SCHEMA_VERSION = "2026-08-27-purchases-v2"
+LEGACY_SCHEMA_VERSION = "2026-08-27-purchases-v1"
+LEGACY_SCHEMA_CHECKSUM = "ff842f7c19ae173e5cce59df3737e8cd261ae869412711bff52287e6ad7e031b"
 
 TABLES = (
     "CREATE TABLE purchase_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
     """CREATE TABLE purchase_requests (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        customer_id INTEGER NOT NULL,
+        customer_id INTEGER,
         product_id INTEGER,
-        product_name TEXT NOT NULL DEFAULT '',
-        brand TEXT NOT NULL DEFAULT '',
-        model TEXT NOT NULL DEFAULT '',
-        article TEXT NOT NULL DEFAULT '',
-        product_url TEXT NOT NULL DEFAULT '',
-        image_url TEXT NOT NULL DEFAULT '',
-        description TEXT NOT NULL DEFAULT '',
+        product_name TEXT,
+        brand TEXT,
+        model TEXT,
+        article TEXT,
+        product_url TEXT,
+        image_url TEXT,
+        description TEXT,
         quantity INTEGER NOT NULL DEFAULT 1 CHECK(quantity > 0),
         target_price REAL CHECK(target_price IS NULL OR target_price >= 0),
         channel TEXT NOT NULL CHECK(channel IN
@@ -37,7 +39,12 @@ TABLES = (
         updated_at TEXT NOT NULL,
         created_by INTEGER NOT NULL,
         updated_by INTEGER NOT NULL,
-        CHECK(product_id IS NOT NULL OR length(trim(product_name || brand || model || description)) > 0)
+        request_key TEXT,
+        CHECK(product_id IS NOT NULL OR length(trim(
+            COALESCE(product_name,'') || COALESCE(brand,'') || COALESCE(model,'') ||
+            COALESCE(article,'') || COALESCE(product_url,'') || COALESCE(description,'') ||
+            COALESCE(customer_comment,'')
+        )) > 0)
     )""",
     """CREATE TABLE purchase_request_history (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -121,6 +128,7 @@ INDEXES = (
     "CREATE INDEX idx_purchase_requests_brand ON purchase_requests(brand,status)",
     "CREATE INDEX idx_purchase_requests_channel ON purchase_requests(channel,status)",
     "CREATE INDEX idx_purchase_requests_valid ON purchase_requests(valid_until,status)",
+    "CREATE UNIQUE INDEX idx_purchase_requests_request_key ON purchase_requests(request_key)",
     "CREATE INDEX idx_purchase_history_request ON purchase_request_history(request_id,created_at,id)",
     "CREATE INDEX idx_purchase_plan_status ON purchase_plan_items(status,updated_at,id)",
     "CREATE INDEX idx_supplier_orders_status ON supplier_orders(status,created_at,id)",
@@ -168,19 +176,54 @@ def migrate_database(path):
     path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(str(path), timeout=30)
     try:
-        connection.execute("PRAGMA foreign_keys=ON")
-        connection.execute("BEGIN IMMEDIATE")
         existing = _tables(connection)
-        if existing:
-            connection.rollback()
-            return verify_database(path)
-        for statement in TABLES + INDEXES:
-            connection.execute(statement)
-        connection.executemany(
-            "INSERT INTO purchase_meta(key,value) VALUES(?,?)",
-            (("schema_version", SCHEMA_VERSION), ("schema_checksum", SCHEMA_CHECKSUM)),
-        )
-        connection.commit()
+        if not existing:
+            connection.execute("PRAGMA foreign_keys=ON")
+            connection.execute("BEGIN IMMEDIATE")
+            for statement in TABLES + INDEXES:
+                connection.execute(statement)
+            connection.executemany(
+                "INSERT INTO purchase_meta(key,value) VALUES(?,?)",
+                (("schema_version", SCHEMA_VERSION), ("schema_checksum", SCHEMA_CHECKSUM)),
+            )
+            connection.commit()
+        else:
+            meta = dict(connection.execute("SELECT key,value FROM purchase_meta"))
+            if (meta.get("schema_version"), meta.get("schema_checksum")) == (
+                    SCHEMA_VERSION, SCHEMA_CHECKSUM):
+                return verify_database(path)
+            if (meta.get("schema_version"), meta.get("schema_checksum")) != (
+                    LEGACY_SCHEMA_VERSION, LEGACY_SCHEMA_CHECKSUM):
+                raise RuntimeError("purchases schema version mismatch")
+            if connection.execute("PRAGMA foreign_key_check").fetchall():
+                raise RuntimeError("purchases foreign key check failed before migration")
+            connection.execute("PRAGMA foreign_keys=OFF")
+            # On modern SQLite this preserves child-table references to the final
+            # purchase_requests name; SQLite 3.7 safely ignores the unknown pragma.
+            connection.execute("PRAGMA legacy_alter_table=ON")
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute("ALTER TABLE purchase_requests RENAME TO purchase_requests_v1")
+            connection.execute(TABLES[1])
+            columns = (
+                "id,customer_id,product_id,product_name,brand,model,article,product_url,"
+                "image_url,description,quantity,target_price,channel,requested_at,valid_until,"
+                "customer_comment,internal_note,status,archived,created_at,updated_at,created_by,updated_by"
+            )
+            connection.execute(
+                "INSERT INTO purchase_requests({0}) SELECT {0} FROM purchase_requests_v1".format(columns)
+            )
+            connection.execute("DROP TABLE purchase_requests_v1")
+            for statement in INDEXES:
+                if "purchase_requests" in statement:
+                    connection.execute(statement)
+            connection.execute(
+                "UPDATE purchase_meta SET value=? WHERE key='schema_version'", (SCHEMA_VERSION,)
+            )
+            connection.execute(
+                "UPDATE purchase_meta SET value=? WHERE key='schema_checksum'", (SCHEMA_CHECKSUM,)
+            )
+            connection.commit()
+            connection.execute("PRAGMA legacy_alter_table=OFF")
     except Exception:
         connection.rollback()
         raise
