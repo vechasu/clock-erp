@@ -232,7 +232,7 @@ class CanonicalCustomerRegistryTest(unittest.TestCase):
         customer = self.registry.get(phone_customer["customer_id"])
         self.assertEqual(customer["name"], "Полное имя")
         self.assertEqual(customer["cancelled_orders_count"], 1)
-        self.assertEqual(customer["total_completed_amount"], 100)
+        self.assertEqual(customer["total_completed_amount"], 0)
 
     def test_more_than_100_server_paginated_customers_and_global_search(self):
         for index in range(1, 126):
@@ -244,6 +244,47 @@ class CanonicalCustomerRegistryTest(unittest.TestCase):
         self.assertEqual(len(first["rows"]), 50)
         self.assertEqual(len(third["rows"]), 25)
         self.assertEqual(search["total"], 1)
+
+    def test_quality_counters_segments_merge_unmerge_and_candidates(self):
+        first = self.add(201, name="Первый", phone="+7 900 100-00-01", city="4334")
+        second = self.add(202, name="Второй", phone="+7 900 100-00-02", email="One@EXAMPLE.RU")
+        third = self.add(203, name="Третий", phone="+7 900 100-00-03", email="Two@example.ru")
+        with self.registry.connection() as connection:
+            connection.execute(
+                "INSERT INTO customer_contacts(customer_id,kind,normalized_value,display_value,source,masked,created_at,updated_at) VALUES(?, 'email', 'one@example.ru', 'One@example.ru', 'legacy', 0, '2026-01-01', '2026-01-01')",
+                (third["customer_id"],),
+            )
+        with self.registry.connection() as connection:
+            self.registry.upsert_operation(connection, {
+                "operation_type": "sale", "source": "erp", "external_id": "s1",
+                "related_order_source": "tictactoy", "related_order_id": "201",
+                "occurred_at": "2026-08-20", "completed": True, "amount": 12500,
+            })
+            self.registry.upsert_operation(connection, {
+                "operation_type": "sale", "source": "erp", "external_id": "s2",
+                "related_order_source": "tictactoy", "related_order_id": "201",
+                "occurred_at": "2099-12-31", "completed": True, "amount": 2500,
+            })
+            self.registry.recompute(connection)
+        customer = self.registry.get(first["customer_id"])
+        self.assertEqual(customer["city_display"], "Не указан")
+        self.assertEqual(customer["sales_count"], 2)
+        self.assertEqual(customer["sales_amount"], 15000)
+        self.assertEqual(customer["last_operation_at"][:10], "2026-08-20")
+        self.assertIn("Повторный", customer["segments"])
+        analytics = self.registry.analytics(source="erp")
+        self.assertEqual(analytics["buyers"], 1)
+        self.assertEqual(analytics["revenue"], 15000)
+        candidates = self.registry.duplicate_candidates(second["customer_id"])
+        self.assertTrue(any(item["right_customer_id"] == third["customer_id"] for item in candidates))
+        audit, created = self.registry.merge(second["customer_id"], third["customer_id"], "1", "test-merge")
+        self.assertTrue(created)
+        self.assertIsNotNone(self.registry.get(third["customer_id"])["merged_into_id"])
+        repeated, repeated_created = self.registry.merge(second["customer_id"], third["customer_id"], "1", "test-merge")
+        self.assertFalse(repeated_created)
+        self.assertEqual(repeated["id"], audit["id"])
+        self.registry.unmerge(audit["id"], "1")
+        self.assertIsNone(self.registry.get(third["customer_id"])["merged_into_id"])
 
 
 class CustomerRoutesTest(unittest.TestCase):
