@@ -10,7 +10,9 @@ import time
 import copy
 import base64
 import binascii
+import csv
 import hashlib
+import io
 import json
 import math
 import os
@@ -113,6 +115,7 @@ from app.services.sale_pricing import (
     calculate_sale_pricing,
     order_line_pricing,
 )
+from app.services.business_analytics import BusinessAnalytics, parse_filters
 from app.services.brand_inventory import (
     BrandInventory,
     InventoryError,
@@ -242,7 +245,7 @@ LEGACY_FRONTEND_REDIRECTS = {
     "/stock-operations": "/app/products",
     "/repair": "/app/repairs",
     "/catalog": "/app/products",
-    "/analytics": "/app/sales",
+    "/analytics": "/app/analytics",
     "/receipt": "/app/receipts",
 }
 
@@ -15652,7 +15655,7 @@ def build_analytics_data(
 
 
 @app.route("/analytics")
-def analytics_page():
+def legacy_analytics_page():
     analytics = build_analytics_data(
         sales_records=build_sales_report_records(),
         receipts=load_receipts(),
@@ -15663,6 +15666,48 @@ def analytics_page():
     return render_template(
         "analytics.html",
         analytics=analytics,
+    )
+
+
+def _analytics_context(section=None):
+    filters = parse_filters(request.args)
+    return BusinessAnalytics().context(
+        section or (request.args.get("section") or "summary").strip(),
+        filters,
+    )
+
+
+@app.route("/app/analytics")
+def analytics_page():
+    return render_template("analytics.html", analytics=_analytics_context())
+
+
+@app.route("/app/analytics/section")
+def analytics_section():
+    return render_template(
+        "_analytics_section.html", analytics=_analytics_context()
+    )
+
+
+@app.route("/app/analytics/export.csv")
+def analytics_export_csv():
+    context = _analytics_context()
+    rows = BusinessAnalytics().csv_rows(context)
+    output = io.StringIO()
+    fieldnames = sorted({key for row in rows for key in row})
+    writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction="ignore")
+    if fieldnames:
+        writer.writeheader()
+        writer.writerows(rows)
+    payload = "\ufeff" + output.getvalue()
+    return Response(
+        payload,
+        mimetype="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": "attachment; filename=analytics-{}.csv".format(
+                context["section"]
+            )
+        },
     )
 
 
@@ -16804,6 +16849,19 @@ NAVIGATION_DEFINITIONS = [
         "mobile_primary": True,
         "active_exact": [],
         "active_prefixes": ["/app/sales", "/sales"],
+    },
+    {
+        "key": "analytics",
+        "label": "Аналитика",
+        "description": "Показатели бизнеса и объяснимые предупреждения.",
+        "icon": "analytics",
+        "href": "/app/analytics",
+        "mobile_href": "/app/analytics",
+        "position": 5,
+        "group": "main",
+        "mobile_primary": False,
+        "active_exact": [],
+        "active_prefixes": ["/app/analytics", "/analytics"],
     },
     {
         "key": "inventory",
