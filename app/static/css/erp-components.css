@@ -1618,10 +1618,11 @@ body.modal-open {
     color: var(--erp-text);
 }
 
-.warehouse-availability-segment.is-active {
-    background: var(--erp-surface);
-    color: var(--erp-primary);
-    box-shadow: inset 0 -2px 0 var(--erp-primary);
+.warehouse-availability-segment.is-active,
+.warehouse-availability-segment.is-active:hover {
+    background: var(--erp-primary);
+    color: #ffffff;
+    box-shadow: none;
 }
 
 .warehouse-availability-segment:focus-visible {
