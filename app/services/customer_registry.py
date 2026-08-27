@@ -482,7 +482,11 @@ class CustomerRegistry:
     def duplicate_candidates(self, customer_id=None, limit=100):
         where, params = "d.status='open'", []
         if customer_id:
-            where += " AND (d.left_customer_id=? OR d.right_customer_id=?)"; params.extend([int(customer_id)] * 2)
+            where = (
+                "d.id IN (SELECT id FROM customer_duplicate_candidates WHERE status='open' AND left_customer_id=? "
+                "UNION SELECT id FROM customer_duplicate_candidates WHERE status='open' AND right_customer_id=?)"
+            )
+            params.extend([int(customer_id)] * 2)
         with self.connection() as connection:
             rows = connection.execute(
                 "SELECT d.*,a.name left_name,a.city left_city,b.name right_name,b.city right_city "
