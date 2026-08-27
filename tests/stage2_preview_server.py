@@ -6,6 +6,9 @@ import tempfile
 import base64
 import hashlib
 import threading
+import sqlite3
+import time
+from datetime import date, timedelta
 from pathlib import Path
 
 
@@ -400,6 +403,73 @@ web.build_sales_report_records = lambda warehouse_items=None: [
     dict(sale) for sale in preview_sales
 ]
 web.app.config.update(TESTING=True, AUTH_TESTING=False)
+
+# Stable local-only task fixtures make responsive and accessibility checks
+# exercise real list, grouping and relation-link states without production data.
+with sqlite3.connect(str(PREVIEW_ROOT / "auth.db")) as task_auth_connection:
+    now = int(time.time())
+    task_auth_connection.executemany(
+        "INSERT INTO users(first_name,last_name,email,email_normalized,password_hash,role,active,"
+        "created_at,email_verified_at,updated_at,session_version) VALUES(?,?,?,?,?,'employee',1,?,?,?,1)",
+        [
+            ("Максим", "Орлов", "maxim@preview.test", "maxim@preview.test", "preview", now, now, now),
+            ("Анна", "Лебедева", "anna@preview.test", "anna@preview.test", "preview", now, now, now),
+        ],
+    )
+
+from app.services.tasks import TaskStore  # noqa: E402
+
+preview_task_store = TaskStore(PREVIEW_ROOT / "tasks.db")
+preview_today = date.today()
+
+
+def preview_task_entity(entity_type, entity_id):
+    if entity_type == "product":
+        return {
+            "id": str(entity_id),
+            "label": "Casio G-Shock GA-2100",
+            "href": "/app/products?selected_id={}".format(entity_id),
+        }
+    return {"id": str(entity_id), "label": "Объект {}".format(entity_id), "href": "/app/tasks"}
+
+
+def add_preview_task(title, **values):
+    payload = {
+        "title": title,
+        "description": values.pop("description", ""),
+        "assignee_id": values.pop("assignee_id", 1),
+        "idempotency_key": "preview-{}".format(title),
+    }
+    payload.update(values)
+    task, _ = preview_task_store.create(payload, 1, lambda user_id: int(user_id) in {1, 2}, preview_task_entity)
+    return task
+
+
+add_preview_task(
+    "Подтвердить наличие часов для клиента",
+    description="Проверить резерв и написать клиенту до конца рабочего дня.",
+    priority="urgent", due_date=preview_today.isoformat(), due_time="12:30",
+    links=[{"entity_type": "product", "entity_id": str(warehouse_items[0]["id"])}],
+)
+add_preview_task(
+    "Согласовать условия доставки заказа",
+    description="Клиент просит перенести доставку на вечер.",
+    priority="important", due_date=preview_today.isoformat(), assignee_id=2,
+)
+add_preview_task("Проверить новые обращения", due_date=preview_today.isoformat())
+add_preview_task("Разобрать входящие документы", section="inbox")
+add_preview_task("Обновить памятку по возвратам", section="anytime", priority="important")
+add_preview_task("Подготовить витрину к осенней коллекции", due_date=(preview_today + timedelta(days=2)).isoformat(), priority="urgent")
+add_preview_task("Сверить план закупок", due_date=(preview_today + timedelta(days=7)).isoformat(), assignee_id=2)
+waiting_task = add_preview_task(
+    "Получить ответ поставщика", status="waiting", waiting_for="Подтверждение цены",
+    check_date=(preview_today - timedelta(days=1)).isoformat(),
+)
+completed_task = add_preview_task("Отправить клиенту фотографии", due_date=(preview_today - timedelta(days=1)).isoformat())
+preview_task_store.set_status(completed_task["id"], "completed", 1, "Фотографии отправлены")
+cancelled_task = add_preview_task("Уточнить старый запрос", assignee_id=2)
+preview_task_store.set_status(cancelled_task["id"], "cancelled", 1)
+web.current_auth_user = lambda: {"id": 1, "role": "employee", "name": "Максим Орлов"}
 
 
 class WarmCacheReleaseMiddleware:

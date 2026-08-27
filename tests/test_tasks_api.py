@@ -119,6 +119,10 @@ class TasksApiTest(unittest.TestCase):
         page = self.client.get("/app/tasks").get_data(as_text=True)
         self.assertIn("Просрочено", page)
         self.assertIn("Ожидаю", page)
+        self.assertIn("Название, описание, клиент, заказ или товар", page)
+        self.assertIn('aria-controls="advancedFilters"', page)
+        self.assertIn("tasks.css?v=3", page)
+        self.assertIn("tasks.js?v=3", page)
         self.assertNotIn("<script>alert(1)</script>", page)
 
 
