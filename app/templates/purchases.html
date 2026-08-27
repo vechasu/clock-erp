@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Vechasu ERP — Закупки</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/themes.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/erp-components.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/purchases.css') }}">
+</head>
+<body class="purchases-page">
+<div class="app">{% include "_sidebar.html" %}
+<main class="main" id="main-content" tabindex="-1">
+    <header class="erp-workspace-header purchases-head">
+        <div class="erp-workspace-heading"><h1>Закупки</h1><p>Спрос клиентов и работа с поставщиками</p></div>
+        <div class="erp-workspace-actions"><button class="purchase-button primary" type="button" data-open="request-modal">Новый запрос</button></div>
+    </header>
+    {% if data_error %}<div class="purchase-error" role="alert">Данные закупок временно недоступны.</div>{% endif %}
+    <section class="purchase-summary" aria-label="Сводка закупок">
+        <a href="?tab=requests&status=new"><span>Новых запросов</span><strong>{{ summary.new_requests or 0 }}</strong></a>
+        <a href="?tab=requests&active_only=1"><span>Клиентов ожидают</span><strong>{{ summary.waiting_customers or 0 }}</strong></a>
+        <a href="?tab=plan"><span>Позиций в плане</span><strong>{{ summary.plan_positions or 0 }}</strong></a>
+        <a href="?tab=plan"><span>Рекомендовано</span><strong>{{ summary.recommended_units or 0 }}</strong></a>
+        <a href="?tab=orders"><span>Заказано единиц</span><strong>{{ summary.ordered_units or 0 }}</strong></a>
+        <a class="attention" href="?tab=requests&status=arrived"><span>Прибыло — уведомить клиентов</span><strong>{{ summary.arrived_unnotified or 0 }}</strong></a>
+    </section>
+    <nav class="purchase-tabs" aria-label="Разделы закупок">
+        <a class="{{ 'active' if tab == 'requests' else '' }}" href="?tab=requests">Запросы клиентов</a>
+        <a class="{{ 'active' if tab == 'plan' else '' }}" href="?tab=plan">План закупки</a>
+        <a class="{{ 'active' if tab == 'orders' else '' }}" href="?tab=orders">Заказы поставщикам</a>
+    </nav>
+
+    {% if tab == 'requests' %}
+    <section class="purchase-panel">
+        <form class="purchase-filters" method="get" id="purchaseFilters">
+            <input type="hidden" name="tab" value="requests">
+            <label class="wide"><span>Поиск</span><input name="q" value="{{ request.args.get('q','') }}" placeholder="Клиент, телефон, бренд, модель, артикул…" autocomplete="off"></label>
+            <label><span>Статус</span><select name="status"><option value="">Все</option>{% for key,label in status_labels.items() %}<option value="{{ key }}" {{ 'selected' if request.args.get('status') == key }}>{{ label }}</option>{% endfor %}</select></label>
+            <label><span>Бренд</span><input name="brand" value="{{ request.args.get('brand','') }}"></label>
+            <label><span>Канал</span><select name="channel"><option value="">Все</option>{% for key,label in channel_labels.items() %}<option value="{{ key }}" {{ 'selected' if request.args.get('channel') == key }}>{{ label }}</option>{% endfor %}</select></label>
+            <label><span>С</span><input type="date" name="date_from" value="{{ request.args.get('date_from','') }}"></label>
+            <label><span>По</span><input type="date" name="date_to" value="{{ request.args.get('date_to','') }}"></label>
+            <label><span>Сортировка</span><select name="sort"><option value="newest">Сначала новые</option><option value="oldest" {{ 'selected' if request.args.get('sort') == 'oldest' }}>Сначала старые</option><option value="valid_until" {{ 'selected' if request.args.get('sort') == 'valid_until' }}>По актуальности</option><option value="quantity" {{ 'selected' if request.args.get('sort') == 'quantity' }}>По количеству</option></select></label>
+            <label class="check"><input type="checkbox" name="active_only" value="1" {{ 'checked' if request.args.get('active_only') }}> Только актуальные</label>
+            <button class="purchase-button" type="submit">Применить</button><a class="purchase-button ghost" href="?tab=requests">Сбросить</a>
+        </form>
+        {% if requests %}
+        <div class="purchase-table-wrap"><table class="purchase-table"><thead><tr><th>Дата</th><th>Клиент</th><th>Товар</th><th>Кол.</th><th>Цена</th><th>Канал</th><th>Актуально</th><th>Статус</th><th></th></tr></thead><tbody>
+        {% for item in requests %}<tr data-valid-until="{{ item.valid_until or '' }}">
+            <td><a href="?tab=requests&request_id={{ item.id }}">{{ item.requested_at[:16]|replace('T',' ') }}</a></td>
+            <td><a href="{{ url_for('customer_detail_page', customer_id=item.customer.id, tab='purchases') }}">{{ item.customer.name or 'Без имени' }}</a><small>{{ item.customer.phone or item.customer.email or '—' }}</small></td>
+            <td><div class="product-cell">{% if item.image_url %}<img src="{{ item.image_url }}" alt="" loading="lazy">{% else %}<span class="photo-placeholder">⌚</span>{% endif %}<span><b>{{ item.brand }} {{ item.model or item.product_name }}</b><small>{{ item.article or item.description[:70] or 'Без артикула' }}</small></span></div></td>
+            <td>{{ item.quantity }}</td><td>{{ ('%.2f'|format(item.target_price)) if item.target_price is not none else '—' }}</td><td>{{ item.channel_label }}</td><td>{{ item.valid_until or '—' }}</td>
+            <td><span class="status status-{{ item.status }}">{{ item.status_label }}</span></td>
+            <td class="actions"><button type="button" class="icon-button" data-plan-request="{{ item.id }}" title="Добавить в план">＋</button><a class="icon-button" href="?tab=requests&request_id={{ item.id }}" title="Открыть">→</a></td>
+        </tr>{% endfor %}</tbody></table></div>
+        <div class="purchase-pagination"><span>{{ listing.total }} запросов</span><div>{% if listing.page > 1 %}<button class="purchase-button ghost" type="button" data-page="{{ listing.page-1 }}">Назад</button>{% endif %}<span>{{ listing.page }} / {{ listing.pages }}</span>{% if listing.page < listing.pages %}<button class="purchase-button ghost" type="button" data-page="{{ listing.page+1 }}">Далее</button>{% endif %}</div><label>На странице <select data-page-size>{% for size in page_sizes %}<option {{ 'selected' if listing.per_page == size }}>{{ size }}</option>{% endfor %}</select></label></div>
+        {% else %}<div class="purchase-empty"><span>⌚</span><h2>Запросов пока нет</h2><p>Зафиксируйте первое пожелание клиента.</p><button class="purchase-button primary" data-open="request-modal">Новый запрос</button></div>{% endif %}
+    </section>
+    {% elif tab == 'plan' %}
+    <section class="purchase-panel">
+        <div class="panel-head"><div><h2>Совокупный спрос</h2><p>Одинаковые товары объединены по безопасному правилу.</p></div><button class="purchase-button primary" data-open="order-modal">Создать заказ поставщику</button></div>
+        {% if plan %}<div class="purchase-table-wrap"><table class="purchase-table"><thead><tr><th></th><th>Товар</th><th>Запросов / клиентов</th><th>Спрос</th><th>Остаток</th><th>Рекомендация</th><th>Закупить</th><th>Закупочная цена</th><th>Период</th><th></th></tr></thead><tbody>
+        {% for item in plan %}<tr><td><input type="checkbox" name="plan_item" value="{{ item.id }}" aria-label="Выбрать {{ item.product_name }}"></td><td><b>{{ item.brand }} {{ item.model or item.product_name }}</b><small>{{ item.article or 'Без артикула' }}</small></td><td><details><summary>{{ item.request_count }} / {{ item.customer_count }}</summary><ul class="waiting-list">{% for req in item.requests %}<li><a href="{{ url_for('customer_detail_page', customer_id=req.customer.id) }}">{{ req.customer.name }}</a> · {{ req.customer.phone or req.customer.email }} · {{ req.quantity }} шт. · до {{ req.valid_until or 'без срока' }}{% if req.customer_comment %}<small>{{ req.customer_comment }}</small>{% endif %}</li>{% endfor %}</ul></details></td><td>{{ item.demand_quantity }}</td><td>{{ item.stock }}</td><td><strong>{{ item.recommended_quantity }}</strong></td><td><input class="quantity-input" type="number" min="0" value="{{ item.purchase_quantity }}" data-plan-quantity="{{ item.id }}"></td><td><input class="quantity-input" type="number" min="0" step="0.01" value="0" data-plan-price="{{ item.id }}"></td><td><small>{{ item.earliest_request[:10] }}<br>{{ item.latest_request[:10] }}</small></td><td><button class="icon-button" type="button" data-remove-plan="{{ item.id }}" title="Убрать из плана">×</button></td></tr>{% endfor %}
+        </tbody></table></div>{% else %}<div class="purchase-empty"><h2>План закупки пуст</h2><p>Добавьте клиентские запросы из первого раздела.</p></div>{% endif %}
+    </section>
+    {% else %}
+    <section class="purchase-panel"><div class="panel-head"><div><h2>Заказы поставщикам</h2><p>Ручные закупочные документы без изменения остатков.</p></div></div>
+        {% if orders %}<div class="purchase-table-wrap"><table class="purchase-table"><thead><tr><th>Номер</th><th>Поставщик</th><th>Создан</th><th>Ожидается</th><th>Позиций</th><th>Сумма</th><th>Статус</th><th></th></tr></thead><tbody>{% for order in orders %}<tr><td><b>{{ order.internal_number }}</b></td><td>{{ order.supplier_name }}</td><td>{{ order.created_date }}</td><td>{{ order.expected_date or '—' }}</td><td>{{ order.item_count }}</td><td>{{ '%.2f'|format(order.total) }} {{ order.currency }}</td><td><span class="status status-{{ order.status }}">{{ order_status_labels.get(order.status,order.status) }}</span></td><td><button class="purchase-button ghost" data-order-detail="{{ order.id }}">Открыть</button></td></tr>{% endfor %}</tbody></table></div>{% else %}<div class="purchase-empty"><h2>Заказов поставщикам пока нет</h2><p>Создайте заказ из выбранных позиций плана.</p></div>{% endif %}
+    </section>{% endif %}
+
+    {% if selected_request %}<aside class="purchase-detail" aria-label="Карточка запроса"><div class="detail-head"><div><small>Запрос №{{ selected_request.id }}</small><h2>{{ selected_request.brand }} {{ selected_request.model or selected_request.product_name }}</h2></div><a href="?tab=requests" aria-label="Закрыть">×</a></div><dl><dt>Клиент</dt><dd><a href="{{ url_for('customer_detail_page', customer_id=selected_request.customer.id) }}">{{ selected_request.customer.name }}</a><br>{{ selected_request.customer.phone or selected_request.customer.email }}</dd><dt>Товар</dt><dd>{{ selected_request.product_name }} {{ selected_request.article }}<br>{{ selected_request.description }}</dd><dt>Обращение</dt><dd>{{ selected_request.requested_at }} · {{ selected_request.channel_label }}</dd><dt>Количество / цена</dt><dd>{{ selected_request.quantity }} / {{ selected_request.target_price or '—' }}</dd><dt>Актуально до</dt><dd>{{ selected_request.valid_until or '—' }}</dd><dt>Комментарий клиента</dt><dd>{{ selected_request.customer_comment or '—' }}</dd><dt>Внутренняя заметка</dt><dd>{{ selected_request.internal_note or '—' }}</dd></dl><label>Статус<select data-request-status="{{ selected_request.id }}">{% for key,label in status_labels.items() %}<option value="{{ key }}" {{ 'selected' if selected_request.status == key }}>{{ label }}</option>{% endfor %}</select></label><div class="detail-actions"><button class="purchase-button" data-plan-request="{{ selected_request.id }}">Добавить в план</button><button class="purchase-button ghost" data-archive-request="{{ selected_request.id }}" data-archived="{{ 0 if selected_request.archived else 1 }}">{{ 'Вернуть в работу' if selected_request.archived else 'Закрыть' }}</button></div><h3>История</h3><ol class="history">{% for event in selected_request.history %}<li><b>{{ event.action }}</b><span>{{ event.created_at|replace('T',' ') }} · пользователь {{ event.actor_id }}</span>{% if event.old_status or event.new_status %}<small>{{ status_labels.get(event.old_status,event.old_status or '—') }} → {{ status_labels.get(event.new_status,event.new_status or '—') }}</small>{% endif %}</li>{% endfor %}</ol>{% if selected_request.plan_item %}<p>План закупки: позиция №{{ selected_request.plan_item.id }}</p>{% endif %}{% if selected_request.supplier_order %}<p>Заказ поставщику: {{ selected_request.supplier_order.internal_number }}</p>{% endif %}</aside>{% endif %}
+</main></div>
+
+<dialog id="request-modal" class="purchase-modal"><form method="dialog" class="modal-card" id="requestForm"><div class="detail-head"><div><small>Запрос клиента</small><h2>Новый запрос</h2></div><button value="cancel" aria-label="Закрыть">×</button></div><div class="form-grid">
+    <label class="wide"><span>Клиент *</span><input id="customerSearch" placeholder="Имя, телефон или email" autocomplete="off"><input type="hidden" name="customer_id"><div id="customerResults" class="search-results"></div></label><button type="button" class="purchase-button ghost" id="quickCustomer">Создать клиента</button>
+    <fieldset class="wide"><legend>Товар *</legend><label><input type="radio" name="product_mode" value="existing" checked> Существующий</label><label><input type="radio" name="product_mode" value="unknown"> Новый / неизвестный</label></fieldset>
+    <label class="wide existing-fields"><span>Поиск товара</span><input id="productSearch" autocomplete="off" placeholder="Бренд, модель, название, артикул"><input type="hidden" name="product_id"><div id="productResults" class="search-results"></div></label>
+    <label class="unknown-fields"><span>Бренд</span><input name="brand"></label><label class="unknown-fields"><span>Модель / название</span><input name="model"></label><label class="unknown-fields"><span>Артикул / reference</span><input name="article"></label><label class="unknown-fields"><span>Ссылка</span><input type="url" name="product_url"></label><label class="unknown-fields wide"><span>Ссылка на изображение</span><input type="url" name="image_url"></label><label class="unknown-fields wide"><span>Описание</span><textarea name="description"></textarea></label>
+    <label><span>Дата и время *</span><input type="datetime-local" name="requested_at" required></label><label><span>Канал *</span><select name="channel">{% for key,label in channel_labels.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select></label><label><span>Количество *</span><input type="number" name="quantity" min="1" value="1" required></label><label><span>Ориентир по цене</span><input type="number" name="target_price" min="0" step="0.01"></label><label><span>Актуально до</span><input type="date" name="valid_until"></label><label class="wide"><span>Комментарий клиента</span><textarea name="customer_comment"></textarea></label><label class="wide"><span>Внутренняя заметка</span><textarea name="internal_note"></textarea></label></div><p class="form-error" role="alert"></p><div class="modal-actions"><button value="cancel" class="purchase-button ghost">Отмена</button><button type="submit" value="default" class="purchase-button primary">Сохранить</button></div></form></dialog>
+
+<dialog id="order-modal" class="purchase-modal"><form method="dialog" class="modal-card" id="orderForm"><div class="detail-head"><div><small>Поставщик</small><h2>Новый заказ</h2></div><button value="cancel">×</button></div><div class="form-grid"><label><span>Внутренний номер</span><input name="internal_number"></label><label><span>Поставщик *</span><input name="supplier_name" required></label><label><span>Дата создания</span><input type="date" name="created_date"></label><label><span>Дата заказа</span><input type="date" name="ordered_date"></label><label><span>Ожидаемая поставка</span><input type="date" name="expected_date"></label><label><span>Валюта</span><select name="currency"><option>RUB</option><option>USD</option><option>EUR</option><option>CNY</option></select></label><label class="wide"><span>Комментарий</span><textarea name="comment"></textarea></label></div><p class="form-error"></p><div class="modal-actions"><button value="cancel" class="purchase-button ghost">Отмена</button><button type="submit" value="default" class="purchase-button primary">Создать</button></div></form></dialog>
+<dialog id="order-detail-modal" class="purchase-modal"><div class="modal-card" id="orderDetail"></div></dialog>
+<script>window.PURCHASES_CONFIG={{ {'csrf':csrf,'statusLabels':status_labels,'orderStatusLabels':order_status_labels}|tojson }};</script>
+<script src="{{ url_for('static', filename='js/theme.js') }}"></script><script src="{{ url_for('static', filename='js/sidebar.js') }}"></script><script src="{{ url_for('static', filename='js/purchases.js') }}"></script>
+</body></html>

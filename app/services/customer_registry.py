@@ -308,6 +308,46 @@ class CustomerRegistry:
             ).fetchone()
         return dict(row) if row else None
 
+    def create_minimal(self, name, phone="", email=""):
+        """Create a real customer card, reusing an exact normalized contact."""
+        name = text(name)
+        phone_display, email_display = text(phone), text(email)
+        phone_normalized, email_normalized = normalize_phone(phone), normalize_email(email)
+        if not name:
+            raise ValueError("Имя клиента обязательно.")
+        if not phone_normalized and not email_normalized:
+            raise ValueError("Укажите корректный телефон или email.")
+        now = utc_now()
+        created = False
+        with self.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            phone_ids = self._candidate_ids(connection, "phone", phone_normalized, "purchases")
+            email_ids = self._candidate_ids(connection, "email", email_normalized, "purchases")
+            if phone_ids and email_ids and phone_ids != email_ids:
+                raise ValueError("Телефон и email принадлежат разным клиентам.")
+            candidates = phone_ids or email_ids
+            if len(candidates) > 1:
+                raise ValueError("Найдено несколько клиентов с таким контактом.")
+            if candidates:
+                customer_id = next(iter(candidates))
+            else:
+                cursor = connection.execute(
+                    "INSERT INTO customers(name,name_fold,city,created_at,updated_at) VALUES(?,?,?,?,?)",
+                    (name, name.casefold(), "", now, now),
+                )
+                customer_id = int(cursor.lastrowid)
+                created = True
+                for kind, normalized, display in (
+                    ("phone", phone_normalized, phone_display),
+                    ("email", email_normalized, email_display),
+                ):
+                    if normalized:
+                        connection.execute(
+                            "INSERT INTO customer_contacts(customer_id,kind,normalized_value,display_value,source,masked,created_at,updated_at) VALUES(?,?,?,?, 'purchases',0,?,?)",
+                            (customer_id, kind, normalized, display, now, now),
+                        )
+        return self.get(customer_id), created
+
     def customer_for_operation(self, operation_type, source, external_id):
         with self.connection() as connection:
             row = connection.execute(

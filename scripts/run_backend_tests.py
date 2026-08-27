@@ -42,6 +42,8 @@ if str(PROJECT_ROOT) not in sys.path:
 from app.domain_schema_migrations import apply_domain_migrations  # noqa: E402
 from app.catalog_db import CatalogDatabase  # noqa: E402
 from app.schema_migrations import apply_migrations  # noqa: E402
+from app.purchases_migrations import migrate_database as migrate_purchases  # noqa: E402
+from app.customer_registry_migrations import migrate_database as migrate_customers  # noqa: E402
 
 
 ORIGINAL_GETADDRINFO = socket.getaddrinfo
@@ -131,11 +133,15 @@ def main():
         auth_path = test_root / "auth.db"
         orders_path = test_root / "orders.db"
         tasks_path = test_root / "tasks.db"
+        purchases_path = test_root / "purchases.db"
+        customers_path = test_root / "customers.db"
         isolated_environment = {
             "CATALOG_DATABASE_PATH": str(catalog_path),
             "ERP_AUTH_DATABASE": str(auth_path),
             "ORDERS_DATABASE_PATH": str(orders_path),
             "ERP_TASKS_DATABASE": str(tasks_path),
+            "ERP_PURCHASES_DATABASE": str(purchases_path),
+            "CUSTOMERS_DATABASE_PATH": str(customers_path),
             "ERP_SECRET_KEY": "isolated-backend-test-secret",
             "ERP_TEST_ROOT": str(test_root),
         }
@@ -156,6 +162,8 @@ def main():
             apply_domain_migrations(auth_path, "auth", "test-suite")
             apply_domain_migrations(orders_path, "orders", "test-suite")
             apply_domain_migrations(tasks_path, "tasks", "test-suite")
+            migrate_purchases(purchases_path)
+            migrate_customers(customers_path)
             suite = unittest.defaultTestLoader.discover(
                 arguments.start_directory,
                 pattern=arguments.pattern,

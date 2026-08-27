@@ -66,14 +66,18 @@ SERVICE_STOPPED=0
 DEPLOY_UPDATED=0
 CATALOG_MIGRATION_REQUIRED=0
 DOMAIN_MIGRATION_REQUIRED=0
+PURCHASES_MIGRATION_REQUIRED=0
 UNREGISTERED_MIGRATION_CHANGE=0
 CATALOG_MIGRATION_STARTED=0
 DOMAIN_MIGRATION_STARTED=0
+PURCHASES_MIGRATION_STARTED=0
 CATALOG_ROLLBACK_BACKUP=""
 AUTH_ROLLBACK_BACKUP=""
 ORDERS_ROLLBACK_BACKUP=""
 TASKS_ROLLBACK_BACKUP=""
 TASKS_DATABASE_EXISTED=0
+PURCHASES_ROLLBACK_BACKUP=""
+PURCHASES_DATABASE_EXISTED=0
 DATA_SNAPSHOT_BEFORE=""
 BITRIX_ENDPOINT_BACKUP=""
 BITRIX_ENDPOINT_UPDATED=0
@@ -97,7 +101,7 @@ rollback() {
     set +e
     printf 'ROLLBACK: stage=%s exit_code=%s\n' "$FAILURE_STAGE" "$exit_code" >&2
 
-    if [[ "$SERVICE_STOPPED" != "1" && ( "$CATALOG_MIGRATION_STARTED" == "1" || "$DOMAIN_MIGRATION_STARTED" == "1" ) ]]; then
+    if [[ "$SERVICE_STOPPED" != "1" && ( "$CATALOG_MIGRATION_STARTED" == "1" || "$DOMAIN_MIGRATION_STARTED" == "1" || "$PURCHASES_MIGRATION_STARTED" == "1" ) ]]; then
         systemctl stop "$SERVICE_NAME"
         SERVICE_STOPPED=1
     fi
@@ -130,6 +134,16 @@ rollback() {
         elif [[ "$TASKS_DATABASE_EXISTED" == "0" && -f instance/tasks.db ]]; then
             rm -f -- instance/tasks.db
             printf 'ROLLBACK_OK: removed newly created tasks database\n' >&2
+        fi
+    fi
+    if [[ "$PURCHASES_MIGRATION_STARTED" == "1" ]]; then
+        if [[ "$PURCHASES_DATABASE_EXISTED" == "1" && -f "$PURCHASES_ROLLBACK_BACKUP" ]]; then
+            cp -p "$PURCHASES_ROLLBACK_BACKUP" instance/purchases.db
+            sqlite3 instance/purchases.db "PRAGMA quick_check;" | grep -qx "ok"
+            printf 'ROLLBACK_OK: restored verified purchases database backup\n' >&2
+        elif [[ "$PURCHASES_DATABASE_EXISTED" == "0" && -f instance/purchases.db ]]; then
+            rm -f -- instance/purchases.db
+            printf 'ROLLBACK_OK: removed newly created purchases database\n' >&2
         fi
     fi
     if [[ "$BITRIX_ENDPOINT_UPDATED" == "1" && -f "$BITRIX_ENDPOINT_BACKUP" ]]; then
@@ -210,6 +224,10 @@ fi
 if printf '%s\n' "$changed_files" | grep -Eq \
     '^(app/(auth|domain_schema_migrations)\.py|app/services/orders_snapshot\.py|scripts/domain_migration_preflight\.py)$'; then
     DOMAIN_MIGRATION_REQUIRED=1
+fi
+if printf '%s\n' "$changed_files" | grep -Eq \
+    '^(app/purchases_migrations\.py|app/services/purchases\.py|scripts/migrate_purchases\.py)$'; then
+    PURCHASES_MIGRATION_REQUIRED=1
 fi
 if printf '%s\n' "$changed_files" | grep -Eq \
     '^scripts/migrate_(brand_inventory|inventory_scopes|repair_cases|unified_catalog)\.py$'; then
@@ -314,6 +332,18 @@ if [[ "$DOMAIN_MIGRATION_REQUIRED" == "1" ]]; then
         --rehearsal-root "$REHEARSAL_ROOT" \
         --report "$DOMAIN_PREFLIGHT_REPORT"
 fi
+if [[ "$PURCHASES_MIGRATION_REQUIRED" == "1" ]]; then
+    purchases_rehearsal="$RELEASE_DIR/purchases-rehearsal.db"
+    if [[ -f instance/purchases.db ]]; then
+        sqlite3 instance/purchases.db ".backup '$purchases_rehearsal'"
+    fi
+    PYTHONPATH="$RELEASE_DIR" "$PYTHON_BIN" \
+        "$RELEASE_DIR/scripts/migrate_purchases.py" apply \
+        --database "$purchases_rehearsal"
+    PYTHONPATH="$RELEASE_DIR" "$PYTHON_BIN" \
+        "$RELEASE_DIR/scripts/migrate_purchases.py" verify \
+        --database "$purchases_rehearsal"
+fi
 
 printf 'APPLICATION UPDATE: fast-forward to verified commit\n'
 FAILURE_STAGE="APPLICATION UPDATE"
@@ -364,7 +394,7 @@ if [[ -f "$BITRIX_ORDERS_EXPORT_SOURCE" ]]; then
     BITRIX_ORDERS_EXPORT_UPDATED=1
 fi
 
-if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" || "$DOMAIN_MIGRATION_REQUIRED" == "1" ]]; then
+if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" || "$DOMAIN_MIGRATION_REQUIRED" == "1" || "$PURCHASES_MIGRATION_REQUIRED" == "1" ]]; then
     printf 'PRODUCTION MIGRATION: stop service, backup, apply verified migrations\n'
     FAILURE_STAGE="PRODUCTION MIGRATION"
     systemctl stop "$SERVICE_NAME"
@@ -400,6 +430,16 @@ if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" || "$DOMAIN_MIGRATION_REQUIRED" == "1
         sqlite3 "$ORDERS_ROLLBACK_BACKUP" "PRAGMA quick_check;" | grep -qx "ok"
         DOMAIN_MIGRATION_STARTED=1
     fi
+    if [[ "$PURCHASES_MIGRATION_REQUIRED" == "1" ]]; then
+        if [[ -f instance/purchases.db ]]; then
+            PURCHASES_DATABASE_EXISTED=1
+            PURCHASES_ROLLBACK_BACKUP="$rollback_directory/purchases-before.db"
+            sqlite3 instance/purchases.db ".backup '$PURCHASES_ROLLBACK_BACKUP'"
+            chmod 600 "$PURCHASES_ROLLBACK_BACKUP"
+            sqlite3 "$PURCHASES_ROLLBACK_BACKUP" "PRAGMA quick_check;" | grep -qx "ok"
+        fi
+        PURCHASES_MIGRATION_STARTED=1
+    fi
     if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" ]]; then
         "$PYTHON_BIN" scripts/migration_preflight.py apply \
             --database instance/catalog.db \
@@ -418,6 +458,10 @@ if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" || "$DOMAIN_MIGRATION_REQUIRED" == "1
             --expected-sqlite-version "$PRODUCTION_SQLITE_VERSION" \
             --service-stopped \
             --report "$rollback_directory/domain-apply-report.json"
+    fi
+    if [[ "$PURCHASES_MIGRATION_REQUIRED" == "1" ]]; then
+        PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/migrate_purchases.py apply \
+            --database instance/purchases.db
     fi
     DATA_SNAPSHOT_AFTER="$($PYTHON_BIN scripts/data_safety_snapshot.py --instance-dir instance)"
     if [[ "$DATA_SNAPSHOT_BEFORE" != "$DATA_SNAPSHOT_AFTER" ]]; then
@@ -473,6 +517,10 @@ if [[ "$DOMAIN_MIGRATION_REQUIRED" == "1" ]]; then
         --tasks-database instance/tasks.db \
         --expected-sqlite-version "$PRODUCTION_SQLITE_VERSION" \
         --report "${AUTH_ROLLBACK_BACKUP%.db}-post-deploy.json"
+fi
+if [[ "$PURCHASES_MIGRATION_REQUIRED" == "1" ]]; then
+    PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/migrate_purchases.py verify \
+        --database instance/purchases.db
 fi
 systemctl is-active --quiet "$SERVICE_NAME"
 if journalctl -u "$SERVICE_NAME" --since "-2 minutes" \

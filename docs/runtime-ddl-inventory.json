@@ -22,6 +22,11 @@
   ],
   "migration_modules": [
     {
+      "file": "app/purchases_migrations.py",
+      "sha256": "1f221e65f936d1411509d4e94e33ff2967efbc46a658d2e2656e1ec275dc85c3",
+      "owner": "purchases"
+    },
+    {
       "file": "app/customer_registry_migrations.py",
       "sha256": "0eb41026ccafa7ad3e9f0fdefccbcf1026707e43495e35a3b472ec7a5a27e741",
       "owner": "customer-registry"

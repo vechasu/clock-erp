@@ -46,10 +46,17 @@
             <a class="{{ 'active' if tab == 'orders' else '' }}" href="{{ url_for('customer_detail_page', customer_id=customer.id, tab='orders') }}">Заказы</a>
             <a class="{{ 'active' if tab == 'sales' else '' }}" href="{{ url_for('customer_detail_page', customer_id=customer.id, tab='sales') }}">Продажи</a>
             <a class="{{ 'active' if tab == 'repairs' else '' }}" href="{{ url_for('customer_detail_page', customer_id=customer.id, tab='repairs') }}">Ремонты</a>
+            <a class="{{ 'active' if tab == 'purchases' else '' }}" href="{{ url_for('customer_detail_page', customer_id=customer.id, tab='purchases') }}">Запросы на товары</a>
         </nav>
         <section class="customer-panel customer-detail-panel">
             {% if tab == 'overview' %}<div class="customer-section-head"><div><h2>Последние операции</h2><p>Заказы, продажи и ремонты клиента</p></div></div>{% endif %}
-            {{ operations_table(customer_operations) }}
+            {% if tab == 'purchases' %}
+                {% if purchase_requests %}
+                <div class="customer-table-wrap"><table class="customer-table"><thead><tr><th>Дата</th><th>Товар</th><th>Количество</th><th>Статус</th></tr></thead><tbody>
+                {% for item in purchase_requests %}<tr><td>{{ item.requested_at[:10] }}</td><td><a href="{{ url_for('purchases_page', request_id=item.id) }}">{{ item.brand }} {{ item.model or item.product_name }}</a><br><small>{{ item.article }}</small></td><td>{{ item.quantity }}</td><td>{{ {'new':'Новый','review':'На рассмотрении','planned':'В плане закупки','ordered':'Заказан','arrived':'Прибыл','notified':'Клиент уведомлён','sold':'Продан','closed':'Закрыт'}.get(item.status,item.status) }}</td></tr>{% endfor %}
+                </tbody></table></div>
+                {% else %}<div class="customer-empty"><h2>Запросов на товары пока нет</h2></div>{% endif %}
+            {% else %}{{ operations_table(customer_operations) }}{% endif %}
             {% if pagination %}{{ render_erp_pagination(pagination, "Страницы операций клиента") }}{% endif %}
         </section>
     </main>
