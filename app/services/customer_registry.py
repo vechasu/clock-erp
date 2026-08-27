@@ -18,6 +18,7 @@ PAGE_SIZES = (20, 50, 100, 200)
 PHONE_FORMATTING = re.compile(r"^[+\d\s().\-\u00a0]+$")
 EMAIL_PATTERN = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,189}\.[^@\s]{2,63}$")
 MASKED_EMAIL_MARKERS = ("relay", "masked", "privaterelay", "marketplace")
+_VALIDATED_DATABASES = {}
 
 
 def text(value):
@@ -80,7 +81,12 @@ def validate_database(path):
     path = Path(path)
     if not path.exists():
         raise sqlite3.OperationalError("customer registry migration required")
-    connection = sqlite3.connect("file:{}?mode=ro".format(path.resolve()), uri=True)
+    resolved = str(path.resolve())
+    stat = path.stat()
+    signature = (getattr(stat, "st_mtime_ns", int(stat.st_mtime * 1000000000)), stat.st_size)
+    if _VALIDATED_DATABASES.get(resolved) == signature:
+        return
+    connection = sqlite3.connect("file:{}?mode=ro".format(resolved), uri=True)
     try:
         expected = {"registry_meta", "customers", "customer_external_ids",
                     "customer_contacts", "customer_operations", "customer_identity_conflicts",
@@ -98,6 +104,7 @@ def validate_database(path):
             raise sqlite3.DatabaseError("customer registry version differs")
         if connection.execute("PRAGMA quick_check").fetchone()[0] != "ok":
             raise sqlite3.DatabaseError("customer registry quick_check failed")
+        _VALIDATED_DATABASES[resolved] = signature
     finally:
         connection.close()
 

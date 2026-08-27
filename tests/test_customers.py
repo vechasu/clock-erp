@@ -221,6 +221,12 @@ class CanonicalCustomerRegistryTest(unittest.TestCase):
         relay_two = self.add(6, email="same@privaterelay.example", source="amazon")
         self.assertNotEqual(relay_one["customer_id"], relay_two["customer_id"])
 
+    def test_schema_validation_is_cached_until_database_changes(self):
+        with mock.patch("app.services.customer_registry.sqlite3.connect", wraps=sqlite3.connect) as connect:
+            self.registry.get(1)
+            self.registry.get(1)
+        self.assertEqual(connect.call_count, 3)
+
     def test_conflict_idempotency_cancellation_and_blank_preservation(self):
         phone_customer = self.add(1, name="Полное имя", phone="+7 900 000-00-01", email="one@example.ru", external_customer_id="u1")
         email_customer = self.add(2, phone="+7 900 000-00-02", email="two@example.ru")
