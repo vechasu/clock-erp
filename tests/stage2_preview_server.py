@@ -8,8 +8,9 @@ import hashlib
 import threading
 import sqlite3
 import time
-from datetime import date, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -420,7 +421,7 @@ with sqlite3.connect(str(PREVIEW_ROOT / "auth.db")) as task_auth_connection:
 from app.services.tasks import TaskStore  # noqa: E402
 
 preview_task_store = TaskStore(PREVIEW_ROOT / "tasks.db")
-preview_today = date.today()
+preview_today = datetime.now(ZoneInfo("Europe/Moscow")).date()
 
 
 def preview_task_entity(entity_type, entity_id):
