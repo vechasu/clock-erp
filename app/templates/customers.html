@@ -1,71 +1,32 @@
 <!doctype html>
-<html lang="ru">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Vechasu ERP — Клиенты</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/themes.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/erp-components.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/customers.css') }}">
-</head>
-<body class="customers-page">
-{% from "_pagination.html" import render_erp_pagination %}
-<div class="app">
-    {% include "_sidebar.html" %}
-    <main class="main" id="main-content" tabindex="-1">
-        <header class="erp-workspace-header">
-            <div class="erp-workspace-heading">
-                <h1>Клиенты</h1>
-                <p>Контакты покупателей и история связанных заказов</p>
-            </div>
-        </header>
-
-        <section class="customer-panel" aria-label="Список клиентов">
-            <form class="customer-toolbar" method="get" action="{{ url_for('customers_page') }}">
-                <div class="customer-search">
-                    <input class="customer-input" type="search" name="q" value="{{ query }}" placeholder="Имя, телефон, email или номер заказа" aria-label="Поиск клиентов">
-                    <button class="customer-button" type="submit">Найти</button>
-                    {% if query %}<a class="customer-reset" href="{{ url_for('customers_page') }}">Очистить</a>{% endif %}
-                </div>
-                <strong class="customer-found">{{ 'Найдено' if query else 'Всего' }}: {{ customers_total }} клиентов</strong>
-            </form>
-
-            {% if data_error %}
-                <div class="customer-empty erp-error-state" role="alert"><h2>Не удалось загрузить клиентов</h2><p>Данные заказов не изменены. Повторите безопасную загрузку.</p><a class="customer-button" href="{{ request.full_path }}">Повторить</a></div>
-            {% elif customers %}
-                <div class="customer-table-wrap">
-                    <table class="customer-table">
-                        <thead><tr><th>Клиент</th><th>Телефон</th><th>Email</th><th>Город</th><th>Источники</th><th>Операций</th><th>Последняя операция</th></tr></thead>
-                        <tbody>
-                        {% for customer in customers %}
-                            <tr data-href="{{ url_for('customer_detail_page', customer_id=customer.id) }}">
-                                <td><a class="customer-name" href="{{ url_for('customer_detail_page', customer_id=customer.id) }}">{{ customer.name or 'Без имени' }}</a></td>
-                                <td>{{ customer.phone or '—' }}</td>
-                                <td>{% if customer.email %}<a href="mailto:{{ customer.email }}">{{ customer.email }}</a>{% else %}—{% endif %}</td>
-                                <td>{{ customer.city or '—' }}</td>
-                                <td>{{ customer.sources or '—' }}</td>
-                                <td>{{ customer.operations_count }}</td>
-                                <td>{{ customer.last_operation_at[:10] if customer.last_operation_at else '—' }}</td>
-                            </tr>
-                        {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-                {{ render_erp_pagination(pagination, "Страницы клиентов") }}
-            {% elif query %}
-                <div class="customer-empty"><h2>Ничего не найдено</h2><p>Попробуйте изменить запрос или очистить поиск.</p><a class="customer-button" href="{{ url_for('customers_page') }}">Очистить поиск</a></div>
-            {% else %}
-                <div class="customer-empty"><h2>Клиентов пока нет</h2><p>Клиенты появятся автоматически после безопасного сопоставления заказов.</p></div>
-            {% endif %}
-        </section>
-    </main>
-</div>
-<script src="{{ url_for('static', filename='js/theme.js') }}"></script>
-<script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
-<script>
-document.querySelectorAll('tr[data-href]').forEach((row) => row.addEventListener('click', (event) => {
-    if (!event.target.closest('a')) window.location.href = row.dataset.href;
-}));
-</script>
-</body>
-</html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Vechasu ERP — Клиенты</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/themes.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/erp-components.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/customers.css') }}"></head>
+<body class="customers-page">{% from "_pagination.html" import render_erp_pagination %}<div class="app">{% include "_sidebar.html" %}
+<main class="main" id="main-content" tabindex="-1">
+<header class="erp-workspace-header"><div class="erp-workspace-heading"><h1>Клиенты</h1><p>Единая история заказов, завершённых продаж, ремонтов и обращений</p></div></header>
+{% set segments=[('','Все','all'),('new','Новые','new'),('repeat','Повторные','repeat'),('vip','VIP','vip'),('inactive','Давно не покупали','inactive'),('repair','Есть ремонт','repair'),('waiting','Ожидают товар','waiting'),('attention','Требуют внимания','attention'),('duplicates','Дубликаты','duplicates')] %}
+<nav class="customer-segments" aria-label="Сегменты клиентов">{% for value,label,key in segments %}<a class="{{ 'active' if filters.segment==value else '' }}" href="{{ url_for('customers_page', segment=value, q=query, per_page=request.args.get('per_page',50)) }}"><span>{{ label }}</span><strong>{{ segment_counts.get(key,0) }}</strong></a>{% endfor %}</nav>
+<section class="customer-panel" aria-label="Список клиентов">
+<form class="customer-toolbar" id="customerFilters" method="get"><input type="hidden" name="segment" value="{{ filters.segment }}">
+<div class="customer-search"><input class="customer-input" id="customerSearch" type="search" name="q" value="{{ query }}" placeholder="ФИО, телефон, email, заказ, продажа или ремонт" autocomplete="off"><button class="customer-button" type="submit">Найти</button>{% if query %}<button class="customer-reset" id="clearSearch" type="button">Очистить</button>{% endif %}<strong class="customer-found">Найдено: {{ customers_total }} клиентов</strong></div>
+<details class="customer-filters" {{ 'open' if filters.values()|select|list else '' }}><summary>Фильтры</summary><div class="customer-filter-grid">
+<label>Источник<input name="source" value="{{ filters.source }}" placeholder="tictactoy"></label><label>Город<input name="city" value="{{ filters.city }}"></label>
+<label>Первая активность с<input type="date" name="first_from" value="{{ filters.first_from }}"></label><label>по<input type="date" name="first_to" value="{{ filters.first_to }}"></label>
+<label>Последняя активность с<input type="date" name="last_from" value="{{ filters.last_from }}"></label><label>по<input type="date" name="last_to" value="{{ filters.last_to }}"></label>
+<label>Покупок от<input type="number" min="0" name="sales_min" value="{{ filters.sales_min }}"></label><label>Сумма покупок от<input type="number" min="0" name="amount_min" value="{{ filters.amount_min }}"></label>
+<label>Контакты<select name="contacts"><option value="">Любые</option><option value="complete" {{ 'selected' if filters.contacts=='complete' }}>Телефон и email</option><option value="missing" {{ 'selected' if filters.contacts=='missing' }}>Не заполнены</option></select></label>
+<label>Сортировка<select name="sort"><option value="last_activity">Последняя активность</option><option value="name" {{ 'selected' if sort=='name' }}>Имя</option><option value="purchases" {{ 'selected' if sort=='purchases' }}>Сумма покупок</option><option value="history" {{ 'selected' if sort=='history' }}>История</option></select></label>
+<div class="customer-filter-actions"><button class="customer-button" type="submit">Применить</button><a class="customer-reset" href="{{ url_for('customers_page') }}">Сбросить всё</a></div></div></details></form>
+{% if data_error %}<div class="customer-empty erp-error-state" role="alert"><h2>Не удалось загрузить клиентов</h2><p>Исходные данные не изменены.</p><a class="customer-button" href="{{ request.full_path }}">Повторить</a></div>
+{% elif customers %}<div class="customer-table-wrap" aria-live="polite"><table class="customer-table"><thead><tr><th>Клиент</th><th>Контакты</th><th>История</th><th>Покупки</th><th>Источники</th><th>Последняя активность</th><th>Статус</th></tr></thead><tbody>
+{% for customer in customers %}<tr><td><a class="customer-name" href="{{ url_for('customer_detail_page', customer_id=customer.id, return_to=request.full_path) }}">{{ customer.name or 'Без имени' }}</a><small>{{ customer.city_display }}</small></td>
+<td>{% if customer.phone %}<a href="tel:{{ customer.phone }}">{{ customer.phone }}</a>{% else %}<span>Телефон не указан</span>{% endif %}<small>{% if customer.email %}<a href="mailto:{{ customer.email }}">{{ customer.email }}</a>{% else %}Email не указан{% endif %}</small></td>
+<td>{{ customer.orders_count }} заказов · {{ customer.sales_count }} продаж · {{ customer.repairs_count }} ремонтов</td><td><strong>{{ '{:,.0f}'.format(customer.sales_amount).replace(',', ' ') }} ₽</strong></td>
+<td><div class="customer-chips">{% for source in (customer.sources or '').split(',') if source %}<span>{{ source }}</span>{% endfor %}</div></td><td>{{ customer.last_operation_at[:10] if customer.last_operation_at else 'Нет данных' }}</td>
+<td><div class="customer-chips">{% for segment in customer.segments %}<span>{{ segment }}</span>{% endfor %}</div></td></tr>{% endfor %}</tbody></table></div>{{ render_erp_pagination(pagination,"Страницы клиентов") }}
+{% else %}<div class="customer-empty"><h2>Клиенты не найдены</h2><p>Измените фильтры или очистите поиск.</p></div>{% endif %}</section></main></div>
+<script src="{{ url_for('static', filename='js/theme.js') }}"></script><script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
+<script>(()=>{const form=document.getElementById('customerFilters'),search=document.getElementById('customerSearch');let timer;search.addEventListener('input',()=>{clearTimeout(timer);timer=setTimeout(()=>form.requestSubmit(),450)});document.getElementById('clearSearch')?.addEventListener('click',()=>{search.value='';form.requestSubmit()});})();</script></body></html>

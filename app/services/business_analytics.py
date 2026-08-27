@@ -335,6 +335,8 @@ class BusinessAnalytics(object):
 
     def csv_rows(self, context):
         section = context["section"]
+        if section == "customers":
+            return context.get("customer_analytics", {}).get("top", [])
         if section in ("products", "channels", "stock", "inventory", "orders"):
             return context.get("rows", [])
         if section in ("summary", "sales"):
