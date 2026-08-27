@@ -10,7 +10,9 @@ import time
 import copy
 import base64
 import binascii
+import csv
 import hashlib
+import io
 import json
 import math
 import os
@@ -113,6 +115,7 @@ from app.services.sale_pricing import (
     calculate_sale_pricing,
     order_line_pricing,
 )
+from app.services.business_analytics import BusinessAnalytics, parse_filters
 from app.services.brand_inventory import (
     BrandInventory,
     InventoryError,
@@ -248,7 +251,7 @@ LEGACY_FRONTEND_REDIRECTS = {
     "/stock-operations": "/app/products",
     "/repair": "/app/repairs",
     "/catalog": "/app/products",
-    "/analytics": "/app/sales",
+    "/analytics": "/app/analytics",
     "/receipt": "/app/receipts",
 }
 
@@ -15790,7 +15793,7 @@ def build_analytics_data(
 
 
 @app.route("/analytics")
-def analytics_page():
+def legacy_analytics_page():
     analytics = build_analytics_data(
         sales_records=build_sales_report_records(),
         receipts=load_receipts(),
@@ -15801,6 +15804,48 @@ def analytics_page():
     return render_template(
         "analytics.html",
         analytics=analytics,
+    )
+
+
+def _analytics_context(section=None):
+    filters = parse_filters(request.args)
+    return BusinessAnalytics().context(
+        section or (request.args.get("section") or "summary").strip(),
+        filters,
+    )
+
+
+@app.route("/app/analytics")
+def analytics_page():
+    return render_template("analytics.html", analytics=_analytics_context())
+
+
+@app.route("/app/analytics/section")
+def analytics_section():
+    return render_template(
+        "_analytics_section.html", analytics=_analytics_context()
+    )
+
+
+@app.route("/app/analytics/export.csv")
+def analytics_export_csv():
+    context = _analytics_context()
+    rows = BusinessAnalytics().csv_rows(context)
+    output = io.StringIO()
+    fieldnames = sorted({key for row in rows for key in row})
+    writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction="ignore")
+    if fieldnames:
+        writer.writeheader()
+        writer.writerows(rows)
+    payload = "\ufeff" + output.getvalue()
+    return Response(
+        payload,
+        mimetype="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": "attachment; filename=analytics-{}.csv".format(
+                context["section"]
+            )
+        },
     )
 
 
@@ -16046,13 +16091,24 @@ def _purchase_stock(product_id):
 
 
 def _purchase_customer(customer_id):
+    if not customer_id:
+        return None
     return customer_store().get(int(customer_id))
 
 
 def _purchase_enrich_request(item):
     prepared = dict(item)
     customer = _purchase_customer(prepared["customer_id"])
-    prepared["customer"] = customer or {"id": prepared["customer_id"], "name": "Клиент недоступен", "phone": "", "email": ""}
+    if customer:
+        prepared["customer"] = customer
+    elif prepared["customer_id"]:
+        prepared["customer"] = {
+            "id": prepared["customer_id"], "name": "Клиент недоступен", "phone": "", "email": ""
+        }
+    else:
+        prepared["customer"] = {
+            "id": None, "name": "Клиент не указан", "phone": "", "email": ""
+        }
     prepared["status_label"] = PURCHASE_STATUS_LABELS.get(prepared["status"], prepared["status"])
     prepared["channel_label"] = PURCHASE_CHANNEL_LABELS.get(prepared["channel"], prepared["channel"])
     return prepared
@@ -16145,6 +16201,14 @@ def purchases_requests_create():
         return jsonify({"ok": True, "request": _purchase_enrich_request(item)}), 201
     except PurchaseValidationError as error:
         return _purchase_error(error)
+    except (OSError, sqlite3.Error, RuntimeError):
+        app.logger.exception("Purchase request could not be created")
+        return _purchase_error(
+            PurchaseValidationError(
+                "Запрос не сохранён из-за ошибки хранилища. Повторите попытку.", "request"
+            ),
+            503,
+        )
 
 
 @app.route("/api/v1/purchases/requests/<int:request_id>", methods=["GET", "PATCH"])
@@ -16161,6 +16225,14 @@ def purchases_request_detail_api(request_id):
         return _purchase_error(error)
     except PurchaseNotFoundError as error:
         return _purchase_error(error, 404)
+    except (OSError, sqlite3.Error, RuntimeError):
+        app.logger.exception("Purchase request could not be loaded or updated request_id=%s", request_id)
+        return _purchase_error(
+            PurchaseValidationError(
+                "Запрос не сохранён из-за ошибки хранилища. Повторите попытку.", "request"
+            ),
+            503,
+        )
 
 
 @app.post("/api/v1/purchases/requests/<int:request_id>/archive")
@@ -16180,8 +16252,8 @@ def purchases_request_plan(request_id):
     try:
         plan_id = purchase_store().add_to_plan(request_id, _purchase_actor())
         return jsonify({"ok": True, "plan_item_id": plan_id})
-    except PurchaseNotFoundError as error:
-        return _purchase_error(error, 404)
+    except (PurchaseValidationError, PurchaseNotFoundError) as error:
+        return _purchase_error(error, 404 if isinstance(error, PurchaseNotFoundError) else 400)
 
 
 @app.patch("/api/v1/purchases/plan/<int:plan_id>")
@@ -16915,6 +16987,19 @@ NAVIGATION_DEFINITIONS = [
         "mobile_primary": True,
         "active_exact": [],
         "active_prefixes": ["/app/sales", "/sales"],
+    },
+    {
+        "key": "analytics",
+        "label": "Аналитика",
+        "description": "Показатели бизнеса и объяснимые предупреждения.",
+        "icon": "analytics",
+        "href": "/app/analytics",
+        "mobile_href": "/app/analytics",
+        "position": 5,
+        "group": "main",
+        "mobile_primary": False,
+        "active_exact": [],
+        "active_prefixes": ["/app/analytics", "/analytics"],
     },
     {
         "key": "inventory",

@@ -49,12 +49,22 @@ def parse_date(value, field, allow_time=False):
     value = text(value, 40)
     if not value:
         return None
-    candidate = value.replace("Z", "+00:00")
-    try:
-        parsed = datetime.fromisoformat(candidate)
-        return parsed.isoformat(timespec="seconds") if allow_time else parsed.date().isoformat()
-    except ValueError:
-        raise PurchaseValidationError("Укажите корректную дату.", field)
+    candidate = value.replace(" ", "T").replace("Z", "+00:00")
+    if (len(candidate) >= 6 and candidate[-6] in ("+", "-")
+            and candidate[-3] == ":"):
+        candidate = candidate[:-3] + candidate[-2:]
+    formats = (
+        "%Y-%m-%dT%H:%M:%S.%f%z", "%Y-%m-%dT%H:%M:%S%z",
+        "%Y-%m-%dT%H:%M%z", "%Y-%m-%dT%H:%M:%S.%f",
+        "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M", "%Y-%m-%d",
+    )
+    for date_format in formats:
+        try:
+            parsed = datetime.strptime(candidate, date_format)
+            return parsed.isoformat(timespec="seconds") if allow_time else parsed.date().isoformat()
+        except ValueError:
+            pass
+    raise PurchaseValidationError("Укажите корректную дату.", field)
 
 
 def positive_int(value, field, default=None):
@@ -84,7 +94,7 @@ def money(value, field, nullable=True):
 def safe_url(value, field):
     value = text(value, 1000)
     if not value:
-        return ""
+        return None
     parsed = urlsplit(value)
     if parsed.scheme not in ("http", "https") or not parsed.netloc or parsed.username or parsed.password:
         raise PurchaseValidationError("Укажите безопасную ссылку http или https.", field)
@@ -115,15 +125,18 @@ class PurchaseStore:
     def _request_values(payload, partial=False):
         result = {}
         if not partial or "customer_id" in payload:
-            result["customer_id"] = positive_int(payload.get("customer_id"), "customer_id")
+            raw = payload.get("customer_id")
+            result["customer_id"] = positive_int(raw, "customer_id") if raw not in (None, "") else None
         if not partial or "product_id" in payload:
             raw = payload.get("product_id")
             result["product_id"] = positive_int(raw, "product_id") if raw not in (None, "") else None
         for field, maximum in (
             ("product_name", 300), ("brand", 160), ("model", 200), ("article", 160),
             ("product_url", 1000), ("image_url", 1000), ("description", 3000),
-            ("customer_comment", 3000), ("internal_note", 5000),
         ):
+            if not partial or field in payload:
+                result[field] = text(payload.get(field), maximum) or None
+        for field, maximum in (("customer_comment", 3000), ("internal_note", 5000)):
             if not partial or field in payload:
                 result[field] = text(payload.get(field), maximum)
         for field in ("product_url", "image_url"):
@@ -134,12 +147,16 @@ class PurchaseStore:
         if not partial or "target_price" in payload:
             result["target_price"] = money(payload.get("target_price"), "target_price")
         if not partial or "channel" in payload:
-            channel = folded(payload.get("channel") or "other")
+            channel = folded(payload.get("channel"))
+            if not channel:
+                raise PurchaseValidationError("Укажите канал обращения.", "channel")
             if channel not in CHANNELS:
                 raise PurchaseValidationError("Неизвестный канал обращения.", "channel")
             result["channel"] = channel
         if not partial or "requested_at" in payload:
-            result["requested_at"] = parse_date(payload.get("requested_at") or moscow_now(), "requested_at", True)
+            result["requested_at"] = parse_date(payload.get("requested_at"), "requested_at", True)
+            if not result["requested_at"]:
+                raise PurchaseValidationError("Укажите дату и время обращения.", "requested_at")
         if not partial or "valid_until" in payload:
             result["valid_until"] = parse_date(payload.get("valid_until"), "valid_until")
         if not partial or "status" in payload:
@@ -147,12 +164,18 @@ class PurchaseStore:
             if status not in REQUEST_STATUSES:
                 raise PurchaseValidationError("Неизвестный статус запроса.", "status")
             result["status"] = status
+        if not partial:
+            result["request_key"] = text(payload.get("request_key"), 100) or None
         return result
 
     @staticmethod
     def _validate_product_presence(values):
-        if not values.get("product_id") and not any(values.get(key) for key in ("product_name", "brand", "model", "description")):
-            raise PurchaseValidationError("Укажите существующий товар или понятное описание часов.", "product_name")
+        if not values.get("product_id") and not any(values.get(key) for key in (
+                "product_name", "brand", "model", "article", "product_url", "description",
+                "customer_comment")):
+            raise PurchaseValidationError(
+                "Укажите товар или заполните комментарий клиента.", "product_or_comment"
+            )
 
     @staticmethod
     def _history(connection, request_id, action, actor_id, old_status=None, new_status=None,
@@ -165,7 +188,7 @@ class PurchaseStore:
 
     def create_request(self, payload, actor_id, customer_exists, product_resolver):
         values = self._request_values(payload)
-        if not customer_exists(values["customer_id"]):
+        if values["customer_id"] and not customer_exists(values["customer_id"]):
             raise PurchaseValidationError("Клиент не найден.", "customer_id")
         if values["product_id"]:
             product = product_resolver(values["product_id"])
@@ -177,16 +200,25 @@ class PurchaseStore:
         now = utc_now()
         fields = ("customer_id","product_id","product_name","brand","model","article","product_url",
                   "image_url","description","quantity","target_price","channel","requested_at","valid_until",
-                  "customer_comment","internal_note","status")
+                  "customer_comment","internal_note","status","request_key")
+        request_id = None
         with self.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
-            cursor = connection.execute(
-                "INSERT INTO purchase_requests({0},created_at,updated_at,created_by,updated_by) VALUES({1},?,?,?,?)".format(
-                    ",".join(fields), ",".join("?" for _ in fields)),
-                tuple(values[field] for field in fields) + (now, now, int(actor_id), int(actor_id)),
-            )
-            request_id = int(cursor.lastrowid)
-            self._history(connection, request_id, "created", actor_id, new_status=values["status"], now=now)
+            existing = None
+            if values["request_key"]:
+                existing = connection.execute(
+                    "SELECT id FROM purchase_requests WHERE request_key=?", (values["request_key"],)
+                ).fetchone()
+            if existing:
+                request_id = int(existing[0])
+            else:
+                cursor = connection.execute(
+                    "INSERT INTO purchase_requests({0},created_at,updated_at,created_by,updated_by) VALUES({1},?,?,?,?)".format(
+                        ",".join(fields), ",".join("?" for _ in fields)),
+                    tuple(values[field] for field in fields) + (now, now, int(actor_id), int(actor_id)),
+                )
+                request_id = int(cursor.lastrowid)
+                self._history(connection, request_id, "created", actor_id, new_status=values["status"], now=now)
             connection.commit()
         return self.get_request(request_id)
 
@@ -218,7 +250,7 @@ class PurchaseStore:
         values = self._request_values(payload, partial=True)
         merged = dict(current)
         merged.update(values)
-        if "customer_id" in values and not customer_exists(values["customer_id"]):
+        if "customer_id" in values and values["customer_id"] and not customer_exists(values["customer_id"]):
             raise PurchaseValidationError("Клиент не найден.", "customer_id")
         if "product_id" in values and values["product_id"]:
             product = product_resolver(values["product_id"])
@@ -272,6 +304,11 @@ class PurchaseStore:
 
     def add_to_plan(self, request_id, actor_id):
         current = self.get_request(request_id)
+        if not any(current.get(key) for key in (
+                "product_id", "product_name", "brand", "model", "article", "product_url", "description")):
+            raise PurchaseValidationError(
+                "Сначала укажите товар в запросе, затем добавьте его в план.", "product_or_comment"
+            )
         key, now = self._grouping_key(current), utc_now()
         with self.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -282,7 +319,8 @@ class PurchaseStore:
             else:
                 cursor = connection.execute(
                     "INSERT INTO purchase_plan_items(grouping_key,product_id,product_name,brand,model,article,status,created_at,updated_at,updated_by) VALUES(?,?,?,?,?,?,'active',?,?,?)",
-                    (key, current["product_id"], current["product_name"], current["brand"], current["model"], current["article"], now, now, int(actor_id)),
+                    (key, current["product_id"], current["product_name"] or "", current["brand"] or "",
+                     current["model"] or "", current["article"] or "", now, now, int(actor_id)),
                 )
                 plan_id = int(cursor.lastrowid)
             connection.execute(
