@@ -6,6 +6,7 @@ const routes = [
   '/app/sales',
   '/app/receipts',
   '/app/orders',
+  '/app/tasks',
   '/app/repairs',
   '/app/journal',
   '/app/settings',
@@ -81,6 +82,26 @@ test('product modal traps focus, closes on Escape, and restores trigger', async 
   await expect(trigger).toBeFocused();
 });
 
+test('task modal traps focus, closes on Escape, and restores trigger', async ({ page }) => {
+  await page.goto('/app/tasks', { waitUntil: 'domcontentloaded' });
+  const trigger = page.getByRole('button', { name: '+ Новая задача' });
+  await trigger.focus();
+  await trigger.press('Enter');
+  const modal = page.locator('#taskModal');
+  await expect(modal).toBeVisible();
+  const focusable = modal.locator(
+    'button:not([disabled]):not([hidden]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled])',
+  );
+  const count = await focusable.count();
+  expect(count).toBeGreaterThan(1);
+  await focusable.nth(count - 1).focus();
+  await page.keyboard.press('Tab');
+  await expect(focusable.nth(0)).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(modal).toBeHidden();
+  await expect(trigger).toBeFocused();
+});
+
 test('tables expose names, scoped headers and sortable state', async ({ page }) => {
   for (const route of ['/app/products', '/app/sales', '/app/receipts']) {
     await page.goto(route, { waitUntil: 'domcontentloaded' });
@@ -108,7 +129,7 @@ test('dynamic announcements are atomic live regions without focus capture', asyn
 test('key pages reflow at required widths and 200/400 percent zoom', async ({ page }) => {
   for (const width of [1440, 1024, 768, 390, 320]) {
     await page.setViewportSize({ width, height: 900 });
-    for (const route of ['/app/products', '/app/sales', '/login', '/register']) {
+    for (const route of ['/app/products', '/app/sales', '/app/tasks', '/login', '/register']) {
       await page.goto(route, { waitUntil: 'domcontentloaded' });
       const overflow = await page
         .locator('html')

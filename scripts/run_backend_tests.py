@@ -130,10 +130,12 @@ def main():
         catalog_path = test_root / "catalog.db"
         auth_path = test_root / "auth.db"
         orders_path = test_root / "orders.db"
+        tasks_path = test_root / "tasks.db"
         isolated_environment = {
             "CATALOG_DATABASE_PATH": str(catalog_path),
             "ERP_AUTH_DATABASE": str(auth_path),
             "ORDERS_DATABASE_PATH": str(orders_path),
+            "ERP_TASKS_DATABASE": str(tasks_path),
             "ERP_SECRET_KEY": "isolated-backend-test-secret",
             "ERP_TEST_ROOT": str(test_root),
         }
@@ -153,6 +155,7 @@ def main():
             apply_migrations(catalog_path, app_commit="test-suite")
             apply_domain_migrations(auth_path, "auth", "test-suite")
             apply_domain_migrations(orders_path, "orders", "test-suite")
+            apply_domain_migrations(tasks_path, "tasks", "test-suite")
             suite = unittest.defaultTestLoader.discover(
                 arguments.start_directory,
                 pattern=arguments.pattern,

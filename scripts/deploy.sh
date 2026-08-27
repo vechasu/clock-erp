@@ -68,6 +68,8 @@ DOMAIN_MIGRATION_STARTED=0
 CATALOG_ROLLBACK_BACKUP=""
 AUTH_ROLLBACK_BACKUP=""
 ORDERS_ROLLBACK_BACKUP=""
+TASKS_ROLLBACK_BACKUP=""
+TASKS_DATABASE_EXISTED=0
 DATA_SNAPSHOT_BEFORE=""
 BITRIX_ENDPOINT_BACKUP=""
 BITRIX_ENDPOINT_UPDATED=0
@@ -112,6 +114,16 @@ rollback() {
         cp -p "$ORDERS_ROLLBACK_BACKUP" instance/orders.db
         sqlite3 instance/orders.db "PRAGMA quick_check;" | grep -qx "ok"
         printf 'ROLLBACK_OK: restored verified orders database backup\n' >&2
+    fi
+    if [[ "$DOMAIN_MIGRATION_STARTED" == "1" ]]; then
+        if [[ "$TASKS_DATABASE_EXISTED" == "1" && -f "$TASKS_ROLLBACK_BACKUP" ]]; then
+            cp -p "$TASKS_ROLLBACK_BACKUP" instance/tasks.db
+            sqlite3 instance/tasks.db "PRAGMA quick_check;" | grep -qx "ok"
+            printf 'ROLLBACK_OK: restored verified tasks database backup\n' >&2
+        elif [[ "$TASKS_DATABASE_EXISTED" == "0" && -f instance/tasks.db ]]; then
+            rm -f -- instance/tasks.db
+            printf 'ROLLBACK_OK: removed newly created tasks database\n' >&2
+        fi
     fi
     if [[ "$BITRIX_ENDPOINT_UPDATED" == "1" && -f "$BITRIX_ENDPOINT_BACKUP" ]]; then
         install -o admin -g admin -m 0640 \
@@ -281,6 +293,7 @@ if [[ "$DOMAIN_MIGRATION_REQUIRED" == "1" ]]; then
         "$RELEASE_DIR/scripts/domain_migration_preflight.py" preflight \
         --auth-database "$PROJECT_DIR/instance/auth.db" \
         --orders-database "$PROJECT_DIR/instance/orders.db" \
+        --tasks-database "$PROJECT_DIR/instance/tasks.db" \
         --app-commit "$FETCHED_COMMIT" \
         --expected-sqlite-version "$PRODUCTION_SQLITE_VERSION" \
         --rehearsal-root "$REHEARSAL_ROOT" \
@@ -346,6 +359,13 @@ if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" || "$DOMAIN_MIGRATION_REQUIRED" == "1
         ORDERS_ROLLBACK_BACKUP="$rollback_directory/orders-before.db"
         sqlite3 instance/auth.db ".backup '$AUTH_ROLLBACK_BACKUP'"
         sqlite3 instance/orders.db ".backup '$ORDERS_ROLLBACK_BACKUP'"
+        if [[ -f instance/tasks.db ]]; then
+            TASKS_DATABASE_EXISTED=1
+            TASKS_ROLLBACK_BACKUP="$rollback_directory/tasks-before.db"
+            sqlite3 instance/tasks.db ".backup '$TASKS_ROLLBACK_BACKUP'"
+            chmod 600 "$TASKS_ROLLBACK_BACKUP"
+            sqlite3 "$TASKS_ROLLBACK_BACKUP" "PRAGMA quick_check;" | grep -qx "ok"
+        fi
         chmod 600 "$AUTH_ROLLBACK_BACKUP" "$ORDERS_ROLLBACK_BACKUP"
         sqlite3 "$AUTH_ROLLBACK_BACKUP" "PRAGMA quick_check;" | grep -qx "ok"
         sqlite3 "$ORDERS_ROLLBACK_BACKUP" "PRAGMA quick_check;" | grep -qx "ok"
@@ -364,6 +384,7 @@ if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" || "$DOMAIN_MIGRATION_REQUIRED" == "1
         "$PYTHON_BIN" scripts/domain_migration_preflight.py apply \
             --auth-database instance/auth.db \
             --orders-database instance/orders.db \
+            --tasks-database instance/tasks.db \
             --app-commit "$CURRENT_COMMIT" \
             --expected-sqlite-version "$PRODUCTION_SQLITE_VERSION" \
             --service-stopped \
@@ -420,6 +441,7 @@ if [[ "$DOMAIN_MIGRATION_REQUIRED" == "1" ]]; then
     "$PYTHON_BIN" scripts/domain_migration_preflight.py verify \
         --auth-database instance/auth.db \
         --orders-database instance/orders.db \
+        --tasks-database instance/tasks.db \
         --expected-sqlite-version "$PRODUCTION_SQLITE_VERSION" \
         --report "${AUTH_ROLLBACK_BACKUP%.db}-post-deploy.json"
 fi
