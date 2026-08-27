@@ -23,7 +23,7 @@
   "migration_modules": [
     {
       "file": "app/purchases_migrations.py",
-      "sha256": "1f221e65f936d1411509d4e94e33ff2967efbc46a658d2e2656e1ec275dc85c3",
+      "sha256": "c88fe195d4c786b8ef30c3f171f9c36dcd6579bb164e2ad9c70ea56d8d3e0897",
       "owner": "purchases"
     },
     {

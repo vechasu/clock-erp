@@ -68,6 +68,7 @@ CATALOG_MIGRATION_REQUIRED=0
 DOMAIN_MIGRATION_REQUIRED=0
 PURCHASES_MIGRATION_REQUIRED=0
 CUSTOMERS_MIGRATION_REQUIRED=0
+CUSTOMERS_REBUILD_REQUIRED=0
 UNREGISTERED_MIGRATION_CHANGE=0
 CATALOG_MIGRATION_STARTED=0
 DOMAIN_MIGRATION_STARTED=0
@@ -240,6 +241,10 @@ fi
 if printf '%s\n' "$changed_files" | grep -Eq \
     '^(app/customer_registry_migrations\.py|app/services/customer_registry\.py|scripts/(customer_registry_schema|backfill_customers)\.py)$'; then
     CUSTOMERS_MIGRATION_REQUIRED=1
+    customer_rebuild_version="$(sqlite3 instance/customers.db "SELECT value FROM registry_meta WHERE key='identity_rebuild_version';" 2>/dev/null || true)"
+    if [[ "$customer_rebuild_version" != "safe-identity-v1" ]]; then
+        CUSTOMERS_REBUILD_REQUIRED=1
+    fi
 fi
 if printf '%s\n' "$changed_files" | grep -Eq \
     '^scripts/migrate_(brand_inventory|inventory_scopes|repair_cases|unified_catalog)\.py$'; then
@@ -490,7 +495,11 @@ if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" || "$DOMAIN_MIGRATION_REQUIRED" == "1
     fi
     if [[ "$CUSTOMERS_MIGRATION_REQUIRED" == "1" ]]; then
         PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/customer_registry_schema.py apply --database instance/customers.db
-        PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/backfill_customers.py --apply --rebuild --backup-dir "$rollback_directory"
+        customer_rebuild_argument=()
+        if [[ "$CUSTOMERS_REBUILD_REQUIRED" == "1" ]]; then
+            customer_rebuild_argument=(--rebuild)
+        fi
+        PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/backfill_customers.py --apply "${customer_rebuild_argument[@]}" --backup-dir "$rollback_directory"
         PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/customer_registry_schema.py verify --database instance/customers.db
     fi
     DATA_SNAPSHOT_AFTER="$($PYTHON_BIN scripts/data_safety_snapshot.py --instance-dir instance)"

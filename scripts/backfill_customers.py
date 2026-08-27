@@ -28,6 +28,9 @@ if str(ROOT) not in sys.path:
 from app.services.customer_registry import CustomerRegistry, migrate_database  # noqa: E402
 
 
+IDENTITY_REBUILD_VERSION = "safe-identity-v1"
+
+
 def clean_amount(value):
     try:
         return float(value) if value not in (None, "") else None
@@ -327,6 +330,11 @@ def main(argv=None):
         if backup_path is not None:
             result["backup"] = str(backup_path)
         if args.apply and args.rebuild:
+            with registry.connection() as connection:
+                connection.execute(
+                    "INSERT OR REPLACE INTO registry_meta(key,value) VALUES('identity_rebuild_version',?)",
+                    (IDENTITY_REBUILD_VERSION,),
+                )
             check = sqlite3.connect(str(target))
             try:
                 if check.execute("PRAGMA quick_check").fetchone()[0] != "ok":

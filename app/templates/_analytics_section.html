@@ -1,0 +1,51 @@
+<section class="analytics-section" data-section="{{ analytics.section }}">
+    <div class="analytics-section-title"><div><h2>{{ analytics.section_label }}</h2><p>{{ analytics.filters.from }} — {{ analytics.filters.to }} · сравнение с предыдущим равным периодом</p></div></div>
+
+    {% if analytics.section == 'customers' %}
+    {% set customers = analytics.customer_analytics %}
+    <div class="analytics-kpis">
+        {% for label,value in [('Уникальные клиенты',customers.total),('Покупатели',customers.buyers),('Повторные',customers.repeat),('Доля повторных',(customers.repeat_share|string) + '%'),('Выручка','{:,.0f} ₽'.format(customers.revenue).replace(',',' ')),('Средний чек','{:,.0f} ₽'.format(customers.average_check).replace(',',' ')),('На клиента','{:,.0f} ₽'.format(customers.average_customer).replace(',',' ')),('С ремонтом',customers.repairs)] %}
+        <a class="analytics-kpi" href="{{ url_for('customers_page') }}"><span>{{ label }}</span><strong>{{ value }}</strong></a>
+        {% endfor %}
+    </div>
+    <div class="analytics-grid">
+        <article class="analytics-panel analytics-wide"><h3>Топ клиентов</h3><div class="analytics-table-wrap" tabindex="0"><table><thead><tr><th>Клиент</th><th>Покупки</th><th>Сумма</th></tr></thead><tbody>{% for item in customers.top %}<tr><td><a href="{{ url_for('customer_detail_page',customer_id=item.id) }}">{{ item.name or 'Без имени' }}</a></td><td>{{ item.sales_count }}</td><td>{{ '{:,.0f}'.format(item.sales_amount).replace(',',' ') }} ₽</td></tr>{% else %}<tr><td colspan="3">Нет данных за выбранный период.</td></tr>{% endfor %}</tbody></table></div></article>
+        <article class="analytics-panel"><h3>По городам</h3><ul class="analytics-list">{% for item in customers.cities %}<li><a href="{{ url_for('customers_page',city=item.label) }}"><span>{{ item.label }}</span><strong>{{ item.value }}</strong></a></li>{% else %}<li>Нет данных.</li>{% endfor %}</ul></article>
+        <article class="analytics-panel"><h3>По источникам</h3><ul class="analytics-list">{% for item in customers.sources %}<li><a href="{{ url_for('customers_page',source=item.label) }}"><span>{{ item.label }}</span><strong>{{ item.value }}</strong></a></li>{% else %}<li>Нет данных.</li>{% endfor %}</ul></article>
+    </div>
+    {% elif analytics.section in ('summary','sales') %}
+    <div class="analytics-kpis">
+        {% set cards = [('revenue','Выручка','money'),('sales','Продажи','number'),('units','Проданные единицы','number'),('average_order','Средний чек','money')] %}
+        {% for key,label,kind in cards %}
+        <a class="analytics-kpi" href="/app/sales?date_from={{ analytics.filters.from }}&date_to={{ analytics.filters.to }}">
+            <span>{{ label }}</span>
+            <strong>{% if analytics.current[key] is none %}Нет данных{% elif kind == 'money' %}{{ '{:,.2f}'.format(analytics.current[key]).replace(',', ' ') }} ₽{% else %}{{ analytics.current[key]|round(2) }}{% endif %}</strong>
+            <small>Было: {% if analytics.previous[key] is none %}нет данных{% elif kind == 'money' %}{{ '{:,.2f}'.format(analytics.previous[key]).replace(',', ' ') }} ₽{% else %}{{ analytics.previous[key]|round(2) }}{% endif %}</small>
+            <em class="is-{{ analytics.changes[key].direction }}">{{ '↑' if analytics.changes[key].direction == 'up' else '↓' if analytics.changes[key].direction == 'down' else '→' }} {{ analytics.changes[key].percent_display }}</em>
+        </a>
+        {% endfor %}
+        {% if analytics.section == 'summary' %}<article class="analytics-kpi"><span>Прогноз месяца</span><strong>{% if analytics.forecast is not none %}{{ '{:,.2f}'.format(analytics.forecast).replace(',', ' ') }} ₽{% else %}Недостаточно данных{% endif %}</strong><small>Run-rate по фактической выручке; минимум 5 дней текущего месяца.</small></article>{% endif %}
+    </div>
+    <div class="analytics-grid">
+        <article class="analytics-panel analytics-wide"><h3>Динамика выручки</h3>{% if analytics.daily %}<div class="analytics-bars" role="img" aria-label="Выручка по дням">{% for row in analytics.daily %}<a href="/app/sales?date_from={{ row.label }}&date_to={{ row.label }}" title="{{ row.label }}: {{ (row.revenue|round(2)|string + ' ₽') if row.revenue is not none else 'нет данных о цене' }}"><i style="height:{{ (row.revenue / analytics.daily_max * 100) if row.revenue is not none and analytics.daily_max else 0 }}%"></i><span>{{ row.label[5:] }}</span></a>{% endfor %}</div>{% else %}<div class="erp-empty-state">За выбранный период проведённых продаж нет.</div>{% endif %}</article>
+        <article class="analytics-panel"><h3>Каналы</h3>{% if analytics.channels %}<ul class="analytics-list">{% for row in analytics.channels %}<li><a href="/app/analytics?section=channels&channel={{ row.label }}"><span>{{ row.label }}</span><strong>{{ ('{:,.2f}'.format(row.revenue).replace(',', ' ') + ' ₽') if row.revenue is not none else 'Нет данных' }}</strong><small>{{ (row.share|round(1)|string + '%') if row.share is not none else '—' }}</small></a></li>{% endfor %}</ul>{% else %}<div class="erp-empty-state">Нет данных по каналам.</div>{% endif %}</article>
+        <article class="analytics-panel"><h3>Требует внимания</h3>{% if analytics.attention %}<ul class="analytics-alerts">{% for event in analytics.attention %}<li><a href="{{ event.href }}"><strong>{{ event.title }}</strong><span>{{ event.detail }}</span></a></li>{% endfor %}</ul>{% else %}<div class="erp-empty-state">По детерминированным правилам предупреждений нет.</div>{% endif %}</article>
+    </div>
+    {% elif analytics.unavailable_reason %}
+    <div class="analytics-unavailable" role="status"><h3>Расчёт недоступен без предположений</h3><p>{{ analytics.unavailable_reason }}</p>{% if analytics.profit_coverage is defined %}<p>Покрытие строк продаж известной закупочной ценой (без доказанной партийности): {{ analytics.profit_coverage|round(1) }}%.</p>{% endif %}</div>
+    {% elif analytics.section == 'orders' %}
+    <p class="analytics-note">{{ analytics.source_note }}</p><div class="analytics-kpis">{% for row in analytics.rows %}<a class="analytics-kpi" href="/app/orders?status={{ row.label }}"><span>{{ row.label }}</span><strong>{{ row.value }}</strong></a>{% endfor %}</div>
+    {% else %}
+    <div class="analytics-table-wrap" tabindex="0"><table><thead><tr>
+    {% if analytics.section == 'products' %}<th>Товар</th><th>Бренд</th><th>Категория</th><th>Модель</th><th>Остаток</th><th>Продажи</th><th>Единицы</th><th>Выручка</th><th>Последняя продажа</th>
+    {% elif analytics.section == 'channels' %}<th>Канал</th><th>Продажи</th><th>Единицы</th><th>Выручка</th><th>Доля</th>
+    {% elif analytics.section == 'stock' %}<th>Товар</th><th>Бренд</th><th>Остаток</th><th>Продажи, ед.</th><th>Запас, дней</th><th>Рекомендация</th><th>Количество</th>
+    {% elif analytics.section == 'inventory' %}<th>Документ</th><th>Охват</th><th>Статус</th><th>Начало</th><th>Завершение</th><th>Проверено</th><th>Расхождения</th><th>Итоговая разница</th>{% endif %}
+    </tr></thead><tbody>{% for row in analytics.rows %}<tr>
+    {% if analytics.section == 'products' %}<td><a href="/app/products?q={{ row.name|urlencode }}">{{ row.name }}</a></td><td>{{ row.brand }}</td><td>{{ row.category }}</td><td>{{ row.model }}</td><td>{{ row.stock }}</td><td>{{ row.sales }}</td><td>{{ row.units }}</td><td>{{ (row.revenue|round(2)|string + ' ₽') if not row.unknown_prices else 'Нет данных' }}</td><td>{{ row.last_sale or '—' }}</td>
+    {% elif analytics.section == 'channels' %}<td><a href="/app/sales?source={{ row.label }}">{{ row.label }}</a></td><td>{{ row.sales }}</td><td>{{ row.units }}</td><td>{{ (row.revenue|round(2)|string + ' ₽') if row.revenue is not none else 'Нет данных' }}</td><td>{{ (row.share|round(1)|string + '%') if row.share is not none else '—' }}</td>
+    {% elif analytics.section == 'stock' %}<td><a href="/app/products?q={{ row.name|urlencode }}">{{ row.name }}</a></td><td>{{ row.brand }}</td><td>{{ row.stock }}</td><td>{{ row.units }}</td><td>{{ row.days_cover|round(1) if row.days_cover is not none else '—' }}</td><td>{{ row.recommendation }}</td><td>{{ row.recommended_quantity }}</td>
+    {% elif analytics.section == 'inventory' %}<td><a href="/app/inventory/{{ row.id }}">{{ row.id }}</a></td><td>{{ row.scope }}</td><td>{{ row.status }}</td><td>{{ row.started_at }}</td><td>{{ row.completed_at or '—' }}</td><td>{{ row.checked_positions }}</td><td>{{ row.adjusted_positions + row.missing_positions }}</td><td>{{ row.total_delta }}</td>{% endif %}
+    </tr>{% else %}<tr><td colspan="9">Нет данных для выбранных фильтров.</td></tr>{% endfor %}</tbody></table></div>
+    {% endif %}
+</section>
