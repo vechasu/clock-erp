@@ -24,16 +24,15 @@
 
         <div class="auth-grid">
             <div class="auth-field auth-field-wide">
-                <label class="auth-label" for="email">Email</label>
+                <label class="auth-label" for="email">Логин или email</label>
                 <input
                     class="auth-input"
                     id="email"
                     name="email"
-                    type="email"
+                    type="text"
                     value="{{ email }}"
                     maxlength="254"
-                    autocomplete="email"
-                    inputmode="email"
+                    autocomplete="username"
                     required
                     {% if error %}aria-invalid="true" aria-describedby="login-error"{% endif %}
                 >
