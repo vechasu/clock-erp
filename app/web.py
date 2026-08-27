@@ -120,6 +120,12 @@ from app.services.brand_inventory import (
     BrandInventory,
     InventoryError,
 )
+from app.services.inventory_control import (
+    DECISIONS as INVENTORY_DECISIONS,
+    REASONS as INVENTORY_REASONS,
+    REVIEW_STATUSES as INVENTORY_REVIEW_STATUSES,
+    InventoryControl,
+)
 from app.services.brand_images import (
     BrandImageStore,
     BrandImageValidationError,
@@ -3907,13 +3913,31 @@ def _inventory_json(action):
 @app.route("/app/inventory")
 def inventory_page():
     service = BrandInventory()
+    control = InventoryControl()
     view = (request.args.get("view") or "history").strip()
     if view == "start":
         return redirect(url_for("inventory_run_page"))
     active_inventories = service.list_active()
+    facets = service.history_facets()
+    page, per_page = parse_erp_pagination()
+    if view == "discrepancies":
+        filters = {key: request.args.get(key, "") for key in (
+            "q", "date_from", "date_to", "brand_id", "category_id",
+            "model_id", "employee", "direction", "reason", "review_status",
+        )}
+        listing = control.discrepancies(filters, page, per_page)
+        pagination = build_erp_pagination(
+            "inventory_page", listing["total"], page, per_page, view="discrepancies"
+        )
+        return render_template(
+            "inventory_section.html", view=view, discrepancies=listing["rows"],
+            pagination=pagination, filters=filters, facets=facets,
+            reasons=INVENTORY_REASONS, review_statuses=INVENTORY_REVIEW_STATUSES,
+            active_inventories=active_inventories,
+        )
     if view == "brands":
         selected_brand = (request.args.get("brand_id") or "").strip()
-        summaries = service.brand_summary()
+        summaries = control.brand_summary()
         if selected_brand:
             summaries = [
                 item for item in summaries
@@ -3921,6 +3945,21 @@ def inventory_page():
             ]
         return render_template(
             "inventory_section.html", view="brands", brand_summaries=summaries,
+            active_inventories=active_inventories, can_admin=_inventory_can_admin(),
+        )
+    if view == "analytics":
+        period = (request.args.get("period") or "30").strip()
+        today = datetime.now(timezone.utc).date()
+        date_to = (request.args.get("date_to") or today.isoformat()).strip()
+        if period == "custom":
+            date_from = (request.args.get("date_from") or (today - timedelta(days=29)).isoformat()).strip()
+        else:
+            days = int(period) if period in {"7", "30", "90", "365"} else 30
+            date_from = (today - timedelta(days=days - 1)).isoformat()
+        return render_template(
+            "inventory_section.html", view=view,
+            analytics=control.analytics(date_from, date_to), period=period,
+            date_from=date_from, date_to=date_to,
             active_inventories=active_inventories,
         )
     filters = {
@@ -3929,18 +3968,17 @@ def inventory_page():
             "model_id", "employee", "status", "discrepancies",
         )
     }
-    history = service.list_history(filters)
-    page, per_page = parse_erp_pagination()
-    history_page, page = paginate_erp_records(history, page, per_page)
+    listing = control.history(filters, page, per_page)
     pagination = build_erp_pagination(
-        "inventory_page", len(history), page, per_page
+        "inventory_page", listing["total"], page, per_page
     )
     current_query = request.query_string.decode("utf-8", "replace")
     return_to = request.path + ("?" + current_query if current_query else "")
     return render_template(
-        "inventory_section.html", view="history", histories=history_page,
-        pagination=pagination, facets=service.history_facets(), filters=filters,
+        "inventory_section.html", view="history", histories=listing["rows"],
+        pagination=pagination, facets=facets, filters=filters,
         active_inventories=active_inventories, return_to=return_to,
+        kpis=control.kpis(filters["date_from"], filters["date_to"]),
     )
 
 
@@ -3970,10 +4008,11 @@ def inventory_run_page():
 
 @app.route("/app/inventory/<inventory_id>")
 def inventory_document_page(inventory_id):
-    service = BrandInventory()
+    control = InventoryControl()
     try:
-        inventory = service.get(inventory_id)
-        items = service.document_items(inventory_id)
+        inventory = control.document(inventory_id)
+        item_filter = (request.args.get("items") or "all").strip()
+        items = control.document_items(inventory_id, item_filter)
     except InventoryError:
         return redirect(url_for(
             "inventory_page", notice="error", message="Инвентаризация не найдена."
@@ -3983,8 +4022,107 @@ def inventory_document_page(inventory_id):
         return_to = url_for("inventory_page")
     return render_template(
         "inventory_document.html", inventory=inventory, items=items,
-        return_to=return_to,
+        return_to=return_to, item_filter=item_filter,
+        reasons=INVENTORY_REASONS, decisions=INVENTORY_DECISIONS,
+        review_statuses=INVENTORY_REVIEW_STATUSES,
+        events=control.events(inventory_id) if _inventory_can_admin() else [],
+        can_edit=_inventory_can_edit(), can_admin=_inventory_can_admin(),
+        csrf=csrf_token(),
     )
+
+
+def _inventory_can_edit():
+    if not auth_is_enabled():
+        return True
+    return (current_auth_user() or {}).get("role") in {"employee", "admin"}
+
+
+def _inventory_can_admin():
+    if not auth_is_enabled():
+        return True
+    return (current_auth_user() or {}).get("role") == "admin"
+
+
+def _inventory_require_edit(admin=False):
+    if not (_inventory_can_admin() if admin else _inventory_can_edit()):
+        abort(403)
+    require_csrf_when_authenticated()
+
+
+@app.post("/api/v1/inventory-discrepancies/<item_id>")
+def inventory_discrepancy_update_api(item_id):
+    _inventory_require_edit()
+    user = current_auth_user() or {}
+    payload = _inventory_payload()
+    if (payload.get("assignee_user_id") or payload.get("assignee_name")) and not _inventory_can_admin():
+        abort(403)
+    return _inventory_json(lambda: {
+        "ok": True,
+        "review": InventoryControl().update_review(
+            item_id, payload, str(user.get("id") or ""), _inventory_actor()
+        ),
+    })
+
+
+@app.post("/api/v1/inventory-discrepancies/<item_id>/task")
+def inventory_discrepancy_task_api(item_id):
+    _inventory_require_edit()
+    user = current_auth_user() or {}
+    control = InventoryControl()
+    discrepancy = control.discrepancy(item_id)
+    if discrepancy is None:
+        return jsonify(ok=False, message="Расхождение не найдено."), 404
+    if discrepancy.get("task_id"):
+        return jsonify(ok=True, task_id=discrepancy["task_id"], duplicate=True)
+    delta = int(discrepancy["quantity_delta"])
+    title = "Проверить {} {} шт. {} по {}".format(
+        "излишек" if delta > 0 else "недостачу", abs(delta),
+        discrepancy.get("name") or discrepancy.get("article") or "товара",
+        discrepancy["document_number"],
+    )
+    payload = _inventory_payload()
+    task_payload = {
+        "title": title,
+        "description": "Расхождение: {:+d} шт.\nДокумент: {}\n/app/inventory/{}".format(
+            delta, discrepancy["document_number"], discrepancy["session_id"]
+        ),
+        "section": "inbox", "priority": "important",
+        "due_date": payload.get("due_date"), "due_time": None,
+        "assignee_id": payload.get("assignee_user_id") or user.get("id"),
+        "entity_type": "product", "entity_id": str(discrepancy["product_id"]),
+        "idempotency_key": "inventory-discrepancy:{}".format(item_id),
+    }
+    try:
+        task, created = _tasks_store().create(
+            task_payload, user.get("id"), _task_user_exists, _task_entity
+        )
+        control.link_task(item_id, task["id"], str(user.get("id") or ""), _inventory_actor())
+    except (TaskValidationError, TaskNotFoundError) as error:
+        return _task_api_error(error)
+    return jsonify(ok=True, task_id=task["id"], duplicate=not created)
+
+
+@app.post("/api/v1/inventory-brands/<int:brand_id>/control")
+def inventory_brand_control_api(brand_id):
+    _inventory_require_edit(admin=True)
+    return _inventory_json(lambda: {
+        "ok": True,
+        "saved": InventoryControl().update_brand_control(
+            brand_id, _inventory_payload(), _inventory_actor()
+        ),
+    })
+
+
+@app.post("/api/v1/inventory-discrepancies/<item_id>/adjust")
+def inventory_discrepancy_adjust_api(item_id):
+    _inventory_require_edit(admin=True)
+    payload = _inventory_payload()
+    return _inventory_json(lambda: {
+        "ok": True, "adjustment": InventoryControl().adjust_once(
+            item_id, payload.get("target_stock"), _inventory_actor(),
+            payload.get("reason") or "Разбор расхождения",
+        )
+    })
 
 
 @app.route("/app/products/inventory")
