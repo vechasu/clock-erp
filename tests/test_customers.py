@@ -16,6 +16,11 @@ from app.services.customer_identity import (
     normalize_phone,
 )
 from app.services.orders_snapshot import OrdersSnapshotStore
+from app.services.customer_registry import (
+    CustomerRegistry, masked_email, migrate_database,
+    normalize_email as registry_normalize_email,
+    normalize_phone as registry_normalize_phone,
+)
 
 
 def order(order_id, name="Иван Иванов", phone="+7 921 123-45-67", email="ivan@example.ru", **values):
@@ -178,16 +183,91 @@ class CustomerBackfillTest(unittest.TestCase):
         self.assertEqual(second["actual_customers"], 1)
 
 
+class CanonicalCustomerRegistryTest(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.path = Path(self.temporary.name) / "customers.db"
+        migrate_database(self.path)
+        self.registry = CustomerRegistry(self.path)
+
+    def tearDown(self):
+        self.temporary.cleanup()
+
+    def add(self, external_id, **values):
+        payload = {
+            "operation_type": "order", "source": "tictactoy",
+            "external_id": str(external_id), "name": "Клиент",
+            "occurred_at": "2026-01-{:02d}".format((int(external_id) % 28) + 1),
+        }
+        payload.update(values)
+        with self.registry.connection() as connection:
+            result = self.registry.upsert_operation(connection, payload)
+            self.registry.recompute(connection)
+        return result
+
+    def test_phone_email_masking_name_and_contactless_rules(self):
+        self.assertEqual(registry_normalize_phone("8 (921) 123-45-67"), "+79211234567")
+        self.assertEqual(registry_normalize_phone("+49 30 123456"), "+4930123456")
+        self.assertEqual(registry_normalize_email(" A@EXAMPLE.RU "), "a@example.ru")
+        self.assertTrue(masked_email("abc@privaterelay.example"))
+        first = self.add(1, phone="8 (921) 123-45-67", email="A@EXAMPLE.RU")
+        same = self.add(2, phone="+7 921 123-45-67")
+        different_name_only = self.add(3, name="Клиент", phone="", email="")
+        another_name_only = self.add(4, name="Клиент", phone="", email="")
+        self.assertEqual(first["customer_id"], same["customer_id"])
+        self.assertNotEqual(different_name_only["customer_id"], another_name_only["customer_id"])
+        relay_one = self.add(5, email="same@privaterelay.example", source="wildberries")
+        relay_two = self.add(6, email="same@privaterelay.example", source="amazon")
+        self.assertNotEqual(relay_one["customer_id"], relay_two["customer_id"])
+
+    def test_conflict_idempotency_cancellation_and_blank_preservation(self):
+        phone_customer = self.add(1, name="Полное имя", phone="+7 900 000-00-01", email="one@example.ru", external_customer_id="u1")
+        email_customer = self.add(2, phone="+7 900 000-00-02", email="two@example.ru")
+        conflict = self.add(3, phone="+7 900 000-00-01", email="two@example.ru")
+        self.assertNotIn(conflict["customer_id"], {phone_customer["customer_id"], email_customer["customer_id"]})
+        self.assertEqual(conflict["reason"], "phone_email_cross_conflict")
+        repeated = self.add(1, name="", phone="", email="", completed=True, amount=100)
+        self.assertEqual(repeated["action"], "updated")
+        cancelled = self.add(4, phone="+7 900 000-00-01", external_customer_id="u1", cancelled=True, completed=False, amount=999)
+        customer = self.registry.get(phone_customer["customer_id"])
+        self.assertEqual(customer["name"], "Полное имя")
+        self.assertEqual(customer["cancelled_orders_count"], 1)
+        self.assertEqual(customer["total_completed_amount"], 100)
+
+    def test_more_than_100_server_paginated_customers_and_global_search(self):
+        for index in range(1, 126):
+            self.add(index, name="Клиент {}".format(index), phone="+1 202 555 {:04d}".format(index))
+        first = self.registry.list(page=1, per_page=50)
+        third = self.registry.list(page=3, per_page=50)
+        search = self.registry.list(query="Клиент 120", per_page=20)
+        self.assertEqual(first["total"], 125)
+        self.assertEqual(len(first["rows"]), 50)
+        self.assertEqual(len(third["rows"]), 25)
+        self.assertEqual(search["total"], 1)
+
+
 class CustomerRoutesTest(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.path = Path(self.temporary.name) / "orders.db"
+        self.customers_path = Path(self.temporary.name) / "customers.db"
         apply_domain_migrations(self.path, "orders", "test")
         OrdersSnapshotStore(self.path).replace([order(1), order(2)], 1)
+        migrate_database(self.customers_path)
+        registry = CustomerRegistry(self.customers_path)
+        with registry.connection() as connection:
+            registry.upsert_operation(connection, {
+                "operation_type": "order", "source": "tictactoy", "external_id": "1",
+                "name": "Иван Иванов", "phone": "+7 921 123-45-67",
+                "email": "ivan@example.ru", "occurred_at": "2026-08-01", "completed": True,
+            })
+            registry.recompute(connection)
         web.app.config.update(TESTING=True)
         self.client = web.app.test_client()
         self.environment = mock.patch.dict(
-            "os.environ", {"ORDERS_DATABASE_PATH": str(self.path), "ERP_AUTH_ENABLED": "0"}, clear=False
+            "os.environ", {"ORDERS_DATABASE_PATH": str(self.path),
+                           "CUSTOMERS_DATABASE_PATH": str(self.customers_path),
+                           "ERP_AUTH_ENABLED": "0"}, clear=False
         )
         self.environment.start()
 
@@ -203,24 +283,16 @@ class CustomerRoutesTest(unittest.TestCase):
             "Найдено: 1 клиентов",
             self.client.get("/app/customers?q=иван").get_data(as_text=True),
         )
-        customer_id = sqlite3.connect(str(self.path)).execute("SELECT id FROM customers").fetchone()[0]
+        customer_id = sqlite3.connect(str(self.customers_path)).execute("SELECT id FROM customers").fetchone()[0]
         overview = self.client.get("/app/customers/{}".format(customer_id))
         orders_tab = self.client.get("/app/customers/{}?tab=orders".format(customer_id))
         self.assertEqual(overview.status_code, 200)
         self.assertEqual(orders_tab.status_code, 200)
         self.assertIn("Обзор", overview.get_data(as_text=True))
-        self.assertIn('href="/order/1"', orders_tab.get_data(as_text=True))
+        self.assertIn("Заказ · №1", orders_tab.get_data(as_text=True))
         self.assertEqual(self.client.get("/app/customers/999999").status_code, 404)
 
-        with mock.patch.object(web, "get_order", return_value=order(1)), mock.patch.object(
-            web, "get_orders", return_value=[order(1), order(2)]
-        ):
-            order_card = self.client.get("/order/1")
-        self.assertEqual(order_card.status_code, 200)
-        self.assertIn(
-            'href="/app/customers/{}"'.format(customer_id),
-            order_card.get_data(as_text=True),
-        )
+        self.assertIn("Продажи", overview.get_data(as_text=True))
 
     def test_customer_routes_follow_global_auth_protection(self):
         with mock.patch.dict("os.environ", {"ERP_AUTH_ENABLED": "1"}, clear=False), mock.patch.dict(

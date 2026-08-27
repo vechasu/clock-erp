@@ -47,6 +47,10 @@ readonly BITRIX_ENDPOINT_SOURCE="$PROJECT_DIR/bitrix/catalog-export.php"
 readonly BITRIX_ENDPOINT_TARGET="/var/www/admin/data/www/tictactoy.ru/api/catalog-export.php"
 readonly BITRIX_COMMENT_ENDPOINT_SOURCE="$PROJECT_DIR/bitrix/order-comments.php"
 readonly BITRIX_COMMENT_ENDPOINT_TARGET="/var/www/admin/data/www/tictactoy.ru/api/order-comments.php"
+readonly BITRIX_ORDERS_EXPORT_SOURCE="$PROJECT_DIR/bitrix/orders-export.php"
+readonly BITRIX_ORDERS_EXPORT_TARGET="/var/www/admin/data/www/tictactoy.ru/api/orders-export.php"
+readonly CUSTOMERS_CRON="/etc/cron.d/clock-erp-customers"
+readonly CUSTOMERS_LOGROTATE="/etc/logrotate.d/clock-erp-customers"
 readonly HEALTHCHECK_URLS=(
     "http://127.0.0.1:5000/register"
     "http://127.0.0.1:5000/login"
@@ -76,6 +80,9 @@ BITRIX_ENDPOINT_UPDATED=0
 BITRIX_COMMENT_ENDPOINT_BACKUP=""
 BITRIX_COMMENT_ENDPOINT_UPDATED=0
 BITRIX_COMMENT_TARGET_EXISTED=0
+BITRIX_ORDERS_EXPORT_BACKUP=""
+BITRIX_ORDERS_EXPORT_UPDATED=0
+BITRIX_ORDERS_EXPORT_TARGET_EXISTED=0
 
 cleanup_release() {
     if [[ -n "$RELEASE_DIR" && "$RELEASE_DIR" == "$BACKUP_DIR/temporary/release-"* ]]; then
@@ -135,6 +142,14 @@ rollback() {
                 "$BITRIX_COMMENT_ENDPOINT_BACKUP" "$BITRIX_COMMENT_ENDPOINT_TARGET"
         elif [[ "$BITRIX_COMMENT_TARGET_EXISTED" == "0" ]]; then
             rm -f -- "$BITRIX_COMMENT_ENDPOINT_TARGET"
+        fi
+    fi
+    if [[ "$BITRIX_ORDERS_EXPORT_UPDATED" == "1" ]]; then
+        if [[ -f "$BITRIX_ORDERS_EXPORT_BACKUP" ]]; then
+            install -o admin -g admin -m 0640 \
+                "$BITRIX_ORDERS_EXPORT_BACKUP" "$BITRIX_ORDERS_EXPORT_TARGET"
+        elif [[ "$BITRIX_ORDERS_EXPORT_TARGET_EXISTED" == "0" ]]; then
+            rm -f -- "$BITRIX_ORDERS_EXPORT_TARGET"
         fi
     fi
     if [[ "$DEPLOY_UPDATED" == "1" && -n "$PREVIOUS_COMMIT" ]]; then
@@ -312,6 +327,8 @@ install -o root -g root -m 0755 scripts/retain_erp_backups.py "$RETENTION_TOOL"
 install -o root -g root -m 0644 ops/clock-erp-backup-retention.cron "$RETENTION_CRON"
 install -o root -g root -m 0644 \
     ops/clock-erp-backup-retention.logrotate "$RETENTION_LOGROTATE"
+install -o root -g root -m 0644 ops/clock-erp-customers.cron "$CUSTOMERS_CRON"
+install -o root -g root -m 0644 ops/clock-erp-customers.logrotate "$CUSTOMERS_LOGROTATE"
 
 if [[ -f "$BITRIX_ENDPOINT_SOURCE" && -f "$BITRIX_ENDPOINT_TARGET" ]]; then
     /opt/php81/bin/php -l "$BITRIX_ENDPOINT_SOURCE" >/dev/null
@@ -333,6 +350,18 @@ if [[ -f "$BITRIX_COMMENT_ENDPOINT_SOURCE" ]]; then
     install -o admin -g admin -m 0640 \
         "$BITRIX_COMMENT_ENDPOINT_SOURCE" "$BITRIX_COMMENT_ENDPOINT_TARGET"
     BITRIX_COMMENT_ENDPOINT_UPDATED=1
+fi
+if [[ -f "$BITRIX_ORDERS_EXPORT_SOURCE" ]]; then
+    /opt/php81/bin/php -l "$BITRIX_ORDERS_EXPORT_SOURCE" >/dev/null
+    if [[ -f "$BITRIX_ORDERS_EXPORT_TARGET" ]]; then
+        BITRIX_ORDERS_EXPORT_TARGET_EXISTED=1
+        BITRIX_ORDERS_EXPORT_BACKUP="$BACKUP_DIR/bitrix-orders-export-$(date +%Y%m%d-%H%M%S).php"
+        cp -p "$BITRIX_ORDERS_EXPORT_TARGET" "$BITRIX_ORDERS_EXPORT_BACKUP"
+        chmod 600 "$BITRIX_ORDERS_EXPORT_BACKUP"
+    fi
+    install -o admin -g admin -m 0640 \
+        "$BITRIX_ORDERS_EXPORT_SOURCE" "$BITRIX_ORDERS_EXPORT_TARGET"
+    BITRIX_ORDERS_EXPORT_UPDATED=1
 fi
 
 if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" || "$DOMAIN_MIGRATION_REQUIRED" == "1" ]]; then

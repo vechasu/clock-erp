@@ -65,7 +65,7 @@ from app.services.orders_snapshot import (
     OrdersSnapshotStore,
     order_item_units,
 )
-from app.services.customer_identity import CustomerStore, CUSTOMER_PAGE_SIZES
+from app.services.customer_registry import CustomerRegistry, PAGE_SIZES as CUSTOMER_PAGE_SIZES
 from app.services.wildberries_orders import synchronize_wildberries_orders
 from app.services.brand_values import normalize_brand
 from app.services.catalog_reader import CatalogReader
@@ -1187,7 +1187,7 @@ def orders_list_api():
 
 
 def customer_store():
-    return CustomerStore(OrdersSnapshotStore())
+    return CustomerRegistry()
 
 
 @app.get("/app/customers")
@@ -1197,7 +1197,7 @@ def customers_page():
         result = customer_store().list(
             query=query,
             page=request.args.get("page", 1),
-            per_page=request.args.get("per_page", 20),
+            per_page=request.args.get("per_page", 50),
         )
     except sqlite3.Error:
         app.logger.exception("Customer list could not be loaded")
@@ -1228,11 +1228,14 @@ def customer_detail_page(customer_id):
         ), 503
     if customer is None:
         abort(404)
-    tab = "orders" if request.args.get("tab") == "orders" else "overview"
-    per_page = request.args.get("per_page", 20) if tab == "orders" else 20
+    requested_tab = str(request.args.get("tab") or "overview")
+    tab = requested_tab if requested_tab in {"overview", "orders", "sales", "repairs"} else "overview"
+    operation_type = {"orders": "order", "sales": "sale", "repairs": "repair"}.get(tab)
+    per_page = request.args.get("per_page", 20) if operation_type else 20
     try:
-        orders = store.orders(
-            customer_id, page=request.args.get("page", 1), per_page=per_page
+        operations = store.operations(
+            customer_id, operation_type=operation_type,
+            page=request.args.get("page", 1), per_page=per_page
         )
     except sqlite3.Error:
         app.logger.exception("Customer orders could not be loaded customer_id=%s", customer_id)
@@ -1241,14 +1244,14 @@ def customer_detail_page(customer_id):
             pagination=None, data_error=True,
         ), 503
     pagination = None
-    if tab == "orders":
+    if operation_type:
         pagination = build_erp_pagination(
-            "customer_detail_page", orders["total"], orders["page"], orders["per_page"],
-            per_page_options=CUSTOMER_PAGE_SIZES, customer_id=customer_id,
+            "customer_detail_page", operations["total"], operations["page"], operations["per_page"],
+            per_page_options=CUSTOMER_PAGE_SIZES, customer_id=customer_id, tab=tab,
         )
     return render_template(
         "customer_detail.html", customer=customer, tab=tab,
-        customer_orders=orders["rows"] if tab == "orders" else orders["rows"][:5],
+        customer_operations=operations["rows"] if operation_type else operations["rows"][:5],
         pagination=pagination,
     )
 
@@ -2123,9 +2126,14 @@ def order_page(order_id):
     try:
         full_order = get_order(order_id)
         if full_order:
-            snapshot_order = OrdersSnapshotStore().get(order_id)
-            if snapshot_order and snapshot_order.get("customer_id"):
-                full_order["customer_id"] = snapshot_order["customer_id"]
+            try:
+                registry_customer_id = customer_store().customer_for_operation(
+                    "order", "tictactoy", order_id
+                )
+            except sqlite3.Error:
+                registry_customer_id = None
+            if registry_customer_id:
+                full_order["customer_id"] = registry_customer_id
             selected_order = full_order
     except BitrixReadOnlyError as error:
         detail_error = type(error).__name__
