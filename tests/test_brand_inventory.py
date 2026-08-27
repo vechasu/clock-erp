@@ -8,6 +8,7 @@ from app import auth, web
 from app.catalog_db import CatalogDatabase
 from app.domain_schema_migrations import apply_domain_migrations
 from app.services.brand_inventory import BrandInventory, InventoryConflict, InventoryError
+from app.services.inventory_control import _duration
 from app.services.excel_product_catalog import ExcelProductCatalog
 from app.services.sales_inventory import SalesInventory
 
@@ -878,7 +879,7 @@ class BrandInventoryWebTest(unittest.TestCase):
         brands = self.client.get("/app/inventory?view=brands")
         markup = brands.get_data(as_text=True)
         self.assertIn("Не проводилась", markup)
-        self.assertIn("идёт проверка", markup)
+        self.assertIn("идёт проверка", markup.casefold())
 
     def test_partial_inventory_is_not_marked_full(self):
         with CatalogDatabase(self.database_path).connect() as connection:
@@ -927,3 +928,31 @@ class BrandInventoryWebTest(unittest.TestCase):
             headers={"X-CSRF-Token": "inventory-csrf"},
         )
         self.assertEqual(accepted.status_code, 200)
+
+    def test_inventory_workspace_has_same_five_tabs_on_every_screen(self):
+        expected = ["history", "run", "discrepancies", "brands", "analytics"]
+        screens = (
+            ("/app/inventory", "history"),
+            ("/app/inventory/run", "run"),
+            ("/app/inventory?view=discrepancies", "discrepancies"),
+            ("/app/inventory?view=brands", "brands"),
+            ("/app/inventory?view=analytics", "analytics"),
+        )
+        for url, active in screens:
+            with self.subTest(url=url):
+                response = self.client.get(url)
+                markup = response.get_data(as_text=True)
+                self.assertEqual(response.status_code, 200)
+                positions = [markup.index('data-inventory-tab="{}"'.format(tab)) for tab in expected]
+                self.assertEqual(positions, sorted(positions))
+                self.assertEqual(markup.count("data-inventory-tab="), 5)
+                self.assertIn(
+                    'data-inventory-tab="{}" aria-current="page"'.format(active),
+                    markup,
+                )
+
+    def test_subminute_duration_uses_readable_label(self):
+        self.assertEqual(
+            _duration("2026-08-28T10:00:00", "2026-08-28T10:00:42"),
+            "< 1 мин",
+        )

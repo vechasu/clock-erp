@@ -54,6 +54,8 @@ def _duration(started_at, completed_at):
     except (TypeError, ValueError):
         return None
     seconds = max(0, int((finish - start).total_seconds()))
+    if seconds < 60:
+        return "< 1 мин"
     hours, remainder = divmod(seconds, 3600)
     minutes = remainder // 60
     return "{} ч {} мин".format(hours, minutes) if hours else "{} мин".format(minutes)
@@ -226,7 +228,7 @@ class InventoryControl:
             page = min(page, max(1, int(math.ceil(float(total) / per_page))))
             rows = connection.execute(
                 "SELECT i.id item_id,i.session_id,i.product_id,n.document_number,s.completed_at,COALESCE(i.snapshot_name,p.excel_name_raw) name,"
-                "COALESCE(i.snapshot_article,p.excel_article) article,COALESCE(i.snapshot_brand_name,p.excel_brand) brand_name,"
+                "COALESCE(i.snapshot_article,p.excel_article) article,COALESCE(i.snapshot_photo_url,p.bitrix_thumbnail_url,p.bitrix_primary_image_url) photo_url,COALESCE(i.snapshot_brand_name,p.excel_brand) brand_name,"
                 "COALESCE(i.snapshot_category_name,p.excel_category) category_name,COALESCE(i.snapshot_model_name,p.model) model_name,"
                 "i.snapshot_stock,i.actual_stock,i.quantity_delta,COALESCE(r.review_status,'new') review_status,r.reason_code,r.reason_comment,r.decision_code,r.assignee_user_id,r.assignee_name,r.task_id "
                 + joins + clause + " ORDER BY (COALESCE(r.review_status,'new')='resolved'),s.completed_at DESC,i.id LIMIT ? OFFSET ?",
