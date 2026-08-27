@@ -49,12 +49,22 @@ def parse_date(value, field, allow_time=False):
     value = text(value, 40)
     if not value:
         return None
-    candidate = value.replace("Z", "+00:00")
-    try:
-        parsed = datetime.fromisoformat(candidate)
-        return parsed.isoformat(timespec="seconds") if allow_time else parsed.date().isoformat()
-    except ValueError:
-        raise PurchaseValidationError("Укажите корректную дату.", field)
+    candidate = value.replace(" ", "T").replace("Z", "+00:00")
+    if (len(candidate) >= 6 and candidate[-6] in ("+", "-")
+            and candidate[-3] == ":"):
+        candidate = candidate[:-3] + candidate[-2:]
+    formats = (
+        "%Y-%m-%dT%H:%M:%S.%f%z", "%Y-%m-%dT%H:%M:%S%z",
+        "%Y-%m-%dT%H:%M%z", "%Y-%m-%dT%H:%M:%S.%f",
+        "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M", "%Y-%m-%d",
+    )
+    for date_format in formats:
+        try:
+            parsed = datetime.strptime(candidate, date_format)
+            return parsed.isoformat(timespec="seconds") if allow_time else parsed.date().isoformat()
+        except ValueError:
+            pass
+    raise PurchaseValidationError("Укажите корректную дату.", field)
 
 
 def positive_int(value, field, default=None):
