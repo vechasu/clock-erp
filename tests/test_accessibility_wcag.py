@@ -31,6 +31,8 @@ class AccessibilityWcagContractTests(unittest.TestCase):
                 self.assertEqual(source.count('id="main-content"'), 1)
                 if name == "warehouse.html":
                     source += self.source("_products_workspace.html")
+                if name == "warehouse_inventory.html":
+                    source += self.source("_inventory_workspace.html")
                 self.assertEqual(len(re.findall(r"<h1(?:\s|>)", source)), 1)
 
     def test_auth_pages_use_the_form_title_as_the_single_h1(self):
