@@ -246,7 +246,7 @@ def main(argv=None):
     parser.add_argument("--catalog-database", type=Path, default=ROOT / "instance/catalog.db")
     parser.add_argument("--repairs", type=Path, default=ROOT / "instance/repair_cases.json")
     parser.add_argument("--backup-dir", type=Path, default=ROOT / "instance/backups")
-    parser.add_argument("--bitrix-url", default="http://127.0.0.1/api/orders-export.php")
+    parser.add_argument("--bitrix-url", default="http://127.0.0.1:81/api/orders-export.php")
     parser.add_argument("--bitrix-host", default="tictactoy.ru")
     parser.add_argument("--skip-bitrix", action="store_true")
     parser.add_argument("--apply", action="store_true")
