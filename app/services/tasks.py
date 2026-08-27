@@ -517,18 +517,18 @@ class TaskStore:
                 "SUM(CASE WHEN due_date>? THEN 1 ELSE 0 END),"
                 "SUM(CASE WHEN status='waiting' THEN 1 ELSE 0 END),"
                 "SUM(CASE WHEN due_date IS NULL AND section='anytime' THEN 1 ELSE 0 END),"
-                "SUM(CASE WHEN due_date IS NULL AND section='someday' THEN 1 ELSE 0 END) "
+                "SUM(CASE WHEN due_date IS NULL AND section='someday' THEN 1 ELSE 0 END),"
+                "SUM(CASE WHEN (due_date<=? OR (status='waiting' AND check_date<=?)) THEN 1 ELSE 0 END) "
                 "FROM tasks WHERE " + clauses,
-                [today, today, today, today, today] + params,
+                [today, today, today, today, today, today, today] + params,
             ).fetchone()
             journal = int(connection.execute(
                 "SELECT COUNT(*) FROM tasks WHERE status IN ('completed','cancelled')" +
                 (" AND assignee_id=?" if assignee_id else ""), params
             ).fetchone()[0])
-        keys = ("inbox", "overdue", "today", "plans", "waiting", "anytime", "someday")
+        keys = ("inbox", "overdue", "today", "plans", "waiting", "anytime", "someday", "active")
         result = {key: int(row[index] or 0) for index, key in enumerate(keys)}
         result["logbook"] = journal
-        result["active"] = result["overdue"] + result["today"]
         return result
 
     def list(self, view="today", query="", assignee_id=None, priority="", entity_type="",

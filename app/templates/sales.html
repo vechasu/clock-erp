@@ -9,6 +9,7 @@
     >
     <title>ТТТ ERP — Продажи</title>
 
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/entity-tasks.css', v='1') }}">
     <style>
         * {
             box-sizing: border-box;
@@ -2664,6 +2665,7 @@
         </div>
 
         <div class="modal-body sales-form-body erp-modal-body">
+            <section id="saleEntityTasks" class="entity-tasks" data-entity-tasks data-entity-type="sale" hidden></section>
             <div
                 id="saleSourceChoice"
                 class="source-choice-panel sales-source-segmented"
@@ -3371,6 +3373,7 @@
 </div>
 
 
+<script src="{{ url_for('static', filename='js/entity-tasks.js', v='1') }}"></script>
 <script src="{{ url_for('static', filename='js/catalog-combobox.js', v='catalog-combobox-20260824-product-hierarchy-category-assignment') }}"></script>
 <script src="{{ url_for('static', filename='js/period-picker.js') }}"></script>
 <script src="{{ url_for('static', filename='js/erp-table-layout.js') }}"></script>
@@ -6076,6 +6079,10 @@
         manualSaleForm.action = "{{ url_for('manual_sale_add') }}";
         manualSaleForm.dataset.editing = "0";
         editingSale = null;
+        const entityTasks = document.getElementById("saleEntityTasks");
+        entityTasks.hidden = true;
+        entityTasks.removeAttribute("data-entity-id");
+        delete entityTasks.dataset.entityTasksReady;
         setSaleFormError();
         setSaleFieldError(saleProductError);
         setSaleFieldError(saleQuantityError);
@@ -6605,6 +6612,12 @@
         saleEditId.disabled = false;
         saleEditId.name = sale.is_manual ? "sale_id" : "operation_id";
         saleEditId.value = sale.id || "";
+        const entityTasks = document.getElementById("saleEntityTasks");
+        entityTasks.hidden = false;
+        entityTasks.dataset.entityId = sale.id || "";
+        delete entityTasks.dataset.entityTasksReady;
+        entityTasks.textContent = "Загружаем задачи…";
+        window.VechasuEntityTasksInit?.(manualSaleModal);
 
         window.restoreSharedCatalogCascade(manualSaleForm, {
             brandId: sale.brand_id || "",

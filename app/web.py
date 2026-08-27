@@ -21569,13 +21569,16 @@ def api_task_reschedule(task_id):
 def api_task_counts():
     user = current_auth_user() or {}
     store = _tasks_store()
-    store.generate_notifications(user.get("id"))
+    if user.get("id"):
+        store.generate_notifications(user.get("id"))
     return api_success(store.counts(assignee_id=user.get("id")))
 
 
 @app.get("/api/v1/tasks/notifications")
 def api_task_notifications():
     user = current_auth_user() or {}
+    if not user.get("id"):
+        return api_success([])
     store = _tasks_store()
     store.generate_notifications(user.get("id"))
     return api_success(store.notifications(user.get("id"), request.args.get("mark_seen") == "1"))
