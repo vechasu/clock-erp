@@ -13,7 +13,7 @@ from app.purchases_migrations import (
     verify_database,
 )
 from app.services.customer_registry import CustomerRegistry
-from app.services.purchases import PurchaseStore, PurchaseValidationError
+from app.services.purchases import PurchaseStore, PurchaseValidationError, parse_date
 
 
 class PurchasesTest(unittest.TestCase):
@@ -49,6 +49,21 @@ class PurchasesTest(unittest.TestCase):
         with sqlite3.connect(str(self.path)) as connection:
             self.assertTrue(connection.execute("PRAGMA foreign_key_list(purchase_request_history)").fetchall())
             self.assertFalse(connection.execute("PRAGMA foreign_key_check").fetchall())
+
+    def test_date_parser_is_python36_compatible(self):
+        self.assertEqual(
+            parse_date("2026-08-27T22:45", "requested_at", True),
+            "2026-08-27T22:45:00",
+        )
+        self.assertEqual(
+            parse_date("2026-08-27T22:45:12+03:00", "requested_at", True),
+            "2026-08-27T22:45:12+03:00",
+        )
+        self.assertEqual(parse_date("2026-08-27", "valid_until"), "2026-08-27")
+        source = (Path(__file__).resolve().parents[1] / "app/services/purchases.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn("datetime.fromisoformat", source)
 
     def test_existing_and_unknown_product_validation(self):
         existing = self.create()
