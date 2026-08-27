@@ -495,11 +495,11 @@ if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" || "$DOMAIN_MIGRATION_REQUIRED" == "1
     fi
     if [[ "$CUSTOMERS_MIGRATION_REQUIRED" == "1" ]]; then
         PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/customer_registry_schema.py apply --database instance/customers.db
-        customer_rebuild_argument=()
         if [[ "$CUSTOMERS_REBUILD_REQUIRED" == "1" ]]; then
-            customer_rebuild_argument=(--rebuild)
+            PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/backfill_customers.py --apply --rebuild --backup-dir "$rollback_directory"
+        else
+            PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/backfill_customers.py --apply --backup-dir "$rollback_directory"
         fi
-        PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/backfill_customers.py --apply "${customer_rebuild_argument[@]}" --backup-dir "$rollback_directory"
         PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/customer_registry_schema.py verify --database instance/customers.db
     fi
     DATA_SNAPSHOT_AFTER="$($PYTHON_BIN scripts/data_safety_snapshot.py --instance-dir instance)"
