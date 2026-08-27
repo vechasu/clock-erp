@@ -234,6 +234,17 @@ class CanonicalCustomerRegistryTest(unittest.TestCase):
         self.assertEqual(customer["cancelled_orders_count"], 1)
         self.assertEqual(customer["total_completed_amount"], 0)
 
+    def test_shared_external_id_never_overrides_personal_contacts(self):
+        first = self.add(11, phone="+7 900 000-00-11", email="first@example.ru", external_customer_id="shared")
+        second = self.add(12, phone="+7 900 000-00-12", email="second@example.ru", external_customer_id="shared")
+        repeated = self.add(13, phone="+7 900 000-00-12", email="second@example.ru", external_customer_id="shared")
+        self.assertNotEqual(first["customer_id"], second["customer_id"])
+        self.assertEqual(second["reason"], "external_id_contact_conflict")
+        self.assertEqual(repeated["customer_id"], second["customer_id"])
+        reused_email = self.add(14, phone="+7 900 000-00-14", email="second@example.ru")
+        self.assertNotEqual(reused_email["customer_id"], second["customer_id"])
+        self.assertEqual(reused_email["reason"], "phone_email_value_conflict")
+
     def test_more_than_100_server_paginated_customers_and_global_search(self):
         for index in range(1, 126):
             self.add(index, name="Клиент {}".format(index), phone="+1 202 555 {:04d}".format(index))
