@@ -1,0 +1,25 @@
+{% macro inventory_workspace_header(active_view, title='Инвентаризация', subtitle='Контроль склада, документы, расхождения и регулярность проверок') %}
+<header class="erp-workspace-header inventory-workspace-header">
+    <div class="erp-workspace-heading">
+        <h1>{{ title }}</h1>
+        <p>{{ subtitle }}</p>
+    </div>
+    {% if caller is defined %}<div class="erp-workspace-actions inventory-workspace-actions">{{ caller() }}</div>{% endif %}
+</header>
+<nav class="erp-section-tabs inventory-workspace-tabs" aria-label="Раздел инвентаризации">
+    {% for key, label, href in (
+        ('history', 'История', url_for('inventory_page')),
+        ('run', 'Провести инвентаризацию', url_for('inventory_run_page')),
+        ('discrepancies', 'Расхождения', url_for('inventory_page', view='discrepancies')),
+        ('brands', 'По брендам', url_for('inventory_page', view='brands')),
+        ('analytics', 'Аналитика', url_for('inventory_page', view='analytics'))
+    ) %}
+        <a class="erp-section-tab{% if active_view == key %} is-active{% endif %}" href="{{ href }}" data-inventory-tab="{{ key }}"{% if active_view == key %} aria-current="page"{% endif %}>{{ label }}</a>
+    {% endfor %}
+</nav>
+{% endmacro %}
+
+{% macro inventory_date(value, placeholder='—') -%}
+    {% set raw = (value or '')|string %}
+    {% if raw|length >= 10 and raw[4:5] == '-' %}{{ raw[8:10] }}.{{ raw[5:7] }}.{{ raw[:4] }}{% elif raw %}{{ raw }}{% else %}{{ placeholder }}{% endif %}
+{%- endmacro %}
