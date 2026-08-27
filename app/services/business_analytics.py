@@ -405,50 +405,61 @@ class BusinessAnalytics(object):
         cut90 = (anchor - timedelta(days=89)).isoformat()
         catalog_clauses = ["p.active=1"]
         valid_sale = "s.cancelled_at IS NULL AND s.deleted_at IS NULL AND s.archived_at IS NULL"
+        demand_values = [
+            cut30, anchor.isoformat(), cut60, anchor.isoformat(),
+            cut90, anchor.isoformat(),
+        ]
         if filters["channel"]:
             valid_sale += " AND lower(s.source)=?"
-        values = []
-        for start in (cut30, cut60, cut90):
-            values.extend([start, anchor.isoformat()])
-            if filters["channel"]:
-                values.append(filters["channel"])
-        if filters["channel"]:
-            values.append(filters["channel"])
+            demand_values.append(filters["channel"])
+        catalog_values = []
         if filters["brand"]:
             catalog_clauses.append("coalesce(b.name,p.excel_brand,'')=?")
-            values.append(filters["brand"])
+            catalog_values.append(filters["brand"])
         if filters["category"]:
             catalog_clauses.append("coalesce(c.name,p.excel_category,'')=?")
-            values.append(filters["category"])
+            catalog_values.append(filters["category"])
         if filters["model"]:
             catalog_clauses.append("coalesce(m.name,p.model,'')=?")
-            values.append(filters["model"])
+            catalog_values.append(filters["model"])
         if filters["product"]:
             catalog_clauses.append("cast(p.id as text)=?")
-            values.append(filters["product"])
+            catalog_values.append(filters["product"])
         if filters["q"]:
             catalog_clauses.append("(p.excel_name_raw LIKE ? OR coalesce(b.name,p.excel_brand,'') LIKE ? OR coalesce(p.excel_article,'') LIKE ?)")
             pattern = "%{}%".format(filters["q"])
-            values.extend([pattern, pattern, pattern])
+            catalog_values.extend([pattern, pattern, pattern])
         if filters["stock_state"] == "out":
             catalog_clauses.append("p.stock<=0")
         elif filters["stock_state"] == "positive":
             catalog_clauses.append("p.stock>0")
-        query = (
-            "SELECT p.id,p.excel_name_raw name,coalesce(b.name,p.excel_brand,'Без бренда') brand,p.stock,"
-            "coalesce(sum(CASE WHEN date(s.created_at) BETWEEN ? AND ? AND " + valid_sale + " THEN max(i.quantity-i.returned_quantity,0) ELSE 0 END),0) units_30,"
-            "coalesce(sum(CASE WHEN date(s.created_at) BETWEEN ? AND ? AND " + valid_sale + " THEN max(i.quantity-i.returned_quantity,0) ELSE 0 END),0) units_60,"
-            "coalesce(sum(CASE WHEN date(s.created_at) BETWEEN ? AND ? AND " + valid_sale + " THEN max(i.quantity-i.returned_quantity,0) ELSE 0 END),0) units_90,"
-            "max(CASE WHEN " + valid_sale + " AND i.quantity-i.returned_quantity>0 THEN s.created_at END) last_sale "
+        demand_query = (
+            "SELECT i.product_id,"
+            "coalesce(sum(CASE WHEN date(s.created_at) BETWEEN ? AND ? THEN max(i.quantity-i.returned_quantity,0) ELSE 0 END),0) units_30,"
+            "coalesce(sum(CASE WHEN date(s.created_at) BETWEEN ? AND ? THEN max(i.quantity-i.returned_quantity,0) ELSE 0 END),0) units_60,"
+            "coalesce(sum(CASE WHEN date(s.created_at) BETWEEN ? AND ? THEN max(i.quantity-i.returned_quantity,0) ELSE 0 END),0) units_90,"
+            "max(CASE WHEN i.quantity-i.returned_quantity>0 THEN s.created_at END) last_sale "
+            "FROM erp_sale_items i JOIN erp_sales s ON s.id=i.sale_id "
+            "WHERE " + valid_sale + " GROUP BY i.product_id"
+        )
+        demand = {int(row["product_id"]): dict(row) for row in connection.execute(
+            demand_query, demand_values,
+        ).fetchall()}
+        catalog_query = (
+            "SELECT p.id,p.excel_name_raw name,coalesce(b.name,p.excel_brand,'Без бренда') brand,p.stock "
             "FROM catalog_excel_products p LEFT JOIN erp_brands b ON b.id=p.brand_id "
             "LEFT JOIN erp_categories c ON c.id=p.category_id LEFT JOIN erp_models m ON m.id=p.model_id "
-            "LEFT JOIN erp_sale_items i ON i.product_id=p.id LEFT JOIN erp_sales s ON s.id=i.sale_id "
-            "WHERE " + " AND ".join(catalog_clauses) + " GROUP BY p.id"
+            "WHERE " + " AND ".join(catalog_clauses)
         )
         purchase_state, purchase_error = self._purchase_state()
         rows = []
-        for row in connection.execute(query, values).fetchall():
+        for row in connection.execute(catalog_query, catalog_values).fetchall():
             item = dict(row)
+            item.update(demand.get(int(item["id"]), {}))
+            item.setdefault("units_30", 0)
+            item.setdefault("units_60", 0)
+            item.setdefault("units_90", 0)
+            item.setdefault("last_sale", None)
             item.update(purchase_state.get(int(item["id"]), {}))
             item.setdefault("ordered_quantity", 0)
             item.setdefault("customer_requests", 0)
