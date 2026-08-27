@@ -6,6 +6,7 @@ from __future__ import print_function
 import argparse
 import fcntl
 import json
+import os
 import shutil
 import sqlite3
 import sys
@@ -250,6 +251,7 @@ def main(argv=None):
     parser.add_argument("--bitrix-host", default="tictactoy.ru")
     parser.add_argument("--skip-bitrix", action="store_true")
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--rebuild", action="store_true", help="Build a fresh registry and atomically replace the derived database")
     parser.add_argument("--no-backup", action="store_true")
     parser.add_argument("--failure-after", type=int, default=0, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
@@ -264,6 +266,7 @@ def main(argv=None):
         return 2
 
     target = args.database
+    original_before = registry_counts(args.database) if args.database.exists() else {"customers": 0, "operations": 0, "conflicts": 0}
     temporary_dir = None
     backup_path = None
     if args.apply and not args.no_backup:
@@ -281,12 +284,15 @@ def main(argv=None):
                 raise RuntimeError("customer registry backup verification failed")
         finally:
             check.close()
-    if not args.apply:
+    if args.apply and args.rebuild:
+        temporary_dir = Path(tempfile.mkdtemp(prefix="customers-rebuild-", dir=str(args.database.parent)))
+        target = temporary_dir / "customers.db"
+    elif not args.apply:
         temporary_dir = Path(tempfile.mkdtemp(prefix="customers-dry-run-"))
         target = temporary_dir / "customers.db"
         if args.database.exists():
             shutil.copy2(str(args.database), str(target))
-    before = registry_counts(target) if target.exists() else {"customers": 0, "operations": 0, "conflicts": 0}
+    before = original_before if args.rebuild else (registry_counts(target) if target.exists() else {"customers": 0, "operations": 0, "conflicts": 0})
     migrate_database(target)
     registry = CustomerRegistry(target)
     report = Counter()
@@ -320,6 +326,15 @@ def main(argv=None):
         }
         if backup_path is not None:
             result["backup"] = str(backup_path)
+        if args.apply and args.rebuild:
+            check = sqlite3.connect(str(target))
+            try:
+                if check.execute("PRAGMA quick_check").fetchone()[0] != "ok":
+                    raise RuntimeError("rebuilt customer registry quick_check failed")
+            finally:
+                check.close()
+            os.replace(str(target), str(args.database))
+            result["atomic_rebuild"] = True
         print("CUSTOMERS_BACKFILL=" + json.dumps(result, ensure_ascii=False, sort_keys=True))
         return 0
     finally:

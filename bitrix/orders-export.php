@@ -79,6 +79,22 @@ function firstProperty(array $properties, array $keys): string
     return '';
 }
 
+function resolvedCity(array $properties): string
+{
+    static $cache = array();
+    $value = firstProperty($properties, array('CITY', 'LOCATION_NAME', 'NAME:ГОРОД'));
+    if ($value === '' || !ctype_digit($value)) {
+        return $value;
+    }
+    if (array_key_exists($value, $cache)) {
+        return $cache[$value];
+    }
+    $location = CSaleLocation::GetByID((int) $value, LANGUAGE_ID);
+    $name = is_array($location) ? trim((string) ($location['CITY_NAME'] ?? '')) : '';
+    $cache[$value] = $name;
+    return $name;
+}
+
 $orders = array();
 foreach ($rawOrders as $order) {
     $id = (string) $order['ID'];
@@ -95,7 +111,7 @@ foreach ($rawOrders as $order) {
         'customer' => firstProperty($props, array('FIO', 'NAME', 'CONTACT_PERSON', 'NAME:Ф.И.О.', 'NAME:ИМЯ')),
         'phone' => firstProperty($props, array('PHONE', 'MOBILE', 'NAME:ТЕЛЕФОН')),
         'email' => firstProperty($props, array('EMAIL', 'NAME:E-MAIL', 'NAME:EMAIL')),
-        'city' => firstProperty($props, array('CITY', 'LOCATION_NAME', 'NAME:ГОРОД')),
+        'city' => resolvedCity($props),
     );
 }
 

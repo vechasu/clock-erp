@@ -1207,25 +1207,51 @@ def customer_store():
 @app.get("/app/customers")
 def customers_page():
     query = str(request.args.get("q") or "").strip()
+    filter_keys = ("segment", "source", "city", "first_from", "first_to", "last_from", "last_to", "sales_min", "amount_min", "contacts")
+    filters = {key: request.args.get(key, "") for key in filter_keys}
+    waiting_ids, attention_ids = [], []
+    try:
+        with purchase_store().connect() as connection:
+            waiting_ids = [int(item[0]) for item in connection.execute(
+                "SELECT DISTINCT customer_id FROM purchase_requests WHERE archived=0 AND status NOT IN ('notified','sold','closed')"
+            ).fetchall()]
+    except (OSError, sqlite3.Error, RuntimeError):
+        pass
+    try:
+        with _tasks_store().connect() as connection:
+            attention_ids = [int(item[0]) for item in connection.execute(
+                "SELECT DISTINCT entity_id FROM tasks WHERE entity_type='customer' AND status='active' AND due_date IS NOT NULL AND due_date<date('now') AND entity_id GLOB '[0-9]*'"
+            ).fetchall()]
+    except (OSError, sqlite3.Error, RuntimeError):
+        pass
+    if filters["segment"] == "waiting": filters["customer_ids"] = waiting_ids
+    if filters["segment"] == "attention": filters["customer_ids"] = attention_ids
     try:
         result = customer_store().list(
             query=query,
             page=request.args.get("page", 1),
             per_page=request.args.get("per_page", 50),
+            filters=filters, sort=request.args.get("sort", "last_activity"),
+            direction=request.args.get("direction", "desc"),
         )
     except sqlite3.Error:
         app.logger.exception("Customer list could not be loaded")
         return render_template(
             "customers.html", customers=[], customers_total=0, query=query,
-            pagination=None, data_error=True,
+            pagination=None, data_error=True, filters={key: "" for key in filter_keys},
+            segment_counts={}, sort="last_activity", direction="desc",
         ), 503
     pagination = build_erp_pagination(
         "customers_page", result["total"], result["page"], result["per_page"],
         per_page_options=CUSTOMER_PAGE_SIZES,
     )
+    result["segment_counts"]["waiting"] = len(set(waiting_ids))
+    result["segment_counts"]["attention"] = len(set(attention_ids))
     return render_template(
         "customers.html", customers=result["rows"], customers_total=result["total"],
-        query=query, pagination=pagination,
+        query=query, pagination=pagination, filters=filters,
+        segment_counts=result["segment_counts"], sort=request.args.get("sort", "last_activity"),
+        direction=request.args.get("direction", "desc"),
     )
 
 
@@ -1243,7 +1269,7 @@ def customer_detail_page(customer_id):
     if customer is None:
         abort(404)
     requested_tab = str(request.args.get("tab") or "overview")
-    tab = requested_tab if requested_tab in {"overview", "orders", "sales", "repairs", "purchases"} else "overview"
+    tab = requested_tab if requested_tab in {"overview", "orders", "sales", "repairs", "purchases", "tasks", "contacts", "duplicates"} else "overview"
     operation_type = {"orders": "order", "sales": "sale", "repairs": "repair"}.get(tab)
     per_page = request.args.get("per_page", 20) if operation_type else 20
     try:
@@ -1264,18 +1290,66 @@ def customer_detail_page(customer_id):
             per_page_options=CUSTOMER_PAGE_SIZES, customer_id=customer_id, tab=tab,
         )
     purchase_requests = []
-    if tab == "purchases":
-        try:
-            purchase_requests = purchase_store().list_requests(
-                {"per_page": 200, "customer_id": customer_id}
-            )["rows"]
-        except (OSError, sqlite3.Error, RuntimeError):
-            app.logger.exception("Customer purchase requests could not be loaded customer_id=%s", customer_id)
+    try:
+        purchase_requests = purchase_store().list_requests(
+            {"per_page": 200, "customer_id": customer_id}
+        )["rows"]
+    except (OSError, sqlite3.Error, RuntimeError):
+        app.logger.exception("Customer purchase requests could not be loaded customer_id=%s", customer_id)
+    tasks = []
+    try:
+        with _tasks_store().connect() as connection:
+            tasks = [dict(row) for row in connection.execute(
+                "SELECT * FROM tasks WHERE entity_type='customer' AND entity_id=? ORDER BY status='active' DESC,due_date,id DESC LIMIT 200",
+                (str(customer_id),),
+            ).fetchall()]
+    except (OSError, sqlite3.Error, RuntimeError):
+        app.logger.exception("Customer tasks could not be loaded customer_id=%s", customer_id)
+    contacts = store.contacts(customer_id)
+    duplicates = store.duplicate_candidates(customer_id)
+    timeline = store.timeline(customer_id, request.args.get("event_type", ""))
+    customer["open_tasks_count"] = sum(1 for item in tasks if item.get("status") == "active")
+    customer["purchase_requests_count"] = len(purchase_requests)
+    if any(item.get("status") not in {"notified", "sold", "closed"} and not item.get("archived") for item in purchase_requests):
+        customer["segments"].append("Ожидает товар")
+    if any(item.get("status") == "active" and item.get("due_date") and item["due_date"] < datetime.now().date().isoformat() for item in tasks):
+        customer["segments"].append("Требует внимания")
     return render_template(
         "customer_detail.html", customer=customer, tab=tab,
         customer_operations=operations["rows"] if operation_type else operations["rows"][:5],
-        pagination=pagination, purchase_requests=purchase_requests,
+        pagination=pagination, purchase_requests=purchase_requests, tasks=tasks,
+        contacts=contacts, duplicates=duplicates, timeline=timeline,
+        can_manage_customers=(not auth_is_enabled() or (current_auth_user() or {}).get("role") == "admin"),
+        csrf=csrf_token(),
     )
+
+
+def _require_customer_manage():
+    if auth_is_enabled() and (current_auth_user() or {}).get("role") != "admin":
+        abort(403)
+    require_csrf_when_authenticated()
+
+
+@app.post("/app/customers/<int:customer_id>/notes")
+def customer_note_create(customer_id):
+    _require_customer_manage()
+    customer_store().add_note(customer_id, request.form.get("body"), (current_auth_user() or {}).get("id", "system"))
+    return redirect(url_for("customer_detail_page", customer_id=customer_id))
+
+
+@app.post("/app/customers/<int:customer_id>/merge")
+def customer_merge(customer_id):
+    _require_customer_manage()
+    source_id = int(request.form.get("source_id") or 0)
+    customer_store().merge(customer_id, source_id, (current_auth_user() or {}).get("id", "system"), request.form.get("idempotency_key") or "merge:{}:{}".format(customer_id, source_id))
+    return redirect(url_for("customer_detail_page", customer_id=customer_id, tab="duplicates"))
+
+
+@app.post("/app/customers/merges/<int:audit_id>/undo")
+def customer_unmerge(audit_id):
+    _require_customer_manage()
+    customer_store().unmerge(audit_id, (current_auth_user() or {}).get("id", "system"))
+    return redirect(url_for("customers_page", segment="duplicates"))
 
 
 @app.post("/api/orders/wildberries/sync")
@@ -15660,10 +15734,13 @@ def analytics_page():
         requested_period=(request.args.get("period") or "30").strip(),
     )
 
-    return render_template(
-        "analytics.html",
-        analytics=analytics,
+    customer_analytics = customer_store().analytics(
+        date_from=request.args.get("date_from", ""), date_to=request.args.get("date_to", ""),
+        source=request.args.get("source", ""), city=request.args.get("city", ""),
+        segment=request.args.get("segment", ""),
     )
+    return render_template("analytics.html", analytics=analytics,
+                           customer_analytics=customer_analytics)
 
 
 def _positive_int(value, default, maximum):

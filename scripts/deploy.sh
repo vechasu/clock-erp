@@ -67,10 +67,12 @@ DEPLOY_UPDATED=0
 CATALOG_MIGRATION_REQUIRED=0
 DOMAIN_MIGRATION_REQUIRED=0
 PURCHASES_MIGRATION_REQUIRED=0
+CUSTOMERS_MIGRATION_REQUIRED=0
 UNREGISTERED_MIGRATION_CHANGE=0
 CATALOG_MIGRATION_STARTED=0
 DOMAIN_MIGRATION_STARTED=0
 PURCHASES_MIGRATION_STARTED=0
+CUSTOMERS_MIGRATION_STARTED=0
 CATALOG_ROLLBACK_BACKUP=""
 AUTH_ROLLBACK_BACKUP=""
 ORDERS_ROLLBACK_BACKUP=""
@@ -78,6 +80,7 @@ TASKS_ROLLBACK_BACKUP=""
 TASKS_DATABASE_EXISTED=0
 PURCHASES_ROLLBACK_BACKUP=""
 PURCHASES_DATABASE_EXISTED=0
+CUSTOMERS_ROLLBACK_BACKUP=""
 DATA_SNAPSHOT_BEFORE=""
 BITRIX_ENDPOINT_BACKUP=""
 BITRIX_ENDPOINT_UPDATED=0
@@ -101,7 +104,7 @@ rollback() {
     set +e
     printf 'ROLLBACK: stage=%s exit_code=%s\n' "$FAILURE_STAGE" "$exit_code" >&2
 
-    if [[ "$SERVICE_STOPPED" != "1" && ( "$CATALOG_MIGRATION_STARTED" == "1" || "$DOMAIN_MIGRATION_STARTED" == "1" || "$PURCHASES_MIGRATION_STARTED" == "1" ) ]]; then
+    if [[ "$SERVICE_STOPPED" != "1" && ( "$CATALOG_MIGRATION_STARTED" == "1" || "$DOMAIN_MIGRATION_STARTED" == "1" || "$PURCHASES_MIGRATION_STARTED" == "1" || "$CUSTOMERS_MIGRATION_STARTED" == "1" ) ]]; then
         systemctl stop "$SERVICE_NAME"
         SERVICE_STOPPED=1
     fi
@@ -145,6 +148,11 @@ rollback() {
             rm -f -- instance/purchases.db
             printf 'ROLLBACK_OK: removed newly created purchases database\n' >&2
         fi
+    fi
+    if [[ "$CUSTOMERS_MIGRATION_STARTED" == "1" && -f "$CUSTOMERS_ROLLBACK_BACKUP" ]]; then
+        cp -p "$CUSTOMERS_ROLLBACK_BACKUP" instance/customers.db
+        sqlite3 instance/customers.db "PRAGMA quick_check;" | grep -qx "ok"
+        printf 'ROLLBACK_OK: restored verified customer registry backup\n' >&2
     fi
     if [[ "$BITRIX_ENDPOINT_UPDATED" == "1" && -f "$BITRIX_ENDPOINT_BACKUP" ]]; then
         install -o admin -g admin -m 0640 \
@@ -228,6 +236,10 @@ fi
 if printf '%s\n' "$changed_files" | grep -Eq \
     '^(app/purchases_migrations\.py|app/services/purchases\.py|scripts/migrate_purchases\.py)$'; then
     PURCHASES_MIGRATION_REQUIRED=1
+fi
+if printf '%s\n' "$changed_files" | grep -Eq \
+    '^(app/customer_registry_migrations\.py|app/services/customer_registry\.py|scripts/(customer_registry_schema|backfill_customers)\.py)$'; then
+    CUSTOMERS_MIGRATION_REQUIRED=1
 fi
 if printf '%s\n' "$changed_files" | grep -Eq \
     '^scripts/migrate_(brand_inventory|inventory_scopes|repair_cases|unified_catalog)\.py$'; then
@@ -344,6 +356,12 @@ if [[ "$PURCHASES_MIGRATION_REQUIRED" == "1" ]]; then
         "$RELEASE_DIR/scripts/migrate_purchases.py" verify \
         --database "$purchases_rehearsal"
 fi
+if [[ "$CUSTOMERS_MIGRATION_REQUIRED" == "1" ]]; then
+    customers_rehearsal="$RELEASE_DIR/customers-rehearsal.db"
+    sqlite3 instance/customers.db ".backup '$customers_rehearsal'"
+    PYTHONPATH="$RELEASE_DIR" "$PYTHON_BIN" "$RELEASE_DIR/scripts/customer_registry_schema.py" apply --database "$customers_rehearsal"
+    PYTHONPATH="$RELEASE_DIR" "$PYTHON_BIN" "$RELEASE_DIR/scripts/customer_registry_schema.py" verify --database "$customers_rehearsal"
+fi
 
 printf 'APPLICATION UPDATE: fast-forward to verified commit\n'
 FAILURE_STAGE="APPLICATION UPDATE"
@@ -394,7 +412,7 @@ if [[ -f "$BITRIX_ORDERS_EXPORT_SOURCE" ]]; then
     BITRIX_ORDERS_EXPORT_UPDATED=1
 fi
 
-if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" || "$DOMAIN_MIGRATION_REQUIRED" == "1" || "$PURCHASES_MIGRATION_REQUIRED" == "1" ]]; then
+if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" || "$DOMAIN_MIGRATION_REQUIRED" == "1" || "$PURCHASES_MIGRATION_REQUIRED" == "1" || "$CUSTOMERS_MIGRATION_REQUIRED" == "1" ]]; then
     printf 'PRODUCTION MIGRATION: stop service, backup, apply verified migrations\n'
     FAILURE_STAGE="PRODUCTION MIGRATION"
     systemctl stop "$SERVICE_NAME"
@@ -440,6 +458,13 @@ if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" || "$DOMAIN_MIGRATION_REQUIRED" == "1
         fi
         PURCHASES_MIGRATION_STARTED=1
     fi
+    if [[ "$CUSTOMERS_MIGRATION_REQUIRED" == "1" ]]; then
+        CUSTOMERS_ROLLBACK_BACKUP="$rollback_directory/customers-before.db"
+        sqlite3 instance/customers.db ".backup '$CUSTOMERS_ROLLBACK_BACKUP'"
+        chmod 600 "$CUSTOMERS_ROLLBACK_BACKUP"
+        sqlite3 "$CUSTOMERS_ROLLBACK_BACKUP" "PRAGMA quick_check;" | grep -qx "ok"
+        CUSTOMERS_MIGRATION_STARTED=1
+    fi
     if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" ]]; then
         "$PYTHON_BIN" scripts/migration_preflight.py apply \
             --database instance/catalog.db \
@@ -462,6 +487,11 @@ if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" || "$DOMAIN_MIGRATION_REQUIRED" == "1
     if [[ "$PURCHASES_MIGRATION_REQUIRED" == "1" ]]; then
         PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/migrate_purchases.py apply \
             --database instance/purchases.db
+    fi
+    if [[ "$CUSTOMERS_MIGRATION_REQUIRED" == "1" ]]; then
+        PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/customer_registry_schema.py apply --database instance/customers.db
+        PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/backfill_customers.py --apply --rebuild --backup-dir "$rollback_directory"
+        PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/customer_registry_schema.py verify --database instance/customers.db
     fi
     DATA_SNAPSHOT_AFTER="$($PYTHON_BIN scripts/data_safety_snapshot.py --instance-dir instance)"
     if [[ "$DATA_SNAPSHOT_BEFORE" != "$DATA_SNAPSHOT_AFTER" ]]; then
@@ -521,6 +551,9 @@ fi
 if [[ "$PURCHASES_MIGRATION_REQUIRED" == "1" ]]; then
     PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/migrate_purchases.py verify \
         --database instance/purchases.db
+fi
+if [[ "$CUSTOMERS_MIGRATION_REQUIRED" == "1" ]]; then
+    PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/customer_registry_schema.py verify --database instance/customers.db
 fi
 systemctl is-active --quiet "$SERVICE_NAME"
 if journalctl -u "$SERVICE_NAME" --since "-2 minutes" \
