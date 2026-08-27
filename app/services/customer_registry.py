@@ -484,7 +484,6 @@ class CustomerRegistry:
         if customer_id:
             where += " AND (d.left_customer_id=? OR d.right_customer_id=?)"; params.extend([int(customer_id)] * 2)
         with self.connection() as connection:
-            self.refresh_duplicate_candidates(connection)
             rows = connection.execute(
                 "SELECT d.*,a.name left_name,a.city left_city,b.name right_name,b.city right_city "
                 "FROM customer_duplicate_candidates d JOIN customers a ON a.id=d.left_customer_id "
