@@ -24,6 +24,7 @@
     </script>
     {% endif %}
 
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/entity-tasks.css', v='1') }}">
     <style>
         * {
             box-sizing: border-box;
@@ -4924,6 +4925,7 @@
                                                 </div>
                                             </details>
                                             <div class="row-actions erp-table-actions">
+                                                <a class="erp-table-action" href="{{ url_for('tasks_page', entity_type='product', entity_id=item.id, title=item.name) }}" title="Создать задачу" aria-label="Создать задачу">✓</a>
                                                 <button
                                                     class="erp-table-action erp-table-action-view"
                                                     type="button"
@@ -5441,6 +5443,8 @@
         </div>
         </div>
 
+        <section id="productEntityTasks" class="entity-tasks" data-entity-tasks data-entity-type="product" aria-label="Задачи товара">Откройте товар, чтобы увидеть задачи.</section>
+
         <div class="product-history-section">
             <div class="drawer-section-title">История</div>
             <div id="stockHistoryList" class="future-card">
@@ -5451,6 +5455,7 @@
 
     {{ render_catalog_create_modal() }}
 
+    <script src="{{ url_for('static', filename='js/entity-tasks.js', v='1') }}"></script>
     <script src="{{ url_for('static', filename='js/catalog-combobox.js', v='catalog-combobox-20260824-product-hierarchy') }}"></script>
     <script src="{{ url_for('static', filename='js/toolbar-popover-coordinator.js') }}"></script>
     <script>
@@ -6288,6 +6293,11 @@
             const publicProductUrl = button.dataset.publicProductUrl || "";
             const thumbnailUrl = button.dataset.thumbnailUrl || "";
             const productId = button.dataset.id || button.dataset.productId || "";
+            const entityTasks = document.getElementById("productEntityTasks");
+            entityTasks.dataset.entityId = productId;
+            delete entityTasks.dataset.entityTasksReady;
+            entityTasks.textContent = "Загружаем задачи…";
+            window.VechasuEntityTasksInit?.(document.getElementById("editDrawer"));
             detailOpenButton = button;
             detailGalleryItems = thumbnailUrl ? [{original_url: thumbnailUrl}] : [];
             detailGalleryOriginalItems = detailGalleryItems.map(item => ({...item}));

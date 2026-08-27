@@ -31,6 +31,7 @@ CREATE TABLE erp_migration_ledger (
 AUTH_MIGRATION_ID = "2026-08-26-auth-baseline-v1"
 ORDERS_MIGRATION_ID = "2026-08-26-orders-customers-baseline-v1"
 TASKS_MIGRATION_ID = "2026-08-27-internal-tasks-v1"
+TASKS_V2_MIGRATION_ID = "2026-08-27-tasks-center-v2"
 
 
 class DomainMigrationError(RuntimeError):
@@ -225,6 +226,93 @@ TASKS_INDEX_STATEMENTS = (
     "CREATE INDEX idx_tasks_completed ON tasks(status, completed_at, id)",
 )
 
+TASKS_V2_TABLE_STATEMENTS = (
+    """CREATE TABLE tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL CHECK (length(trim(title)) > 0),
+        description TEXT NOT NULL DEFAULT '',
+        section TEXT NOT NULL DEFAULT 'inbox'
+            CHECK (section IN ('inbox', 'anytime', 'someday')),
+        status TEXT NOT NULL DEFAULT 'new'
+            CHECK (status IN ('new','in_progress','waiting','completed','cancelled')),
+        priority TEXT NOT NULL DEFAULT 'other'
+            CHECK (priority IN ('urgent', 'important', 'other')),
+        due_date TEXT,
+        due_time TEXT,
+        reminder_at TEXT,
+        author_id INTEGER NOT NULL,
+        assignee_id INTEGER NOT NULL,
+        source_comment TEXT NOT NULL DEFAULT '',
+        contact_name TEXT NOT NULL DEFAULT '',
+        contact_phone TEXT NOT NULL DEFAULT '',
+        contact_email TEXT NOT NULL DEFAULT '',
+        contact_channel TEXT NOT NULL DEFAULT '',
+        waiting_for TEXT NOT NULL DEFAULT '',
+        check_date TEXT,
+        waiting_comment TEXT NOT NULL DEFAULT '',
+        repeat_type TEXT NOT NULL DEFAULT 'none'
+            CHECK (repeat_type IN ('none','daily','weekdays','weekly','monthly','custom')),
+        repeat_interval INTEGER NOT NULL DEFAULT 1 CHECK (repeat_interval > 0),
+        series_id TEXT,
+        parent_task_id INTEGER,
+        completion_result TEXT NOT NULL DEFAULT '',
+        previous_status TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        updated_by INTEGER,
+        completed_at TEXT,
+        completed_by INTEGER,
+        cancelled_at TEXT,
+        cancelled_by INTEGER,
+        idempotency_key TEXT UNIQUE,
+        next_occurrence_key TEXT UNIQUE,
+        CHECK (due_time IS NULL OR due_date IS NOT NULL)
+    )""",
+    """CREATE TABLE task_links (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id INTEGER NOT NULL,
+        entity_type TEXT NOT NULL CHECK (entity_type IN
+            ('customer','order','sale','repair','product','purchase')),
+        entity_id TEXT NOT NULL,
+        entity_label TEXT NOT NULL DEFAULT '',
+        entity_href TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        created_by INTEGER NOT NULL,
+        UNIQUE(task_id, entity_type, entity_id)
+    )""",
+    """CREATE TABLE task_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id INTEGER NOT NULL,
+        event_type TEXT NOT NULL,
+        actor_id INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        details_json TEXT NOT NULL DEFAULT '{}'
+    )""",
+    """CREATE TABLE task_notifications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        notification_type TEXT NOT NULL,
+        notification_key TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        seen_at TEXT,
+        UNIQUE(task_id, user_id, notification_type, notification_key)
+    )""",
+)
+
+TASKS_V2_INDEX_STATEMENTS = (
+    "CREATE INDEX idx_tasks_status_due ON tasks(status, due_date, due_time, id)",
+    "CREATE INDEX idx_tasks_assignee_status_due ON tasks(assignee_id, status, due_date, id)",
+    "CREATE INDEX idx_tasks_section_status ON tasks(section, status, id)",
+    "CREATE INDEX idx_tasks_check_date ON tasks(status, check_date, id)",
+    "CREATE INDEX idx_tasks_completed ON tasks(status, completed_at, id)",
+    "CREATE INDEX idx_tasks_series ON tasks(series_id, id)",
+    "CREATE INDEX idx_task_links_task ON task_links(task_id, id)",
+    "CREATE INDEX idx_task_links_entity ON task_links(entity_type, entity_id, task_id)",
+    "CREATE INDEX idx_task_history_task ON task_history(task_id, id)",
+    "CREATE INDEX idx_task_notifications_user ON task_notifications(user_id, seen_at, id)",
+)
+
 ORDERS_LEGACY_COLUMNS = (
     ("order_id", "TEXT", 0, None, 1),
     ("source_position", "INTEGER", 1, None, 0),
@@ -275,10 +363,18 @@ TASKS_MIGRATION = {
         + TASKS_TABLE_STATEMENTS + TASKS_INDEX_STATEMENTS
     ),
 }
+TASKS_V2_MIGRATION = {
+    "id": TASKS_V2_MIGRATION_ID,
+    "name": "Unified tasks center schema",
+    "checksum": _digest(
+        (TASKS_V2_MIGRATION_ID, "tasks-contract-v2")
+        + TASKS_V2_TABLE_STATEMENTS + TASKS_V2_INDEX_STATEMENTS
+    ),
+}
 DOMAIN_MIGRATIONS = {
     "auth": AUTH_MIGRATION,
     "orders": ORDERS_MIGRATION,
-    "tasks": TASKS_MIGRATION,
+    "tasks": TASKS_V2_MIGRATION,
 }
 
 
@@ -336,7 +432,7 @@ ORDERS_EXPECTED_COLUMNS = {
     ),
 }
 
-TASKS_EXPECTED_COLUMNS = {
+TASKS_V1_EXPECTED_COLUMNS = {
     "tasks": (
         ("id", "INTEGER", 0, None, 1), ("title", "TEXT", 1, None, 0),
         ("description", "TEXT", 1, "''", 0), ("section", "TEXT", 1, "'inbox'", 0),
@@ -348,6 +444,45 @@ TASKS_EXPECTED_COLUMNS = {
         ("created_at", "TEXT", 1, None, 0), ("updated_at", "TEXT", 1, None, 0),
         ("updated_by", "INTEGER", 0, None, 0), ("completed_at", "TEXT", 0, None, 0),
         ("completed_by", "INTEGER", 0, None, 0), ("idempotency_key", "TEXT", 0, None, 0),
+    ),
+}
+
+TASKS_EXPECTED_COLUMNS = {
+    "tasks": (
+        ("id", "INTEGER", 0, None, 1), ("title", "TEXT", 1, None, 0),
+        ("description", "TEXT", 1, "''", 0), ("section", "TEXT", 1, "'inbox'", 0),
+        ("status", "TEXT", 1, "'new'", 0), ("priority", "TEXT", 1, "'other'", 0),
+        ("due_date", "TEXT", 0, None, 0), ("due_time", "TEXT", 0, None, 0),
+        ("reminder_at", "TEXT", 0, None, 0), ("author_id", "INTEGER", 1, None, 0),
+        ("assignee_id", "INTEGER", 1, None, 0), ("source_comment", "TEXT", 1, "''", 0),
+        ("contact_name", "TEXT", 1, "''", 0), ("contact_phone", "TEXT", 1, "''", 0),
+        ("contact_email", "TEXT", 1, "''", 0), ("contact_channel", "TEXT", 1, "''", 0),
+        ("waiting_for", "TEXT", 1, "''", 0), ("check_date", "TEXT", 0, None, 0),
+        ("waiting_comment", "TEXT", 1, "''", 0), ("repeat_type", "TEXT", 1, "'none'", 0),
+        ("repeat_interval", "INTEGER", 1, "1", 0), ("series_id", "TEXT", 0, None, 0),
+        ("parent_task_id", "INTEGER", 0, None, 0), ("completion_result", "TEXT", 1, "''", 0),
+        ("previous_status", "TEXT", 0, None, 0), ("created_at", "TEXT", 1, None, 0),
+        ("updated_at", "TEXT", 1, None, 0), ("updated_by", "INTEGER", 0, None, 0),
+        ("completed_at", "TEXT", 0, None, 0), ("completed_by", "INTEGER", 0, None, 0),
+        ("cancelled_at", "TEXT", 0, None, 0), ("cancelled_by", "INTEGER", 0, None, 0),
+        ("idempotency_key", "TEXT", 0, None, 0), ("next_occurrence_key", "TEXT", 0, None, 0),
+    ),
+    "task_links": (
+        ("id", "INTEGER", 0, None, 1), ("task_id", "INTEGER", 1, None, 0),
+        ("entity_type", "TEXT", 1, None, 0), ("entity_id", "TEXT", 1, None, 0),
+        ("entity_label", "TEXT", 1, "''", 0), ("entity_href", "TEXT", 1, "''", 0),
+        ("created_at", "TEXT", 1, None, 0), ("created_by", "INTEGER", 1, None, 0),
+    ),
+    "task_history": (
+        ("id", "INTEGER", 0, None, 1), ("task_id", "INTEGER", 1, None, 0),
+        ("event_type", "TEXT", 1, None, 0), ("actor_id", "INTEGER", 1, None, 0),
+        ("created_at", "TEXT", 1, None, 0), ("details_json", "TEXT", 1, "'{}'", 0),
+    ),
+    "task_notifications": (
+        ("id", "INTEGER", 0, None, 1), ("task_id", "INTEGER", 1, None, 0),
+        ("user_id", "INTEGER", 1, None, 0), ("notification_type", "TEXT", 1, None, 0),
+        ("notification_key", "TEXT", 1, None, 0), ("created_at", "TEXT", 1, None, 0),
+        ("seen_at", "TEXT", 0, None, 0),
     ),
 }
 
@@ -369,12 +504,24 @@ ORDERS_INDEXES = {
     "idx_orders_snapshot_source_ordering": (0, ("source", "source_position", "order_id")),
     "idx_orders_snapshot_customer_created": (0, ("customer_id", "created_sort")),
 }
-TASKS_INDEXES = {
+TASKS_V1_INDEXES = {
     "idx_tasks_status_due": (0, ("status", "due_date", "due_time", "id")),
     "idx_tasks_assignee_status_due": (0, ("assignee_id", "status", "due_date", "id")),
     "idx_tasks_section_status": (0, ("section", "status", "id")),
     "idx_tasks_entity": (0, ("entity_type", "entity_id", "status")),
     "idx_tasks_completed": (0, ("status", "completed_at", "id")),
+}
+TASKS_INDEXES = {
+    "idx_tasks_status_due": (0, ("status", "due_date", "due_time", "id")),
+    "idx_tasks_assignee_status_due": (0, ("assignee_id", "status", "due_date", "id")),
+    "idx_tasks_section_status": (0, ("section", "status", "id")),
+    "idx_tasks_check_date": (0, ("status", "check_date", "id")),
+    "idx_tasks_completed": (0, ("status", "completed_at", "id")),
+    "idx_tasks_series": (0, ("series_id", "id")),
+    "idx_task_links_task": (0, ("task_id", "id")),
+    "idx_task_links_entity": (0, ("entity_type", "entity_id", "task_id")),
+    "idx_task_history_task": (0, ("task_id", "id")),
+    "idx_task_notifications_user": (0, ("user_id", "seen_at", "id")),
 }
 
 
@@ -580,6 +727,7 @@ def verify_tasks_schema(connection, require_ledger=True):
         raise DomainMigrationError("tasks schema contract: unexpected table set")
     if require_ledger:
         _verify_ledger_columns(connection)
+        _verify_tasks_ledger(connection)
     _verify_columns(connection, TASKS_EXPECTED_COLUMNS)
     _verify_indexes(connection, TASKS_INDEXES, TASKS_EXPECTED_COLUMNS)
     if any(connection.execute(
@@ -589,13 +737,127 @@ def verify_tasks_schema(connection, require_ledger=True):
     if ("idempotency_key",) not in _unique_columns(connection, "tasks"):
         raise DomainMigrationError("tasks schema contract: idempotency key is not unique")
     invalid = connection.execute(
-        "SELECT 1 FROM tasks WHERE status NOT IN ('active','completed') "
+        "SELECT 1 FROM tasks WHERE status NOT IN ('new','in_progress','waiting','completed','cancelled') "
         "OR section NOT IN ('inbox','anytime','someday') "
-        "OR priority NOT IN ('urgent','important','other') LIMIT 1"
+        "OR priority NOT IN ('urgent','important','other') "
+        "OR repeat_type NOT IN ('none','daily','weekdays','weekly','monthly','custom') LIMIT 1"
     ).fetchone()
     if invalid:
         raise DomainMigrationError("tasks data contract: invalid enum value")
     return True
+
+
+def _verify_tasks_ledger(connection):
+    rows = connection.execute(
+        "SELECT migration_id,name,checksum,state FROM " + LEDGER_TABLE + " ORDER BY migration_id"
+    ).fetchall()
+    expected = {
+        migration["id"]: migration for migration in (TASKS_MIGRATION, TASKS_V2_MIGRATION)
+    }
+    if len(rows) != len(expected):
+        raise MigrationRequiredError("migration required: tasks center v2")
+    for row in rows:
+        migration = expected.get(str(row[0]))
+        if not migration:
+            raise DomainMigrationError("unknown migration in tasks ledger: {}".format(row[0]))
+        if (str(row[1]), str(row[2]), str(row[3])) != (
+            migration["name"], migration["checksum"], "applied"
+        ):
+            raise DomainMigrationError("tasks migration ledger mismatch: {}".format(row[0]))
+
+
+def _verify_tasks_v1_schema(connection):
+    if _tables(connection) != {LEDGER_TABLE, "tasks"}:
+        raise DomainMigrationError("tasks v1 schema contract: unexpected table set")
+    _verify_columns(connection, TASKS_V1_EXPECTED_COLUMNS)
+    _verify_indexes(connection, TASKS_V1_INDEXES, TASKS_V1_EXPECTED_COLUMNS)
+    _verify_ledger(connection, TASKS_MIGRATION)
+
+
+def _create_tasks_v2(connection, observer):
+    for statement in TASKS_V2_TABLE_STATEMENTS + TASKS_V2_INDEX_STATEMENTS:
+        _execute(connection, statement, observer)
+
+
+def _apply_tasks_v2_migrations(path, app_commit, observer):
+    with DomainMigrationLock(path, "tasks"):
+        connection = sqlite3.connect(str(path), timeout=30, isolation_level=None)
+        try:
+            connection.execute("PRAGMA foreign_keys = ON")
+            connection.execute("PRAGMA busy_timeout = 30000")
+            tables = _tables(connection)
+            if not tables:
+                connection.execute("BEGIN IMMEDIATE")
+                try:
+                    _execute(connection, LEDGER_SQL, observer)
+                    _create_tasks_v2(connection, observer)
+                    now = _utc_now()
+                    for migration in (TASKS_MIGRATION, TASKS_V2_MIGRATION):
+                        connection.execute(
+                            "INSERT INTO {} (migration_id,name,checksum,state,applied_at,app_commit,details_json) "
+                            "VALUES (?,?,?,'applied',?,?,?)".format(LEDGER_TABLE),
+                            (migration["id"], migration["name"], migration["checksum"], now,
+                             str(app_commit or "") or None,
+                             json.dumps({"source_state": "fresh", "transactional": True}, sort_keys=True)),
+                        )
+                    verify_tasks_schema(connection)
+                    connection.commit()
+                except Exception:
+                    connection.rollback()
+                    raise
+            else:
+                ledger_ids = set()
+                if LEDGER_TABLE in tables:
+                    ledger_ids = {str(row[0]) for row in connection.execute(
+                        "SELECT migration_id FROM " + LEDGER_TABLE
+                    ).fetchall()}
+                if TASKS_V2_MIGRATION_ID in ledger_ids:
+                    verify_tasks_schema(connection)
+                else:
+                    _verify_tasks_v1_schema(connection)
+                    connection.execute("BEGIN IMMEDIATE")
+                    try:
+                        connection.execute("ALTER TABLE tasks RENAME TO tasks_v1")
+                        for index_name in TASKS_V1_INDEXES:
+                            connection.execute("DROP INDEX {}".format(index_name))
+                        _create_tasks_v2(connection, observer)
+                        connection.execute(
+                            "INSERT INTO tasks(id,title,description,section,status,priority,due_date,due_time,"
+                            "author_id,assignee_id,created_at,updated_at,updated_by,completed_at,completed_by,"
+                            "idempotency_key,previous_status) "
+                            "SELECT id,title,description,section,CASE WHEN status='completed' THEN 'completed' ELSE 'new' END,"
+                            "priority,due_date,due_time,author_id,assignee_id,created_at,updated_at,updated_by,"
+                            "completed_at,completed_by,idempotency_key,CASE WHEN status='completed' THEN 'new' ELSE NULL END "
+                            "FROM tasks_v1"
+                        )
+                        connection.execute(
+                            "INSERT INTO task_links(task_id,entity_type,entity_id,entity_label,entity_href,created_at,created_by) "
+                            "SELECT id,entity_type,entity_id,COALESCE(entity_label,''),COALESCE(entity_href,''),created_at,author_id "
+                            "FROM tasks_v1 WHERE entity_type IS NOT NULL AND entity_id IS NOT NULL"
+                        )
+                        connection.execute(
+                            "INSERT INTO task_history(task_id,event_type,actor_id,created_at,details_json) "
+                            "SELECT id,'migrated',author_id,?,? FROM tasks_v1",
+                            (_utc_now(), '{"from":"tasks-v1"}'),
+                        )
+                        connection.execute("DROP TABLE tasks_v1")
+                        migration = TASKS_V2_MIGRATION
+                        connection.execute(
+                            "INSERT INTO {} (migration_id,name,checksum,state,applied_at,app_commit,details_json) "
+                            "VALUES (?,?,?,'applied',?,?,?)".format(LEDGER_TABLE),
+                            (migration["id"], migration["name"], migration["checksum"], _utc_now(),
+                             str(app_commit or "") or None,
+                             json.dumps({"source_state": "tasks-v1", "transactional": True}, sort_keys=True)),
+                        )
+                        verify_tasks_schema(connection)
+                        _require_integrity(connection, "tasks-v2-migration")
+                        connection.commit()
+                    except Exception:
+                        connection.rollback()
+                        raise
+            return migration_report(connection, "tasks")
+        finally:
+            connection.close()
 
 
 def _legacy_state(connection, kind):
@@ -675,6 +937,8 @@ def apply_domain_migrations(database_path, kind, app_commit="", observer=None):
         raise DomainMigrationError("unknown domain database: {}".format(kind))
     path = Path(database_path).resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
+    if kind == "tasks":
+        return _apply_tasks_v2_migrations(path, app_commit, observer)
     migration = DOMAIN_MIGRATIONS[kind]
     with DomainMigrationLock(path, kind):
         connection = sqlite3.connect(str(path), timeout=30, isolation_level=None)
@@ -774,7 +1038,6 @@ def validate_orders_database(database_path):
 def validate_tasks_database(database_path):
     connection = _runtime_connection(database_path)
     try:
-        _verify_ledger(connection, TASKS_MIGRATION)
         verify_tasks_schema(connection)
     finally:
         connection.close()
@@ -806,9 +1069,10 @@ def migration_report(connection, kind):
     payload = json.dumps(
         _semantic_schema(connection, tables), sort_keys=True, separators=(",", ":")
     )
+    count_tables = ("tasks",) if kind == "tasks" else sorted(tables)
     counts = {
         table: int(connection.execute("SELECT COUNT(*) FROM {}".format(table)).fetchone()[0])
-        for table in sorted(tables)
+        for table in count_tables
     }
     return {
         "kind": kind,
@@ -822,6 +1086,19 @@ def migration_report(connection, kind):
 def domain_snapshot(database_path, kind):
     connection = _runtime_connection(database_path)
     try:
+        if kind == "tasks" and _tables(connection) == {LEDGER_TABLE, "tasks"}:
+            payload = json.dumps(
+                _semantic_schema(connection, TASKS_V1_EXPECTED_COLUMNS),
+                sort_keys=True, separators=(",", ":"),
+            )
+            return {
+                "kind": "tasks", "latest_migration": TASKS_MIGRATION["id"],
+                "checksum": TASKS_MIGRATION["checksum"],
+                "schema_fingerprint": hashlib.sha256(payload.encode("utf-8")).hexdigest(),
+                "business_counts": {"tasks": int(connection.execute(
+                    "SELECT COUNT(*) FROM tasks"
+                ).fetchone()[0])},
+            }
         return migration_report(connection, kind)
     finally:
         connection.close()
