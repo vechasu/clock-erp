@@ -66,6 +66,15 @@ from app.services.orders_snapshot import (
     order_item_units,
 )
 from app.services.customer_registry import CustomerRegistry, PAGE_SIZES as CUSTOMER_PAGE_SIZES
+from app.services.purchases import (
+    CHANNELS as PURCHASE_CHANNELS,
+    ORDER_STATUSES as PURCHASE_ORDER_STATUSES,
+    PAGE_SIZES as PURCHASE_PAGE_SIZES,
+    REQUEST_STATUSES as PURCHASE_REQUEST_STATUSES,
+    PurchaseNotFoundError,
+    PurchaseStore,
+    PurchaseValidationError,
+)
 from app.services.wildberries_orders import synchronize_wildberries_orders
 from app.services.brand_values import normalize_brand
 from app.services.catalog_reader import CatalogReader
@@ -214,6 +223,11 @@ app.config.setdefault(
     "TASKS_DATABASE",
     os.getenv("ERP_TASKS_DATABASE", "").strip()
     or str(PROJECT_ROOT / "instance" / "tasks.db"),
+)
+app.config.setdefault(
+    "PURCHASES_DATABASE",
+    os.getenv("ERP_PURCHASES_DATABASE", "").strip()
+    or str(PROJECT_ROOT / "instance" / "purchases.db"),
 )
 
 # Gunicorn imports this module once per worker. Pay the one required schema
@@ -1229,7 +1243,7 @@ def customer_detail_page(customer_id):
     if customer is None:
         abort(404)
     requested_tab = str(request.args.get("tab") or "overview")
-    tab = requested_tab if requested_tab in {"overview", "orders", "sales", "repairs"} else "overview"
+    tab = requested_tab if requested_tab in {"overview", "orders", "sales", "repairs", "purchases"} else "overview"
     operation_type = {"orders": "order", "sales": "sale", "repairs": "repair"}.get(tab)
     per_page = request.args.get("per_page", 20) if operation_type else 20
     try:
@@ -1249,10 +1263,18 @@ def customer_detail_page(customer_id):
             "customer_detail_page", operations["total"], operations["page"], operations["per_page"],
             per_page_options=CUSTOMER_PAGE_SIZES, customer_id=customer_id, tab=tab,
         )
+    purchase_requests = []
+    if tab == "purchases":
+        try:
+            purchase_requests = purchase_store().list_requests(
+                {"per_page": 200, "customer_id": customer_id}
+            )["rows"]
+        except (OSError, sqlite3.Error, RuntimeError):
+            app.logger.exception("Customer purchase requests could not be loaded customer_id=%s", customer_id)
     return render_template(
         "customer_detail.html", customer=customer, tab=tab,
         customer_operations=operations["rows"] if operation_type else operations["rows"][:5],
-        pagination=pagination,
+        pagination=pagination, purchase_requests=purchase_requests,
     )
 
 
@@ -15821,6 +15843,268 @@ def product_image_file(filename):
     )
 
 
+PURCHASE_STATUS_LABELS = {
+    "new": "Новый", "review": "На рассмотрении", "planned": "В плане закупки",
+    "ordered": "Заказан", "arrived": "Прибыл", "notified": "Клиент уведомлён",
+    "sold": "Продан", "closed": "Закрыт",
+}
+PURCHASE_CHANNEL_LABELS = {
+    "whatsapp": "WhatsApp", "telegram": "Telegram", "email": "email",
+    "call": "Звонок", "website": "Сайт", "personal": "Лично", "other": "Другое",
+}
+PURCHASE_ORDER_STATUS_LABELS = {
+    "draft": "Черновик", "ordered": "Заказан", "partially_received": "Частично получен",
+    "received": "Получен", "cancelled": "Отменён",
+}
+
+
+def purchase_store():
+    return PurchaseStore(app.config["PURCHASES_DATABASE"])
+
+
+def _purchase_actor():
+    user = current_auth_user() or {}
+    return int(user.get("id") or 0)
+
+
+def _purchase_can_view():
+    if not auth_is_enabled():
+        return True
+    user = current_auth_user() or {}
+    return user.get("role") in {"employee", "admin"}
+
+
+def _purchase_require_edit():
+    if not _purchase_can_view():
+        abort(403)
+    require_csrf_when_authenticated()
+
+
+def _purchase_product(product_id):
+    if not product_id:
+        return None
+    database = CatalogDatabase(cache_initialization=True)
+    with database.connect() as connection:
+        row = connection.execute(
+            "SELECT id,excel_name_raw product_name,excel_brand brand,model,excel_article article,"
+            "stock,local_image_path,bitrix_thumbnail_url,bitrix_primary_image_url "
+            "FROM catalog_excel_products WHERE id=? AND active=1",
+            (int(product_id),),
+        ).fetchone()
+    if not row:
+        return None
+    product = dict(row)
+    product["image_url"] = (
+        url_for("product_image_file", filename=Path(product["local_image_path"]).name)
+        if product.get("local_image_path") else
+        product.get("bitrix_thumbnail_url") or product.get("bitrix_primary_image_url") or ""
+    )
+    return product
+
+
+def _purchase_stock(product_id):
+    product = _purchase_product(product_id)
+    return int(float(product.get("stock") or 0)) if product else 0
+
+
+def _purchase_customer(customer_id):
+    return customer_store().get(int(customer_id))
+
+
+def _purchase_enrich_request(item):
+    prepared = dict(item)
+    customer = _purchase_customer(prepared["customer_id"])
+    prepared["customer"] = customer or {"id": prepared["customer_id"], "name": "Клиент недоступен", "phone": "", "email": ""}
+    prepared["status_label"] = PURCHASE_STATUS_LABELS.get(prepared["status"], prepared["status"])
+    prepared["channel_label"] = PURCHASE_CHANNEL_LABELS.get(prepared["channel"], prepared["channel"])
+    return prepared
+
+
+def _purchase_error(error, status=400):
+    return jsonify({"ok": False, "error": {"message": str(error), "field": getattr(error, "field", "")}}), status
+
+
+@app.get("/app/purchases")
+def purchases_page():
+    if not _purchase_can_view():
+        abort(403)
+    selected_tab = str(request.args.get("tab") or "requests")
+    tab = selected_tab if selected_tab in {"requests", "plan", "orders"} else "requests"
+    try:
+        customer_ids = []
+        query = str(request.args.get("q") or "").strip()
+        if query:
+            customer_ids = [item["id"] for item in customer_store().list(query=query, per_page=200)["rows"]]
+        filters = {key: request.args.get(key) for key in (
+            "q", "status", "brand", "channel", "date_from", "date_to", "active_only", "sort", "page", "per_page"
+        )}
+        listing = purchase_store().list_requests(filters, customer_ids=customer_ids)
+        requests_list = [_purchase_enrich_request(item) for item in listing["rows"]]
+        plan = purchase_store().list_plan(_purchase_stock)
+        for item in plan:
+            item["requests"] = [_purchase_enrich_request(row) for row in item["requests"]]
+        orders = purchase_store().list_supplier_orders()
+        summary = purchase_store().summary()
+        summary["recommended_units"] = sum(item["recommended_quantity"] for item in plan)
+        selected = None
+        if request.args.get("request_id"):
+            selected = _purchase_enrich_request(purchase_store().get_request(int(request.args["request_id"])))
+    except (OSError, sqlite3.Error, RuntimeError, ValueError) as error:
+        app.logger.exception("Purchases workspace could not be loaded")
+        return render_template("purchases.html", tab=tab, requests=[], plan=[], orders=[], summary={},
+                               listing=None, selected_request=None, data_error=True,
+                               status_labels=PURCHASE_STATUS_LABELS, channel_labels=PURCHASE_CHANNEL_LABELS,
+                               order_status_labels=PURCHASE_ORDER_STATUS_LABELS, page_sizes=PURCHASE_PAGE_SIZES,
+                               csrf=csrf_token()), 503
+    return render_template(
+        "purchases.html", tab=tab, requests=requests_list, plan=plan, orders=orders, summary=summary,
+        listing=listing, selected_request=selected, data_error=False,
+        status_labels=PURCHASE_STATUS_LABELS, channel_labels=PURCHASE_CHANNEL_LABELS,
+        order_status_labels=PURCHASE_ORDER_STATUS_LABELS, page_sizes=PURCHASE_PAGE_SIZES,
+        csrf=csrf_token(),
+    )
+
+
+@app.get("/api/v1/purchases/customers")
+def purchases_customers_search():
+    if not _purchase_can_view(): abort(403)
+    result = customer_store().list(query=request.args.get("q", ""), per_page=20)
+    return jsonify({"ok": True, "items": result["rows"]})
+
+
+@app.post("/api/v1/purchases/customers")
+def purchases_customers_create():
+    _purchase_require_edit()
+    payload = request.get_json(silent=True) or {}
+    try:
+        customer, created = customer_store().create_minimal(payload.get("name"), payload.get("phone"), payload.get("email"))
+        return jsonify({"ok": True, "customer": customer, "created": created}), 201 if created else 200
+    except ValueError as error:
+        return _purchase_error(error)
+
+
+@app.get("/api/v1/purchases/products")
+def purchases_products_search():
+    if not _purchase_can_view(): abort(403)
+    query = str(request.args.get("q") or "").strip()
+    pattern = "%{}%".format(query)
+    database = CatalogDatabase(cache_initialization=True)
+    with database.connect() as connection:
+        rows = connection.execute(
+            "SELECT id FROM catalog_excel_products WHERE active=1 AND "
+            "(excel_name_raw LIKE ? OR excel_brand LIKE ? OR COALESCE(model,'') LIKE ? OR COALESCE(excel_article,'') LIKE ?) "
+            "ORDER BY excel_brand,excel_name_raw,id LIMIT 30", (pattern, pattern, pattern, pattern)
+        ).fetchall()
+    return jsonify({"ok": True, "items": [_purchase_product(row[0]) for row in rows]})
+
+
+@app.post("/api/v1/purchases/requests")
+def purchases_requests_create():
+    _purchase_require_edit()
+    payload = request.get_json(silent=True) or {}
+    try:
+        item = purchase_store().create_request(payload, _purchase_actor(), lambda value: bool(_purchase_customer(value)), _purchase_product)
+        return jsonify({"ok": True, "request": _purchase_enrich_request(item)}), 201
+    except PurchaseValidationError as error:
+        return _purchase_error(error)
+
+
+@app.route("/api/v1/purchases/requests/<int:request_id>", methods=["GET", "PATCH"])
+def purchases_request_detail_api(request_id):
+    if not _purchase_can_view(): abort(403)
+    try:
+        if request.method == "PATCH":
+            _purchase_require_edit()
+            item = purchase_store().update_request(request_id, request.get_json(silent=True) or {}, _purchase_actor(), lambda value: bool(_purchase_customer(value)), _purchase_product)
+        else:
+            item = purchase_store().get_request(request_id)
+        return jsonify({"ok": True, "request": _purchase_enrich_request(item)})
+    except PurchaseValidationError as error:
+        return _purchase_error(error)
+    except PurchaseNotFoundError as error:
+        return _purchase_error(error, 404)
+
+
+@app.post("/api/v1/purchases/requests/<int:request_id>/archive")
+def purchases_request_archive(request_id):
+    _purchase_require_edit()
+    payload = request.get_json(silent=True) or {}
+    try:
+        item = purchase_store().archive_request(request_id, payload.get("archived", True), _purchase_actor(), payload.get("comment", ""))
+        return jsonify({"ok": True, "request": _purchase_enrich_request(item)})
+    except PurchaseNotFoundError as error:
+        return _purchase_error(error, 404)
+
+
+@app.post("/api/v1/purchases/requests/<int:request_id>/plan")
+def purchases_request_plan(request_id):
+    _purchase_require_edit()
+    try:
+        plan_id = purchase_store().add_to_plan(request_id, _purchase_actor())
+        return jsonify({"ok": True, "plan_item_id": plan_id})
+    except PurchaseNotFoundError as error:
+        return _purchase_error(error, 404)
+
+
+@app.patch("/api/v1/purchases/plan/<int:plan_id>")
+def purchases_plan_update(plan_id):
+    _purchase_require_edit()
+    try:
+        purchase_store().set_plan_quantity(plan_id, (request.get_json(silent=True) or {}).get("actual_quantity"), _purchase_actor())
+        return jsonify({"ok": True})
+    except (PurchaseValidationError, PurchaseNotFoundError) as error:
+        return _purchase_error(error, 404 if isinstance(error, PurchaseNotFoundError) else 400)
+
+
+@app.post("/api/v1/purchases/plan/<int:plan_id>/remove")
+def purchases_plan_remove(plan_id):
+    _purchase_require_edit()
+    try:
+        purchase_store().remove_plan_item(plan_id, _purchase_actor())
+        return jsonify({"ok": True})
+    except PurchaseNotFoundError as error:
+        return _purchase_error(error, 404)
+
+
+@app.post("/api/v1/purchases/supplier-orders")
+def purchases_supplier_order_create():
+    _purchase_require_edit()
+    try:
+        order = purchase_store().create_supplier_order(request.get_json(silent=True) or {}, _purchase_actor())
+        return jsonify({"ok": True, "order": order}), 201
+    except (PurchaseValidationError, sqlite3.IntegrityError) as error:
+        return _purchase_error(error)
+
+
+@app.get("/api/v1/purchases/supplier-orders/<int:order_id>")
+def purchases_supplier_order_detail(order_id):
+    if not _purchase_can_view(): abort(403)
+    try:
+        return jsonify({"ok": True, "order": purchase_store().get_supplier_order(order_id)})
+    except PurchaseNotFoundError as error:
+        return _purchase_error(error, 404)
+
+
+@app.post("/api/v1/purchases/supplier-orders/<int:order_id>/status")
+def purchases_supplier_order_status(order_id):
+    _purchase_require_edit()
+    try:
+        order = purchase_store().set_order_status(order_id, (request.get_json(silent=True) or {}).get("status"), _purchase_actor())
+        return jsonify({"ok": True, "order": order})
+    except (PurchaseValidationError, PurchaseNotFoundError) as error:
+        return _purchase_error(error, 404 if isinstance(error, PurchaseNotFoundError) else 400)
+
+
+@app.post("/api/v1/purchases/supplier-items/<int:item_id>/receive")
+def purchases_supplier_item_receive(item_id):
+    _purchase_require_edit()
+    try:
+        order = purchase_store().receive_item(item_id, (request.get_json(silent=True) or {}).get("received_quantity"), _purchase_actor())
+        return jsonify({"ok": True, "order": order})
+    except (PurchaseValidationError, PurchaseNotFoundError) as error:
+        return _purchase_error(error, 404 if isinstance(error, PurchaseNotFoundError) else 400)
+
+
 def _categories_redirect(category_id=None, notice="success", message=""):
     arguments = {"view": "categories", "notice": notice, "message": message}
     if category_id is not None:
@@ -16560,13 +16844,26 @@ NAVIGATION_DEFINITIONS = [
         "active_prefixes": ["/app/customers"],
     },
     {
+        "key": "purchases",
+        "label": "Закупки",
+        "description": "Запросы клиентов, план закупки и заказы поставщикам.",
+        "icon": "purchases",
+        "href": "/app/purchases",
+        "mobile_href": "/app/purchases",
+        "position": 9,
+        "group": "main",
+        "mobile_primary": False,
+        "active_exact": [],
+        "active_prefixes": ["/app/purchases"],
+    },
+    {
         "key": "settings",
         "label": "Настройки",
         "description": "Настройки ERP.",
         "icon": "settings",
         "href": "/app/settings",
         "mobile_href": "/app/settings",
-        "position": 9,
+        "position": 10,
         "group": "system",
         "mobile_primary": False,
         "active_exact": [],
