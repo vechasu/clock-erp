@@ -241,6 +241,9 @@ class CanonicalCustomerRegistryTest(unittest.TestCase):
         self.assertNotEqual(first["customer_id"], second["customer_id"])
         self.assertEqual(second["reason"], "external_id_contact_conflict")
         self.assertEqual(repeated["customer_id"], second["customer_id"])
+        reused_email = self.add(14, phone="+7 900 000-00-14", email="second@example.ru")
+        self.assertNotEqual(reused_email["customer_id"], second["customer_id"])
+        self.assertEqual(reused_email["reason"], "phone_email_value_conflict")
 
     def test_more_than_100_server_paginated_customers_and_global_search(self):
         for index in range(1, 126):

@@ -191,6 +191,10 @@ class CustomerRegistry:
                 candidates = set()
                 reason = "phone_email_cross_conflict"
                 matched_by = "conflict"
+            elif phone and email and ((phone_ids and not email_ids) or (email_ids and not phone_ids)):
+                candidates = set()
+                reason = "phone_email_value_conflict"
+                matched_by = "conflict"
             elif len(external_ids & (phone_ids | email_ids)) == 1:
                 candidates = external_ids & (phone_ids | email_ids)
                 matched_by = "external_id_and_contact"
@@ -262,6 +266,12 @@ class CustomerRegistry:
             allowed_kinds = {"phone"}
         elif not existing and matched_by == "email":
             allowed_kinds = {"email"}
+        elif not existing and matched_by == "external_id_and_contact":
+            allowed_kinds = set()
+            if customer_id in phone_ids:
+                allowed_kinds.add("phone")
+            if customer_id in email_ids:
+                allowed_kinds.add("email")
         for kind, normalized, display, masked in (
             ("phone", phone, text(operation.get("phone")), 0),
             ("email", email, text(operation.get("email")), email_masked),
