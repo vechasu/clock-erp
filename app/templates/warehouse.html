@@ -4095,7 +4095,7 @@
                         {% if active_brand_inventory.locked_positions %}
                             <span class="inventory-lock-badge">На инвентаризации: {{ active_brand_inventory.locked_positions }} {{ 'позиция' if active_brand_inventory.locked_positions == 1 else 'позиций' }}</span>
                         {% endif %}
-                        <a class="inventory-lock-link" href="{{ url_for('warehouse_inventory_page', inventory_id=active_brand_inventory.id) }}">Открыть инвентаризацию</a>
+                        <a class="inventory-lock-link" href="{{ url_for('inventory_run_page', inventory_id=active_brand_inventory.id) }}">Открыть инвентаризацию</a>
                     </div>
                 </section>
             {% endif %}

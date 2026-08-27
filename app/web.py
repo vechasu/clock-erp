@@ -3706,8 +3706,48 @@ def _inventory_json(action):
         return jsonify(ok=False, message="Переданы некорректные данные."), 400
 
 
-@app.route("/app/products/inventory")
-def warehouse_inventory_page():
+@app.route("/app/inventory")
+def inventory_page():
+    service = BrandInventory()
+    view = (request.args.get("view") or "history").strip()
+    if view == "start":
+        return redirect(url_for("inventory_run_page"))
+    active_inventories = service.list_active()
+    if view == "brands":
+        selected_brand = (request.args.get("brand_id") or "").strip()
+        summaries = service.brand_summary()
+        if selected_brand:
+            summaries = [
+                item for item in summaries
+                if str(item["id"]) == selected_brand
+            ]
+        return render_template(
+            "inventory_section.html", view="brands", brand_summaries=summaries,
+            active_inventories=active_inventories,
+        )
+    filters = {
+        key: request.args.get(key, "") for key in (
+            "q", "date_from", "date_to", "brand_id", "category_id",
+            "model_id", "employee", "status", "discrepancies",
+        )
+    }
+    history = service.list_history(filters)
+    page, per_page = parse_erp_pagination()
+    history_page, page = paginate_erp_records(history, page, per_page)
+    pagination = build_erp_pagination(
+        "inventory_page", len(history), page, per_page
+    )
+    current_query = request.query_string.decode("utf-8", "replace")
+    return_to = request.path + ("?" + current_query if current_query else "")
+    return render_template(
+        "inventory_section.html", view="history", histories=history_page,
+        pagination=pagination, facets=service.history_facets(), filters=filters,
+        active_inventories=active_inventories, return_to=return_to,
+    )
+
+
+@app.route("/app/inventory/run")
+def inventory_run_page():
     service = BrandInventory()
     inventory_id = (request.args.get("inventory_id") or "").strip()
     inventory = None
@@ -3718,7 +3758,7 @@ def warehouse_inventory_page():
             items = service.list_items(inventory_id)
         except InventoryError:
             return redirect(url_for(
-                "warehouse_inventory_page", notice="error",
+                "inventory_run_page", notice="error",
                 message="Инвентаризация не найдена.",
             ))
     return render_template(
@@ -3728,6 +3768,43 @@ def warehouse_inventory_page():
         active_inventories=service.list_active(),
         brands=SharedCatalog().list_brands(limit=500),
     )
+
+
+@app.route("/app/inventory/<inventory_id>")
+def inventory_document_page(inventory_id):
+    service = BrandInventory()
+    try:
+        inventory = service.get(inventory_id)
+        items = service.document_items(inventory_id)
+    except InventoryError:
+        return redirect(url_for(
+            "inventory_page", notice="error", message="Инвентаризация не найдена."
+        ))
+    return_to = (request.args.get("return_to") or "").strip()
+    if not return_to.startswith("/app/inventory"):
+        return_to = url_for("inventory_page")
+    return render_template(
+        "inventory_document.html", inventory=inventory, items=items,
+        return_to=return_to,
+    )
+
+
+@app.route("/app/products/inventory")
+def warehouse_inventory_page():
+    inventory_id = (request.args.get("inventory_id") or "").strip()
+    if inventory_id:
+        try:
+            inventory = BrandInventory().get(inventory_id)
+        except InventoryError:
+            return redirect(url_for(
+                "inventory_page", notice="error", message="Инвентаризация не найдена."
+            ))
+        endpoint = (
+            "inventory_run_page" if inventory["status"] == "active"
+            else "inventory_document_page"
+        )
+        return redirect(url_for(endpoint, inventory_id=inventory_id), code=302)
+    return redirect(url_for("inventory_page", view="start"), code=302)
 
 
 @app.route("/api/v1/inventories", methods=["POST"])
@@ -16299,11 +16376,24 @@ NAVIGATION_DEFINITIONS = [
         "icon": "sales",
         "href": "/app/sales",
         "mobile_href": "/app/sales",
-        "position": 3,
+        "position": 4,
         "group": "main",
         "mobile_primary": True,
         "active_exact": [],
         "active_prefixes": ["/app/sales", "/sales"],
+    },
+    {
+        "key": "inventory",
+        "label": "Инвентаризация",
+        "description": "История и проведение инвентаризаций.",
+        "icon": "stock_operations",
+        "href": "/app/inventory",
+        "mobile_href": "/app/inventory",
+        "position": 3,
+        "group": "main",
+        "mobile_primary": False,
+        "active_exact": [],
+        "active_prefixes": ["/app/inventory"],
     },
     {
         "key": "receipts",
@@ -16312,7 +16402,7 @@ NAVIGATION_DEFINITIONS = [
         "icon": "receipts",
         "href": "/app/receipts",
         "mobile_href": "/app/receipts",
-        "position": 4,
+        "position": 5,
         "group": "main",
         "mobile_primary": True,
         "active_exact": [],
@@ -16325,7 +16415,7 @@ NAVIGATION_DEFINITIONS = [
         "icon": "journal",
         "href": "/app/journal",
         "mobile_href": "/app/journal",
-        "position": 5,
+        "position": 6,
         "group": "main",
         "mobile_primary": True,
         "active_exact": [],
@@ -16338,7 +16428,7 @@ NAVIGATION_DEFINITIONS = [
         "icon": "repair",
         "href": "/app/repairs",
         "mobile_href": "/app/repairs",
-        "position": 6,
+        "position": 7,
         "group": "main",
         "mobile_primary": False,
         "active_exact": [],
@@ -16351,7 +16441,7 @@ NAVIGATION_DEFINITIONS = [
         "icon": "customers",
         "href": "/app/customers",
         "mobile_href": "/app/customers",
-        "position": 7,
+        "position": 8,
         "group": "main",
         "mobile_primary": False,
         "active_exact": [],
@@ -16364,7 +16454,7 @@ NAVIGATION_DEFINITIONS = [
         "icon": "settings",
         "href": "/app/settings",
         "mobile_href": "/app/settings",
-        "position": 8,
+        "position": 9,
         "group": "system",
         "mobile_primary": False,
         "active_exact": [],
@@ -16759,7 +16849,7 @@ def api_journal_event(event_id):
                     "warehouse_page", view="brands", brand_id=brand_id
                 )
         elif event["entity_type"] == "inventory":
-            object_url = "/app/products/inventory?inventory_id={}".format(event["entity_id"])
+            object_url = "/app/inventory/{}".format(event["entity_id"])
         elif event["entity_type"] == "repair":
             repair = find_api_repair(event["entity_id"])
             if repair:
