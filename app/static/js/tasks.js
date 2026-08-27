@@ -132,7 +132,7 @@
         setEntity(task && task.entity_id ? { id: task.entity_id, label: task.entity_label, href: task.entity_href } : null);
         entityWrap.hidden = !form.elements.entity_type.value; document.getElementById("taskModalTitle").textContent = task ? "Редактирование задачи" : "Новая задача";
         ["moveInbox", "moveAnytime", "moveSomeday"].forEach((id) => document.getElementById(id).hidden = !task || task.completed);
-        formError.hidden = true; modal.hidden = false; backdrop.hidden = false; document.body.style.overflow = "hidden"; state.returnFocus = trigger; requestAnimationFrame(() => form.elements.title.focus());
+        formError.hidden = true; modal.hidden = false; backdrop.hidden = false; document.body.style.overflow = "hidden"; state.returnFocus = trigger; form.elements.title.focus();
     }
     function closeModal() { modal.hidden = true; backdrop.hidden = true; document.body.style.overflow = ""; entityResults.hidden = true; if (state.returnFocus) state.returnFocus.focus(); }
     async function submit(event) {
