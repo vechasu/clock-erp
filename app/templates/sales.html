@@ -2324,6 +2324,7 @@
                                                 data-sales-actions-menu
                                                 hidden
                                             >
+                                                <a role="menuitem" href="{{ url_for('tasks_page', entity_type='sale', entity_id=sale.id, title='Продажа ' ~ (sale.order_number or sale.id)) }}">Создать задачу</a>
                                                 {% if sales_view != 'archive' and not sale.is_cancelled and sale.inventory_managed and sale.return_available_quantity > 0 %}
                                                     <button
                                                         class="sales-row-return"

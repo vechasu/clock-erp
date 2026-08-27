@@ -105,6 +105,7 @@
                             <div class="card-subtitle"><span class="date-value" data-date="{{ selected_order.get('created_at') or selected_order.get('date') }}"></span>{% if detail_total is not none %} · <strong><span class="money-value" data-amount="{{ detail_total }}"></span> ₽</strong>{% endif %}</div>
                         </div>
                         <div class="actions">
+                            <a class="button button-secondary" href="{{ url_for('tasks_page', entity_type='order', entity_id=detail_id, title='Заказ №' ~ detail_number) }}">Создать задачу</a>
                             {% if is_wb %}<span class="button button-secondary" aria-label="Только чтение">Только чтение</span>{% else %}
                             <form class="status-form" method="post" action="/order/{{ detail_id }}/status" data-status-autosave>
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

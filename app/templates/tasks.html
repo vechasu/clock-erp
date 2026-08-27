@@ -1,68 +1,61 @@
 <!doctype html>
 <html lang="ru">
 <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
     <title>Vechasu ERP — Задачи</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/themes.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/erp-components.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/tasks.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/tasks.css', v='2') }}">
 </head>
-<body class="tasks-page">
-<div class="app">
-    {% include "_sidebar.html" %}
-    <main class="tasks-main" id="main-content" tabindex="-1">
-        <header class="erp-workspace-header tasks-header">
-            <div class="erp-workspace-heading"><h1>Задачи</h1><p>Обещания клиентам, вопросы и планы команды</p></div>
-            <button class="tasks-primary" id="newTask" type="button">+ Новая задача</button>
-        </header>
-        <div class="tasks-layout">
-            <nav class="tasks-views" aria-label="Представления задач">
-                {% for value, label in [("inbox","Входящие"),("today","Сегодня"),("plans","Планы"),("anytime","В любое время"),("someday","Когда-нибудь"),("logbook","Журнал")] %}
-                <button type="button" data-view="{{ value }}"{% if value == "today" %} class="active" aria-current="page"{% endif %}>{{ label }}<span data-view-count="{{ value }}"></span></button>
-                {% endfor %}
-            </nav>
-            <section class="tasks-workspace" aria-label="Список задач">
-                <div class="tasks-toolbar">
-                    <input id="taskSearch" type="search" placeholder="Поиск по задачам и связанным объектам" aria-label="Поиск задач">
-                    <select id="assigneeFilter" aria-label="Ответственный"><option value="">Все сотрудники</option>{% for user in task_users %}<option value="{{ user.id }}">{{ (user.first_name ~ ' ' ~ user.last_name)|trim or user.email }}</option>{% endfor %}</select>
-                    <select id="priorityFilter" aria-label="Приоритет"><option value="">Все приоритеты</option><option value="urgent">Срочно</option><option value="important">Важно</option><option value="other">Другое</option></select>
-                    <select id="entityFilter" aria-label="Тип связи"><option value="">Все связи</option><option value="customer">Клиент</option><option value="order">Заказ</option><option value="sale">Продажа</option><option value="repair">Ремонт</option><option value="product">Товар</option></select>
-                    <button id="resetFilters" type="button" hidden>Сбросить</button>
-                </div>
-                <div id="taskStatus" class="tasks-status" role="status" aria-live="polite"></div>
-                <div id="taskList" class="tasks-list" aria-live="polite"></div>
-                <div class="tasks-pagination" id="taskPagination" hidden><button id="prevPage" type="button">Назад</button><span id="pageLabel"></span><button id="nextPage" type="button">Далее</button></div>
-            </section>
-        </div>
-    </main>
-</div>
+<body class="tasks-page"><div class="app">{% include "_sidebar.html" %}
+<main class="tasks-main" id="main-content" tabindex="-1">
+    <header class="erp-workspace-header tasks-header"><div class="erp-workspace-heading"><h1>Задачи</h1><p>Обещания, ожидания и незавершённые дела команды</p></div><button class="tasks-primary" id="newTask" type="button">+ Новая задача</button></header>
+    <div class="tasks-layout">
+        <nav class="tasks-views" aria-label="Представления задач">
+        {% for value,label in [("inbox","Входящие"),("overdue","Просрочено"),("today","Сегодня"),("plans","Планы"),("waiting","Ожидаю"),("anytime","В любое время"),("someday","Когда-нибудь"),("logbook","Журнал")] %}
+            <button type="button" data-view="{{ value }}"{% if value == 'today' %} class="active" aria-current="page"{% endif %}>{{ label }}<span data-view-count="{{ value }}"></span></button>
+        {% endfor %}
+        </nav>
+        <section class="tasks-workspace" aria-label="Список задач">
+            <div class="tasks-toolbar">
+                <input id="taskSearch" type="search" placeholder="Название, телефон, заказ, товар, комментарий…" aria-label="Поиск задач">
+                <select id="assigneeFilter" aria-label="Ответственный"><option value="">Все сотрудники</option>{% for user in task_users %}<option value="{{ user.id }}">{{ (user.first_name ~ ' ' ~ user.last_name)|trim or user.email }}</option>{% endfor %}</select>
+                <select id="priorityFilter" aria-label="Приоритет"><option value="">Все приоритеты</option><option value="urgent">Срочно</option><option value="important">Важно</option><option value="other">Другое</option></select>
+                <select id="statusFilter" aria-label="Статус"><option value="">Все статусы</option><option value="new">Новая</option><option value="in_progress">В работе</option><option value="waiting">Ожидаю</option><option value="completed">Выполнена</option><option value="cancelled">Отменена</option></select>
+                <select id="entityFilter" aria-label="Тип связи"><option value="">Все связи</option><option value="customer">Клиент</option><option value="order">Заказ</option><option value="repair">Ремонт</option><option value="product">Товар</option><option value="sale">Продажа</option><option value="purchase">Закупка</option></select>
+                <select id="dueFilter" aria-label="Срок"><option value="">Любой срок</option><option value="overdue">Просрочено</option><option value="today">Сегодня</option><option value="future">В будущем</option><option value="none">Без срока</option></select>
+                <label class="tasks-only-mine"><input id="mineFilter" type="checkbox"> Только мои</label><button id="resetFilters" type="button" hidden>Очистить</button>
+            </div>
+            <div id="taskStatus" class="tasks-status" role="status" aria-live="polite"></div>
+            <div id="taskList" class="tasks-list" aria-live="polite"></div>
+            <div class="tasks-pagination" id="taskPagination" hidden><button id="prevPage" type="button">Назад</button><span id="pageLabel"></span><button id="nextPage" type="button">Далее</button></div>
+        </section>
+    </div>
+</main></div>
 
-<div class="tasks-modal-backdrop" id="taskBackdrop" hidden></div>
-<section class="tasks-modal" id="taskModal" role="dialog" aria-modal="true" aria-labelledby="taskModalTitle" tabindex="-1" hidden>
-    <form id="taskForm" novalidate>
-        <header><div><h2 id="taskModalTitle">Новая задача</h2><p>Сохраните вопрос сейчас — ERP вернёт его в нужный день.</p></div><button type="button" id="closeTask" aria-label="Закрыть окно">×</button></header>
-        <div class="tasks-form-body">
-            <label class="tasks-field tasks-field-wide"><span>Название *</span><input name="title" maxlength="240" required autocomplete="off"></label>
-            <label class="tasks-field tasks-field-wide"><span>Описание</span><textarea name="description" rows="4" maxlength="10000"></textarea></label>
-            <label class="tasks-field"><span>Раздел без даты</span><select name="section"><option value="inbox">Входящие</option><option value="anytime">В любое время</option><option value="someday">Когда-нибудь</option></select></label>
-            <label class="tasks-field"><span>Приоритет</span><select name="priority"><option value="urgent">Срочно</option><option value="important">Важно</option><option value="other" selected>Другое</option></select></label>
-            <label class="tasks-field"><span>Дата</span><input type="date" name="due_date"></label>
-            <label class="tasks-field"><span>Время</span><input type="time" name="due_time"></label>
-            <label class="tasks-field tasks-field-wide"><span>Ответственный</span><select name="assignee_id">{% for user in task_users %}<option value="{{ user.id }}"{% if current_user and user.id == current_user.id %} selected{% endif %}>{{ (user.first_name ~ ' ' ~ user.last_name)|trim or user.email }}</option>{% endfor %}</select></label>
-            <label class="tasks-field"><span>Связь с ERP</span><select name="entity_type"><option value="">Без связи</option><option value="customer">Клиент</option><option value="order">Заказ</option><option value="sale">Продажа</option><option value="repair">Ремонт</option><option value="product">Товар</option></select></label>
-            <div class="tasks-field" id="entitySearchWrap" hidden><span>Найти объект</span><input id="entitySearch" type="search" autocomplete="off" placeholder="Начните вводить"><div id="entityResults" class="entity-results" role="listbox" hidden></div></div>
-            <div id="selectedEntity" class="selected-entity tasks-field-wide" hidden></div>
-            <input type="hidden" name="entity_id"><input type="hidden" name="id">
-            <div class="tasks-form-error tasks-field-wide" id="taskFormError" role="alert" hidden></div>
-        </div>
-        <footer><button type="button" id="moveInbox" class="tasks-secondary" hidden>Во Входящие</button><button type="button" id="moveAnytime" class="tasks-secondary" hidden>В любое время</button><button type="button" id="moveSomeday" class="tasks-secondary" hidden>Когда-нибудь</button><span></span><button type="button" id="cancelTask" class="tasks-secondary">Отмена</button><button type="submit" id="saveTask" class="tasks-primary">Сохранить</button></footer>
-    </form>
-</section>
-<script>window.TASKS_BOOTSTRAP={csrf:{{ csrf|tojson }},currentUserId:{{ (current_user.id if current_user else 0)|tojson }},prefillType:{{ request.args.get('entity_type','')|tojson }},prefillId:{{ request.args.get('entity_id','')|tojson }}};</script>
-<script src="{{ url_for('static', filename='js/theme.js') }}"></script>
-<script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
-<script src="{{ url_for('static', filename='js/notifications.js') }}"></script>
-<script src="{{ url_for('static', filename='js/tasks.js') }}"></script>
-</body>
-</html>
+<div class="tasks-drawer-backdrop" id="taskBackdrop" hidden></div>
+<aside class="tasks-drawer" id="taskDrawer" role="dialog" aria-modal="true" aria-labelledby="taskDrawerTitle" tabindex="-1" hidden>
+<form id="taskForm" novalidate>
+    <header><div><small id="taskDrawerKicker">Карточка задачи</small><h2 id="taskDrawerTitle">Новая задача</h2></div><button type="button" id="closeTask" aria-label="Закрыть карточку">×</button></header>
+    <div class="tasks-form-body">
+        <label class="tasks-field tasks-field-wide"><span>Название *</span><input name="title" maxlength="240" required autocomplete="off"></label>
+        <label class="tasks-field tasks-field-wide"><span>Описание</span><textarea name="description" rows="4" maxlength="10000"></textarea></label>
+        <label class="tasks-field"><span>Статус</span><select name="status"><option value="new">Новая</option><option value="in_progress">В работе</option><option value="waiting">Ожидаю</option><option value="completed">Выполнена</option><option value="cancelled">Отменена</option></select></label>
+        <label class="tasks-field"><span>Приоритет</span><select name="priority"><option value="urgent">Срочно</option><option value="important">Важно</option><option value="other" selected>Другое</option></select></label>
+        <label class="tasks-field"><span>Срок</span><input type="date" name="due_date"></label><label class="tasks-field"><span>Время</span><input type="time" name="due_time"></label>
+        <div class="tasks-quick-dates tasks-field-wide"><button type="button" data-quick-date="today">Сегодня</button><button type="button" data-quick-date="tomorrow">Завтра</button><button type="button" data-quick-date="week">Через неделю</button><button type="button" data-quick-date="clear">Убрать дату</button><button type="button" data-move="anytime">В любое время</button><button type="button" data-move="someday">Когда-нибудь</button></div>
+        <label class="tasks-field"><span>Напоминание</span><input type="datetime-local" name="reminder_at"></label><label class="tasks-field"><span>Раздел без даты</span><select name="section"><option value="inbox">Входящие</option><option value="anytime">В любое время</option><option value="someday">Когда-нибудь</option></select></label>
+        <label class="tasks-field tasks-field-wide"><span>Ответственный</span><select name="assignee_id">{% for user in task_users %}<option value="{{ user.id }}"{% if current_user and user.id == current_user.id %} selected{% endif %}>{{ (user.first_name ~ ' ' ~ user.last_name)|trim or user.email }}</option>{% endfor %}</select></label>
+        <fieldset class="tasks-waiting tasks-field-wide" id="waitingFields"><legend>Ожидание</legend><label class="tasks-field"><span>Кого или что ожидаем *</span><input name="waiting_for" maxlength="500"></label><label class="tasks-field"><span>Следующая проверка *</span><input type="date" name="check_date"></label><label class="tasks-field tasks-field-wide"><span>Комментарий</span><textarea name="waiting_comment" rows="2"></textarea></label></fieldset>
+        <fieldset class="tasks-context tasks-field-wide"><legend>Исходный контекст и контакты</legend><label class="tasks-field tasks-field-wide"><span>Комментарий или сообщение</span><textarea name="source_comment" rows="3"></textarea></label><label class="tasks-field"><span>Клиент (необязательно)</span><input name="contact_name"></label><label class="tasks-field"><span>Телефон</span><input name="contact_phone"></label><label class="tasks-field"><span>Почта</span><input type="email" name="contact_email"></label><label class="tasks-field"><span>Канал</span><input name="contact_channel"></label></fieldset>
+        <fieldset class="tasks-repeat tasks-field-wide"><legend>Повторение</legend><label class="tasks-field"><span>Период</span><select name="repeat_type"><option value="none">Без повторения</option><option value="daily">Ежедневно</option><option value="weekdays">По рабочим дням</option><option value="weekly">Еженедельно</option><option value="monthly">Ежемесячно</option><option value="custom">Свой интервал</option></select></label><label class="tasks-field"><span>Интервал</span><input type="number" name="repeat_interval" min="1" max="365" value="1"></label></fieldset>
+        <fieldset class="tasks-links tasks-field-wide"><legend>Связанные объекты</legend><div class="tasks-link-search"><select id="entityType"><option value="customer">Клиент</option><option value="order">Заказ</option><option value="repair">Ремонт</option><option value="product">Товар</option><option value="sale">Продажа</option><option value="purchase">Закупка</option></select><input id="entitySearch" type="search" autocomplete="off" placeholder="Найти и добавить"><div id="entityResults" class="entity-results" role="listbox" hidden></div></div><div id="selectedEntities" class="selected-entities"></div></fieldset>
+        <label class="tasks-field tasks-field-wide" id="resultField"><span>Результат выполнения</span><textarea name="completion_result" rows="3" placeholder="Что сделано?"></textarea></label>
+        <section class="tasks-history tasks-field-wide" id="taskHistory" hidden><h3>История</h3><ol></ol></section>
+        <input type="hidden" name="id"><div class="tasks-form-error tasks-field-wide" id="taskFormError" role="alert" hidden></div>
+    </div>
+    <footer><div class="task-actions" id="taskActions"><button type="button" data-action="start">Начать</button><button type="button" data-action="waiting">Ожидаю</button><button type="button" data-action="complete">Выполнить</button><button type="button" data-action="cancel">Отменить</button><button type="button" data-action="restore">Восстановить</button></div><span></span><button type="button" id="cancelTask" class="tasks-secondary">Закрыть</button><button type="submit" id="saveTask" class="tasks-primary">Сохранить</button></footer>
+</form></aside>
+<script>window.TASKS_BOOTSTRAP={csrf:{{ csrf|tojson }},currentUserId:{{ (current_user.id if current_user else 0)|tojson }},prefillType:{{ request.args.get('entity_type','')|tojson }},prefillId:{{ request.args.get('entity_id','')|tojson }},prefillTitle:{{ request.args.get('title','')|tojson }},prefillContext:{{ request.args.get('context','')|tojson }}};</script>
+<script src="{{ url_for('static', filename='js/theme.js') }}"></script><script src="{{ url_for('static', filename='js/sidebar.js') }}"></script><script src="{{ url_for('static', filename='js/notifications.js') }}"></script><script src="{{ url_for('static', filename='js/tasks.js', v='2') }}"></script>
+</body></html>

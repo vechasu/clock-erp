@@ -16973,7 +16973,11 @@ def get_navigation_items(include_disabled=False):
     active_key = get_active_navigation_key(request.path)
     task_badge = 0
     try:
-        task_badge = TaskStore(app.config["TASKS_DATABASE"]).counts()["active"]
+        user = current_auth_user() or {}
+        if user.get("id"):
+            store = TaskStore(app.config["TASKS_DATABASE"])
+            store.generate_notifications(user["id"])
+            task_badge = store.counts(assignee_id=user["id"])["active"]
     except (MigrationRequiredError, sqlite3.Error):
         task_badge = 0
     return [
@@ -21414,6 +21418,15 @@ def _task_entity(entity_type, entity_id):
             return {"id": entity_id,
                     "label": "Ремонт №{}".format(repair.get("repair_number") or entity_id[:8]),
                     "href": "/app/repairs?selected_id={}".format(entity_id)}
+    elif entity_type == "purchase" and entity_id.isdigit():
+        try:
+            purchase = purchase_store().get_request(int(entity_id))
+        except (PurchaseNotFoundError, ValueError, sqlite3.Error):
+            purchase = None
+        if purchase:
+            label = "Закупка №{} · {}".format(entity_id, purchase.get("product_name") or purchase.get("model") or "запрос")
+            return {"id": entity_id, "label": label,
+                    "href": "/app/purchases?tab=requests&request_id={}".format(entity_id)}
     return None
 
 
@@ -21425,6 +21438,11 @@ def _serialize_tasks(rows):
         user = users.get(int(item["assignee_id"])) or {}
         full_name = " ".join(str(user.get(key) or "").strip() for key in ("first_name", "last_name")).strip()
         item["assignee_name"] = full_name or user.get("email") or "Сотрудник"
+        author = users.get(int(item["author_id"])) or {}
+        item["author_name"] = " ".join(str(author.get(key) or "").strip() for key in ("first_name", "last_name")).strip() or author.get("email") or "Сотрудник"
+        for event in item.get("history", []):
+            actor = users.get(int(event["actor_id"])) or {}
+            event["actor_name"] = " ".join(str(actor.get(key) or "").strip() for key in ("first_name", "last_name")).strip() or actor.get("email") or "Сотрудник"
         result.append(item)
     return result
 
@@ -21445,11 +21463,14 @@ def tasks_page():
 
 @app.get("/api/v1/tasks")
 def api_tasks_collection_get():
+    user = current_auth_user() or {}
     try:
         listing = _tasks_store().list(
             view=request.args.get("view", "today"), query=request.args.get("q", ""),
             assignee_id=request.args.get("assignee_id") or None,
             priority=request.args.get("priority", ""), entity_type=request.args.get("entity_type", ""),
+            status=request.args.get("status", ""), due=request.args.get("due", ""),
+            only_mine=user.get("id") if request.args.get("only_mine") == "1" else None,
             page=request.args.get("page", 1), per_page=request.args.get("per_page", 50),
         )
     except TaskValidationError as error:
@@ -21492,8 +21513,11 @@ def api_task_resource(task_id):
 @app.post("/api/v1/tasks/<int:task_id>/complete")
 def api_task_complete(task_id):
     try:
-        task = _tasks_store().set_completed(task_id, True, current_auth_user()["id"])
-    except TaskNotFoundError as error:
+        payload = api_json_payload()
+        task = _tasks_store().set_status(
+            task_id, "completed", current_auth_user()["id"], payload.get("result", "")
+        )
+    except (TaskValidationError, TaskNotFoundError) as error:
         return _task_api_error(error)
     return api_success(_serialize_tasks([task])[0])
 
@@ -21501,8 +21525,8 @@ def api_task_complete(task_id):
 @app.post("/api/v1/tasks/<int:task_id>/reopen")
 def api_task_reopen(task_id):
     try:
-        task = _tasks_store().set_completed(task_id, False, current_auth_user()["id"])
-    except TaskNotFoundError as error:
+        task = _tasks_store().set_status(task_id, "new", current_auth_user()["id"])
+    except (TaskValidationError, TaskNotFoundError) as error:
         return _task_api_error(error)
     return api_success(_serialize_tasks([task])[0])
 
@@ -21517,9 +21541,55 @@ def api_task_move(task_id):
     return api_success(_serialize_tasks([task])[0])
 
 
+@app.post("/api/v1/tasks/<int:task_id>/status")
+def api_task_status(task_id):
+    try:
+        payload = api_json_payload()
+        task = _tasks_store().set_status(
+            task_id, str(payload.get("status") or ""), current_auth_user()["id"],
+            payload.get("result", ""), bool(payload.get("continue_series")),
+        )
+    except (TaskValidationError, TaskNotFoundError) as error:
+        return _task_api_error(error)
+    return api_success(_serialize_tasks([task])[0])
+
+
+@app.post("/api/v1/tasks/<int:task_id>/reschedule")
+def api_task_reschedule(task_id):
+    try:
+        task = _tasks_store().reschedule(
+            task_id, api_json_payload().get("due_date"), current_auth_user()["id"]
+        )
+    except (TaskValidationError, TaskNotFoundError) as error:
+        return _task_api_error(error)
+    return api_success(_serialize_tasks([task])[0])
+
+
 @app.get("/api/v1/tasks/counts")
 def api_task_counts():
-    return api_success(_tasks_store().counts())
+    user = current_auth_user() or {}
+    store = _tasks_store()
+    store.generate_notifications(user.get("id"))
+    return api_success(store.counts(assignee_id=user.get("id")))
+
+
+@app.get("/api/v1/tasks/notifications")
+def api_task_notifications():
+    user = current_auth_user() or {}
+    store = _tasks_store()
+    store.generate_notifications(user.get("id"))
+    return api_success(store.notifications(user.get("id"), request.args.get("mark_seen") == "1"))
+
+
+@app.get("/api/v1/tasks/by-entity/<entity_type>/<entity_id>")
+def api_tasks_by_entity(entity_type, entity_id):
+    if not _task_entity(entity_type, entity_id):
+        return api_error("TASK_ENTITY_NOT_FOUND", "Объект не найден или недоступен.", 404)
+    try:
+        rows = _tasks_store().for_entity(entity_type, entity_id)
+    except TaskValidationError as error:
+        return _task_api_error(error)
+    return api_success(_serialize_tasks(rows))
 
 
 @app.get("/api/v1/tasks/assignees")
@@ -21559,11 +21629,17 @@ def api_task_entities():
                     ("%{}%".format(query.casefold()), "%{}%".format(query.casefold())),
                 ).fetchall()
         results += [_task_entity(entity_type, row["id"]) for row in rows]
-    else:
+    elif entity_type == "repair":
         folded = query.casefold()
         candidates = load_repair_cases()
         results += [_task_entity("repair", case.get("id")) for case in candidates
                    if folded in " ".join(str(case.get(key) or "") for key in ("repair_number", "client_name", "product_name")).casefold()][:20]
+    else:
+        try:
+            listing = purchase_store().list_requests({"q": query, "page": 1, "per_page": 20})
+            results += [_task_entity("purchase", row.get("id")) for row in listing["rows"]]
+        except (sqlite3.Error, ValueError, RuntimeError):
+            results = results
     unique = []
     seen = set()
     for item in results:

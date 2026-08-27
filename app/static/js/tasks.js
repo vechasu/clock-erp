@@ -1,30 +1,23 @@
 (() => {
+    if (window.__vechasuTasksInitialized) return;
+    window.__vechasuTasksInitialized = true;
     const boot = window.TASKS_BOOTSTRAP || {};
-    const state = { view: "today", page: 1, rows: [], pages: 1, loading: false, returnFocus: null, entity: null };
-    const list = document.getElementById("taskList");
-    const status = document.getElementById("taskStatus");
-    const modal = document.getElementById("taskModal");
-    const backdrop = document.getElementById("taskBackdrop");
-    const form = document.getElementById("taskForm");
-    const formError = document.getElementById("taskFormError");
-    const save = document.getElementById("saveTask");
-    const search = document.getElementById("taskSearch");
-    const filters = [document.getElementById("assigneeFilter"), document.getElementById("priorityFilter"), document.getElementById("entityFilter")];
-    const reset = document.getElementById("resetFilters");
-    const entityType = form.elements.entity_type;
-    const entitySearch = document.getElementById("entitySearch");
-    const entityWrap = document.getElementById("entitySearchWrap");
-    const entityResults = document.getElementById("entityResults");
-    const selectedEntity = document.getElementById("selectedEntity");
-    const labels = { inbox: "Входящие", today: "Сегодня", plans: "Планы", anytime: "В любое время", someday: "Когда-нибудь", logbook: "Журнал" };
-    const priorityLabels = { urgent: "Срочно", important: "Важно", other: "Другое" };
-    let searchTimer = 0;
-    let entityTimer = 0;
+    const q = (selector) => document.querySelector(selector);
+    const qa = (selector) => [...document.querySelectorAll(selector)];
+    const initial = new URLSearchParams(location.search);
+    const validViews = ["inbox", "overdue", "today", "plans", "waiting", "anytime", "someday", "logbook"];
+    const state = { view: validViews.includes(initial.get("view")) ? initial.get("view") : "today", page: 1, rows: [], pages: 1, loading: false, task: null, links: [], returnFocus: null };
+    const list = q("#taskList"), status = q("#taskStatus"), drawer = q("#taskDrawer"), backdrop = q("#taskBackdrop"), form = q("#taskForm"), errorBox = q("#taskFormError"), save = q("#saveTask");
+    const search = q("#taskSearch"), filters = [q("#assigneeFilter"), q("#priorityFilter"), q("#statusFilter"), q("#entityFilter"), q("#dueFilter")], mine = q("#mineFilter"), reset = q("#resetFilters");
+    const labels = { inbox: "Входящие", overdue: "Просрочено", today: "Сегодня", plans: "Планы", waiting: "Ожидаю", anytime: "В любое время", someday: "Когда-нибудь", logbook: "Журнал" };
+    const statuses = { new: "Новая", in_progress: "В работе", waiting: "Ожидаю", completed: "Выполнена", cancelled: "Отменена" };
+    const priorities = { urgent: "Срочно", important: "Важно", other: "Другое" };
+    let searchTimer = 0, entityTimer = 0;
 
-    function notify(message, error = false) {
-        status.textContent = message;
-        status.classList.toggle("error", error);
-        if (window.VechasuNotify) window.VechasuNotify[error ? "error" : "success"](message);
+    function notify(message, isError = false, undo = null) {
+        status.replaceChildren(document.createTextNode(message)); status.classList.toggle("error", isError);
+        if (undo) { const button = document.createElement("button"); button.type = "button"; button.textContent = "Отменить"; button.addEventListener("click", undo, { once: true }); status.append(" ", button); }
+        if (window.VechasuNotify) window.VechasuNotify[isError ? "error" : "success"](message);
     }
     async function api(url, options = {}) {
         const headers = { Accept: "application/json", ...(options.headers || {}) };
@@ -35,141 +28,55 @@
         if (!response.ok) throw new Error(payload.message || "Не удалось выполнить запрос.");
         return payload;
     }
-    function taskTone(task) {
-        if (state.view === "today" && task.due_date < new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Moscow" })) return "overdue";
-        return task.priority;
-    }
-    function groupRows(rows) {
-        const groups = [];
-        const add = (key, label, tone, items) => { if (items.length) groups.push({ key, label, tone, items }); };
-        if (state.view === "today") {
-            const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Moscow" });
-            add("overdue", "Просрочено", "overdue", rows.filter((row) => row.due_date < today));
-            add("urgent", "Срочно", "urgent", rows.filter((row) => row.due_date >= today && row.priority === "urgent"));
-            add("important", "Важно", "important", rows.filter((row) => row.due_date >= today && row.priority === "important"));
-            add("other", "Другое", "other", rows.filter((row) => row.due_date >= today && row.priority === "other"));
-        } else if (state.view === "plans") {
-            [...new Set(rows.map((row) => row.due_date))].forEach((date) => add(date, formatDate(date), "other", rows.filter((row) => row.due_date === date)));
-        } else add(state.view, labels[state.view], "other", rows);
-        return groups;
-    }
-    function formatDate(value) {
-        if (!value) return "Без даты";
-        const [year, month, day] = value.split("-").map(Number);
-        return new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", year: "numeric", timeZone: "Europe/Moscow" }).format(new Date(Date.UTC(year, month - 1, day, 9)));
-    }
-    function taskRow(task) {
-        const row = document.createElement("article");
-        row.className = `task-row${task.completed ? " task-completed" : ""}`;
-        row.dataset.id = task.id;
-        row.dataset.tone = taskTone(task);
-        const check = document.createElement("input");
-        check.type = "checkbox"; check.className = "task-check"; check.checked = task.completed;
-        check.setAttribute("aria-label", task.completed ? `Вернуть задачу «${task.title}» в работу` : `Выполнить задачу «${task.title}»`);
-        check.addEventListener("change", () => toggleComplete(task, check));
-        const open = document.createElement("button");
-        open.type = "button"; open.className = "task-open";
-        const title = document.createElement("span"); title.className = "task-title"; title.textContent = task.title; open.append(title);
-        if (task.description) { const desc = document.createElement("span"); desc.className = "task-description"; desc.textContent = task.description; open.append(desc); }
-        const meta = document.createElement("span"); meta.className = "task-meta";
-        const values = [];
-        if (task.due_date) values.push(`${formatDate(task.due_date)}${task.due_time ? ` · ${task.due_time}` : ""}`);
-        values.push(priorityLabels[task.priority], task.assignee_name);
-        if (task.completed_at) values.push(`Выполнено ${new Date(task.completed_at).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" })}`);
-        values.forEach((value) => { const span = document.createElement("span"); span.textContent = value; meta.append(span); });
-        if (task.entity_label) { const badge = document.createElement("a"); badge.className = "task-badge"; badge.href = task.entity_href; badge.textContent = task.entity_label; badge.addEventListener("click", (event) => event.stopPropagation()); meta.append(badge); }
-        open.append(meta); open.addEventListener("click", () => openModal(task, open));
-        row.append(check, open);
-        if (task.completed) { const reopen = document.createElement("button"); reopen.type = "button"; reopen.className = "task-reopen"; reopen.textContent = "Вернуть"; reopen.addEventListener("click", () => toggleComplete(task, check, false)); row.append(reopen); }
-        return row;
+    function localDate(offset = 0) { const date = new Date(); date.setDate(date.getDate() + offset); return new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Moscow" }).format(date); }
+    function formatDate(value) { if (!value) return "Без даты"; const [y,m,d] = value.split("-").map(Number); return new Intl.DateTimeFormat("ru-RU", { day:"numeric", month:"short", year:"numeric", timeZone:"Europe/Moscow" }).format(new Date(Date.UTC(y,m-1,d,9))); }
+    function taskDate(task) { return task.status === "waiting" && task.check_date ? task.check_date : task.due_date; }
+    function tone(task) { const date = taskDate(task); if (date && date < localDate()) return "overdue"; if (date === localDate()) return "today"; return task.priority; }
+    function updateUrl(taskId = state.task && state.task.id) { const params = new URLSearchParams(); params.set("view", state.view); if (taskId) params.set("task", taskId); history.replaceState(null, "", `${location.pathname}?${params}`); }
+    function chip(link) { const a = document.createElement("a"); a.className = "task-badge"; a.href = link.entity_href || "#"; a.textContent = link.entity_label || `${link.entity_type} ${link.entity_id}`; a.addEventListener("click", (event) => event.stopPropagation()); return a; }
+    function row(task) {
+        const article = document.createElement("article"); article.className = `task-row${task.completed ? " task-completed" : ""}`; article.dataset.tone = tone(task);
+        const check = document.createElement("input"); check.type="checkbox"; check.className="task-check"; check.checked=task.completed; check.setAttribute("aria-label", `${task.completed ? "Восстановить" : "Выполнить"} «${task.title}»`); check.addEventListener("change", () => quickComplete(task, check));
+        const open = document.createElement("button"); open.type="button"; open.className="task-open";
+        const title=document.createElement("span"); title.className="task-title"; title.textContent=task.title; open.append(title);
+        if(task.description){const desc=document.createElement("span");desc.className="task-description";desc.textContent=task.description;open.append(desc);}
+        const meta=document.createElement("span");meta.className="task-meta"; const date=taskDate(task);
+        [date ? `${task.status === "waiting" ? "Проверить " : ""}${formatDate(date)}${task.due_time ? ` · ${task.due_time}` : ""}` : "", statuses[task.status], priorities[task.priority], task.assignee_name].filter(Boolean).forEach(value=>{const span=document.createElement("span");span.textContent=value;meta.append(span);});
+        (task.links || []).forEach(link => meta.append(chip(link))); open.append(meta); open.addEventListener("click",()=>openTask(task.id,open)); article.append(check,open); return article;
     }
     function render() {
         list.replaceChildren();
-        if (!state.rows.length) {
-            const empty = document.createElement("div"); empty.className = "tasks-empty";
-            const strong = document.createElement("strong"); strong.textContent = "Задач здесь нет";
-            empty.append(strong, document.createTextNode(state.view === "today" ? "На сегодня всё спокойно." : "Создайте задачу или измените фильтры.")); list.append(empty);
-        } else groupRows(state.rows).forEach((group) => {
-            const section = document.createElement("section"); section.className = "task-group"; section.dataset.tone = group.tone;
-            const heading = document.createElement("h2"); heading.textContent = group.label; section.append(heading);
-            group.items.forEach((task) => section.append(taskRow(task))); list.append(section);
-        });
-        const pager = document.getElementById("taskPagination");
-        pager.hidden = !["plans", "logbook"].includes(state.view) || state.pages <= 1;
-        document.getElementById("pageLabel").textContent = `Страница ${state.page} из ${state.pages}`;
-        document.getElementById("prevPage").disabled = state.page <= 1;
-        document.getElementById("nextPage").disabled = state.page >= state.pages;
+        if (!state.rows.length) { const empty=document.createElement("div");empty.className="tasks-empty";const strong=document.createElement("strong");strong.textContent="Задач здесь нет";empty.append(strong,document.createTextNode(state.view==="today"?"На сегодня всё спокойно.":"Создайте задачу или измените фильтры."));list.append(empty); }
+        else state.rows.forEach(task=>list.append(row(task)));
+        const pager=q("#taskPagination");pager.hidden=state.pages<=1;q("#pageLabel").textContent=`Страница ${state.page} из ${state.pages}`;q("#prevPage").disabled=state.page<=1;q("#nextPage").disabled=state.page>=state.pages;
     }
     async function load() {
-        if (state.loading) return; state.loading = true; status.textContent = "Загружаем задачи…";
-        const params = new URLSearchParams({ view: state.view, page: state.page, per_page: ["plans", "logbook"].includes(state.view) ? 30 : 100 });
-        if (search.value.trim()) params.set("q", search.value.trim());
-        if (filters[0].value) params.set("assignee_id", filters[0].value);
-        if (filters[1].value) params.set("priority", filters[1].value);
-        if (filters[2].value) params.set("entity_type", filters[2].value);
-        try { const payload = await api(`/api/v1/tasks?${params}`); state.rows = payload.data.rows; state.page = payload.data.page; state.pages = payload.data.pages; render(); status.textContent = `Найдено: ${payload.data.total}`; }
-        catch (error) { list.replaceChildren(); notify(error.message, true); }
-        finally { state.loading = false; updateFilters(); loadCounts(); }
+        if(state.loading)return;state.loading=true;status.textContent="Загружаем задачи…";list.classList.add("loading");
+        const params=new URLSearchParams({view:state.view,page:state.page,per_page:"50"});
+        if(search.value.trim())params.set("q",search.value.trim());["assignee_id","priority","status","entity_type","due"].forEach((name,i)=>{if(filters[i].value)params.set(name,filters[i].value);});if(mine.checked)params.set("only_mine","1");
+        try{const payload=await api(`/api/v1/tasks?${params}`);state.rows=payload.data.rows;state.page=payload.data.page;state.pages=payload.data.pages;render();status.textContent=`Найдено: ${payload.data.total}`;}catch(error){list.replaceChildren();notify(error.message,true);}finally{state.loading=false;list.classList.remove("loading");updateFilters();loadCounts();}
     }
-    async function loadCounts() {
-        try { const payload = await api("/api/v1/tasks/counts"); const counts = payload.data; document.querySelector('[data-view-count="today"]').textContent = counts.active || ""; }
-        catch (_) { /* list error already provides actionable feedback */ }
-    }
-    async function toggleComplete(task, checkbox, target = !task.completed) {
-        checkbox.disabled = true; const row = checkbox.closest(".task-row"); row.style.opacity = ".45";
-        try { await api(`/api/v1/tasks/${task.id}/${target ? "complete" : "reopen"}`, { method: "POST", body: "{}" }); notify(target ? "Задача выполнена." : "Задача возвращена в работу."); await load(); }
-        catch (error) { checkbox.checked = task.completed; row.style.opacity = ""; notify(error.message, true); }
-        finally { checkbox.disabled = false; }
-    }
-    function setEntity(entity) {
-        state.entity = entity; form.elements.entity_id.value = entity ? entity.id : "";
-        selectedEntity.hidden = !entity; selectedEntity.replaceChildren();
-        if (entity) { const text = document.createElement("span"); text.textContent = entity.label; const remove = document.createElement("button"); remove.type = "button"; remove.textContent = "Убрать"; remove.addEventListener("click", () => setEntity(null)); selectedEntity.append(text, remove); }
-    }
-    function openModal(task = null, trigger = document.activeElement) {
-        form.reset(); form.elements.id.value = task ? task.id : ""; form.elements.assignee_id.value = task ? task.assignee_id : boot.currentUserId;
-        ["title", "description", "section", "priority", "due_date", "due_time", "entity_type"].forEach((name) => { if (task) form.elements[name].value = task[name] || ""; });
-        setEntity(task && task.entity_id ? { id: task.entity_id, label: task.entity_label, href: task.entity_href } : null);
-        entityWrap.hidden = !form.elements.entity_type.value; document.getElementById("taskModalTitle").textContent = task ? "Редактирование задачи" : "Новая задача";
-        ["moveInbox", "moveAnytime", "moveSomeday"].forEach((id) => document.getElementById(id).hidden = !task || task.completed);
-        formError.hidden = true; modal.hidden = false; backdrop.hidden = false; document.body.style.overflow = "hidden"; state.returnFocus = trigger; form.elements.title.focus();
-    }
-    function closeModal() { modal.hidden = true; backdrop.hidden = true; document.body.style.overflow = ""; entityResults.hidden = true; if (state.returnFocus) state.returnFocus.focus(); }
-    async function submit(event) {
-        event.preventDefault(); if (!form.reportValidity() || save.disabled) return;
-        if (form.elements.due_time.value && !form.elements.due_date.value) { formError.textContent = "Для времени укажите дату."; formError.hidden = false; form.elements.due_date.focus(); return; }
-        const data = Object.fromEntries(new FormData(form)); const id = data.id; delete data.id;
-        save.disabled = true; save.textContent = "Сохраняем…"; formError.hidden = true;
-        const key = window.crypto && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
-        try { await api(id ? `/api/v1/tasks/${id}` : "/api/v1/tasks", { method: id ? "PATCH" : "POST", headers: { "Idempotency-Key": key }, body: JSON.stringify({ ...data, idempotency_key: key }) }); closeModal(); notify(id ? "Задача обновлена." : "Задача создана."); state.page = 1; await load(); }
-        catch (error) { formError.textContent = error.message; formError.hidden = false; }
-        finally { save.disabled = false; save.textContent = "Сохранить"; }
-    }
-    async function move(section) {
-        const id = form.elements.id.value; if (!id) return;
-        const button = document.activeElement; button.disabled = true;
-        try { await api(`/api/v1/tasks/${id}/move`, { method: "POST", body: JSON.stringify({ section }) }); closeModal(); notify("Задача перемещена."); await load(); }
-        catch (error) { formError.textContent = error.message; formError.hidden = false; }
-        finally { button.disabled = false; }
-    }
-    function updateFilters() { const active = Boolean(search.value.trim() || filters.some((item) => item.value)); reset.hidden = !active; [search, ...filters].forEach((item) => item.classList.toggle("active-filter", Boolean(item.value))); }
-    document.querySelectorAll("[data-view]").forEach((button) => button.addEventListener("click", () => { document.querySelectorAll("[data-view]").forEach((item) => { item.classList.toggle("active", item === button); item.removeAttribute("aria-current"); }); button.setAttribute("aria-current", "page"); state.view = button.dataset.view; state.page = 1; load(); }));
-    filters.forEach((filter) => filter.addEventListener("change", () => { state.page = 1; load(); }));
-    search.addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { state.page = 1; load(); }, 250); });
-    reset.addEventListener("click", () => { search.value = ""; filters.forEach((item) => { item.value = ""; }); state.page = 1; load(); });
-    document.getElementById("prevPage").addEventListener("click", () => { state.page -= 1; load(); }); document.getElementById("nextPage").addEventListener("click", () => { state.page += 1; load(); });
-    document.getElementById("newTask").addEventListener("click", (event) => openModal(null, event.currentTarget)); ["closeTask", "cancelTask"].forEach((id) => document.getElementById(id).addEventListener("click", closeModal)); backdrop.addEventListener("click", closeModal); form.addEventListener("submit", submit);
-    entityType.addEventListener("change", () => { entityWrap.hidden = !entityType.value; setEntity(null); entitySearch.value = ""; entityResults.hidden = true; });
-    entitySearch.addEventListener("input", () => { clearTimeout(entityTimer); const q = entitySearch.value.trim(); if (!q) { entityResults.hidden = true; return; } entityTimer = setTimeout(async () => { try { const payload = await api(`/api/v1/tasks/entities?type=${encodeURIComponent(entityType.value)}&q=${encodeURIComponent(q)}`); entityResults.replaceChildren(); payload.data.forEach((entity) => { const button = document.createElement("button"); button.type = "button"; button.role = "option"; button.textContent = entity.label; button.addEventListener("click", () => { setEntity(entity); entityResults.hidden = true; }); entityResults.append(button); }); entityResults.hidden = !payload.data.length; } catch (error) { notify(error.message, true); } }, 250); });
-    document.getElementById("moveInbox").addEventListener("click", () => move("inbox")); document.getElementById("moveAnytime").addEventListener("click", () => move("anytime")); document.getElementById("moveSomeday").addEventListener("click", () => move("someday"));
-    modal.addEventListener("keydown", (event) => { if (event.key === "Escape") return closeModal(); if (event.key !== "Tab") return; const focusable = [...modal.querySelectorAll('button:not([disabled]):not([hidden]),input:not([disabled]),select:not([disabled]),textarea:not([disabled])')].filter((item) => !item.closest("[hidden]")); const first = focusable[0], last = focusable[focusable.length - 1]; if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); } else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); } });
+    async function loadCounts(){try{const payload=await api("/api/v1/tasks/counts");Object.entries(payload.data).forEach(([key,value])=>{const node=q(`[data-view-count="${key}"]`);if(node)node.textContent=value||"";});}catch(_){}}
+    async function quickComplete(task, checkbox){checkbox.disabled=true;try{const target=!task.completed;await api(`/api/v1/tasks/${task.id}/${target?"complete":"reopen"}`,{method:"POST",body:"{}"});await load();notify(target?"Задача выполнена.":"Задача восстановлена.",false,async()=>{await api(`/api/v1/tasks/${task.id}/${target?"reopen":"complete"}`,{method:"POST",body:"{}"});await load();});}catch(error){checkbox.checked=task.completed;notify(error.message,true);}finally{checkbox.disabled=false;}}
+    function renderLinks(){const wrap=q("#selectedEntities");wrap.replaceChildren();state.links.forEach((link,index)=>{const item=document.createElement("span");item.className="selected-entity";item.append(chip(link));const remove=document.createElement("button");remove.type="button";remove.textContent="×";remove.setAttribute("aria-label",`Убрать связь ${link.entity_label}`);remove.addEventListener("click",()=>{state.links.splice(index,1);renderLinks();});item.append(remove);wrap.append(item);});}
+    function renderHistory(events){const section=q("#taskHistory"),ol=section.querySelector("ol");ol.replaceChildren();section.hidden=!events.length;events.forEach(event=>{const li=document.createElement("li");const details=event.details||{};li.textContent=`${new Date(event.created_at).toLocaleString("ru-RU",{timeZone:"Europe/Moscow"})} · ${event.actor_name || "Сотрудник"} · ${event.event_type}${details.field?` · ${details.field}`:""}`;ol.append(li);});}
+    function updateActionVisibility(){const value=form.elements.status.value;q("#waitingFields").hidden=value!=="waiting";q('[data-action="start"]').hidden=value!=="new";q('[data-action="waiting"]').hidden=["completed","cancelled"].includes(value);q('[data-action="complete"]').hidden=["completed","cancelled"].includes(value);q('[data-action="cancel"]').hidden=["completed","cancelled"].includes(value);q('[data-action="restore"]').hidden=!["completed","cancelled"].includes(value);}
+    function fill(task){form.reset();state.task=task;state.links=task?JSON.parse(JSON.stringify(task.links||[])):[];const fields=["title","description","section","status","priority","due_date","due_time","reminder_at","assignee_id","source_comment","contact_name","contact_phone","contact_email","contact_channel","waiting_for","check_date","waiting_comment","repeat_type","repeat_interval","completion_result"];
+        fields.forEach(name=>{if(task&&form.elements[name])form.elements[name].value=task[name]||"";});form.elements.id.value=task?task.id:"";if(!task){form.elements.assignee_id.value=boot.currentUserId;form.elements.status.value="new";form.elements.repeat_interval.value="1";}q("#taskDrawerTitle").textContent=task?task.title:"Новая задача";q("#taskDrawerKicker").textContent=task?`Задача №${task.id} · автор: ${task.author_name}`:"Карточка задачи";renderLinks();renderHistory(task?task.history||[]:[]);updateActionVisibility();errorBox.hidden=true;}
+    function showDrawer(trigger){drawer.hidden=false;backdrop.hidden=false;document.body.classList.add("task-drawer-open");state.returnFocus=trigger;setTimeout(()=>form.elements.title.focus(),0);}
+    async function openTask(id,trigger=document.activeElement){try{const payload=await api(`/api/v1/tasks/${id}`);fill(payload.data);showDrawer(trigger);updateUrl(id);}catch(error){notify(error.message,true);}}
+    function openNew(trigger=document.activeElement){fill(null);if(boot.prefillTitle)form.elements.title.value=boot.prefillTitle;if(boot.prefillContext)form.elements.source_comment.value=boot.prefillContext;showDrawer(trigger);updateUrl();}
+    function closeDrawer(){drawer.hidden=true;backdrop.hidden=true;document.body.classList.remove("task-drawer-open");state.task=null;updateUrl(null);if(state.returnFocus&&document.contains(state.returnFocus))state.returnFocus.focus();}
+    function payload(){const data=Object.fromEntries(new FormData(form));delete data.id;data.links=state.links.map(link=>({entity_type:link.entity_type,entity_id:String(link.entity_id)}));return data;}
+    async function submit(event){event.preventDefault();if(!form.reportValidity()||save.disabled)return;if(form.elements.status.value==="waiting"&&(!form.elements.waiting_for.value.trim()||!form.elements.check_date.value)){errorBox.textContent="Для ожидания укажите, кого ожидаем, и дату проверки.";errorBox.hidden=false;return;}const id=form.elements.id.value,key=crypto.randomUUID?crypto.randomUUID():`${Date.now()}-${Math.random()}`;save.disabled=true;save.textContent="Сохраняем…";try{await api(id?`/api/v1/tasks/${id}`:"/api/v1/tasks",{method:id?"PATCH":"POST",headers:{"Idempotency-Key":key},body:JSON.stringify({...payload(),idempotency_key:key})});closeDrawer();notify(id?"Задача обновлена.":"Задача создана.");state.page=1;await load();}catch(error){errorBox.textContent=error.message;errorBox.hidden=false;}finally{save.disabled=false;save.textContent="Сохранить";}}
+    async function action(name){if(!state.task)return;const mapping={start:"in_progress",waiting:"waiting",complete:"completed",cancel:"cancelled",restore:"new"};if(name==="waiting"&&(!form.elements.waiting_for.value.trim()||!form.elements.check_date.value)){form.elements.status.value="waiting";updateActionVisibility();form.elements.waiting_for.focus();return;}const button=q(`[data-action="${name}"]`);button.disabled=true;try{if(name==="waiting"){await api(`/api/v1/tasks/${state.task.id}`,{method:"PATCH",body:JSON.stringify(payload())});}await api(`/api/v1/tasks/${state.task.id}/status`,{method:"POST",body:JSON.stringify({status:mapping[name],result:form.elements.completion_result.value})});closeDrawer();notify(name==="complete"?"Задача выполнена.":name==="cancel"?"Задача отменена.":name==="restore"?"Задача восстановлена.":"Статус обновлён.");await load();}catch(error){errorBox.textContent=error.message;errorBox.hidden=false;}finally{button.disabled=false;}}
+    async function quickDate(kind){const offsets={today:0,tomorrow:1,week:7};const value=kind==="clear"?"":localDate(offsets[kind]);form.elements.due_date.value=value;if(state.task){try{await api(`/api/v1/tasks/${state.task.id}/reschedule`,{method:"POST",body:JSON.stringify({due_date:value})});closeDrawer();notify("Срок перенесён.");await load();}catch(error){notify(error.message,true);}}}
+    function updateFilters(){const active=Boolean(search.value.trim()||filters.some(item=>item.value)||mine.checked);reset.hidden=!active;[search,...filters].forEach(item=>item.classList.toggle("active-filter",Boolean(item.value)));mine.closest("label").classList.toggle("active-filter",mine.checked);}
+    qa("[data-view]").forEach(button=>{const active=button.dataset.view===state.view;button.classList.toggle("active",active);if(active)button.setAttribute("aria-current","page");else button.removeAttribute("aria-current");button.addEventListener("click",()=>{qa("[data-view]").forEach(item=>{item.classList.toggle("active",item===button);item.removeAttribute("aria-current");});button.setAttribute("aria-current","page");state.view=button.dataset.view;state.page=1;updateUrl();load();});});
+    filters.forEach(filter=>filter.addEventListener("change",()=>{state.page=1;load();}));mine.addEventListener("change",()=>{state.page=1;load();});search.addEventListener("input",()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>{state.page=1;load();},250);});reset.addEventListener("click",()=>{search.value="";filters.forEach(item=>item.value="");mine.checked=false;load();});
+    q("#prevPage").addEventListener("click",()=>{state.page-=1;load();});q("#nextPage").addEventListener("click",()=>{state.page+=1;load();});q("#newTask").addEventListener("click",event=>openNew(event.currentTarget));[q("#closeTask"),q("#cancelTask"),backdrop].forEach(node=>node.addEventListener("click",closeDrawer));form.addEventListener("submit",submit);form.elements.status.addEventListener("change",updateActionVisibility);qa("[data-action]").forEach(button=>button.addEventListener("click",()=>action(button.dataset.action)));qa("[data-quick-date]").forEach(button=>button.addEventListener("click",()=>quickDate(button.dataset.quickDate)));qa("[data-move]").forEach(button=>button.addEventListener("click",async()=>{if(state.task){await api(`/api/v1/tasks/${state.task.id}/move`,{method:"POST",body:JSON.stringify({section:button.dataset.move})});closeDrawer();await load();}else{form.elements.section.value=button.dataset.move;form.elements.due_date.value="";}}));
+    q("#entitySearch").addEventListener("input",event=>{clearTimeout(entityTimer);const value=event.target.value.trim(),results=q("#entityResults");if(!value){results.hidden=true;return;}entityTimer=setTimeout(async()=>{try{const payload=await api(`/api/v1/tasks/entities?type=${encodeURIComponent(q("#entityType").value)}&q=${encodeURIComponent(value)}`);results.replaceChildren();payload.data.forEach(entity=>{const button=document.createElement("button");button.type="button";button.role="option";button.textContent=entity.label;button.addEventListener("click",()=>{const type=q("#entityType").value;if(!state.links.some(link=>link.entity_type===type&&String(link.entity_id)===String(entity.id)))state.links.push({...entity,entity_type:type,entity_id:String(entity.id)});renderLinks();results.hidden=true;event.target.value="";});results.append(button);});results.hidden=!payload.data.length;}catch(error){notify(error.message,true);}},250);});
+    drawer.addEventListener("keydown",event=>{if(event.key==="Escape"){event.preventDefault();closeDrawer();return;}if(event.key!=="Tab")return;const focusable=qa('#taskDrawer button:not([disabled]):not([hidden]),#taskDrawer input:not([disabled]),#taskDrawer select:not([disabled]),#taskDrawer textarea:not([disabled])').filter(item=>!item.closest("[hidden]"));const first=focusable[0],last=focusable[focusable.length-1];if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}});
     load();
-    if (boot.prefillType && boot.prefillId) {
-        api(`/api/v1/tasks/entities?type=${encodeURIComponent(boot.prefillType)}&q=${encodeURIComponent(boot.prefillId)}`).then((payload) => {
-            const entity = payload.data.find((item) => String(item.id) === String(boot.prefillId));
-            openModal(null, document.getElementById("newTask"));
-            entityType.value = boot.prefillType; entityWrap.hidden = false;
-            if (entity) setEntity(entity);
-        }).catch(() => openModal(null, document.getElementById("newTask")));
-    }
+    const requested=initial.get("task");if(requested)openTask(requested,q("#newTask"));else if(boot.prefillType&&boot.prefillId){openNew(q("#newTask"));q("#entityType").value=boot.prefillType;api(`/api/v1/tasks/entities?type=${encodeURIComponent(boot.prefillType)}&q=${encodeURIComponent(boot.prefillId)}`).then(payload=>{const entity=payload.data.find(item=>String(item.id)===String(boot.prefillId));if(entity){state.links=[{...entity,entity_type:boot.prefillType,entity_id:String(entity.id)}];renderLinks();}}).catch(()=>{});}
 })();
